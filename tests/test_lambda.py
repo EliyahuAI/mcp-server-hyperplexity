@@ -1,8 +1,11 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 import pytest
 import json
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
-import os
+import boto3
 
 from lambda_function import lambda_handler
 
@@ -77,11 +80,26 @@ def mock_perplexity_api():
         ]
     }
     
-    with patch('lambda_function.validate_with_perplexity', return_value=mock_response) as mock:
+    # Create async mock that returns the mock response
+    async def mock_validate(*args, **kwargs):
+        return mock_response
+    
+    with patch('lambda_function.validate_with_perplexity', side_effect=mock_validate) as mock:
         yield mock
 
 def test_lambda_handler_success(mock_env, mock_aws_services, mock_perplexity_api):
     """Test successful Lambda execution."""
+    # Mock the S3 put_object method to avoid errors when writing the cache
+    mock_aws_services['bucket'].put_object = MagicMock()
+    
+    # Mock a missing cache by raising NoSuchKey
+    def mock_get_side_effect(*args, **kwargs):
+        raise boto3.exceptions.botocore.exceptions.ClientError(
+            {'Error': {'Code': 'NoSuchKey', 'Message': 'The specified key does not exist.'}},
+            'GetObject'
+        )
+    mock_aws_services['bucket'].Object().get.side_effect = mock_get_side_effect
+    
     test_event = {
         "config": SAMPLE_CONFIG,
         "validation_data": SAMPLE_DATA,
@@ -99,7 +117,7 @@ def test_lambda_handler_cache_hit(mock_env, mock_aws_services, mock_perplexity_a
     # Mock cached data
     cached_data = {
         'results': {
-            'name': ('John Doe', 0.95, 'Name is valid')
+            'name': ['John Doe', 0.95, 'Name is valid']
         },
         'timestamp': datetime.now(timezone.utc).isoformat()
     }
@@ -117,7 +135,13 @@ def test_lambda_handler_cache_hit(mock_env, mock_aws_services, mock_perplexity_a
     response = lambda_handler(test_event, None)
     
     assert response['statusCode'] == 200
-    assert response['body'] == cached_data['results']
+    
+    response_body = response['body']
+    assert 'name' in response_body
+    assert response_body['name'][0] == cached_data['results']['name'][0]
+    assert response_body['name'][1] == cached_data['results']['name'][1]
+    assert response_body['name'][2] == cached_data['results']['name'][2]
+    
     mock_perplexity_api.assert_not_called()
 
 def test_lambda_handler_cache_expired(mock_env, mock_aws_services, mock_perplexity_api):
@@ -126,14 +150,18 @@ def test_lambda_handler_cache_expired(mock_env, mock_aws_services, mock_perplexi
     expired_time = datetime.now(timezone.utc) - timedelta(days=31)
     cached_data = {
         'results': {
-            'name': ('John Doe', 0.95, 'Name is valid')
+            'name': ['John Doe', 0.95, 'Name is valid']
         },
         'timestamp': expired_time.isoformat()
     }
     
+    # Setup the mock to return cached data first
     mock_aws_services['bucket'].Object().get.return_value = {
         'Body': MagicMock(read=lambda: json.dumps(cached_data).encode())
     }
+    
+    # Mock for the put_object call (for caching)
+    mock_aws_services['bucket'].put_object = MagicMock()
     
     test_event = {
         "config": SAMPLE_CONFIG,
@@ -141,16 +169,32 @@ def test_lambda_handler_cache_expired(mock_env, mock_aws_services, mock_perplexi
         "bucket_name": "test-validation-bucket"
     }
     
+    # Run the handler - should use fresh data since cache is expired
     response = lambda_handler(test_event, None)
     
     assert response['statusCode'] == 200
     assert 'results' in response['body']
+    
+    # Verify API was called because cache was expired
     mock_perplexity_api.assert_called()
 
 def test_lambda_handler_error(mock_env, mock_aws_services):
     """Test error handling."""
-    # Mock Perplexity API error
-    with patch('lambda_function.validate_with_perplexity', side_effect=Exception("API Error")):
+    # Mock the S3 bucket.put_object method
+    mock_aws_services['bucket'].put_object = MagicMock()
+    
+    # Setup the mock to not raise an error for the cache check
+    mock_aws_services['bucket'].Object().get.side_effect = boto3.exceptions.botocore.exceptions.ClientError(
+        {'Error': {'Code': 'NoSuchKey', 'Message': 'The specified key does not exist.'}},
+        'GetObject'
+    )
+    
+    # Mock process_validation_batch to raise an error
+    async def mock_process_batch(*args, **kwargs):
+        raise Exception("API Error")
+    
+    # Use patch to replace the function that would call the API
+    with patch('lambda_function.process_validation_batch', side_effect=mock_process_batch):
         test_event = {
             "config": SAMPLE_CONFIG,
             "validation_data": SAMPLE_DATA,

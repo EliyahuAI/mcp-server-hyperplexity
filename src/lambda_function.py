@@ -16,13 +16,30 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 def get_perplexity_api_key():
+    """Get Perplexity API key from environment variable or SSM, with fallback for testing."""
+    # Try environment variable first
     api_key = os.environ.get('PERPLEXITY_API_KEY')
     if api_key:
         return api_key
-    ssm_client = boto3.client('ssm')
-    parameter_name = '/Perplexity_API_Key'
-    response = ssm_client.get_parameter(Name=parameter_name, WithDecryption=True)
-    return response['Parameter']['Value']
+    
+    # Try AWS SSM Parameter Store
+    try:
+        ssm_client = boto3.client('ssm')
+        parameter_name = '/Perplexity_API_Key'
+        response = ssm_client.get_parameter(Name=parameter_name, WithDecryption=True)
+        return response['Parameter']['Value']
+    except Exception as e:
+        logger.warning(f"Could not retrieve API key from SSM: {str(e)}")
+        
+        # TESTING ONLY: If running integration tests and no key is available, use a default
+        # In production, this should be properly configured through environment or SSM
+        if 'TEST_MODE' in os.environ:
+            logger.warning("USING TEST API KEY - THIS SHOULD NOT HAPPEN IN PRODUCTION")
+            # For testing integration, insert your API key here TEMPORARILY
+            return "pp-..." # Replace with actual API key for testing
+        
+        # In production, we should fail if the key isn't available
+        raise ValueError("No Perplexity API key found. Set PERPLEXITY_API_KEY environment variable or configure SSM parameter.")
 
 async def validate_with_perplexity(session: aiohttp.ClientSession, prompt: str, api_key: str) -> Dict:
     """Validate a single prompt using Perplexity API."""
@@ -118,7 +135,8 @@ def lambda_handler(event, context):
         # Check cache first
         try:
             cache_obj = bucket.Object(cache_path).get()
-            cache_data = json.loads(cache_obj['Body'].read().decode())
+            body_content = cache_obj['Body'].read().decode() if hasattr(cache_obj.get('Body', {}), 'read') else '{}'
+            cache_data = json.loads(body_content)
             
             # Check if cache is still valid
             cache_timestamp = datetime.fromisoformat(cache_data['timestamp'])
@@ -130,8 +148,12 @@ def lambda_handler(event, context):
                     'statusCode': 200,
                     'body': cache_data['results']
                 }
-        except bucket.meta.client.exceptions.NoSuchKey:
-            logger.info("No cache found, proceeding with validation")
+        except Exception as e:
+            if hasattr(e, 'response') and e.response.get('Error', {}).get('Code') == 'NoSuchKey':
+                logger.info("No cache found, proceeding with validation")
+            else:
+                logger.warning(f"Cache error: {str(e)}")
+                logger.info("Proceeding with validation")
         
         # Prepare validation batches
         validation_batches = []
@@ -162,25 +184,33 @@ def lambda_handler(event, context):
                         results['results']
                     )
                     if next_check_date:
-                        results['results'][f"{row_key}_next_check"] = (next_check_date, 1.0, reasons)
-                
-                # Cache the results with UTC timestamp
-                current_time = datetime.now(timezone.utc)
-                cache_data = {
-                    'results': results,
-                    'timestamp': current_time.isoformat()
-                }
-                
-                bucket.put_object(
-                    Key=cache_path,
-                    Body=json.dumps(cache_data),
-                    Metadata={'timestamp': current_time.isoformat()}
-                )
+                        # Convert datetime to string
+                        next_check_str = next_check_date.isoformat()
+                        results['results'][f"{row_key}_next_check"] = (next_check_str, 1.0, reasons)
                 
                 return results
         
         # Run the async validation process
         results = asyncio.run(process_validations())
+        
+        # Cache the results with UTC timestamp
+        current_time = datetime.now(timezone.utc)
+        cache_data = {
+            'results': results,
+            'timestamp': current_time.isoformat()
+        }
+        
+        # Convert cache_data to JSON-serializable format
+        json_serializable_cache = json.dumps(cache_data, default=str)
+        
+        try:
+            bucket.put_object(
+                Key=cache_path,
+                Body=json_serializable_cache,
+                Metadata={'timestamp': current_time.isoformat()}
+            )
+        except Exception as e:
+            logger.warning(f"Failed to cache results: {str(e)}")
         
         return {
             'statusCode': 200,
