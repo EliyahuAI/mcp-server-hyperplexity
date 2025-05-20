@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
 import logging
+import re
 
 logger = logging.getLogger()
 
@@ -12,7 +13,8 @@ class ValidationTarget:
     validation_type: str
     rules: Dict[str, Any]
     description: str
-    importance: str = "MEDIUM"  # HIGH, MEDIUM, LOW, IGNORED
+    importance: str = "MEDIUM"  # ID, CRITICAL, HIGH, MEDIUM, LOW, IGNORED
+    search_group: int = 0  # Added search_group field for multiplexing
 
 class SchemaValidator:
     def __init__(self, config: Dict[str, Any]):
@@ -21,6 +23,7 @@ class SchemaValidator:
         self.primary_key = config.get('primary_key', [])
         self.cache_ttl_days = config.get('cache_ttl_days', 30)
         self.column_config = config.get('column_config', {})
+        self.similarity_threshold = config.get('similarity_threshold', 0.8)  # Threshold for determining substantial difference
         
         # Define JSON schemas for API responses
         self._single_column_schema = {
@@ -30,7 +33,8 @@ class SchemaValidator:
                 "confidence": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW"]},
                 "quote": {"type": "string"},
                 "sources": {"type": "array", "items": {"type": "string"}},
-                "update_required": {"type": "boolean"}
+                "update_required": {"type": "boolean"},
+                "substantially_different": {"type": "boolean"}
             },
             "required": ["answer", "confidence"]
         }
@@ -45,7 +49,8 @@ class SchemaValidator:
                     "confidence": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW"]},
                     "quote": {"type": "string"},
                     "sources": {"type": "array", "items": {"type": "string"}},
-                    "update_required": {"type": "boolean"}
+                    "update_required": {"type": "boolean"},
+                    "substantially_different": {"type": "boolean"}
                 },
                 "required": ["column", "answer", "confidence"]
             }
@@ -60,13 +65,85 @@ class SchemaValidator:
                 validation_type=target_config['validation_type'],
                 rules=target_config.get('rules', {}),
                 description=target_config.get('description', ''),
-                importance=target_config.get('importance', 'MEDIUM')
+                importance=target_config.get('importance', 'MEDIUM'),
+                search_group=target_config.get('search_group', 0)  # Parse search_group for multiplexing
             )
             targets.append(target)
         return targets
     
-    def generate_validation_prompt(self, row: Dict[str, Any], target: ValidationTarget) -> str:
-        """Generate a validation prompt for a specific target."""
+    def _group_columns_by_search_group(self, targets: List[ValidationTarget]) -> Dict[int, List[ValidationTarget]]:
+        """Group validation targets by search_group for multiplexing."""
+        grouped = {}
+        for target in targets:
+            if target.search_group not in grouped:
+                grouped[target.search_group] = []
+            grouped[target.search_group].append(target)
+        return grouped
+    
+    def _get_id_fields(self, targets: List[ValidationTarget]) -> List[ValidationTarget]:
+        """Get fields with ID importance level."""
+        return [target for target in targets if target.importance.upper() == "ID"]
+    
+    def _get_ignored_fields(self, targets: List[ValidationTarget]) -> List[ValidationTarget]:
+        """Get fields with IGNORED importance level."""
+        return [target for target in targets if target.importance.upper() == "IGNORED"]
+    
+    def _get_critical_fields(self, targets: List[ValidationTarget]) -> List[ValidationTarget]:
+        """Get fields with CRITICAL importance level."""
+        return [target for target in targets if target.importance.upper() == "CRITICAL"]
+    
+    def _is_substantially_different(self, original_value: str, validated_value: str) -> bool:
+        """
+        Determine if the validated value is substantially different from the original.
+        Returns True if they are substantially different, False otherwise.
+        """
+        if original_value is None and validated_value is None:
+            return False
+        if original_value is None or validated_value is None:
+            return True
+            
+        # Convert to strings for comparison
+        original_str = str(original_value).strip().lower()
+        validated_str = str(validated_value).strip().lower()
+        
+        # If they're identical, they're not different
+        if original_str == validated_str:
+            return False
+            
+        # If one is blank and the other isn't, they're different
+        if not original_str or not validated_str:
+            return True
+            
+        # Calculate similarity
+        # For longer strings, use a more sophisticated approach
+        if len(original_str) > 10 or len(validated_str) > 10:
+            # Simple Jaccard similarity for words
+            original_words = set(re.findall(r'\w+', original_str))
+            validated_words = set(re.findall(r'\w+', validated_str))
+            
+            if not original_words or not validated_words:
+                return True
+                
+            intersection = len(original_words.intersection(validated_words))
+            union = len(original_words.union(validated_words))
+            
+            similarity = intersection / union if union > 0 else 0
+            return similarity < self.similarity_threshold
+        else:
+            # For short strings, use character-level difference
+            if len(original_str) == 0 or len(validated_str) == 0:
+                return True
+                
+            # Simple edit distance-based similarity for short strings
+            changes = sum(1 for a, b in zip(original_str, validated_str) if a != b)
+            changes += abs(len(original_str) - len(validated_str))
+            max_len = max(len(original_str), len(validated_str))
+            
+            similarity = 1 - (changes / max_len)
+            return similarity < self.similarity_threshold
+    
+    def generate_validation_prompt(self, row: Dict[str, Any], target: ValidationTarget, previous_results: Dict[str, Dict[str, Any]] = None) -> str:
+        """Generate a validation prompt for a specific target with context from previous validations."""
         # Get column configuration
         column_info = self.column_config.get(target.column, {})
         description = column_info.get('description', target.description)
@@ -88,6 +165,21 @@ Importance: {target.importance}"""
             prompt += f"\nNotes: {notes}"
         if examples:
             prompt += f"\nExamples:\n{examples}"
+        
+        # Add ID fields for context
+        id_fields = self._get_id_fields(self.validation_targets)
+        if id_fields:
+            prompt += "\n\nID Fields:\n"
+            for id_field in id_fields:
+                prompt += f"  {id_field.column}: {row.get(id_field.column, '')}\n"
+        
+        # Add previous results as context if available
+        if previous_results and len(previous_results) > 0:
+            prompt += "\nPrevious Validation Results:\n"
+            for col, result in previous_results.items():
+                confidence_level = result.get('confidence_level', 'UNKNOWN')
+                value = result.get('value', '')
+                prompt += f"  {col}: {value} (Confidence: {confidence_level})\n"
             
         prompt += f"""
 
@@ -97,8 +189,78 @@ Please respond in the following JSON format:
     "confidence": <confidence level: HIGH, MEDIUM, or LOW>,
     "quote": <direct quote from source if available>,
     "sources": [<list of source URLs>],
-    "update_required": <true if value needs to be updated>
+    "update_required": <true if value needs to be updated>,
+    "substantially_different": <true if validated value is substantially different from input>
 }}"""
+        
+        return prompt
+    
+    def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None) -> str:
+        """Generate a validation prompt for multiple targets (multiplex) with progressive context."""
+        general_notes = self.config.get('general_notes', '')
+        
+        # Build the multiplex prompt header
+        prompt = f"""Please validate the following data fields:
+
+{general_notes}
+
+I need you to validate multiple fields at once. For each field, provide your validated answer, confidence level, and supporting information.
+"""
+        
+        # Add ID fields at the beginning
+        id_fields = self._get_id_fields(self.validation_targets)
+        if id_fields:
+            prompt += "\nIdentification Fields:\n"
+            for id_field in id_fields:
+                prompt += f"  {id_field.column}: {row.get(id_field.column, '')}\n"
+            prompt += "\n"
+        
+        # Add previous results as context if available
+        if previous_results and len(previous_results) > 0:
+            prompt += "Previous Validation Results:\n"
+            for col, result in previous_results.items():
+                confidence_level = result.get('confidence_level', 'UNKNOWN')
+                value = result.get('value', '')
+                prompt += f"  {col}: {value} (Confidence: {confidence_level})\n"
+            prompt += "\n"
+        
+        # Add each column to validate
+        prompt += "Fields to validate:\n\n"
+        
+        for target in targets:
+            column_info = self.column_config.get(target.column, {})
+            description = column_info.get('description', target.description)
+            format_info = column_info.get('format', '')
+            notes = column_info.get('notes', '')
+            examples = self._format_examples(target.column)
+            
+            prompt += f"""Field: {target.column}
+Current Value: {row.get(target.column, '')}
+Description: {description}
+Format: {format_info}
+Importance: {target.importance}
+"""
+            if notes:
+                prompt += f"Notes: {notes}\n"
+            if examples:
+                prompt += f"Examples: {examples}\n"
+            
+            prompt += "\n"
+        
+        # Add response format instructions
+        prompt += """Please respond with a JSON array containing an object for each field. Each object should have the following structure:
+[
+  {
+    "column": "field name",
+    "answer": "validated value",
+    "confidence": "HIGH|MEDIUM|LOW",
+    "quote": "direct quote from source if available",
+    "sources": ["source URL 1", "source URL 2"],
+    "update_required": true/false,
+    "substantially_different": true/false
+  },
+  ...
+]"""
         
         return prompt
     
@@ -113,16 +275,16 @@ Please respond in the following JSON format:
             formatted += f"- {example}\n"
         return formatted
     
-    def parse_validation_result(self, result: Dict, target: ValidationTarget) -> Tuple[Any, float, List[str], str, str, str]:
+    def parse_validation_result(self, result: Dict, target: ValidationTarget, original_value: Any) -> Tuple[Any, float, List[str], str, str, str, bool, bool]:
         """Parse the validation result from Perplexity API response."""
         try:
             # Extract content from API response
             if not isinstance(result, dict) or 'choices' not in result:
-                return None, 0.0, [], "LOW", "", ""
+                return None, 0.0, [], "LOW", "", "", False, False
             
             content = result['choices'][0]['message'].get('content', '')
             if not content:
-                return None, 0.0, [], "LOW", "", ""
+                return None, 0.0, [], "LOW", "", "", False, False
             
             # Parse JSON response
             try:
@@ -133,15 +295,21 @@ Please respond in the following JSON format:
                     json_start = content.find("```json") + 7
                     json_end = content.find("```", json_start)
                     if json_end > json_start:
-                        validation_result = json.loads(content[json_start:json_end].strip())
+                            validation_result = json.loads(content[json_start:json_end].strip())
                 else:
-                    return None, 0.0, [], "LOW", "", ""
-            
+                        return None, 0.0, [], "LOW", "", "", False, False
+                
             # Extract values
             answer = validation_result.get('answer', '')
             confidence_level = validation_result.get('confidence', 'LOW')
             quote = validation_result.get('quote', '')
             sources = validation_result.get('sources', [])
+            update_required = validation_result.get('update_required', False)
+            
+            # Determine if substantially different
+            substantially_different = validation_result.get('substantially_different', None)
+            if substantially_different is None:
+                substantially_different = self._is_substantially_different(original_value, answer)
             
             # Map confidence level to numeric value
             confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
@@ -150,11 +318,94 @@ Please respond in the following JSON format:
             # Get main source if available
             main_source = sources[0] if sources else ""
             
-            return answer, numeric_confidence, sources, confidence_level, quote, main_source
+            return answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different
             
         except Exception as e:
             logger.error(f"Error parsing validation result: {str(e)}")
-            return None, 0.0, [], "LOW", "", ""
+            return None, 0.0, [], "LOW", "", "", False, False
+    
+    def parse_multiplex_result(self, result: Dict, row: Dict[str, Any]) -> Dict[str, Tuple[Any, float, List[str], str, str, str, bool, bool]]:
+        """Parse results from a multiplex validation request."""
+        results = {}
+        
+        try:
+            # Extract content from API response
+            if not isinstance(result, dict) or 'choices' not in result:
+                logger.error("Invalid API response format for multiplex validation")
+                return results
+            
+            content = result['choices'][0]['message'].get('content', '')
+            if not content:
+                logger.error("Empty content in API response for multiplex validation")
+                return results
+            
+            # Parse JSON response
+            try:
+                validation_results = json.loads(content)
+                if not isinstance(validation_results, list):
+                    # Try to extract from code block if not directly parseable as array
+                    if "```json" in content:
+                        json_start = content.find("```json") + 7
+                        json_end = content.find("```", json_start)
+                        if json_end > json_start:
+                            validation_results = json.loads(content[json_start:json_end].strip())
+                    if not isinstance(validation_results, list):
+                        logger.error(f"Expected array of results but got: {type(validation_results)}")
+                        return results
+            except json.JSONDecodeError as e:
+                logger.error(f"Error parsing JSON in multiplex response: {str(e)}")
+                # Try to extract JSON from markdown code block
+                if "```json" in content:
+                    try:
+                        json_start = content.find("```json") + 7
+                        json_end = content.find("```", json_start)
+                        if json_end > json_start:
+                            validation_results = json.loads(content[json_start:json_end].strip())
+                        else:
+                            return results
+                    except:
+                        return results
+                else:
+                    return results
+            
+            # Process each item in the array
+            for item in validation_results:
+                try:
+                    column = item.get("column", "")
+                    if not column:
+                        continue
+                    
+                    answer = item.get("answer", "")
+                    confidence_level = item.get("confidence", "LOW")
+                    quote = item.get("quote", "")
+                    sources = item.get("sources", [])
+                    update_required = item.get("update_required", False)
+                    
+                    # Get original value
+                    original_value = row.get(column, "")
+                    
+                    # Determine if substantially different
+                    substantially_different = item.get("substantially_different", None)
+                    if substantially_different is None:
+                        substantially_different = self._is_substantially_different(original_value, answer)
+                    
+                    # Map confidence level to numeric value
+                    confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
+                    numeric_confidence = confidence_map.get(confidence_level, 0.5)
+                    
+                    # Get main source if available
+                    main_source = sources[0] if sources else ""
+                    
+                    results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different)
+                    logger.info(f"Processed multiplex result for column {column}")
+                except Exception as item_error:
+                    logger.error(f"Error processing multiplex item: {str(item_error)}")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error parsing multiplex validation results: {str(e)}")
+            return results
     
     def determine_next_check_date(
         self,

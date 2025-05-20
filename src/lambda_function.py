@@ -38,8 +38,8 @@ def get_perplexity_api_key() -> str:
         except Exception as e:
             logger.error(f"Failed to get API key from SSM: {str(e)}")
             raise
-    return api_key
-
+        return api_key
+    
 async def validate_with_perplexity(
     session: aiohttp.ClientSession,
     prompt: str,
@@ -124,72 +124,277 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         validation_results = {}
         total_cache_hits = 0
         total_cache_misses = 0
+        total_multiplex_validations = 0
+        total_single_validations = 0
         
         async def process_all_rows():
-            nonlocal total_cache_hits, total_cache_misses
+            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations
             
             # Process rows in batches
             batch_size = 5  # Adjust based on API limits
             async with aiohttp.ClientSession() as session:
                 for i in range(0, len(rows), batch_size):
                     batch = rows[i:i + batch_size]
-                    batch_tasks = []
+                    row_tasks = []
                     
-                    for row in batch:
-                        row_results = {}
-                        for target in validator.validation_targets:
-                            # Check cache
-                            cache_key = get_cache_key(row, target.column)
-                            try:
-                                cache_response = s3.get_object(
-                                    Bucket=s3_bucket,
-                                    Key=f"validation_cache/{cache_key}.json"
-                                )
-                                cached_result = json.loads(cache_response['Body'].read())
-                                row_results[target.column] = cached_result
-                                total_cache_hits += 1
-                                logger.info(f"Cache hit for {target.column}")
-                                continue
-                            except:
-                                total_cache_misses += 1
-                                logger.info(f"Cache miss for {target.column}")
-                            
-                            # Process validation
-                            prompt = validator.generate_validation_prompt(row, target)
-                            result = await validate_with_perplexity(session, prompt, api_key)
-                            
-                            # Parse and store result
-                            parsed_result = validator.parse_validation_result(result, target)
-                            row_results[target.column] = {
-                                'value': parsed_result[0],
-                                'confidence': parsed_result[1],
-                                'sources': parsed_result[2],
-                                'confidence_level': parsed_result[3],
-                                'quote': parsed_result[4],
-                                'main_source': parsed_result[5]
-                            }
-                            
-                            # Cache result
-                            try:
-                                s3.put_object(
-                                    Bucket=s3_bucket,
-                                    Key=f"validation_cache/{cache_key}.json",
-                                    Body=json.dumps(row_results[target.column]),
-                                    ContentType='application/json'
-                                )
-                                logger.info(f"Cached result for {target.column}")
-                            except Exception as e:
-                                logger.error(f"Failed to cache result: {str(e)}")
-                        
-                        # Determine next check date
-                        next_check, reasons = validator.determine_next_check_date(row, row_results)
-                        row_results['next_check'] = next_check.isoformat() if next_check else None
-                        row_results['reasons'] = reasons
-                        
-                        validation_results[i + len(batch_tasks)] = row_results
+                    for row_idx, row in enumerate(batch):
+                        task = asyncio.create_task(process_row(session, row, i + row_idx))
+                        row_tasks.append(task)
                     
-                    # Wait for all tasks in the batch to complete
-                    await asyncio.gather(*batch_tasks)
+                    # Wait for all rows in the batch to complete
+                    batch_results = await asyncio.gather(*row_tasks)
+                    
+                    # Store results
+                    for idx, result in batch_results:
+                        validation_results[idx] = result
+        
+        async def process_row(session, row, row_idx):
+            """Process a single row with progressive multiplexing."""
+            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations
+            
+            row_results = {}
+            accumulated_results = {}  # Store results to pass as context to later groups
+            
+            # Get ignored fields - add them to results without processing
+            ignored_fields = validator._get_ignored_fields(validator.validation_targets)
+            if ignored_fields:
+                logger.info(f"Adding {len(ignored_fields)} IGNORED fields without processing")
+                for ignored_field in ignored_fields:
+                    # Simply copy the original value to the result without validation
+                    original_value = row.get(ignored_field.column, "")
+                    row_results[ignored_field.column] = {
+                        'value': original_value,
+                        'confidence': 1.0,  # Max confidence since we're not checking
+                        'confidence_level': "HIGH",
+                        'sources': [],
+                        'quote': "",
+                        'main_source': "",
+                        'update_required': False,  # Never update ignored fields
+                        'substantially_different': False
+                    }
+            
+            # Process ID fields first
+            id_fields = validator._get_id_fields(validator.validation_targets)
+            if id_fields:
+                logger.info(f"Processing {len(id_fields)} ID fields")
+                for id_field in id_fields:
+                    await process_single_column(session, row, row_results, id_field)
+                    
+                    # Add ID field results to accumulated results
+                    if id_field.column in row_results:
+                        accumulated_results[id_field.column] = row_results[id_field.column]
+            
+            # Group validation targets by search group
+            grouped_targets = validator._group_columns_by_search_group(validator.validation_targets)
+            
+            # Sort search groups by number to ensure sequential processing
+            sorted_groups = sorted(grouped_targets.keys())
+            
+            # Process each search group in order
+            for group_id in sorted_groups:
+                targets = grouped_targets[group_id]
+                
+                # Skip ID fields that were already processed and IGNORED fields
+                targets = [t for t in targets if t.importance.upper() != "ID" and t.importance.upper() != "IGNORED"]
+                if not targets:
+                    continue
+                
+                logger.info(f"Processing search group {group_id} with {len(targets)} columns")
+                
+                if len(targets) > 1:
+                    # Multiplex validation for this group
+                    await process_multiplex_group(session, row, row_results, targets, accumulated_results)
+                    total_multiplex_validations += 1
+                else:
+                    # Single column validation
+                    for target in targets:
+                        await process_single_column(session, row, row_results, target)
+                        total_single_validations += 1
+                
+                # Add this group's results to accumulated results for next groups
+                for target in targets:
+                    if target.column in row_results:
+                        accumulated_results[target.column] = row_results[target.column]
+            
+            # Revisit CRITICAL fields with less than HIGH confidence
+            critical_fields = validator._get_critical_fields(validator.validation_targets)
+            critical_revisits = []
+            
+            for critical_field in critical_fields:
+                if critical_field.column in row_results:
+                    result = row_results[critical_field.column]
+                    confidence_level = result.get('confidence_level', 'LOW')
+                    
+                    if confidence_level != 'HIGH':
+                        logger.info(f"Revisiting CRITICAL field {critical_field.column} with {confidence_level} confidence")
+                        critical_revisits.append(critical_field)
+            
+            # Process revisit fields individually with all accumulated context
+            for revisit_target in critical_revisits:
+                logger.info(f"Re-validating critical field: {revisit_target.column}")
+                # Process individually to get better confidence
+                await process_single_column(session, row, row_results, revisit_target, accumulated_results)
+                total_single_validations += 1
+            
+            # Determine next check date
+            next_check, reasons = validator.determine_next_check_date(row, row_results)
+            row_results['next_check'] = next_check.isoformat() if next_check else None
+            row_results['reasons'] = reasons
+            
+            return row_idx, row_results
+        
+        async def process_multiplex_group(session, row, row_results, targets, previous_results=None):
+            """Process a group of columns with a single multiplex API call."""
+            nonlocal total_cache_hits, total_cache_misses, total_single_validations
+            
+            # Check if all targets in this group are in cache
+            all_cached = True
+            cached_results = {}
+            
+            for target in targets:
+                cache_key = get_cache_key(row, target.column)
+                try:
+                    cache_response = s3.get_object(
+                        Bucket=s3_bucket,
+                        Key=f"validation_cache/{cache_key}.json"
+                    )
+                    cached_result = json.loads(cache_response['Body'].read())
+                    cached_results[target.column] = cached_result
+                    total_cache_hits += 1
+                    logger.info(f"Cache hit for {target.column}")
+                except:
+                    all_cached = False
+                    break
+            
+            if all_cached:
+                # If everything was cached, use cached results
+                logger.info(f"Using cached results for all {len(targets)} columns in search group")
+                for column, result in cached_results.items():
+                    row_results[column] = result
+                return
+            
+            # Generate multiplex prompt and validate
+            logger.info(f"Generating multiplex prompt for {len(targets)} columns with context from previous groups")
+            prompt = validator.generate_multiplex_prompt(row, targets, previous_results)
+            
+            # Call Perplexity API
+            result = await validate_with_perplexity(session, prompt, api_key)
+            
+            # Parse multiplex results
+            parsed_results = validator.parse_multiplex_result(result, row)
+            
+            # Process and store results for each column
+            for target in targets:
+                if target.column in parsed_results:
+                    parsed_result = parsed_results[target.column]
+                    value = parsed_result[0]
+                    numeric_confidence = parsed_result[1]
+                    sources = parsed_result[2]
+                    confidence_level = parsed_result[3]
+                    quote = parsed_result[4]
+                    main_source = parsed_result[5]
+                    update_required = parsed_result[6]
+                    substantially_different = parsed_result[7]
+                    
+                    # If update_required wasn't set by the API, set it based on substantially_different
+                    if update_required is None:
+                        update_required = substantially_different
+                    
+                    row_results[target.column] = {
+                        'value': value,
+                        'confidence': numeric_confidence,
+                        'sources': sources,
+                        'confidence_level': confidence_level,
+                        'quote': quote,
+                        'main_source': main_source,
+                        'update_required': update_required,
+                        'substantially_different': substantially_different
+                    }
+                    
+                    # Cache result
+                    try:
+                        cache_key = get_cache_key(row, target.column)
+                        s3.put_object(
+                            Bucket=s3_bucket,
+                            Key=f"validation_cache/{cache_key}.json",
+                            Body=json.dumps(row_results[target.column]),
+                            ContentType='application/json'
+                        )
+                        logger.info(f"Cached multiplex result for {target.column}")
+                    except Exception as e:
+                        logger.error(f"Failed to cache multiplex result for {target.column}: {str(e)}")
+                else:
+                    # If column wasn't found in multiplex result, do single validation
+                    logger.warning(f"Column {target.column} not found in multiplex result, falling back to single validation")
+                    await process_single_column(session, row, row_results, target, previous_results)
+                    total_single_validations += 1
+        
+        async def process_single_column(session, row, row_results, target, previous_results=None):
+            """Process a single column validation."""
+            nonlocal total_cache_hits, total_cache_misses
+            
+            # Check cache
+            cache_key = get_cache_key(row, target.column)
+            try:
+                cache_response = s3.get_object(
+                    Bucket=s3_bucket,
+                    Key=f"validation_cache/{cache_key}.json"
+                )
+                cached_result = json.loads(cache_response['Body'].read())
+                row_results[target.column] = cached_result
+                total_cache_hits += 1
+                logger.info(f"Cache hit for {target.column}")
+                return
+            except:
+                total_cache_misses += 1
+                logger.info(f"Cache miss for {target.column}")
+            
+            # Get original value for comparison
+            original_value = row.get(target.column, "")
+            
+            # Process validation
+            prompt = validator.generate_validation_prompt(row, target, previous_results)
+            result = await validate_with_perplexity(session, prompt, api_key)
+            
+            # Parse and store result
+            parsed_result = validator.parse_validation_result(result, target, original_value)
+            
+            # Check if result is substantially different from original
+            value = parsed_result[0]
+            numeric_confidence = parsed_result[1]
+            sources = parsed_result[2]
+            confidence_level = parsed_result[3]
+            quote = parsed_result[4]
+            main_source = parsed_result[5]
+            update_required = parsed_result[6]  # From the API response
+            substantially_different = parsed_result[7]  # From the API response or calculated
+            
+            # If update_required wasn't set by the API, set it based on substantially_different
+            if update_required is None:
+                update_required = substantially_different
+            
+            row_results[target.column] = {
+                'value': value,
+                'confidence': numeric_confidence,
+                'sources': sources,
+                'confidence_level': confidence_level, 
+                'quote': quote,
+                'main_source': main_source,
+                'update_required': update_required,
+                'substantially_different': substantially_different
+            }
+            
+                        # Cache result
+            try:
+                s3.put_object(
+                    Bucket=s3_bucket,
+                    Key=f"validation_cache/{cache_key}.json",
+                    Body=json.dumps(row_results[target.column]),
+                    ContentType='application/json'
+                )
+                logger.info(f"Cached result for {target.column}")
+            except Exception as e:
+                logger.error(f"Failed to cache result: {str(e)}")
         
         # Run the async function
         loop = asyncio.new_event_loop()
@@ -198,17 +403,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             loop.run_until_complete(process_all_rows())
         finally:
             loop.close()
-        
-        return {
-            'statusCode': 200,
+            
+            return {
+                'statusCode': 200,
             'body': {
                 'validation_results': validation_results,
                 'cache_stats': {
                     'hits': total_cache_hits,
-                    'misses': total_cache_misses
+                    'misses': total_cache_misses,
+                    'multiplex_validations': total_multiplex_validations,
+                    'single_validations': total_single_validations
                 }
             }
-        }
+            }
         
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}")

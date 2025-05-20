@@ -3,6 +3,19 @@
     "primary_key": ["id"],
     "validation_targets": [
       {
+        "column": "id",
+        "validation_type": "string",
+        "rules": {
+          "min_length": 3
+        },
+        "description": "Unique identifier for the row",
+        "importance": "ID",
+        "format": "Alphanumeric ID",
+        "notes": "Used as the primary reference for the row",
+        "examples": ["test_123", "user_456"],
+        "search_group": 0
+      },
+      {
         "column": "name",
         "validation_type": "string",
         "rules": {
@@ -13,7 +26,8 @@
         "importance": "HIGH",
         "format": "Full name (First Last)",
         "notes": "Must be a valid person's name",
-        "examples": ["John Smith", "Jane Doe"]
+        "examples": ["John Smith", "Jane Doe"],
+        "search_group": 1
       },
       {
         "column": "email",
@@ -25,7 +39,8 @@
         "importance": "HIGH",
         "format": "valid email address",
         "notes": "Must be a valid email format",
-        "examples": ["user@example.com", "name.surname@company.com"]
+        "examples": ["user@example.com", "name.surname@company.com"],
+        "search_group": 1
       },
       {
         "column": "status",
@@ -37,14 +52,16 @@
         "importance": "MEDIUM",
         "format": "status value",
         "notes": "Must be one of the allowed status values",
-        "examples": ["active", "inactive", "pending"]
+        "examples": ["active", "inactive", "pending"],
+        "search_group": 2
       }
     ],
     "cache_ttl_days": 30,
     "recheck": {
       "force_recheck": false,
       "min_days_between_checks": 7
-    }
+    },
+    "general_notes": "These fields are for a user profile validation check. Check for correct format and values."
   },
   "validation_data": {
     "rows": [
