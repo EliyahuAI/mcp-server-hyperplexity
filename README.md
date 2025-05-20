@@ -76,7 +76,7 @@ zip -r ../deployment.zip .
 ```bash
 aws lambda create-function \
     --function-name perplexity-validator \
-    --runtime python3.8 \
+    --runtime python3.9 \
     --handler lambda_function.lambda_handler \
     --zip-file fileb://deployment.zip \
     --role arn:aws:iam::<account-id>:role/<role-name>
