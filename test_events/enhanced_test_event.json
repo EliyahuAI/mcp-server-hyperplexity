@@ -1,0 +1,73 @@
+{
+  "config": {
+    "primary_key": ["id"],
+    "validation_targets": [
+      {
+        "column": "name",
+        "validation_type": "string",
+        "rules": {
+          "min_length": 2,
+          "max_length": 100
+        },
+        "description": "Validate name length and format",
+        "importance": "HIGH",
+        "format": "Full name (First Last)",
+        "notes": "Must be a valid person's name",
+        "examples": ["John Smith", "Jane Doe"]
+      },
+      {
+        "column": "email",
+        "validation_type": "email",
+        "rules": {
+          "format": "email"
+        },
+        "description": "Validate email format",
+        "importance": "HIGH",
+        "format": "valid email address",
+        "notes": "Must be a valid email format",
+        "examples": ["user@example.com", "name.surname@company.com"]
+      },
+      {
+        "column": "status",
+        "validation_type": "enum",
+        "rules": {
+          "allowed_values": ["active", "inactive", "pending"]
+        },
+        "description": "Validate status value",
+        "importance": "MEDIUM",
+        "format": "status value",
+        "notes": "Must be one of the allowed status values",
+        "examples": ["active", "inactive", "pending"]
+      }
+    ],
+    "cache_ttl_days": 30,
+    "recheck": {
+      "force_recheck": false,
+      "min_days_between_checks": 7
+    }
+  },
+  "validation_data": {
+    "rows": [
+      {
+        "id": "test_123",
+        "name": "John Smith",
+        "email": "john.smith@example.com",
+        "status": "active",
+        "Last Check": "2024-03-15T00:00:00Z",
+        "Next Check Date": "2024-03-22T00:00:00Z"
+      },
+      {
+        "id": "test_456",
+        "name": "Invalid Name",
+        "email": "invalid-email",
+        "status": "unknown",
+        "Last Check": "2024-03-10T00:00:00Z",
+        "Next Check Date": "2024-03-17T00:00:00Z"
+      }
+    ]
+  },
+  "debug_options": {
+    "print_cache_key_details": true,
+    "test_run_id": "enhanced_test_1"
+  }
+} 

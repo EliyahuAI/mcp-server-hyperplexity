@@ -1,0 +1,71 @@
+# Error Log
+# Format: [Timestamp] Error: <error description>
+#        Resolution: <how it was resolved>
+
+[2024-03-21] Initial setup of error logging system 
+
+[2024-03-21 15:30] Error: Lambda function deployment failed with 500 status code
+        Details: Initial deployment attempt failed due to missing dependencies
+        Resolution: Added proper dependency verification and installation process
+
+[2024-03-21 15:45] Error: ModuleNotFoundError: No module named 'pandas'
+        Details: Lambda execution failed due to missing pandas dependency
+        Resolution: Removed unused pandas import from lambda_function.py
+
+[2024-03-21 16:00] Error: ModuleNotFoundError: No module named 'python_dateutil'
+        Details: Lambda execution failed due to incorrect package name
+        Resolution: Updated requirements-lambda.txt to use correct package name 'python-dateutil'
+
+[2024-03-21 16:15] Error: AccessDeniedException when accessing SSM parameter
+        Details: Lambda function failed to access Perplexity API key from SSM
+        Resolution: Updated IAM policy to allow access to correct SSM parameter path
+
+[2024-03-21 16:30] Error: "no running event loop" in Lambda execution
+        Details: Async operations not properly handled in Lambda environment
+        Resolution: Restructured lambda_handler to create and manage event loop properly
+
+[2024-03-21 16:45] Error: Perplexity API 400 Bad Request
+        Details: Incorrect response format schema in API request
+        Attempted Resolution 1: Changed type to 'json_object' and schema structure
+        Attempted Resolution 2: Reverted to 'json_schema' type with correct field structure
+        Status: Ongoing - API integration still being debugged
+
+[2024-03-21 17:00] Current Status:
+        - Lambda function deployment process is working
+        - Dependencies are properly managed
+        - Async operations are correctly structured
+        - Perplexity API integration needs further debugging
+        - Cache mechanism is in place but untested
+        - Error logging system is operational 
+
+[2024-03-21 17:15] Error: IndentationError in create_package.py
+        Details: Unexpected indent in copy_source_files function at line 170
+        File: deployment/create_package.py
+        Line: shutil.copy(SRC_DIR / "lambda_function.py", PACKAGE_DIR)
+        Resolution: Fixed indentation in copy_source_files function
+        Status: Resolved
+
+[2024-03-21 17:30] Error: Persistent Perplexity API 400 Bad Request
+        Details: Still receiving format validation errors after multiple attempts
+        Error Message: "At body -> response_format -> ResponseFormatJSONSchema -> json_schema -> schema: Field required"
+        Attempted Resolution 3: Will try simplifying to basic json_object format without a schema
+        Status: Ongoing - Need to understand API's expected format
+
+[2024-03-21 17:45] Error: Perplexity API Schema Structure
+        Details: Attempted too simple format (json_object) when a schema is required
+        Attempted Resolution 4: Restructured json_schema to include a nested "schema" field
+        JSON Path: response_format -> json_schema -> schema -> {actual schema definition}
+        Status: Testing - Restructured according to error message hints
+
+[2024-03-21 18:00] Error: Invalid model parameter for Perplexity API
+        Details: Using 'mixtral-8x7b-instruct' model which is not supported
+        Error Message: "Invalid model 'mixtral-8x7b-instruct'. Permitted models can be found in the documentation at https://docs.perplexity.ai/guides/model-cards."
+        Resolution: Updated model parameter to "sonar-pro" as specified in the documentation
+        Status: Testing - Updated model parameter to supported value
+
+[2024-03-21 18:15] Error: Type comparison error in Lambda function
+        Details: "'<' not supported between instances of 'str' and 'float'"
+        Location: Found in the determine_next_check_date method in SchemaValidator
+        Issue: The method was expecting direct tuple unpacking but was receiving dictionary values
+        Resolution: Updated method to properly extract values from dictionary and handle type conversion
+        Status: Fixed - Modified the method signature and implementation 

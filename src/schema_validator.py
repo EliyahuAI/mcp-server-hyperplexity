@@ -2,6 +2,9 @@ from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
+import logging
+
+logger = logging.getLogger()
 
 @dataclass
 class ValidationTarget:
@@ -9,6 +12,7 @@ class ValidationTarget:
     validation_type: str
     rules: Dict[str, Any]
     description: str
+    importance: str = "MEDIUM"  # HIGH, MEDIUM, LOW, IGNORED
 
 class SchemaValidator:
     def __init__(self, config: Dict[str, Any]):
@@ -16,6 +20,36 @@ class SchemaValidator:
         self.validation_targets = self._parse_validation_targets()
         self.primary_key = config.get('primary_key', [])
         self.cache_ttl_days = config.get('cache_ttl_days', 30)
+        self.column_config = config.get('column_config', {})
+        
+        # Define JSON schemas for API responses
+        self._single_column_schema = {
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string"},
+                "confidence": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW"]},
+                "quote": {"type": "string"},
+                "sources": {"type": "array", "items": {"type": "string"}},
+                "update_required": {"type": "boolean"}
+            },
+            "required": ["answer", "confidence"]
+        }
+        
+        self._multiplex_schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "column": {"type": "string"},
+                    "answer": {"type": "string"},
+                    "confidence": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW"]},
+                    "quote": {"type": "string"},
+                    "sources": {"type": "array", "items": {"type": "string"}},
+                    "update_required": {"type": "boolean"}
+                },
+                "required": ["column", "answer", "confidence"]
+            }
+        }
     
     def _parse_validation_targets(self) -> List[ValidationTarget]:
         """Parse validation targets from config."""
@@ -25,109 +59,107 @@ class SchemaValidator:
                 column=target_config['column'],
                 validation_type=target_config['validation_type'],
                 rules=target_config.get('rules', {}),
-                description=target_config.get('description', '')
+                description=target_config.get('description', ''),
+                importance=target_config.get('importance', 'MEDIUM')
             )
             targets.append(target)
         return targets
     
     def generate_validation_prompt(self, row: Dict[str, Any], target: ValidationTarget) -> str:
         """Generate a validation prompt for a specific target."""
+        # Get column configuration
+        column_info = self.column_config.get(target.column, {})
+        description = column_info.get('description', target.description)
+        format_info = column_info.get('format', '')
+        notes = column_info.get('notes', '')
+        examples = self._format_examples(target.column)
+        
+        # Build the prompt
         prompt = f"""Please validate the following data according to these rules:
 Column: {target.column}
+Current Value: {row.get(target.column, '')}
 Validation Type: {target.validation_type}
 Rules: {json.dumps(target.rules, indent=2)}
-Description: {target.description}
+Description: {description}
+Format: {format_info}
+Importance: {target.importance}"""
 
-Data to validate:
-{json.dumps(row, indent=2)}
+        if notes:
+            prompt += f"\nNotes: {notes}"
+        if examples:
+            prompt += f"\nExamples:\n{examples}"
+            
+        prompt += f"""
 
 Please respond in the following JSON format:
 {{
-    "validated_value": <the validated value>,
-    "confidence": <confidence score between 0 and 1>,
-    "message": <explanation of validation result>
+    "answer": <the validated value>,
+    "confidence": <confidence level: HIGH, MEDIUM, or LOW>,
+    "quote": <direct quote from source if available>,
+    "sources": [<list of source URLs>],
+    "update_required": <true if value needs to be updated>
 }}"""
+        
         return prompt
     
-    def parse_validation_result(self, result: Dict, target: ValidationTarget) -> Tuple[Any, float, str]:
+    def _format_examples(self, column: str) -> str:
+        """Format examples for a column."""
+        examples = self.column_config.get(column, {}).get('examples', [])
+        if not examples:
+            return ""
+        
+        formatted = "Examples of valid values:\n"
+        for example in examples:
+            formatted += f"- {example}\n"
+        return formatted
+    
+    def parse_validation_result(self, result: Dict, target: ValidationTarget) -> Tuple[Any, float, List[str], str, str, str]:
         """Parse the validation result from Perplexity API response."""
         try:
-            # Log the raw response for debugging
-            print(f"Raw API response: {result}")
-            
-            # Check if we have a valid result structure
+            # Extract content from API response
             if not isinstance(result, dict) or 'choices' not in result:
-                return None, 0.0, f"Invalid API response structure: {str(result)[:100]}..."
-            
-            # Extract the content from the API response
-            if not result.get('choices') or not isinstance(result['choices'], list) or not result['choices'][0].get('message'):
-                return None, 0.0, f"Missing content in API response: {str(result)[:100]}..."
+                return None, 0.0, [], "LOW", "", ""
             
             content = result['choices'][0]['message'].get('content', '')
             if not content:
-                return None, 0.0, "Empty content in API response"
+                return None, 0.0, [], "LOW", "", ""
             
-            # Look for JSON block in the response
-            json_str = ""
-            # Check if the content has a JSON code block
-            if "```json" in content:
-                # Extract the JSON from between ```json and ```
-                json_start = content.find("```json") + 7
-                json_end = content.find("```", json_start)
-                if json_end > json_start:
-                    json_str = content[json_start:json_end].strip()
-            else:
-                # Try to parse the whole content as JSON
-                json_str = content
-            
-            # Parse the JSON response
+            # Parse JSON response
             try:
-                validation_result = json.loads(json_str)
-                print(f"Successfully parsed JSON: {validation_result}")
-                
-                return (
-                    validation_result.get('validated_value'),
-                    validation_result.get('confidence', 0.0),
-                    validation_result.get('message', '')
-                )
-            except json.JSONDecodeError as json_err:
-                print(f"JSON parsing error: {json_err} - Content: {json_str[:100]}")
-                # Fallback to regex parsing
-                import re
-                validated_value = None
-                confidence = 0.0
-                message = ""
-                
-                # Try to extract data using regex patterns
-                value_match = re.search(r'"validated_value"\s*:\s*"([^"]*)"', content)
-                if value_match:
-                    validated_value = value_match.group(1)
-                
-                confidence_match = re.search(r'"confidence"\s*:\s*([0-9.]+)', content)
-                if confidence_match:
-                    try:
-                        confidence = float(confidence_match.group(1))
-                    except:
-                        confidence = 0.0
-                
-                message_match = re.search(r'"message"\s*:\s*"([^"]*)"', content)
-                if message_match:
-                    message = message_match.group(1)
-                
-                if validated_value and message:
-                    print(f"Extracted values using regex: {validated_value}, {confidence}, {message}")
-                    return validated_value, confidence, message
-                
-                # If all else fails, return the content as the message
-                return target.column, 0.5, f"Could not parse JSON, using raw content: {content[:100]}..."
-                
-        except (KeyError, Exception) as e:
-            return None, 0.0, f"Error parsing validation result: {str(e)}"
+                validation_result = json.loads(content)
+            except json.JSONDecodeError:
+                # Try to extract JSON from markdown code block
+                if "```json" in content:
+                    json_start = content.find("```json") + 7
+                    json_end = content.find("```", json_start)
+                    if json_end > json_start:
+                        validation_result = json.loads(content[json_start:json_end].strip())
+                else:
+                    return None, 0.0, [], "LOW", "", ""
+            
+            # Extract values
+            answer = validation_result.get('answer', '')
+            confidence_level = validation_result.get('confidence', 'LOW')
+            quote = validation_result.get('quote', '')
+            sources = validation_result.get('sources', [])
+            
+            # Map confidence level to numeric value
+            confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
+            numeric_confidence = confidence_map.get(confidence_level, 0.5)
+            
+            # Get main source if available
+            main_source = sources[0] if sources else ""
+            
+            return answer, numeric_confidence, sources, confidence_level, quote, main_source
+            
+        except Exception as e:
+            logger.error(f"Error parsing validation result: {str(e)}")
+            return None, 0.0, [], "LOW", "", ""
     
     def determine_next_check_date(
         self,
         row: Dict[str, Any],
-        validation_results: Dict[str, Tuple[Any, float, str]]
+        validation_results: Dict[str, Dict[str, Any]]
     ) -> Tuple[Optional[datetime], List[str]]:
         """Determine the next check date based on validation results."""
         reasons = []
@@ -135,14 +167,24 @@ Please respond in the following JSON format:
         
         for target in self.validation_targets:
             if target.column in validation_results:
-                validated_value, confidence, message = validation_results[target.column]
+                result = validation_results[target.column]
+                confidence = result.get('confidence', 0.0)
+                validated_value = result.get('value')
+                quote = result.get('quote', '')
+                
+                # Make sure confidence is a float
+                if isinstance(confidence, str):
+                    try:
+                        confidence = float(confidence)
+                    except (ValueError, TypeError):
+                        confidence = 0.0
                 
                 if confidence < min_confidence:
-                    reasons.append(f"Low confidence ({confidence:.2f}) for {target.column}: {message}")
+                    reasons.append(f"Low confidence ({confidence:.2f}) for {target.column}: {quote}")
                     continue
                 
                 if validated_value is None:
-                    reasons.append(f"Invalid value for {target.column}: {message}")
+                    reasons.append(f"Invalid value for {target.column}: {quote}")
                     continue
         
         if reasons:
