@@ -1,0 +1,36 @@
+{
+  "bucket_name": "perplexity-temp-bucket--use1-az6--x-s3",
+  "config": {
+    "primary_key": ["id"],
+    "validation_targets": [
+      {
+        "column": "name",
+        "validation_type": "string",
+        "rules": {
+          "min_length": 2,
+          "max_length": 100
+        },
+        "description": "Validate name length and format"
+      },
+      {
+        "column": "email",
+        "validation_type": "email",
+        "rules": {
+          "format": "email"
+        },
+        "description": "Validate email format"
+      }
+    ],
+    "cache_ttl_days": 30
+  },
+  "validation_data": {
+    "rows": [
+      {
+        "id": "123",
+        "name": "John Doe",
+        "email": "john.doe@example.com",
+        "type": "customer"
+      }
+    ]
+  }
+} 

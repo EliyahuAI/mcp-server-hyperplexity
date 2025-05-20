@@ -52,17 +52,76 @@ Please respond in the following JSON format:
     def parse_validation_result(self, result: Dict, target: ValidationTarget) -> Tuple[Any, float, str]:
         """Parse the validation result from Perplexity API response."""
         try:
-            # Extract the content from the API response
-            content = result['choices'][0]['message']['content']
-            # Parse the JSON response
-            validation_result = json.loads(content)
+            # Log the raw response for debugging
+            print(f"Raw API response: {result}")
             
-            return (
-                validation_result.get('validated_value'),
-                validation_result.get('confidence', 0.0),
-                validation_result.get('message', '')
-            )
-        except (KeyError, json.JSONDecodeError) as e:
+            # Check if we have a valid result structure
+            if not isinstance(result, dict) or 'choices' not in result:
+                return None, 0.0, f"Invalid API response structure: {str(result)[:100]}..."
+            
+            # Extract the content from the API response
+            if not result.get('choices') or not isinstance(result['choices'], list) or not result['choices'][0].get('message'):
+                return None, 0.0, f"Missing content in API response: {str(result)[:100]}..."
+            
+            content = result['choices'][0]['message'].get('content', '')
+            if not content:
+                return None, 0.0, "Empty content in API response"
+            
+            # Look for JSON block in the response
+            json_str = ""
+            # Check if the content has a JSON code block
+            if "```json" in content:
+                # Extract the JSON from between ```json and ```
+                json_start = content.find("```json") + 7
+                json_end = content.find("```", json_start)
+                if json_end > json_start:
+                    json_str = content[json_start:json_end].strip()
+            else:
+                # Try to parse the whole content as JSON
+                json_str = content
+            
+            # Parse the JSON response
+            try:
+                validation_result = json.loads(json_str)
+                print(f"Successfully parsed JSON: {validation_result}")
+                
+                return (
+                    validation_result.get('validated_value'),
+                    validation_result.get('confidence', 0.0),
+                    validation_result.get('message', '')
+                )
+            except json.JSONDecodeError as json_err:
+                print(f"JSON parsing error: {json_err} - Content: {json_str[:100]}")
+                # Fallback to regex parsing
+                import re
+                validated_value = None
+                confidence = 0.0
+                message = ""
+                
+                # Try to extract data using regex patterns
+                value_match = re.search(r'"validated_value"\s*:\s*"([^"]*)"', content)
+                if value_match:
+                    validated_value = value_match.group(1)
+                
+                confidence_match = re.search(r'"confidence"\s*:\s*([0-9.]+)', content)
+                if confidence_match:
+                    try:
+                        confidence = float(confidence_match.group(1))
+                    except:
+                        confidence = 0.0
+                
+                message_match = re.search(r'"message"\s*:\s*"([^"]*)"', content)
+                if message_match:
+                    message = message_match.group(1)
+                
+                if validated_value and message:
+                    print(f"Extracted values using regex: {validated_value}, {confidence}, {message}")
+                    return validated_value, confidence, message
+                
+                # If all else fails, return the content as the message
+                return target.column, 0.5, f"Could not parse JSON, using raw content: {content[:100]}..."
+                
+        except (KeyError, Exception) as e:
             return None, 0.0, f"Error parsing validation result: {str(e)}"
     
     def determine_next_check_date(

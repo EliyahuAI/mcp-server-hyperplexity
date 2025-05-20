@@ -3,13 +3,13 @@ import boto3
 import hashlib
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
-import pandas as pd
 from botocore.exceptions import NoCredentialsError
 import asyncio
 import aiohttp
 import logging
 import os
-from schema_validator import SchemaValidator, ValidationTarget
+from schema_validator import SchemaValidator
+from botocore.config import Config
 
 # Configure logging
 logger = logging.getLogger()
@@ -35,7 +35,6 @@ def get_perplexity_api_key():
         # In production, this should be properly configured through environment or SSM
         if 'TEST_MODE' in os.environ:
             logger.warning("USING TEST API KEY - THIS SHOULD NOT HAPPEN IN PRODUCTION")
-            # For testing integration, insert your API key here TEMPORARILY
             return "pp-..." # Replace with actual API key for testing
         
         # In production, we should fail if the key isn't available
@@ -54,34 +53,75 @@ async def validate_with_perplexity(session: aiohttp.ClientSession, prompt: str, 
         "max_tokens": 1000
     }
     
-    async with session.post(
-        "https://api.perplexity.ai/chat/completions",
-        headers=headers,
-        json=data
-    ) as response:
-        if response.status == 200:
-            result = await response.json()
-            return result
-        else:
-            error_text = await response.text()
-            raise Exception(f"Perplexity API error: {error_text}")
+    logger.info(f"Calling Perplexity API with prompt length: {len(prompt)} chars")
+    
+    try:
+        async with session.post(
+            "https://api.perplexity.ai/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30  # Add timeout
+        ) as response:
+            if response.status == 200:
+                result = await response.json()
+                logger.info(f"API call successful, response length: {len(str(result))} chars")
+                return result
+            else:
+                error_text = await response.text()
+                logger.error(f"API call failed with status {response.status}: {error_text}")
+                # Return a structured error response that can be safely handled
+                return {
+                    "error": True,
+                    "status": response.status,
+                    "message": error_text
+                }
+    except aiohttp.ClientError as e:
+        logger.error(f"HTTP client error: {str(e)}")
+        return {"error": True, "message": f"HTTP client error: {str(e)}"}
+    except Exception as e:
+        logger.error(f"Unexpected error calling API: {str(e)}")
+        return {"error": True, "message": f"Unexpected error: {str(e)}"}
 
 def get_cache_key(data: Dict) -> str:
     """Generate a unique cache key for the validation request."""
+    # Check if debug mode is enabled
+    debug_options = data.get('debug_options', {})
+    print_cache_details = debug_options.get('print_cache_key_details', False)
+    
     # Include model name in the cache key
     cache_data = {
         **data,
         "model": "sonar-pro"  # Add model to ensure different models don't share cache
     }
-    data_bytes = json.dumps(cache_data, sort_keys=True).encode()
-    return hashlib.sha256(data_bytes).hexdigest()
+    
+    # Remove debug_options from the data being hashed
+    if 'debug_options' in cache_data:
+        del cache_data['debug_options']
+    
+    # Sort the keys to ensure consistent hash
+    json_str = json.dumps(cache_data, sort_keys=True)
+    
+    if print_cache_details:
+        logger.info(f"CACHE KEY DEBUG: Hash input JSON (truncated): {json_str[:200]}...")
+        logger.info(f"CACHE KEY DEBUG: Hash input data structure: {list(cache_data.keys())}")
+        if 'validation_data' in cache_data and 'rows' in cache_data['validation_data']:
+            for i, row in enumerate(cache_data['validation_data']['rows']):
+                logger.info(f"CACHE KEY DEBUG: Row {i} keys: {list(row.keys())}")
+                for key, value in row.items():
+                    logger.info(f"CACHE KEY DEBUG: Row {i} - {key}: {value}")
+    
+    data_bytes = json_str.encode()
+    hash_result = hashlib.sha256(data_bytes).hexdigest()
+    
+    if print_cache_details:
+        logger.info(f"CACHE KEY DEBUG: Generated hash: {hash_result}")
+    
+    return hash_result
 
 async def process_validation_batch(
     session: aiohttp.ClientSession,
     batch: List[Dict],
     api_key: str,
-    s3_bucket: str,
-    cache_key: str,
     validator: SchemaValidator
 ) -> Dict:
     """Process a batch of validations in parallel."""
@@ -99,23 +139,31 @@ async def process_validation_batch(
     for idx, (item, result) in enumerate(zip(batch, results)):
         target = item['target']
         if isinstance(result, Exception):
+            logger.error(f"Exception for {target.column}: {str(result)}")
             processed_results[target.column] = (None, 0.0, f"Error: {str(result)}")
+        elif isinstance(result, dict) and result.get('error'):
+            # Handle structured error responses from the API call
+            logger.error(f"API error for {target.column}: {result.get('message')}")
+            processed_results[target.column] = (None, 0.0, f"API Error: {result.get('message')}")
         else:
             validated_value, confidence, message = validator.parse_validation_result(result, target)
             processed_results[target.column] = (validated_value, confidence, message)
     
     return {
-        "results": processed_results,
-        "cache_key": cache_key
+        "results": processed_results
     }
 
 def lambda_handler(event, context):
     """Main Lambda handler function."""
     try:
-        # Initialize AWS clients
-        s3 = boto3.resource('s3')
-        bucket_name = event.get('bucket_name', 'validation-cache-bucket')
-        bucket = s3.Bucket(bucket_name)
+        # Check for debug options
+        debug_options = event.get('debug_options', {})
+        if debug_options and debug_options.get('print_cache_key_details'):
+            logger.info(f"DEBUG MODE ENABLED: Will print cache key generation details")
+        
+        # Initialize S3 client with standard configuration
+        s3_bucket = os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
+        s3_client = boto3.client('s3')
         
         # Get API key from SSM
         api_key = get_perplexity_api_key()
@@ -128,95 +176,111 @@ def lambda_handler(event, context):
         validation_data = event.get('validation_data', {})
         rows = validation_data.get('rows', [])
         
-        # Generate cache key
-        cache_key = get_cache_key(validation_data)
+        # Generate cache key - make sure we include any debug options
+        cache_key_data = {'validation_data': validation_data}
+        if debug_options:
+            cache_key_data['debug_options'] = debug_options
+        cache_key = get_cache_key(cache_key_data)
         cache_path = f"validation_results/{cache_key}.json"
         
-        # Check cache first
+        # Try S3 cache first
         try:
-            cache_obj = bucket.Object(cache_path).get()
-            body_content = cache_obj['Body'].read().decode() if hasattr(cache_obj.get('Body', {}), 'read') else '{}'
-            cache_data = json.loads(body_content)
+            logger.info(f"Checking S3 cache at {s3_bucket}/{cache_path}")
             
-            # Check if cache is still valid
-            cache_timestamp = datetime.fromisoformat(cache_data['timestamp'])
-            if cache_timestamp.tzinfo is None:
-                cache_timestamp = cache_timestamp.replace(tzinfo=timezone.utc)
-            if (datetime.now(timezone.utc) - cache_timestamp).days < config.get('cache_ttl_days', 30):
-                logger.info("Returning cached validation results")
-                return {
-                    'statusCode': 200,
-                    'body': cache_data['results']
-                }
-        except Exception as e:
-            if hasattr(e, 'response') and e.response.get('Error', {}).get('Code') == 'NoSuchKey':
+            try:
+                # Get object from S3
+                response = s3_client.get_object(
+                    Bucket=s3_bucket,
+                    Key=cache_path
+                )
+                cache_data = json.loads(response['Body'].read().decode())
+                
+                # Check if cache is still valid
+                cache_timestamp = datetime.fromisoformat(cache_data['timestamp'])
+                if cache_timestamp.tzinfo is None:
+                    cache_timestamp = cache_timestamp.replace(tzinfo=timezone.utc)
+                if (datetime.now(timezone.utc) - cache_timestamp).days < config.get('cache_ttl_days', 30):
+                    logger.info("Returning cached validation results")
+                    return {
+                        'statusCode': 200,
+                        'body': cache_data['results']
+                    }
+            except s3_client.exceptions.NoSuchKey:
                 logger.info("No cache found, proceeding with validation")
-            else:
+            except Exception as e:
                 logger.warning(f"Cache error: {str(e)}")
                 logger.info("Proceeding with validation")
-        
-        # Prepare validation batches
-        validation_batches = []
-        for row in rows:
-            for target in validator.validation_targets:
-                validation_batches.append({
-                    'row': row,
-                    'target': target
-                })
-        
-        # Process validation in batches
-        async def process_validations():
-            async with aiohttp.ClientSession() as session:
-                results = await process_validation_batch(
-                    session,
-                    validation_batches,
-                    api_key,
-                    bucket_name,
-                    cache_key,
-                    validator
-                )
-                
-                # Calculate next check dates
-                for row in rows:
-                    row_key = "|".join(str(row[col]) for col in validator.primary_key)
-                    next_check_date, reasons = validator.determine_next_check_date(
-                        row,
-                        results['results']
+            
+            # Prepare validation batches
+            validation_batches = []
+            for row in rows:
+                for target in validator.validation_targets:
+                    validation_batches.append({
+                        'row': row,
+                        'target': target
+                    })
+            
+            # Process validation in batches
+            async def process_validations():
+                async with aiohttp.ClientSession() as session:
+                    results = await process_validation_batch(
+                        session,
+                        validation_batches,
+                        api_key,
+                        validator
                     )
-                    if next_check_date:
-                        # Convert datetime to string
-                        next_check_str = next_check_date.isoformat()
-                        results['results'][f"{row_key}_next_check"] = (next_check_str, 1.0, reasons)
-                
-                return results
-        
-        # Run the async validation process
-        results = asyncio.run(process_validations())
-        
-        # Cache the results with UTC timestamp
-        current_time = datetime.now(timezone.utc)
-        cache_data = {
-            'results': results,
-            'timestamp': current_time.isoformat()
-        }
-        
-        # Convert cache_data to JSON-serializable format
-        json_serializable_cache = json.dumps(cache_data, default=str)
-        
-        try:
-            bucket.put_object(
-                Key=cache_path,
-                Body=json_serializable_cache,
-                Metadata={'timestamp': current_time.isoformat()}
-            )
+                    
+                    # Calculate next check dates
+                    for row in rows:
+                        row_key = "|".join(str(row[col]) for col in validator.primary_key)
+                        next_check_date, reasons = validator.determine_next_check_date(
+                            row,
+                            results['results']
+                        )
+                        if next_check_date:
+                            # Convert datetime to string
+                            next_check_str = next_check_date.isoformat()
+                            results['results'][f"{row_key}_next_check"] = (next_check_str, 1.0, reasons)
+                    
+                    # Cache the results in S3
+                    try:
+                        # Prepare cache data with UTC timestamp
+                        current_time = datetime.now(timezone.utc)
+                        cache_data = {
+                            'results': results,
+                            'timestamp': current_time.isoformat()
+                        }
+                        
+                        # Convert cache_data to JSON-serializable format
+                        json_serializable_cache = json.dumps(cache_data, default=str)
+                        
+                        # Store in S3
+                        s3_client.put_object(
+                            Bucket=s3_bucket,
+                            Key=cache_path,
+                            Body=json_serializable_cache,
+                            ContentType='application/json',
+                            Metadata={'timestamp': current_time.isoformat()}
+                        )
+                        logger.info(f"Successfully cached results to {cache_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to cache results to S3: {str(e)}")
+                    
+                    return results
+            
+            # Run the async validation process
+            results = asyncio.run(process_validations())
+            
+            return {
+                'statusCode': 200,
+                'body': results
+            }
         except Exception as e:
-            logger.warning(f"Failed to cache results: {str(e)}")
-        
-        return {
-            'statusCode': 200,
-            'body': results
-        }
-        
+            logger.error(f"Error in validation process: {str(e)}")
+            return {
+                'statusCode': 500,
+                'body': json.dumps({'error': str(e)})
+            }
     except Exception as e:
         logger.error(f"Error in validation process: {str(e)}")
         return {
