@@ -480,9 +480,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(process_all_rows())
-        finally:
-            loop.close()
+            # Run the async task and log any exceptions
+            try:
+                loop.run_until_complete(process_all_rows())
+            except Exception as e:
+                logger.error(f"Error during async processing: {str(e)}")
+                logger.error(traceback.format_exc())
+                raise
+                
+            logger.info("Async processing completed successfully")
             
             # Log validation results to help with debugging
             logger.info(f"Final validation_results contains {len(validation_results)} items")
@@ -492,6 +498,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Convert validation_results to serializable format by converting keys to strings
             # This is needed because the keys might be integers that can't be directly serialized
             serializable_results = {str(k): v for k, v in validation_results.items()}
+            
+            # Extra debug logging
+            logger.info("Serializable validation results keys: " + str(list(serializable_results.keys())))
+            for key in serializable_results:
+                logger.info(f"Result for key {key} type: {type(serializable_results[key])}")
             
             # Prepare response with proper serialization
             response_body = {
@@ -512,6 +523,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'statusCode': 200,
                 'body': response_body
             }
+        finally:
+            loop.close()
         
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}")
