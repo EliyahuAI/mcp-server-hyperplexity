@@ -112,18 +112,25 @@ async def validate_with_perplexity(
                     
                     # Try to parse and format the content as JSON
                     try:
-                        content_json = json.loads(content)
-                        formatted_content = json.dumps(content_json, indent=2)
+                        # Properly parse JSON content, handling escaped newlines
+                        content_json = json.loads(content.replace("\\n", " "))
+                        # Create a cleaner version for logging by removing all newlines
+                        clean_content = json.dumps(content_json, indent=2)
                         
                         # Create a copy with formatted content for logging
                         log_response = response_json.copy()
-                        log_response['choices'][0]['message']['content'] = f"PARSED JSON:\n{formatted_content}"
+                        if 'choices' in log_response and len(log_response['choices']) > 0:
+                            if 'message' in log_response['choices'][0]:
+                                log_response['choices'][0]['message'] = {
+                                    'role': message.get('role', 'assistant'),
+                                    'content': f"PARSED_JSON: {clean_content}"
+                                }
                         
-                        # Log the formatted response
-                        logger.info(f"API Response body (with formatted content): {json.dumps(log_response, indent=2)}")
-                    except:
-                        # If content isn't valid JSON, log as is
-                        logger.info(f"API Response body: {json.dumps(response_json, indent=2)}")
+                        # Log the formatted response with consistent JSON formatting
+                        logger.info(f"API Response body (formatted): {json.dumps(log_response, indent=2)}")
+                    except Exception as json_err:
+                        # If content isn't valid JSON or has formatting issues, log as is
+                        logger.info(f"API Response body (raw content, parse error: {str(json_err)}): {json.dumps(response_json, indent=2)}")
                 else:
                     logger.info(f"API Response body: {json.dumps(response_json, indent=2)}")
                     
@@ -139,12 +146,25 @@ async def validate_with_perplexity(
         logger.error(f"Error calling Perplexity API: {str(e)}")
         raise
 
-def get_cache_key(row: Dict[str, Any], target: str) -> str:
-    """Generate a unique cache key for validation request."""
+def get_cache_key(row: Dict[str, Any], target: str, validation_context: str = None) -> str:
+    """
+    Generate a unique cache key for validation request.
+    
+    Args:
+        row: The data row being validated
+        target: The column/field being validated
+        validation_context: Optional string describing the validation context (e.g., "isolated", "group:1,2,3")
+                            to ensure different caching for isolated vs group validations
+    """
     # Sort keys to ensure consistent hashing
     sorted_row = dict(sorted(row.items()))
     row_str = json.dumps(sorted_row, sort_keys=True)
-    return hashlib.md5(f"{row_str}:{target}".encode()).hexdigest()
+    
+    # Include validation context in the cache key if provided
+    if validation_context:
+        return hashlib.md5(f"{row_str}:{target}:{validation_context}".encode()).hexdigest()
+    else:
+        return hashlib.md5(f"{row_str}:{target}".encode()).hexdigest()
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests."""
@@ -345,7 +365,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         if new_confidence == "LOW":
                             logger.info(f"Field {field.column} still has LOW confidence - trying isolated validation")
                             # Process this single field in isolation (but still using the multiplex format)
-                            await process_multiplex_group(session, row, row_results, [field], accumulated_results)
+                            # Set is_isolated_validation=True to ensure we don't hit the group cache
+                            await process_multiplex_group(
+                                session, 
+                                row, 
+                                row_results, 
+                                [field], 
+                                accumulated_results,
+                                is_isolated_validation=True  # Mark this as an isolated validation
+                            )
                             
                             if field.column in row_results:
                                 final_confidence = row_results[field.column].get('confidence_level', 'LOW')
@@ -396,7 +424,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         
                         if priority_targets:
                             logger.info(f"Re-validating {len(priority_targets)} priority fields from holistic validation")
-                            await process_multiplex_group(session, row, row_results, priority_targets, accumulated_results)
+                            # Mark this as an isolated validation to avoid cache hits
+                            await process_multiplex_group(
+                                session, 
+                                row, 
+                                row_results, 
+                                priority_targets, 
+                                accumulated_results,
+                                is_isolated_validation=True  # Force fresh validation
+                            )
                             
                             # Update the holistic validation after re-validating priority fields
                             next_check, reasons = validator.determine_next_check_date(row, row_results)
@@ -410,7 +446,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             return row_idx, row_results
         
-        async def process_multiplex_group(session, row, row_results, targets, previous_results=None):
+        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, is_isolated_validation=False):
             """Process a group of columns with a single multiplex API call, even if there's only one column."""
             nonlocal total_cache_hits, total_cache_misses
             
@@ -421,10 +457,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if not validation_targets:
                 logger.info("No non-ID/IGNORED fields to validate in this group")
                 return
+            
+            # Create validation context string to differentiate cache for different validation types
+            validation_context = None
+            if is_isolated_validation or len(validation_targets) == 1:
+                # Isolated validation should have its own cache key
+                validation_context = f"isolated:{validation_targets[0].column}"
+                logger.info(f"Using isolated validation context for {validation_targets[0].column}")
+            else:
+                # Group validation with unique context for this specific group
+                group_columns = ",".join([t.column for t in validation_targets])
+                validation_context = f"group:{group_columns}"
+                logger.info(f"Using group validation context: {validation_context}")
                 
             # Log clear info about what we're processing
             if len(validation_targets) == 1:
                 logger.info(f"Processing field '{validation_targets[0].column}' using multiplex format")
+                if is_isolated_validation:
+                    logger.info(f"This is an ISOLATED validation for field '{validation_targets[0].column}'")
             else:
                 logger.info(f"Processing {len(validation_targets)} fields together using multiplex format")
             
@@ -433,7 +483,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             cached_results = {}
             
             for target in validation_targets:
-                cache_key = get_cache_key(row, target.column)
+                cache_key = get_cache_key(row, target.column, validation_context)
                 try:
                     cache_response = s3.get_object(
                         Bucket=s3_bucket,
@@ -442,11 +492,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     cached_result = json.loads(cache_response['Body'].read())
                     cached_results[target.column] = cached_result
                     total_cache_hits += 1
-                    logger.info(f"Cache hit for {target.column}")
+                    logger.info(f"Cache hit for {target.column} with context: {validation_context}")
                 except:
                     all_cached = False
                     total_cache_misses += 1
-                    logger.info(f"Cache miss for {target.column}")
+                    logger.info(f"Cache miss for {target.column} with context: {validation_context}")
                     break
             
             if all_cached:
@@ -519,16 +569,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     
                     # Cache result
                     try:
-                        cache_key = get_cache_key(row, target.column)
+                        cache_key = get_cache_key(row, target.column, validation_context)
                         s3.put_object(
                             Bucket=s3_bucket,
                             Key=f"validation_cache/{cache_key}.json",
                             Body=json.dumps(row_results[target.column]),
                             ContentType='application/json'
                         )
-                        logger.info(f"Cached multiplex result for {target.column}")
+                        logger.info(f"Cached multiplex result for {target.column} with context: {validation_context}")
                     except Exception as e:
-                        logger.error(f"Failed to cache multiplex result for {target.column}: {str(e)}")
+                        logger.error(f"Failed to cache multiplex result for {target.column} with context {validation_context}: {str(e)}")
                 else:
                     # If column wasn't found in multiplex result, log an error and set a placeholder
                     logger.error(f"Column {target.column} not found in multiplex result")
