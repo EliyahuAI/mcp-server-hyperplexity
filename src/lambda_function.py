@@ -11,17 +11,20 @@ import os
 from schema_validator import SchemaValidator
 from botocore.config import Config
 import traceback
+from perplexity_schema import get_response_format_schema
 
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Custom JSON encoder to handle datetime objects
-class CustomJSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        return super().default(obj)
+# Add a handler to ensure logs appear in CloudWatch
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S'))
+    logger.addHandler(handler)
+    logger.info("Initialized logger with StreamHandler")
+else:
+    logger.info("Logger already has handlers, skipping handler setup")
 
 # Initialize AWS clients with retry configuration
 config = Config(
@@ -59,6 +62,7 @@ async def validate_with_perplexity(
         "Content-Type": "application/json"
     }
     
+    # Use multiplex schema since we're always using multiplex format now
     data = {
         "model": model,
         "messages": [
@@ -67,30 +71,26 @@ async def validate_with_perplexity(
         ],
         "temperature": 0.1,
         "max_tokens": 1000,
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "answer": {"type": "string"},
-                        "confidence": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW"]},
-                        "quote": {"type": "string"},
-                        "sources": {"type": "array", "items": {"type": "string"}},
-                        "update_required": {"type": "boolean"},
-                        "explanation": {"type": "string"},
-                        "substantially_different": {"type": "boolean"},
-                        "consistent_with_model_knowledge": {"type": "string", "description": "Indicate if the answer is consistent with the model's general knowledge beyond the specific sources cited. Should be 'Yes' or 'No' followed by explanation."}
-                    },
-                    "required": ["answer", "confidence", "sources", "update_required"]
-                }
-            }
-        }
+        "response_format": get_response_format_schema(is_multiplex=True)
     }
     
     try:
+        # Log the formatted prompt for better diagnostics
         logger.info(f"Sending request to Perplexity API with model: {model}")
-        logger.info(f"Request data: {json.dumps(data, indent=2)}")
+        
+        # Log a readable version of the prompt for debugging
+        prompt_lines = prompt.split('\n')
+        formatted_prompt = "\n".join([f"  {line}" for line in prompt_lines])
+        logger.info(f"Formatted prompt:\n{formatted_prompt}")
+        
+        # Simplified request data log (without the full prompt)
+        simplified_data = {
+            "model": data["model"],
+            "temperature": data["temperature"],
+            "max_tokens": data["max_tokens"],
+            "response_format": data["response_format"]
+        }
+        logger.info(f"Request config: {json.dumps(simplified_data, indent=2)}")
         
         async with session.post(
             "https://api.perplexity.ai/chat/completions",
@@ -100,7 +100,36 @@ async def validate_with_perplexity(
         ) as response:
             response_text = await response.text()
             logger.info(f"API Response status: {response.status}")
-            logger.info(f"API Response body: {response_text}")
+            
+            # Parse the JSON response and pretty print for CloudWatch logs
+            try:
+                response_json = json.loads(response_text)
+                
+                # Extract and format the content for better readability in logs
+                if 'choices' in response_json and len(response_json['choices']) > 0:
+                    message = response_json['choices'][0].get('message', {})
+                    content = message.get('content', '')
+                    
+                    # Try to parse and format the content as JSON
+                    try:
+                        content_json = json.loads(content)
+                        formatted_content = json.dumps(content_json, indent=2)
+                        
+                        # Create a copy with formatted content for logging
+                        log_response = response_json.copy()
+                        log_response['choices'][0]['message']['content'] = f"PARSED JSON:\n{formatted_content}"
+                        
+                        # Log the formatted response
+                        logger.info(f"API Response body (with formatted content): {json.dumps(log_response, indent=2)}")
+                    except:
+                        # If content isn't valid JSON, log as is
+                        logger.info(f"API Response body: {json.dumps(response_json, indent=2)}")
+                else:
+                    logger.info(f"API Response body: {json.dumps(response_json, indent=2)}")
+                    
+            except json.JSONDecodeError:
+                # If response isn't valid JSON, log as is
+                logger.info(f"API Response body (raw): {response_text}")
             
             if response.status != 200:
                 raise Exception(f"API returned status {response.status}: {response_text}")
@@ -120,8 +149,55 @@ def get_cache_key(row: Dict[str, Any], target: str) -> str:
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests."""
     try:
+        # Test CloudWatch logging - with extreme verbosity for debugging
+        print("==== LAMBDA FUNCTION STARTED - CONSOLE.LOG PRINT ====")
+        logger.error("==== LAMBDA FUNCTION STARTED - ERROR LEVEL LOG ====")  # Use ERROR level for visibility
+        logger.error(f"Request ID: {context.aws_request_id if context else 'unknown'}")
+        logger.error(f"Function name: {context.function_name if context else 'unknown'}")
+        logger.error(f"Log group: {'/aws/lambda/' + (context.function_name if context else 'perplexity-validator')}")
+        logger.error(f"Log stream: {context.log_stream_name if context else 'unknown'}")
+        
+        # Check if logging handlers are working
+        logger.error(f"Logger handlers: {logger.handlers}")
+        
+        # Flush any pending logs
+        for handler in logger.handlers:
+            if hasattr(handler, 'flush'):
+                handler.flush()
+                logger.error("Flushed log handler")
+        
+        # Explicitly create log group (testing permissions)
+        try:
+            logs_client = boto3.client('logs')
+            log_group_name = f"/aws/lambda/{context.function_name if context else 'perplexity-validator'}"
+            
+            # Check if log group exists
+            try:
+                logs_client.describe_log_groups(logGroupNamePrefix=log_group_name)
+                logger.info(f"Log group exists: {log_group_name}")
+            except Exception as e:
+                # Create log group if it doesn't exist
+                try:
+                    logs_client.create_log_group(logGroupName=log_group_name)
+                    logger.info(f"Created log group: {log_group_name}")
+                except Exception as create_e:
+                    logger.error(f"Failed to create log group: {str(create_e)}")
+                    logger.error("This may indicate a permissions issue with the Lambda execution role")
+        except Exception as logs_e:
+            logger.error(f"Error working with CloudWatch logs: {str(logs_e)}")
+        
         # Initialize validator with config
         config = event.get('config', {})
+        
+        # Log the config for debugging
+        logger.error(f"Config received: {json.dumps({k: v for k, v in config.items() if k != 'validation_targets'})[:500]}...")
+        
+        # Check if general_notes is present
+        if 'general_notes' in config:
+            logger.error(f"General notes included: {config['general_notes'][:200]}...")
+        else:
+            logger.error("WARNING: general_notes NOT found in config!")
+            
         validator = SchemaValidator(config)
         
         # Get API key and S3 bucket
@@ -164,8 +240,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             row_results = {}
             accumulated_results = {}  # Store results to pass as context to later groups
             
-            # Get ignored fields - add them to results without processing
+            # Get ignored fields and ID fields - add them to results without processing
             ignored_fields = validator._get_ignored_fields(validator.validation_targets)
+            id_fields = validator._get_id_fields(validator.validation_targets)
+            
+            # Process IGNORED fields
             if ignored_fields:
                 logger.info(f"Adding {len(ignored_fields)} IGNORED fields without processing")
                 for ignored_field in ignored_fields:
@@ -182,19 +261,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'substantially_different': False
                     }
             
-            # Process ID fields first
-            id_fields = validator._get_id_fields(validator.validation_targets)
+            # Process ID fields - similar to IGNORED fields, we don't validate them
             if id_fields:
-                logger.info(f"Processing {len(id_fields)} ID fields")
+                logger.info(f"Adding {len(id_fields)} ID fields to results without validation")
                 for id_field in id_fields:
-                    await process_single_column(session, row, row_results, id_field)
+                    # Simply copy the original value to the result without validation
+                    original_value = row.get(id_field.column, "")
+                    row_results[id_field.column] = {
+                        'value': original_value,
+                        'confidence': 1.0,  # Max confidence since we're not checking
+                        'confidence_level': "HIGH",
+                        'sources': [],
+                        'quote': "",
+                        'main_source': "",
+                        'update_required': False,  # Never update ID fields
+                        'substantially_different': False
+                    }
                     
                     # Add ID field results to accumulated results
-                    if id_field.column in row_results:
-                        accumulated_results[id_field.column] = row_results[id_field.column]
+                    accumulated_results[id_field.column] = row_results[id_field.column]
             
-            # Group validation targets by search group
-            grouped_targets = validator._group_columns_by_search_group(validator.validation_targets)
+            # Group validation targets by search group - exclude ID and IGNORED fields 
+            validation_targets = [t for t in validator.validation_targets if t.importance.upper() not in ["ID", "IGNORED"]]
+            grouped_targets = validator._group_columns_by_search_group(validation_targets)
             
             # Sort search groups by number to ensure sequential processing
             sorted_groups = sorted(grouped_targets.keys())
@@ -202,23 +291,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Process each search group in order
             for group_id in sorted_groups:
                 targets = grouped_targets[group_id]
-                
-                # Skip ID fields that were already processed and IGNORED fields
-                targets = [t for t in targets if t.importance.upper() != "ID" and t.importance.upper() != "IGNORED"]
                 if not targets:
                     continue
                 
                 logger.info(f"Processing search group {group_id} with {len(targets)} columns")
                 
-                if len(targets) > 1:
-                    # Multiplex validation for this group
-                    await process_multiplex_group(session, row, row_results, targets, accumulated_results)
-                    total_multiplex_validations += 1
-                else:
-                    # Single column validation
-                    for target in targets:
-                        await process_single_column(session, row, row_results, target)
-                        total_single_validations += 1
+                # Always use multiplex validation regardless of number of fields
+                await process_multiplex_group(session, row, row_results, targets, accumulated_results)
+                total_multiplex_validations += 1
                 
                 # Add this group's results to accumulated results for next groups
                 for target in targets:
@@ -230,6 +310,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             critical_revisits = []
             
             for critical_field in critical_fields:
+                # Skip ID fields that are already processed
+                if critical_field.importance.upper() == "ID":
+                    continue
+                    
                 if critical_field.column in row_results:
                     result = row_results[critical_field.column]
                     confidence_level = result.get('confidence_level', 'LOW')
@@ -238,12 +322,34 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         logger.info(f"Revisiting CRITICAL field {critical_field.column} with {confidence_level} confidence")
                         critical_revisits.append(critical_field)
             
-            # Process revisit fields individually with all accumulated context
-            for revisit_target in critical_revisits:
-                logger.info(f"Re-validating critical field: {revisit_target.column}")
-                # Process individually to get better confidence
-                await process_single_column(session, row, row_results, revisit_target, accumulated_results)
-                total_single_validations += 1
+            # Process revisit fields via multiplex as well
+            if critical_revisits:
+                logger.info(f"Re-validating {len(critical_revisits)} critical fields via multiplex")
+                
+                # Pass the current accumulated results (including all previous validations)
+                # This ensures the critical field has all context from previous validations
+                for field in critical_revisits:
+                    logger.info(f"Providing previous validation context for {field.column} re-validation")
+                
+                await process_multiplex_group(session, row, row_results, critical_revisits, accumulated_results)
+                total_multiplex_validations += 1
+                
+                # Log the final results after re-validation
+                for field in critical_revisits:
+                    if field.column in row_results:
+                        new_result = row_results[field.column]
+                        new_confidence = new_result.get('confidence_level', 'LOW')
+                        logger.info(f"After re-validation: {field.column} confidence is now {new_confidence}")
+                        
+                        # For critical fields that still have LOW confidence, try one more time in isolation
+                        if new_confidence == "LOW":
+                            logger.info(f"Field {field.column} still has LOW confidence - trying isolated validation")
+                            # Process this single field in isolation (but still using the multiplex format)
+                            await process_multiplex_group(session, row, row_results, [field], accumulated_results)
+                            
+                            if field.column in row_results:
+                                final_confidence = row_results[field.column].get('confidence_level', 'LOW')
+                                logger.info(f"After isolated validation: {field.column} confidence is now {final_confidence}")
             
             # Determine next check date
             next_check, reasons = validator.determine_next_check_date(row, row_results)
@@ -267,18 +373,66 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info(f"Holistic validation: {json.dumps(row_results['holistic_summary'], indent=2)}")
                 if holistic_validation.get('concerns', []):
                     logger.info(f"Concerns: {holistic_validation['concerns']}")
+                    
+                # If holistic validation finds consistency issues, perform one final check
+                if not holistic_validation.get('is_consistent', True) or holistic_validation.get('needs_review', False):
+                    logger.info("Holistic validation found issues - performing final consistency check")
+                    
+                    # Update accumulated_results with all current values
+                    for field, result in row_results.items():
+                        if field not in ['next_check', 'reasons', 'holistic_validation', 'holistic_summary']:
+                            accumulated_results[field] = result
+                    
+                    # Re-validate any fields marked as priority
+                    priority_fields = holistic_validation.get('priority_fields', [])
+                    if priority_fields:
+                        # Find the validation targets for these fields
+                        priority_targets = []
+                        for field_name in priority_fields:
+                            for target in validation_targets:
+                                if target.column == field_name:
+                                    priority_targets.append(target)
+                                    break
+                        
+                        if priority_targets:
+                            logger.info(f"Re-validating {len(priority_targets)} priority fields from holistic validation")
+                            await process_multiplex_group(session, row, row_results, priority_targets, accumulated_results)
+                            
+                            # Update the holistic validation after re-validating priority fields
+                            next_check, reasons = validator.determine_next_check_date(row, row_results)
+                            row_results['next_check'] = next_check.isoformat() if next_check else None
+                            row_results['reasons'] = reasons
+                            
+                            # Log updated holistic results
+                            if 'holistic_validation' in row_results:
+                                logger.info("Updated holistic validation after priority field re-validation:")
+                                logger.info(json.dumps(row_results['holistic_validation'], indent=2))
             
             return row_idx, row_results
         
         async def process_multiplex_group(session, row, row_results, targets, previous_results=None):
-            """Process a group of columns with a single multiplex API call."""
-            nonlocal total_cache_hits, total_cache_misses, total_single_validations
+            """Process a group of columns with a single multiplex API call, even if there's only one column."""
+            nonlocal total_cache_hits, total_cache_misses
+            
+            # First, filter out any ID or IGNORED fields - we don't validate these
+            validation_targets = [t for t in targets if t.importance.upper() not in ["ID", "IGNORED"]]
+            
+            # If there are no fields to validate after filtering, just return
+            if not validation_targets:
+                logger.info("No non-ID/IGNORED fields to validate in this group")
+                return
+                
+            # Log clear info about what we're processing
+            if len(validation_targets) == 1:
+                logger.info(f"Processing field '{validation_targets[0].column}' using multiplex format")
+            else:
+                logger.info(f"Processing {len(validation_targets)} fields together using multiplex format")
             
             # Check if all targets in this group are in cache
             all_cached = True
             cached_results = {}
             
-            for target in targets:
+            for target in validation_targets:
                 cache_key = get_cache_key(row, target.column)
                 try:
                     cache_response = s3.get_object(
@@ -291,18 +445,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.info(f"Cache hit for {target.column}")
                 except:
                     all_cached = False
+                    total_cache_misses += 1
+                    logger.info(f"Cache miss for {target.column}")
                     break
             
             if all_cached:
                 # If everything was cached, use cached results
-                logger.info(f"Using cached results for all {len(targets)} columns in search group")
+                if len(validation_targets) == 1:
+                    logger.info(f"Using cached result for field {validation_targets[0].column}")
+                else:
+                    logger.info(f"Using cached results for all {len(validation_targets)} columns in search group")
                 for column, result in cached_results.items():
                     row_results[column] = result
                 return
             
             # Generate multiplex prompt and validate
-            logger.info(f"Generating multiplex prompt for {len(targets)} columns with context from previous groups")
-            prompt = validator.generate_multiplex_prompt(row, targets, previous_results)
+            logger.info(f"Generating multiplex prompt for {len(validation_targets)} field(s) with context from previous groups")
+            prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results)
             
             # Call Perplexity API
             result = await validate_with_perplexity(session, prompt, api_key)
@@ -311,7 +470,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             parsed_results = validator.parse_multiplex_result(result, row)
             
             # Process and store results for each column
-            for target in targets:
+            for target in validation_targets:
                 if target.column in parsed_results:
                     parsed_result = parsed_results[target.column]
                     value = parsed_result[0]
@@ -371,68 +530,33 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     except Exception as e:
                         logger.error(f"Failed to cache multiplex result for {target.column}: {str(e)}")
                 else:
-                    # If column wasn't found in multiplex result, do single validation
-                    logger.warning(f"Column {target.column} not found in multiplex result, falling back to single validation")
-                    await process_single_column(session, row, row_results, target, previous_results)
-                    total_single_validations += 1
-        
-        async def process_single_column(session, row, row_results, target, previous_results=None):
-            """Process a single column validation using the multiplex approach with a single target."""
-            nonlocal total_cache_hits, total_cache_misses
-            
-            # Check cache first for efficiency
-            cache_key = get_cache_key(row, target.column)
-            try:
-                cache_response = s3.get_object(
-                    Bucket=s3_bucket,
-                    Key=f"validation_cache/{cache_key}.json"
-                )
-                cached_result = json.loads(cache_response['Body'].read())
-                row_results[target.column] = cached_result
-                total_cache_hits += 1
-                logger.info(f"Cache hit for {target.column}")
-                return
-            except:
-                total_cache_misses += 1
-                logger.info(f"Cache miss for {target.column}")
-            
-            # If not in cache, process it as a multiplex group with a single target
-            logger.info(f"Processing single column {target.column} using multiplex approach")
-            await process_multiplex_group(session, row, row_results, [target], previous_results)
-            
-            # The result will already be in row_results and cached by process_multiplex_group
+                    # If column wasn't found in multiplex result, log an error and set a placeholder
+                    logger.error(f"Column {target.column} not found in multiplex result")
+                    # Set a placeholder result with error information
+                    row_results[target.column] = {
+                        'value': row.get(target.column, ""),  # Keep original value
+                        'confidence': 0.0,
+                        'confidence_level': "LOW",
+                        'sources': [],
+                        'quote': "",
+                        'main_source': "",
+                        'update_required': False,
+                        'substantially_different': False,
+                        'error': "Field not found in multiplex validation result"
+                    }
         
         # Run the async function
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            # Run the async task and log any exceptions
-            try:
-                loop.run_until_complete(process_all_rows())
-            except Exception as e:
-                logger.error(f"Error during async processing: {str(e)}")
-                logger.error(traceback.format_exc())
-                raise
-                
-            logger.info("Async processing completed successfully")
+            loop.run_until_complete(process_all_rows())
+        finally:
+            loop.close()
             
-            # Log validation results to help with debugging
-            logger.info(f"Final validation_results contains {len(validation_results)} items")
-            for idx, result in validation_results.items():
-                logger.info(f"Result for row {idx} has {len(result)} fields")
-            
-            # Convert validation_results to serializable format by converting keys to strings
-            # This is needed because the keys might be integers that can't be directly serialized
-            serializable_results = {str(k): v for k, v in validation_results.items()}
-            
-            # Extra debug logging
-            logger.info("Serializable validation results keys: " + str(list(serializable_results.keys())))
-            for key in serializable_results:
-                logger.info(f"Result for key {key} type: {type(serializable_results[key])}")
-            
-            # Prepare response with proper serialization
-            response_body = {
-                'validation_results': serializable_results,
+            return {
+                'statusCode': 200,
+            'body': {
+                'validation_results': validation_results,
                 'cache_stats': {
                     'hits': total_cache_hits,
                     'misses': total_cache_misses,
@@ -440,17 +564,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'single_validations': total_single_validations
                 }
             }
-            
-            # Ensure all values are JSON serializable
-            response_body_json = json.dumps(response_body, cls=CustomJSONEncoder)
-            response_body = json.loads(response_body_json)
-            
-            return {
-                'statusCode': 200,
-                'body': response_body
             }
-        finally:
-            loop.close()
         
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}")

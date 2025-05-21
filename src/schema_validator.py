@@ -13,15 +13,15 @@ try:
 except ImportError:
     # Define fallback functions in case the module is not available
     def parse_multiplex_with_citations(result):
-        logger.warning("multiplex_parser module not available, using fallback function")
+        # Silent fallback instead of warning
         return [], {}
         
     def parse_multiplex_with_references(content):
-        logger.warning("multiplex_parser module not available, using fallback function")
+        # Silent fallback instead of warning
         return [], {}
         
     def apply_references_to_items(items, references):
-        logger.warning("multiplex_parser module not available, using fallback function")
+        # Silent fallback instead of warning
         return items
 
 # Import prompt_loader
