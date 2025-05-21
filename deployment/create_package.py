@@ -375,6 +375,58 @@ def test_lambda_function(function_name, region=None):
         logger.error(traceback.format_exc())
         return False
 
+def delete_s3_cache(bucket_name, region=None):
+    """Delete all validation cache objects from the S3 bucket."""
+    try:
+        # Initialize S3 client
+        s3_client = boto3.client('s3', region_name=region)
+        
+        logger.info(f"Listing objects in s3://{bucket_name}/validation_cache/")
+        
+        # List objects with validation_cache/ prefix
+        paginator = s3_client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket_name, Prefix='validation_cache/')
+        
+        total_objects = 0
+        deleted_objects = 0
+        
+        for page in pages:
+            if 'Contents' not in page:
+                logger.info("No cache objects found.")
+                return
+                
+            objects_to_delete = [{'Key': obj['Key']} for obj in page['Contents']]
+            total_objects += len(objects_to_delete)
+            
+            if not objects_to_delete:
+                continue
+                
+            # Delete objects in batches of 1000 (S3 limit)
+            batch_size = 1000
+            for i in range(0, len(objects_to_delete), batch_size):
+                batch = objects_to_delete[i:i + batch_size]
+                response = s3_client.delete_objects(
+                    Bucket=bucket_name,
+                    Delete={'Objects': batch, 'Quiet': False}
+                )
+                
+                if 'Deleted' in response:
+                    deleted_objects += len(response['Deleted'])
+                    
+                if 'Errors' in response and response['Errors']:
+                    for error in response['Errors']:
+                        logger.error(f"Error deleting {error['Key']}: {error['Code']} - {error['Message']}")
+        
+        logger.info(f"Successfully deleted {deleted_objects}/{total_objects} cache objects from s3://{bucket_name}/validation_cache/")
+        
+    except Exception as e:
+        logger.error(f"Error deleting cache: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+    
+    return True
+
 def main():
     """Main function."""
     global PACKAGE_DIR  # Move global declaration to the start of the function
@@ -389,7 +441,17 @@ def main():
     parser.add_argument('--no-rebuild', action='store_true', help='Skip rebuilding the package if it exists')
     parser.add_argument('--run-test', action='store_true', help='Run a test of the function after deployment')
     parser.add_argument('--test-only', action='store_true', help='Only run a test without deploying')
+    parser.add_argument('--delete-cache', action='store_true', help='Delete all validation cache objects from the S3 bucket')
     args = parser.parse_args()
+    
+    # Handle delete-cache option
+    if args.delete_cache:
+        logger.info(f"Deleting validation cache from S3 bucket: {args.s3_bucket}")
+        success = delete_s3_cache(args.s3_bucket, args.region)
+        if not success:
+            return 1
+        if not args.deploy and not args.test_only:
+            return 0
     
     # Handle test-only option
     if args.test_only:
