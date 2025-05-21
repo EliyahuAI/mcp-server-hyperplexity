@@ -16,6 +16,13 @@ import traceback
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Custom JSON encoder to handle datetime objects
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 # Initialize AWS clients with retry configuration
 config = Config(
     retries = dict(
@@ -477,10 +484,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         finally:
             loop.close()
             
-            return {
-                'statusCode': 200,
-            'body': {
-                'validation_results': validation_results,
+            # Log validation results to help with debugging
+            logger.info(f"Final validation_results contains {len(validation_results)} items")
+            for idx, result in validation_results.items():
+                logger.info(f"Result for row {idx} has {len(result)} fields")
+            
+            # Convert validation_results to serializable format by converting keys to strings
+            # This is needed because the keys might be integers that can't be directly serialized
+            serializable_results = {str(k): v for k, v in validation_results.items()}
+            
+            # Prepare response with proper serialization
+            response_body = {
+                'validation_results': serializable_results,
                 'cache_stats': {
                     'hits': total_cache_hits,
                     'misses': total_cache_misses,
@@ -488,6 +503,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'single_validations': total_single_validations
                 }
             }
+            
+            # Ensure all values are JSON serializable
+            response_body_json = json.dumps(response_body, cls=CustomJSONEncoder)
+            response_body = json.loads(response_body_json)
+            
+            return {
+                'statusCode': 200,
+                'body': response_body
             }
         
     except Exception as e:
