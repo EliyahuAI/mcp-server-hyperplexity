@@ -59,6 +59,25 @@ def extract_reference_numbers(text: str) -> List[int]:
     
     return numbers
 
+def extract_citations_from_api_response(result: Dict) -> List[str]:
+    """
+    Extract citations from the Perplexity API response.
+    
+    Args:
+        result: The full API response from Perplexity
+        
+    Returns:
+        List of citation URLs
+    """
+    if not isinstance(result, dict):
+        return []
+    
+    # Check if the response has a citations field
+    if 'citations' in result and isinstance(result['citations'], list):
+        return result['citations']
+    
+    return []
+
 def extract_main_url_from_quote(quote: str) -> Optional[str]:
     """
     Extract the main URL from a quote, typically at the end.
@@ -111,6 +130,43 @@ def extract_references_from_content(content: str) -> Dict[int, str]:
                 references[ref_num] = url
     
     return references
+
+def parse_multiplex_with_citations(result: Dict) -> Tuple[List[Dict[str, Any]], Dict[int, str]]:
+    """
+    Parse a multiplex response with citations from the API response.
+    
+    Args:
+        result: The full API response from Perplexity
+        
+    Returns:
+        Tuple of (parsed JSON array, references dictionary)
+    """
+    items = []
+    citations = extract_citations_from_api_response(result)
+    citations_dict = {}
+    
+    # Convert citations list to dictionary with 1-based index
+    for i, citation in enumerate(citations):
+        citations_dict[i + 1] = citation
+    
+    # Extract content from the response
+    if 'choices' in result and len(result['choices']) > 0:
+        content = result['choices'][0]['message'].get('content', '')
+        
+        # Try to parse content as individual items
+        item_pattern = r'(?:^|\n)(\d+)\.\s+([^:]+):([^\n]+)(?:\n-\s*Correct Answer:([^\n]+))?(?:\n-\s*Confidence:([^\n]+))?(?:\n-\s*Sources:([^\n]+))?'
+        items_matches = re.finditer(item_pattern, content)
+        
+        for match in items_matches:
+            item = {
+                "column": match.group(2).strip(),
+                "answer": match.group(4).strip() if match.group(4) else "",
+                "confidence": match.group(5).strip() if match.group(5) else "LOW",
+                "quote": match.group(6).strip() if match.group(6) else "",
+            }
+            items.append(item)
+    
+    return items, citations_dict
 
 def parse_multiplex_with_references(content: str) -> Tuple[List[Dict[str, Any]], Dict[int, str]]:
     """

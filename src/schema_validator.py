@@ -458,6 +458,55 @@ Importance: {target.importance}
                 logger.error("Empty content in API response for multiplex validation")
                 return results
             
+            # Extract citations from the API response - this is the preferred approach
+            citations = extract_citations_from_api_response(result)
+            if citations:
+                logger.info(f"Found {len(citations)} citations in API response")
+                # Convert to dictionary
+                citations_dict = {}
+                for i, citation in enumerate(citations):
+                    citations_dict[i + 1] = citation
+                
+                # Try to parse items from content
+                items, _ = parse_multiplex_with_citations(result)
+                if items:
+                    # Apply citations to items
+                    items = apply_references_to_items(items, citations_dict)
+                    
+                    # Process each item
+                    for item in items:
+                        try:
+                            column = item.get("column", "")
+                            if not column:
+                                continue
+                                
+                            answer = item.get("answer", "")
+                            confidence_level = item.get("confidence", "LOW")
+                            quote = item.get("quote", "")
+                            sources = item.get("sources", [])
+                            update_required = item.get("update_required", False)
+                            main_source = sources[0] if sources else ""
+                            
+                            # Get original value
+                            original_value = row.get(column, "")
+                            
+                            # Determine if substantially different
+                            substantially_different = item.get("substantially_different", None)
+                            if substantially_different is None:
+                                substantially_different = self._is_substantially_different(original_value, answer)
+                            
+                            # Map confidence level to numeric value
+                            confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
+                            numeric_confidence = confidence_map.get(confidence_level, 0.5)
+                            
+                            results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different)
+                            logger.info(f"Processed multiplex result for column {column} using API citations")
+                        except Exception as item_error:
+                            logger.error(f"Error processing multiplex item: {str(item_error)}")
+                    
+                    if results:
+                        return results
+            
             # Try to parse with references section
             try:
                 items, references = parse_multiplex_with_references(content)
@@ -530,6 +579,13 @@ Importance: {target.importance}
                         return results
                 else:
                     return results
+            
+            # Apply API citations to the validation results if available
+            if citations and isinstance(validation_results, list):
+                citations_dict = {}
+                for i, citation in enumerate(citations):
+                    citations_dict[i + 1] = citation
+                validation_results = apply_references_to_items(validation_results, citations_dict)
             
             # Process each item in the array
             for item in validation_results:

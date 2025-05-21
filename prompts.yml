@@ -20,22 +20,21 @@ validation_prompt: |
 
   Current value: {value}
 
-  YOUR TOP PRIORITY is to find and include DIRECT QUOTES from authoritative sources that support your answer. Exact quotes are essential.
+  YOUR TOP PRIORITY is to find and provide DIRECT QUOTES from authoritative sources that explicitly support your answer.
 
   EXTREMELY IMPORTANT FORMATTING REQUIREMENTS:
-  1. The SOURCES field must contain COMPLETE URL STRINGS (not numbered references like [1], [2])
-  2. Each quote must be DIRECTLY ATTRIBUTABLE to its source - include the complete URL at the end of the quote
-  3. Do not use relative references - always include the full, absolute URL for each source
+  1. Use reference numbers like [1], [2], etc. for each source citation
+  2. Do NOT embed full URLs directly in your text - use the reference numbers only
+  3. Make sure each citation refers to a specific authoritative source
 
   Please provide the following information in a clear, structured format:
 
   ANSWER: [correct value for this column - provide ONLY the exact value, no explanations]
-  QUOTE: [REQUIRED - exact text quoted directly from an official source that explicitly supports your answer, ending with the complete URL source]
-  SOURCES: [list complete webpage URLs where the quotes/information was found - not numbered references]
   CONFIDENCE: [HIGH/MEDIUM/LOW]
+  SOURCES: [Brief description with reference numbers, e.g., "Confirmed by multiple sources [1][2]"]
   UPDATE_REQUIRED: [YES/NO - indicate if the current value should be updated]
   SUBSTANTIALLY_DIFFERENT: [YES/NO - indicate if your answer is substantially different from the current value]
-  EXPLANATION: [brief explanation of why you assigned this confidence level]
+  EXPLANATION: [brief explanation of why you assigned this confidence level with reference numbers where applicable]
 
   If you cannot find the information, indicate this clearly and provide your best estimate with LOW confidence.
 
@@ -51,43 +50,29 @@ multiplex_validation: |
 
   {columns_to_validate}
 
-  YOUR TOP PRIORITY is to find and include DIRECT QUOTES from authoritative sources that explicitly support your answers. Exact quotes are essential.
+  YOUR TOP PRIORITY is to find and provide DIRECT QUOTES from authoritative sources that explicitly support your answers.
 
   EXTREMELY IMPORTANT FORMATTING REQUIREMENTS:
-  1. Include a COLLECTIVE REFERENCES section at the bottom of your response
-  2. Each quote MUST end with a reference number like [1], [2], etc.
-  3. Each reference in the REFERENCES section must be a complete URL
-  4. Do not include individual "sources" arrays in each response object
-  5. Do not use relative references - always include the full, absolute URL for each source
-  6. All URLs must be valid and accessible web addresses
+  1. Use reference numbers like [1], [2], etc. for each source citation
+  2. Make sure each citation refers to a specific authoritative source
+  3. Do NOT embed full URLs directly in your text - use the reference numbers only
+  4. Format each field response as a numbered list item with bullet points for details
 
-  Provide your answer as a VALID JSON array with the following structure followed by a REFERENCES section:
-  ```json
-  [
-    {{
-      "column": "Column Name 1",
-      "answer": "validated value 1",
-      "quote": "direct quote from source ending with reference number [1]",
-      "confidence": "HIGH/MEDIUM/LOW",
-      "update_required": true,
-      "substantially_different": true,
-      "explanation": "brief explanation"
-    }},
-    {{
-      "column": "Column Name 2",
-      "answer": "validated value 2",
-      "quote": "another direct quote ending with reference number [2]",
-      "confidence": "HIGH/MEDIUM/LOW",
-      "update_required": true,
-      "substantially_different": false,
-      "explanation": "brief explanation"
-    }}
-  ]
-  ```
+  For each field, provide:
+  - The correct validated value
+  - Your confidence level (HIGH/MEDIUM/LOW)
+  - Source citations with reference numbers
 
-  REFERENCES:
-  [1] https://example.com/page1
-  [2] https://example.com/page2
+  Example format:
+  1. Field Name: Current Value
+  - Correct Answer: [validated value]
+  - Confidence: HIGH/MEDIUM/LOW
+  - Sources: Multiple sources confirm this information [1][2]
 
-  If you cannot find information for a specific column, include it in the response with LOW confidence and explain why.
+  2. Another Field: Its Value
+  - Correct Answer: [validated value]
+  - Confidence: HIGH/MEDIUM/LOW
+  - Sources: This information is verified by [3]
+
+  If you cannot find information for a specific column, clearly indicate that with LOW confidence and explain why.
   IMPORTANT: Your response must be a valid JSON array containing objects for ALL the requested columns. 
