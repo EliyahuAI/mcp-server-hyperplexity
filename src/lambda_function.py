@@ -71,7 +71,9 @@ async def validate_with_perplexity(
                         "quote": {"type": "string"},
                         "sources": {"type": "array", "items": {"type": "string"}},
                         "update_required": {"type": "boolean"},
-                        "explanation": {"type": "string"}
+                        "explanation": {"type": "string"},
+                        "substantially_different": {"type": "boolean"},
+                        "consistent_with_model_knowledge": {"type": "string", "description": "Indicate if the answer is consistent with the model's general knowledge beyond the specific sources cited. Should be 'Yes' or 'No' followed by explanation."}
                     },
                     "required": ["answer", "confidence", "sources", "update_required"]
                 }
@@ -295,6 +297,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     main_source = parsed_result[5]
                     update_required = parsed_result[6]
                     substantially_different = parsed_result[7]
+                    consistent_with_model_knowledge = parsed_result[8] if len(parsed_result) > 8 else None
                     
                     # If update_required wasn't set by the API, set it based on substantially_different
                     if update_required is None:
@@ -310,6 +313,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'update_required': update_required,
                         'substantially_different': substantially_different
                     }
+                    
+                    # Add consistent_with_model_knowledge if available
+                    if consistent_with_model_knowledge:
+                        row_results[target.column]['consistent_with_model_knowledge'] = consistent_with_model_knowledge
+                    
+                    # Include any citations from the API response
+                    if 'citations' in result:
+                        row_results[target.column]['api_citations'] = result['citations']
                     
                     # Cache result
                     try:
@@ -368,6 +379,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             main_source = parsed_result[5]
             update_required = parsed_result[6]  # From the API response
             substantially_different = parsed_result[7]  # From the API response or calculated
+            consistent_with_model_knowledge = parsed_result[8] if len(parsed_result) > 8 else None
             
             # If update_required wasn't set by the API, set it based on substantially_different
             if update_required is None:
@@ -384,7 +396,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'substantially_different': substantially_different
             }
             
-                        # Cache result
+            # Add consistent_with_model_knowledge if available
+            if consistent_with_model_knowledge:
+                row_results[target.column]['consistent_with_model_knowledge'] = consistent_with_model_knowledge
+            
+            # Also include any other fields from the API response
+            if isinstance(result, dict) and 'choices' in result and len(result['choices']) > 0:
+                message = result['choices'][0]['message']
+                if 'content' in message:
+                    try:
+                        content_json = json.loads(message.get('content', '{}'))
+                        # Copy over any fields we don't already have
+                        for key, value in content_json.items():
+                            if key not in row_results[target.column]:
+                                row_results[target.column][key] = value
+                    except:
+                        pass  # If we can't parse the content as JSON, just continue
+            
+            # Cache result
             try:
                 s3.put_object(
                     Bucket=s3_bucket,

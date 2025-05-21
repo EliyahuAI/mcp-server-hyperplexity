@@ -34,6 +34,7 @@ validation_prompt: |
   SOURCES: [Brief description with reference numbers, e.g., "Confirmed by multiple sources [1][2]"]
   UPDATE_REQUIRED: [YES/NO - indicate if the current value should be updated]
   SUBSTANTIALLY_DIFFERENT: [YES/NO - indicate if your answer is substantially different from the current value]
+  CONSISTENT_WITH_MODEL_KNOWLEDGE: [YES/NO - indicate if your answer is consistent with your general knowledge beyond the sources, with brief explanation]
   EXPLANATION: [brief explanation of why you assigned this confidence level with reference numbers where applicable]
 
   If you cannot find the information, indicate this clearly and provide your best estimate with LOW confidence.
@@ -62,17 +63,26 @@ multiplex_validation: |
   - The correct validated value
   - Your confidence level (HIGH/MEDIUM/LOW)
   - Source citations with reference numbers
+  - Whether the value needs to be updated (YES/NO)
+  - Whether the value is substantially different from the current value (YES/NO)
+  - Whether your answer is consistent with your general knowledge beyond these sources (YES/NO with explanation)
 
   Example format:
   1. Field Name: Current Value
   - Correct Answer: [validated value]
   - Confidence: HIGH/MEDIUM/LOW
   - Sources: Multiple sources confirm this information [1][2]
+  - Update Required: YES/NO
+  - Substantially Different: YES/NO
+  - Consistent with Model Knowledge: YES - This aligns with established facts about this subject.
 
   2. Another Field: Its Value
   - Correct Answer: [validated value]
   - Confidence: HIGH/MEDIUM/LOW
   - Sources: This information is verified by [3]
+  - Update Required: YES/NO
+  - Substantially Different: YES/NO
+  - Consistent with Model Knowledge: NO - This contradicts common understanding that [explanation].
 
   If you cannot find information for a specific column, clearly indicate that with LOW confidence and explain why.
   IMPORTANT: Your response must be a valid JSON array containing objects for ALL the requested columns. 

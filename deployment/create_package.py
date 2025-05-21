@@ -354,7 +354,7 @@ def test_lambda_function(function_name, region=None):
                 logger.info(f"  Next Check: {row_results['next_check']}")
                 logger.info(f"  Reasons: {row_results['reasons']}")
             
-            return True
+                return True
         else:
             error_msg = response_payload.get('body', {}).get('error')
             if not error_msg:
@@ -433,7 +433,7 @@ def delete_s3_cache(bucket_name, region=None):
         traceback.print_exc()
         return False
     
-    return True
+        return True
 
 def main():
     """Main function."""

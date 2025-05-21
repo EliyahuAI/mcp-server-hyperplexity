@@ -391,16 +391,16 @@ Importance: {target.importance}
             formatted += f"- {example}\n"
         return formatted
     
-    def parse_validation_result(self, result: Dict, target: ValidationTarget, original_value: Any) -> Tuple[Any, float, List[str], str, str, str, bool, bool]:
+    def parse_validation_result(self, result: Dict, target: ValidationTarget, original_value: Any) -> Tuple[Any, float, List[str], str, str, str, bool, bool, Optional[str]]:
         """Parse the validation result from Perplexity API response."""
         try:
             # Extract content from API response
             if not isinstance(result, dict) or 'choices' not in result:
-                return None, 0.0, [], "LOW", "", "", False, False
+                return None, 0.0, [], "LOW", "", "", False, False, None
             
             content = result['choices'][0]['message'].get('content', '')
             if not content:
-                return None, 0.0, [], "LOW", "", "", False, False
+                return None, 0.0, [], "LOW", "", "", False, False, None
             
             # Parse JSON response
             try:
@@ -412,8 +412,10 @@ Importance: {target.importance}
                     json_end = content.find("```", json_start)
                     if json_end > json_start:
                         validation_result = json.loads(content[json_start:json_end].strip())
+                    else:
+                        return None, 0.0, [], "LOW", "", "", False, False, None
                 else:
-                    return None, 0.0, [], "LOW", "", "", False, False
+                    return None, 0.0, [], "LOW", "", "", False, False, None
             
             # Normalize sources to extract URLs from all text fields
             validation_result = normalize_sources(validation_result)
@@ -424,6 +426,18 @@ Importance: {target.importance}
             quote = validation_result.get('quote', '')
             sources = validation_result.get('sources', [])
             update_required = validation_result.get('update_required', False)
+            consistent_with_model_knowledge = validation_result.get('consistent_with_model_knowledge', '')
+            
+            # Lower confidence if not consistent with model knowledge
+            if consistent_with_model_knowledge and 'no' in consistent_with_model_knowledge.lower():
+                if confidence_level == 'HIGH':
+                    confidence_level = 'MEDIUM'
+                elif confidence_level == 'MEDIUM':
+                    confidence_level = 'LOW'
+                
+                # Add the inconsistency note to the quote
+                if quote and consistent_with_model_knowledge:
+                    quote = f"{quote} NOTE: {consistent_with_model_knowledge}"
             
             # Determine if substantially different
             substantially_different = validation_result.get('substantially_different', None)
@@ -437,13 +451,13 @@ Importance: {target.importance}
             # Get main source if available
             main_source = sources[0] if sources else ""
             
-            return answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different
+            return answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, consistent_with_model_knowledge
             
         except Exception as e:
             logger.error(f"Error parsing validation result: {str(e)}")
-            return None, 0.0, [], "LOW", "", "", False, False
+            return None, 0.0, [], "LOW", "", "", False, False, None
     
-    def parse_multiplex_result(self, result: Dict, row: Dict[str, Any]) -> Dict[str, Tuple[Any, float, List[str], str, str, str, bool, bool]]:
+    def parse_multiplex_result(self, result: Dict, row: Dict[str, Any]) -> Dict[str, Tuple[Any, float, List[str], str, str, str, bool, bool, Optional[str]]]:
         """Parse results from a multiplex validation request."""
         results = {}
         
@@ -485,7 +499,18 @@ Importance: {target.importance}
                             quote = item.get("quote", "")
                             sources = item.get("sources", [])
                             update_required = item.get("update_required", False)
-                            main_source = sources[0] if sources else ""
+                            consistent_with_model_knowledge = item.get("consistent_with_model_knowledge", "")
+                            
+                            # Lower confidence if not consistent with model knowledge
+                            if consistent_with_model_knowledge and 'no' in consistent_with_model_knowledge.lower():
+                                if confidence_level == 'HIGH':
+                                    confidence_level = 'MEDIUM'
+                                elif confidence_level == 'MEDIUM':
+                                    confidence_level = 'LOW'
+                                
+                                # Add the inconsistency note to the quote
+                                if quote and consistent_with_model_knowledge:
+                                    quote = f"{quote} NOTE: {consistent_with_model_knowledge}"
                             
                             # Get original value
                             original_value = row.get(column, "")
@@ -499,7 +524,10 @@ Importance: {target.importance}
                             confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
                             numeric_confidence = confidence_map.get(confidence_level, 0.5)
                             
-                            results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different)
+                            # Get main source if available - ensure it's a complete URL
+                            main_source = sources[0] if sources else ""
+                            
+                            results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, consistent_with_model_knowledge)
                             logger.info(f"Processed multiplex result for column {column} using API citations")
                         except Exception as item_error:
                             logger.error(f"Error processing multiplex item: {str(item_error)}")
@@ -541,7 +569,7 @@ Importance: {target.importance}
                             confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
                             numeric_confidence = confidence_map.get(confidence_level, 0.5)
                             
-                            results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different)
+                            results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, None)
                             logger.info(f"Processed multiplex result for column {column}")
                         except Exception as item_error:
                             logger.error(f"Error processing multiplex item: {str(item_error)}")
@@ -561,6 +589,8 @@ Importance: {target.importance}
                         json_end = content.find("```", json_start)
                         if json_end > json_start:
                             validation_results = json.loads(content[json_start:json_end].strip())
+                        else:
+                            return results
                     if not isinstance(validation_results, list):
                         logger.error(f"Expected array of results but got: {type(validation_results)}")
                         return results
@@ -618,7 +648,7 @@ Importance: {target.importance}
                     # Get main source if available
                     main_source = sources[0] if sources else ""
                     
-                    results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different)
+                    results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, None)
                     logger.info(f"Processed multiplex result for column {column}")
                 except Exception as item_error:
                     logger.error(f"Error processing multiplex item: {str(item_error)}")
