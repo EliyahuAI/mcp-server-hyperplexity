@@ -377,10 +377,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     total_single_validations += 1
         
         async def process_single_column(session, row, row_results, target, previous_results=None):
-            """Process a single column validation."""
+            """Process a single column validation using the multiplex approach with a single target."""
             nonlocal total_cache_hits, total_cache_misses
             
-            # Check cache
+            # Check cache first for efficiency
             cache_key = get_cache_key(row, target.column)
             try:
                 cache_response = s3.get_object(
@@ -396,85 +396,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 total_cache_misses += 1
                 logger.info(f"Cache miss for {target.column}")
             
-            # Get original value for comparison
-            original_value = row.get(target.column, "")
+            # If not in cache, process it as a multiplex group with a single target
+            logger.info(f"Processing single column {target.column} using multiplex approach")
+            await process_multiplex_group(session, row, row_results, [target], previous_results)
             
-            # Process validation
-            prompt = validator.generate_validation_prompt(row, target, previous_results)
-            result = await validate_with_perplexity(session, prompt, api_key)
-            
-            # Parse and store result
-            parsed_result = validator.parse_validation_result(result, target, original_value)
-            
-            # Check if result is substantially different from original
-            value = parsed_result[0]
-            numeric_confidence = parsed_result[1]
-            sources = parsed_result[2]
-            confidence_level = parsed_result[3]
-            quote = parsed_result[4]
-            main_source = parsed_result[5]
-            update_required = parsed_result[6]  # From the API response
-            substantially_different = parsed_result[7]  # From the API response or calculated
-            consistent_with_model_knowledge = parsed_result[8] if len(parsed_result) > 8 else None
-            
-            # If update_required wasn't set by the API, set it based on substantially_different
-            if update_required is None:
-                update_required = substantially_different
-            
-            row_results[target.column] = {
-                'value': value,
-                'confidence': numeric_confidence,
-                'sources': sources,
-                'confidence_level': confidence_level, 
-                'quote': quote,
-                'main_source': main_source,
-                'update_required': update_required,
-                'substantially_different': substantially_different
-            }
-            
-            # Add consistent_with_model_knowledge if available
-            if consistent_with_model_knowledge:
-                row_results[target.column]['consistent_with_model_knowledge'] = consistent_with_model_knowledge
-            
-            # Also include any other fields from the API response
-            if isinstance(result, dict) and 'choices' in result and len(result['choices']) > 0:
-                message = result['choices'][0]['message']
-                if 'content' in message:
-                    try:
-                        content_json = json.loads(message.get('content', '{}'))
-                        # Copy over any fields we don't already have
-                        for key, value in content_json.items():
-                            if key not in row_results[target.column]:
-                                row_results[target.column][key] = value
-                    except:
-                        pass  # If we can't parse the content as JSON, just continue
-            
-            # Handle citations if they exist
-            if 'citations' in result:
-                row_results[target.column]['api_citations'] = result['citations']
-                
-                # If sources contains numeric references, convert them to URLs
-                if 'sources' in row_results[target.column] and isinstance(row_results[target.column]['sources'], list):
-                    from url_extractor import ensure_url_sources
-                    source_obj = {
-                        "sources": row_results[target.column]['sources'],
-                        "main_source": row_results[target.column].get('main_source', '')
-                    }
-                    processed = ensure_url_sources(source_obj, result['citations'])
-                    row_results[target.column]['sources'] = processed['sources']
-                    row_results[target.column]['main_source'] = processed['main_source']
-            
-            # Cache result
-            try:
-                s3.put_object(
-                    Bucket=s3_bucket,
-                    Key=f"validation_cache/{cache_key}.json",
-                    Body=json.dumps(row_results[target.column]),
-                    ContentType='application/json'
-                )
-                logger.info(f"Cached result for {target.column}")
-            except Exception as e:
-                logger.error(f"Failed to cache result: {str(e)}")
+            # The result will already be in row_results and cached by process_multiplex_group
         
         # Run the async function
         loop = asyncio.new_event_loop()

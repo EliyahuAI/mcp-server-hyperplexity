@@ -181,90 +181,9 @@ class SchemaValidator:
             return similarity < self.similarity_threshold
     
     def generate_validation_prompt(self, row: Dict[str, Any], target: ValidationTarget, previous_results: Dict[str, Dict[str, Any]] = None) -> str:
-        """Generate a validation prompt for a specific target with context from previous validations."""
-        # Get column configuration
-        column_info = self.column_config.get(target.column, {})
-        description = column_info.get('description', target.description)
-        format_info = column_info.get('format', '')
-        notes = column_info.get('notes', '')
-        examples = self._format_examples(target.column)
-        
-        # Check if we have the validation_prompt template
-        if 'validation_prompt' in self.prompts:
-            # Create context string from ID fields
-            context = ""
-            id_fields = self._get_id_fields(self.validation_targets)
-            if id_fields:
-                context += "ID Fields:\n"
-                for id_field in id_fields:
-                    context += f"  {id_field.column}: {row.get(id_field.column, '')}\n"
-            
-            # Add previous results as context if available
-            if previous_results and len(previous_results) > 0:
-                context += "\nPrevious Validation Results:\n"
-                for col, result in previous_results.items():
-                    confidence_level = result.get('confidence_level', 'UNKNOWN')
-                    value = result.get('value', '')
-                    context += f"  {col}: {value} (Confidence: {confidence_level})\n"
-            
-            # Format the template with our data
-            template = self.prompts['validation_prompt']
-            prompt = template.format(
-                context=context,
-                column=target.column,
-                description=description,
-                format_info=format_info,
-                notes=notes,
-                general_notes=self.config.get('general_notes', ''),
-                examples=examples,
-                value=row.get(target.column, '')
-            )
-            
-            return prompt
-        
-        # Fallback to the original implementation if template is not available
-        prompt = f"""Please validate the following data according to these rules:
-Column: {target.column}
-Current Value: {row.get(target.column, '')}
-Validation Type: {target.validation_type}
-Rules: {json.dumps(target.rules, indent=2)}
-Description: {description}
-Format: {format_info}
-Importance: {target.importance}"""
-
-        if notes:
-            prompt += f"\nNotes: {notes}"
-        if examples:
-            prompt += f"\nExamples:\n{examples}"
-        
-        # Add ID fields for context
-        id_fields = self._get_id_fields(self.validation_targets)
-        if id_fields:
-            prompt += "\n\nID Fields:\n"
-            for id_field in id_fields:
-                prompt += f"  {id_field.column}: {row.get(id_field.column, '')}\n"
-        
-        # Add previous results as context if available
-        if previous_results and len(previous_results) > 0:
-            prompt += "\nPrevious Validation Results:\n"
-            for col, result in previous_results.items():
-                confidence_level = result.get('confidence_level', 'UNKNOWN')
-                value = result.get('value', '')
-                prompt += f"  {col}: {value} (Confidence: {confidence_level})\n"
-            
-        prompt += f"""
-
-Please respond in the following JSON format:
-{{
-    "answer": <the validated value>,
-    "confidence": <confidence level: HIGH, MEDIUM, or LOW>,
-    "quote": <direct quote from source if available>,
-    "sources": [<list of source URLs>],
-    "update_required": <true if value needs to be updated>,
-    "substantially_different": <true if validated value is substantially different from input>
-}}"""
-        
-        return prompt
+        """Generate a validation prompt for a specific target using the multiplex approach."""
+        # Just use the multiplex approach with a single-item list
+        return self.generate_multiplex_prompt(row, [target], previous_results)
     
     def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None) -> str:
         """Generate a validation prompt for multiple targets (multiplex) with progressive context."""
@@ -399,81 +318,19 @@ Importance: {target.importance}
         return formatted
     
     def parse_validation_result(self, result: Dict, target: ValidationTarget, original_value: Any) -> Tuple[Any, float, List[str], str, str, str, bool, bool, Optional[str]]:
-        """Parse the validation result from Perplexity API response."""
-        try:
-            # Extract content from API response
-            if not isinstance(result, dict) or 'choices' not in result:
-                return None, 0.0, [], "LOW", "", "", False, False, None
-            
-            content = result['choices'][0]['message'].get('content', '')
-            if not content:
-                return None, 0.0, [], "LOW", "", "", False, False, None
-            
-            # Parse JSON response
-            try:
-                validation_result = json.loads(content)
-            except json.JSONDecodeError:
-                # Try to extract JSON from markdown code block
-                if "```json" in content:
-                    json_start = content.find("```json") + 7
-                    json_end = content.find("```", json_start)
-                    if json_end > json_start:
-                        validation_result = json.loads(content[json_start:json_end].strip())
-                    else:
-                        return None, 0.0, [], "LOW", "", "", False, False, None
-                else:
-                    return None, 0.0, [], "LOW", "", "", False, False, None
-            
-            # Normalize sources to extract URLs from all text fields
-            validation_result = normalize_sources(validation_result)
-            
-            # Extract values
-            answer = validation_result.get('answer', '')
-            confidence_level = validation_result.get('confidence', 'LOW')
-            quote = validation_result.get('quote', '')
-            sources = validation_result.get('sources', [])
-            update_required = validation_result.get('update_required', False)
-            consistent_with_model_knowledge = validation_result.get('consistent_with_model_knowledge', '')
-            
-            # Lower confidence if not consistent with model knowledge
-            if consistent_with_model_knowledge and 'no' in consistent_with_model_knowledge.lower():
-                if confidence_level == 'HIGH':
-                    confidence_level = 'MEDIUM'
-                elif confidence_level == 'MEDIUM':
-                    confidence_level = 'LOW'
-                
-                # Add the inconsistency note to the quote
-                if quote and consistent_with_model_knowledge:
-                    quote = f"{quote} NOTE: {consistent_with_model_knowledge}"
-            
-            # Determine if substantially different
-            substantially_different = validation_result.get('substantially_different', None)
-            if substantially_different is None:
-                substantially_different = self._is_substantially_different(original_value, answer)
-            
-            # Map confidence level to numeric value
-            confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
-            numeric_confidence = confidence_map.get(confidence_level, 0.5)
-            
-            # Convert any numeric references in sources to actual URLs using citations from API
-            if 'citations' in result and isinstance(result['citations'], list):
-                citations = result['citations']
-                source_obj = {
-                    "sources": sources,
-                    "main_source": sources[0] if sources else ""
-                }
-                processed_sources = ensure_url_sources(source_obj, citations)
-                sources = processed_sources["sources"]
-                main_source = processed_sources["main_source"]
-            else:
-                # Get main source if available
-                main_source = sources[0] if sources else ""
-            
-            return answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, consistent_with_model_knowledge
-            
-        except Exception as e:
-            logger.error(f"Error parsing validation result: {str(e)}")
-            return None, 0.0, [], "LOW", "", "", False, False, None
+        """Parse the validation result from Perplexity API response using the multiplex approach."""
+        # Create a simple row with just the target column for the multiplex parser
+        row = {target.column: original_value}
+        
+        # Use the multiplex parser but only extract the single target's data
+        results_dict = self.parse_multiplex_result(result, row)
+        
+        # Return the result for the specific target if available
+        if target.column in results_dict:
+            return results_dict[target.column]
+        
+        # Return defaults if not found
+        return None, 0.0, [], "LOW", "", "", False, False, None
     
     def parse_multiplex_result(self, result: Dict, row: Dict[str, Any]) -> Dict[str, Tuple[Any, float, List[str], str, str, str, bool, bool, Optional[str]]]:
         """Parse results from a multiplex validation request."""
