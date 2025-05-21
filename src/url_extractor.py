@@ -3,12 +3,15 @@ Module for extracting and normalizing URLs from text.
 """
 import re
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 
 logger = logging.getLogger()
 
 # Regular expression to match URLs
 URL_PATTERN = r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+(?:/[-\w%!.~\'*,;:=+()@/&?#[\]]*)?'
+
+# Regular expression to match reference numbers like [1], [2], etc.
+REF_NUMBER_PATTERN = r'\[(\d+)\]'
 
 def extract_urls_from_text(text: str) -> List[str]:
     """
@@ -35,6 +38,27 @@ def extract_urls_from_text(text: str) -> List[str]:
     
     return cleaned_urls
 
+def extract_reference_numbers(text: str) -> List[int]:
+    """
+    Extract reference numbers like [1], [2] from text.
+    
+    Args:
+        text: The text to extract reference numbers from
+        
+    Returns:
+        List of extracted reference numbers as integers
+    """
+    if not text:
+        return []
+    
+    # Find all matches of the reference pattern
+    matches = re.findall(REF_NUMBER_PATTERN, text)
+    
+    # Convert to integers
+    numbers = [int(m) for m in matches]
+    
+    return numbers
+
 def extract_main_url_from_quote(quote: str) -> Optional[str]:
     """
     Extract the main URL from a quote, typically at the end.
@@ -54,6 +78,111 @@ def extract_main_url_from_quote(quote: str) -> Optional[str]:
         return urls[-1]  # Return the last URL found
     
     return None
+
+def extract_references_from_content(content: str) -> Dict[int, str]:
+    """
+    Extract references section from content and parse it.
+    
+    Args:
+        content: The full API response content
+        
+    Returns:
+        Dictionary mapping reference numbers to URLs
+    """
+    references = {}
+    
+    # Look for a REFERENCES section
+    matches = re.search(r'REFERENCES:\s*([\s\S]+?)(?:\n\n|\Z)', content, re.IGNORECASE)
+    if not matches:
+        return references
+    
+    references_section = matches.group(1)
+    
+    # Parse each reference line
+    # Format is expected to be: [number] URL
+    for line in references_section.strip().split('\n'):
+        # Find the reference number
+        ref_match = re.match(r'\[(\d+)\]\s*(.*)', line.strip())
+        if ref_match:
+            ref_num = int(ref_match.group(1))
+            url = ref_match.group(2).strip()
+            # Verify it's a URL
+            if re.match(URL_PATTERN, url):
+                references[ref_num] = url
+    
+    return references
+
+def parse_multiplex_with_references(content: str) -> Tuple[List[Dict[str, Any]], Dict[int, str]]:
+    """
+    Parse a multiplex response with a references section.
+    
+    Args:
+        content: The full API response content
+        
+    Returns:
+        Tuple of (parsed JSON array, references dictionary)
+    """
+    # Extract the JSON part (which should be inside a code block)
+    json_match = re.search(r'```(?:json)?\s*([\s\S]+?)```', content)
+    
+    if not json_match:
+        # Try to extract any JSON array
+        json_match = re.search(r'\[\s*{[\s\S]+?}\s*\]', content)
+        if not json_match:
+            logger.error("Could not find JSON array in content")
+            return [], {}
+    
+    json_str = json_match.group(1)
+    
+    # Parse the JSON
+    try:
+        import json
+        items = json.loads(json_str)
+        if not isinstance(items, list):
+            logger.error(f"Expected list but got {type(items)}")
+            return [], {}
+    except Exception as e:
+        logger.error(f"Error parsing JSON: {str(e)}")
+        return [], {}
+    
+    # Extract references
+    references = extract_references_from_content(content)
+    
+    return items, references
+
+def apply_references_to_items(items: List[Dict[str, Any]], references: Dict[int, str]) -> List[Dict[str, Any]]:
+    """
+    Apply references to each item in the list.
+    
+    Args:
+        items: List of parsed JSON items
+        references: Dictionary mapping reference numbers to URLs
+        
+    Returns:
+        Updated list of items with sources added
+    """
+    for item in items:
+        # Extract reference numbers from quote
+        if 'quote' in item and isinstance(item['quote'], str):
+            ref_numbers = extract_reference_numbers(item['quote'])
+            
+            # Add sources field with referenced URLs
+            sources = []
+            for ref_num in ref_numbers:
+                if ref_num in references:
+                    sources.append(references[ref_num])
+            
+            item['sources'] = sources
+            
+            # Set main_source if we have sources
+            if sources:
+                item['main_source'] = sources[0]
+        
+        # If no sources were found, add an empty array
+        if 'sources' not in item:
+            item['sources'] = []
+    
+    return items
 
 def normalize_sources(response_obj: Dict[str, Any]) -> Dict[str, Any]:
     """

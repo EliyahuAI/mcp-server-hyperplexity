@@ -51,23 +51,23 @@ multiplex_validation: |
 
   {columns_to_validate}
 
-  YOUR TOP PRIORITY is to find and include DIRECT QUOTES from authoritative sources that support your answers. Exact quotes are essential.
+  YOUR TOP PRIORITY is to find and include DIRECT QUOTES from authoritative sources that explicitly support your answers. Exact quotes are essential.
 
   EXTREMELY IMPORTANT FORMATTING REQUIREMENTS:
-  1. The "sources" array MUST contain COMPLETE URL STRINGS for each entry (not numbered references like [1], [2])
-  2. Each "quote" must include the complete URL source at the end of the quote text
-  3. Do not use relative references - always include the full, absolute URL for each source
-  4. All URLs must be valid and accessible web addresses
-  5. Do not include explanatory text outside the JSON structure
+  1. Include a COLLECTIVE REFERENCES section at the bottom of your response
+  2. Each quote MUST end with a reference number like [1], [2], etc.
+  3. Each reference in the REFERENCES section must be a complete URL
+  4. Do not include individual "sources" arrays in each response object
+  5. Do not use relative references - always include the full, absolute URL for each source
+  6. All URLs must be valid and accessible web addresses
 
-  Provide your answer as a VALID JSON array with the following structure (do not include any text outside of this JSON):
+  Provide your answer as a VALID JSON array with the following structure followed by a REFERENCES section:
   ```json
   [
     {{
       "column": "Column Name 1",
       "answer": "validated value 1",
-      "quote": "direct quote from source ending with the complete source URL: https://example.com/page1",
-      "sources": ["https://example.com/page1", "https://example.com/page2"],
+      "quote": "direct quote from source ending with reference number [1]",
       "confidence": "HIGH/MEDIUM/LOW",
       "update_required": true,
       "substantially_different": true,
@@ -76,8 +76,7 @@ multiplex_validation: |
     {{
       "column": "Column Name 2",
       "answer": "validated value 2",
-      "quote": "another direct quote ending with the complete source URL: https://example.com/page3",
-      "sources": ["https://example.com/page3"],
+      "quote": "another direct quote ending with reference number [2]",
       "confidence": "HIGH/MEDIUM/LOW",
       "update_required": true,
       "substantially_different": false,
@@ -85,6 +84,10 @@ multiplex_validation: |
     }}
   ]
   ```
+
+  REFERENCES:
+  [1] https://example.com/page1
+  [2] https://example.com/page2
 
   If you cannot find information for a specific column, include it in the response with LOW confidence and explain why.
   IMPORTANT: Your response must be a valid JSON array containing objects for ALL the requested columns. 

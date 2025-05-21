@@ -458,7 +458,51 @@ Importance: {target.importance}
                 logger.error("Empty content in API response for multiplex validation")
                 return results
             
-            # Parse JSON response
+            # Try to parse with references section
+            try:
+                items, references = parse_multiplex_with_references(content)
+                if items and references:
+                    logger.info(f"Successfully parsed references format: {len(items)} items, {len(references)} references")
+                    # Apply references to items
+                    items = apply_references_to_items(items, references)
+                    
+                    # Process each item
+                    for item in items:
+                        try:
+                            column = item.get("column", "")
+                            if not column:
+                                continue
+                                
+                            answer = item.get("answer", "")
+                            confidence_level = item.get("confidence", "LOW")
+                            quote = item.get("quote", "")
+                            sources = item.get("sources", [])  # This is populated by apply_references_to_items
+                            update_required = item.get("update_required", False)
+                            main_source = item.get("main_source", "")  # Also populated by apply_references_to_items
+                            
+                            # Get original value
+                            original_value = row.get(column, "")
+                            
+                            # Determine if substantially different
+                            substantially_different = item.get("substantially_different", None)
+                            if substantially_different is None:
+                                substantially_different = self._is_substantially_different(original_value, answer)
+                            
+                            # Map confidence level to numeric value
+                            confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
+                            numeric_confidence = confidence_map.get(confidence_level, 0.5)
+                            
+                            results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different)
+                            logger.info(f"Processed multiplex result for column {column}")
+                        except Exception as item_error:
+                            logger.error(f"Error processing multiplex item: {str(item_error)}")
+                    
+                    return results
+            except Exception as ref_error:
+                logger.warning(f"Failed to parse with references format: {str(ref_error)}")
+                # Fall back to standard parsing
+            
+            # Standard JSON parsing (fallback)
             try:
                 validation_results = json.loads(content)
                 if not isinstance(validation_results, list):
