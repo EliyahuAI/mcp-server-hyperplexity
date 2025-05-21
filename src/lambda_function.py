@@ -146,25 +146,19 @@ async def validate_with_perplexity(
         logger.error(f"Error calling Perplexity API: {str(e)}")
         raise
 
-def get_cache_key(row: Dict[str, Any], target: str, validation_context: str = None) -> str:
+def get_cache_key(prompt: str, model: str = "sonar-pro") -> str:
     """
-    Generate a unique cache key for validation request.
+    Generate a unique cache key for validation request based only on the prompt and model.
     
     Args:
-        row: The data row being validated
-        target: The column/field being validated
-        validation_context: Optional string describing the validation context (e.g., "isolated", "group:1,2,3")
-                            to ensure different caching for isolated vs group validations
+        prompt: The prompt text sent to the API
+        model: The model name used for the request
+        
+    Returns:
+        A hash string to use as the cache key
     """
-    # Sort keys to ensure consistent hashing
-    sorted_row = dict(sorted(row.items()))
-    row_str = json.dumps(sorted_row, sort_keys=True)
-    
-    # Include validation context in the cache key if provided
-    if validation_context:
-        return hashlib.md5(f"{row_str}:{target}:{validation_context}".encode()).hexdigest()
-    else:
-        return hashlib.md5(f"{row_str}:{target}".encode()).hexdigest()
+    # Create a hash of prompt + model for a deterministic cache key
+    return hashlib.md5(f"{prompt}:{model}".encode()).hexdigest()
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests."""
@@ -457,18 +451,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if not validation_targets:
                 logger.info("No non-ID/IGNORED fields to validate in this group")
                 return
-            
-            # Create validation context string to differentiate cache for different validation types
-            validation_context = None
-            if is_isolated_validation or len(validation_targets) == 1:
-                # Isolated validation should have its own cache key
-                validation_context = f"isolated:{validation_targets[0].column}"
-                logger.info(f"Using isolated validation context for {validation_targets[0].column}")
-            else:
-                # Group validation with unique context for this specific group
-                group_columns = ",".join([t.column for t in validation_targets])
-                validation_context = f"group:{group_columns}"
-                logger.info(f"Using group validation context: {validation_context}")
                 
             # Log clear info about what we're processing
             if len(validation_targets) == 1:
@@ -478,43 +460,72 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             else:
                 logger.info(f"Processing {len(validation_targets)} fields together using multiplex format")
             
-            # Check if all targets in this group are in cache
-            all_cached = True
-            cached_results = {}
-            
-            for target in validation_targets:
-                cache_key = get_cache_key(row, target.column, validation_context)
-                try:
-                    cache_response = s3.get_object(
-                        Bucket=s3_bucket,
-                        Key=f"validation_cache/{cache_key}.json"
-                    )
-                    cached_result = json.loads(cache_response['Body'].read())
-                    cached_results[target.column] = cached_result
-                    total_cache_hits += 1
-                    logger.info(f"Cache hit for {target.column} with context: {validation_context}")
-                except:
-                    all_cached = False
-                    total_cache_misses += 1
-                    logger.info(f"Cache miss for {target.column} with context: {validation_context}")
-                    break
-            
-            if all_cached:
-                # If everything was cached, use cached results
-                if len(validation_targets) == 1:
-                    logger.info(f"Using cached result for field {validation_targets[0].column}")
-                else:
-                    logger.info(f"Using cached results for all {len(validation_targets)} columns in search group")
-                for column, result in cached_results.items():
-                    row_results[column] = result
-                return
-            
-            # Generate multiplex prompt and validate
+            # Generate multiplex prompt first - we need this for the cache key
             logger.info(f"Generating multiplex prompt for {len(validation_targets)} field(s) with context from previous groups")
             prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results)
             
+            # Use default model
+            model = "sonar-pro"
+            
+            # Generate cache key based on the prompt and model only
+            cache_key = get_cache_key(prompt, model)
+            logger.info(f"Using cache key based on prompt hash: {cache_key[:8]}...")
+            
+            # Check if this exact prompt has been cached before
+            try:
+                cache_response = s3.get_object(
+                    Bucket=s3_bucket,
+                    Key=f"validation_cache/{cache_key}.json"
+                )
+                # The cache contains the full API response
+                cached_api_response = json.loads(cache_response['Body'].read())
+                total_cache_hits += 1
+                logger.info(f"Cache hit for prompt with key: {cache_key[:8]}...")
+                
+                # Parse the cached API response
+                parsed_results = validator.parse_multiplex_result(cached_api_response, row)
+                
+                # Process results as if we had just called the API
+                for target in validation_targets:
+                    if target.column in parsed_results:
+                        parsed_result = parsed_results[target.column]
+                        row_results[target.column] = {
+                            'value': parsed_result[0],
+                            'confidence': parsed_result[1],
+                            'sources': parsed_result[2],
+                            'confidence_level': parsed_result[3],
+                            'quote': parsed_result[4],
+                            'main_source': parsed_result[5],
+                            'update_required': parsed_result[6],
+                            'substantially_different': parsed_result[7],
+                        }
+                        
+                        # Add consistent_with_model_knowledge if available
+                        if len(parsed_result) > 8:
+                            row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
+                
+                logger.info(f"Applied cached results for {len(parsed_results)} fields")
+                return
+                
+            except Exception as e:
+                # Cache miss - need to call the API
+                total_cache_misses += 1
+                logger.info(f"Cache miss for prompt with key: {cache_key[:8]}..., will call API")
+            
             # Call Perplexity API
-            result = await validate_with_perplexity(session, prompt, api_key)
+            result = await validate_with_perplexity(session, prompt, api_key, model)
+            
+            # Cache the complete API response
+            try:
+                s3.put_object(
+                    Bucket=s3_bucket,
+                    Key=f"validation_cache/{cache_key}.json",
+                    Body=json.dumps(result),
+                    ContentType='application/json'
+                )
+                logger.info(f"Cached API response with key: {cache_key[:8]}...")
+            except Exception as e:
+                logger.error(f"Failed to cache API response: {str(e)}")
             
             # Parse multiplex results
             parsed_results = validator.parse_multiplex_result(result, row)
@@ -566,19 +577,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             processed = ensure_url_sources(source_obj, result['citations'])
                             row_results[target.column]['sources'] = processed['sources']
                             row_results[target.column]['main_source'] = processed['main_source']
-                    
-                    # Cache result
-                    try:
-                        cache_key = get_cache_key(row, target.column, validation_context)
-                        s3.put_object(
-                            Bucket=s3_bucket,
-                            Key=f"validation_cache/{cache_key}.json",
-                            Body=json.dumps(row_results[target.column]),
-                            ContentType='application/json'
-                        )
-                        logger.info(f"Cached multiplex result for {target.column} with context: {validation_context}")
-                    except Exception as e:
-                        logger.error(f"Failed to cache multiplex result for {target.column} with context {validation_context}: {str(e)}")
                 else:
                     # If column wasn't found in multiplex result, log an error and set a placeholder
                     logger.error(f"Column {target.column} not found in multiplex result")
