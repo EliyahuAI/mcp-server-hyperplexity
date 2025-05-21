@@ -3,7 +3,7 @@ Module for extracting and normalizing URLs from text.
 """
 import re
 import logging
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Union
 
 logger = logging.getLogger()
 
@@ -239,6 +239,66 @@ def apply_references_to_items(items: List[Dict[str, Any]], references: Dict[int,
             item['sources'] = []
     
     return items
+
+def ensure_url_sources(result_obj: Dict[str, Any], citations: List[str]) -> Dict[str, Any]:
+    """
+    Ensure all sources are proper URLs, replacing reference numbers with actual URLs.
+    
+    Args:
+        result_obj: The result object containing sources and main_source
+        citations: List of citations from the API
+        
+    Returns:
+        Updated result object with URL sources and main_source
+    """
+    if not isinstance(result_obj, dict):
+        return result_obj
+    
+    # Process sources array
+    if 'sources' in result_obj and isinstance(result_obj['sources'], list):
+        # Create a new list for URL sources
+        url_sources = []
+        
+        for source in result_obj['sources']:
+            if isinstance(source, str):
+                # If it looks like a URL, keep it
+                if re.match(URL_PATTERN, source):
+                    url_sources.append(source)
+                # If it's a number or [number], try to map it to a citation
+                elif source.isdigit() or (source.startswith('[') and source.endswith(']')):
+                    index = int(source.strip('[]')) - 1  # Convert to 0-based index
+                    if 0 <= index < len(citations):
+                        url_sources.append(citations[index])
+                    else:
+                        # If we can't map it, keep it as is
+                        url_sources.append(source)
+                else:
+                    # Keep other strings as-is
+                    url_sources.append(source)
+        
+        # Update sources with URL sources
+        result_obj['sources'] = url_sources
+    
+    # Process main_source
+    if 'main_source' in result_obj:
+        main_source = result_obj['main_source']
+        if isinstance(main_source, str):
+            # If it's already a URL, keep it
+            if re.match(URL_PATTERN, main_source):
+                pass  # No change needed
+            # If it's a number or [number], try to map it to a citation
+            elif main_source.isdigit() or (main_source.startswith('[') and main_source.endswith(']')):
+                index = int(main_source.strip('[]')) - 1  # Convert to 0-based index
+                if 0 <= index < len(citations):
+                    result_obj['main_source'] = citations[index]
+            # If there are sources, use the first one as main_source
+            elif result_obj.get('sources') and len(result_obj['sources']) > 0:
+                result_obj['main_source'] = result_obj['sources'][0]
+    elif result_obj.get('sources') and len(result_obj['sources']) > 0:
+        # If there's no main_source but there are sources, use the first one
+        result_obj['main_source'] = result_obj['sources'][0]
+    
+    return result_obj
 
 def normalize_sources(response_obj: Dict[str, Any]) -> Dict[str, Any]:
     """

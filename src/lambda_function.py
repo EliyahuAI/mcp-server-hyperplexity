@@ -321,6 +321,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Include any citations from the API response
                     if 'citations' in result:
                         row_results[target.column]['api_citations'] = result['citations']
+                        
+                        # If sources contains numeric references, convert them to URLs
+                        if 'sources' in row_results[target.column] and isinstance(row_results[target.column]['sources'], list):
+                            from url_extractor import ensure_url_sources
+                            source_obj = {
+                                "sources": row_results[target.column]['sources'],
+                                "main_source": row_results[target.column].get('main_source', '')
+                            }
+                            processed = ensure_url_sources(source_obj, result['citations'])
+                            row_results[target.column]['sources'] = processed['sources']
+                            row_results[target.column]['main_source'] = processed['main_source']
                     
                     # Cache result
                     try:
@@ -412,6 +423,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 row_results[target.column][key] = value
                     except:
                         pass  # If we can't parse the content as JSON, just continue
+            
+            # Handle citations if they exist
+            if 'citations' in result:
+                row_results[target.column]['api_citations'] = result['citations']
+                
+                # If sources contains numeric references, convert them to URLs
+                if 'sources' in row_results[target.column] and isinstance(row_results[target.column]['sources'], list):
+                    from url_extractor import ensure_url_sources
+                    source_obj = {
+                        "sources": row_results[target.column]['sources'],
+                        "main_source": row_results[target.column].get('main_source', '')
+                    }
+                    processed = ensure_url_sources(source_obj, result['citations'])
+                    row_results[target.column]['sources'] = processed['sources']
+                    row_results[target.column]['main_source'] = processed['main_source']
             
             # Cache result
             try:

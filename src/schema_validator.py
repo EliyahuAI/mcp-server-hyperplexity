@@ -9,7 +9,7 @@ from pathlib import Path
 # Import prompt_loader
 try:
     from prompt_loader import load_prompts
-    from url_extractor import normalize_sources, extract_urls_from_text, extract_main_url_from_quote
+    from url_extractor import normalize_sources, extract_urls_from_text, extract_main_url_from_quote, ensure_url_sources, extract_citations_from_api_response
 except ImportError:
     # For local development, might need to adjust the path
     import sys
@@ -17,7 +17,7 @@ except ImportError:
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     try:
         from prompt_loader import load_prompts
-        from url_extractor import normalize_sources, extract_urls_from_text, extract_main_url_from_quote
+        from url_extractor import normalize_sources, extract_urls_from_text, extract_main_url_from_quote, ensure_url_sources, extract_citations_from_api_response
     except ImportError:
         # Fallback if module can't be imported
         def load_prompts(path=None):
@@ -31,6 +31,12 @@ except ImportError:
             
         def extract_main_url_from_quote(quote):
             return None
+            
+        def ensure_url_sources(result_obj, citations):
+            return result_obj
+            
+        def extract_citations_from_api_response(result):
+            return []
 
 logger = logging.getLogger()
 
@@ -448,8 +454,19 @@ Importance: {target.importance}
             confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
             numeric_confidence = confidence_map.get(confidence_level, 0.5)
             
-            # Get main source if available
-            main_source = sources[0] if sources else ""
+            # Convert any numeric references in sources to actual URLs using citations from API
+            if 'citations' in result and isinstance(result['citations'], list):
+                citations = result['citations']
+                source_obj = {
+                    "sources": sources,
+                    "main_source": sources[0] if sources else ""
+                }
+                processed_sources = ensure_url_sources(source_obj, citations)
+                sources = processed_sources["sources"]
+                main_source = processed_sources["main_source"]
+            else:
+                # Get main source if available
+                main_source = sources[0] if sources else ""
             
             return answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, consistent_with_model_knowledge
             
@@ -524,8 +541,18 @@ Importance: {target.importance}
                             confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
                             numeric_confidence = confidence_map.get(confidence_level, 0.5)
                             
-                            # Get main source if available - ensure it's a complete URL
-                            main_source = sources[0] if sources else ""
+                            # Convert any numeric references in sources to actual URLs using citations
+                            if citations:
+                                source_obj = {
+                                    "sources": sources,
+                                    "main_source": sources[0] if sources else ""
+                                }
+                                processed_sources = ensure_url_sources(source_obj, citations)
+                                sources = processed_sources["sources"]
+                                main_source = processed_sources["main_source"]
+                            else:
+                                # Get main source if available
+                                main_source = sources[0] if sources else ""
                             
                             results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, consistent_with_model_knowledge)
                             logger.info(f"Processed multiplex result for column {column} using API citations")
@@ -645,8 +672,18 @@ Importance: {target.importance}
                     confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
                     numeric_confidence = confidence_map.get(confidence_level, 0.5)
                     
-                    # Get main source if available
-                    main_source = sources[0] if sources else ""
+                    # Convert any numeric references in sources to actual URLs using citations
+                    if citations:
+                        source_obj = {
+                            "sources": sources,
+                            "main_source": sources[0] if sources else ""
+                        }
+                        processed_sources = ensure_url_sources(source_obj, citations)
+                        sources = processed_sources["sources"]
+                        main_source = processed_sources["main_source"]
+                    else:
+                        # Get main source if available
+                        main_source = sources[0] if sources else ""
                     
                     results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, None)
                     logger.info(f"Processed multiplex result for column {column}")
