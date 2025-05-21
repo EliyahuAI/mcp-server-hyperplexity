@@ -243,6 +243,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             row_results['next_check'] = next_check.isoformat() if next_check else None
             row_results['reasons'] = reasons
             
+            # Get holistic validation results (already done in determine_next_check_date)
+            holistic_validation = row_results.get('holistic_validation', {})
+            
+            # Add a summary of the holistic validation
+            if holistic_validation:
+                row_results['holistic_summary'] = {
+                    'is_consistent': holistic_validation.get('is_consistent', True),
+                    'overall_confidence': holistic_validation.get('overall_confidence', 'HIGH'),
+                    'concerns_count': len(holistic_validation.get('concerns', [])),
+                    'needs_review': holistic_validation.get('needs_review', False),
+                    'priority_fields': holistic_validation.get('priority_fields', [])
+                }
+                
+                # Log holistic validation results
+                logger.info(f"Holistic validation: {json.dumps(row_results['holistic_summary'], indent=2)}")
+                if holistic_validation.get('concerns', []):
+                    logger.info(f"Concerns: {holistic_validation['concerns']}")
+            
             return row_idx, row_results
         
         async def process_multiplex_group(session, row, row_results, targets, previous_results=None):

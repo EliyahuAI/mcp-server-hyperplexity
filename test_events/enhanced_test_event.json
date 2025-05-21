@@ -36,7 +36,7 @@
           "format": "email"
         },
         "description": "Validate email format",
-        "importance": "HIGH",
+        "importance": "CRITICAL",
         "format": "valid email address",
         "notes": "Must be a valid email format",
         "examples": ["user@example.com", "name.surname@company.com"],
@@ -54,6 +54,19 @@
         "notes": "Must be one of the allowed status values",
         "examples": ["active", "inactive", "pending"],
         "search_group": 2
+      }
+    ],
+    "field_relationships": [
+      {
+        "type": "required_together",
+        "fields": ["name", "email"],
+        "description": "Name and email must both be present or both be absent"
+      },
+      {
+        "type": "dependent",
+        "primary": "status",
+        "dependent": ["name", "email"],
+        "description": "If status is set, name and email must also be set"
       }
     ],
     "cache_ttl_days": 30,

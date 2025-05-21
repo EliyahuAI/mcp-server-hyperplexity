@@ -56,7 +56,7 @@ class SchemaValidator:
         self.primary_key = config.get('primary_key', [])
         self.cache_ttl_days = config.get('cache_ttl_days', 30)
         self.column_config = config.get('column_config', {})
-        self.similarity_threshold = config.get('similarity_threshold', 0.8)  # Threshold for determining substantial difference
+        self.similarity_threshold = config.get('similarity_threshold', 0.8)  # Threshold for determining substantially difference
         
         # Load prompt templates
         self.prompts = load_prompts()
@@ -696,15 +696,271 @@ Importance: {target.importance}
             logger.error(f"Error parsing multiplex validation results: {str(e)}")
             return results
     
+    def perform_holistic_validation(
+        self, 
+        row: Dict[str, Any],
+        validation_results: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Perform a holistic validation of the entire row to check for consistencies
+        and overall correctness.
+        
+        Args:
+            row: The original row data
+            validation_results: The individual field validation results
+            
+        Returns:
+            A dictionary containing the holistic validation results
+        """
+        # Initialize holistic validation result
+        holistic_result = {
+            "is_consistent": True,
+            "overall_confidence": "HIGH",
+            "concerns": [],
+            "needs_review": False,
+            "priority_fields": []
+        }
+        
+        # Check if there are any inconsistencies between related fields
+        self._check_field_relationships(row, validation_results, holistic_result)
+        
+        # Check for pattern of low confidence results
+        self._evaluate_confidence_pattern(validation_results, holistic_result)
+        
+        # Check for critical fields with issues
+        self._check_critical_fields(validation_results, holistic_result)
+        
+        # Set overall confidence level based on concerns
+        if len(holistic_result["concerns"]) > 3:
+            holistic_result["overall_confidence"] = "LOW"
+            holistic_result["needs_review"] = True
+        elif len(holistic_result["concerns"]) > 0:
+            holistic_result["overall_confidence"] = "MEDIUM"
+            if any("CRITICAL" in concern for concern in holistic_result["concerns"]):
+                holistic_result["needs_review"] = True
+        
+        return holistic_result
+    
+    def _check_field_relationships(
+        self,
+        row: Dict[str, Any],
+        validation_results: Dict[str, Dict[str, Any]],
+        holistic_result: Dict[str, Any]
+    ) -> None:
+        """Check for inconsistencies between related fields."""
+        # Get list of validated fields
+        validated_fields = [
+            field for field in validation_results.keys() 
+            if field not in ['next_check', 'reasons', 'holistic_validation']
+        ]
+        
+        # Identify field relationships from config
+        related_fields = self.config.get('field_relationships', [])
+        
+        # Check each field relationship
+        for relation in related_fields:
+            # Skip if any fields in the relationship are missing
+            if not all(field in validated_fields for field in relation['fields']):
+                continue
+            
+            # Check the relationship type
+            if relation['type'] == 'mutually_exclusive':
+                # Fields should not all have values together
+                non_empty_count = sum(
+                    1 for field in relation['fields'] 
+                    if validation_results[field].get('value') and str(validation_results[field].get('value')).strip()
+                )
+                if non_empty_count > 1:
+                    holistic_result["concerns"].append(
+                        f"Mutually exclusive fields have values: {', '.join(relation['fields'])}"
+                    )
+                    holistic_result["is_consistent"] = False
+                    holistic_result["priority_fields"].extend(relation['fields'])
+            
+            elif relation['type'] == 'required_together':
+                # Either all fields should have values or none should
+                has_value = [
+                    bool(validation_results[field].get('value') and str(validation_results[field].get('value')).strip())
+                    for field in relation['fields']
+                ]
+                if any(has_value) and not all(has_value):
+                    holistic_result["concerns"].append(
+                        f"Required together fields are inconsistent: {', '.join(relation['fields'])}"
+                    )
+                    holistic_result["is_consistent"] = False
+                    empty_fields = [relation['fields'][i] for i, v in enumerate(has_value) if not v]
+                    holistic_result["priority_fields"].extend(empty_fields)
+            
+            elif relation['type'] == 'dependent':
+                # If primary field has value, dependent fields should also have values
+                primary_field = relation['primary']
+                dependent_fields = relation['dependent']
+                
+                if primary_field in validated_fields and validation_results[primary_field].get('value'):
+                    for dep_field in dependent_fields:
+                        if dep_field in validated_fields and not validation_results[dep_field].get('value'):
+                            holistic_result["concerns"].append(
+                                f"Dependent field '{dep_field}' is empty but primary field '{primary_field}' has value"
+                            )
+                            holistic_result["is_consistent"] = False
+                            holistic_result["priority_fields"].append(dep_field)
+        
+        # Look for inconsistencies in date fields
+        date_fields = [
+            field for field in validated_fields
+            if any(date_term in field.lower() for date_term in ['date', 'year', 'month', 'day'])
+        ]
+        
+        if len(date_fields) > 1:
+            # Check for chronological consistency
+            for i, field1 in enumerate(date_fields):
+                for field2 in date_fields[i+1:]:
+                    # Skip if either field doesn't have a configuration
+                    if field1 not in self.column_config or field2 not in self.column_config:
+                        continue
+                    
+                    field1_config = self.column_config.get(field1, {})
+                    field2_config = self.column_config.get(field2, {})
+                    
+                    # Check if there's a chronological relationship defined
+                    rel_type = None
+                    if 'chronological_relation' in field1_config:
+                        for rel in field1_config['chronological_relation']:
+                            if rel['field'] == field2:
+                                rel_type = rel['type']
+                                break
+                    
+                    if rel_type:
+                        field1_value = validation_results[field1].get('value')
+                        field2_value = validation_results[field2].get('value')
+                        
+                        if field1_value and field2_value:
+                            # Try to parse as dates for comparison
+                            try:
+                                # This is a simplified check - in practice, you'd need more robust date parsing
+                                field1_date = field1_value
+                                field2_date = field2_value
+                                
+                                inconsistent = False
+                                if rel_type == 'before' and field1_date > field2_date:
+                                    inconsistent = True
+                                elif rel_type == 'after' and field1_date < field2_date:
+                                    inconsistent = True
+                                
+                                if inconsistent:
+                                    holistic_result["concerns"].append(
+                                        f"Date inconsistency: {field1} should be {rel_type} {field2}"
+                                    )
+                                    holistic_result["is_consistent"] = False
+                                    holistic_result["priority_fields"].extend([field1, field2])
+                            except:
+                                # If we can't parse as dates, skip this check
+                                pass
+    
+    def _evaluate_confidence_pattern(
+        self,
+        validation_results: Dict[str, Dict[str, Any]],
+        holistic_result: Dict[str, Any]
+    ) -> None:
+        """Evaluate the pattern of confidence levels across all fields."""
+        # Count confidence levels
+        confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        total_fields = 0
+        
+        for field, result in validation_results.items():
+            # Skip non-field entries
+            if field in ['next_check', 'reasons', 'holistic_validation']:
+                continue
+            
+            confidence_level = result.get('confidence_level', 'LOW')
+            confidence_counts[confidence_level] += 1
+            total_fields += 1
+        
+        # Calculate percentages
+        if total_fields > 0:
+            low_percentage = (confidence_counts["LOW"] / total_fields) * 100
+            medium_percentage = (confidence_counts["MEDIUM"] / total_fields) * 100
+            
+            # Identify patterns of concern
+            if low_percentage > 30:
+                holistic_result["concerns"].append(
+                    f"High percentage of LOW confidence results: {low_percentage:.1f}%"
+                )
+                holistic_result["needs_review"] = True
+            
+            if (low_percentage + medium_percentage) > 60:
+                holistic_result["concerns"].append(
+                    f"Majority of fields have less than HIGH confidence: {low_percentage + medium_percentage:.1f}%"
+                )
+                holistic_result["overall_confidence"] = "MEDIUM"
+            
+            # If more than 20% are low confidence, flag as needing review
+            if low_percentage > 20:
+                holistic_result["needs_review"] = True
+    
+    def _check_critical_fields(
+        self,
+        validation_results: Dict[str, Dict[str, Any]],
+        holistic_result: Dict[str, Any]
+    ) -> None:
+        """Check if critical fields have issues."""
+        critical_fields = self._get_critical_fields(self.validation_targets)
+        high_importance_fields = [t for t in self.validation_targets if t.importance.upper() == "HIGH"]
+        
+        for field in critical_fields:
+            if field.column not in validation_results:
+                continue
+                
+            result = validation_results[field.column]
+            confidence_level = result.get('confidence_level', 'LOW')
+            
+            if confidence_level != 'HIGH':
+                holistic_result["concerns"].append(
+                    f"CRITICAL field '{field.column}' has {confidence_level} confidence"
+                )
+                holistic_result["needs_review"] = True
+                holistic_result["priority_fields"].append(field.column)
+            
+            if result.get('update_required', False):
+                holistic_result["concerns"].append(
+                    f"CRITICAL field '{field.column}' requires update"
+                )
+                holistic_result["priority_fields"].append(field.column)
+        
+        # Also check HIGH importance fields
+        for field in high_importance_fields:
+            if field.column not in validation_results:
+                continue
+                
+            result = validation_results[field.column]
+            confidence_level = result.get('confidence_level', 'LOW')
+            
+            if confidence_level == 'LOW':
+                holistic_result["concerns"].append(
+                    f"HIGH importance field '{field.column}' has LOW confidence"
+                )
+                holistic_result["priority_fields"].append(field.column)
+    
     def determine_next_check_date(
         self,
         row: Dict[str, Any],
         validation_results: Dict[str, Dict[str, Any]]
     ) -> Tuple[Optional[datetime], List[str]]:
-        """Determine the next check date based on validation results."""
+        """Determine the next check date based on validation results and holistic validation."""
         reasons = []
         min_confidence = 0.8  # Minimum confidence threshold
         
+        # Perform holistic validation
+        holistic_result = self.perform_holistic_validation(row, validation_results)
+        
+        # Store holistic validation result in the validation_results
+        validation_results['holistic_validation'] = holistic_result
+        
+        # If holistic validation found issues, add to reasons
+        if holistic_result["concerns"]:
+            reasons.extend(holistic_result["concerns"])
+        
+        # Check individual fields
         for target in self.validation_targets:
             if target.column in validation_results:
                 result = validation_results[target.column]
@@ -727,11 +983,18 @@ Importance: {target.importance}
                     reasons.append(f"Invalid value for {target.column}: {quote}")
                     continue
         
-        if reasons:
-            # If there are issues, schedule next check in 1 day
+        # Determine when to schedule the next check
+        if holistic_result["needs_review"]:
+            # If holistic validation indicates need for review, schedule sooner
+            next_check = datetime.now() + timedelta(days=1)
+            if not reasons:
+                reasons.append("Holistic validation indicates need for review")
+            return next_check, reasons
+        elif reasons:
+            # If there are other issues, schedule next check in 1 day
             next_check = datetime.now() + timedelta(days=1)
             return next_check, reasons
-        
-        # If all validations passed, schedule next check based on cache TTL
-        next_check = datetime.now() + timedelta(days=self.cache_ttl_days)
-        return next_check, ["All validations passed"] 
+        else:
+            # If all validations passed, schedule next check based on cache TTL
+            next_check = datetime.now() + timedelta(days=self.cache_ttl_days)
+            return next_check, ["All validations passed"] 

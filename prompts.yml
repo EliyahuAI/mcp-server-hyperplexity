@@ -27,15 +27,16 @@ validation_prompt: |
   2. Do NOT embed full URLs directly in your text - use the reference numbers only
   3. Make sure each citation refers to a specific authoritative source
 
-  Please provide the following information in a clear, structured format:
-
-  ANSWER: [correct value for this column - provide ONLY the exact value, no explanations]
-  CONFIDENCE: [HIGH/MEDIUM/LOW]
-  SOURCES: [Brief description with reference numbers, e.g., "Confirmed by multiple sources [1][2]"]
-  UPDATE_REQUIRED: [YES/NO - indicate if the current value should be updated]
-  SUBSTANTIALLY_DIFFERENT: [YES/NO - indicate if your answer is substantially different from the current value]
-  CONSISTENT_WITH_MODEL_KNOWLEDGE: [YES/NO - indicate if your answer is consistent with your general knowledge beyond the sources, with brief explanation]
-  EXPLANATION: [brief explanation of why you assigned this confidence level with reference numbers where applicable]
+  Please respond in the following JSON format:
+  {{
+    "answer": <the validated value>,
+    "confidence": <confidence level: HIGH, MEDIUM, or LOW>,
+    "quote": <direct quote from source if available>,
+    "sources": [<list of source URLs>],
+    "update_required": <true if value needs to be updated>,
+    "substantially_different": <true if validated value is substantially different from input>
+    "consistent_with_model_knowledge": <YES/NO - indicate if your answer is consistent with your general knowledge beyond the sources, with brief explanation>
+  }}
 
   If you cannot find the information, indicate this clearly and provide your best estimate with LOW confidence.
 
@@ -86,3 +87,36 @@ multiplex_validation: |
 
   If you cannot find information for a specific column, clearly indicate that with LOW confidence and explain why.
   IMPORTANT: Your response must be a valid JSON array containing objects for ALL the requested columns. 
+
+holistic_validation: |
+  You are a data validation expert performing a holistic check of the entire record. Your task is to analyze all validated fields together to identify any inconsistencies, logical errors, or potential issues.
+
+  General Notes: {general_notes}
+
+  Here are the individual field validation results:
+  {validation_results}
+
+  Context Information:
+  {context}
+
+  Please analyze the entire record and focus on finding:
+  1. Any inconsistencies between related fields
+  2. Logical contradictions in the data
+  3. Patterns of low confidence results that might indicate systematic issues
+  4. Fields with critical importance that have issues
+  5. Overall assessment of data quality and reliability
+
+  Return your findings in this JSON format:
+  {{
+    "is_consistent": <boolean: true if data is internally consistent>,
+    "overall_confidence": <"HIGH", "MEDIUM", or "LOW">,
+    "concerns": [
+      <list of specific concerns or issues identified>,
+      ...
+    ],
+    "needs_review": <boolean: true if manual review is recommended>,
+    "priority_fields": [<list of field names that need priority attention>],
+    "explanation": <detailed explanation of your findings>
+  }}
+
+  If no issues are found, return a simple confirmation of data consistency with HIGH confidence. 
