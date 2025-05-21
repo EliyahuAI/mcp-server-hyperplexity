@@ -167,8 +167,27 @@ def verify_dependencies():
 def copy_source_files():
     """Copy necessary source files."""
     logger.info("Copying source files...")
-    shutil.copy(SRC_DIR / "lambda_function.py", PACKAGE_DIR)
-    shutil.copy(SRC_DIR / "schema_validator.py", PACKAGE_DIR)
+    # Copy lambda_function.py
+    lambda_source = SRC_DIR / "lambda_function.py"
+    shutil.copy(lambda_source, PACKAGE_DIR)
+    # Copy schema_validator.py
+    schema_source = SRC_DIR / "schema_validator.py"
+    shutil.copy(schema_source, PACKAGE_DIR)
+    # Copy prompt_loader.py
+    prompt_loader = SRC_DIR / "prompt_loader.py"
+    if prompt_loader.exists():
+        shutil.copy(prompt_loader, PACKAGE_DIR)
+        logger.info("Copied prompt_loader.py")
+    else:
+        logger.warning(f"prompt_loader.py not found at {prompt_loader}")
+    
+    # Copy prompts.yml
+    prompts_yml = PROJECT_DIR / "prompts.yml"
+    if prompts_yml.exists():
+        shutil.copy(prompts_yml, PACKAGE_DIR)
+        logger.info("Copied prompts.yml")
+    else:
+        logger.warning(f"prompts.yml not found at {prompts_yml}")
 
 def create_zip():
     """Create deployment zip file."""

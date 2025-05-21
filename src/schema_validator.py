@@ -4,6 +4,22 @@ from datetime import datetime, timedelta
 import json
 import logging
 import re
+from pathlib import Path
+
+# Import prompt_loader
+try:
+    from prompt_loader import load_prompts
+except ImportError:
+    # For local development, might need to adjust the path
+    import sys
+    import os
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        from prompt_loader import load_prompts
+    except ImportError:
+        # Fallback if module can't be imported
+        def load_prompts(path=None):
+            return {}
 
 logger = logging.getLogger()
 
@@ -24,6 +40,10 @@ class SchemaValidator:
         self.cache_ttl_days = config.get('cache_ttl_days', 30)
         self.column_config = config.get('column_config', {})
         self.similarity_threshold = config.get('similarity_threshold', 0.8)  # Threshold for determining substantial difference
+        
+        # Load prompt templates
+        self.prompts = load_prompts()
+        logger.info(f"Loaded {len(self.prompts)} prompt templates")
         
         # Define JSON schemas for API responses
         self._single_column_schema = {
@@ -151,7 +171,40 @@ class SchemaValidator:
         notes = column_info.get('notes', '')
         examples = self._format_examples(target.column)
         
-        # Build the prompt
+        # Check if we have the validation_prompt template
+        if 'validation_prompt' in self.prompts:
+            # Create context string from ID fields
+            context = ""
+            id_fields = self._get_id_fields(self.validation_targets)
+            if id_fields:
+                context += "ID Fields:\n"
+                for id_field in id_fields:
+                    context += f"  {id_field.column}: {row.get(id_field.column, '')}\n"
+            
+            # Add previous results as context if available
+            if previous_results and len(previous_results) > 0:
+                context += "\nPrevious Validation Results:\n"
+                for col, result in previous_results.items():
+                    confidence_level = result.get('confidence_level', 'UNKNOWN')
+                    value = result.get('value', '')
+                    context += f"  {col}: {value} (Confidence: {confidence_level})\n"
+            
+            # Format the template with our data
+            template = self.prompts['validation_prompt']
+            prompt = template.format(
+                context=context,
+                column=target.column,
+                description=description,
+                format_info=format_info,
+                notes=notes,
+                general_notes=self.config.get('general_notes', ''),
+                examples=examples,
+                value=row.get(target.column, '')
+            )
+            
+            return prompt
+        
+        # Fallback to the original implementation if template is not available
         prompt = f"""Please validate the following data according to these rules:
 Column: {target.column}
 Current Value: {row.get(target.column, '')}
@@ -199,6 +252,58 @@ Please respond in the following JSON format:
         """Generate a validation prompt for multiple targets (multiplex) with progressive context."""
         general_notes = self.config.get('general_notes', '')
         
+        # Check if we have the multiplex template
+        if 'multiplex_validation' in self.prompts:
+            # Create context string from ID fields
+            context = ""
+            id_fields = self._get_id_fields(self.validation_targets)
+            if id_fields:
+                context += "ID Fields:\n"
+                for id_field in id_fields:
+                    context += f"  {id_field.column}: {row.get(id_field.column, '')}\n"
+            
+            # Add previous results as context if available
+            if previous_results and len(previous_results) > 0:
+                context += "\nPrevious Validation Results:\n"
+                for col, result in previous_results.items():
+                    confidence_level = result.get('confidence_level', 'UNKNOWN')
+                    value = result.get('value', '')
+                    context += f"  {col}: {value} (Confidence: {confidence_level})\n"
+            
+            # Format the columns to validate
+            columns_to_validate = ""
+            for target in targets:
+                column_info = self.column_config.get(target.column, {})
+                description = column_info.get('description', target.description)
+                format_info = column_info.get('format', '')
+                notes = column_info.get('notes', '')
+                examples = self._format_examples(target.column)
+                
+                columns_to_validate += f"""Field: {target.column}
+Current Value: {row.get(target.column, '')}
+Description: {description}
+Format: {format_info}
+Importance: {target.importance}
+"""
+                if notes:
+                    columns_to_validate += f"Notes: {notes}\n"
+                if examples:
+                    columns_to_validate += f"Examples: {examples}\n"
+                
+                columns_to_validate += "\n"
+            
+            # Format the template with our data
+            template = self.prompts['multiplex_validation']
+            prompt = template.format(
+                context=context,
+                general_notes=general_notes,
+                column_count=len(targets),
+                columns_to_validate=columns_to_validate
+            )
+            
+            return prompt
+            
+        # Fallback to the original implementation if template is not available
         # Build the multiplex prompt header
         prompt = f"""Please validate the following data fields:
 
