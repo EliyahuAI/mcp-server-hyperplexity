@@ -295,7 +295,7 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
         # Run test if requested
         if run_test:
             logger.info("\nRunning test after deployment...")
-            test_lambda_function(LAMBDA_CONFIG["FunctionName"], region, None)
+            test_lambda_function(LAMBDA_CONFIG["FunctionName"], region, args.test_event)
         
         return True
         
@@ -305,26 +305,13 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
         traceback.print_exc()
         return False
 
-def test_lambda_function(function_name, region=None, test_event_file=None):
+def test_lambda_function(function_name, region=None, test_event=None):
     """Test the Lambda function with the enhanced test event."""
     logger.info(f"Testing Lambda function: {function_name}")
     
     try:
         # Load test event
-        if test_event_file:
-            test_event_path = Path(test_event_file)
-            logger.info(f"Using custom test event: {test_event_path}")
-        else:
-            # Try the ratio competitive intelligence test file first
-            ratio_test_path = PROJECT_DIR / "test_events" / "ratio_competitive_intelligence_test.json"
-            if ratio_test_path.exists():
-                test_event_path = ratio_test_path
-                logger.info(f"Using ratio test event: {test_event_path}")
-            else:
-                # Fall back to the enhanced test event
-                test_event_path = PROJECT_DIR / "test_events" / "enhanced_test_event.json"
-                logger.info(f"Using default test event: {test_event_path}")
-                
+        test_event_path = PROJECT_DIR / "test_events" / "enhanced_test_event.json"
         with open(test_event_path, 'r') as f:
             test_event = json.load(f)
         
@@ -356,26 +343,18 @@ def test_lambda_function(function_name, region=None, test_event_file=None):
             for row_idx, row_results in results['validation_results'].items():
                 logger.info(f"\nRow {row_idx} Results:")
                 for target, result in row_results.items():
-                    if target not in ['next_check', 'reasons', 'holistic_validation', 'holistic_summary']:
+                    if target not in ['next_check', 'reasons']:
                         logger.info(f"  {target}:")
                         logger.info(f"    Value: {result['value']}")
                         logger.info(f"    Confidence: {result['confidence']} ({result['confidence_level']})")
                         logger.info(f"    Sources: {result['sources']}")
-                        if result.get('quote'):
+                        if result['quote']:
                             logger.info(f"    Quote: {result['quote']}")
-                    elif target == 'holistic_validation' and isinstance(result, dict):
-                        logger.info(f"  {target}:")
-                        logger.info(f"    Overall Confidence: {result.get('overall_confidence', 'N/A')}")
-                        logger.info(f"    Concerns: {result.get('concerns', [])}")
-                        logger.info(f"    Needs Review: {result.get('needs_review', False)}")
                 
-                if 'next_check' in row_results:
-                    logger.info(f"  Next Check: {row_results['next_check']}")
-                if 'reasons' in row_results:
-                    logger.info(f"  Reasons: {row_results['reasons']}")
-                if 'holistic_summary' in row_results:
-                    logger.info(f"  Holistic Summary: {row_results['holistic_summary']}")
-            
+                logger.info(f"  Next Check: {row_results['next_check']}")
+                logger.info(f"  Reasons: {row_results['reasons']}")
+                
+            # Return after processing all rows (fixed indentation)
             return True
         else:
             error_msg = response_payload.get('body', {}).get('error')
