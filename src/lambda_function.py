@@ -493,6 +493,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 total_cache_hits += 1
                 logger.info(f"Cache hit for prompt with key: {cache_key[:8]}...")
                 
+                # Store the raw API response for this prompt in row_results
+                response_id = f"response_{len(row_results.get('_raw_responses', {})) + 1}"
+                if '_raw_responses' not in row_results:
+                    row_results['_raw_responses'] = {}
+                row_results['_raw_responses'][response_id] = {
+                    'prompt': prompt,
+                    'response': cached_api_response,
+                    'is_cached': True,
+                    'fields': [t.column for t in validation_targets]
+                }
+                
                 # Parse the cached API response
                 parsed_results = validator.parse_multiplex_result(cached_api_response, row)
                 
@@ -509,6 +520,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             'main_source': parsed_result[5],
                             'update_required': parsed_result[6],
                             'substantially_different': parsed_result[7],
+                            'response_id': response_id  # Reference which API response this came from
                         }
                         
                         # Add consistent_with_model_knowledge if available
@@ -525,6 +537,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Call Perplexity API
             result = await validate_with_perplexity(session, prompt, api_key, model)
+            
+            # Store the raw API response for this prompt in row_results
+            response_id = f"response_{len(row_results.get('_raw_responses', {})) + 1}"
+            if '_raw_responses' not in row_results:
+                row_results['_raw_responses'] = {}
+            row_results['_raw_responses'][response_id] = {
+                'prompt': prompt,
+                'response': result,
+                'is_cached': False,
+                'fields': [t.column for t in validation_targets]
+            }
             
             # Cache the complete API response
             try:
@@ -567,7 +590,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'quote': quote,
                         'main_source': main_source,
                         'update_required': update_required,
-                        'substantially_different': substantially_different
+                        'substantially_different': substantially_different,
+                        'response_id': response_id  # Reference which API response this came from
                     }
                     
                     # Add consistent_with_model_knowledge if available
@@ -601,7 +625,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'main_source': "",
                         'update_required': False,
                         'substantially_different': False,
-                        'error': "Field not found in multiplex validation result"
+                        'error': "Field not found in multiplex validation result",
+                        'response_id': response_id  # Reference which API response this came from
                     }
         
         # Run the async function
@@ -612,9 +637,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         finally:
             loop.close()
             
-            return {
-                'statusCode': 200,
-            'body': {
+            # Ensure we're returning the complete validation results for each row
+            logger.info(f"Returning full validation results for {len(validation_results)} rows")
+            
+            # Collect all raw responses from all rows
+            all_raw_responses = {}
+            for row_idx, row_result in validation_results.items():
+                if '_raw_responses' in row_result:
+                    # Add a row prefix to each response ID to avoid collisions
+                    for response_id, response_data in row_result['_raw_responses'].items():
+                        new_response_id = f"row{row_idx}_{response_id}"
+                        all_raw_responses[new_response_id] = response_data
+                    
+                    # Remove the raw responses from the row result to avoid duplication
+                    del row_result['_raw_responses']
+            
+            # Log the size of the response data (approximately)
+            response_json = json.dumps({
                 'validation_results': validation_results,
                 'cache_stats': {
                     'hits': total_cache_hits,
@@ -622,7 +661,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'multiplex_validations': total_multiplex_validations,
                     'single_validations': total_single_validations
                 }
-            }
+            })
+            response_size_kb = len(response_json) / 1024
+            logger.info(f"Response size without raw responses: approximately {response_size_kb:.2f} KB")
+            
+            # Estimate size with raw responses
+            raw_responses_json = json.dumps(all_raw_responses)
+            raw_size_kb = len(raw_responses_json) / 1024
+            logger.info(f"Raw responses size: approximately {raw_size_kb:.2f} KB")
+            logger.info(f"Total estimated response size: {response_size_kb + raw_size_kb:.2f} KB")
+            
+            # Return the full validation results without any summarization
+            return {
+                'statusCode': 200,
+                'body': {
+                    'validation_results': validation_results,  # Complete results for all rows
+                    'cache_stats': {
+                        'hits': total_cache_hits,
+                        'misses': total_cache_misses,
+                        'multiplex_validations': total_multiplex_validations,
+                        'single_validations': total_single_validations
+                    },
+                    'raw_responses': all_raw_responses  # Include all raw API responses
+                }
             }
         
     except Exception as e:
