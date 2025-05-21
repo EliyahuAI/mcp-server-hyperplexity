@@ -22,11 +22,16 @@ validation_prompt: |
 
   YOUR TOP PRIORITY is to find and include DIRECT QUOTES from authoritative sources that support your answer. Exact quotes are essential.
 
+  EXTREMELY IMPORTANT FORMATTING REQUIREMENTS:
+  1. The SOURCES field must contain COMPLETE URL STRINGS (not numbered references like [1], [2])
+  2. Each quote must be DIRECTLY ATTRIBUTABLE to its source - include the complete URL at the end of the quote
+  3. Do not use relative references - always include the full, absolute URL for each source
+
   Please provide the following information in a clear, structured format:
 
   ANSWER: [correct value for this column - provide ONLY the exact value, no explanations]
-  QUOTE: [REQUIRED - exact text quoted directly from an official source that explicitly supports your answer]
-  SOURCES: [list specific webpage URLs where the quotes/information was found]
+  QUOTE: [REQUIRED - exact text quoted directly from an official source that explicitly supports your answer, ending with the complete URL source]
+  SOURCES: [list complete webpage URLs where the quotes/information was found - not numbered references]
   CONFIDENCE: [HIGH/MEDIUM/LOW]
   UPDATE_REQUIRED: [YES/NO - indicate if the current value should be updated]
   SUBSTANTIALLY_DIFFERENT: [YES/NO - indicate if your answer is substantially different from the current value]
@@ -48,29 +53,36 @@ multiplex_validation: |
 
   YOUR TOP PRIORITY is to find and include DIRECT QUOTES from authoritative sources that support your answers. Exact quotes are essential.
 
+  EXTREMELY IMPORTANT FORMATTING REQUIREMENTS:
+  1. The "sources" array MUST contain COMPLETE URL STRINGS for each entry (not numbered references like [1], [2])
+  2. Each "quote" must include the complete URL source at the end of the quote text
+  3. Do not use relative references - always include the full, absolute URL for each source
+  4. All URLs must be valid and accessible web addresses
+  5. Do not include explanatory text outside the JSON structure
+
   Provide your answer as a VALID JSON array with the following structure (do not include any text outside of this JSON):
   ```json
   [
-    {
+    {{
       "column": "Column Name 1",
       "answer": "validated value 1",
-      "quote": "direct quote from source",
-      "sources": ["url1", "url2"],
+      "quote": "direct quote from source ending with the complete source URL: https://example.com/page1",
+      "sources": ["https://example.com/page1", "https://example.com/page2"],
       "confidence": "HIGH/MEDIUM/LOW",
       "update_required": true,
       "substantially_different": true,
       "explanation": "brief explanation"
-    },
-    {
+    }},
+    {{
       "column": "Column Name 2",
       "answer": "validated value 2",
-      "quote": "direct quote from source",
-      "sources": ["url1", "url2"],
+      "quote": "another direct quote ending with the complete source URL: https://example.com/page3",
+      "sources": ["https://example.com/page3"],
       "confidence": "HIGH/MEDIUM/LOW",
       "update_required": true,
       "substantially_different": false,
       "explanation": "brief explanation"
-    }
+    }}
   ]
   ```
 
