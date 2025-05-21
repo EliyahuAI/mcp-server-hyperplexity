@@ -343,18 +343,26 @@ def test_lambda_function(function_name, region=None):
             for row_idx, row_results in results['validation_results'].items():
                 logger.info(f"\nRow {row_idx} Results:")
                 for target, result in row_results.items():
-                    if target not in ['next_check', 'reasons']:
+                    if target not in ['next_check', 'reasons', 'holistic_validation', 'holistic_summary']:
                         logger.info(f"  {target}:")
                         logger.info(f"    Value: {result['value']}")
                         logger.info(f"    Confidence: {result['confidence']} ({result['confidence_level']})")
                         logger.info(f"    Sources: {result['sources']}")
-                        if result['quote']:
+                        if result.get('quote'):
                             logger.info(f"    Quote: {result['quote']}")
+                    elif target == 'holistic_validation' and isinstance(result, dict):
+                        logger.info(f"  {target}:")
+                        logger.info(f"    Overall Confidence: {result.get('overall_confidence', 'N/A')}")
+                        logger.info(f"    Concerns: {result.get('concerns', [])}")
+                        logger.info(f"    Needs Review: {result.get('needs_review', False)}")
                 
-                logger.info(f"  Next Check: {row_results['next_check']}")
-                logger.info(f"  Reasons: {row_results['reasons']}")
-                
-            # Return after processing all rows (fixed indentation)
+                if 'next_check' in row_results:
+                    logger.info(f"  Next Check: {row_results['next_check']}")
+                if 'reasons' in row_results:
+                    logger.info(f"  Reasons: {row_results['reasons']}")
+                if 'holistic_summary' in row_results:
+                    logger.info(f"  Holistic Summary: {row_results['holistic_summary']}")
+            
             return True
         else:
             error_msg = response_payload.get('body', {}).get('error')
