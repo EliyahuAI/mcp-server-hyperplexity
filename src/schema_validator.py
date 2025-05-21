@@ -5,11 +5,28 @@ import json
 import logging
 import re
 from pathlib import Path
-import traceback
+from perplexity_schema import VALIDATION_RESPONSE_SCHEMA, MULTIPLEX_RESPONSE_SCHEMA
+
+# Import multiplex_parser for parsing API responses
+try:
+    from multiplex_parser import parse_multiplex_with_citations, parse_multiplex_with_references, apply_references_to_items
+except ImportError:
+    # Define fallback functions in case the module is not available
+    def parse_multiplex_with_citations(result):
+        logger.warning("multiplex_parser module not available, using fallback function")
+        return [], {}
+        
+    def parse_multiplex_with_references(content):
+        logger.warning("multiplex_parser module not available, using fallback function")
+        return [], {}
+        
+    def apply_references_to_items(items, references):
+        logger.warning("multiplex_parser module not available, using fallback function")
+        return items
 
 # Import prompt_loader
 try:
-    from prompt_loader import load_prompts
+    from prompt_loader import load_prompts, format_prompt
     from url_extractor import normalize_sources, extract_urls_from_text, extract_main_url_from_quote, ensure_url_sources, extract_citations_from_api_response
 except ImportError:
     # For local development, might need to adjust the path
@@ -17,7 +34,7 @@ except ImportError:
     import os
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     try:
-        from prompt_loader import load_prompts
+        from prompt_loader import load_prompts, format_prompt
         from url_extractor import normalize_sources, extract_urls_from_text, extract_main_url_from_quote, ensure_url_sources, extract_citations_from_api_response
     except ImportError:
         # Fallback if module can't be imported
@@ -63,36 +80,9 @@ class SchemaValidator:
         self.prompts = load_prompts()
         logger.info(f"Loaded {len(self.prompts)} prompt templates")
         
-        # Define JSON schemas for API responses
-        self._single_column_schema = {
-            "type": "object",
-            "properties": {
-                "answer": {"type": "string"},
-                "confidence": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW"]},
-                "quote": {"type": "string"},
-                "sources": {"type": "array", "items": {"type": "string"}},
-                "update_required": {"type": "boolean"},
-                "substantially_different": {"type": "boolean"}
-            },
-            "required": ["answer", "confidence"]
-        }
-        
-        self._multiplex_schema = {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "column": {"type": "string"},
-                    "answer": {"type": "string"},
-                    "confidence": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW"]},
-                    "quote": {"type": "string"},
-                    "sources": {"type": "array", "items": {"type": "string"}},
-                    "update_required": {"type": "boolean"},
-                    "substantially_different": {"type": "boolean"}
-                },
-                "required": ["column", "answer", "confidence"]
-            }
-        }
+        # Define JSON schemas for API responses - import from perplexity_schema.py
+        self._single_column_schema = VALIDATION_RESPONSE_SCHEMA
+        self._multiplex_schema = MULTIPLEX_RESPONSE_SCHEMA
     
     def _parse_validation_targets(self) -> List[ValidationTarget]:
         """Parse validation targets from config."""
@@ -181,129 +171,283 @@ class SchemaValidator:
             return similarity < self.similarity_threshold
     
     def generate_validation_prompt(self, row: Dict[str, Any], target: ValidationTarget, previous_results: Dict[str, Dict[str, Any]] = None) -> str:
-        """Generate a validation prompt for a specific target using the multiplex approach."""
-        # Just use the multiplex approach with a single-item list
-        return self.generate_multiplex_prompt(row, [target], previous_results)
-    
-    def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None) -> str:
-        """Generate a validation prompt for multiple targets (multiplex) with progressive context."""
+        """Generate a validation prompt for a specific target with context from previous validations."""
+        # Get column configuration
+        column_info = self.column_config.get(target.column, {})
+        description = column_info.get('description', target.description)
+        format_info = column_info.get('format', '')
+        notes = column_info.get('notes', '')
+        examples = self._format_examples(target.column)
+        
+        # Get general notes from config
         general_notes = self.config.get('general_notes', '')
         
-        # Check if we have the multiplex template
-        if 'multiplex_validation' in self.prompts:
-            # Create context string from ID fields
-            context = ""
-            id_fields = self._get_id_fields(self.validation_targets)
-            if id_fields:
-                context += "ID Fields:\n"
-                for id_field in id_fields:
-                    context += f"  {id_field.column}: {row.get(id_field.column, '')}\n"
-            
-            # Add previous results as context if available
-            if previous_results and len(previous_results) > 0:
-                context += "\nPrevious Validation Results:\n"
-                for col, result in previous_results.items():
-                    confidence_level = result.get('confidence_level', 'UNKNOWN')
-                    value = result.get('value', '')
-                    context += f"  {col}: {value} (Confidence: {confidence_level})\n"
-            
-            # Format the columns to validate
-            columns_to_validate = ""
-            for target in targets:
-                column_info = self.column_config.get(target.column, {})
-                description = column_info.get('description', target.description)
-                format_info = column_info.get('format', '')
-                notes = column_info.get('notes', '')
-                examples = self._format_examples(target.column)
-                
-                columns_to_validate += f"""Field: {target.column}
-Current Value: {row.get(target.column, '')}
-Description: {description}
-Format: {format_info}
-Importance: {target.importance}
-"""
-                if notes:
-                    columns_to_validate += f"Notes: {notes}\n"
-                if examples:
-                    columns_to_validate += f"Examples: {examples}\n"
-                
-                columns_to_validate += "\n"
-            
-            # Format the template with our data
-            template = self.prompts['multiplex_validation']
-            prompt = template.format(
-                context=context,
-                general_notes=general_notes,
-                column_count=len(targets),
-                columns_to_validate=columns_to_validate
-            )
-            
-            return prompt
-            
-        # Fallback to the original implementation if template is not available
-        # Build the multiplex prompt header
-        prompt = f"""Please validate the following data fields:
-
-{general_notes}
-
-I need you to validate multiple fields at once. For each field, provide your validated answer, confidence level, and supporting information.
-"""
+        # Build the prompt directly without template substitution
+        prompt_parts = []
         
-        # Add ID fields at the beginning
+        # Main section - Field to validate
+        prompt_parts.append("=== FIELD TO VALIDATE ===")
+        prompt_parts.append(f"Column: {target.column}")
+        prompt_parts.append(f"Current Value: {row.get(target.column, '')}")
+        prompt_parts.append(f"Description: {description}")
+        
+        if format_info:
+            prompt_parts.append(f"Format: {format_info}")
+            
+        prompt_parts.append(f"Importance: {target.importance}")
+        
+        if notes:
+            prompt_parts.append(f"Notes: {notes}")
+        
+        # ID Fields section
+        context_lines = []
         id_fields = self._get_id_fields(self.validation_targets)
         if id_fields:
-            prompt += "\nIdentification Fields:\n"
+            prompt_parts.append("\n=== CONTEXT INFORMATION ===")
             for id_field in id_fields:
-                prompt += f"  {id_field.column}: {row.get(id_field.column, '')}\n"
-            prompt += "\n"
+                prompt_parts.append(f"{id_field.column}: {row.get(id_field.column, '')}")
         
-        # Add previous results as context if available
+        # Previous validation results
         if previous_results and len(previous_results) > 0:
-            prompt += "Previous Validation Results:\n"
+            prompt_parts.append("\n=== PREVIOUS VALIDATION RESULTS ===")
             for col, result in previous_results.items():
                 confidence_level = result.get('confidence_level', 'UNKNOWN')
                 value = result.get('value', '')
-                prompt += f"  {col}: {value} (Confidence: {confidence_level})\n"
-            prompt += "\n"
+                prompt_parts.append(f"{col}: {value} (Confidence: {confidence_level})")
         
-        # Add each column to validate
-        prompt += "Fields to validate:\n\n"
+        # General notes section - explicitly include this if available
+        prompt_parts.append("\n=== GENERAL VALIDATION GUIDELINES ===")
+        if general_notes:
+            prompt_parts.append(general_notes)
         
-        for target in targets:
+        # Examples section
+        if examples and examples.strip():
+            prompt_parts.append("\n=== EXAMPLES ===")
+            prompt_parts.append(examples)
+        
+        # Response format instructions
+        prompt_parts.append("\n=== RESPONSE FORMAT ===")
+        
+        # Use a clear JSON example with proper formatting
+        json_example = """
+{
+  "answer": "the validated value",
+  "confidence": "HIGH, MEDIUM, or LOW",
+  "quote": "direct quote from source if available",
+  "sources": ["source URL 1", "source URL 2"],
+  "update_required": true/false,
+  "substantially_different": true/false,
+  "consistent_with_model_knowledge": "YES/NO followed by brief explanation"
+}
+"""
+        prompt_parts.append(json_example)
+        
+        # Add important instructions
+        prompt_parts.append("IMPORTANT:")
+        prompt_parts.append("- The response MUST be valid JSON")
+        prompt_parts.append("- Place actual URLs in the sources array, not reference numbers")
+        prompt_parts.append("- Include direct quotes from authoritative sources")
+        prompt_parts.append("- If you cannot find information, indicate LOW confidence")
+        
+        # Join with proper line separation
+        return "\n".join(prompt_parts)
+    
+    def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None) -> str:
+        """Generate a validation prompt for multiple targets (multiplex) with progressive context."""
+        # Get general notes from config
+        general_notes = self.config.get('general_notes', '')
+        
+        # First, filter out the ID fields - we don't validate these, just use them for context
+        validation_targets = [t for t in targets if t.importance.upper() != "ID"]
+        
+        # If we have no fields to validate after filtering out ID fields, return empty prompt
+        if not validation_targets:
+            logger.warning("No non-ID fields to validate in multiplex prompt. All fields are ID or IGNORED.")
+            # Create a minimal prompt with just the response format
+            return "No fields to validate."
+        
+        # Use the template from prompts.yml
+        multiplex_template = self.prompts.get('multiplex_validation', '')
+        if not multiplex_template:
+            logger.warning("No multiplex_validation template found in prompts.yml, falling back to hardcoded template")
+            return self._generate_multiplex_prompt_fallback(row, validation_targets, previous_results)
+        
+        # Format the context section (ID fields)
+        context_lines = []
+        all_id_fields = self._get_id_fields(self.validation_targets)
+        if all_id_fields:
+            for id_field in all_id_fields:
+                context_lines.append(f"{id_field.column}: {row.get(id_field.column, '')}")
+        context = "\n".join(context_lines)
+            
+        # Format the previous results section
+        previous_results_lines = []
+        if previous_results and len(previous_results) > 0:
+            for col, result in previous_results.items():
+                confidence_level = result.get('confidence_level', 'UNKNOWN')
+                value = result.get('value', '')
+                previous_results_lines.append(f"{col}: {value} (Confidence: {confidence_level})")
+        previous_results_text = "\n".join(previous_results_lines)
+            
+        # Format the fields to validate section
+        fields_to_validate = []
+        for i, target in enumerate(validation_targets, 1):
             column_info = self.column_config.get(target.column, {})
             description = column_info.get('description', target.description)
             format_info = column_info.get('format', '')
             notes = column_info.get('notes', '')
-            examples = self._format_examples(target.column)
             
-            prompt += f"""Field: {target.column}
-Current Value: {row.get(target.column, '')}
-Description: {description}
-Format: {format_info}
-Importance: {target.importance}
-"""
+            field_parts = []
+            field_parts.append(f"----- FIELD {i}: {target.column} -----")
+            field_parts.append(f"Current Value: {row.get(target.column, '')}")
+            field_parts.append(f"Description: {description}")
+            
+            if format_info:
+                field_parts.append(f"Format: {format_info}")
+                
+            field_parts.append(f"Importance: {target.importance}")
+            
             if notes:
-                prompt += f"Notes: {notes}\n"
-            if examples:
-                prompt += f"Examples: {examples}\n"
+                field_parts.append(f"Notes: {notes}")
             
-            prompt += "\n"
+            # Only include examples if they exist and are not empty
+            examples = self._format_examples(target.column)
+            if examples and examples.strip():
+                field_parts.append("Examples:")
+                field_parts.append(examples)
+            
+            fields_to_validate.append("\n".join(field_parts))
         
-        # Add response format instructions
-        prompt += """Please respond with a JSON array containing an object for each field. Each object should have the following structure:
+        columns_to_validate = "\n\n".join(fields_to_validate)
+        
+        # Format the prompt using the template
+        prompt_context = {
+            'general_notes': general_notes,
+            'context': context,
+            'previous_results': previous_results_text,
+            'columns_to_validate': columns_to_validate
+        }
+        
+        # Use the format_prompt function to fill in the template
+        prompt = format_prompt(multiplex_template, prompt_context)
+        
+        # Clean up any instances of multiple consecutive newlines
+        while "\n\n\n" in prompt:
+            prompt = prompt.replace("\n\n\n", "\n\n")
+            
+        return prompt
+        
+    def _generate_multiplex_prompt_fallback(self, row: Dict[str, Any], validation_targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None) -> str:
+        """Fallback method to generate multiplex prompt if template is missing."""
+        # Build the prompt directly
+        prompt_parts = []
+        
+        # Main header
+        prompt_parts.append("=== MULTIPLE FIELDS VALIDATION ===")
+        if len(validation_targets) == 1:
+            prompt_parts.append(f"Please validate the following field: {validation_targets[0].column}")
+        else:
+            prompt_parts.append(f"Please validate the following {len(validation_targets)} fields:")
+        
+        # General notes section first
+        general_notes = self.config.get('general_notes', '')
+        prompt_parts.append("=== GENERAL VALIDATION GUIDELINES ===")
+        if general_notes:
+            prompt_parts.append(general_notes)
+        
+        # ID Fields section for context
+        prompt_parts.append("=== CONTEXT INFORMATION ===")
+        context_lines = []
+        all_id_fields = self._get_id_fields(self.validation_targets)
+        if all_id_fields:
+            for id_field in all_id_fields:
+                context_lines.append(f"{id_field.column}: {row.get(id_field.column, '')}")
+            prompt_parts.append("\n".join(context_lines))
+        
+        # Previous validation results
+        prompt_parts.append("=== PREVIOUS VALIDATION RESULTS ===")
+        previous_results_lines = []
+        if previous_results and len(previous_results) > 0:
+            for col, result in previous_results.items():
+                confidence_level = result.get('confidence_level', 'UNKNOWN')
+                value = result.get('value', '')
+                previous_results_lines.append(f"{col}: {value} (Confidence: {confidence_level})")
+            prompt_parts.append("\n".join(previous_results_lines))
+        
+        # Fields to validate section - ONLY non-ID fields
+        prompt_parts.append("=== FIELDS TO VALIDATE ===")
+        
+        # Format each field with clear separation
+        for i, target in enumerate(validation_targets, 1):
+            column_info = self.column_config.get(target.column, {})
+            description = column_info.get('description', target.description)
+            format_info = column_info.get('format', '')
+            notes = column_info.get('notes', '')
+            
+            field_parts = []
+            field_parts.append(f"----- FIELD {i}: {target.column} -----")
+            field_parts.append(f"Current Value: {row.get(target.column, '')}")
+            field_parts.append(f"Description: {description}")
+            
+            if format_info:
+                field_parts.append(f"Format: {format_info}")
+                
+            field_parts.append(f"Importance: {target.importance}")
+            
+            if notes:
+                field_parts.append(f"Notes: {notes}")
+            
+            # Only include examples if they exist and are not empty
+            examples = self._format_examples(target.column)
+            if examples and examples.strip():
+                field_parts.append("Examples:")
+                field_parts.append(examples)
+            
+            # Add this field's info to the prompt
+            prompt_parts.append("\n".join(field_parts))
+            prompt_parts.append("")  # Add a blank line between fields
+        
+        # Response format instructions
+        prompt_parts.append("=== RESPONSE FORMAT ===")
+        response_format_intro = "Please respond with a JSON array containing an object for each field."
+        if len(validation_targets) == 1:
+            response_format_intro += f" Even though there is only 1 field ({validation_targets[0].column}), still return an array with a single object."
+        prompt_parts.append(f"{response_format_intro} Each object must have the following structure:")
+        
+        # Use a clear JSON example with proper formatting
+        json_example = """
 [
   {
     "column": "field name",
-    "answer": "validated value",
+    "answer": "validated value", 
     "confidence": "HIGH|MEDIUM|LOW",
     "quote": "direct quote from source if available",
     "sources": ["source URL 1", "source URL 2"],
     "update_required": true/false,
-    "substantially_different": true/false
+    "substantially_different": true/false,
+    "consistent_with_model_knowledge": "YES/NO followed by brief explanation"
   },
   ...
-]"""
+]
+"""
+        prompt_parts.append(json_example)
         
+        # Add important instructions
+        prompt_parts.append("IMPORTANT:")
+        prompt_parts.append("- The response MUST be valid JSON")
+        prompt_parts.append("- Each field must have its own object in the array")
+        prompt_parts.append("- Include the column name in each object")
+        prompt_parts.append("- Place actual URLs in the sources arrays, not reference numbers")
+        prompt_parts.append("- Include direct quotes from authoritative sources")
+        prompt_parts.append("- If you cannot find information for a field, indicate LOW confidence")
+        
+        # Join with proper line separation
+        prompt = "\n".join(prompt_parts)
+            
+        # Clean up any instances of multiple consecutive newlines
+        while "\n\n\n" in prompt:
+            prompt = prompt.replace("\n\n\n", "\n\n")
+            
         return prompt
     
     def _format_examples(self, column: str) -> str:
@@ -318,19 +462,81 @@ Importance: {target.importance}
         return formatted
     
     def parse_validation_result(self, result: Dict, target: ValidationTarget, original_value: Any) -> Tuple[Any, float, List[str], str, str, str, bool, bool, Optional[str]]:
-        """Parse the validation result from Perplexity API response using the multiplex approach."""
-        # Create a simple row with just the target column for the multiplex parser
-        row = {target.column: original_value}
-        
-        # Use the multiplex parser but only extract the single target's data
-        results_dict = self.parse_multiplex_result(result, row)
-        
-        # Return the result for the specific target if available
-        if target.column in results_dict:
-            return results_dict[target.column]
-        
-        # Return defaults if not found
-        return None, 0.0, [], "LOW", "", "", False, False, None
+        """Parse the validation result from Perplexity API response."""
+        try:
+            # Extract content from API response
+            if not isinstance(result, dict) or 'choices' not in result:
+                return None, 0.0, [], "LOW", "", "", False, False, None
+            
+            content = result['choices'][0]['message'].get('content', '')
+            if not content:
+                return None, 0.0, [], "LOW", "", "", False, False, None
+            
+            # Parse JSON response
+            try:
+                validation_result = json.loads(content)
+            except json.JSONDecodeError:
+                # Try to extract JSON from markdown code block
+                if "```json" in content:
+                    json_start = content.find("```json") + 7
+                    json_end = content.find("```", json_start)
+                    if json_end > json_start:
+                        validation_result = json.loads(content[json_start:json_end].strip())
+                    else:
+                        return None, 0.0, [], "LOW", "", "", False, False, None
+                else:
+                    return None, 0.0, [], "LOW", "", "", False, False, None
+            
+            # Normalize sources to extract URLs from all text fields
+            validation_result = normalize_sources(validation_result)
+            
+            # Extract values
+            answer = validation_result.get('answer', '')
+            confidence_level = validation_result.get('confidence', 'LOW')
+            quote = validation_result.get('quote', '')
+            sources = validation_result.get('sources', [])
+            update_required = validation_result.get('update_required', False)
+            consistent_with_model_knowledge = validation_result.get('consistent_with_model_knowledge', '')
+            
+            # Lower confidence if not consistent with model knowledge
+            if consistent_with_model_knowledge and 'no' in consistent_with_model_knowledge.lower():
+                if confidence_level == 'HIGH':
+                    confidence_level = 'MEDIUM'
+                elif confidence_level == 'MEDIUM':
+                    confidence_level = 'LOW'
+                
+                # Add the inconsistency note to the quote
+                if quote and consistent_with_model_knowledge:
+                    quote = f"{quote} NOTE: {consistent_with_model_knowledge}"
+            
+            # Determine if substantially different
+            substantially_different = validation_result.get('substantially_different', None)
+            if substantially_different is None:
+                substantially_different = self._is_substantially_different(original_value, answer)
+            
+            # Map confidence level to numeric value
+            confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
+            numeric_confidence = confidence_map.get(confidence_level, 0.5)
+            
+            # Convert any numeric references in sources to actual URLs using citations from API
+            if 'citations' in result and isinstance(result['citations'], list):
+                citations = result['citations']
+                source_obj = {
+                    "sources": sources,
+                    "main_source": sources[0] if sources else ""
+                }
+                processed_sources = ensure_url_sources(source_obj, citations)
+                sources = processed_sources["sources"]
+                main_source = processed_sources["main_source"]
+            else:
+                # Get main source if available
+                main_source = sources[0] if sources else ""
+            
+            return answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, consistent_with_model_knowledge
+            
+        except Exception as e:
+            logger.error(f"Error parsing validation result: {str(e)}")
+            return None, 0.0, [], "LOW", "", "", False, False, None
     
     def parse_multiplex_result(self, result: Dict, row: Dict[str, Any]) -> Dict[str, Tuple[Any, float, List[str], str, str, str, bool, bool, Optional[str]]]:
         """Parse results from a multiplex validation request."""
@@ -615,30 +821,14 @@ Importance: {target.importance}
         # Identify field relationships from config
         related_fields = self.config.get('field_relationships', [])
         
-        # Skip check if no field relationships defined
-        if not related_fields:
-            logger.info("No field relationships defined in config, skipping relationship check")
-            return
-            
         # Check each field relationship
         for relation in related_fields:
-            # Skip if relation doesn't have required fields
-            relation_type = relation.get('type')
-            if not relation_type:
-                logger.warning(f"Field relationship missing 'type', skipping: {relation}")
+            # Skip if any fields in the relationship are missing
+            if not all(field in validated_fields for field in relation['fields']):
                 continue
-                
-            # Handle different relationship types
-            if relation_type == 'mutually_exclusive':
-                # Check if 'fields' key exists
-                if 'fields' not in relation:
-                    logger.warning(f"Mutually exclusive relationship missing 'fields' key, skipping: {relation}")
-                    continue
-                    
-                # Skip if any fields in the relationship are missing
-                if not all(field in validated_fields for field in relation['fields']):
-                    continue
-                
+            
+            # Check the relationship type
+            if relation['type'] == 'mutually_exclusive':
                 # Fields should not all have values together
                 non_empty_count = sum(
                     1 for field in relation['fields'] 
@@ -651,16 +841,7 @@ Importance: {target.importance}
                     holistic_result["is_consistent"] = False
                     holistic_result["priority_fields"].extend(relation['fields'])
             
-            elif relation_type == 'required_together':
-                # Check if 'fields' key exists
-                if 'fields' not in relation:
-                    logger.warning(f"Required together relationship missing 'fields' key, skipping: {relation}")
-                    continue
-                    
-                # Skip if any fields in the relationship are missing
-                if not all(field in validated_fields for field in relation['fields']):
-                    continue
-                
+            elif relation['type'] == 'required_together':
                 # Either all fields should have values or none should
                 has_value = [
                     bool(validation_results[field].get('value') and str(validation_results[field].get('value')).strip())
@@ -674,12 +855,7 @@ Importance: {target.importance}
                     empty_fields = [relation['fields'][i] for i, v in enumerate(has_value) if not v]
                     holistic_result["priority_fields"].extend(empty_fields)
             
-            elif relation_type == 'dependent':
-                # Check if required keys exist
-                if 'primary' not in relation or 'dependent' not in relation:
-                    logger.warning(f"Dependent relationship missing 'primary' or 'dependent' key, skipping: {relation}")
-                    continue
-                    
+            elif relation['type'] == 'dependent':
                 # If primary field has value, dependent fields should also have values
                 primary_field = relation['primary']
                 dependent_fields = relation['dependent']
@@ -838,73 +1014,51 @@ Importance: {target.importance}
         reasons = []
         min_confidence = 0.8  # Minimum confidence threshold
         
-        logger.info(f"Determining next check date for row with {len(validation_results)} validation results")
+        # Perform holistic validation
+        holistic_result = self.perform_holistic_validation(row, validation_results)
         
-        try:
-            # Perform holistic validation
-            holistic_result = self.perform_holistic_validation(row, validation_results)
-            
-            # Log holistic validation results
-            logger.info(f"Holistic validation results: {json.dumps(holistic_result, default=str)}")
-            
-            # Store holistic validation result in the validation_results
-            validation_results['holistic_validation'] = holistic_result
-            
-            # If holistic validation found issues, add to reasons
-            if holistic_result["concerns"]:
-                logger.info(f"Holistic validation found {len(holistic_result['concerns'])} concerns")
-                reasons.extend(holistic_result["concerns"])
-            
-            # Check individual fields
-            for target in self.validation_targets:
-                if target.column in validation_results:
-                    result = validation_results[target.column]
-                    confidence = result.get('confidence', 0.0)
-                    validated_value = result.get('value')
-                    quote = result.get('quote', '')
-                    
-                    # Make sure confidence is a float
-                    if isinstance(confidence, str):
-                        try:
-                            confidence = float(confidence)
-                        except (ValueError, TypeError):
-                            confidence = 0.0
-                    
-                    if confidence < min_confidence:
-                        reason = f"Low confidence ({confidence:.2f}) for {target.column}: {quote}"
-                        logger.info(reason)
-                        reasons.append(reason)
-                        continue
-                    
-                    if validated_value is None:
-                        reason = f"Invalid value for {target.column}: {quote}"
-                        logger.info(reason)
-                        reasons.append(reason)
-                        continue
-            
-            # Determine when to schedule the next check
-            if holistic_result["needs_review"]:
-                # If holistic validation indicates need for review, schedule sooner
-                next_check = datetime.now() + timedelta(days=1)
-                if not reasons:
-                    reasons.append("Holistic validation indicates need for review")
-                logger.info(f"Setting next check to {next_check} due to need for review")
-                return next_check, reasons
-            elif reasons:
-                # If there are other issues, schedule next check in 1 day
-                next_check = datetime.now() + timedelta(days=1)
-                logger.info(f"Setting next check to {next_check} due to {len(reasons)} issues found")
-                return next_check, reasons
-            else:
-                # If all validations passed, schedule next check based on cache TTL
-                next_check = datetime.now() + timedelta(days=self.cache_ttl_days)
-                logger.info(f"Setting next check to {next_check} as all validations passed")
-                return next_check, ["All validations passed"]
+        # Store holistic validation result in the validation_results
+        validation_results['holistic_validation'] = holistic_result
+        
+        # If holistic validation found issues, add to reasons
+        if holistic_result["concerns"]:
+            reasons.extend(holistic_result["concerns"])
+        
+        # Check individual fields
+        for target in self.validation_targets:
+            if target.column in validation_results:
+                result = validation_results[target.column]
+                confidence = result.get('confidence', 0.0)
+                validated_value = result.get('value')
+                quote = result.get('quote', '')
                 
-        except Exception as e:
-            logger.error(f"Error in determine_next_check_date: {str(e)}")
-            logger.error(traceback.format_exc())
-            # Return a default date in case of error
+                # Make sure confidence is a float
+                if isinstance(confidence, str):
+                    try:
+                        confidence = float(confidence)
+                    except (ValueError, TypeError):
+                        confidence = 0.0
+                
+                if confidence < min_confidence:
+                    reasons.append(f"Low confidence ({confidence:.2f}) for {target.column}: {quote}")
+                    continue
+                
+                if validated_value is None:
+                    reasons.append(f"Invalid value for {target.column}: {quote}")
+                    continue
+        
+        # Determine when to schedule the next check
+        if holistic_result["needs_review"]:
+            # If holistic validation indicates need for review, schedule sooner
             next_check = datetime.now() + timedelta(days=1)
-            reasons.append(f"Error determining next check date: {str(e)}")
-            return next_check, reasons 
+            if not reasons:
+                reasons.append("Holistic validation indicates need for review")
+            return next_check, reasons
+        elif reasons:
+            # If there are other issues, schedule next check in 1 day
+            next_check = datetime.now() + timedelta(days=1)
+            return next_check, reasons
+        else:
+            # If all validations passed, schedule next check based on cache TTL
+            next_check = datetime.now() + timedelta(days=self.cache_ttl_days)
+            return next_check, ["All validations passed"] 

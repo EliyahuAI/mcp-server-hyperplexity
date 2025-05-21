@@ -1,0 +1,119 @@
+system_base: |
+  You are a data validator helping to verify and update information. Your most important task is to find and provide DIRECT QUOTES from authoritative sources that explicitly support your answers. Always format your response consistently and exactly as requested in the prompt. For each field you validate, provide specific evidence from an official source.
+
+validation_prompt: |
+  === FIELD TO VALIDATE ===
+  Column: {column}
+  Current Value: {value}
+  Description: {description}
+  Format: {format_info}
+  Importance: MEDIUM
+  Notes: {notes}
+
+  === CONTEXT INFORMATION ===
+  {context}
+
+  === PREVIOUS VALIDATION RESULTS ===
+  {previous_results}
+
+  === GENERAL VALIDATION GUIDELINES ===
+  {general_notes}
+
+  === EXAMPLES ===
+  {examples}
+
+  === RESPONSE FORMAT ===
+  Please respond in the following JSON format:
+  
+  {
+    "answer": "the validated value",
+    "confidence": "HIGH, MEDIUM, or LOW",
+    "quote": "direct quote from source if available",
+    "sources": ["source URL 1", "source URL 2"],
+    "update_required": true/false,
+    "substantially_different": true/false,
+    "consistent_with_model_knowledge": "YES/NO followed by brief explanation"
+  }
+
+  IMPORTANT:
+  - The response MUST be valid JSON
+  - Place actual URLs in the sources array, not reference numbers
+  - Include direct quotes from authoritative sources
+  - If you cannot find information, indicate LOW confidence
+
+multiplex_validation: |
+  === MULTIPLE FIELDS VALIDATION ===
+  Please validate the following fields:
+
+  === GENERAL VALIDATION GUIDELINES ===
+  {general_notes}
+
+  === CONTEXT INFORMATION ===
+  {context}
+
+  === PREVIOUS VALIDATION RESULTS ===
+  {previous_results}
+
+  === FIELDS TO VALIDATE ===
+  {columns_to_validate}
+
+  === RESPONSE FORMAT ===
+  Please respond with a JSON array containing an object for each field. Each object must have the following structure:
+  
+  [
+    {
+      "column": "field name",
+      "answer": "validated value",
+      "confidence": "HIGH|MEDIUM|LOW",
+      "quote": "direct quote from source if available",
+      "sources": ["source URL 1", "source URL 2"],
+      "update_required": true/false,
+      "substantially_different": true/false,
+      "consistent_with_model_knowledge": "YES/NO followed by brief explanation"
+    },
+    ...
+  ]
+
+  IMPORTANT:
+  - The response MUST be valid JSON
+  - Each field must have its own object in the array
+  - Include the column name in each object
+  - Place actual URLs in the sources arrays, not reference numbers
+  - Include direct quotes from authoritative sources
+  - If you cannot find information for a field, indicate LOW confidence
+
+holistic_validation: |
+  === HOLISTIC VALIDATION ===
+  Your task is to analyze all validated fields together to identify any inconsistencies, logical errors, or potential issues.
+
+  === GENERAL VALIDATION GUIDELINES ===
+  {general_notes}
+
+  === VALIDATION RESULTS ===
+  {validation_results}
+
+  === CONTEXT INFORMATION ===
+  {context}
+
+  Please analyze the entire record and focus on finding:
+  1. Any inconsistencies between related fields
+  2. Logical contradictions in the data
+  3. Patterns of low confidence results that might indicate systematic issues
+  4. Fields with critical importance that have issues
+  5. Overall assessment of data quality and reliability
+
+  === RESPONSE FORMAT ===
+  Please respond in the following JSON format:
+  
+  {
+    "is_consistent": true/false,
+    "overall_confidence": "HIGH", "MEDIUM", or "LOW",
+    "concerns": [
+      "list of specific concerns or issues identified"
+    ],
+    "needs_review": true/false,
+    "priority_fields": ["field names that need priority attention"],
+    "explanation": "detailed explanation of your findings"
+  }
+
+  If no issues are found, return a simple confirmation of data consistency with HIGH confidence. 
