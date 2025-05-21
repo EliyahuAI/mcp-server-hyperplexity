@@ -1,50 +1,7 @@
 system_base: |
   You are a data validator helping to verify and update information. Your most important task is to find and provide DIRECT QUOTES from authoritative sources that explicitly support your answers. Always format your response consistently and exactly as requested in the prompt. For each field you validate, provide specific evidence from an official source.
 
-validation_prompt: |
-  === FIELD TO VALIDATE ===
-  Column: {column}
-  Current Value: {value}
-  Description: {description}
-  Format: {format_info}
-  Importance: MEDIUM
-  Notes: {notes}
-
-  === CONTEXT INFORMATION ===
-  {context}
-
-  === PREVIOUS VALIDATION RESULTS ===
-  {previous_results}
-
-  === GENERAL VALIDATION GUIDELINES ===
-  {general_notes}
-
-  === EXAMPLES ===
-  {examples}
-
-  === RESPONSE FORMAT ===
-  Please respond in the following JSON format:
-  
-  {
-    "answer": "the validated value",
-    "confidence": "HIGH, MEDIUM, or LOW",
-    "quote": "direct quote from source if available",
-    "sources": ["source URL 1", "source URL 2"],
-    "update_required": true/false,
-    "substantially_different": true/false,
-    "consistent_with_model_knowledge": "YES/NO followed by brief explanation"
-  }
-
-  IMPORTANT:
-  - The response MUST be valid JSON
-  - Place actual URLs in the sources array, not reference numbers
-  - Include direct quotes from authoritative sources
-  - If you cannot find information, indicate LOW confidence
-
 multiplex_validation: |
-  === MULTIPLE FIELDS VALIDATION ===
-  Please validate the following fields:
-
   === GENERAL VALIDATION GUIDELINES ===
   {general_notes}
 
@@ -56,6 +13,21 @@ multiplex_validation: |
 
   === FIELDS TO VALIDATE ===
   {columns_to_validate}
+
+  === CONFIDENCE RUBRIC ===
+  1. **Model certainty**
+     H = core fact, no hedging | M = familiar, slight doubt | L = guess / qualifiers
+
+  2. **Perplexity.ai check (≤ 3 links)**
+     H = ≥ 1 independent authoritative match, no conflict | M = one solid secondary or partial match | L = no credible match, conflict, or only informal sources
+
+  3. **Topic volatility**
+     H = stable fact | M = slow‑moving data | L = fast‑changing info
+
+  **Scoring rule**
+  High = H in all three steps
+  Medium = no L's + at least one M
+  Low = any L (or a step can't be checked)
 
   === RESPONSE FORMAT ===
   Please respond with a JSON array containing an object for each field. Each object must have the following structure:
