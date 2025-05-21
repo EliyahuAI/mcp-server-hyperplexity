@@ -5,6 +5,7 @@ import json
 import logging
 import re
 from pathlib import Path
+import traceback
 
 # Import prompt_loader
 try:
@@ -757,14 +758,30 @@ Importance: {target.importance}
         # Identify field relationships from config
         related_fields = self.config.get('field_relationships', [])
         
+        # Skip check if no field relationships defined
+        if not related_fields:
+            logger.info("No field relationships defined in config, skipping relationship check")
+            return
+            
         # Check each field relationship
         for relation in related_fields:
-            # Skip if any fields in the relationship are missing
-            if not all(field in validated_fields for field in relation['fields']):
+            # Skip if relation doesn't have required fields
+            relation_type = relation.get('type')
+            if not relation_type:
+                logger.warning(f"Field relationship missing 'type', skipping: {relation}")
                 continue
-            
-            # Check the relationship type
-            if relation['type'] == 'mutually_exclusive':
+                
+            # Handle different relationship types
+            if relation_type == 'mutually_exclusive':
+                # Check if 'fields' key exists
+                if 'fields' not in relation:
+                    logger.warning(f"Mutually exclusive relationship missing 'fields' key, skipping: {relation}")
+                    continue
+                    
+                # Skip if any fields in the relationship are missing
+                if not all(field in validated_fields for field in relation['fields']):
+                    continue
+                
                 # Fields should not all have values together
                 non_empty_count = sum(
                     1 for field in relation['fields'] 
@@ -777,7 +794,16 @@ Importance: {target.importance}
                     holistic_result["is_consistent"] = False
                     holistic_result["priority_fields"].extend(relation['fields'])
             
-            elif relation['type'] == 'required_together':
+            elif relation_type == 'required_together':
+                # Check if 'fields' key exists
+                if 'fields' not in relation:
+                    logger.warning(f"Required together relationship missing 'fields' key, skipping: {relation}")
+                    continue
+                    
+                # Skip if any fields in the relationship are missing
+                if not all(field in validated_fields for field in relation['fields']):
+                    continue
+                
                 # Either all fields should have values or none should
                 has_value = [
                     bool(validation_results[field].get('value') and str(validation_results[field].get('value')).strip())
@@ -791,7 +817,12 @@ Importance: {target.importance}
                     empty_fields = [relation['fields'][i] for i, v in enumerate(has_value) if not v]
                     holistic_result["priority_fields"].extend(empty_fields)
             
-            elif relation['type'] == 'dependent':
+            elif relation_type == 'dependent':
+                # Check if required keys exist
+                if 'primary' not in relation or 'dependent' not in relation:
+                    logger.warning(f"Dependent relationship missing 'primary' or 'dependent' key, skipping: {relation}")
+                    continue
+                    
                 # If primary field has value, dependent fields should also have values
                 primary_field = relation['primary']
                 dependent_fields = relation['dependent']
@@ -950,51 +981,73 @@ Importance: {target.importance}
         reasons = []
         min_confidence = 0.8  # Minimum confidence threshold
         
-        # Perform holistic validation
-        holistic_result = self.perform_holistic_validation(row, validation_results)
+        logger.info(f"Determining next check date for row with {len(validation_results)} validation results")
         
-        # Store holistic validation result in the validation_results
-        validation_results['holistic_validation'] = holistic_result
-        
-        # If holistic validation found issues, add to reasons
-        if holistic_result["concerns"]:
-            reasons.extend(holistic_result["concerns"])
-        
-        # Check individual fields
-        for target in self.validation_targets:
-            if target.column in validation_results:
-                result = validation_results[target.column]
-                confidence = result.get('confidence', 0.0)
-                validated_value = result.get('value')
-                quote = result.get('quote', '')
+        try:
+            # Perform holistic validation
+            holistic_result = self.perform_holistic_validation(row, validation_results)
+            
+            # Log holistic validation results
+            logger.info(f"Holistic validation results: {json.dumps(holistic_result, default=str)}")
+            
+            # Store holistic validation result in the validation_results
+            validation_results['holistic_validation'] = holistic_result
+            
+            # If holistic validation found issues, add to reasons
+            if holistic_result["concerns"]:
+                logger.info(f"Holistic validation found {len(holistic_result['concerns'])} concerns")
+                reasons.extend(holistic_result["concerns"])
+            
+            # Check individual fields
+            for target in self.validation_targets:
+                if target.column in validation_results:
+                    result = validation_results[target.column]
+                    confidence = result.get('confidence', 0.0)
+                    validated_value = result.get('value')
+                    quote = result.get('quote', '')
+                    
+                    # Make sure confidence is a float
+                    if isinstance(confidence, str):
+                        try:
+                            confidence = float(confidence)
+                        except (ValueError, TypeError):
+                            confidence = 0.0
+                    
+                    if confidence < min_confidence:
+                        reason = f"Low confidence ({confidence:.2f}) for {target.column}: {quote}"
+                        logger.info(reason)
+                        reasons.append(reason)
+                        continue
+                    
+                    if validated_value is None:
+                        reason = f"Invalid value for {target.column}: {quote}"
+                        logger.info(reason)
+                        reasons.append(reason)
+                        continue
+            
+            # Determine when to schedule the next check
+            if holistic_result["needs_review"]:
+                # If holistic validation indicates need for review, schedule sooner
+                next_check = datetime.now() + timedelta(days=1)
+                if not reasons:
+                    reasons.append("Holistic validation indicates need for review")
+                logger.info(f"Setting next check to {next_check} due to need for review")
+                return next_check, reasons
+            elif reasons:
+                # If there are other issues, schedule next check in 1 day
+                next_check = datetime.now() + timedelta(days=1)
+                logger.info(f"Setting next check to {next_check} due to {len(reasons)} issues found")
+                return next_check, reasons
+            else:
+                # If all validations passed, schedule next check based on cache TTL
+                next_check = datetime.now() + timedelta(days=self.cache_ttl_days)
+                logger.info(f"Setting next check to {next_check} as all validations passed")
+                return next_check, ["All validations passed"]
                 
-                # Make sure confidence is a float
-                if isinstance(confidence, str):
-                    try:
-                        confidence = float(confidence)
-                    except (ValueError, TypeError):
-                        confidence = 0.0
-                
-                if confidence < min_confidence:
-                    reasons.append(f"Low confidence ({confidence:.2f}) for {target.column}: {quote}")
-                    continue
-                
-                if validated_value is None:
-                    reasons.append(f"Invalid value for {target.column}: {quote}")
-                    continue
-        
-        # Determine when to schedule the next check
-        if holistic_result["needs_review"]:
-            # If holistic validation indicates need for review, schedule sooner
+        except Exception as e:
+            logger.error(f"Error in determine_next_check_date: {str(e)}")
+            logger.error(traceback.format_exc())
+            # Return a default date in case of error
             next_check = datetime.now() + timedelta(days=1)
-            if not reasons:
-                reasons.append("Holistic validation indicates need for review")
-            return next_check, reasons
-        elif reasons:
-            # If there are other issues, schedule next check in 1 day
-            next_check = datetime.now() + timedelta(days=1)
-            return next_check, reasons
-        else:
-            # If all validations passed, schedule next check based on cache TTL
-            next_check = datetime.now() + timedelta(days=self.cache_ttl_days)
-            return next_check, ["All validations passed"] 
+            reasons.append(f"Error determining next check date: {str(e)}")
+            return next_check, reasons 
