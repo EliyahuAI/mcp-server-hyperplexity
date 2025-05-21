@@ -295,7 +295,7 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
         # Run test if requested
         if run_test:
             logger.info("\nRunning test after deployment...")
-            test_lambda_function(LAMBDA_CONFIG["FunctionName"], region)
+            test_lambda_function(LAMBDA_CONFIG["FunctionName"], region, None)
         
         return True
         
@@ -305,13 +305,26 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
         traceback.print_exc()
         return False
 
-def test_lambda_function(function_name, region=None):
+def test_lambda_function(function_name, region=None, test_event_file=None):
     """Test the Lambda function with the enhanced test event."""
     logger.info(f"Testing Lambda function: {function_name}")
     
     try:
         # Load test event
-        test_event_path = PROJECT_DIR / "test_events" / "enhanced_test_event.json"
+        if test_event_file:
+            test_event_path = Path(test_event_file)
+            logger.info(f"Using custom test event: {test_event_path}")
+        else:
+            # Try the ratio competitive intelligence test file first
+            ratio_test_path = PROJECT_DIR / "test_events" / "ratio_competitive_intelligence_test.json"
+            if ratio_test_path.exists():
+                test_event_path = ratio_test_path
+                logger.info(f"Using ratio test event: {test_event_path}")
+            else:
+                # Fall back to the enhanced test event
+                test_event_path = PROJECT_DIR / "test_events" / "enhanced_test_event.json"
+                logger.info(f"Using default test event: {test_event_path}")
+                
         with open(test_event_path, 'r') as f:
             test_event = json.load(f)
         
@@ -459,6 +472,7 @@ def main():
     parser.add_argument('--run-test', action='store_true', help='Run a test of the function after deployment')
     parser.add_argument('--test-only', action='store_true', help='Only run a test without deploying')
     parser.add_argument('--delete-cache', action='store_true', help='Delete all validation cache objects from the S3 bucket')
+    parser.add_argument('--test-event', help='Path to a custom test event JSON file to use for testing')
     args = parser.parse_args()
     
     # Handle delete-cache option
@@ -479,7 +493,7 @@ def main():
     if args.test_only:
         function_name = args.function_name or LAMBDA_CONFIG["FunctionName"]
         logger.info(f"Running test against Lambda function: {function_name}")
-        test_lambda_function(function_name, args.region)
+        test_lambda_function(function_name, args.region, args.test_event)
         return 0
     
     # Check if we need to build the package

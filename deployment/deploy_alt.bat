@@ -7,7 +7,7 @@ echo Checking if Lambda package exists...
 echo.
 
 echo Deploying Lambda Function...
-python create_package.py --deploy --region us-east-1 --s3-bucket perplexity-cache --verify --delete-cache --no-rebuild --run-test
+python create_package.py --deploy --region us-east-1 --s3-bucket perplexity-cache --verify --delete-cache --force-rebuild --run-test
 
 echo.
 echo Deployment completed. Press any key to exit.
