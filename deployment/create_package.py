@@ -181,6 +181,14 @@ def copy_source_files():
     else:
         logger.warning(f"prompt_loader.py not found at {prompt_loader}")
     
+    # Copy url_extractor.py
+    url_extractor = SRC_DIR / "url_extractor.py"
+    if url_extractor.exists():
+        shutil.copy(url_extractor, PACKAGE_DIR)
+        logger.info("Copied url_extractor.py")
+    else:
+        logger.warning(f"url_extractor.py not found at {url_extractor}")
+    
     # Copy prompts.yml
     prompts_yml = PROJECT_DIR / "prompts.yml"
     if prompts_yml.exists():

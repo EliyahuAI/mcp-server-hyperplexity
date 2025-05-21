@@ -9,6 +9,7 @@ from pathlib import Path
 # Import prompt_loader
 try:
     from prompt_loader import load_prompts
+    from url_extractor import normalize_sources, extract_urls_from_text, extract_main_url_from_quote
 except ImportError:
     # For local development, might need to adjust the path
     import sys
@@ -16,10 +17,20 @@ except ImportError:
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     try:
         from prompt_loader import load_prompts
+        from url_extractor import normalize_sources, extract_urls_from_text, extract_main_url_from_quote
     except ImportError:
         # Fallback if module can't be imported
         def load_prompts(path=None):
             return {}
+        
+        def normalize_sources(response_obj):
+            return response_obj
+            
+        def extract_urls_from_text(text):
+            return []
+            
+        def extract_main_url_from_quote(quote):
+            return None
 
 logger = logging.getLogger()
 
@@ -400,10 +411,13 @@ Importance: {target.importance}
                     json_start = content.find("```json") + 7
                     json_end = content.find("```", json_start)
                     if json_end > json_start:
-                            validation_result = json.loads(content[json_start:json_end].strip())
+                        validation_result = json.loads(content[json_start:json_end].strip())
                 else:
-                        return None, 0.0, [], "LOW", "", "", False, False
-                
+                    return None, 0.0, [], "LOW", "", "", False, False
+            
+            # Normalize sources to extract URLs from all text fields
+            validation_result = normalize_sources(validation_result)
+            
             # Extract values
             answer = validation_result.get('answer', '')
             confidence_level = validation_result.get('confidence', 'LOW')
@@ -479,6 +493,9 @@ Importance: {target.importance}
                     column = item.get("column", "")
                     if not column:
                         continue
+                    
+                    # Normalize sources for this item
+                    item = normalize_sources(item)
                     
                     answer = item.get("answer", "")
                     confidence_level = item.get("confidence", "LOW")
