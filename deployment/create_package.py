@@ -401,7 +401,7 @@ def delete_s3_cache(bucket_name, region=None):
         for page in pages:
             if 'Contents' not in page:
                 logger.info("No cache objects found.")
-                return
+                return True  # Return True even when no objects are found (success)
                 
             objects_to_delete = [{'Key': obj['Key']} for obj in page['Contents']]
             total_objects += len(objects_to_delete)
@@ -433,7 +433,7 @@ def delete_s3_cache(bucket_name, region=None):
         traceback.print_exc()
         return False
     
-        return True
+    return True
 
 def main():
     """Main function."""
@@ -455,10 +455,15 @@ def main():
     # Handle delete-cache option
     if args.delete_cache:
         logger.info(f"Deleting validation cache from S3 bucket: {args.s3_bucket}")
-        success = delete_s3_cache(args.s3_bucket, args.region)
-        if not success:
-            return 1
-        if not args.deploy and not args.test_only:
+        cache_deleted = delete_s3_cache(args.s3_bucket, args.region)
+        
+        # If cache deletion was requested but failed, log an error but continue
+        if not cache_deleted:
+            logger.error("Failed to delete cache, but continuing with deployment/test")
+        
+        # If only cache deletion was requested (no other actions), exit here
+        if not args.deploy and not args.test_only and not args.force_rebuild and not args.no_rebuild:
+            logger.info("Cache deletion completed. No other operations requested.")
             return 0
     
     # Handle test-only option
