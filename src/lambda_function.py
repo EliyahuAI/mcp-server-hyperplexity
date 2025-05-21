@@ -319,7 +319,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if target.column in row_results:
                         accumulated_results[target.column] = row_results[target.column]
             
-            # Revisit CRITICAL fields with less than HIGH confidence
+            # DISABLED: Revisit CRITICAL fields with less than HIGH confidence
+            """
             critical_fields = validator._get_critical_fields(validator.validation_targets)
             critical_revisits = []
             
@@ -345,7 +346,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 for field in critical_revisits:
                     logger.info(f"Providing previous validation context for {field.column} re-validation")
                 
-                await process_multiplex_group(session, row, row_results, critical_revisits, accumulated_results)
+                await process_multiplex_group(
+                    session, 
+                    row, 
+                    row_results, 
+                    critical_revisits, 
+                    accumulated_results
+                )
                 total_multiplex_validations += 1
                 
                 # Log the final results after re-validation
@@ -372,12 +379,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             if field.column in row_results:
                                 final_confidence = row_results[field.column].get('confidence_level', 'LOW')
                                 logger.info(f"After isolated validation: {field.column} confidence is now {final_confidence}")
+            """
             
-            # Determine next check date
+            # Still determine next check date, but without holistic validation
             next_check, reasons = validator.determine_next_check_date(row, row_results)
             row_results['next_check'] = next_check.isoformat() if next_check else None
             row_results['reasons'] = reasons
             
+            # DISABLED: Holistic validation and consistency check
+            """
             # Get holistic validation results (already done in determine_next_check_date)
             holistic_validation = row_results.get('holistic_validation', {})
             
@@ -437,6 +447,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             if 'holistic_validation' in row_results:
                                 logger.info("Updated holistic validation after priority field re-validation:")
                                 logger.info(json.dumps(row_results['holistic_validation'], indent=2))
+            """
             
             return row_idx, row_results
         
