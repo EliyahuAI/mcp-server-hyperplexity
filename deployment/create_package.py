@@ -16,6 +16,7 @@ import base64
 import random
 import re
 import logging
+from botocore.config import Config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -33,13 +34,16 @@ LAMBDA_CONFIG = {
     "FunctionName": "perplexity-validator",
     "Runtime": "python3.9",
     "Handler": "lambda_function.lambda_handler",
-    "Timeout": 180,  # 3 minutes in seconds
-    "MemorySize": 512,  # MB
+    "Timeout": 600,  # 10 minutes in seconds (max allowed for Lambda)
+    "MemorySize": 1024,  # Increased from 512 MB to 1024 MB for better performance
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
     "Environment": {
         "Variables": {
             "S3_CACHE_BUCKET": "perplexity-cache"
         }
+    },
+    "TracingConfig": {
+        "Mode": "Active"  # Enable X-Ray tracing for better debugging
     }
 }
 
@@ -173,6 +177,13 @@ def copy_source_files():
     # Copy schema_validator.py
     schema_source = SRC_DIR / "schema_validator.py"
     shutil.copy(schema_source, PACKAGE_DIR)
+    # Copy perplexity_schema.py
+    perplexity_schema = SRC_DIR / "perplexity_schema.py"
+    if perplexity_schema.exists():
+        shutil.copy(perplexity_schema, PACKAGE_DIR)
+        logger.info("Copied perplexity_schema.py")
+    else:
+        logger.warning(f"perplexity_schema.py not found at {perplexity_schema}")
     # Copy prompt_loader.py
     prompt_loader = SRC_DIR / "prompt_loader.py"
     if prompt_loader.exists():
@@ -180,6 +191,22 @@ def copy_source_files():
         logger.info("Copied prompt_loader.py")
     else:
         logger.warning(f"prompt_loader.py not found at {prompt_loader}")
+    
+    # Copy test_logging.py
+    test_logging = SRC_DIR / "test_logging.py"
+    if test_logging.exists():
+        shutil.copy(test_logging, PACKAGE_DIR)
+        logger.info("Copied test_logging.py")
+    else:
+        logger.warning(f"test_logging.py not found at {test_logging}")
+    
+    # Copy diagnose_logs.py
+    diagnose_logs = SRC_DIR / "diagnose_logs.py"
+    if diagnose_logs.exists():
+        shutil.copy(diagnose_logs, PACKAGE_DIR)
+        logger.info("Copied diagnose_logs.py")
+    else:
+        logger.warning(f"diagnose_logs.py not found at {diagnose_logs}")
     
     # Copy url_extractor.py
     url_extractor = SRC_DIR / "url_extractor.py"
@@ -189,13 +216,20 @@ def copy_source_files():
     else:
         logger.warning(f"url_extractor.py not found at {url_extractor}")
     
-    # Copy prompts.yml
-    prompts_yml = PROJECT_DIR / "prompts.yml"
+    # Copy prompts.yml from src directory
+    prompts_yml = SRC_DIR / "prompts.yml"
     if prompts_yml.exists():
         shutil.copy(prompts_yml, PACKAGE_DIR)
         logger.info("Copied prompts.yml")
     else:
         logger.warning(f"prompts.yml not found at {prompts_yml}")
+        # Try looking in project root as fallback
+        fallback_prompts_yml = PROJECT_DIR / "prompts.yml"
+        if fallback_prompts_yml.exists():
+            shutil.copy(fallback_prompts_yml, PACKAGE_DIR)
+            logger.info("Copied prompts.yml from project root (fallback)")
+        else:
+            logger.error("prompts.yml not found in either src or project root!")
 
 def create_zip():
     """Create deployment zip file."""
@@ -207,13 +241,17 @@ def create_zip():
                 arcname = os.path.relpath(file_path, PACKAGE_DIR)
                 zipf.write(file_path, arcname)
 
-def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=False, run_test=False):
+def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=False, run_test=False, timeout=None, test_event=None):
     """Deploy the Lambda package to AWS."""
     if function_name:
         LAMBDA_CONFIG["FunctionName"] = function_name
     
     if s3_bucket:
         LAMBDA_CONFIG["Environment"]["Variables"]["S3_CACHE_BUCKET"] = s3_bucket
+        
+    if timeout:
+        LAMBDA_CONFIG["Timeout"] = timeout
+        logger.info(f"Setting Lambda function timeout to {timeout} seconds")
 
     lambda_client = boto3.client('lambda', region_name=region)
     
@@ -261,17 +299,19 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
                     logger.error(f"Error checking function state: {str(e)}")
             
             # Update function configuration
-                    update_config_args = {
-                        'FunctionName': LAMBDA_CONFIG["FunctionName"],
-                        'Runtime': LAMBDA_CONFIG["Runtime"],
-                        'Role': LAMBDA_CONFIG["Role"],
-                        'Handler': LAMBDA_CONFIG["Handler"],
-                        'Timeout': LAMBDA_CONFIG["Timeout"],
-                        'MemorySize': LAMBDA_CONFIG["MemorySize"],
-                        'Environment': LAMBDA_CONFIG["Environment"],
-                    }
-                    
-                    response = lambda_client.update_function_configuration(**update_config_args)
+            update_config_args = {
+                'FunctionName': LAMBDA_CONFIG["FunctionName"],
+                'Runtime': LAMBDA_CONFIG["Runtime"],
+                'Role': LAMBDA_CONFIG["Role"],
+                'Handler': LAMBDA_CONFIG["Handler"],
+                'Timeout': LAMBDA_CONFIG["Timeout"],
+                'MemorySize': LAMBDA_CONFIG["MemorySize"],
+                'Environment': LAMBDA_CONFIG["Environment"],
+                'TracingConfig': LAMBDA_CONFIG.get("TracingConfig", {'Mode': 'PassThrough'})
+            }
+            
+            logger.info(f"Updating function configuration with timeout={LAMBDA_CONFIG['Timeout']}s and memory={LAMBDA_CONFIG['MemorySize']}MB")
+            response = lambda_client.update_function_configuration(**update_config_args)
             logger.info("Function configuration updated successfully.")
         else:
             # Create new function
@@ -284,6 +324,7 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
                 'Timeout': LAMBDA_CONFIG["Timeout"],
                 'MemorySize': LAMBDA_CONFIG["MemorySize"],
                 'Environment': LAMBDA_CONFIG["Environment"],
+                'TracingConfig': LAMBDA_CONFIG.get("TracingConfig", {'Mode': 'PassThrough'})
             }
             
             response = lambda_client.create_function(**create_function_args)
@@ -295,7 +336,7 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
         # Run test if requested
         if run_test:
             logger.info("\nRunning test after deployment...")
-            test_lambda_function(LAMBDA_CONFIG["FunctionName"], region, args.test_event)
+            test_lambda_function(LAMBDA_CONFIG["FunctionName"], region, test_event)
         
         return True
         
@@ -310,77 +351,291 @@ def test_lambda_function(function_name, region=None, test_event=None):
     logger.info(f"Testing Lambda function: {function_name}")
     
     try:
-        # Load test event
-        test_event_path = PROJECT_DIR / "test_events" / "enhanced_test_event.json"
-        with open(test_event_path, 'r') as f:
-            test_event = json.load(f)
+        # Initialize Lambda client with increased timeout
+        lambda_client = boto3.client(
+            'lambda', 
+            region_name=region,
+            config=Config(
+                connect_timeout=120,
+                read_timeout=300,  # Increase read timeout to 5 minutes
+                retries={'max_attempts': 0}
+            )
+        )
         
-        # Initialize Lambda client
-        lambda_client = boto3.client('lambda', region_name=region)
+        # Load test event
+        if test_event:
+            # If test_event is a path, load it
+            try:
+                # Normalize path to handle both forward and backslashes
+                test_event_path = Path(test_event.replace('\\', '/'))
+                logger.info(f"Looking for test event at: {test_event_path}")
+                
+                if test_event_path.exists():
+                    logger.info(f"Loading test event from {test_event_path}")
+                    with open(test_event_path, 'r') as f:
+                        test_event_data = json.load(f)
+                else:
+                    # Try alternative path constructions
+                    alternative_paths = [
+                        PROJECT_DIR / test_event,
+                        PROJECT_DIR / "test_events" / test_event,
+                        Path(os.path.abspath(test_event))
+                    ]
+                    
+                    for alt_path in alternative_paths:
+                        logger.info(f"Trying alternative path: {alt_path}")
+                        if alt_path.exists():
+                            logger.info(f"Found test event at alternative path: {alt_path}")
+                            with open(alt_path, 'r') as f:
+                                test_event_data = json.load(f)
+                            break
+                    else:
+                        logger.warning(f"Custom test event file not found at any tried location: {test_event}")
+                        logger.info(f"Falling back to default test event")
+                        test_event_path = PROJECT_DIR / "test_events" / "enhanced_test_event.json"
+                        with open(test_event_path, 'r') as f:
+                            test_event_data = json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading test event: {e}")
+                logger.info(f"Falling back to default test event")
+                test_event_path = PROJECT_DIR / "test_events" / "enhanced_test_event.json"
+                with open(test_event_path, 'r') as f:
+                    test_event_data = json.load(f)
+        else:
+            test_event_path = PROJECT_DIR / "test_events" / "enhanced_test_event.json"
+            with open(test_event_path, 'r') as f:
+                test_event_data = json.load(f)
         
         logger.info("Invoking Lambda function...")
         
+        # First, get the log group name
+        logs_client = boto3.client('logs', region_name=region)
+        log_group_name = f"/aws/lambda/{function_name}"
+        
+        # Check if log group exists
+        try:
+            log_groups = logs_client.describe_log_groups(logGroupNamePrefix=log_group_name)
+            if log_groups.get('logGroups'):
+                logger.info(f"CloudWatch Logs group exists: {log_group_name}")
+            else:
+                logger.warning(f"CloudWatch Logs group does not exist yet: {log_group_name}")
+                logger.info("Logs will be created automatically when Lambda function writes to stdout/stderr")
+        except Exception as e:
+            logger.warning(f"Could not verify log group: {e}")
+            logger.info("Will try to create log group automatically when function executes")
+        
+        # Get the timestamp before invocation to filter logs 
+        start_time = int(time.time() * 1000) - 60000  # Start 1 minute before now
+
         # Invoke Lambda function
+        logger.info("Invoking Lambda with 5-minute timeout...")
         response = lambda_client.invoke(
             FunctionName=function_name,
             InvocationType='RequestResponse',
-            Payload=json.dumps(test_event)
+            Payload=json.dumps(test_event_data),
+            LogType='Tail'  # Request the last 4KB of logs
         )
         
+        # Parse base64 encoded logs from the response
+        if 'LogResult' in response:
+            log_result = base64.b64decode(response['LogResult']).decode()
+            logger.info(f"Lambda execution log:\n{log_result}")
+        
         # Parse response
-        response_payload = json.loads(response['Payload'].read())
-        
-        # Log the full response for debugging
-        logger.info("Full Lambda response:")
-        logger.info(json.dumps(response_payload, indent=2))
-        
-        if response_payload.get('statusCode') == 200:
-            results = response_payload['body']
-            logger.info("Validation completed successfully!")
-            logger.info(f"Cache stats: {results['cache_stats']}")
+        if 'Payload' in response:
+            response_payload = json.loads(response['Payload'].read())
             
-            # Print validation results
-            for row_idx, row_results in results['validation_results'].items():
-                logger.info(f"\nRow {row_idx} Results:")
-                for target, result in row_results.items():
-                    if target not in ['next_check', 'reasons']:
-                        logger.info(f"  {target}:")
-                        logger.info(f"    Value: {result['value']}")
-                        logger.info(f"    Confidence: {result['confidence']} ({result['confidence_level']})")
-                        logger.info(f"    Sources: {result['sources']}")
-                        if result['quote']:
-                            logger.info(f"    Quote: {result['quote']}")
+            # Log the full response for debugging
+            logger.info("Full Lambda response:")
+            logger.info(json.dumps(response_payload, indent=2))
+            
+            if response_payload.get('statusCode') == 200:
+                results = response_payload['body']
+                logger.info("Validation completed successfully!")
+                logger.info(f"Cache stats: {results['cache_stats']}")
                 
-                logger.info(f"  Next Check: {row_results['next_check']}")
-                logger.info(f"  Reasons: {row_results['reasons']}")
+                # Print validation results
+                if results.get('validation_results'):
+                    for row_idx, row_results in results['validation_results'].items():
+                        logger.info(f"\nRow {row_idx} Results:")
+                        for target, result in row_results.items():
+                            if target not in ['next_check', 'reasons']:
+                                logger.info(f"  {target}:")
+                                logger.info(f"    Value: {result['value']}")
+                                logger.info(f"    Confidence: {result['confidence']} ({result['confidence_level']})")
+                                logger.info(f"    Sources: {result['sources']}")
+                                if result['quote']:
+                                    logger.info(f"    Quote: {result['quote']}")
+                        
+                        logger.info(f"  Next Check: {row_results.get('next_check', 'None')}")
+                        logger.info(f"  Reasons: {row_results.get('reasons', [])}")
+                else:
+                    logger.info("No validation results returned, likely using cached results")
                 
-            # Return after processing all rows (fixed indentation)
-            return True
+                # Print raw API responses if available
+                if results.get('raw_responses'):
+                    logger.info("\n=== RAW PERPLEXITY API RESPONSES ===")
+                    for response_id, response_data in results['raw_responses'].items():
+                        logger.info(f"\nResponse ID: {response_id}")
+                        logger.info(f"Fields: {response_data.get('fields', [])}")
+                        logger.info(f"Is Cached: {response_data.get('is_cached', False)}")
+                        
+                        # Log the prompt
+                        logger.info("\nPrompt:")
+                        prompt_lines = response_data.get('prompt', '').split('\n')
+                        for line in prompt_lines[:20]:  # Show first 20 lines
+                            logger.info(f"  {line}")
+                        if len(prompt_lines) > 20:
+                            logger.info(f"  ... ({len(prompt_lines) - 20} more lines)")
+                        
+                        # Log the API response content
+                        if 'response' in response_data:
+                            api_response = response_data['response']
+                            
+                            # Show citations
+                            if 'citations' in api_response and api_response['citations']:
+                                logger.info("\nCitations:")
+                                for i, citation in enumerate(api_response['citations']):
+                                    logger.info(f"  [{i+1}] {citation}")
+                            
+                            # Extract and format the content field
+                            if 'choices' in api_response and api_response['choices']:
+                                content = api_response['choices'][0].get('message', {}).get('content', '')
+                                if content:
+                                    logger.info("\nModel Response Content:")
+                                    try:
+                                        # Try to pretty-print the content as JSON
+                                        content_json = json.loads(content)
+                                        logger.info(json.dumps(content_json, indent=2))
+                                    except:
+                                        # If not JSON, print as is
+                                        logger.info(content)
+                    
+                    logger.info("=== END RAW RESPONSES ===\n")
+                
+                return True
+            else:
+                error_msg = response_payload.get('body', {}).get('error')
+                if not error_msg:
+                    error_msg = response_payload.get('errorMessage', 'Unknown error')
+                logger.error(f"Error in Lambda execution: {error_msg}")
+                
+                # Log function error if available
+                if 'FunctionError' in response:
+                    logger.error(f"Function error type: {response['FunctionError']}")
+                
+                # Log any stack trace if available
+                if 'errorMessage' in response_payload:
+                    logger.error("Error message:")
+                    logger.error(response_payload['errorMessage'])
+                if 'stackTrace' in response_payload:
+                    logger.error("Stack trace:")
+                    for line in response_payload['stackTrace']:
+                        logger.error(line)
         else:
-            error_msg = response_payload.get('body', {}).get('error')
-            if not error_msg:
-                error_msg = response_payload.get('errorMessage', 'Unknown error')
-            logger.error(f"Error in Lambda execution: {error_msg}")
+            logger.error("No payload returned from Lambda function")
+        
+        # Fetch CloudWatch logs
+        end_time = int(time.time() * 1000)
+        logger.info(f"Fetching CloudWatch logs from {log_group_name}...")
+        
+        try:
+            # Wait a moment for logs to be available
+            time.sleep(3)
             
-            # Log function error if available
-            if 'FunctionError' in response:
-                logger.error(f"Function error type: {response['FunctionError']}")
+            # Get log streams, sorted by last event time
+            log_streams = logs_client.describe_log_streams(
+                logGroupName=log_group_name,
+                orderBy='LastEventTime',
+                descending=True,
+                limit=3
+            )
             
-            # Log any stack trace if available
-            if 'errorMessage' in response_payload:
-                logger.error("Error message:")
-                logger.error(response_payload['errorMessage'])
-            if 'stackTrace' in response_payload:
-                logger.error("Stack trace:")
-                for line in response_payload['stackTrace']:
-                    logger.error(line)
-            
-            return False
+            if 'logStreams' in log_streams and log_streams['logStreams']:
+                latest_stream = log_streams['logStreams'][0]['logStreamName']
+                logger.info(f"Latest log stream: {latest_stream}")
+                
+                # Get log events
+                log_events = logs_client.get_log_events(
+                    logGroupName=log_group_name,
+                    logStreamName=latest_stream,
+                    startTime=start_time,
+                    endTime=end_time,
+                    limit=1000
+                )
+                
+                if 'events' in log_events and log_events['events']:
+                    logger.info("=== CLOUDWATCH LOGS ===")
+                    for event in log_events['events']:
+                        logger.info(event['message'])
+                    logger.info("=== END LOGS ===")
+                else:
+                    logger.warning("No log events found in the specified time range")
+            else:
+                logger.warning("No log streams found for this function")
+        except Exception as e:
+            logger.error(f"Error retrieving CloudWatch logs: {e}")
+                
+        return False
         
     except Exception as e:
-        logger.error(f"Error testing Lambda: {str(e)}")
-        import traceback
+        logger.error(f"Error testing Lambda: {e}")
         logger.error("Full traceback:")
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
+
+def get_cloudwatch_logs(function_name, region=None, minutes=10):
+    """Utility function to fetch the latest CloudWatch logs for a Lambda function."""
+    try:
+        import traceback
+        logs_client = boto3.client('logs', region_name=region)
+        log_group_name = f"/aws/lambda/{function_name}"
+        
+        # Calculate start time (minutes ago)
+        start_time = int((time.time() - (minutes * 60)) * 1000)
+        end_time = int(time.time() * 1000)
+        
+        logger.info(f"Fetching CloudWatch logs for {function_name} from the last {minutes} minutes...")
+        
+        # Get the most recent log streams
+        log_streams = logs_client.describe_log_streams(
+            logGroupName=log_group_name,
+            orderBy='LastEventTime',
+            descending=True,
+            limit=3
+        )
+        
+        if not log_streams.get('logStreams'):
+            logger.warning(f"No log streams found for {log_group_name}")
+            return False
+            
+        # Get logs from the most recent stream
+        latest_stream = log_streams['logStreams'][0]['logStreamName']
+        logger.info(f"Reading logs from stream: {latest_stream}")
+        
+        log_events = logs_client.get_log_events(
+            logGroupName=log_group_name,
+            logStreamName=latest_stream,
+            startTime=start_time,
+            endTime=end_time,
+            limit=1000  # Increase if needed
+        )
+        
+        if not log_events.get('events'):
+            logger.warning("No log events found in the specified time range")
+            return False
+            
+        # Print the logs
+        logger.info("\n=== CLOUDWATCH LOGS ===")
+        for event in log_events['events']:
+            logger.info(event['message'])
+        logger.info("=== END LOGS ===\n")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error retrieving CloudWatch logs: {e}")
         logger.error(traceback.format_exc())
         return False
 
@@ -452,7 +707,120 @@ def main():
     parser.add_argument('--test-only', action='store_true', help='Only run a test without deploying')
     parser.add_argument('--delete-cache', action='store_true', help='Delete all validation cache objects from the S3 bucket')
     parser.add_argument('--test-event', help='Path to a custom test event JSON file to use for testing')
+    parser.add_argument('--logs', action='store_true', help='Fetch the latest CloudWatch logs for the Lambda function')
+    parser.add_argument('--logs-minutes', type=int, default=30, help='Number of minutes of logs to fetch (default: 30)')
+    parser.add_argument('--timeout', type=int, default=300, help='Lambda invocation timeout in seconds (default: 300)')
+    parser.add_argument('--diagnose-logs', action='store_true', help='Deploy and test a function to diagnose CloudWatch Logs permissions')
     args = parser.parse_args()
+    
+    # Special handling for diagnose logs
+    if args.diagnose_logs:
+        function_name = "perplexity-validator-logs-test"
+        logger.info(f"Setting up log diagnostics function: {function_name}")
+        
+        # Build the package
+        logger.info("Creating diagnostic package...")
+        package_dir = clean_directory(PACKAGE_DIR)
+        PACKAGE_DIR = package_dir
+        
+        # Install required dependencies
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install",
+            "boto3",
+            "-t", str(PACKAGE_DIR),
+            "--no-cache-dir"
+        ])
+        
+        # Copy diagnose_logs.py as lambda_function.py
+        diagnose_logs = SRC_DIR / "diagnose_logs.py"
+        if diagnose_logs.exists():
+            shutil.copy(diagnose_logs, PACKAGE_DIR / "lambda_function.py")
+            logger.info("Copied diagnose_logs.py as lambda_function.py")
+        else:
+            logger.error("diagnose_logs.py not found. Cannot continue.")
+            return 1
+            
+        # Create ZIP file
+        create_zip()
+        
+        # Deploy
+        test_lambda_config = {
+            "FunctionName": function_name,
+            "Runtime": "python3.9",
+            "Handler": "lambda_function.lambda_handler",
+            "Timeout": 30,
+            "MemorySize": 512,
+            "Role": LAMBDA_CONFIG["Role"],
+            "Environment": {"Variables": {}},
+            "TracingConfig": {"Mode": "Active"}
+        }
+        
+        # Store original config
+        original_config = LAMBDA_CONFIG.copy()
+        
+        # Use test config
+        LAMBDA_CONFIG.update(test_lambda_config)
+        
+        # Deploy
+        success = deploy_to_lambda()
+        
+        if success:
+            # Wait for the function to be active
+            logger.info("Waiting for function to reach Active state...")
+            max_wait_time = 30  # seconds
+            wait_interval = 3   # seconds
+            
+            for i in range(int(max_wait_time / wait_interval)):
+                try:
+                    function_info = lambda_client.get_function(
+                        FunctionName=function_name
+                    )
+                    state = function_info['Configuration']['State']
+                    logger.info(f"Function state: {state}")
+                    
+                    if state == 'Active':
+                        logger.info("Function is now active!")
+                        break
+                    else:
+                        logger.info(f"Function is in {state} state, waiting...")
+                        time.sleep(wait_interval)
+                except Exception as e:
+                    logger.error(f"Error checking function state: {e}")
+                    time.sleep(wait_interval)
+            
+            # Test the function
+            logger.info("Invoking logs diagnostics function...")
+            lambda_client = boto3.client('lambda', region_name=args.region)
+            response = lambda_client.invoke(
+                FunctionName=function_name,
+                InvocationType='RequestResponse',
+                LogType='Tail'
+            )
+            
+            # Display logs
+            if 'LogResult' in response:
+                log_result = base64.b64decode(response['LogResult']).decode()
+                logger.info(f"Log diagnostic output:\n{log_result}")
+            
+            # Wait for logs to propagate
+            logger.info("Waiting 5 seconds for logs to propagate...")
+            time.sleep(5)
+            
+            # Try to fetch CloudWatch logs
+            get_cloudwatch_logs(function_name, args.region, 5)
+        
+        # Restore original config
+        LAMBDA_CONFIG.update(original_config)
+        return 0
+    
+    # Get Lambda function name
+    function_name = args.function_name or LAMBDA_CONFIG["FunctionName"]
+    
+    # Just fetch logs if that's all that's requested
+    if args.logs and not (args.deploy or args.test_only or args.delete_cache or args.force_rebuild or args.no_rebuild):
+        logger.info(f"Fetching CloudWatch logs for {function_name}...")
+        get_cloudwatch_logs(function_name, args.region, args.logs_minutes)
+        return 0
     
     # Handle delete-cache option
     if args.delete_cache:
@@ -464,7 +832,7 @@ def main():
             logger.error("Failed to delete cache, but continuing with deployment/test")
         
         # If only cache deletion was requested (no other actions), exit here
-        if not args.deploy and not args.test_only and not args.force_rebuild and not args.no_rebuild:
+        if not args.deploy and not args.test_only and not args.force_rebuild and not args.no_rebuild and not args.logs:
             logger.info("Cache deletion completed. No other operations requested.")
             return 0
     
@@ -534,7 +902,9 @@ def main():
                 args.region, 
                 args.s3_bucket, 
                 args.verify,
-                args.run_test
+                args.run_test,
+                args.timeout,
+                args.test_event
             )
             if not success:
                 return 1
@@ -545,9 +915,11 @@ def main():
             return 1
     else:
         logger.info("\nTo deploy to AWS Lambda, use:")
-        logger.info(f"python {__file__} --deploy [--run-test]")
+        logger.info(f"python {__file__} --deploy [--run-test] [--timeout SECONDS]")
         logger.info("\nTo test an existing Lambda function:")
-        logger.info(f"python {__file__} --test-only --function-name perplexity-validator")
+        logger.info(f"python {__file__} --test-only [--timeout SECONDS] [--test-event PATH]")
+        logger.info("\nTo fetch CloudWatch logs:")
+        logger.info(f"python {__file__} --logs [--logs-minutes MINUTES]")
     
     return 0
 
