@@ -48,4 +48,25 @@ logs/
 
 # Local development
 .env
-.env.* 
+.env.*
+
+# Test and temporary files
+lambda_payload_*.json
+lambda_response_*.json
+lambda_*debug.json
+simple_lambda_*.json
+validation_results_*.xlsx
+fill_test_data.py
+temp_*.py
+*_test.py
+test_*.py
+!excel_test.py
+
+# Other temporary files
+tables/
+*.tmp
+
+# Don't ignore essential test files
+!run_lambda_test.py
+!src/run_ratio_test.py
+!src/test_logging.py 
