@@ -16,9 +16,10 @@ import boto3
 import time
 from datetime import datetime
 from pathlib import Path
+import re
 
 # Configure logging
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ def load_config_file(config_path):
 def create_batch_payload(rows_data, config, row_keys):
     """Create a payload for the Lambda function with multiple rows."""
     payload = {
-        "test_mode": False,  # Set to False for production use
+        "test_mode": True,  # Set to True for better debugging 
         "config": config,
         "validation_data": {
             "rows": rows_data
@@ -196,6 +197,10 @@ def process_lambda_response(response, row_keys):
                     if isinstance(validation_results, dict):
                         logger.info(f"Received validation results for {len(validation_results)} rows")
                         
+                        # Debug print all result keys
+                        logger.info(f"Result keys from Lambda: {list(validation_results.keys())}")
+                        logger.info(f"Original row keys: {row_keys}")
+                        
                         # Map results to the original row keys using the results dictionary
                         processed_results = {}
                         
@@ -217,7 +222,7 @@ def process_lambda_response(response, row_keys):
                                 processed_results[matched_key] = cleaned_result
                                 logger.info(f"Matched result key: {result_key} to original key: {matched_key}")
                             else:
-                                # If no match found, use the result key as is
+                                # If no match found, use the result key as is - this is important!
                                 processed_results[result_key] = cleaned_result
                                 logger.info(f"No matching original key found for result key: {result_key}")
                         
@@ -226,11 +231,50 @@ def process_lambda_response(response, row_keys):
                             for key in processed_results:
                                 processed_results[key]['_raw_responses'] = body['raw_responses']
                         
+                        # Check if the processed results dictionary is empty despite having validation results
+                        if not processed_results and validation_results:
+                            logger.warning("No results were matched to original rows - using Lambda results directly")
+                            # Fall back to using the original validation results with their keys
+                            for result_key, result_data in validation_results.items():
+                                # Just use the unmodified result
+                                processed_results[result_key] = result_data
+                        
+                        logger.info(f"Final processed results contain {len(processed_results)} rows")
                         return processed_results
                     else:
                         logger.warning(f"validation_results is not a dictionary")
                 else:
                     logger.warning("No validation_results found in response body")
+                
+                # If there is 'data' in the response, this could be the debug/converted format
+                if 'data' in body:
+                    logger.info("Found 'data' field in response - trying to extract results")
+                    processed_results = {}
+                    data = body['data']
+                    
+                    for data_key, data_value in data.items():
+                        if 'validation_results' in data_value:
+                            results = data_value['validation_results']
+                            # Try to match with original row keys
+                            matched_key = match_key_to_original(data_key, row_keys)
+                            if matched_key:
+                                processed_results[matched_key] = results
+                                logger.info(f"Matched data key: {data_key} to original key: {matched_key}")
+                            else:
+                                # If no match found, use the data key as is
+                                processed_results[data_key] = results
+                                logger.info(f"No matching original key found for data key: {data_key}")
+                    
+                    if processed_results:
+                        logger.info(f"Extracted {len(processed_results)} results from data field")
+                        return processed_results
+                
+                # Special handling for debug format
+                if 'debug' in body:
+                    logger.info("Found 'debug' field in response - extracting results")
+                    debug_data = body['debug']
+                    if isinstance(debug_data, dict) and 'results' in debug_data:
+                        return debug_data['results']
                 
                 return {}
                 
@@ -238,10 +282,30 @@ def process_lambda_response(response, row_keys):
                 logger.error(f"Error parsing response body: {str(e)}")
                 import traceback
                 traceback.print_exc()
+                
+                # Last resort - try to extract anything useful from the response
+                try:
+                    if isinstance(response['body'], str):
+                        # Save the raw response for manual inspection
+                        with open("raw_response_body.json", "w") as f:
+                            f.write(response['body'])
+                        logger.info("Saved raw response body to raw_response_body.json")
+                        
+                        # Try a more permissive JSON parse
+                        import json5
+                        body = json5.loads(response['body'])
+                        if 'validation_results' in body:
+                            return {'debug_fallback': body['validation_results']}
+                except:
+                    pass
+                    
                 return {}
         else:
             # For old-format responses (unlikely)
             logger.warning("Response is not in API Gateway format, cannot process")
+            # Dump raw response for debugging
+            with open("non_gateway_response.json", "w") as f:
+                json.dump(response, f, indent=2)
             return {}
         
     except Exception as e:
@@ -252,8 +316,11 @@ def process_lambda_response(response, row_keys):
 
 def match_key_to_original(result_key, original_keys):
     """Match a result key to one of the original row keys."""
+    logger.debug(f"Attempting to match result key: {result_key}")
+    
     # Try direct match first
     if result_key in original_keys:
+        logger.debug(f"Direct match found for {result_key}")
         return result_key
     
     # Try normalized matching
@@ -261,25 +328,85 @@ def match_key_to_original(result_key, original_keys):
     for orig_key in original_keys:
         orig_key_norm = normalize_column_name(orig_key)
         if result_key_norm == orig_key_norm:
+            logger.debug(f"Normalized match found: {result_key} -> {orig_key}")
             return orig_key
     
-    # Try partial matching
+    # Try partial matching by splitting on separators
     for orig_key in original_keys:
-        # Split both keys by separators and check if parts match
-        result_parts = result_key.split("||") if "||" in result_key else result_key.split("|")
-        orig_parts = orig_key.split("||") if "||" in orig_key else orig_key.split("|")
+        # Split both keys by common separators and check if parts match
+        result_parts = re.split(r'[|_\-\s]+', result_key)
+        orig_parts = re.split(r'[|_\-\s]+', orig_key)
         
-        # If number of parts matches and most parts match
-        if len(result_parts) == len(orig_parts):
-            match_count = sum(1 for r, o in zip(result_parts, orig_parts) 
-                             if normalize_column_name(r) == normalize_column_name(o) or 
-                                normalize_column_name(r) in normalize_column_name(o) or
-                                normalize_column_name(o) in normalize_column_name(r))
-            if match_count >= max(2, len(result_parts) * 2 // 3):  # At least 2/3 of parts match
-                return orig_key
+        # Check how many parts match between the keys
+        common_parts = 0
+        for r_part in result_parts:
+            if not r_part.strip():
+                continue
+            r_norm = normalize_column_name(r_part)
+            for o_part in orig_parts:
+                if not o_part.strip():
+                    continue
+                o_norm = normalize_column_name(o_part)
+                if r_norm == o_norm or r_norm in o_norm or o_norm in r_norm:
+                    common_parts += 1
+                    break
+        
+        # If sufficient parts match, consider it a match
+        # Require at least 2 matching parts or >50% of parts to match
+        min_match = max(2, min(len(result_parts), len(orig_parts)) * 0.5)
+        if common_parts >= min_match:
+            logger.debug(f"Partial match: {result_key} -> {orig_key} ({common_parts} common parts)")
+            return orig_key
+    
+    # Try content-based matching - look for matching words and numbers
+    for orig_key in original_keys:
+        # Extract significant content (words, numbers, codes)
+        result_content = extract_significant_content(result_key)
+        orig_content = extract_significant_content(orig_key)
+        
+        # Check for overlap in content
+        common_content = set(result_content).intersection(set(orig_content))
+        if common_content and len(common_content) >= 2:  # At least 2 common elements
+            logger.debug(f"Content match: {result_key} -> {orig_key} (common: {common_content})")
+            return orig_key
+    
+    # As a last resort, try positional matching if original_keys is ordered
+    if len(original_keys) > 0:
+        try:
+            # If the number of results matches the number of original keys,
+            # assume they're in the same order
+            result_keys_seen = []
+            if len(result_keys_seen) == len(original_keys):
+                idx = result_keys_seen.index(result_key)
+                if idx < len(original_keys):
+                    logger.debug(f"Positional match: {result_key} -> {original_keys[idx]}")
+                    return original_keys[idx]
+        except (ValueError, IndexError):
+            pass
     
     # No match found
+    logger.debug(f"No match found for {result_key}")
     return None
+
+def extract_significant_content(key):
+    """Extract significant content from a key string - generic version."""
+    if not key:
+        return []
+    
+    content = []
+    # Extract all alphanumeric words (3+ chars)
+    words = re.findall(r'[A-Za-z0-9]{3,}', key)
+    content.extend(words)
+    
+    # Extract numbers
+    numbers = re.findall(r'\d+', key)
+    content.extend(numbers)
+    
+    # Extract codes/identifiers (patterns with letters and numbers)
+    codes = re.findall(r'[A-Za-z]+[0-9]+|[0-9]+[A-Za-z]+', key)
+    content.extend(codes)
+    
+    return content
 
 def generate_row_key(row, primary_keys):
     """Generate a unique key for a row based on primary key columns."""
@@ -396,11 +523,32 @@ def process_in_batches(df, config, batch_size, output_path, api_key=None):
 def save_results_to_excel(df, results_dict, output_path, config):
     """Save validation results to Excel with robust column handling."""
     try:
-        from lambda_test_json_clean import save_results_to_excel as excel_saver
-        return excel_saver(df, results_dict, output_path, config)
-    except ImportError:
-        logger.error("Could not import save_results_to_excel from lambda_test_json_clean.py")
-        logger.error("Falling back to basic Excel saving")
+        # Try to use the rich formatting from lambda_test_json_clean.py
+        try:
+            from lambda_test_json_clean import save_results_to_excel as excel_saver
+            logger.info("Using enhanced Excel formatting from lambda_test_json_clean")
+            
+            # Log the contents of the results dictionary for debugging
+            logger.info(f"Results dictionary contains {len(results_dict)} rows")
+            for key in results_dict.keys():
+                logger.info(f"Result key: {key[:50]}...")
+                
+                # Check if the results contain the required fields
+                result_data = results_dict[key]
+                if isinstance(result_data, dict):
+                    logger.info(f"  Fields: {list(result_data.keys())}")
+                else:
+                    logger.info(f"  Not a dictionary: {type(result_data)}")
+            
+            return excel_saver(df, results_dict, output_path, config)
+        except ImportError as e:
+            logger.error(f"Could not import save_results_to_excel: {str(e)}")
+            logger.error("Falling back to basic Excel saving")
+        except Exception as e:
+            logger.error(f"Error using enhanced Excel formatting: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            logger.error("Falling back to basic Excel saving")
         
         # Basic Excel saving if the import fails
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -409,10 +557,69 @@ def save_results_to_excel(df, results_dict, output_path, config):
         
         # Use pandas ExcelWriter
         writer = pd.ExcelWriter(output_path, engine='xlsxwriter')
-        df.to_excel(writer, index=False)
+        
+        # Create a copy of the original DataFrame to avoid modifying the input
+        result_df = df.copy()
+        
+        # Save the raw DataFrame
+        result_df.to_excel(writer, sheet_name='Raw Data', index=False)
+        
+        # Add a results sheet if we have results
+        if results_dict:
+            # Create a results summary sheet
+            workbook = writer.book
+            results_sheet = workbook.add_worksheet('Results Summary')
+            
+            # Create formats
+            header_format = workbook.add_format({
+                'bold': True, 'text_wrap': True, 'valign': 'center',
+                'fg_color': '#4472C4', 'font_color': 'white', 'border': 1
+            })
+            
+            # Add headers
+            headers = ["Row", "Key", "Columns Validated"]
+            for i, header in enumerate(headers):
+                results_sheet.write(0, i, header, header_format)
+            
+            # Set column widths
+            results_sheet.set_column(0, 0, 5)
+            results_sheet.set_column(1, 1, 50)
+            results_sheet.set_column(2, 2, 50)
+            
+            # Fill with result summary
+            row_idx = 1
+            for key, result_data in results_dict.items():
+                results_sheet.write(row_idx, 0, row_idx)
+                results_sheet.write(row_idx, 1, key)
+                
+                if isinstance(result_data, dict):
+                    validated_cols = [col for col in result_data.keys() 
+                                    if col not in ['holistic_validation', 'next_check', 'reasons', '_raw_responses']]
+                    results_sheet.write(row_idx, 2, ", ".join(validated_cols))
+                else:
+                    results_sheet.write(row_idx, 2, f"Invalid result type: {type(result_data)}")
+                
+                row_idx += 1
+        
+        # Save the workbook
         writer.close()
         logger.info(f"Results saved to {output_path} (basic format)")
         return output_path
+    except Exception as e:
+        logger.error(f"Error saving results to Excel: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        # Last resort - save results as JSON for manual inspection
+        try:
+            json_path = f"{os.path.splitext(output_path)[0]}_results.json"
+            with open(json_path, 'w') as f:
+                json.dump(results_dict, f, indent=2, default=str)
+            logger.info(f"Results saved as JSON to {json_path}")
+        except:
+            logger.error("Could not save results as JSON")
+        
+        raise
 
 def main():
     """Main function to process Excel file in batches through Lambda."""
