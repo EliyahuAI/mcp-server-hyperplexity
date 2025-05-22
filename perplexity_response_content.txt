@@ -1,9 +1,0 @@
-1. Current CEO of Microsoft: Satya Nadella  
-- Correct Answer: Satya Nadella is the current CEO of Microsoft.
-- Confidence: Very High
-- Sources: Multiple recent sources confirm Satya Nadella is the CEO of Microsoft as of May 2025, including coverage of his keynote at Microsoft Build 2025 and references to his ongoing leadership role[1][2][3][4].
-
-2. Launch date of ChatGPT: November 30, 2022  
-- Correct Answer: November 30, 2022 is the correct launch date for ChatGPT.
-- Confidence: Very High
-- Sources: Detailed reporting confirms that ChatGPT was launched on November 30, 2022, with OpenAI CEO Sam Altman announcing the release on that date[5].
