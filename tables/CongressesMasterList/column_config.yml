@@ -1,0 +1,288 @@
+general_notes: |
+  CRITICALLY IMPORTANT: Find information about the NEXT UPCOMING conference that has NOT YET OCCURRED.  You must know todays date to do this. If you cannot find a specific date you must look at past years and estimate based on typical timing - i.e last year's abstract submission deadline was 6 months before the conference, so we estimate that this year's abstract will also be 6 months before the conference whose date we know. 
+  
+  Use these guidelines:
+  1. Only provide information about future conferences that will happen AFTER the current date.
+  2. If exact dates are not available for upcoming conferences (but it is clear that they are being held), you must look at past years and estimate based on typical timing.
+  3. If no upcoming conference is detected you can return information about the last conference.
+
+primary_key: ["Conference"]
+
+model_name: sonar-pro
+
+columns:
+
+  Index:
+    description: Row count
+    examples:
+    - '10'
+    - '100'
+    - '1'
+    format: Number
+    importance: ignored
+    notes: Sometimes included
+    search_group: 0
+
+  Conference:
+    description: Full name of the conference
+    examples:
+    - International Congress on Neuromuscular Diseases
+    - MDA Clinical and Scientific Conference
+    - European Lung Cancer Congress (ELCC)
+    format: String
+    importance: ignored
+    notes: Should include the full name with any acronyms in parentheses
+    search_group: 0
+  
+  Next Conference Name:
+    description: The name of the next conference that has not yet ocurred (ususally an acronym and a year)
+    examples:
+    - ASCO 2025
+    - DIA 2026
+    - ACC24
+    - No upcoming conferences identified!
+    format: String
+    importance: critical
+    notes: Must be for first next conference after today's date - Ask yourself what date is it today? it is possible that a year was included in the conference name, forget it!  Explicitly search for the conference name with upcoming years to see if they exist.              
+    search_group: 1
+  
+  Website:
+    description: Official conference website URL
+    examples:
+    - https://accscientificsession.acc.org/
+    - https://professional.heart.org/en/meetings/international-stroke-conference
+    - https://aaic.alz.org/
+    format: URL
+    importance: critical
+    notes: Must be a valid URL to the conference's official website
+    search_group: 1
+  
+  Indication:
+    description: Medical or scientific field of the conference
+    examples:
+    - Neurology
+    - Oncology
+    - Cardiovascular
+    format: String
+    importance: critical
+    notes: Should be a specific medical or scientific field (e.g., Oncology, Cardiology)
+    search_group: 1
+  
+  Frequency:
+    description: How often the conference occurs
+    examples:
+    - annual
+    - biennial
+    format: String
+    importance: interesting
+    notes: You can use historical information if no upcoming conference is detected
+    search_group: 1
+  
+  Location:
+    description: City and country where the next conference (after today) is held
+    examples:
+    - San Diego, CA
+    - Washington, DC
+    - Boston, MA
+    format: City, Country
+    importance: critical
+    notes: Should include both city and country, separated by comma
+    search_group: 1
+  
+  Start Date:
+    description: First day of the next conference
+    examples:
+    - '2024-10-25'
+    - '2024-02-07'
+    - '2024-12-06'
+    format: YYYY-MM-DD
+    importance: critical
+    notes: Must be in YYYY-MM-DD format
+    search_group: 1
+
+  End Date:
+    description: Last day of the next conference
+    examples:
+    - '2010-04-05'
+    format: YYYY-MM-DD
+    importance: interesting
+    notes: Must be in YYYY-MM-DD format
+    search_group: 1
+  
+  Publication:
+    description: Where accepted abstracts are published
+    examples:
+    - Conference website
+    - Journal of the American College of Cardiology
+    - Stroke
+    format: String
+    importance: interesting
+    notes: Name of journal or publication
+    search_group: 1
+  
+  Sponsoring Society:
+    description: Organization hosting the next conference
+    examples:
+    - ACC
+    - ASCO
+    - ESMO
+    format: String
+    importance: critical
+    notes: Full name of the sponsoring society or organization
+    search_group: 1
+
+  Number of Attendees:
+    description: Expected number of conference attendees
+    examples:
+    - Not published
+    - '10000'
+    - '1000'
+    format: Integer
+    importance: interesting
+    notes: Number of attendees for the previous conference
+    search_group: 2
+
+  Impact Factor:
+    description: Impact factor of the publication
+    examples:
+    - '27.2'
+    - '20.3'
+    - '5.5'
+    format: Float
+    importance: interesting
+    notes: Numeric value representing the impact factor of the publication (historically)
+    search_group: 2
+
+  Abstract Submission Deadline:
+    description: Last day to submit abstracts for next conference (after today)
+    examples:
+    - '2024-10-25'
+    - '2024-02-07'
+    - '2024-12-06'
+    format: YYYY-MM-DD
+    importance: critical
+    notes: Must be in YYYY-MM-DD format, this is a really critica field - you must provide an estimate, use past years relative to the conference date to estimate if you must. 
+    search_group: 3
+  
+  Late Breaker Deadline:
+    description: Deadline for late breaker abstracts
+    examples:
+    - '2024-10-25'
+    - '2024-02-07'
+    format: YYYY-MM-DD or N/A
+    importance: critical
+    notes: Must be in YYYY-MM-DD format or N/A if not applicable
+    search_group: 3
+  
+  Late Breaker Option:
+    description: Whether late breaker abstracts are accepted
+    examples:
+    - 'Yes'
+    - 'No'
+    - closed for 2025
+    format: Boolean
+    importance: interesting
+    notes: True/False value
+    search_group: 3
+  
+
+  Encores Allowed:
+    description: Whether previously presented work can be submitted
+    examples:
+    - 'Yes'
+    - 'No'
+    format: Boolean
+    importance: interesting
+    notes: True/False value
+    search_group: 3
+  
+  Notification Date:
+    description: Date when abstract acceptance notifications are sent for the next
+      conference (after today)
+    examples:
+    - '2023-12-01'
+    - '2024-03-15'
+    - '2024-06-30'
+    format: YYYY-MM-DD
+    importance: interesting
+    notes: Must be in YYYY-MM-DD format
+    search_group: 3
+
+  Industry Restrictions:
+    description: Any restrictions on industry participation
+    examples:
+    - 'No'
+    - 'Yes'
+    - Some - see website
+    format: String
+    importance: interesting
+    notes: Description of any industry-related restrictions
+    search_group: 3
+  
+  Poster Guidelines:
+    description: Specific requirements for posters
+    examples:
+    - recorded presentation and poster recommended upload Nov 12. https://www.hematology.org/meetings/annual-meeting/meeting-and-presenter-resources/presenter-resources
+    format: String
+    importance: interesting
+    notes: Brief description of poster requirements
+    search_group: 4
+  
+  Poster Upload Date:
+    description: Deadline for uploading poster materials
+    examples:
+    - '2024-10-18'
+    format: YYYY-MM-DD
+    importance: critical
+    notes: Must be in YYYY-MM-DD format
+    search_group: 4
+
+  Submitter/Presenter:
+    description: Who can submit/present abstracts
+    examples:
+    - First Author only
+    - First Author or Presenter
+    - Any registered attendee
+    format: String
+    importance: interesting
+    notes: 'Common values: First Author, Any Author, etc.'
+    search_group: 4
+
+  Estimated Start Conceptualizing:
+    description: 12 weeks before the abstract submission deadline
+    examples:
+    - '2023-12-01'
+    - '2024-03-15'
+    - '2024-06-30'
+    format: YYYY-MM-DD
+    importance: interesting
+    notes: Must be in YYYY-MM-DD format
+    search_group: 5
+
+  Estimated Start Writing Date:
+    description: 6 weeks before the abstract submission deadline
+    examples:
+    - '2023-12-01'
+    - '2024-03-15'
+    - '2024-06-30'
+    format: YYYY-MM-DD
+    importance: interesting
+    notes: Must be in YYYY-MM-DD format
+    search_group: 5
+
+
+  Notes:
+    description: Additional information about the conference relevant to medical writers that is not captured in the other columns. 
+    examples:
+    - No upcoming confernces identified! Dates are mostly from the past.
+    - Abstract submission for registered attendees - date to be identified
+    - Preliminary screening of abstracts will be done by the Scientific Program Committee in early June
+    - Information for the next conference is not yet available
+    format: String
+    importance: interesting
+    notes: Free-form text field for additional notes. Collect the most critical notes here.
+    search_group: 5
+
+
+
+

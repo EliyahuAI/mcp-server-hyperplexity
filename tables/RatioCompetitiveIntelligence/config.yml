@@ -1,0 +1,68 @@
+# Configuration for RatioCompetitiveIntelligence dataset
+
+# Primary key column(s) used to identify rows
+primary_key:
+  - "Conference"  # Using the conference name as the primary key
+
+# Columns to validate
+# If empty, all columns will be processed
+columns_to_validate:
+  - "Conference"
+  - "Year"
+  - "City"
+  - "Country"
+  - "URL"
+  - "Start Date"
+  - "End Date"
+  - "CFP Due"
+  - "Notification"
+  - "Final Version"
+
+# Column importance levels
+column_importance:
+  Conference: HIGH
+  Year: HIGH
+  City: MEDIUM
+  Country: MEDIUM
+  URL: HIGH
+  "Start Date": HIGH
+  "End Date": HIGH
+  "CFP Due": MEDIUM
+  Notification: MEDIUM
+  "Final Version": MEDIUM
+
+# Whether to create a detailed view tab
+detailed_view: true
+
+# Format settings for specific columns
+column_formats:
+  Conference:
+    format: "String"
+    description: "Conference name"
+  Year:
+    format: "Integer"
+    description: "Year of the conference"
+  City:
+    format: "String"
+    description: "City where the conference is held"
+  Country:
+    format: "String"
+    description: "Country where the conference is held"
+  URL:
+    format: "URL"
+    description: "Official conference website URL"
+  "Start Date":
+    format: "Date"
+    description: "Start date of the conference"
+  "End Date":
+    format: "Date"
+    description: "End date of the conference"
+  "CFP Due":
+    format: "Date"
+    description: "Deadline for submitting papers"
+  Notification:
+    format: "Date"
+    description: "Date when authors are notified about acceptance/rejection"
+  "Final Version":
+    format: "Date"
+    description: "Deadline for submitting the final version of accepted papers" 

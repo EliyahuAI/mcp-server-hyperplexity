@@ -1,0 +1,122 @@
+general_notes: |
+  This table tracks radiopharmaceutical products (diagnostic, therapeutic and
+  theranostic) in development that could compete with Ratio Therapeutics over
+  the next 1–5 years.  Use these guidelines:
+  1. Focus on agents that are pre‑registration through Phase 1 and likely to reach market or pivotal trials in the 2024‑2030 window.
+  2. When precise data (e.g., launch year) are unavailable, infer from typical development timelines (Phase 2→3 ≈ 3 y; Phase 3→approval ≈ 2 y).
+  3. Only indicate that 'Change Required' if the information is significantly different than the existing information.
+  4. Only provied a quote if the information is specific to the product. 
+  5. If you cannot verify information - do not erase the exitisting information, just mark it low confidence. 
+
+
+primary_key: ["Product Name", "Developer",  "Target"]
+
+model_name: sonar-pro
+
+columns:
+
+  Product Name:
+    description: Official code or INN of the radiopharmaceutical
+    examples: ["FAP-2286", "225Ac-PSMA-617", "TLX250-CDx"]
+    format: String
+    importance: ignored
+    notes: Use sponsor’s current nomenclature
+    search_group: 0
+
+  Developer:
+    description: Lead company (add parent in parentheses if acquired)
+    examples: ["Novartis (AAA)", "POINT Biopharma / Eli Lilly"]
+    format: String
+    importance: ignored
+    notes: Name mergers or major co‑developers
+    search_group: 0
+
+  Target:
+    description: Molecular target or receptor the agent binds
+    examples: ["FAP", "PSMA", "SSTR2"]
+    format: String
+    importance: ignored
+    notes: Use gene/protein symbol or common receptor acronym
+    search_group: 1
+
+  Indication:
+    description: Main disease(s) or tumour type(s) the product is being developed for
+    examples: ["mCRPC", "GEP‑NETs", "Clear‑cell RCC"]
+    format: String
+    importance: critical
+    notes: Concise but specific (e.g., include biomarker status)
+    search_group: 1
+
+  Therapeutic Radionuclide:
+    description: Radionuclide used for therapy (if applicable) for this product
+    examples: ["Lu‑177", "Ac‑225", "Cu‑67"]
+    format: String
+    importance: critical
+    notes: Use IUPAC‑style isotope notation
+    search_group: 1
+
+  Diagnostic Radionuclide:
+    description: Radionuclide used for imaging (if theranostic or diagnostic‑only) for this product
+    examples: ["Ga‑68", "Zr‑89", "Cu‑64", "–"]
+    format: String
+    importance: critical
+    notes: Use "–" if no diagnostic label
+    search_group: 1
+
+  Modality Type:
+    description: Classification (theranostic, therapeutic, diagnostic)
+    examples: ["Theranostic peptide", "Therapeutic radioligand"]
+    format: String
+    importance: critical
+    notes: Include molecule class if helpful (peptide, mAb, small molecule)
+    search_group: 1
+
+  Development Stage:
+    description: Highest disclosed stage of development
+    examples: ["Phase 3", "Phase 1/2", "Pre‑clinical", "BLA filed"]
+    format: String
+    importance: critical
+    notes: If multiple, list the most advanced
+    search_group: 2
+
+  Key Trial ID:
+    description: Primary clinical‑trials.gov identifier
+    examples: ["NCT04939610", "NCT04647526", "–"]
+    format: String
+    importance: critical
+    notes: None
+    search_group: 2
+
+  Projected Launch:
+    description: Estimated first commercial approval year
+    examples: ["2026", "2027‑28", "After 2030"]
+    format: String
+    importance: interesting
+    notes: Infer from typical timelines if not public
+    search_group: 3
+
+  FDA-EMA Designation:
+    description: Notable regulatory designations (BTD, Fast Track, Orphan‑Drug)
+    examples: ["Fast Track (FDA, 2023)", "Orphan‑Drug (EMA)"]
+    format: String
+    importance: interesting
+    notes: List agency and year; "–" if none
+    search_group: 3
+
+  Strategic Partners:
+    description: Key collaborators or licensees
+    examples: ["Lantheus", "Bristol Myers Squibb", "–"]
+    format: String
+    importance: interesting
+    notes: Include major CDMO / isotope‑supply partners if relevant
+    search_group: 3
+
+  Recent News:
+    description: Latest important news on the product development (includes date of information release)
+    examples:
+      - "- 4/10/2025(colon) BLA resubmission in Q1 2025 after OS update requested (High Confidence)\r\n-5/1/2025(colon) Alpha version of Pluvicto aimed at earlier‑line use (Medium Confidence)"
+    format: String
+    importance: critical
+    notes: "Bullets with aggregated news on a prdduct. Include past news and append new news to the beginning of the list. Starts with date (colon)news (confidence level), append new news to the beginning of the list."
+    search_group: 4
+
