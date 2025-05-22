@@ -198,33 +198,58 @@ def process_lambda_response(response, row_keys):
                         logger.info(f"Received validation results for {len(validation_results)} rows")
                         
                         # Debug print all result keys
-                        logger.info(f"Result keys from Lambda: {list(validation_results.keys())}")
+                        result_keys = list(validation_results.keys())
+                        logger.info(f"Result keys from Lambda: {result_keys}")
                         logger.info(f"Original row keys: {row_keys}")
                         
                         # Map results to the original row keys using the results dictionary
                         processed_results = {}
                         
-                        # Match results to the original row keys
-                        for result_key, result_data in validation_results.items():
-                            # Clean the column names in results
-                            cleaned_result = {}
-                            for col, value in result_data.items():
-                                # Replace non-breaking spaces with regular spaces
-                                if isinstance(col, str) and '\xa0' in col:
-                                    cleaned_col = col.replace('\xa0', ' ')
-                                    cleaned_result[cleaned_col] = value
+                        # Special case: Check if all result keys are numeric (0, 1, 2, ...)
+                        # This happens when the Lambda returns results with numeric indices
+                        numeric_keys = all(k.isdigit() for k in result_keys if isinstance(k, str))
+                        
+                        if numeric_keys and len(result_keys) == len(row_keys):
+                            logger.info("Detected numeric keys - using position-based mapping")
+                            # Map results based on position/index
+                            for i, (result_key, row_key) in enumerate(zip(sorted(result_keys), row_keys)):
+                                # Get the result data and clean column names
+                                result_data = validation_results[result_key]
+                                cleaned_result = {}
+                                for col, value in result_data.items():
+                                    # Replace non-breaking spaces with regular spaces
+                                    if isinstance(col, str) and '\xa0' in col:
+                                        cleaned_col = col.replace('\xa0', ' ')
+                                        cleaned_result[cleaned_col] = value
+                                    else:
+                                        cleaned_result[col] = value
+                                
+                                # Store with original row key
+                                processed_results[row_key] = cleaned_result
+                                logger.info(f"Mapped result key {result_key} to row key {row_key} by position")
+                        else:
+                            # Standard matching approach
+                            # Match results to the original row keys
+                            for result_key, result_data in validation_results.items():
+                                # Clean the column names in results
+                                cleaned_result = {}
+                                for col, value in result_data.items():
+                                    # Replace non-breaking spaces with regular spaces
+                                    if isinstance(col, str) and '\xa0' in col:
+                                        cleaned_col = col.replace('\xa0', ' ')
+                                        cleaned_result[cleaned_col] = value
+                                    else:
+                                        cleaned_result[col] = value
+                                
+                                # Try to match with an original row key
+                                matched_key = match_key_to_original(result_key, row_keys)
+                                if matched_key:
+                                    processed_results[matched_key] = cleaned_result
+                                    logger.info(f"Matched result key: {result_key} to original key: {matched_key}")
                                 else:
-                                    cleaned_result[col] = value
-                            
-                            # Try to match with an original row key
-                            matched_key = match_key_to_original(result_key, row_keys)
-                            if matched_key:
-                                processed_results[matched_key] = cleaned_result
-                                logger.info(f"Matched result key: {result_key} to original key: {matched_key}")
-                            else:
-                                # If no match found, use the result key as is - this is important!
-                                processed_results[result_key] = cleaned_result
-                                logger.info(f"No matching original key found for result key: {result_key}")
+                                    # If no match found, use the result key as is - this is important!
+                                    processed_results[result_key] = cleaned_result
+                                    logger.info(f"No matching original key found for result key: {result_key}")
                         
                         # Add raw responses to each result for detailed view
                         if 'raw_responses' in body:
@@ -525,9 +550,6 @@ def save_results_to_excel(df, results_dict, output_path, config):
     try:
         # Try to use the rich formatting from lambda_test_json_clean.py
         try:
-            from lambda_test_json_clean import save_results_to_excel as excel_saver
-            logger.info("Using enhanced Excel formatting from lambda_test_json_clean")
-            
             # Log the contents of the results dictionary for debugging
             logger.info(f"Results dictionary contains {len(results_dict)} rows")
             for key in results_dict.keys():
@@ -540,7 +562,68 @@ def save_results_to_excel(df, results_dict, output_path, config):
                 else:
                     logger.info(f"  Not a dictionary: {type(result_data)}")
             
-            return excel_saver(df, results_dict, output_path, config)
+            # Check if we need to convert the row keys
+            # lambda_test_json_clean.py expects integer row indices when the keys are numeric
+            # But we have matched them to our original row keys
+            convert_keys = False
+            for key in results_dict.keys():
+                try:
+                    int(key)
+                    # We have at least one numeric key, don't convert
+                    convert_keys = False
+                    break
+                except (ValueError, TypeError):
+                    # We have non-numeric keys, we need to convert
+                    convert_keys = True
+            
+            if convert_keys:
+                logger.info("Converting result dictionary keys for lambda_test_json_clean compatibility")
+                from lambda_test_json_clean import save_results_to_excel as excel_saver
+                
+                # Get row indices corresponding to the row keys
+                row_indices = {}
+                for i, row in enumerate(df.iterrows()):
+                    # Get index and row data
+                    index, row_data = row
+                    
+                    # Generate row key from primary keys
+                    primary_keys = config.get('primary_key', [])
+                    key_parts = []
+                    for pk in primary_keys:
+                        if pk in row_data:
+                            value = row_data[pk]
+                            if pd.isna(value):
+                                value = "NULL"
+                            else:
+                                value = str(value)
+                            key_parts.append(value)
+                        else:
+                            key_parts.append("MISSING")
+                    
+                    row_key = "||".join(key_parts)
+                    row_indices[row_key] = str(i)  # Use string index for consistency
+                
+                # Create a new dictionary with indices as keys
+                indexed_results = {}
+                for key, value in results_dict.items():
+                    if key in row_indices:
+                        # Use the row index as the key
+                        indexed_results[row_indices[key]] = value
+                        logger.info(f"Mapped result key {key} to row index {row_indices[key]}")
+                    else:
+                        # Couldn't map to a row index, use key as is
+                        indexed_results[key] = value
+                        logger.info(f"Could not map result key {key} to a row index")
+                
+                # Use the indexed results with the excel_saver
+                logger.info("Using enhanced Excel formatting from lambda_test_json_clean")
+                return excel_saver(df, indexed_results, output_path, config)
+            else:
+                # Keys are already in the expected format for lambda_test_json_clean
+                from lambda_test_json_clean import save_results_to_excel as excel_saver
+                logger.info("Using enhanced Excel formatting from lambda_test_json_clean (with existing keys)")
+                return excel_saver(df, results_dict, output_path, config)
+                
         except ImportError as e:
             logger.error(f"Could not import save_results_to_excel: {str(e)}")
             logger.error("Falling back to basic Excel saving")
