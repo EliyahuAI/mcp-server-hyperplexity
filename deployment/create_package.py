@@ -461,10 +461,13 @@ def test_lambda_function(function_name, region=None, test_event=None):
                         for target, result in row_results.items():
                             if target not in ['next_check', 'reasons']:
                                 logger.info(f"  {target}:")
-                                logger.info(f"    Value: {result['value']}")
-                                logger.info(f"    Confidence: {result['confidence']} ({result['confidence_level']})")
-                                logger.info(f"    Sources: {result['sources']}")
-                                if result['quote']:
+                                if 'value' in result:
+                                    logger.info(f"    Value: {result['value']}")
+                                if 'confidence' in result and 'confidence_level' in result:
+                                    logger.info(f"    Confidence: {result['confidence']} ({result['confidence_level']})")
+                                if 'sources' in result:
+                                    logger.info(f"    Sources: {result['sources']}")
+                                if 'quote' in result and result['quote']:
                                     logger.info(f"    Quote: {result['quote']}")
                         
                         logger.info(f"  Next Check: {row_results.get('next_check', 'None')}")

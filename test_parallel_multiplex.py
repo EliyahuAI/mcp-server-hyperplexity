@@ -1121,7 +1121,7 @@ class EnhancedParallelValidator(ParallelValidator):
             return await self._process_row(row, row_key, row_idx)
 
     def _get_primary_key_value(self, row, pk):
-        """Extract primary key values consistently with special case handling."""
+        """Extract primary key values consistently using normalized column matching."""
         # Direct match
         if pk in row:
             return row[pk]
@@ -1131,10 +1131,6 @@ class EnhancedParallelValidator(ParallelValidator):
         for col in row.index:
             if normalize_column_name(col) == pk_norm:
                 return row[col]
-        
-        # Special case for 'Company / Developer' -> 'Developer'
-        if pk == 'Company / Developer' and 'Developer' in row:
-            return row['Developer']
         
         # Not found
         logging.warning(f"Primary key column '{pk}' not found in row")
@@ -1291,26 +1287,6 @@ async def test_parallel_multiplex(input_file, api_key, concurrent_rows, max_rows
         return
     
     config.recheck.force_recheck = True
-    
-    # Let's clean the config data structure - define a common normalization function for use throughout the code
-    def normalize_column_name(col):
-        if col is None:
-            return ""
-        # Convert to lowercase, remove common separators and whitespace
-        norm = str(col).lower()
-        # Handle "Company / Developer" -> "Developer" special case
-        if "company" in norm and "developer" in norm:
-            return "developer"
-        if norm == "developer":
-            return "developer"
-            
-        # Replace non-breaking space with regular space
-        norm = norm.replace('\xa0', ' ')
-        # Remove common separators, brackets, spaces
-        norm = norm.replace('/', '').replace('\\', '').replace('-', '')
-        norm = norm.replace('(', '').replace(')', '').replace(' ', '')
-        norm = norm.replace('_', '').replace('.', '').replace(',', '')
-        return norm
     
     # Use this for column validation
     # VALIDATION: Check for mismatches between config columns and input file columns
@@ -1531,26 +1507,6 @@ async def test_parallel_multiplex(input_file, api_key, concurrent_rows, max_rows
         
         # Create a reverse mapping
         actual_to_norm = {v: k for k, v in norm_to_actual.items()}
-        
-        # Create primary key mapping function to handle special cases
-        def get_primary_key_value(row, pk):
-            # Direct match
-            if pk in row:
-                return row[pk]
-            
-            # Normalized match
-            pk_norm = normalize_column_name(pk)
-            for col in row.index:
-                if normalize_column_name(col) == pk_norm:
-                    return row[col]
-            
-            # Special case for 'Company / Developer' -> 'Developer'
-            if pk == 'Company / Developer' and 'Developer' in row:
-                return row['Developer']
-            
-            # Not found
-            logging.warning(f"Primary key column '{pk}' not found in row")
-            return "[Unknown]"
         
         # Generate row_keys with enhanced handling
         row_keys = {}

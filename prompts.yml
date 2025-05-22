@@ -2,101 +2,112 @@ system_base: |
   You are a data validator helping to verify and update information. Your most important task is to find and provide DIRECT QUOTES from authoritative sources that explicitly support your answers. Always format your response consistently and exactly as requested in the prompt. For each field you validate, provide specific evidence from an official source.
 
 validation_prompt: |
-  You are a data validation expert. Your task is to validate the following information:
-
-  Context:
-  {context}
-
-  Column to validate: {column}
+  === FIELD TO VALIDATE ===
+  Column: {column}
+  Current Value: {value}
   Description: {description}
   Format: {format_info}
+  Importance: MEDIUM
   Notes: {notes}
-  General Notes: {general_notes}
-  
-  IMPORTANT REFERENCE EXAMPLES:
-  {examples}
-  
-  These examples show typical valid values for this column. Use them as a guide for format and content expectations.
 
-  Current value: {value}
-
-  YOUR TOP PRIORITY is to find and provide DIRECT QUOTES from authoritative sources that explicitly support your answer.
-
-  EXTREMELY IMPORTANT FORMATTING REQUIREMENTS:
-  1. Use reference numbers like [1], [2], etc. for each source citation
-  2. Do NOT embed full URLs directly in your text - use the reference numbers only
-  3. Make sure each citation refers to a specific authoritative source
-
-  Please respond in the following JSON format:
-  {{
-    "answer": <the validated value>,
-    "confidence": <confidence level: HIGH, MEDIUM, or LOW>,
-    "quote": <direct quote from source if available>,
-    "sources": [<list of source URLs>],
-    "update_required": <true if value needs to be updated>,
-    "substantially_different": <true if validated value is substantially different from input>
-    "consistent_with_model_knowledge": <YES/NO - indicate if your answer is consistent with your general knowledge beyond the sources, with brief explanation>
-  }}
-
-  If you cannot find the information, indicate this clearly and provide your best estimate with LOW confidence.
-
-multiplex_validation: |
-  You are a data validation expert. Your task is to validate multiple fields for the following data:
-
-  Context:
+  === CONTEXT INFORMATION ===
   {context}
 
-  General Notes: {general_notes}
+  === PREVIOUS VALIDATION RESULTS ===
+  {previous_results}
 
-  I need you to validate the following {column_count} columns at once:
+  === GENERAL VALIDATION GUIDELINES ===
+  {general_notes}
 
+  === EXAMPLES ===
+  {examples}
+
+  === RESPONSE FORMAT ===
+  Please respond in the following JSON format:
+  
+  {
+    "answer": "the validated value",
+    "confidence": "HIGH, MEDIUM, or LOW",
+    "quote": "direct quote from source if available",
+    "sources": ["source URL 1", "source URL 2"],
+    "update_required": true/false,
+    "substantially_different": true/false,
+    "consistent_with_model_knowledge": "YES/NO followed by brief explanation"
+  }
+
+  IMPORTANT:
+  - The response MUST be valid JSON
+  - Place actual URLs in the sources array, not reference numbers
+  - Include direct quotes from authoritative sources
+  - If you cannot find information, indicate LOW confidence
+
+multiplex_validation: |
+  === MULTIPLE FIELDS VALIDATION ===
+  Please validate the following fields:
+
+  === CONTEXT INFORMATION ===
+  {context}
+
+  === PREVIOUS VALIDATION RESULTS ===
+  {previous_results}
+
+  === GENERAL VALIDATION GUIDELINES ===
+  {general_notes}
+
+  === FIELDS TO VALIDATE ===
   {columns_to_validate}
 
-  YOUR TOP PRIORITY is to find and provide DIRECT QUOTES from authoritative sources that explicitly support your answers.
+  === CONFIDENCE RUBRIC ===
+  1. **Model certainty**
+     H = core fact, no hedging | M = familiar, slight doubt | L = guess / qualifiers
 
-  EXTREMELY IMPORTANT FORMATTING REQUIREMENTS:
-  1. Use reference numbers like [1], [2], etc. for each source citation
-  2. Make sure each citation refers to a specific authoritative source
-  3. Do NOT embed full URLs directly in your text - use the reference numbers only
-  4. Format each field response as a numbered list item with bullet points for details
+  2. **Perplexity.ai check (≤ 3 links)**
+     H = ≥ 1 independent authoritative match, no conflict | M = one solid secondary or partial match | L = no credible match, conflict, or only informal sources
 
-  For each field, provide:
-  - The correct validated value
-  - Your confidence level (HIGH/MEDIUM/LOW)
-  - Source citations with reference numbers
-  - Whether the value needs to be updated (YES/NO)
-  - Whether the value is substantially different from the current value (YES/NO)
-  - Whether your answer is consistent with your general knowledge beyond these sources (YES/NO with explanation)
+  3. **Topic volatility**
+     H = stable fact | M = slow‑moving data | L = fast‑changing info
 
-  Example format:
-  1. Field Name: Current Value
-  - Correct Answer: [validated value]
-  - Confidence: HIGH/MEDIUM/LOW
-  - Sources: Multiple sources confirm this information [1][2]
-  - Update Required: YES/NO
-  - Substantially Different: YES/NO
-  - Consistent with Model Knowledge: YES - This aligns with established facts about this subject.
+  **Scoring rule**
+  High = H in all three steps
+  Medium = no L's + at least one M
+  Low = any L (or a step can't be checked)
 
-  2. Another Field: Its Value
-  - Correct Answer: [validated value]
-  - Confidence: HIGH/MEDIUM/LOW
-  - Sources: This information is verified by [3]
-  - Update Required: YES/NO
-  - Substantially Different: YES/NO
-  - Consistent with Model Knowledge: NO - This contradicts common understanding that [explanation].
+  === RESPONSE FORMAT ===
+  Please respond with a JSON array containing an object for each field. Each object must have the following structure:
+  
+  [
+    {
+      "column": "field name",
+      "answer": "validated value",
+      "confidence": "HIGH|MEDIUM|LOW",
+      "quote": "direct quote from source if available",
+      "sources": ["source URL 1", "source URL 2"],
+      "update_required": true/false,
+      "substantially_different": true/false,
+      "consistent_with_model_knowledge": "YES/NO followed by brief explanation"
+    },
+    ...
+  ]
 
-  If you cannot find information for a specific column, clearly indicate that with LOW confidence and explain why.
-  IMPORTANT: Your response must be a valid JSON array containing objects for ALL the requested columns. 
+  IMPORTANT:
+  - The response MUST be valid JSON
+  - Each field must have its own object in the array
+  - Include the column name in each object
+  - Place actual URLs in the sources arrays, not reference numbers
+  - Include direct quotes from authoritative sources
+  - If you cannot find information for a field, indicate LOW confidence
 
 holistic_validation: |
-  You are a data validation expert performing a holistic check of the entire record. Your task is to analyze all validated fields together to identify any inconsistencies, logical errors, or potential issues.
+  === HOLISTIC VALIDATION ===
+  Your task is to analyze all validated fields together to identify any inconsistencies, logical errors, or potential issues.
 
-  General Notes: {general_notes}
+  === GENERAL VALIDATION GUIDELINES ===
+  {general_notes}
 
-  Here are the individual field validation results:
+  === VALIDATION RESULTS ===
   {validation_results}
 
-  Context Information:
+  === CONTEXT INFORMATION ===
   {context}
 
   Please analyze the entire record and focus on finding:
@@ -106,17 +117,18 @@ holistic_validation: |
   4. Fields with critical importance that have issues
   5. Overall assessment of data quality and reliability
 
-  Return your findings in this JSON format:
-  {{
-    "is_consistent": <boolean: true if data is internally consistent>,
-    "overall_confidence": <"HIGH", "MEDIUM", or "LOW">,
+  === RESPONSE FORMAT ===
+  Please respond in the following JSON format:
+  
+  {
+    "is_consistent": true/false,
+    "overall_confidence": "HIGH", "MEDIUM", or "LOW",
     "concerns": [
-      <list of specific concerns or issues identified>,
-      ...
+      "list of specific concerns or issues identified"
     ],
-    "needs_review": <boolean: true if manual review is recommended>,
-    "priority_fields": [<list of field names that need priority attention>],
-    "explanation": <detailed explanation of your findings>
-  }}
+    "needs_review": true/false,
+    "priority_fields": ["field names that need priority attention"],
+    "explanation": "detailed explanation of your findings"
+  }
 
   If no issues are found, return a simple confirmation of data consistency with HIGH confidence. 
