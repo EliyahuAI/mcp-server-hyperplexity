@@ -360,6 +360,12 @@ def process_lambda_response(response, row_data, row_key):
                                 else:
                                     cleaned_results[col] = value
                             
+                            # Check for validation history in the response
+                            if 'validation_history' in data[matching_key]:
+                                validation_history = data[matching_key]['validation_history']
+                                # Add validation history to the results
+                                cleaned_results['validation_history'] = validation_history
+                            
                             # Return as dictionary keyed by row_key
                             return {row_key: cleaned_results}
                     
@@ -384,6 +390,12 @@ def process_lambda_response(response, row_data, row_key):
                                         cleaned_results[cleaned_col] = value
                                     else:
                                         cleaned_results[col] = value
+                                
+                                # Check for validation history in the response
+                                if 'validation_history' in data[key]:
+                                    validation_history = data[key]['validation_history']
+                                    # Add validation history to the results
+                                    cleaned_results['validation_history'] = validation_history
                                 
                                 # Return as dictionary keyed by row_key
                                 return {row_key: cleaned_results}
@@ -418,6 +430,18 @@ def process_lambda_response(response, row_data, row_key):
                             # Create dictionary with our row key as the key
                             processed_results = {}
                             processed_results[row_key] = cleaned_results
+                            
+                            # Check for validation history in the response
+                            if 'validation_history' in body:
+                                validation_history = body['validation_history']
+                                # If there's a direct entry for the row key in the history
+                                if row_key in validation_history:
+                                    # Add validation history to the results
+                                    cleaned_results['validation_history'] = validation_history[row_key]
+                                # Or if there's an entry for the first result key
+                                elif result_keys[0] in validation_history:
+                                    # Add validation history to the results
+                                    cleaned_results['validation_history'] = validation_history[result_keys[0]]
                             
                             logger.info(f"Found results for row index {result_keys[0]}")
                             
@@ -1254,6 +1278,73 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
                 except Exception as pk_comment_error:
                     logger.error(f"Error writing primary key comment: {str(pk_comment_error)}")
     
+        # Process validation history for this row if available
+        if matched_key in validation_history:
+            row_history = validation_history[matched_key]
+            
+            # For each column with history, add entries to the History tab
+            for column, history_entries in row_history.items():
+                for entry in history_entries:
+                    try:
+                        # Extract data from history entry
+                        timestamp = entry.get('timestamp', '')
+                        value = entry.get('value', '')
+                        confidence_level = entry.get('confidence_level', '')
+                        quote = entry.get('quote', '')
+                        sources = entry.get('sources', [])
+                        
+                        # Write history entry to the History worksheet
+                        history_worksheet.write(history_row, 0, matched_key)
+                        history_worksheet.write(history_row, 1, column)
+                        
+                        # Try to parse the timestamp as datetime if possible
+                        try:
+                            if isinstance(timestamp, str) and timestamp:
+                                dt_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                                history_worksheet.write_datetime(history_row, 2, dt_timestamp, date_format)
+                            else:
+                                history_worksheet.write(history_row, 2, str(timestamp))
+                        except (ValueError, TypeError):
+                            # If timestamp can't be parsed, just write it as a string
+                            history_worksheet.write(history_row, 2, str(timestamp))
+                        
+                        # Write the rest of the fields
+                        history_worksheet.write(history_row, 3, str(value))
+                        
+                        # Apply confidence formatting
+                        if confidence_level == "HIGH":
+                            history_worksheet.write(history_row, 4, confidence_level, high_confidence)
+                        elif confidence_level == "MEDIUM":
+                            history_worksheet.write(history_row, 4, confidence_level, medium_confidence)
+                        elif confidence_level == "LOW":
+                            history_worksheet.write(history_row, 4, confidence_level, low_confidence)
+                        else:
+                            history_worksheet.write(history_row, 4, str(confidence_level))
+                        
+                        # Write quote and sources
+                        if quote:
+                            # Truncate if needed
+                            if isinstance(quote, str) and len(quote) > 1000:
+                                quote_text = quote[:1000] + "..."
+                            else:
+                                quote_text = quote
+                            history_worksheet.write(history_row, 5, quote_text, wrap_format)
+                        else:
+                            history_worksheet.write(history_row, 5, "")
+                        
+                        # Format sources as a string
+                        if isinstance(sources, list):
+                            sources_text = "; ".join(sources[:3])
+                            if len(sources) > 3:
+                                sources_text += f" (+{len(sources) - 3} more)"
+                        else:
+                            sources_text = str(sources)
+                        history_worksheet.write(history_row, 6, sources_text)
+                        
+                        history_row += 1
+                    except Exception as history_error:
+                        logger.error(f"Error writing history entry: {str(history_error)}")
+    
     # Try adding autofilter, but catch any errors
     try:
         worksheet.autofilter(0, 0, len(result_df), len(result_df.columns) - 1)
@@ -1270,9 +1361,15 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
     except Exception as reasons_filter_error:
         logger.error(f"Error adding autofilter to reasons worksheet: {str(reasons_filter_error)}")
     
+    try:
+        history_worksheet.autofilter(0, 0, history_row - 1, len(history_headers) - 1)
+    except Exception as history_filter_error:
+        logger.error(f"Error adding autofilter to history worksheet: {str(history_filter_error)}")
+    
     # Final stats for debugging
     logger.info(f"Added {detail_row-1} rows to detailed view")
     logger.info(f"Added {reasons_row-1} rows to reasons view")
+    logger.info(f"Added {history_row-1} rows to history view")
 
 def main():
     """Main function to test Lambda with rows from the Excel file."""

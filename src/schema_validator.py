@@ -277,7 +277,7 @@ class SchemaValidator:
         # Join with proper line separation
         return "\n".join(prompt_parts)
     
-    def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None) -> str:
+    def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None, validation_history: Dict[str, List[Dict[str, Any]]] = None) -> str:
         """Generate a validation prompt for multiple targets (multiplex) with progressive context."""
         # Get general notes from config
         general_notes = self.config.get('general_notes', '')
@@ -295,7 +295,7 @@ class SchemaValidator:
         multiplex_template = self.prompts.get('multiplex_validation', '')
         if not multiplex_template:
             logger.warning("No multiplex_validation template found in prompts.yml, falling back to hardcoded template")
-            return self._generate_multiplex_prompt_fallback(row, validation_targets, previous_results)
+            return self._generate_multiplex_prompt_fallback(row, validation_targets, previous_results, validation_history)
         
         # Format the context section (ID fields)
         context_lines = []
@@ -313,6 +313,55 @@ class SchemaValidator:
                 value = result.get('value', '')
                 previous_results_lines.append(f"{col}: {value} (Confidence: {confidence_level})")
         previous_results_text = "\n".join(previous_results_lines)
+        
+        # Format the validation history section if available
+        validation_history_text = ""
+        if validation_history:
+            history_lines = []
+            history_lines.append("Previous validation entries:")
+            
+            # Sort fields by importance first
+            field_importance = {}
+            for target in validation_targets:
+                field_importance[target.column] = self._get_importance_score(target.importance)
+            
+            # Sort fields by importance
+            sorted_fields = sorted(
+                validation_history.keys(), 
+                key=lambda x: field_importance.get(x, 999),  # Default to low importance if not found
+                reverse=True  # Higher importance first
+            )
+            
+            for field in sorted_fields:
+                if field in validation_history:
+                    # Add a header for this field
+                    history_lines.append(f"\n{field} validation history:")
+                    
+                    # Sort entries by timestamp (newest first)
+                    entries = sorted(
+                        validation_history[field],
+                        key=lambda x: x.get('timestamp', ''),
+                        reverse=True
+                    )
+                    
+                    # Add the entries (limit to most recent 3)
+                    for i, entry in enumerate(entries[:3]):
+                        timestamp = entry.get('timestamp', 'Unknown date')
+                        # Try to format the timestamp in a more readable way
+                        try:
+                            if isinstance(timestamp, str) and timestamp:
+                                dt_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                                formatted_date = dt_timestamp.strftime('%Y-%m-%d')
+                            else:
+                                formatted_date = "Unknown date"
+                        except (ValueError, TypeError):
+                            formatted_date = str(timestamp)[:10]  # Just take the date part
+                            
+                        value = entry.get('value', '')
+                        confidence = entry.get('confidence_level', 'UNKNOWN')
+                        history_lines.append(f"  - [{formatted_date}] Value: {value} (Confidence: {confidence})")
+            
+            validation_history_text = "\n".join(history_lines)
             
         # Format the fields to validate section
         fields_to_validate = []
@@ -335,6 +384,42 @@ class SchemaValidator:
             if notes:
                 field_parts.append(f"Notes: {notes}")
             
+            # Include field validation history if available
+            if validation_history and target.column in validation_history:
+                field_parts.append("Previous validation entries:")
+                
+                # Sort entries by timestamp (newest first)
+                entries = sorted(
+                    validation_history[target.column],
+                    key=lambda x: x.get('timestamp', ''),
+                    reverse=True
+                )
+                
+                # Add the entries (limit to most recent 3)
+                for i, entry in enumerate(entries[:3]):
+                    timestamp = entry.get('timestamp', 'Unknown date')
+                    # Try to format the timestamp in a more readable way
+                    try:
+                        if isinstance(timestamp, str) and timestamp:
+                            dt_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                            formatted_date = dt_timestamp.strftime('%Y-%m-%d')
+                        else:
+                            formatted_date = "Unknown date"
+                    except (ValueError, TypeError):
+                        formatted_date = str(timestamp)[:10]  # Just take the date part
+                        
+                    value = entry.get('value', '')
+                    confidence = entry.get('confidence_level', 'UNKNOWN')
+                    quote = entry.get('quote', '')
+                    
+                    history_entry = f"  - [{formatted_date}] Value: {value} (Confidence: {confidence})"
+                    if quote:
+                        # Add a shortened quote if available (up to 100 chars)
+                        shortened_quote = quote[:100] + ("..." if len(quote) > 100 else "")
+                        history_entry += f" - Source quote: \"{shortened_quote}\""
+                    
+                    field_parts.append(history_entry)
+            
             # Only include examples if they exist and are not empty
             # Check if column has examples before getting them
             if self.column_config.get(target.column, {}).get('examples', []):
@@ -350,6 +435,7 @@ class SchemaValidator:
             'general_notes': general_notes,
             'context': context,
             'previous_results': previous_results_text,
+            'validation_history': validation_history_text,
             'columns_to_validate': columns_to_validate
         }
         
@@ -362,7 +448,20 @@ class SchemaValidator:
             
         return prompt
         
-    def _generate_multiplex_prompt_fallback(self, row: Dict[str, Any], validation_targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None) -> str:
+    def _get_importance_score(self, importance: str) -> int:
+        """Convert importance string to numeric score for sorting."""
+        importance = importance.upper() if isinstance(importance, str) else ""
+        scores = {
+            "ID": 5,  # Highest importance
+            "CRITICAL": 4,
+            "HIGH": 3,
+            "MEDIUM": 2,
+            "LOW": 1,
+            "IGNORED": 0  # Lowest importance
+        }
+        return scores.get(importance, 1)  # Default to MEDIUM if unknown
+
+    def _generate_multiplex_prompt_fallback(self, row: Dict[str, Any], validation_targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None, validation_history: Dict[str, List[Dict[str, Any]]] = None) -> str:
         """Fallback method to generate multiplex prompt if template is missing."""
         # Build the prompt directly
         prompt_parts = []
@@ -398,6 +497,57 @@ class SchemaValidator:
                 value = result.get('value', '')
                 previous_results_lines.append(f"{col}: {value} (Confidence: {confidence_level})")
             prompt_parts.append("\n".join(previous_results_lines))
+        else:
+            prompt_parts.append("No previous validation results available.")
+            
+        # Validation history section if available
+        if validation_history:
+            prompt_parts.append("=== VALIDATION HISTORY ===")
+            history_lines = []
+            
+            # Sort fields by importance
+            field_importance = {}
+            for target in validation_targets:
+                field_importance[target.column] = self._get_importance_score(target.importance)
+                
+            sorted_fields = sorted(
+                validation_history.keys(), 
+                key=lambda x: field_importance.get(x, 999),
+                reverse=True  # Higher importance first
+            )
+            
+            for field in sorted_fields:
+                if field in validation_history:
+                    history_lines.append(f"\n{field} validation history:")
+                    
+                    # Sort entries by timestamp (newest first)
+                    entries = sorted(
+                        validation_history[field],
+                        key=lambda x: x.get('timestamp', ''),
+                        reverse=True
+                    )
+                    
+                    # Add the entries (limit to most recent 3)
+                    for i, entry in enumerate(entries[:3]):
+                        timestamp = entry.get('timestamp', 'Unknown date')
+                        # Try to format the timestamp in a more readable way
+                        try:
+                            if isinstance(timestamp, str) and timestamp:
+                                dt_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                                formatted_date = dt_timestamp.strftime('%Y-%m-%d')
+                            else:
+                                formatted_date = "Unknown date"
+                        except (ValueError, TypeError):
+                            formatted_date = str(timestamp)[:10]
+                            
+                        value = entry.get('value', '')
+                        confidence = entry.get('confidence_level', 'UNKNOWN')
+                        history_lines.append(f"  - [{formatted_date}] Value: {value} (Confidence: {confidence})")
+            
+            if history_lines:
+                prompt_parts.append("\n".join(history_lines))
+            else:
+                prompt_parts.append("No validation history available.")
         
         # Fields to validate section - ONLY non-ID fields
         prompt_parts.append("=== FIELDS TO VALIDATE ===")
@@ -421,6 +571,42 @@ class SchemaValidator:
             
             if notes:
                 field_parts.append(f"Notes: {notes}")
+            
+            # Include field validation history if available
+            if validation_history and target.column in validation_history:
+                field_parts.append("Previous validation entries:")
+                
+                # Sort entries by timestamp (newest first)
+                entries = sorted(
+                    validation_history[target.column],
+                    key=lambda x: x.get('timestamp', ''),
+                    reverse=True
+                )
+                
+                # Add the entries (limit to most recent 3)
+                for i, entry in enumerate(entries[:3]):
+                    timestamp = entry.get('timestamp', 'Unknown date')
+                    # Try to format the timestamp in a more readable way
+                    try:
+                        if isinstance(timestamp, str) and timestamp:
+                            dt_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                            formatted_date = dt_timestamp.strftime('%Y-%m-%d')
+                        else:
+                            formatted_date = "Unknown date"
+                    except (ValueError, TypeError):
+                        formatted_date = str(timestamp)[:10]
+                        
+                    value = entry.get('value', '')
+                    confidence = entry.get('confidence_level', 'UNKNOWN')
+                    quote = entry.get('quote', '')
+                    
+                    history_entry = f"  - [{formatted_date}] Value: {value} (Confidence: {confidence})"
+                    if quote:
+                        # Add a shortened quote if available (up to 100 chars)
+                        shortened_quote = quote[:100] + ("..." if len(quote) > 100 else "")
+                        history_entry += f" - Source quote: \"{shortened_quote}\""
+                    
+                    field_parts.append(history_entry)
             
             # Only include examples if they exist and are not empty
             # Check if column has examples before getting them
@@ -472,6 +658,7 @@ class SchemaValidator:
         prompt_parts.append("- Include direct quotes from authoritative sources")
         prompt_parts.append("- If you cannot find information for a field, indicate LOW confidence")
         prompt_parts.append("- Use provided examples to guide your validation of format and expected values")
+        prompt_parts.append("- Consider the validation history when determining if updates are needed")
         
         # Join with proper line separation
         prompt = "\n".join(prompt_parts)

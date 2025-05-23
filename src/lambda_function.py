@@ -35,6 +35,34 @@ config = Config(
 s3 = boto3.client('s3', config=config)
 ssm = boto3.client('ssm', config=config)
 
+def generate_row_key(row: Dict[str, Any], primary_keys: List[str]) -> str:
+    """
+    Generate a row key based on primary key values.
+    
+    Args:
+        row: The row data dictionary
+        primary_keys: List of column names that form the primary key
+        
+    Returns:
+        A string key formed by joining primary key values with "||"
+    """
+    if not primary_keys:
+        # For safety, use hash of the entire row if no primary key is provided
+        return hashlib.md5(json.dumps(row, sort_keys=True).encode()).hexdigest()
+    
+    key_parts = []
+    for key in primary_keys:
+        # Use empty string for None/missing values
+        value = row.get(key, "")
+        if value is None:
+            value = ""
+        # Convert to string
+        key_parts.append(str(value))
+    
+    # Join key parts with a separator
+    row_key = "||".join(key_parts)
+    return row_key
+
 def get_perplexity_api_key() -> str:
     """Get Perplexity API key from environment or SSM."""
     api_key = os.environ.get('PERPLEXITY_API_KEY')
@@ -263,6 +291,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             row_results = {}
             accumulated_results = {}  # Store results to pass as context to later groups
             
+            # Generate a row key for looking up historical validation data
+            row_key = generate_row_key(row, config.get('primary_key', []))
+            
+            # Get validation history if provided in the event
+            validation_history = {}
+            if 'validation_history' in event and row_key in event['validation_history']:
+                validation_history = event['validation_history'][row_key]
+                logger.info(f"Found validation history for row key: {row_key}")
+                logger.info(f"History contains data for {len(validation_history)} fields")
+            
             # Get ignored fields and ID fields - add them to results without processing
             ignored_fields = validator._get_ignored_fields(validator.validation_targets)
             id_fields = validator._get_id_fields(validator.validation_targets)
@@ -286,7 +324,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Process ID fields - similar to IGNORED fields, we don't validate them
             if id_fields:
-                logger.info(f"Adding {len(id_fields)} ID fields to results without validation")
+                logger.info(f"Adding {len(id_fields)} ID fields to results without processing")
                 for id_field in id_fields:
                     # Simply copy the original value to the result without validation
                     original_value = row.get(id_field.column, "")
@@ -320,7 +358,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info(f"Processing search group {group_id} with {len(targets)} columns")
                 
                 # Always use multiplex validation regardless of number of fields
-                await process_multiplex_group(session, row, row_results, targets, accumulated_results)
+                await process_multiplex_group(session, row, row_results, targets, accumulated_results, validation_history)
                 total_multiplex_validations += 1
                 
                 # Add this group's results to accumulated results for next groups
@@ -328,139 +366,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if target.column in row_results:
                         accumulated_results[target.column] = row_results[target.column]
             
-            # DISABLED: Revisit CRITICAL fields with less than HIGH confidence
-            """
-            critical_fields = validator._get_critical_fields(validator.validation_targets)
-            critical_revisits = []
-            
-            for critical_field in critical_fields:
-                # Skip ID fields that are already processed
-                if critical_field.importance.upper() == "ID":
-                    continue
-                    
-                if critical_field.column in row_results:
-                    result = row_results[critical_field.column]
-                    confidence_level = result.get('confidence_level', 'LOW')
-                    
-                    if confidence_level != 'HIGH':
-                        logger.info(f"Revisiting CRITICAL field {critical_field.column} with {confidence_level} confidence")
-                        critical_revisits.append(critical_field)
-            
-            # Process revisit fields via multiplex as well
-            if critical_revisits:
-                logger.info(f"Re-validating {len(critical_revisits)} critical fields via multiplex")
-                
-                # Pass the current accumulated results (including all previous validations)
-                # This ensures the critical field has all context from previous validations
-                for field in critical_revisits:
-                    logger.info(f"Providing previous validation context for {field.column} re-validation")
-                
-                await process_multiplex_group(
-                    session, 
-                    row, 
-                    row_results, 
-                    critical_revisits, 
-                    accumulated_results
-                )
-                total_multiplex_validations += 1
-                
-                # Log the final results after re-validation
-                for field in critical_revisits:
-                    if field.column in row_results:
-                        new_result = row_results[field.column]
-                        new_confidence = new_result.get('confidence_level', 'LOW')
-                        logger.info(f"After re-validation: {field.column} confidence is now {new_confidence}")
-                        
-                        # For critical fields that still have LOW confidence, try one more time in isolation
-                        if new_confidence == "LOW":
-                            logger.info(f"Field {field.column} still has LOW confidence - trying isolated validation")
-                            # Process this single field in isolation (but still using the multiplex format)
-                            # Set is_isolated_validation=True to ensure we don't hit the group cache
-                            await process_multiplex_group(
-                                session, 
-                                row, 
-                                row_results, 
-                                [field], 
-                                accumulated_results,
-                                is_isolated_validation=True  # Mark this as an isolated validation
-                            )
-                            
-                            if field.column in row_results:
-                                final_confidence = row_results[field.column].get('confidence_level', 'LOW')
-                                logger.info(f"After isolated validation: {field.column} confidence is now {final_confidence}")
-            """
-            
             # Still determine next check date, but without holistic validation
             next_check, reasons = validator.determine_next_check_date(row, row_results)
             row_results['next_check'] = next_check.isoformat() if next_check else None
             row_results['reasons'] = reasons
             
-            # DISABLED: Holistic validation and consistency check
-            """
-            # Get holistic validation results (already done in determine_next_check_date)
-            holistic_validation = row_results.get('holistic_validation', {})
-            
-            # Add a summary of the holistic validation
-            if holistic_validation:
-                row_results['holistic_summary'] = {
-                    'is_consistent': holistic_validation.get('is_consistent', True),
-                    'overall_confidence': holistic_validation.get('overall_confidence', 'HIGH'),
-                    'concerns_count': len(holistic_validation.get('concerns', [])),
-                    'needs_review': holistic_validation.get('needs_review', False),
-                    'priority_fields': holistic_validation.get('priority_fields', [])
-                }
-                
-                # Log holistic validation results
-                logger.info(f"Holistic validation: {json.dumps(row_results['holistic_summary'], indent=2)}")
-                if holistic_validation.get('concerns', []):
-                    logger.info(f"Concerns: {holistic_validation['concerns']}")
-                    
-                # If holistic validation finds consistency issues, perform one final check
-                if not holistic_validation.get('is_consistent', True) or holistic_validation.get('needs_review', False):
-                    logger.info("Holistic validation found issues - performing final consistency check")
-                    
-                    # Update accumulated_results with all current values
-                    for field, result in row_results.items():
-                        if field not in ['next_check', 'reasons', 'holistic_validation', 'holistic_summary']:
-                            accumulated_results[field] = result
-                    
-                    # Re-validate any fields marked as priority
-                    priority_fields = holistic_validation.get('priority_fields', [])
-                    if priority_fields:
-                        # Find the validation targets for these fields
-                        priority_targets = []
-                        for field_name in priority_fields:
-                            for target in validation_targets:
-                                if target.column == field_name:
-                                    priority_targets.append(target)
-                                    break
-                        
-                        if priority_targets:
-                            logger.info(f"Re-validating {len(priority_targets)} priority fields from holistic validation")
-                            # Mark this as an isolated validation to avoid cache hits
-                            await process_multiplex_group(
-                                session, 
-                                row, 
-                                row_results, 
-                                priority_targets, 
-                                accumulated_results,
-                                is_isolated_validation=True  # Force fresh validation
-                            )
-                            
-                            # Update the holistic validation after re-validating priority fields
-                            next_check, reasons = validator.determine_next_check_date(row, row_results)
-                            row_results['next_check'] = next_check.isoformat() if next_check else None
-                            row_results['reasons'] = reasons
-                            
-                            # Log updated holistic results
-                            if 'holistic_validation' in row_results:
-                                logger.info("Updated holistic validation after priority field re-validation:")
-                                logger.info(json.dumps(row_results['holistic_validation'], indent=2))
-            """
-            
             return row_idx, row_results
         
-        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, is_isolated_validation=False):
+        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False):
             """Process a group of columns with a single multiplex API call, even if there's only one column."""
             nonlocal total_cache_hits, total_cache_misses
             
@@ -480,9 +393,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             else:
                 logger.info(f"Processing {len(validation_targets)} fields together using multiplex format")
             
+            # Filter validation history to just the fields we're validating in this group
+            filtered_validation_history = None
+            if validation_history:
+                filtered_validation_history = {}
+                for target in validation_targets:
+                    if target.column in validation_history:
+                        filtered_validation_history[target.column] = validation_history[target.column]
+                
+                if filtered_validation_history:
+                    logger.info(f"Including validation history for {len(filtered_validation_history)} fields")
+            
             # Generate multiplex prompt first - we need this for the cache key
             logger.info(f"Generating multiplex prompt for {len(validation_targets)} field(s) with context from previous groups")
-            prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results)
+            prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history)
             
             # Use default model
             model = "sonar-pro"
@@ -680,20 +604,88 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info(f"Raw responses size: approximately {raw_size_kb:.2f} KB")
             logger.info(f"Total estimated response size: {response_size_kb + raw_size_kb:.2f} KB")
             
-            # Return the full validation results without any summarization
-            return {
-                'statusCode': 200,
-                'body': {
-                    'validation_results': validation_results,  # Complete results for all rows
-                    'cache_stats': {
-                        'hits': total_cache_hits,
-                        'misses': total_cache_misses,
-                        'multiplex_validations': total_multiplex_validations,
-                        'single_validations': total_single_validations
+            # Create a single response
+            response = {
+                "statusCode": 200,
+                "body": {
+                    "success": True,
+                    "message": "Validation completed",
+                    "data": {
+                        # Map row indices to results
+                        "rows": validation_results
                     },
-                    'raw_responses': all_raw_responses  # Include all raw API responses
+                    "metadata": {
+                        "total_rows": len(rows),
+                        "completed_rows": len(validation_results),
+                        "cache_hits": total_cache_hits,
+                        "cache_misses": total_cache_misses,
+                        "multiplex_validations": total_multiplex_validations,
+                        "single_validations": total_single_validations
+                    }
                 }
             }
+            
+            # Create a validation_history structure for easier future lookups
+            # Each record will have detailed validation history for each field
+            if 'validation_history' in event:
+                # Start with existing history (if there is any)
+                validation_history = event['validation_history']
+            else:
+                validation_history = {}
+            
+            # Extract results and add to validation history
+            for row_idx, results in validation_results.items():
+                # Get the row data
+                row = rows[row_idx] if row_idx < len(rows) else {}
+                
+                # Generate row key
+                row_key = generate_row_key(row, config.get('primary_key', []))
+                
+                # Initialize history for this row if doesn't exist yet
+                if row_key not in validation_history:
+                    validation_history[row_key] = {}
+                
+                # Add an entry for each field (except metadata fields)
+                timestamp = datetime.now(timezone.utc).isoformat()
+                
+                for field, result in results.items():
+                    # Skip metadata fields
+                    if field in ['holistic_validation', 'next_check', 'reasons', '_raw_responses']:
+                        continue
+                    
+                    # Create history entry
+                    history_entry = {
+                        "timestamp": timestamp,
+                        "value": result.get('value', ''),
+                        "confidence_level": result.get('confidence_level', ''),
+                        "quote": result.get('quote', ''),
+                        "sources": result.get('sources', [])
+                    }
+                    
+                    # Add to history list for this field
+                    if field not in validation_history[row_key]:
+                        validation_history[row_key][field] = []
+                    
+                    validation_history[row_key][field].append(history_entry)
+            
+            # Add validation history to the response
+            response['body']['validation_history'] = validation_history
+            
+            # Add the raw responses for debugging if in test_mode
+            test_mode = event.get('test_mode', False)
+            if test_mode:
+                # Return the raw responses as well in test mode
+                if 'raw_responses' in event:
+                    response['body']['raw_responses'] = event['raw_responses']
+            
+            # Remove any raw response content if not in test mode
+            else:
+                # Clean up any raw response content that might have been added (just to be safe)
+                if 'raw_responses' in response['body']:
+                    del response['body']['raw_responses']
+                
+            # Return the combined results
+            return response
         
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}")

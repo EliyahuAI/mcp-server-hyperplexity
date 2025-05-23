@@ -53,6 +53,10 @@ multiplex_validation: |
   Additional context come from previous validation results:
   {previous_results}
 
+  === VALIDATION HISTORY ===
+  Review the historical validations to track changes over time:
+  {validation_history}
+
   === FIELDS TO VALIDATE ===
   Please validate the following fields:
   {columns_to_validate}
@@ -89,6 +93,7 @@ multiplex_validation: |
   - Include direct quotes from authoritative sources
   - If you cannot find information for a field, indicate LOW confidence
   - Use provided examples to guide your validation of format and expected values
+  - Consider the validation history when determining if the value should be updated
 
 holistic_validation: |
   === HOLISTIC VALIDATION ===
