@@ -137,11 +137,12 @@ def invoke_lambda(payload):
             # Test parse to validate
             json.loads(payload_json)
         except Exception as e:
+            # Log the problematic payload but don't write to file unless in debug mode
             logger.error(f"Error converting payload to JSON: {str(e)}")
-            # Save the problematic payload for debugging
-            with open("error_payload.json", "w") as f:
-                # Use built-in str to avoid JSON errors
-                f.write(str(payload))
+            if logging.getLogger().getEffectiveLevel() <= logging.DEBUG:
+                with open("error_payload.json", "w") as f:
+                    # Use built-in str to avoid JSON errors
+                    f.write(str(payload))
             raise
         
         # Invoke Lambda function
@@ -311,10 +312,8 @@ def process_lambda_response(response, row_keys):
                 # Last resort - try to extract anything useful from the response
                 try:
                     if isinstance(response['body'], str):
-                        # Save the raw response for manual inspection
-                        with open("raw_response_body.json", "w") as f:
-                            f.write(response['body'])
-                        logger.info("Saved raw response body to raw_response_body.json")
+                        # Only save the response body during debugging/errors
+                        logger.info("Trying to parse response body as JSON")
                         
                         # Try a more permissive JSON parse
                         import json5
@@ -328,9 +327,8 @@ def process_lambda_response(response, row_keys):
         else:
             # For old-format responses (unlikely)
             logger.warning("Response is not in API Gateway format, cannot process")
-            # Dump raw response for debugging
-            with open("non_gateway_response.json", "w") as f:
-                json.dump(response, f, indent=2)
+            # Log but don't write to file
+            logger.debug(f"Raw non-gateway response: {json.dumps(response)[:500]}...")
             return {}
         
     except Exception as e:
@@ -512,19 +510,9 @@ def process_in_batches(df, config, batch_size, output_path, api_key=None):
         # Create Lambda payload for the batch
         payload = create_batch_payload(rows_data, config, row_keys)
         
-        # Save payload for debugging (optional)
-        debug_file = f"batch_{batch_num+1}_payload.json"
-        with open(debug_file, "w") as f:
-            json.dump(payload, f, indent=2)
-        
         # Invoke Lambda function
         try:
             response = invoke_lambda(payload)
-            
-            # Save the raw response for debugging (optional)
-            debug_response = f"batch_{batch_num+1}_response.json"
-            with open(debug_response, "w") as f:
-                json.dump(response, f, indent=2)
             
             # Process response
             batch_results = process_lambda_response(response, row_keys)

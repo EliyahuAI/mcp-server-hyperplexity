@@ -1,5 +1,5 @@
 system_base: |
-  You are a data validator helping to verify and update information. Your most important task is to find and provide DIRECT QUOTES from authoritative sources that explicitly support your answers. Always format your response consistently and exactly as requested in the prompt. For each field you validate, provide specific evidence from an official source.
+  You are a data validator helping to verify and update information. Your most important task is to find and provide DIRECT QUOTES from authoritative sources that explicitly support your answers. Alternatively, you may report well established facts that are not directly quoted, or facts that can be calculated precisely from other well supported facts. When this is not possible - search for any information and/or estimate the value. You may leave blank fields if you cannot find any information. You will assign confidence levels to your responses based on the confidence rubric defined below.  Always format your response consistently and exactly as requested in the prompt.
 
 validation_prompt: |
   === FIELD TO VALIDATE ===
@@ -42,35 +42,27 @@ validation_prompt: |
   - If you cannot find information, indicate LOW confidence
 
 multiplex_validation: |
-  === MULTIPLE FIELDS VALIDATION ===
-  Please validate the following fields:
-
-  === CONTEXT INFORMATION ===
-  {context}
-
-  === PREVIOUS VALIDATION RESULTS ===
-  {previous_results}
-
   === GENERAL VALIDATION GUIDELINES ===
   {general_notes}
+  
+  === CONTEXT INFORMATION ===
+  Makes sure your response is within this context:
+  {context}
+  
+  === PREVIOUS VALIDATION RESULTS ===
+  Additional context come from previous validation results:
+  {previous_results}
 
   === FIELDS TO VALIDATE ===
+  Please validate the following fields:
   {columns_to_validate}
 
+  === EXAMPLES USAGE ===
+  For each field, use the provided examples as guidance for expected formats and values. Do not use quotation marks around your responses.
+
   === CONFIDENCE RUBRIC ===
-  1. **Model certainty**
-     H = core fact, no hedging | M = familiar, slight doubt | L = guess / qualifiers
-
-  2. **Perplexity.ai check (≤ 3 links)**
-     H = ≥ 1 independent authoritative match, no conflict | M = one solid secondary or partial match | L = no credible match, conflict, or only informal sources
-
-  3. **Topic volatility**
-     H = stable fact | M = slow‑moving data | L = fast‑changing info
-
-  **Scoring rule**
-  High = H in all three steps
-  Medium = no L's + at least one M
-  Low = any L (or a step can't be checked)
+  Use the confidence rubric defined to assign confidence levels to your responses: 
+  Assign HIGH confidence when the claim is a widely accepted fact, can be directly verified by an authoritative source (such as a government document, peer‑reviewed study, or major news outlet), or is a straightforward calculation derived from such a fact. Use MEDIUM confidence for good estimates or confident projections, or for claims supported only by sources that an expert would judge respectable but not definitive. Everything else—situations with weak or conflicting sources or where the system remains uncertain—receives LOW confidence. When no information is available, assign UNDEFINED confidence.
 
   === RESPONSE FORMAT ===
   Please respond with a JSON array containing an object for each field. Each object must have the following structure:
@@ -96,6 +88,7 @@ multiplex_validation: |
   - Place actual URLs in the sources arrays, not reference numbers
   - Include direct quotes from authoritative sources
   - If you cannot find information for a field, indicate LOW confidence
+  - Use provided examples to guide your validation of format and expected values
 
 holistic_validation: |
   === HOLISTIC VALIDATION ===

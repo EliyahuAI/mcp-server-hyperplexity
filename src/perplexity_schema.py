@@ -29,11 +29,11 @@ MULTIPLEX_RESPONSE_SCHEMA = {
         "type": "object",
         "properties": {
             "column": {"type": "string", "description": "The name of the field being validated"},
-            "answer": {"type": "string", "description": "The validated value that should be used"},
+            "answer": {"type": "string", "description": "The validated value that should be used, can be empty if no information is available"},
             "confidence": {
                 "type": "string", 
-                "enum": ["HIGH", "MEDIUM", "LOW"], 
-                "description": "Confidence level in the validation, based on the following rubric: 1) Model certainty: H = core fact, no hedging | M = familiar, slight doubt | L = guess / qualifiers; 2) Perplexity.ai check (≤ 3 links): H = ≥ 1 independent authoritative match, no conflict | M = one solid secondary or partial match | L = no credible match, conflict, or only informal sources; 3) Topic volatility: H = stable fact | M = slow‑moving data | L = fast‑changing info. Scoring: High = H in all three steps, Medium = no L's + at least one M, Low = any L (or a step can't be checked)"
+                "enum": ["HIGH", "MEDIUM", "LOW", "UNDEFINED"], 
+                "description": "Assign HIGH confidence when the claim is a widely accepted fact, can be directly verified by an authoritative source (such as a government document, peer‑reviewed study, or major news outlet), or is a straightforward calculation derived from such a fact. Use MEDIUM confidence for good estimates or confident projections, or for claims supported only by sources that an expert would judge respectable but not definitive. Everything else—situations with weak or conflicting sources or where the system remains uncertain—receives LOW confidence. When no information is available, assign UNDEFINED confidence"
             },
             "quote": {"type": "string", "description": "Direct quote from a source that supports the answer"},
             "sources": {"type": "array", "items": {"type": "string"}, "description": "List of source URLs that support the validation"},

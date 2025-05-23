@@ -212,6 +212,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         else:
             logger.error("WARNING: general_notes NOT found in config!")
             
+        # Debug check for validation_targets examples
+        if 'validation_targets' in config:
+            targets_with_examples = 0
+            for target in config.get('validation_targets', []):
+                if 'examples' in target and target['examples']:
+                    targets_with_examples += 1
+                    logger.error(f"Found examples for {target.get('column')}: {target['examples']}")
+            logger.error(f"Found {targets_with_examples} validation targets with examples")
+            
         validator = SchemaValidator(config)
         
         # Get API key and S3 bucket

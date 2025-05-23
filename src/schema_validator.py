@@ -73,7 +73,32 @@ class SchemaValidator:
         self.validation_targets = self._parse_validation_targets()
         self.primary_key = config.get('primary_key', [])
         self.cache_ttl_days = config.get('cache_ttl_days', 30)
+        
+        # For accessing examples and other column metadata
+        # First try column_config directly from config
         self.column_config = config.get('column_config', {})
+        
+        # If column_config is empty, but validation_targets has examples, extract them
+        if not self.column_config and 'validation_targets' in config:
+            # Create column_config from validation_targets
+            logger.info("No column_config found in config, extracting from validation_targets")
+            self.column_config = {}
+            for target in config['validation_targets']:
+                column_name = target.get('column', '')
+                if column_name:
+                    self.column_config[column_name] = {
+                        'description': target.get('description', ''),
+                        'format': target.get('format', ''),
+                        'notes': target.get('notes', ''),
+                        'examples': target.get('examples', [])
+                    }
+        
+        # Log column config info for debugging
+        logger.info(f"Initialized column_config with {len(self.column_config)} columns")
+        for column, config in self.column_config.items():
+            if 'examples' in config and config['examples']:
+                logger.info(f"Column {column} has {len(config['examples'])} examples")
+            
         self.similarity_threshold = config.get('similarity_threshold', 0.8)  # Threshold for determining substantially difference
         
         # Load prompt templates
@@ -311,10 +336,10 @@ class SchemaValidator:
                 field_parts.append(f"Notes: {notes}")
             
             # Only include examples if they exist and are not empty
-            examples = self._format_examples(target.column)
-            if examples and examples.strip():
+            # Check if column has examples before getting them
+            if self.column_config.get(target.column, {}).get('examples', []):
                 field_parts.append("Examples:")
-                field_parts.append(examples)
+                field_parts.append(self._format_examples(target.column))
             
             fields_to_validate.append("\n".join(field_parts))
         
@@ -398,14 +423,20 @@ class SchemaValidator:
                 field_parts.append(f"Notes: {notes}")
             
             # Only include examples if they exist and are not empty
-            examples = self._format_examples(target.column)
-            if examples and examples.strip():
+            # Check if column has examples before getting them
+            if self.column_config.get(target.column, {}).get('examples', []):
                 field_parts.append("Examples:")
-                field_parts.append(examples)
+                field_parts.append(self._format_examples(target.column))
             
             # Add this field's info to the prompt
             prompt_parts.append("\n".join(field_parts))
             prompt_parts.append("")  # Add a blank line between fields
+        
+        # Add explicit examples usage section
+        prompt_parts.append("=== EXAMPLES USAGE ===")
+        prompt_parts.append("For each field, use the provided examples (both in list format and JSON format) as guidance for expected formats and values.")
+        prompt_parts.append("The examples represent valid values that should inform your validation process. When validating a field, check if the")
+        prompt_parts.append("current value follows similar patterns or formats as the examples provided.")
         
         # Response format instructions
         prompt_parts.append("=== RESPONSE FORMAT ===")
@@ -440,6 +471,7 @@ class SchemaValidator:
         prompt_parts.append("- Place actual URLs in the sources arrays, not reference numbers")
         prompt_parts.append("- Include direct quotes from authoritative sources")
         prompt_parts.append("- If you cannot find information for a field, indicate LOW confidence")
+        prompt_parts.append("- Use provided examples to guide your validation of format and expected values")
         
         # Join with proper line separation
         prompt = "\n".join(prompt_parts)
@@ -451,26 +483,40 @@ class SchemaValidator:
         return prompt
     
     def _format_examples(self, column: str) -> str:
-        """Format examples for a column."""
-        examples = self.column_config.get(column, {}).get('examples', [])
+        """
+        Format examples for a column in a more structured way that's 
+        easy to parse by LLMs in the validation prompt.
+        """
+        if column not in self.column_config:
+            logger.warning(f"Column {column} not found in column_config")
+            return ""
+            
+        column_info = self.column_config.get(column, {})
+        examples = column_info.get('examples', [])
+        
         if not examples:
+            logger.debug(f"No examples found for column {column}")
             return ""
         
-        formatted = "Examples of valid values:\n"
+        logger.info(f"Formatting {len(examples)} examples for column {column}")
+        
+        # Just format as bullet points, removing both the redundant header and JSON format
+        formatted = ""
         for example in examples:
             formatted += f"- {example}\n"
+            
         return formatted
     
-    def parse_validation_result(self, result: Dict, target: ValidationTarget, original_value: Any) -> Tuple[Any, float, List[str], str, str, str, bool, bool, Optional[str]]:
+    def parse_validation_result(self, result: Dict, target: ValidationTarget, original_value: Any) -> Tuple[Any, None, List[str], str, str, str, bool, bool, Optional[str]]:
         """Parse the validation result from Perplexity API response."""
         try:
             # Extract content from API response
             if not isinstance(result, dict) or 'choices' not in result:
-                return None, 0.0, [], "LOW", "", "", False, False, None
+                return None, None, [], "LOW", "", "", False, False, None
             
             content = result['choices'][0]['message'].get('content', '')
             if not content:
-                return None, 0.0, [], "LOW", "", "", False, False, None
+                return None, None, [], "LOW", "", "", False, False, None
             
             # Parse JSON response
             try:
@@ -483,9 +529,9 @@ class SchemaValidator:
                     if json_end > json_start:
                         validation_result = json.loads(content[json_start:json_end].strip())
                     else:
-                        return None, 0.0, [], "LOW", "", "", False, False, None
+                        return None, None, [], "LOW", "", "", False, False, None
                 else:
-                    return None, 0.0, [], "LOW", "", "", False, False, None
+                    return None, None, [], "LOW", "", "", False, False, None
             
             # Normalize sources to extract URLs from all text fields
             validation_result = normalize_sources(validation_result)
@@ -515,7 +561,7 @@ class SchemaValidator:
                 substantially_different = self._is_substantially_different(original_value, answer)
             
             # Map confidence level to numeric value
-            confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
+            confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95, "UNDEFINED": 0.0}
             numeric_confidence = confidence_map.get(confidence_level, 0.5)
             
             # Convert any numeric references in sources to actual URLs using citations from API
@@ -532,13 +578,13 @@ class SchemaValidator:
                 # Get main source if available
                 main_source = sources[0] if sources else ""
             
-            return answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, consistent_with_model_knowledge
+            return answer, None, sources, confidence_level, quote, main_source, update_required, substantially_different, consistent_with_model_knowledge
             
         except Exception as e:
             logger.error(f"Error parsing validation result: {str(e)}")
-            return None, 0.0, [], "LOW", "", "", False, False, None
+            return None, None, [], "LOW", "", "", False, False, None
     
-    def parse_multiplex_result(self, result: Dict, row: Dict[str, Any]) -> Dict[str, Tuple[Any, float, List[str], str, str, str, bool, bool, Optional[str]]]:
+    def parse_multiplex_result(self, result: Dict, row: Dict[str, Any]) -> Dict[str, Tuple[Any, None, List[str], str, str, str, bool, bool, Optional[str]]]:
         """Parse results from a multiplex validation request."""
         results = {}
         
@@ -601,11 +647,9 @@ class SchemaValidator:
                             if substantially_different is None:
                                 substantially_different = self._is_substantially_different(original_value, answer)
                             
-                            # Map confidence level to numeric value
-                            confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
-                            numeric_confidence = confidence_map.get(confidence_level, 0.5)
+                            # No need to map to numeric value - use string confidence level directly
                             
-                            # Convert any numeric references in sources to actual URLs using citations
+                            # Convert any numeric references in sources to actual URLs using citations from API
                             if citations:
                                 source_obj = {
                                     "sources": sources,
@@ -618,7 +662,7 @@ class SchemaValidator:
                                 # Get main source if available
                                 main_source = sources[0] if sources else ""
                             
-                            results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, consistent_with_model_knowledge)
+                            results[column] = (answer, None, sources, confidence_level, quote, main_source, update_required, substantially_different, consistent_with_model_knowledge)
                             logger.info(f"Processed multiplex result for column {column} using API citations")
                         except Exception as item_error:
                             logger.error(f"Error processing multiplex item: {str(item_error)}")
@@ -656,11 +700,9 @@ class SchemaValidator:
                             if substantially_different is None:
                                 substantially_different = self._is_substantially_different(original_value, answer)
                             
-                            # Map confidence level to numeric value
-                            confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
-                            numeric_confidence = confidence_map.get(confidence_level, 0.5)
+                            # No need to map to numeric value - use string confidence level directly
                             
-                            results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, None)
+                            results[column] = (answer, None, sources, confidence_level, quote, main_source, update_required, substantially_different, None)
                             logger.info(f"Processed multiplex result for column {column}")
                         except Exception as item_error:
                             logger.error(f"Error processing multiplex item: {str(item_error)}")
@@ -732,11 +774,9 @@ class SchemaValidator:
                     if substantially_different is None:
                         substantially_different = self._is_substantially_different(original_value, answer)
                     
-                    # Map confidence level to numeric value
-                    confidence_map = {"LOW": 0.5, "MEDIUM": 0.8, "HIGH": 0.95}
-                    numeric_confidence = confidence_map.get(confidence_level, 0.5)
+                    # No need to map to numeric value - use string confidence level directly
                     
-                    # Convert any numeric references in sources to actual URLs using citations
+                    # Convert any numeric references in sources to actual URLs using citations from API
                     if citations:
                         source_obj = {
                             "sources": sources,
@@ -749,7 +789,7 @@ class SchemaValidator:
                         # Get main source if available
                         main_source = sources[0] if sources else ""
                     
-                    results[column] = (answer, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, None)
+                    results[column] = (answer, None, sources, confidence_level, quote, main_source, update_required, substantially_different, None)
                     logger.info(f"Processed multiplex result for column {column}")
                 except Exception as item_error:
                     logger.error(f"Error processing multiplex item: {str(item_error)}")
@@ -928,8 +968,9 @@ class SchemaValidator:
     ) -> None:
         """Evaluate the pattern of confidence levels across all fields."""
         # Count confidence levels
-        confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+        confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "UNDEFINED": 0}
         total_fields = 0
+        fields_with_defined_confidence = 0
         
         for field, result in validation_results.items():
             # Skip non-field entries
@@ -939,11 +980,15 @@ class SchemaValidator:
             confidence_level = result.get('confidence_level', 'LOW')
             confidence_counts[confidence_level] += 1
             total_fields += 1
+            
+            # Don't count UNDEFINED in percentage calculations
+            if confidence_level != "UNDEFINED":
+                fields_with_defined_confidence += 1
         
-        # Calculate percentages
-        if total_fields > 0:
-            low_percentage = (confidence_counts["LOW"] / total_fields) * 100
-            medium_percentage = (confidence_counts["MEDIUM"] / total_fields) * 100
+        # Calculate percentages - only for defined confidence levels
+        if fields_with_defined_confidence > 0:
+            low_percentage = (confidence_counts["LOW"] / fields_with_defined_confidence) * 100
+            medium_percentage = (confidence_counts["MEDIUM"] / fields_with_defined_confidence) * 100
             
             # Identify patterns of concern
             if low_percentage > 30:
@@ -961,6 +1006,12 @@ class SchemaValidator:
             # If more than 20% are low confidence, flag as needing review
             if low_percentage > 20:
                 holistic_result["needs_review"] = True
+                
+        # Note how many fields have UNDEFINED confidence
+        if confidence_counts["UNDEFINED"] > 0:
+            holistic_result["concerns"].append(
+                f"{confidence_counts['UNDEFINED']} fields have UNDEFINED confidence"
+            )
     
     def _check_critical_fields(
         self,
@@ -978,7 +1029,13 @@ class SchemaValidator:
             result = validation_results[field.column]
             confidence_level = result.get('confidence_level', 'LOW')
             
-            if confidence_level != 'HIGH':
+            if confidence_level == 'UNDEFINED':
+                holistic_result["concerns"].append(
+                    f"CRITICAL field '{field.column}' has UNDEFINED confidence - requires investigation"
+                )
+                holistic_result["needs_review"] = True
+                holistic_result["priority_fields"].append(field.column)
+            elif confidence_level != 'HIGH':
                 holistic_result["concerns"].append(
                     f"CRITICAL field '{field.column}' has {confidence_level} confidence"
                 )
@@ -1037,19 +1094,13 @@ class SchemaValidator:
         for target in self.validation_targets:
             if target.column in validation_results:
                 result = validation_results[target.column]
-                confidence = result.get('confidence', 0.0)
+                confidence_level = result.get('confidence_level', 'LOW')
                 validated_value = result.get('value')
                 quote = result.get('quote', '')
                 
-                # Make sure confidence is a float
-                if isinstance(confidence, str):
-                    try:
-                        confidence = float(confidence)
-                    except (ValueError, TypeError):
-                        confidence = 0.0
-                
-                if confidence < min_confidence:
-                    reasons.append(f"Low confidence ({confidence:.2f}) for {target.column}: {quote}")
+                # Check if confidence level is below threshold
+                if confidence_level in ['LOW', 'UNDEFINED']:
+                    reasons.append(f"Low confidence ({confidence_level}) for {target.column}: {quote}")
                     continue
                 
                 if validated_value is None:
