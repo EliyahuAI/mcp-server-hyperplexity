@@ -1080,30 +1080,41 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
                     break
             
             # Add comment with quote if available, but only for non-ID columns
-            if safe_quote and not is_id_column:
-                # Just show the quote without the "Quote:" prefix
-                # Truncate comment if too long to prevent Excel corruption
-                if isinstance(safe_quote, str) and len(safe_quote) > MAX_COMMENT_LENGTH:
-                    comment_text = f"\"{safe_quote[:MAX_COMMENT_LENGTH]}...\""
-                else:
-                    comment_text = f"\"{safe_quote}\""
+            if not is_id_column:
+                comment_text = ""
                 
-                if safe_sources:
-                    if isinstance(safe_sources, list):
-                        # Limit sources text length
-                        source_text = "\n\nSources: " + ", ".join([s[:100] for s in safe_sources if s])
-                        if len(source_text) > 200:
-                            source_text = source_text[:200] + "..."
+                # Use quote if it's meaningful (non-empty and has reasonable length)
+                if safe_quote and len(str(safe_quote).strip()) > 10:
+                    # Truncate comment if too long to prevent Excel corruption
+                    if isinstance(safe_quote, str) and len(safe_quote) > MAX_COMMENT_LENGTH:
+                        comment_text = f"\"{safe_quote[:MAX_COMMENT_LENGTH]}...\""
                     else:
-                        source_text = "\n\nSources: " + str(safe_sources)[:200]
-                    comment_text += source_text
+                        comment_text = f"\"{safe_quote}\""
+                # Fall back to the validated value if quote is missing or too short
+                elif safe_validated and str(safe_validated).strip() and str(safe_validated) != str(safe_original):
+                    # Use validated value as fallback when no quote is available
+                    if isinstance(safe_validated, str) and len(safe_validated) > MAX_COMMENT_LENGTH:
+                        comment_text = f"Output: {safe_validated[:MAX_COMMENT_LENGTH]}..."
+                    else:
+                        comment_text = f"Output: {safe_validated}"
                 
-                # Only add comment if the text is not empty
-                if comment_text.strip():
-                    try:
-                        worksheet.write_comment(row_idx + 1, col_idx, comment_text[:MAX_COMMENT_LENGTH], {'width': 300, 'height': 150})
-                    except Exception as comment_error:
-                        logger.error(f"Error writing comment: {str(comment_error)}")
+                if comment_text:
+                    if safe_sources:
+                        if isinstance(safe_sources, list):
+                            # Limit sources text length
+                            source_text = "\n\nSources: " + ", ".join([s[:100] for s in safe_sources if s])
+                            if len(source_text) > 200:
+                                source_text = source_text[:200] + "..."
+                        else:
+                            source_text = "\n\nSources: " + str(safe_sources)[:200]
+                        comment_text += source_text
+                    
+                    # Only add comment if the text is not empty
+                    if comment_text.strip():
+                        try:
+                            worksheet.write_comment(row_idx + 1, col_idx, comment_text[:MAX_COMMENT_LENGTH], {'width': 300, 'height': 150})
+                        except Exception as comment_error:
+                            logger.error(f"Error writing comment: {str(comment_error)}")
             
             # Apply confidence-based formatting - do this AFTER writing the value
             # Skip coloring for ID columns and UNDEFINED confidence level
@@ -1125,13 +1136,24 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
                     logger.error(f"Error applying update formatting: {str(update_error)}")
             
             # Add to row note for comment, but only for non-ID columns
-            if safe_quote and not is_id_column:
-                # Just show the quote without the "Quote:" prefix
-                # Truncate to avoid excessively long notes
-                if isinstance(safe_quote, str):
-                    truncated_quote = safe_quote if len(safe_quote) <= 200 else safe_quote[:200] + "..."
-                    comment_text = f"\"{truncated_quote}\""
-                    row_note += f"\n{excel_col}: {comment_text}\n"
+            if not is_id_column:
+                note_text = ""
+                
+                # Use quote if it's meaningful
+                if safe_quote and len(str(safe_quote).strip()) > 10:
+                    # Truncate to avoid excessively long notes
+                    if isinstance(safe_quote, str):
+                        truncated_quote = safe_quote if len(safe_quote) <= 200 else safe_quote[:200] + "..."
+                        note_text = f"\"{truncated_quote}\""
+                # Fall back to the validated value if quote is missing or too short
+                elif safe_validated and str(safe_validated).strip() and str(safe_validated) != str(safe_original):
+                    # Use validated value as fallback when no quote is available
+                    if isinstance(safe_validated, str):
+                        truncated_output = safe_validated if len(safe_validated) <= 200 else safe_validated[:200] + "..."
+                        note_text = f"Output: {truncated_output}"
+                
+                if note_text:
+                    row_note += f"\n{excel_col}: {note_text}\n"
             
             # Add to detailed view
             try:
@@ -1182,16 +1204,23 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
                 
                 detail_worksheet.write(detail_row, 6, sources_text, wrap_format)
                 
-                if safe_quote:
-                    # Just show the quote without the "Quote:" prefix
+                # For the quote column, use either the quote or the output value as fallback
+                quote_text = ""
+                if safe_quote and len(str(safe_quote).strip()) > 10:
                     # Truncate if needed
                     if isinstance(safe_quote, str) and len(safe_quote) > 1000:
-                        comment_text = f"\"{safe_quote[:1000]}...\""
+                        quote_text = f"\"{safe_quote[:1000]}...\""
                     else:
-                        comment_text = f"\"{safe_quote}\""
-                    detail_worksheet.write(detail_row, 7, comment_text, wrap_format)
-                else:
-                    detail_worksheet.write(detail_row, 7, "")
+                        quote_text = f"\"{safe_quote}\""
+                # Fall back to the validated value if quote is missing or too short
+                elif safe_validated and str(safe_validated).strip() and str(safe_validated) != str(safe_original):
+                    # Use validated value as fallback when no quote is available
+                    if isinstance(safe_validated, str) and len(safe_validated) > 1000:
+                        quote_text = f"Output: {safe_validated[:1000]}..."
+                    else:
+                        quote_text = f"Output: {safe_validated}"
+                
+                detail_worksheet.write(detail_row, 7, quote_text, wrap_format)
                 
                 # Reasoning - truncate if needed
                 if isinstance(safe_reasoning, str) and len(safe_reasoning) > 1000:
