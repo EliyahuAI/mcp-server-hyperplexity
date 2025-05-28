@@ -68,4 +68,4 @@ test_*.py
 # Don't ignore essential test files
 !run_lambda_test.py
 !src/run_ratio_test.py
-!src/test_logging.py 
+!src/test_logging.py temp_unnecessary_files/ 

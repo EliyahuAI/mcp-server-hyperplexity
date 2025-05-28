@@ -1,47 +1,12 @@
 system_base: |
   You are a data validator helping to verify and update information. Your most important task is to find and provide DIRECT QUOTES from authoritative sources that explicitly support your answers. Alternatively, you may report well established facts that are not directly quoted, or facts that can be calculated precisely from other well supported facts. When this is not possible - search for any information and/or estimate the value. You may leave blank fields if you cannot find any information. You will assign confidence levels to your responses based on the confidence rubric defined below.  Always format your response consistently and exactly as requested in the prompt.
 
-validation_prompt: |
-  === FIELD TO VALIDATE ===
-  Column: {column}
-  Current Value: {value}
-  Description: {description}
-  Format: {format_info}
-  Importance: MEDIUM
-  Notes: {notes}
 
-  === CONTEXT INFORMATION ===
-  {context}
-
-  === PREVIOUS VALIDATION RESULTS ===
-  {previous_results}
-
-  === GENERAL VALIDATION GUIDELINES ===
-  {general_notes}
-
-  === EXAMPLES ===
-  {examples}
-
-  === RESPONSE FORMAT ===
-  Please respond in the following JSON format:
-  
-  {
-    "answer": "the validated value",
-    "confidence": "HIGH, MEDIUM, or LOW",
-    "quote": "direct quote from source if available",
-    "sources": ["source URL 1", "source URL 2"],
-    "update_required": true/false,
-    "substantially_different": true/false,
-    "consistent_with_model_knowledge": "YES/NO followed by brief explanation"
-  }
-
-  IMPORTANT:
-  - The response MUST be valid JSON
-  - Place actual URLs in the sources array, not reference numbers
-  - Include direct quotes from authoritative sources
-  - If you cannot find information, indicate LOW confidence
 
 multiplex_validation: |
+  === MULTIPLE FIELDS VALIDATION ===
+  {validation_intro}
+
   === GENERAL VALIDATION GUIDELINES ===
   {general_notes}
   
@@ -53,47 +18,41 @@ multiplex_validation: |
   Additional context come from previous validation results:
   {previous_results}
 
-  === VALIDATION HISTORY ===
-  Review the historical validations to track changes over time:
-  {validation_history}
-
   === FIELDS TO VALIDATE ===
-  Please validate the following fields:
-  {columns_to_validate}
+  {fields_to_validate}
 
   === EXAMPLES USAGE ===
   For each field, use the provided examples as guidance for expected formats and values. Do not use quotation marks around your responses.
 
   === CONFIDENCE RUBRIC ===
-  Use the confidence rubric defined to assign confidence levels to your responses: 
+  Use the confidence rubric defined to assign confidence levels to your responses.
   Assign HIGH confidence when the claim is a widely accepted fact, can be directly verified by an authoritative source (such as a government document, peer‑reviewed study, or major news outlet), or is a straightforward calculation derived from such a fact. Use MEDIUM confidence for good estimates or confident projections, or for claims supported only by sources that an expert would judge respectable but not definitive. Everything else—situations with weak or conflicting sources or where the system remains uncertain—receives LOW confidence. When no information is available, assign UNDEFINED confidence.
 
   === RESPONSE FORMAT ===
-  Please respond with a JSON array containing an object for each field. Each object must have the following structure:
+  Please respond with a JSON array containing an object for each field. {single_field_note} 
   
-  [
-    {
-      "column": "field name",
-      "answer": "validated value",
-      "confidence": "HIGH|MEDIUM|LOW",
-      "quote": "direct quote from source if available",
-      "sources": ["source URL 1", "source URL 2"],
-      "update_required": true/false,
-      "substantially_different": true/false,
-      "consistent_with_model_knowledge": "YES/NO followed by brief explanation"
-    },
-    ...
-  ]
+  {json_schema_example}
 
   IMPORTANT:
-  - The response MUST be valid JSON
+  - The response MUST be valid JSON array format
   - Each field must have its own object in the array
-  - Include the column name in each object
+  - Include the exact column name in each object
   - Place actual URLs in the sources arrays, not reference numbers
-  - Include direct quotes from authoritative sources
+  - CRITICAL: Include direct quotes from authoritative sources in the quote field
+  - Extract specific text snippets that support your answer
+  - If no direct quote is available, provide a relevant excerpt or summary
+  - The quote field should NEVER be empty - always provide supporting text
   - If you cannot find information for a field, indicate LOW confidence
   - Use provided examples to guide your validation of format and expected values
   - Consider the validation history when determining if the value should be updated
+  - Always include all required fields: column, answer, confidence, sources, update_required
+
+  LOGIC FOR update_required AND substantially_different:
+  - update_required: true if the current value is empty/blank/missing OR if your validated answer differs from the current value
+  - substantially_different: true if the meaning/content changes significantly (empty→filled always counts as substantial)
+  - For empty/blank current values: ALWAYS set both update_required=true and substantially_different=true
+  - For minor formatting changes (like punctuation): update_required=false, substantially_different=false
+  - For completely different information: both should be true
 
 holistic_validation: |
   === HOLISTIC VALIDATION ===

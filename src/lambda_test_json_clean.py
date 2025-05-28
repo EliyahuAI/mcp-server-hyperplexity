@@ -627,725 +627,355 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
     # Remove duplicate columns (keep first occurrence)
     result_df = result_df.loc[:, ~result_df.columns.duplicated()]
     
-    # Remove columns that are entirely unnamed or empty
-    result_df = result_df.loc[:, [col for col in result_df.columns if str(col).strip() and not str(col).startswith('Unnamed')]]
+    # Get primary key columns using SimplifiedSchemaValidator
+    try:
+        from schema_validator_simplified import SimplifiedSchemaValidator
+        validator = SimplifiedSchemaValidator(config)
+        primary_key_columns = validator.primary_key
+        id_fields = [target.column for target in validator.get_id_fields()]
+        logger.info(f"Using auto-generated primary key: {primary_key_columns}")
+        logger.info(f"ID fields (no confidence formatting): {id_fields}")
+    except Exception as e:
+        logger.warning(f"Could not create SimplifiedSchemaValidator: {e}")
+        # Fallback to old method
+        primary_key_columns = config.get('primary_key', [])
+        if not primary_key_columns:
+            # Try to find ID fields manually
+            id_fields = []
+            for target in config.get('validation_targets', []):
+                if target.get('importance', '').upper() == 'ID':
+                    id_fields.append(target['column'])
+            primary_key_columns = id_fields
+        else:
+            id_fields = primary_key_columns  # Fallback assumption
+        logger.info(f"Using fallback primary key: {primary_key_columns}")
+        logger.info(f"ID fields (fallback): {id_fields}")
     
-    # Get the workbook and worksheet objects
+    # Create workbook and formats
     workbook = writer.book
     
-    # Create formats for headers and data
-    header_format = workbook.add_format({
-        'bold': True, 'text_wrap': True, 'valign': 'center',
-        'fg_color': '#4472C4', 'font_color': 'white', 'border': 1
-    })
-    high_confidence = workbook.add_format({'bg_color': '#C6EFCE'})  # Light green
-    medium_confidence = workbook.add_format({'bg_color': '#FFEB9C'})  # Light yellow
-    low_confidence = workbook.add_format({'bg_color': '#FFC7CE'})  # Light red
-    update_required = workbook.add_format({
-        'bg_color': '#FF7B7B', 'font_color': 'black', 'bold': True
-    })
-    wrap_format = workbook.add_format({'text_wrap': True})
+    # Add a date format for date columns
+    date_format = workbook.add_format({'num_format': 'yyyy-mm-dd', 'align': 'center'})
     
-    # Write the cleaned dataframe to Excel - convert all NaN/Infinity values before writing
-    # Replace inf/-inf with empty strings to prevent Excel errors
-    result_df = result_df.replace([float('inf'), float('-inf')], '')
-    result_df.to_excel(writer, sheet_name='Main View', index=False)
+    # Add worksheets
+    worksheet = workbook.add_worksheet('Results')
+    detail_worksheet = workbook.add_worksheet('Details')
+    reasons_worksheet = workbook.add_worksheet('Reasons')
+    history_worksheet = workbook.add_worksheet('History')
     
-    # Get the worksheet - handle both dict and attribute access for compatibility
-    try:
-        worksheet = writer.sheets['Main View']
-    except (KeyError, AttributeError):
-        try:
-            worksheet = writer.book.get_worksheet_by_name('Main View')
-        except AttributeError:
-            # Last resort, get the first worksheet if we can't access by name
-            try:
-                worksheet = writer.book.worksheets()[0]
-            except:
-                worksheet = writer.book.add_worksheet('Main View')
-            logger.warning("Could not access 'Main View' worksheet by name, using first worksheet")
+    # Formats
+    header_format = workbook.add_format({'bold': True, 'text_wrap': True, 'valign': 'top',
+                                       'fg_color': '#4472C4', 'font_color': 'white', 'border': 1})
     
-    # Format the header row and set column widths
-    for col_num, value in enumerate(result_df.columns.values):
-        worksheet.write(0, col_num, value, header_format)
-        # Calculate column width with safer handling
-        try:
-            str_lengths = result_df[value].astype(str).apply(len)
-            # Filter out any inf values
-            str_lengths = str_lengths[~np.isinf(str_lengths)]
-            max_len = max(str_lengths.max() if not str_lengths.empty else 0, len(str(value))) + 2
-            # Cap column width to avoid Excel limits (255 characters)
-            max_len = min(max_len, 100)
-            worksheet.set_column(col_num, col_num, max_len)
-        except Exception as e:
-            # Use a default width if calculation fails
-            logger.warning(f"Error calculating column width for {value}: {str(e)}")
-            worksheet.set_column(col_num, col_num, 20)
+    subheader_format = workbook.add_format({'bold': True, 'text_wrap': True, 'valign': 'top',
+                                       'fg_color': '#8EA9DB', 'font_color': 'black', 'border': 1})
     
-    # Log the final DataFrame columns for debugging
-    logger.info(f"Final DataFrame columns in Excel: {list(result_df.columns)}")
+    alert_format = workbook.add_format({'bold': True, 'italic': True, 'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
     
-    # Create Detailed View worksheet
-    # Check if a Detailed View sheet already exists and use it, otherwise create a new one
-    try:
-        detail_worksheet = writer.book.get_worksheet_by_name('Detailed View')
-        # If it exists, clear it first
-        detail_worksheet.clear()
-    except (AttributeError, ValueError):
-        # Sheet doesn't exist or can't be accessed, create a new one
-        detail_worksheet = workbook.add_worksheet('Detailed View')
+    confidence_formats = {
+        'HIGH': workbook.add_format({'bold': True, 'fg_color': '#C6EFCE', 'font_color': '#006100'}),
+        'MEDIUM': workbook.add_format({'fg_color': '#FFEB9C', 'font_color': '#9C6500'}),
+        'LOW': workbook.add_format({'italic': True, 'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
+    }
     
-    detail_headers = [
-        "Row", "Column", "Original Value", "Validated Value", 
-        "Confidence Level", "Update Required", "Sources", "Quote", "Reasoning"
-    ]
-    for col_num, header in enumerate(detail_headers):
-        detail_worksheet.write(0, col_num, header, header_format)
-    detail_worksheet.set_column(0, 0, 5)
-    detail_worksheet.set_column(1, 1, 25)
-    detail_worksheet.set_column(2, 2, 40)
-    detail_worksheet.set_column(3, 3, 40)
-    detail_worksheet.set_column(4, 4, 15)
-    detail_worksheet.set_column(5, 5, 15)
-    detail_worksheet.set_column(6, 6, 50)
-    detail_worksheet.set_column(7, 7, 50)
-    detail_worksheet.set_column(8, 8, 80)
+    # Write headers for main Results worksheet
+    for col_idx, col_name in enumerate(result_df.columns):
+        worksheet.write(0, col_idx, col_name, header_format)
     
-    # Create Reasons worksheet
-    # Check if a Reasons & Notes sheet already exists and use it, otherwise create a new one
-    try:
-        reasons_worksheet = writer.book.get_worksheet_by_name('Reasons & Notes')
-        # If it exists, clear it first
-        reasons_worksheet.clear()
-    except (AttributeError, ValueError):
-        # Sheet doesn't exist or can't be accessed, create a new one
-        reasons_worksheet = workbook.add_worksheet('Reasons & Notes')
+    # Set columns widths based on data
+    for col_idx, col_name in enumerate(result_df.columns):
+        max_len = max(result_df[col_name].astype(str).str.len().max(), len(col_name)) + 2
+        worksheet.set_column(col_idx, col_idx, min(max_len, 40))  # Cap at 40 characters
     
-    reasons_headers = ["Row", "Overall Validation", "Next Check", "Reasons"]
-    for col_num, header in enumerate(reasons_headers):
-        reasons_worksheet.write(0, col_num, header, header_format)
-    reasons_worksheet.set_column(0, 0, 5)
-    reasons_worksheet.set_column(1, 1, 20)
-    reasons_worksheet.set_column(2, 2, 20)
-    reasons_worksheet.set_column(3, 3, 100)
-    
-    detail_row = 1
-    reasons_row = 1
-    primary_keys = config.get('primary_key', [])
-    if not primary_keys:
-        primary_keys = [result_df.columns[0]] if len(result_df.columns) > 0 else []
-        logging.warning(f"No primary key found in config, using first column: {primary_keys}")
-    
-    # Clean the result_dict column names: replace non-breaking spaces with regular spaces
-    cleaned_results_dict = {}
-    for row_key, row_data in results_dict.items():
-        cleaned_row_data = {}
-        for col_name, value in row_data.items():
-            if isinstance(col_name, str) and '\xa0' in col_name:
-                cleaned_col_name = col_name.replace('\xa0', ' ')
-                cleaned_row_data[cleaned_col_name] = value
-            else:
-                cleaned_row_data[col_name] = value
-        cleaned_results_dict[row_key] = cleaned_row_data
-    
-    logger.info(f"Cleaned results dictionary column names")
-    
-    # Create a lookup dictionary for fuzzy matching result row keys
-    # This will help match response keys to the original row keys
-    result_keys = list(cleaned_results_dict.keys())
-    
-    # Log all result keys for debugging
-    logger.info(f"Result keys available: {result_keys}")
-    
-    # Keep track of which result keys have already been used
-    used_result_keys = set()
-    
-    # Use a more flexible row key matching approach
-    for row_idx in range(len(result_df)):
-        # Generate the row key as we would for the lookup
-        pk_values = []
-        for pk in primary_keys:
-            if pk in result_df.columns:
-                pk_value = result_df.iloc[row_idx][pk]
-                pk_values.append(str(pk_value) if not pd.isna(pk_value) else "")
-        row_key = "||".join(pk_values)
+    # Write column data for each row with validation results overlay
+    for row_idx, (_, row) in enumerate(result_df.iterrows()):
+        # Try to find validation results for this row
+        row_validation_data = None
+        if row_idx in results_dict:
+            row_validation_data = results_dict[row_idx]
+        elif str(row_idx) in results_dict:
+            row_validation_data = results_dict[str(row_idx)]
         
-        # Try direct match first
-        if row_key in cleaned_results_dict and row_key not in used_result_keys:
-            matched_key = row_key
-            row_results = cleaned_results_dict[matched_key]
-            logger.info(f"Processing row {row_idx+1}, direct key match: {row_key}")
-            used_result_keys.add(matched_key)
-        else:
-            # Try fuzzy matching with the result keys
-            matched_key = None
+        for col_idx, (col_name, cell_value) in enumerate(row.items()):
+            # Check if this is an ID field (should not have confidence formatting)
+            is_id_field = col_name in id_fields
             
-            # Normalize the row key for matching
-            row_key_norm = normalize_column_name(row_key)
-            
-            # First, try matching by all primary key parts being in the result key
-            for result_key in result_keys:
-                # Skip already used keys
-                if result_key in used_result_keys:
-                    continue
-                    
-                # Check if all parts of the row key are in the result key
-                parts_match = True
-                for part in pk_values:
-                    # Skip empty parts
-                    if not part.strip():
-                        continue
-                    # Normalize for comparison
-                    part_norm = normalize_column_name(part)
-                    result_norm = normalize_column_name(result_key)
-                    
-                    # Try more lenient matching for complex product names
-                    if part_norm and len(part_norm) >= 3:  # Only consider parts with at least 3 chars
-                        # Check if significant portion of part is in result or vice versa
-                        if not (part_norm in result_norm or 
-                               any(part_norm[i:i+min(len(part_norm), 5)] in result_norm 
-                                   for i in range(0, len(part_norm), 3))):
-                            parts_match = False
-                            break
-                    elif part_norm:  # For very short parts (like "Cu"), exact match required
-                        if part_norm not in result_norm:
-                            parts_match = False
-                            break
-                
-                if parts_match:
-                    matched_key = result_key
-                    logger.info(f"Found fuzzy match for row {row_idx+1}: {row_key} -> {result_key}")
-                    used_result_keys.add(matched_key)
-                    break
-            
-            # If still no match, try matching by keywords in the product name
-            if not matched_key and len(pk_values) > 0:
-                product_name = pk_values[0]
-                
-                # Extract significant identifiers from the product name
-                # Common patterns: product codes, radionuclides, target names, etc.
-                identifiers = []
-                
-                # Extract product codes (typically alphanumeric with hyphens)
-                product_codes = re.findall(r'[A-Za-z0-9]+[-][A-Za-z0-9]+', product_name)
-                identifiers.extend(product_codes)
-                
-                # Extract common radiopharmaceutical isotopes with numbers
-                isotope_patterns = [
-                    r'(?:64|67)Cu', r'(?:177|175)Lu', r'(?:225|227|223)Ac', r'(?:212|203)Pb',
-                    r'(?:68|67|64)Ga', r'99mTc', r'(?:188|186)Re', r'(?:89|90)Zr', r'(?:131|125|123)I',
-                    r'(?:90|91)Y', r'(?:161|160)Tb', r'211At', r'213Bi', r'227Th'
-                ]
-                for pattern in isotope_patterns:
-                    matches = re.findall(pattern, product_name)
-                    identifiers.extend(matches)
-                
-                # Extract chemical elements and isotopes (typically 2-3 letters possibly with numbers)
-                elements = re.findall(r'(?:[0-9]{1,3}[A-Z][a-z]?|[A-Z][a-z]?)', product_name)
-                identifiers.extend(elements)
-                
-                # Extract common target abbreviations
-                target_patterns = [
-                    'PSMA', 'FAP', 'SSTR2', 'GRPR', 'CAIX', 'HER2', 'EGFR', 'cMET', 'GPC3',
-                    'CD45', 'CD33', 'DLL3', 'LAT1', 'IGF1R', 'B7H3', 'TATE', 'TOC', 'DOTANOC',
-                    'DOTATOC', 'DOTATATE', 'FAPI', 'mAb', 'RTX', 'PET'
-                ]
-                for target in target_patterns:
-                    if target in product_name.upper():
-                        identifiers.append(target)
-                
-                # Extract any sequence of 3+ letters (could be targets, etc.)
-                words = re.findall(r'[A-Za-z]{3,}', product_name)
-                identifiers.extend(words)
-                
-                # Extract numeric product codes
-                numbers = re.findall(r'[0-9]{3,}', product_name)
-                identifiers.extend(numbers)
-                
-                # Special case for common prefixes/formats in radiopharmaceuticals
-                special_prefixes = [
-                    'SAR', 'TLX', 'RYZ', 'FPI', 'PNT', 'OX', 'BAY', 'AZD',
-                    'ACTIMAB', 'IOMAB', 'SOLUCIN', 'ALPHA', 'NANO'
-                ]
-                for prefix in special_prefixes:
-                    if prefix in product_name.upper():
-                        identifiers.append(prefix)
-                
-                # Try to match by these identifiers
-                best_match = None
-                best_score = 0
-                
-                for result_key in result_keys:
-                    # Skip already used keys
-                    if result_key in used_result_keys:
-                        continue
-                        
-                    # Count how many identifiers match
-                    match_count = 0
-                    for identifier in identifiers:
-                        if identifier in result_key:
-                            match_count += 1
-                    
-                    # Calculate a match score (percentage of identifiers that match)
-                    score = match_count / len(identifiers) if identifiers else 0
-                    
-                    # If this is the best match so far and meets minimum threshold, save it
-                    if score > best_score and score >= 0.5:  # At least 50% of identifiers must match
-                        best_score = score
-                        best_match = result_key
-                
-                # Use the best match if found
-                if best_match:
-                    matched_key = best_match
-                    logger.info(f"Found identifier-based match for row {row_idx+1}: {row_key} -> {matched_key} (score: {best_score:.2f})")
-                    logger.info(f"Matching identifiers: {[id for id in identifiers if id in matched_key]}")
-                    used_result_keys.add(matched_key)
-            
-            # If still no match, try matching by primary key position using separators
-            if not matched_key:
-                best_match = None
-                best_score = 0
-                
-                for result_key in result_keys:
-                    # Skip already used keys
-                    if result_key in used_result_keys:
-                        continue
-                        
-                    # Split both keys by the separator
-                    row_parts = row_key.split("||")
-                    result_parts = result_key.split("||") if "||" in result_key else result_key.split("|")
-                    
-                    # Check if the number of parts match
-                    if len(row_parts) == len(result_parts):
-                        # Check if enough parts match
-                        match_count = 0
-                        for i, (row_part, result_part) in enumerate(zip(row_parts, result_parts)):
-                            row_part_norm = normalize_column_name(row_part)
-                            result_part_norm = normalize_column_name(result_part)
-                            
-                            # For primary key, check if the normalized value is within the other
-                            if row_part_norm in result_part_norm or result_part_norm in row_part_norm:
-                                match_count += 1
-                        
-                        # Calculate a score based on how many parts match
-                        score = match_count / len(row_parts)
-                        
-                        # If this is the best match so far and meets minimum threshold, save it
-                        if score > best_score and score >= 0.66:  # At least 2/3 of parts must match
-                            best_score = score
-                            best_match = result_key
-                
-                # Use the best match if found
-                if best_match:
-                    matched_key = best_match
-                    logger.info(f"Found position-based match for row {row_idx+1}: {row_key} -> {matched_key} (score: {best_score:.2f})")
-                    used_result_keys.add(matched_key)
-            
-            # Last resort - try to find any key that contains the first primary key value
-            if not matched_key and len(pk_values) > 0 and pk_values[0].strip():
-                first_pk = pk_values[0].strip()
-                # Try both direct and normalized matching, but only for unused keys
-                for result_key in result_keys:
-                    if result_key in used_result_keys:
-                        continue
-                        
-                    if (first_pk in result_key) or (normalize_column_name(first_pk) in normalize_column_name(result_key)):
-                        matched_key = result_key
-                        logger.info(f"Found last-resort match for row {row_idx+1}: {row_key} -> {result_key}")
-                        used_result_keys.add(matched_key)
-                        break
-            
-            # Final attempt - try completely normalized comparison ignoring all separators and spaces
-            if not matched_key and len(pk_values) > 0:
-                # Get a super normalized version of the row key (just alphanumeric characters)
-                super_norm_row = ''.join(c.lower() for c in row_key if c.isalnum())
-                
-                # Find the closest match based on character overlap
-                best_match = None
-                best_score = 0.4  # Minimum threshold (40% similarity)
-                
-                for result_key in result_keys:
-                    if result_key in used_result_keys:
-                        continue
-                        
-                    # Get super normalized version of result key
-                    super_norm_result = ''.join(c.lower() for c in result_key if c.isalnum())
-                    
-                    # Calculate overlap score (proportion of shared characters)
-                    if not super_norm_row or not super_norm_result:
-                        continue
-                        
-                    # Find longest common substring
-                    from difflib import SequenceMatcher
-                    match = SequenceMatcher(None, super_norm_row, super_norm_result).find_longest_match(
-                        0, len(super_norm_row), 0, len(super_norm_result))
-                    
-                    if match.size >= 5:  # At least 5 characters must match
-                        score = match.size / max(len(super_norm_row), len(super_norm_result))
-                        if score > best_score:
-                            best_score = score
-                            best_match = result_key
-                
-                if best_match:
-                    matched_key = best_match
-                    logger.info(f"Found super-normalized match for row {row_idx+1}: {row_key} -> {matched_key} (score: {best_score:.2f})")
-                    used_result_keys.add(matched_key)
-            
-            # If we found a match, use it, otherwise skip this row
-            if matched_key:
-                row_results = cleaned_results_dict[matched_key]
-                # Update the logged key to what we're actually using
-                logger.info(f"Processing row {row_idx+1} with matched key: {matched_key}")
-            else:
-                logger.warning(f"No matching result key found for row {row_idx+1}, key: {row_key}")
-                # Print the first few characters of each result key for comparison
-                for rk in result_keys:
-                    if rk not in used_result_keys:
-                        logger.warning(f"  Available key: {rk[:50]}...")
-                continue
-        
-        # Reasons worksheet
-        if 'holistic_validation' in row_results:
-            holistic_data = row_results['holistic_validation']
-            if isinstance(holistic_data, dict):
-                overall_confidence = holistic_data.get('overall_confidence', '')
-                reasons_worksheet.write(reasons_row, 0, row_idx + 1)
-                reasons_worksheet.write(reasons_row, 1, overall_confidence)
-        
-        if 'next_check' in row_results:
-            next_check = row_results['next_check']
-            reasons_worksheet.write(reasons_row, 2, next_check)
-        
-        if 'reasons' in row_results:
-            reasons = row_results['reasons']
-            reasons_text = "\n".join(reasons) if isinstance(reasons, list) else str(reasons)
-            reasons_worksheet.write(reasons_row, 3, reasons_text, wrap_format)
-            reasons_row += 1
-        
-        # Max length for Excel comments to avoid corruption
-        MAX_COMMENT_LENGTH = 512
-        row_note = ""
-        
-        for col_name, result in row_results.items():
-            if col_name in ['holistic_validation', 'next_check', 'reasons', '_raw_responses']:
-                continue
-            
-            # Try direct match first
-            if col_name in result_df.columns:
-                excel_col = col_name
-            else:
-                # Try to find the column with normalization
-                excel_col = match_column(col_name, result_df.columns)
-            
-            if not excel_col or excel_col not in result_df.columns:
-                logger.warning(f"Column {col_name} not found in result_df.columns, skipping.")
-                continue
-            
-            # Get the column index in the result_df
-            col_idx = result_df.columns.get_loc(excel_col)
-            
-            # Extract values from the result based on its type
+            # Check if we have validation results for this column
             validated_value = None
             confidence_level = None
-            quote = None
-            sources = None
-            update_req = False
-            reasoning = ""
-            original_value = result_df.iloc[row_idx][excel_col]
+            if row_validation_data and isinstance(row_validation_data, dict):
+                if col_name in row_validation_data and isinstance(row_validation_data[col_name], dict):
+                    validated_value = row_validation_data[col_name].get('value')
+                    confidence_level = row_validation_data[col_name].get('confidence_level')
             
-            if isinstance(result, dict):
-                validated_value = result.get('value', '')
-                confidence_level = result.get('confidence_level', 'MEDIUM')
-                sources = result.get('sources', [])
-                quote = result.get('quote', '')
-                update_req = result.get('update_required', False)
-                reasoning = result.get('reasoning', '')
-            elif isinstance(result, tuple) and len(result) >= 4:
-                validated_value = result[0]
-                # Skip confidence_numeric (index 1)
-                sources = result[2]
-                confidence_level = result[3]
-                quote = result[4] if len(result) > 4 else ""
-                update_req = result[6] if len(result) > 6 else False
-                reasoning = result[5] if len(result) > 5 else ""
+            # Use validated value if available, otherwise use original value
+            final_value = validated_value if validated_value is not None else cell_value
             
-            # Make all values safe for Excel
-            safe_validated = safe_for_excel(validated_value)
-            safe_confidence_level = safe_for_excel(confidence_level)
-            safe_sources = [safe_for_excel(s) for s in sources] if isinstance(sources, list) else safe_for_excel(sources)
-            safe_quote = safe_for_excel(quote)
-            safe_reasoning = safe_for_excel(reasoning)
-            safe_original = safe_for_excel(original_value)
+            # Determine the format to use
+            cell_format = None
+            if not is_id_field and confidence_level and confidence_level.upper() in confidence_formats:
+                # Apply confidence formatting for non-ID fields
+                cell_format = confidence_formats[confidence_level.upper()]
+            elif validated_value is not None and validated_value != cell_value:
+                # Apply light green background for validated/updated values (but not confidence color)
+                cell_format = workbook.add_format({'bg_color': '#E6FFE6'})
             
-            # Truncate strings if they're excessively long to avoid Excel corruption
-            if isinstance(safe_validated, str) and len(safe_validated) > 32767:  # Excel's cell content limit
-                safe_validated = safe_validated[:32700] + "..."
-            
-            # Log what we're about to write for debugging
-            logger.info(f"Writing to cell ({row_idx+1}, {col_idx}) column '{excel_col}': value='{safe_validated[:100]}...', confidence={safe_confidence_level}")
-            
-            # Write value - catch any issues
+            # Write the value to Excel
             try:
-                worksheet.write(row_idx + 1, col_idx, safe_validated)
-            except Exception as e:
-                logger.error(f"Error writing cell ({row_idx+1}, {col_idx}): {str(e)}")
-                # Try a simpler write without any formatting
-                try:
-                    worksheet.write_string(row_idx + 1, col_idx, str(safe_validated)[:32700])
-                except Exception as fallback_e:
-                    logger.error(f"Even fallback write failed: {str(fallback_e)}")
-                    worksheet.write_string(row_idx + 1, col_idx, "ERROR WRITING VALUE")
-            
-            # Skip ID columns when adding cell comments and row notes
-            is_id_column = False
-            for target in config.get('validation_targets', []):
-                if target.get('column') == excel_col and target.get('importance', '').upper() == 'ID':
-                    is_id_column = True
-                    break
-            
-            # Add comment with quote if available, but only for non-ID columns
-            if not is_id_column:
-                comment_text = ""
-                
-                # Use quote if it's meaningful (non-empty and has reasonable length)
-                if safe_quote and len(str(safe_quote).strip()) > 10:
-                    # Truncate comment if too long to prevent Excel corruption
-                    if isinstance(safe_quote, str) and len(safe_quote) > MAX_COMMENT_LENGTH:
-                        comment_text = f"\"{safe_quote[:MAX_COMMENT_LENGTH]}...\""
+                # Skip NaN values
+                if pd.isna(final_value):
+                    worksheet.write(row_idx + 1, col_idx, '', cell_format)
+                else:
+                    # For Excel compatibility, make sure the value is not too long
+                    if isinstance(final_value, str) and len(final_value) > 32767:
+                        safe_value = final_value[:32700] + '... [truncated]'
+                        worksheet.write(row_idx + 1, col_idx, safe_value, cell_format)
                     else:
-                        comment_text = f"\"{safe_quote}\""
-                # Fall back to the validated value if quote is missing or too short
-                elif safe_validated and str(safe_validated).strip() and str(safe_validated) != str(safe_original):
-                    # Use validated value as fallback when no quote is available
-                    if isinstance(safe_validated, str) and len(safe_validated) > MAX_COMMENT_LENGTH:
-                        comment_text = f"Output: {safe_validated[:MAX_COMMENT_LENGTH]}..."
-                    else:
-                        comment_text = f"Output: {safe_validated}"
-                
-                if comment_text:
-                    if safe_sources:
-                        if isinstance(safe_sources, list):
-                            # Limit sources text length
-                            source_text = "\n\nSources: " + ", ".join([s[:100] for s in safe_sources if s])
-                            if len(source_text) > 200:
-                                source_text = source_text[:200] + "..."
-                        else:
-                            source_text = "\n\nSources: " + str(safe_sources)[:200]
-                        comment_text += source_text
+                        worksheet.write(row_idx + 1, col_idx, final_value, cell_format)
                     
-                    # Only add comment if the text is not empty
-                    if comment_text.strip():
-                        try:
-                            worksheet.write_comment(row_idx + 1, col_idx, comment_text[:MAX_COMMENT_LENGTH], {'width': 300, 'height': 150})
-                        except Exception as comment_error:
-                            logger.error(f"Error writing comment: {str(comment_error)}")
-            
-            # Apply confidence-based formatting - do this AFTER writing the value
-            # Skip coloring for ID columns and UNDEFINED confidence level
-            if not is_id_column and safe_confidence_level != "UNDEFINED":
+                    # Add comment with quote and sources if this column was validated
+                    if row_validation_data and isinstance(row_validation_data, dict):
+                        if col_name in row_validation_data and isinstance(row_validation_data[col_name], dict):
+                            col_validation = row_validation_data[col_name]
+                            quote = col_validation.get('quote', '')
+                            sources = col_validation.get('sources', [])
+                            
+                            # Create comment text if we have quote or sources
+                            comment_parts = []
+                            if quote and quote != 'N/A' and quote.strip():
+                                comment_parts.append(f'Quote: "{quote}"')
+                            
+                            if sources and isinstance(sources, list) and sources:
+                                sources_text = ', '.join(sources)
+                                comment_parts.append(f'Sources: {sources_text}')
+                            elif sources and str(sources) != 'N/A' and str(sources).strip():
+                                comment_parts.append(f'Sources: {sources}')
+                            
+                            if comment_parts:
+                                comment_text = '\n\n'.join(comment_parts)
+                                try:
+                                    worksheet.write_comment(row_idx + 1, col_idx, comment_text, 
+                                                          {'width': 300, 'height': 150})
+                                except Exception as comment_error:
+                                    logger.warning(f"Could not add comment to cell ({row_idx+1}, {col_idx}): {comment_error}")
+                        
+            except Exception as e:
+                logger.error(f"Error writing cell value for {col_name} ({final_value}): {str(e)}")
                 try:
-                    if safe_confidence_level == "HIGH":
-                        worksheet.write(row_idx + 1, col_idx, safe_validated, high_confidence)
-                    elif safe_confidence_level == "MEDIUM":
-                        worksheet.write(row_idx + 1, col_idx, safe_validated, medium_confidence)
-                    elif safe_confidence_level == "LOW":
-                        worksheet.write(row_idx + 1, col_idx, safe_validated, low_confidence)
-                except Exception as format_error:
-                    logger.error(f"Error applying confidence formatting: {str(format_error)}")
-            
-            if update_req and not is_id_column:
-                try:
-                    worksheet.write(row_idx + 1, col_idx, safe_validated, update_required)
-                except Exception as update_error:
-                    logger.error(f"Error applying update formatting: {str(update_error)}")
-            
-            # Add to row note for comment, but only for non-ID columns
-            if not is_id_column:
-                note_text = ""
-                
-                # Use quote if it's meaningful
-                if safe_quote and len(str(safe_quote).strip()) > 10:
-                    # Truncate to avoid excessively long notes
-                    if isinstance(safe_quote, str):
-                        truncated_quote = safe_quote if len(safe_quote) <= 200 else safe_quote[:200] + "..."
-                        note_text = f"\"{truncated_quote}\""
-                # Fall back to the validated value if quote is missing or too short
-                elif safe_validated and str(safe_validated).strip() and str(safe_validated) != str(safe_original):
-                    # Use validated value as fallback when no quote is available
-                    if isinstance(safe_validated, str):
-                        truncated_output = safe_validated if len(safe_validated) <= 200 else safe_validated[:200] + "..."
-                        note_text = f"Output: {truncated_output}"
-                
-                if note_text:
-                    row_note += f"\n{excel_col}: {note_text}\n"
-            
-            # Add to detailed view
-            try:
-                detail_worksheet.write(detail_row, 0, row_idx + 1)
-                detail_worksheet.write(detail_row, 1, excel_col)
-                
-                # Handle potential NaN/Infinity values for Excel
-                safe_original = safe_for_excel(original_value)
-                
-                detail_worksheet.write(detail_row, 2, safe_original)
-                detail_worksheet.write(detail_row, 3, safe_validated)
-                
-                # Apply formatting to confidence level in detailed view
-                if is_id_column:
-                    # For ID columns, show "ID" instead of confidence level
-                    detail_worksheet.write(detail_row, 4, "ID")
-                else:
-                    # For non-ID columns, apply confidence level formatting
-                    if safe_confidence_level == "UNDEFINED":
-                        # No formatting for UNDEFINED confidence
-                        detail_worksheet.write(detail_row, 4, safe_confidence_level)
-                    elif safe_confidence_level == "HIGH":
-                        detail_worksheet.write(detail_row, 4, safe_confidence_level, high_confidence)
-                    elif safe_confidence_level == "MEDIUM":
-                        detail_worksheet.write(detail_row, 4, safe_confidence_level, medium_confidence)
-                    elif safe_confidence_level == "LOW":
-                        detail_worksheet.write(detail_row, 4, safe_confidence_level, low_confidence)
-                
-                # Update required indicator
-                if is_id_column:
-                    # ID columns are never marked as needing updates
-                    detail_worksheet.write(detail_row, 5, "No")
-                else:
-                    detail_worksheet.write(detail_row, 5, "Yes" if update_req else "No")
-                    if update_req:
-                        detail_worksheet.write(detail_row, 5, "Yes", update_required)
-                
-                # Sources - truncate if needed
-                if isinstance(safe_sources, list):
-                    # Join and limit length for each source
-                    sources_text = "; ".join([s[:100] for s in safe_sources if s])
-                    if len(sources_text) > 1000:
-                        sources_text = sources_text[:1000] + "..."
-                else:
-                    sources_text = str(safe_sources)
-                    if len(sources_text) > 1000:
-                        sources_text = sources_text[:1000] + "..."
-                
-                detail_worksheet.write(detail_row, 6, sources_text, wrap_format)
-                
-                # For the quote column, use either the quote or the output value as fallback
-                quote_text = ""
-                if safe_quote and len(str(safe_quote).strip()) > 10:
-                    # Truncate if needed
-                    if isinstance(safe_quote, str) and len(safe_quote) > 1000:
-                        quote_text = f"\"{safe_quote[:1000]}...\""
-                    else:
-                        quote_text = f"\"{safe_quote}\""
-                # Fall back to the validated value if quote is missing or too short
-                elif safe_validated and str(safe_validated).strip() and str(safe_validated) != str(safe_original):
-                    # Use validated value as fallback when no quote is available
-                    if isinstance(safe_validated, str) and len(safe_validated) > 1000:
-                        quote_text = f"Output: {safe_validated[:1000]}..."
-                    else:
-                        quote_text = f"Output: {safe_validated}"
-                
-                detail_worksheet.write(detail_row, 7, quote_text, wrap_format)
-                
-                # Reasoning - truncate if needed
-                if isinstance(safe_reasoning, str) and len(safe_reasoning) > 1000:
-                    safe_reasoning = safe_reasoning[:1000] + "..."
-                
-                detail_worksheet.write(detail_row, 8, safe_reasoning, wrap_format)
-                detail_row += 1
-            except Exception as detail_error:
-                logger.error(f"Error writing to detail worksheet: {str(detail_error)}")
+                    # Try to convert to string if there's an error
+                    worksheet.write(row_idx + 1, col_idx, str(final_value)[:1000], cell_format)
+                except:
+                    worksheet.write(row_idx + 1, col_idx, "[Error - could not display value]", cell_format)
+    
+    # Initialize counters for details and reasons worksheets
+    detail_row = 1  # Start at 1 to leave room for header
+    reasons_row = 1
+    history_row_counter = 1
+    used_result_keys = set()  # Initialize here to avoid scoping issues
+    
+    # Write headers for detail worksheet
+    detail_headers = ["Row Key", "Identifier", "Column", "Original Value", "Validated Value", "Confidence", "Quote", "Sources", "Explanation", "Update Required", "Substantially Different", "Consistent with Model"]
+    for col_idx, header in enumerate(detail_headers):
+        detail_worksheet.write(0, col_idx, header, header_format)
+    
+    # Set column widths for detail worksheet
+    detail_worksheet.set_column(0, 0, 15)  # Row Key
+    detail_worksheet.set_column(1, 1, 30)  # Identifier
+    detail_worksheet.set_column(2, 2, 25)  # Column
+    detail_worksheet.set_column(3, 3, 30)  # Original Value
+    detail_worksheet.set_column(4, 4, 30)  # Validated Value
+    detail_worksheet.set_column(5, 5, 15)  # Confidence
+    detail_worksheet.set_column(6, 6, 50)  # Quote
+    detail_worksheet.set_column(7, 7, 40)  # Sources
+    detail_worksheet.set_column(8, 8, 60)  # Explanation
+    detail_worksheet.set_column(9, 9, 15)  # Update Required
+    detail_worksheet.set_column(10, 10, 20)  # Substantially Different
+    detail_worksheet.set_column(11, 11, 25)  # Consistent with Model
+    
+    # Write headers for reasons worksheet
+    reasons_headers = ["Row Key", "Identifier", "Holistic Validation", "Reason"]
+    for col_idx, header in enumerate(reasons_headers):
+        reasons_worksheet.write(0, col_idx, header, header_format)
+    
+    # Set column widths for reasons worksheet
+    reasons_worksheet.set_column(0, 0, 15)  # Row Key
+    reasons_worksheet.set_column(1, 1, 30)  # Identifier
+    reasons_worksheet.set_column(2, 2, 20)  # Holistic Validation
+    reasons_worksheet.set_column(3, 3, 80)  # Reason
+    
+    # Write headers for history worksheet
+    history_headers = ["Row Key"] + primary_key_columns + ["Column", "Value", "Confidence", "Timestamp"]
+    for col_idx, header in enumerate(history_headers):
+        history_worksheet.write(0, col_idx, header, header_format)
+    
+    # Set column widths for history worksheet
+    history_worksheet.set_column(0, 0, 15)  # Row Key
+    for i in range(len(primary_key_columns)):
+        history_worksheet.set_column(1+i, 1+i, 25)  # Primary key columns
+    hist_offset = len(primary_key_columns) + 1
+    history_worksheet.set_column(hist_offset, hist_offset, 25)  # Column
+    history_worksheet.set_column(hist_offset+1, hist_offset+1, 30)  # Value
+    history_worksheet.set_column(hist_offset+2, hist_offset+2, 15)  # Confidence
+    history_worksheet.set_column(hist_offset+3, hist_offset+3, 20)  # Timestamp
+    
+    # Process each row's validation results
+    for row_idx, (_, row) in enumerate(result_df.iterrows()):
+        # Try to find matching result using row index directly
+        matched_key = None
+        row_data = None
         
-        # Add a summary comment to the row's primary key cell
-        # Only add if we have notes AND primary key is not itself an ID column
-        if row_note != "" and primary_keys and primary_keys[0] in result_df.columns:
-            pk_idx = result_df.columns.get_loc(primary_keys[0])
+        # Check if we have results for this row index
+        if row_idx in results_dict:
+            matched_key = row_idx
+            row_data = results_dict[row_idx]
+        else:
+            # Try string version of row index
+            str_row_idx = str(row_idx)
+            if str_row_idx in results_dict:
+                matched_key = str_row_idx
+                row_data = results_dict[str_row_idx]
+            else:
+                # Try to find any result that hasn't been used yet
+                for key, data in results_dict.items():
+                    if key not in used_result_keys:
+                        matched_key = key
+                        row_data = data
+                        break
+        
+        if not matched_key or not row_data:
+            logger.warning(f"No validation results found for row {row_idx+1}")
+            continue
             
-            # Check if primary key is an ID column
-            pk_is_id = False
-            for target in config.get('validation_targets', []):
-                if target.get('column') == primary_keys[0] and target.get('importance', '').upper() == 'ID':
-                    pk_is_id = True
-                    break
-            
-            # Only add comment if primary key isn't an ID column
-            if not pk_is_id:
-                # Truncate row note if it's too long
-                if len(row_note) > MAX_COMMENT_LENGTH:
-                    row_note = row_note[:MAX_COMMENT_LENGTH] + "..."
+        # Mark this key as used
+        used_result_keys.add(matched_key)
+        
+        # Skip non-dictionary values
+        if not isinstance(row_data, dict):
+            logger.warning(f"Skipping non-dictionary result for row {row_idx+1}: {type(row_data)}")
+            continue
+        
+        logger.info(f"Processing row {row_idx+1} with matched key: {matched_key}")
+        
+        # Generate identifier from primary key values
+        identifier_parts = []
+        for pk in primary_key_columns:
+            if pk in row and not pd.isna(row[pk]):
+                identifier_parts.append(str(row[pk]))
+            else:
+                identifier_parts.append("?")
+        
+        identifier = " | ".join(identifier_parts) if identifier_parts else f"Row {row_idx+1}"
+        
+        # Process individual column validations
+        for col_name, col_data in row_data.items():
+            # Skip special fields and non-dictionary values
+            if col_name in ['holistic_validation', 'reasons', 'next_check', '_raw_responses', 'validation_history']:
+                continue
                 
-                try:
-                    worksheet.write_comment(row_idx + 1, pk_idx, row_note, {'width': 400, 'height': 200})
-                except Exception as pk_comment_error:
-                    logger.error(f"Error writing primary key comment: {str(pk_comment_error)}")
-    
-        # Process validation history for this row if available
-        if matched_key in validation_history:
-            row_history = validation_history[matched_key]
+            if not isinstance(col_data, dict):
+                continue
             
-            # For each column with history, add entries to the History tab
-            for column, history_entries in row_history.items():
-                for entry in history_entries:
-                    try:
-                        # Extract data from history entry
-                        timestamp = entry.get('timestamp', '')
-                        value = entry.get('value', '')
-                        confidence_level = entry.get('confidence_level', '')
-                        quote = entry.get('quote', '')
-                        sources = entry.get('sources', [])
-                        
-                        # Write history entry to the History worksheet
-                        history_worksheet.write(history_row, 0, matched_key)
-                        history_worksheet.write(history_row, 1, column)
-                        
-                        # Try to parse the timestamp as datetime if possible
-                        try:
-                            if isinstance(timestamp, str) and timestamp:
-                                dt_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                                history_worksheet.write_datetime(history_row, 2, dt_timestamp, date_format)
-                            else:
-                                history_worksheet.write(history_row, 2, str(timestamp))
-                        except (ValueError, TypeError):
-                            # If timestamp can't be parsed, just write it as a string
-                            history_worksheet.write(history_row, 2, str(timestamp))
-                        
-                        # Write the rest of the fields
-                        history_worksheet.write(history_row, 3, str(value))
-                        
-                        # Apply confidence formatting
-                        if confidence_level == "HIGH":
-                            history_worksheet.write(history_row, 4, confidence_level, high_confidence)
-                        elif confidence_level == "MEDIUM":
-                            history_worksheet.write(history_row, 4, confidence_level, medium_confidence)
-                        elif confidence_level == "LOW":
-                            history_worksheet.write(history_row, 4, confidence_level, low_confidence)
-                        else:
-                            history_worksheet.write(history_row, 4, str(confidence_level))
-                        
-                        # Write quote and sources
-                        if quote:
-                            # Truncate if needed
-                            if isinstance(quote, str) and len(quote) > 1000:
-                                quote_text = quote[:1000] + "..."
-                            else:
-                                quote_text = quote
-                            history_worksheet.write(history_row, 5, quote_text, wrap_format)
-                        else:
-                            history_worksheet.write(history_row, 5, "")
-                        
-                        # Format sources as a string
-                        if isinstance(sources, list):
-                            sources_text = "; ".join(sources[:3])
-                            if len(sources) > 3:
-                                sources_text += f" (+{len(sources) - 3} more)"
-                        else:
-                            sources_text = str(sources)
-                        history_worksheet.write(history_row, 6, sources_text)
-                        
-                        history_row += 1
-                    except Exception as history_error:
-                        logger.error(f"Error writing history entry: {str(history_error)}")
+            # Extract validation details
+            value = col_data.get('value', 'N/A')
+            confidence = col_data.get('confidence_level', col_data.get('confidence', 'N/A'))  # Use text confidence first
+            quote = col_data.get('quote', 'N/A')
+            sources = col_data.get('sources', [])
+            explanation = col_data.get('explanation', 'N/A')
+            update_required = col_data.get('update_required', 'N/A')
+            substantially_different = col_data.get('substantially_different', 'N/A')
+            consistent_with_model = col_data.get('consistent_with_model_knowledge', 'N/A')
+            
+            # Get original value from the DataFrame
+            original_value = 'N/A'
+            if col_name in row:
+                original_value = row[col_name]
+                if pd.isna(original_value):
+                    original_value = 'N/A'
+                else:
+                    original_value = str(original_value)
+            
+            # Convert sources list to string
+            if isinstance(sources, list):
+                sources_str = '; '.join(sources) if sources else 'N/A'
+            else:
+                sources_str = str(sources) if sources else 'N/A'
+            
+            # Ensure all values are strings and safe for Excel
+            if not isinstance(value, str):
+                value = str(value)
+            
+            if not isinstance(confidence, str):
+                confidence = str(confidence)
+                
+            if not isinstance(quote, str):
+                quote = str(quote)
+                
+            if not isinstance(explanation, str):
+                explanation = str(explanation)
+                
+            if not isinstance(update_required, str):
+                update_required = str(update_required)
+                
+            if not isinstance(substantially_different, str):
+                substantially_different = str(substantially_different)
+                
+            if not isinstance(consistent_with_model, str):
+                consistent_with_model = str(consistent_with_model)
+            
+            # Make sure values are safe for Excel (truncate if needed)
+            original_value = safe_for_excel(original_value)
+            value = safe_for_excel(value)
+            confidence = safe_for_excel(confidence)
+            quote = safe_for_excel(quote)
+            sources_str = safe_for_excel(sources_str)
+            explanation = safe_for_excel(explanation)
+            update_required = safe_for_excel(update_required)
+            substantially_different = safe_for_excel(substantially_different)
+            consistent_with_model = safe_for_excel(consistent_with_model)
+            
+            # Write to detail worksheet
+            detail_worksheet.write(detail_row, 0, matched_key)  # Row Key
+            detail_worksheet.write(detail_row, 1, identifier)  # Identifier
+            detail_worksheet.write(detail_row, 2, col_name)  # Column
+            detail_worksheet.write(detail_row, 3, original_value)  # Original Value
+            detail_worksheet.write(detail_row, 4, value)  # Validated Value
+            
+            # Apply confidence formatting (skip for ID fields)
+            if col_name not in id_fields and confidence.upper() in confidence_formats:
+                detail_worksheet.write(detail_row, 5, confidence, confidence_formats[confidence.upper()])
+            else:
+                detail_worksheet.write(detail_row, 5, confidence)
+                
+            detail_worksheet.write(detail_row, 6, quote)  # Quote
+            detail_worksheet.write(detail_row, 7, sources_str)  # Sources
+            detail_worksheet.write(detail_row, 8, explanation)  # Explanation
+            detail_worksheet.write(detail_row, 9, update_required)  # Update Required
+            detail_worksheet.write(detail_row, 10, substantially_different)  # Substantially Different
+            detail_worksheet.write(detail_row, 11, consistent_with_model)  # Consistent with Model
+            
+            detail_row += 1
+        
+        # Process holistic validation and reasons
+        if 'holistic_validation' in row_data and 'reasons' in row_data:
+            holistic_result = row_data['holistic_validation']
+            reasons = row_data['reasons']
+            
+            for reason in reasons:
+                # Ensure reason is string and safe for Excel
+                if not isinstance(reason, str):
+                    reason = str(reason)
+                
+                reason = safe_for_excel(reason)
+                
+                # Write to reasons worksheet
+                reasons_worksheet.write(reasons_row, 0, matched_key)  # Row Key
+                reasons_worksheet.write(reasons_row, 1, identifier)  # Identifier
+                reasons_worksheet.write(reasons_row, 2, holistic_result)  # Holistic Validation
+                reasons_worksheet.write(reasons_row, 3, reason)  # Reason
+                
+                reasons_row += 1
     
-    # Try adding autofilter, but catch any errors
+    # Try adding autofilter to each worksheet
     try:
         worksheet.autofilter(0, 0, len(result_df), len(result_df.columns) - 1)
     except Exception as filter_error:
@@ -1362,14 +992,9 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
         logger.error(f"Error adding autofilter to reasons worksheet: {str(reasons_filter_error)}")
     
     try:
-        history_worksheet.autofilter(0, 0, history_row - 1, len(history_headers) - 1)
+        history_worksheet.autofilter(0, 0, history_row_counter - 1, len(history_headers) - 1)
     except Exception as history_filter_error:
         logger.error(f"Error adding autofilter to history worksheet: {str(history_filter_error)}")
-    
-    # Final stats for debugging
-    logger.info(f"Added {detail_row-1} rows to detailed view")
-    logger.info(f"Added {reasons_row-1} rows to reasons view")
-    logger.info(f"Added {history_row-1} rows to history view")
 
 def main():
     """Main function to test Lambda with rows from the Excel file."""

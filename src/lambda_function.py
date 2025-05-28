@@ -8,7 +8,7 @@ import asyncio
 import aiohttp
 import logging
 import os
-from schema_validator import SchemaValidator
+from schema_validator_simplified import SimplifiedSchemaValidator
 from botocore.config import Config
 import traceback
 from perplexity_schema import get_response_format_schema
@@ -52,12 +52,18 @@ def generate_row_key(row: Dict[str, Any], primary_keys: List[str]) -> str:
     
     key_parts = []
     for key in primary_keys:
-        # Use empty string for None/missing values
-        value = row.get(key, "")
-        if value is None:
-            value = ""
-        # Convert to string
-        key_parts.append(str(value))
+        # Get the value from the row
+        value = row.get(key, None)
+        
+        # Handle None/NaN values consistently with batch processor
+        if value is None or (isinstance(value, float) and str(value).lower() == 'nan'):
+            value = "NULL"
+        else:
+            value = str(value)
+            # Keep alphanumeric, spaces, and some basic punctuation (match batch processor)
+            value = ''.join(c for c in value if c.isalnum() or c in ' -_')
+        
+        key_parts.append(value)
     
     # Join key parts with a separator
     row_key = "||".join(key_parts)
@@ -249,7 +255,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.error(f"Found examples for {target.get('column')}: {target['examples']}")
             logger.error(f"Found {targets_with_examples} validation targets with examples")
             
-        validator = SchemaValidator(config)
+        validator = SimplifiedSchemaValidator(config)
         
         # Get API key and S3 bucket
         api_key = get_perplexity_api_key()
@@ -291,8 +297,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             row_results = {}
             accumulated_results = {}  # Store results to pass as context to later groups
             
-            # Generate a row key for looking up historical validation data
-            row_key = generate_row_key(row, config.get('primary_key', []))
+            # Generate a row key for looking up historical validation data using auto-generated primary key
+            row_key = generate_row_key(row, validator.primary_key)
             
             # Get validation history if provided in the event
             validation_history = {}
@@ -302,8 +308,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info(f"History contains data for {len(validation_history)} fields")
             
             # Get ignored fields and ID fields - add them to results without processing
-            ignored_fields = validator._get_ignored_fields(validator.validation_targets)
-            id_fields = validator._get_id_fields(validator.validation_targets)
+            ignored_fields = validator.get_ignored_fields()
+            id_fields = validator.get_id_fields()
             
             # Process IGNORED fields
             if ignored_fields:
@@ -322,29 +328,31 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'substantially_different': False
                     }
             
-            # Process ID fields - similar to IGNORED fields, we don't validate them
+            # Process ID fields - DON'T add them to results since they're not validated
             if id_fields:
-                logger.info(f"Adding {len(id_fields)} ID fields to results without processing")
-                for id_field in id_fields:
-                    # Simply copy the original value to the result without validation
-                    original_value = row.get(id_field.column, "")
-                    row_results[id_field.column] = {
-                        'value': original_value,
-                        'confidence': 1.0,  # Max confidence since we're not checking
-                        'confidence_level': "HIGH",
-                        'sources': [],
-                        'quote': "",
-                        'main_source': "",
-                        'update_required': False,  # Never update ID fields
-                        'substantially_different': False
-                    }
-                    
-                    # Add ID field results to accumulated results
-                    accumulated_results[id_field.column] = row_results[id_field.column]
+                logger.info(f"Skipping {len(id_fields)} ID fields - they are not validated, only used for context")
+                # ID fields are used for context and row identification only
+                # They should not appear in validation results or have confidence levels
+                # for id_field in id_fields:
+                #     # Simply copy the original value to the result without validation
+                #     original_value = row.get(id_field.column, "")
+                #     row_results[id_field.column] = {
+                #         'value': original_value,
+                #         'confidence': 1.0,  # Max confidence since we're not checking
+                #         'confidence_level': "HIGH",
+                #         'sources': [],
+                #         'quote': "",
+                #         'main_source': "",
+                #         'update_required': False,  # Never update ID fields
+                #         'substantially_different': False
+                #     }
+                #     
+                #     # Add ID field results to accumulated results
+                #     accumulated_results[id_field.column] = row_results[id_field.column]
             
             # Group validation targets by search group - exclude ID and IGNORED fields 
             validation_targets = [t for t in validator.validation_targets if t.importance.upper() not in ["ID", "IGNORED"]]
-            grouped_targets = validator._group_columns_by_search_group(validation_targets)
+            grouped_targets = validator.group_columns_by_search_group(validation_targets)
             
             # Sort search groups by number to ensure sequential processing
             sorted_groups = sorted(grouped_targets.keys())
@@ -497,6 +505,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Parse multiplex results
             parsed_results = validator.parse_multiplex_result(result, row)
             
+            # Log the parsed results for debugging
+            logger.info(f"Parsed {len(parsed_results)} results from API response")
+            for col, parsed_result in parsed_results.items():
+                quote_text = parsed_result[4] if len(parsed_result) > 4 else "N/A"
+                logger.info(f"  {col}: quote='{quote_text[:50]}{'...' if len(quote_text) > 50 else ''}'")
+            
             # Process and store results for each column
             for target in validation_targets:
                 if target.column in parsed_results:
@@ -514,6 +528,31 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # If update_required wasn't set by the API, set it based on substantially_different
                     if update_required is None:
                         update_required = substantially_different
+                    
+                    # Fallback logic: ensure correct update_required and substantially_different
+                    original_value = str(row.get(target.column, "")).strip()
+                    validated_value = str(value).strip()
+                    
+                    # If original was empty and now we have a value, both should be True
+                    if not original_value and validated_value:
+                        update_required = True
+                        substantially_different = True
+                        logger.info(f"Empty→filled for {target.column}: setting both flags to True")
+                    
+                    # If values are different, update_required should be True
+                    elif original_value != validated_value:
+                        update_required = True
+                        # Keep substantially_different as determined by API unless it's clearly wrong
+                        if not substantially_different and original_value and validated_value:
+                            # Only override if the change seems substantial (length difference > 50% or completely different words)
+                            if abs(len(original_value) - len(validated_value)) > max(len(original_value), len(validated_value)) * 0.5:
+                                substantially_different = True
+                                logger.info(f"Large change detected for {target.column}: setting substantially_different to True")
+                    
+                    # If values are the same, both should be False
+                    elif original_value == validated_value:
+                        update_required = False
+                        substantially_different = False
                     
                     row_results[target.column] = {
                         'value': value,
@@ -534,6 +573,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Include any citations from the API response
                     if 'citations' in result:
                         row_results[target.column]['api_citations'] = result['citations']
+                        
+                        # If quote is empty but we have citations, try to extract a quote
+                        if not quote and result['citations']:
+                            # Try to extract a meaningful quote from the first citation
+                            try:
+                                # Log the citations for debugging
+                                logger.info(f"No quote found for {target.column}, trying to extract from citations")
+                                logger.info(f"Available citations: {result['citations'][:2]}")  # Log first 2 citations
+                                
+                                # For now, use a simple fallback - we could enhance this later
+                                quote = f"Source information available from {len(result['citations'])} citations"
+                                row_results[target.column]['quote'] = quote
+                                logger.info(f"Generated fallback quote for {target.column}: {quote}")
+                            except Exception as quote_error:
+                                logger.error(f"Error generating fallback quote: {str(quote_error)}")
                         
                         # If sources contains numeric references, convert them to URLs
                         if 'sources' in row_results[target.column] and isinstance(row_results[target.column]['sources'], list):
@@ -639,7 +693,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 row = rows[row_idx] if row_idx < len(rows) else {}
                 
                 # Generate row key
-                row_key = generate_row_key(row, config.get('primary_key', []))
+                row_key = generate_row_key(row, validator.primary_key)
                 
                 # Initialize history for this row if doesn't exist yet
                 if row_key not in validation_history:
