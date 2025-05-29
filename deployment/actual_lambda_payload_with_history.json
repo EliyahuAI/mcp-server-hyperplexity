@@ -1,0 +1,318 @@
+{
+  "test_mode": true,
+  "config": {
+    "general_notes": "This table tracks radiopharmaceutical products (diagnostic, therapeutic and theranostic) in development that could compete with Ratio Therapeutics over the next 1â€“5 years. The list focuses on agents in pre-registration through Phase 1 and likely to reach market in 2024-2030. Your key goal is to monitor this competitive landscape. Please use the most recent information available from public sources, including clinicaltrials.gov, company press releases, and news articles.",
+    "default_model": "sonar-pro",
+    "validation_targets": [
+      {
+        "column": "Product Name",
+        "description": "Official code or INN of the radiopharmaceutical",
+        "importance": "ID",
+        "format": "String",
+        "notes": "Use sponsor's current nomenclature",
+        "examples": [
+          "FAP-2286",
+          "225Ac-PSMA-617",
+          "TLX250-CDx"
+        ],
+        "search_group": 0
+      },
+      {
+        "column": "Developer",
+        "description": "Lead company (add parent in parentheses if acquired)",
+        "importance": "ID",
+        "format": "String",
+        "notes": "Name mergers or major co-developers",
+        "examples": [
+          "Novartis (AAA)",
+          "POINT Biopharma / Eli Lilly"
+        ],
+        "search_group": 0
+      },
+      {
+        "column": "Target",
+        "description": "Molecular target or receptor the agent binds",
+        "importance": "ID",
+        "format": "String",
+        "notes": "Use gene/protein symbol or common receptor acronym",
+        "examples": [
+          "FAP",
+          "PSMA",
+          "SSTR2"
+        ],
+        "search_group": 1
+      },
+      {
+        "column": "Indication",
+        "description": "Main disease(s) or tumour type(s) the product is being developed for",
+        "importance": "CRITICAL",
+        "format": "String",
+        "notes": "Concise but specific (e.g., include biomarker status)",
+        "examples": [
+          "mCRPC",
+          "GEP-NETs",
+          "Clear-cell RCC"
+        ],
+        "search_group": 1
+      },
+      {
+        "column": "Therapeutic Radionuclide",
+        "description": "Radionuclide used for therapy (if applicable) for this product",
+        "importance": "CRITICAL",
+        "format": "String",
+        "notes": "Use IUPAC-style isotope notation",
+        "examples": [
+          "Lu-177",
+          "Ac-225",
+          "Cu-67"
+        ],
+        "search_group": 1
+      },
+      {
+        "column": "Diagnostic Radionuclide",
+        "description": "Radionuclide used for imaging (if theranostic or diagnostic-only) for this product",
+        "importance": "CRITICAL",
+        "format": "String",
+        "notes": "Use '-' if no diagnostic label",
+        "examples": [
+          "Ga-68",
+          "Zr-89",
+          "Cu-64",
+          "-"
+        ],
+        "search_group": 1
+      },
+      {
+        "column": "Modality Type",
+        "description": "Classification (theranostic, therapeutic, diagnostic)",
+        "importance": "CRITICAL",
+        "format": "String",
+        "notes": "Include molecule class if helpful (peptide, mAb, small molecule)",
+        "examples": [
+          "Theranostic peptide",
+          "Therapeutic radioligand"
+        ],
+        "search_group": 1
+      },
+      {
+        "column": "Development Stage",
+        "description": "Highest disclosed stage of development",
+        "importance": "CRITICAL",
+        "format": "String",
+        "notes": "If multiple, list the most advanced",
+        "examples": [
+          "Phase 3",
+          "Phase 1/2",
+          "Pre-clinical",
+          "BLA filed"
+        ],
+        "search_group": 2
+      },
+      {
+        "column": "Key Trial ID",
+        "description": "Primary clinical-trials.gov identifier",
+        "importance": "CRITICAL",
+        "format": "String",
+        "notes": "Use '-' if none available",
+        "examples": [
+          "NCT04939610",
+          "NCT04647526",
+          "-"
+        ],
+        "search_group": 2
+      },
+      {
+        "column": "Projected Launch",
+        "description": "Estimated first commercial approval year",
+        "importance": "HIGH",
+        "format": "String",
+        "notes": "Infer from typical timelines if not public",
+        "examples": [
+          "2026",
+          "2027-28",
+          "After 2030"
+        ],
+        "search_group": 3
+      },
+      {
+        "column": "FDA-EMA Designation",
+        "description": "Notable regulatory designations (BTD, Fast Track, Orphan-Drug)",
+        "importance": "HIGH",
+        "format": "String",
+        "notes": "List agency and year; '-' if none",
+        "examples": [
+          "Fast Track (FDA, 2023)",
+          "Orphan-Drug (EMA)"
+        ],
+        "search_group": 3
+      },
+      {
+        "column": "Strategic Partners",
+        "description": "Key collaborators or licensees",
+        "importance": "HIGH",
+        "format": "String",
+        "notes": "Include major CDMO / isotope-supply partners if relevant",
+        "examples": [
+          "Lantheus",
+          "Bristol Myers Squibb",
+          "-"
+        ],
+        "search_group": 3
+      },
+      {
+        "column": "Recent News",
+        "description": "Latest important news on the product development (includes date of information release)",
+        "importance": "CRITICAL",
+        "format": "String",
+        "notes": "Bullets with aggregated news on a product. Confidence is only assesed for new news that is to be added - all other data is past forward. Include past news and append new news to the beginning of the list. Starts with a dash, date: news (confidence level). Use \n to separate each line.",
+        "examples": [
+          "- 4/10/2025: BLA resubmission in Q1 2025 after OS update requested (High Confidence)\n- 3/10/2025: Phase 3 trial results expected in Q2 2025 (High Confidence)\n- 2/10/2025: Phase 3 trial initiated (High Confidence)\n- 1/10/2025: Phase 2 trial results expected in Q4 2025 (High Confidence)"
+        ],
+        "search_group": 4,
+        "preferred_model": "sonar-pro"
+      }
+    ]
+  },
+  "validation_data": {
+    "rows": [
+      {
+        "_row_key": "[^64Cu]RTX-1363S (FAP-PET tracer)||RatioTherapeutics / Lantheus||FAP",
+        "Product Name": "[^64Cu]RTX‑1363S (FAP‑PET tracer)",
+        "Developer": "Ratio Therapeutics / Lantheus",
+        "Target": "FAP",
+        "Indication": "Solid tumors (including sarcoma, gastrointestinal tract cancer, pancreatic, breast, and colorectal cancers; FAP-expressing cancers)",
+        "Therapeutic Radionuclide": "-",
+        "Diagnostic Radionuclide": "Cu-64",
+        "Modality Type": "Diagnostic radiotracer (FAP inhibitor, small molecule)",
+        "Development Stage": "Phase 1",
+        "Key Trial ID": "NCT05760989",
+        "Projected Launch": "2026",
+        "FDA-EMA Designation": "-",
+        "Strategic Partners": "Lantheus, PharmaLogic",
+        "Recent News": "- 03/12/2024: Ratio announces expansion of manufacturing agreement with PharmaLogic for FAP-targeted radiopharmaceuticals (High Confidence)\n- 07/11/2023: First patient dosed in Phase I study evaluating a novel FAP-targeted radiopharmaceutical for PET imaging (High Confidence)\n- 02/10/2024: IND cleared by FDA (High Confidence)"
+      }
+    ]
+  },
+  "validation_history": {
+    "[^64Cu]RTX-1363S (FAP-PET tracer)||RatioTherapeutics / Lantheus||FAP": {
+      "Indication": [
+        {
+          "timestamp": "2025-05-29T12:55:10.329288",
+          "value": "Solid tumors (including sarcoma, gastrointestinal tract cancer, pancreatic, breast, and colorectal cancers; FAP-expressing cancers)",
+          "confidence_level": "HIGH",
+          "quote": "A Phase 1/2a Study Utilizing 64Cu-LNTH-1363S (64Cu Radiolabeled FAPi PET/CT Imaging Agent) in Patients with Sarcoma or Gastrointestinal Tract Cancer... Cancer-associated fibroblasts selectively expressing FAP comprise up to 90 percent of the tumor mass in highly desmoplastic cancers including pancreatic, breast, and colorectal.",
+          "sources": [
+            "https://synapse.patsnap.com/drug/cb194997545a4a1fb5bb24ac30506c9e",
+            "https://www.precisionmedicineonline.com/precision-oncology/ratio-therapeutics-launches-phase-i-trial-fap-targeted-radiopharmaceutical"
+          ]
+        }
+      ],
+      "Therapeutic Radionuclide": [
+        {
+          "timestamp": "2025-05-29T12:55:10.329512",
+          "value": "-",
+          "confidence_level": "HIGH",
+          "quote": "Ratio’s clinical candidate, RTX-1363S, is a highly selective, high affinity FAP inhibitor that will be radiolabeled with copper-64 (Cu-64), a positron-emitting radionuclide with a half-life of 12.7 hr... Results from the study will inform further development of [Cu-64]-labeled RTX-1363S as a FAP-targeted tumor imaging agent.",
+          "sources": [
+            "https://ratiotx.com/press-release-phase-i-novel-fap-targeted-radiopharmaceutical/",
+            "https://www.precisionmedicineonline.com/precision-oncology/ratio-therapeutics-launches-phase-i-trial-fap-targeted-radiopharmaceutical"
+          ]
+        }
+      ],
+      "Diagnostic Radionuclide": [
+        {
+          "timestamp": "2025-05-29T12:55:10.329672",
+          "value": "Cu-64",
+          "confidence_level": "HIGH",
+          "quote": "Ratio’s clinical candidate, RTX-1363S, is a highly selective, high affinity FAP inhibitor that will be radiolabeled with copper-64 (Cu-64), a positron-emitting radionuclide with a half-life of 12.7 hr.",
+          "sources": [
+            "https://ratiotx.com/press-release-phase-i-novel-fap-targeted-radiopharmaceutical/",
+            "https://www.precisionmedicineonline.com/precision-oncology/ratio-therapeutics-launches-phase-i-trial-fap-targeted-radiopharmaceutical"
+          ]
+        }
+      ],
+      "Modality Type": [
+        {
+          "timestamp": "2025-05-29T12:55:10.329813",
+          "value": "Diagnostic radiotracer (FAP inhibitor, small molecule)",
+          "confidence_level": "HIGH",
+          "quote": "Ratio’s clinical candidate, RTX-1363S, is a highly selective, high affinity FAP inhibitor that will be radiolabeled with copper-64 (Cu-64)... Results from the study will inform further development of [Cu-64]-labeled RTX-1363S as a FAP-targeted tumor imaging agent.",
+          "sources": [
+            "https://ratiotx.com/press-release-phase-i-novel-fap-targeted-radiopharmaceutical/",
+            "https://www.precisionmedicineonline.com/precision-oncology/ratio-therapeutics-launches-phase-i-trial-fap-targeted-radiopharmaceutical"
+          ]
+        }
+      ],
+      "Development Stage": [
+        {
+          "timestamp": "2025-05-29T12:55:10.329945",
+          "value": "Phase 1",
+          "confidence_level": "HIGH",
+          "quote": "Ratio Therapeutics on Wednesday said that it began a Phase I trial of the fibroblast activation protein-alpha (FAP)-targeted radiopharmaceutical Cu-64-labeled RTX-1363S in healthy volunteers.",
+          "sources": [
+            "https://www.precisionmedicineonline.com/precision-oncology/ratio-therapeutics-launches-phase-i-trial-fap-targeted-radiopharmaceutical",
+            "https://ratiotx.com/press-release-phase-i-novel-fap-targeted-radiopharmaceutical/"
+          ]
+        }
+      ],
+      "Key Trial ID": [
+        {
+          "timestamp": "2025-05-29T12:55:10.330072",
+          "value": "NCT05760989",
+          "confidence_level": "HIGH",
+          "quote": "No direct quote available, but NCT05760989 is the only publicly listed clinical trial for [Cu-64]-labeled RTX-1363S on clinicaltrials.gov as of the latest available information.",
+          "sources": [
+            "https://clinicaltrials.gov/ct2/show/NCT05760989"
+          ]
+        }
+      ],
+      "Projected Launch": [
+        {
+          "timestamp": "2025-05-29T12:55:10.330201",
+          "value": "2026",
+          "confidence_level": "MEDIUM",
+          "quote": "No direct quote available for launch year. Typical timelines for Phase 1 radiopharmaceuticals suggest a possible launch in 2026 if development proceeds without delays, but this is not explicitly stated in available sources.",
+          "sources": [
+            "https://ratiotx.com/press-release-phase-i-novel-fap-targeted-radiopharmaceutical/",
+            "https://ratiotx.com/2024/03/12/march-12th-2024-ratio-announces-expansion-of-manufacturing-agreement-with-pharmalogic-for-fap-targeted-radiopharmaceuticals/"
+          ]
+        }
+      ],
+      "FDA-EMA Designation": [
+        {
+          "timestamp": "2025-05-29T12:55:10.330326",
+          "value": "-",
+          "confidence_level": "HIGH",
+          "quote": "No public record of FDA or EMA regulatory designations (BTD, Fast Track, Orphan-Drug) for [^64Cu]RTX-1363S.",
+          "sources": [
+            "https://ratiotx.com/press-release-phase-i-novel-fap-targeted-radiopharmaceutical/",
+            "https://ratiotx.com/2024/03/12/march-12th-2024-ratio-announces-expansion-of-manufacturing-agreement-with-pharmalogic-for-fap-targeted-radiopharmaceuticals/"
+          ]
+        }
+      ],
+      "Strategic Partners": [
+        {
+          "timestamp": "2025-05-29T12:55:10.330454",
+          "value": "Lantheus, PharmaLogic",
+          "confidence_level": "HIGH",
+          "quote": "Ratio, in collaboration with Lantheus and PharmaLogic, is currently conducting a Phase I trial evaluating the efficacy of a novel FAP-targeted radiopharmaceutical.",
+          "sources": [
+            "https://ratiotx.com/2024/03/12/march-12th-2024-ratio-announces-expansion-of-manufacturing-agreement-with-pharmalogic-for-fap-targeted-radiopharmaceuticals/"
+          ]
+        }
+      ],
+      "Recent News": [
+        {
+          "timestamp": "2025-05-29T12:55:10.330575",
+          "value": "- 03/12/2024: Ratio announces expansion of manufacturing agreement with PharmaLogic for FAP-targeted radiopharmaceuticals (High Confidence)\n- 07/11/2023: First patient dosed in Phase I study evaluating a novel FAP-targeted radiopharmaceutical for PET imaging (High Confidence)\n- 02/10/2024: IND cleared by FDA (High Confidence)",
+          "confidence_level": "HIGH",
+          "quote": "Today marks a major milestone for Ratio as we take a crucial step forward in the development of our FAP-targeted imaging agent... RTX-1363S has the potential to transform the way we detect and monitor various epithelial-derived cancers.",
+          "sources": [
+            "https://ratiotx.com/press-release-phase-i-novel-fap-targeted-radiopharmaceutical/",
+            "https://ratiotx.com/2024/03/12/march-12th-2024-ratio-announces-expansion-of-manufacturing-agreement-with-pharmalogic-for-fap-targeted-radiopharmaceuticals/"
+          ]
+        }
+      ]
+    }
+  }
+}

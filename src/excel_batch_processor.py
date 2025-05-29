@@ -14,12 +14,17 @@ import argparse
 import pandas as pd
 import boto3
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import re
+import numpy as np
+import botocore.config
+from schema_validator_simplified import SimplifiedSchemaValidator
+from row_key_utils import generate_row_key
+from lambda_test_json_clean import load_validation_history_from_excel
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -100,15 +105,37 @@ def load_config_file(config_path):
         logger.error(f"Error loading config file: {str(e)}")
         raise
 
-def create_batch_payload(rows_data, config, row_keys):
+def create_batch_payload(rows_data, config, row_keys, validation_history=None):
     """Create a payload for the Lambda function with multiple rows."""
+    
+    # Add row keys to each row
+    rows_with_keys = []
+    for i, row_data in enumerate(rows_data):
+        if i < len(row_keys):
+            row_with_key = {
+                "_row_key": row_keys[i],  # Include pre-computed row key
+                **row_data
+            }
+            rows_with_keys.append(row_with_key)
+        else:
+            # Fallback if we somehow have more rows than keys
+            logger.warning(f"Row {i} has no corresponding row key")
+            rows_with_keys.append(row_data)
+    
     payload = {
         "test_mode": True,  # Set to True for better debugging 
         "config": config,
         "validation_data": {
-            "rows": rows_data
-        }
+            "rows": rows_with_keys
+        },
+        "validation_history": validation_history if validation_history else {}
     }
+    
+    # Log validation history inclusion
+    if validation_history:
+        logger.info(f"Including validation history for {len(validation_history)} row keys in batch payload")
+    else:
+        logger.info("No validation history included in batch payload")
     
     # Clean payload to remove any NaN values
     def clean_dict(d):
@@ -147,6 +174,38 @@ def invoke_lambda(payload):
         
         # Invoke Lambda function
         logger.info(f"Invoking Lambda function with {len(payload['validation_data']['rows'])} rows...")
+        
+        # Debug: Log the payload structure for troubleshooting
+        logger.info(f"Payload structure - config keys: {list(payload['config'].keys())}")
+        logger.info(f"Payload structure - validation_data keys: {list(payload['validation_data'].keys())}")
+        if payload['validation_data']['rows']:
+            first_row = payload['validation_data']['rows'][0]
+            logger.info(f"First row keys: {list(first_row.keys())}")
+            logger.info(f"First row sample values: {dict(list(first_row.items())[:3])}")
+        
+        # Debug: Test SimplifiedSchemaValidator locally to see what's wrong
+        try:
+            from schema_validator_simplified import SimplifiedSchemaValidator
+            test_validator = SimplifiedSchemaValidator(payload['config'])
+            logger.info(f"Test validator - primary key: {test_validator.primary_key}")
+            logger.info(f"Test validator - validation targets count: {len(test_validator.validation_targets)}")
+            
+            # Check field groupings
+            id_fields = test_validator.get_id_fields()
+            validation_fields = test_validator.get_validation_fields()
+            logger.info(f"Test validator - ID fields: {[f.column for f in id_fields]}")
+            logger.info(f"Test validator - Validation fields: {[f.column for f in validation_fields]}")
+            
+            # Check search group grouping
+            if validation_fields:
+                grouped = test_validator.group_columns_by_search_group(validation_fields)
+                logger.info(f"Test validator - Search groups: {dict((k, [f.column for f in v]) for k, v in grouped.items())}")
+            else:
+                logger.warning("Test validator - No validation fields found!")
+                
+        except Exception as debug_e:
+            logger.error(f"Debug validator creation failed: {str(debug_e)}")
+        
         response = lambda_client.invoke(
             FunctionName=LAMBDA_ARN,
             InvocationType='RequestResponse',
@@ -191,6 +250,22 @@ def process_lambda_response(response, row_keys):
                 
                 logger.info(f"Parsed response body with keys: {list(body.keys())}")
                 
+                # Debug validation history if present
+                if 'validation_history' in body:
+                    logger.info(f"Found validation_history in response with {len(body['validation_history'])} entries")
+                    # Log first entry as a sample (limited output)
+                    if body['validation_history']:
+                        first_key = next(iter(body['validation_history']))
+                        first_entry = body['validation_history'][first_key]
+                        logger.info(f"Sample validation_history entry for key {first_key}: {str(first_entry)[:200]}...")
+                else:
+                    logger.warning("No validation_history found in response body")
+                
+                # Extract validation history for later use
+                validation_history = {}
+                if 'validation_history' in body:
+                    validation_history = body['validation_history']
+                
                 # Process validation results
                 if 'validation_results' in body:
                     validation_results = body['validation_results']
@@ -212,8 +287,8 @@ def process_lambda_response(response, row_keys):
                         
                         if numeric_keys and len(result_keys) == len(row_keys):
                             logger.info("Detected numeric keys - using position-based mapping")
-                            # Map results based on position/index
-                            for i, (result_key, row_key) in enumerate(zip(sorted(result_keys), row_keys)):
+                            # Map results based on position/index but preserve numeric keys
+                            for i, result_key in enumerate(sorted(result_keys, key=lambda x: int(x) if str(x).isdigit() else 999)):
                                 # Get the result data and clean column names
                                 result_data = validation_results[result_key]
                                 cleaned_result = {}
@@ -225,9 +300,9 @@ def process_lambda_response(response, row_keys):
                                     else:
                                         cleaned_result[col] = value
                                 
-                                # Store with original row key
-                                processed_results[row_key] = cleaned_result
-                                logger.info(f"Mapped result key {result_key} to row key {row_key} by position")
+                                # Store with numeric key to preserve simple mapping
+                                processed_results[result_key] = cleaned_result
+                                logger.info(f"Mapped result key {result_key} to row key {row_keys[i]} by position (preserving numeric key)")
                         else:
                             # Standard matching approach
                             # Match results to the original row keys
@@ -269,6 +344,86 @@ def process_lambda_response(response, row_keys):
                         return processed_results
                     else:
                         logger.warning(f"validation_results is not a dictionary")
+                
+                # Check for new response format: data.rows
+                elif 'data' in body and 'rows' in body['data']:
+                    logger.info("Found 'data.rows' field in response - using new response format")
+                    validation_results = body['data']['rows']
+                    
+                    if isinstance(validation_results, dict):
+                        logger.info(f"Received validation results for {len(validation_results)} rows")
+                        
+                        # Debug print all result keys
+                        result_keys = list(validation_results.keys())
+                        logger.info(f"Result keys from Lambda: {result_keys}")
+                        logger.info(f"Original row keys: {row_keys}")
+                        
+                        # Map results to the original row keys using the results dictionary
+                        processed_results = {}
+                        
+                        # Special case: Check if all result keys are numeric (0, 1, 2, ...)
+                        # This happens when the Lambda returns results with numeric indices
+                        numeric_keys = all(k.isdigit() for k in result_keys if isinstance(k, str))
+                        
+                        if numeric_keys and len(result_keys) == len(row_keys):
+                            logger.info("Detected numeric keys - using position-based mapping")
+                            # Map results based on position/index but preserve numeric keys
+                            for i, result_key in enumerate(sorted(result_keys, key=lambda x: int(x) if str(x).isdigit() else 999)):
+                                # Get the result data and clean column names
+                                result_data = validation_results[result_key]
+                                cleaned_result = {}
+                                for col, value in result_data.items():
+                                    # Replace non-breaking spaces with regular spaces
+                                    if isinstance(col, str) and '\xa0' in col:
+                                        cleaned_col = col.replace('\xa0', ' ')
+                                        cleaned_result[cleaned_col] = value
+                                    else:
+                                        cleaned_result[col] = value
+                                
+                                # Store with numeric key to preserve simple mapping
+                                processed_results[result_key] = cleaned_result
+                                logger.info(f"Mapped result key {result_key} to row key {row_keys[i]} by position (preserving numeric key)")
+                        else:
+                            # Standard matching approach
+                            # Match results to the original row keys
+                            for result_key, result_data in validation_results.items():
+                                # Clean the column names in results
+                                cleaned_result = {}
+                                for col, value in result_data.items():
+                                    # Replace non-breaking spaces with regular spaces
+                                    if isinstance(col, str) and '\xa0' in col:
+                                        cleaned_col = col.replace('\xa0', ' ')
+                                        cleaned_result[cleaned_col] = value
+                                    else:
+                                        cleaned_result[col] = value
+                                
+                                # Try to match with an original row key
+                                matched_key = match_key_to_original(result_key, row_keys)
+                                if matched_key:
+                                    processed_results[matched_key] = cleaned_result
+                                    logger.info(f"Matched result key: {result_key} to original key: {matched_key}")
+                                else:
+                                    # If no match found, use the result key as is - this is important!
+                                    processed_results[result_key] = cleaned_result
+                                    logger.info(f"No matching original key found for result key: {result_key}")
+                        
+                        # Add raw responses to each result for detailed view
+                        if 'raw_responses' in body:
+                            for key in processed_results:
+                                processed_results[key]['_raw_responses'] = body['raw_responses']
+                        
+                        # Check if the processed results dictionary is empty despite having validation results
+                        if not processed_results and validation_results:
+                            logger.warning("No results were matched to original rows - using Lambda results directly")
+                            # Fall back to using the original validation results with their keys
+                            for result_key, result_data in validation_results.items():
+                                # Just use the unmodified result
+                                processed_results[result_key] = result_data
+                        
+                        logger.info(f"Final processed results contain {len(processed_results)} rows")
+                        return processed_results
+                    else:
+                        logger.warning(f"data.rows is not a dictionary")
                 else:
                     logger.warning("No validation_results found in response body")
                 
@@ -431,45 +586,37 @@ def extract_significant_content(key):
     
     return content
 
-def generate_row_key(row, primary_keys):
-    """Generate a unique key for a row based on primary key columns."""
-    key_parts = []
-    for key in primary_keys:
-        # Try to match the key to a column in the row using normalization
-        matched_key = None
-        if key in row:
-            matched_key = key
-        else:
-            # Try to find a normalized match
-            key_norm = normalize_column_name(key)
-            for col in row.keys():
-                if normalize_column_name(col) == key_norm:
-                    matched_key = col
-                    break
-        
-        if matched_key:
-            # Convert to string and handle None/NaN values
-            value = row[matched_key]
-            if pd.isna(value) or value is None:
-                value = "NULL"
-            else:
-                value = str(value)
-                # Keep alphanumeric, spaces, and some basic punctuation
-                value = ''.join(c for c in value if c.isalnum() or c in ' -_')
-            key_parts.append(value)
-        else:
-            key_parts.append("MISSING")
-    
-    # Join key parts with a separator
-    row_key = "||".join(key_parts)
-    return row_key
-
-def process_in_batches(df, config, batch_size, output_path, api_key=None):
+def process_in_batches(df, config, batch_size, output_path, api_key=None, input_file_path=None):
     """Process DataFrame in batches through the Lambda function."""
     total_rows = len(df)
     total_batches = (total_rows + batch_size - 1) // batch_size  # Ceiling division
     all_results = {}
-    primary_keys = config.get('primary_key', [])
+    
+    # Load validation history if input file path is provided
+    validation_history = {}
+    if input_file_path:
+        validation_history = load_validation_history_from_excel(input_file_path)
+        logger.info(f"Loaded validation history from input file")
+    else:
+        logger.info("No input file path provided, skipping validation history loading")
+    
+    # Use SimplifiedSchemaValidator to get the correct primary key
+    try:
+        validator = SimplifiedSchemaValidator(config)
+        primary_keys = validator.primary_key
+        logger.info(f"Using auto-generated primary key: {primary_keys}")
+    except Exception as e:
+        logger.warning(f"Could not create SimplifiedSchemaValidator: {e}")
+        # Fallback to old method
+        primary_keys = config.get('primary_key', [])
+        if not primary_keys:
+            # Try to find ID fields manually
+            id_fields = []
+            for target in config.get('validation_targets', []):
+                if target.get('importance', '').upper() == 'ID':
+                    id_fields.append(target['column'])
+            primary_keys = id_fields
+        logger.info(f"Using fallback primary key: {primary_keys}")
     
     logger.info(f"Processing {total_rows} rows in {total_batches} batches of size {batch_size}")
     
@@ -493,6 +640,7 @@ def process_in_batches(df, config, batch_size, output_path, api_key=None):
                     # Convert non-string values to strings
                     if not pd.isna(val) and val is not None:
                         row_data[col] = str(val)
+                        # Don't normalize Unicode here - let row_key_utils handle it
                     else:
                         row_data[col] = None
             
@@ -507,8 +655,8 @@ def process_in_batches(df, config, batch_size, output_path, api_key=None):
         if api_key:
             config['api_key'] = api_key
         
-        # Create Lambda payload for the batch
-        payload = create_batch_payload(rows_data, config, row_keys)
+        # Create Lambda payload for the batch with validation history
+        payload = create_batch_payload(rows_data, config, row_keys, validation_history)
         
         # Invoke Lambda function
         try:
@@ -533,49 +681,53 @@ def process_in_batches(df, config, batch_size, output_path, api_key=None):
     
     return all_results
 
-def save_results_to_excel(df, results_dict, output_path, config):
-    """Save validation results to Excel with robust column handling."""
+def save_results_to_excel(df, results_dict, output_path, config, input_file_path=None):
+    """Save validation results to Excel with simplified approach - just mark current validations as 'New'."""
     try:
-        # Try to use the rich formatting from lambda_test_json_clean.py
-        try:
-            # Log the contents of the results dictionary for debugging
-            logger.info(f"Results dictionary contains {len(results_dict)} rows")
-            for key in results_dict.keys():
-                logger.info(f"Result key: {key[:50]}...")
-                
-                # Check if the results contain the required fields
-                result_data = results_dict[key]
-                if isinstance(result_data, dict):
-                    logger.info(f"  Fields: {list(result_data.keys())}")
-                else:
-                    logger.info(f"  Not a dictionary: {type(result_data)}")
+        # Use the enhanced Excel formatting from lambda_test_json_clean.py
+        # The enhanced formatter now includes a 'New' column for tracking current vs historical validations
+        logger.info("Using enhanced Excel formatting with simplified 'New' column approach")
+        from lambda_test_json_clean import save_results_to_excel as excel_saver
+        
+        # Check if we need to convert the row keys for compatibility
+        convert_keys = False
+        for key in results_dict.keys():
+            try:
+                int(key)
+                convert_keys = False
+                break
+            except (ValueError, TypeError):
+                convert_keys = True
+        
+        if convert_keys:
+            logger.info("Converting result dictionary keys for compatibility")
+            # Get primary keys using SimplifiedSchemaValidator
+            try:
+                validator = SimplifiedSchemaValidator(config)
+                primary_keys = validator.primary_key
+            except Exception as e:
+                logger.warning(f"Could not create SimplifiedSchemaValidator: {e}")
+                primary_keys = config.get('primary_key', [])
+                if not primary_keys:
+                    id_fields = []
+                    for target in config.get('validation_targets', []):
+                        if target.get('importance', '').upper() == 'ID':
+                            id_fields.append(target['column'])
+                    primary_keys = id_fields
             
-            # Check if we need to convert the row keys
-            # lambda_test_json_clean.py expects integer row indices when the keys are numeric
-            # But we have matched them to our original row keys
-            convert_keys = False
-            for key in results_dict.keys():
-                try:
-                    int(key)
-                    # We have at least one numeric key, don't convert
-                    convert_keys = False
-                    break
-                except (ValueError, TypeError):
-                    # We have non-numeric keys, we need to convert
-                    convert_keys = True
+            # Convert to numeric keys for compatibility
+            converted_results = {}
+            result_keys = list(results_dict.keys())
             
-            if convert_keys:
-                logger.info("Converting result dictionary keys for lambda_test_json_clean compatibility")
-                from lambda_test_json_clean import save_results_to_excel as excel_saver
-                
-                # Get row indices corresponding to the row keys
+            if all(k.isdigit() for k in result_keys if isinstance(k, str)):
+                for i, result_key in enumerate(sorted(result_keys, key=lambda x: int(x) if str(x).isdigit() else 999)):
+                    if i < len(df):
+                        converted_results[i] = results_dict[result_key]
+            else:
+                # Complex key mapping
                 row_indices = {}
                 for i, row in enumerate(df.iterrows()):
-                    # Get index and row data
                     index, row_data = row
-                    
-                    # Generate row key from primary keys
-                    primary_keys = config.get('primary_key', [])
                     key_parts = []
                     for pk in primary_keys:
                         if pk in row_data:
@@ -589,107 +741,32 @@ def save_results_to_excel(df, results_dict, output_path, config):
                             key_parts.append("MISSING")
                     
                     row_key = "||".join(key_parts)
-                    row_indices[row_key] = str(i)  # Use string index for consistency
+                    row_indices[row_key] = i
                 
-                # Create a new dictionary with indices as keys
-                indexed_results = {}
-                for key, value in results_dict.items():
-                    if key in row_indices:
-                        # Use the row index as the key
-                        indexed_results[row_indices[key]] = value
-                        logger.info(f"Mapped result key {key} to row index {row_indices[key]}")
+                for result_key, result_data in results_dict.items():
+                    if result_key in row_indices:
+                        converted_results[row_indices[result_key]] = result_data
                     else:
-                        # Couldn't map to a row index, use key as is
-                        indexed_results[key] = value
-                        logger.info(f"Could not map result key {key} to a row index")
-                
-                # Use the indexed results with the excel_saver
-                logger.info("Using enhanced Excel formatting from lambda_test_json_clean")
-                return excel_saver(df, indexed_results, output_path, config)
-            else:
-                # Keys are already in the expected format for lambda_test_json_clean
-                from lambda_test_json_clean import save_results_to_excel as excel_saver
-                logger.info("Using enhanced Excel formatting from lambda_test_json_clean (with existing keys)")
-                return excel_saver(df, results_dict, output_path, config)
-                
-        except ImportError as e:
-            logger.error(f"Could not import save_results_to_excel: {str(e)}")
-            logger.error("Falling back to basic Excel saving")
-        except Exception as e:
-            logger.error(f"Error using enhanced Excel formatting: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            logger.error("Falling back to basic Excel saving")
-        
-        # Basic Excel saving if the import fails
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        if not output_path:
-            output_path = f"validation_results_{timestamp}.xlsx"
-        
-        # Use pandas ExcelWriter
-        writer = pd.ExcelWriter(output_path, engine='xlsxwriter')
-        
-        # Create a copy of the original DataFrame to avoid modifying the input
-        result_df = df.copy()
-        
-        # Save the raw DataFrame
-        result_df.to_excel(writer, sheet_name='Raw Data', index=False)
-        
-        # Add a results sheet if we have results
-        if results_dict:
-            # Create a results summary sheet
-            workbook = writer.book
-            results_sheet = workbook.add_worksheet('Results Summary')
+                        # Try to find a close match
+                        best_match_idx = None
+                        for mapped_key, idx in row_indices.items():
+                            if any(part in mapped_key for part in result_key.split("||") if part.strip()):
+                                best_match_idx = idx
+                                break
+                        
+                        if best_match_idx is not None:
+                            converted_results[best_match_idx] = result_data
             
-            # Create formats
-            header_format = workbook.add_format({
-                'bold': True, 'text_wrap': True, 'valign': 'center',
-                'fg_color': '#4472C4', 'font_color': 'white', 'border': 1
-            })
-            
-            # Add headers
-            headers = ["Row", "Key", "Columns Validated"]
-            for i, header in enumerate(headers):
-                results_sheet.write(0, i, header, header_format)
-            
-            # Set column widths
-            results_sheet.set_column(0, 0, 5)
-            results_sheet.set_column(1, 1, 50)
-            results_sheet.set_column(2, 2, 50)
-            
-            # Fill with result summary
-            row_idx = 1
-            for key, result_data in results_dict.items():
-                results_sheet.write(row_idx, 0, row_idx)
-                results_sheet.write(row_idx, 1, key)
-                
-                if isinstance(result_data, dict):
-                    validated_cols = [col for col in result_data.keys() 
-                                    if col not in ['holistic_validation', 'next_check', 'reasons', '_raw_responses']]
-                    results_sheet.write(row_idx, 2, ", ".join(validated_cols))
-                else:
-                    results_sheet.write(row_idx, 2, f"Invalid result type: {type(result_data)}")
-                
-                row_idx += 1
+            excel_saver(df, converted_results, output_path, config, input_file_path)
+        else:
+            excel_saver(df, results_dict, output_path, config, input_file_path)
         
-        # Save the workbook
-        writer.close()
-        logger.info(f"Results saved to {output_path} (basic format)")
         return output_path
+        
     except Exception as e:
         logger.error(f"Error saving results to Excel: {str(e)}")
         import traceback
         traceback.print_exc()
-        
-        # Last resort - save results as JSON for manual inspection
-        try:
-            json_path = f"{os.path.splitext(output_path)[0]}_results.json"
-            with open(json_path, 'w') as f:
-                json.dump(results_dict, f, indent=2, default=str)
-            logger.info(f"Results saved as JSON to {json_path}")
-        except:
-            logger.error("Could not save results as JSON")
-        
         raise
 
 def main():
@@ -718,7 +795,7 @@ def main():
             logger.info(f"Limited to {len(df)} rows as specified")
         
         # Process in batches
-        results_dict = process_in_batches(df, config, args.batch_size, args.output, args.api_key)
+        results_dict = process_in_batches(df, config, args.batch_size, args.output, args.api_key, args.input)
         
         # Save results to Excel if we have any
         if results_dict:
@@ -729,7 +806,7 @@ def main():
                 output_path = f"validation_results_{input_name}_{timestamp}.xlsx"
             
             # Import and use the full-featured Excel saving function
-            save_results_to_excel(df, results_dict, output_path, config)
+            save_results_to_excel(df, results_dict, output_path, config, args.input)
             logger.info(f"Results saved to {output_path}")
         else:
             logger.warning("No results to save to Excel")

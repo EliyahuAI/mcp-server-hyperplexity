@@ -14,8 +14,8 @@ multiplex_validation: |
   Makes sure your response is within this context:
   {context}
   
-  === PREVIOUS VALIDATION RESULTS ===
-  Additional context come from previous validation results:
+  === CURRENT VALIDATION RESULTS FOR OTHER COLUMNS ===
+  Additional context come from validated entries for other columns:
   {previous_results}
 
   === FIELDS TO VALIDATE ===

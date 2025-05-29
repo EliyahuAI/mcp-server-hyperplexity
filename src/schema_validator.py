@@ -314,54 +314,8 @@ class SchemaValidator:
                 previous_results_lines.append(f"{col}: {value} (Confidence: {confidence_level})")
         previous_results_text = "\n".join(previous_results_lines)
         
-        # Format the validation history section if available
+        # Remove the general validation history section entirely
         validation_history_text = ""
-        if validation_history:
-            history_lines = []
-            history_lines.append("Previous validation entries:")
-            
-            # Sort fields by importance first
-            field_importance = {}
-            for target in validation_targets:
-                field_importance[target.column] = self._get_importance_score(target.importance)
-            
-            # Sort fields by importance
-            sorted_fields = sorted(
-                validation_history.keys(), 
-                key=lambda x: field_importance.get(x, 999),  # Default to low importance if not found
-                reverse=True  # Higher importance first
-            )
-            
-            for field in sorted_fields:
-                if field in validation_history:
-                    # Add a header for this field
-                    history_lines.append(f"\n{field} validation history:")
-                    
-                    # Sort entries by timestamp (newest first)
-                    entries = sorted(
-                        validation_history[field],
-                        key=lambda x: x.get('timestamp', ''),
-                        reverse=True
-                    )
-                    
-                    # Add the entries (limit to most recent 3)
-                    for i, entry in enumerate(entries[:3]):
-                        timestamp = entry.get('timestamp', 'Unknown date')
-                        # Try to format the timestamp in a more readable way
-                        try:
-                            if isinstance(timestamp, str) and timestamp:
-                                dt_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                                formatted_date = dt_timestamp.strftime('%Y-%m-%d')
-                            else:
-                                formatted_date = "Unknown date"
-                        except (ValueError, TypeError):
-                            formatted_date = str(timestamp)[:10]  # Just take the date part
-                            
-                        value = entry.get('value', '')
-                        confidence = entry.get('confidence_level', 'UNKNOWN')
-                        history_lines.append(f"  - [{formatted_date}] Value: {value} (Confidence: {confidence})")
-            
-            validation_history_text = "\n".join(history_lines)
             
         # Format the fields to validate section
         fields_to_validate = []

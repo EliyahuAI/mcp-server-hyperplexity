@@ -152,12 +152,9 @@ class SimplifiedSchemaValidator:
         return grouped
     
     def generate_row_key(self, row: Dict[str, Any]) -> str:
-        """Generate a unique row key using the auto-generated primary key fields."""
-        key_parts = []
-        for key_field in self.primary_key:
-            value = str(row.get(key_field, "")).strip()
-            key_parts.append(value)
-        return "|".join(key_parts)
+        """Generate a unique row key using the centralized function."""
+        from row_key_utils import generate_row_key
+        return generate_row_key(row, self.primary_key)
     
     def format_examples(self, column: str) -> str:
         """Format examples for a column."""

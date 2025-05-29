@@ -12,6 +12,7 @@ from schema_validator_simplified import SimplifiedSchemaValidator
 from botocore.config import Config
 import traceback
 from perplexity_schema import get_response_format_schema
+from row_key_utils import generate_row_key  # Import centralized row key generation
 
 # Configure logging
 logger = logging.getLogger()
@@ -35,40 +36,6 @@ config = Config(
 s3 = boto3.client('s3', config=config)
 ssm = boto3.client('ssm', config=config)
 
-def generate_row_key(row: Dict[str, Any], primary_keys: List[str]) -> str:
-    """
-    Generate a row key based on primary key values.
-    
-    Args:
-        row: The row data dictionary
-        primary_keys: List of column names that form the primary key
-        
-    Returns:
-        A string key formed by joining primary key values with "||"
-    """
-    if not primary_keys:
-        # For safety, use hash of the entire row if no primary key is provided
-        return hashlib.md5(json.dumps(row, sort_keys=True).encode()).hexdigest()
-    
-    key_parts = []
-    for key in primary_keys:
-        # Get the value from the row
-        value = row.get(key, None)
-        
-        # Handle None/NaN values consistently with batch processor
-        if value is None or (isinstance(value, float) and str(value).lower() == 'nan'):
-            value = "NULL"
-        else:
-            value = str(value)
-            # Keep alphanumeric, spaces, and some basic punctuation (match batch processor)
-            value = ''.join(c for c in value if c.isalnum() or c in ' -_')
-        
-        key_parts.append(value)
-    
-    # Join key parts with a separator
-    row_key = "||".join(key_parts)
-    return row_key
-
 def get_perplexity_api_key() -> str:
     """Get Perplexity API key from environment or SSM."""
     api_key = os.environ.get('PERPLEXITY_API_KEY')
@@ -82,8 +49,8 @@ def get_perplexity_api_key() -> str:
         except Exception as e:
             logger.error(f"Failed to get API key from SSM: {str(e)}")
             raise
-        return api_key
-    
+    return api_key
+
 async def validate_with_perplexity(
     session: aiohttp.ClientSession,
     prompt: str,
@@ -205,6 +172,26 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.error(f"Log group: {'/aws/lambda/' + (context.function_name if context else 'perplexity-validator')}")
         logger.error(f"Log stream: {context.log_stream_name if context else 'unknown'}")
         
+        # Debug validation history in event
+        logger.error("==== VALIDATION HISTORY DEBUG ====")
+        if 'validation_history' in event:
+            vh = event['validation_history']
+            logger.error(f"Validation history present in event with {len(vh)} row keys")
+            if vh:
+                # Show first key
+                first_key = list(vh.keys())[0]
+                logger.error(f"First validation history key: {first_key}")
+                logger.error(f"Fields for first key: {list(vh[first_key].keys())}")
+                # Show sample history entry
+                if vh[first_key]:
+                    sample_field = list(vh[first_key].keys())[0]
+                    sample_history = vh[first_key][sample_field]
+                    logger.error(f"Sample history for {sample_field}: {len(sample_history)} entries")
+                    if sample_history:
+                        logger.error(f"First entry: {json.dumps(sample_history[0], indent=2)}")
+        else:
+            logger.error("NO validation_history in event at all!")
+        
         # Check if logging handlers are working
         logger.error(f"Logger handlers: {logger.handlers}")
         
@@ -297,8 +284,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             row_results = {}
             accumulated_results = {}  # Store results to pass as context to later groups
             
-            # Generate a row key for looking up historical validation data using auto-generated primary key
-            row_key = generate_row_key(row, validator.primary_key)
+            # Use pre-computed row key if available, otherwise generate it
+            if '_row_key' in row:
+                row_key = row['_row_key']
+                logger.info(f"Using pre-computed row key: {row_key}")
+                # Remove _row_key from row data so it doesn't get processed as a column
+                row_data = {k: v for k, v in row.items() if k != '_row_key'}
+            else:
+                # Fallback: generate row key if not provided (for backward compatibility)
+                row_data = row
+                row_key = generate_row_key(row_data, validator.primary_key)
+                logger.warning(f"No pre-computed row key found, generated: {row_key}")
             
             # Get validation history if provided in the event
             validation_history = {}
@@ -306,6 +302,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 validation_history = event['validation_history'][row_key]
                 logger.info(f"Found validation history for row key: {row_key}")
                 logger.info(f"History contains data for {len(validation_history)} fields")
+                # Log sample history for debugging
+                if validation_history:
+                    sample_field = list(validation_history.keys())[0]
+                    logger.info(f"Sample history field '{sample_field}': {validation_history[sample_field][:1]}")
+            else:
+                logger.warning(f"No validation history found for row key: {row_key}")
+                if 'validation_history' in event:
+                    logger.warning(f"Available history keys: {list(event['validation_history'].keys())[:5]}")
+                else:
+                    logger.warning("No validation_history in event at all")
             
             # Get ignored fields and ID fields - add them to results without processing
             ignored_fields = validator.get_ignored_fields()
@@ -316,7 +322,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info(f"Adding {len(ignored_fields)} IGNORED fields without processing")
                 for ignored_field in ignored_fields:
                     # Simply copy the original value to the result without validation
-                    original_value = row.get(ignored_field.column, "")
+                    original_value = row_data.get(ignored_field.column, "")
                     row_results[ignored_field.column] = {
                         'value': original_value,
                         'confidence': 1.0,  # Max confidence since we're not checking
@@ -335,7 +341,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # They should not appear in validation results or have confidence levels
                 # for id_field in id_fields:
                 #     # Simply copy the original value to the result without validation
-                #     original_value = row.get(id_field.column, "")
+                #     original_value = row_data.get(id_field.column, "")
                 #     row_results[id_field.column] = {
                 #         'value': original_value,
                 #         'confidence': 1.0,  # Max confidence since we're not checking
@@ -366,7 +372,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info(f"Processing search group {group_id} with {len(targets)} columns")
                 
                 # Always use multiplex validation regardless of number of fields
-                await process_multiplex_group(session, row, row_results, targets, accumulated_results, validation_history)
+                await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history)
                 total_multiplex_validations += 1
                 
                 # Add this group's results to accumulated results for next groups
@@ -375,7 +381,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         accumulated_results[target.column] = row_results[target.column]
             
             # Still determine next check date, but without holistic validation
-            next_check, reasons = validator.determine_next_check_date(row, row_results)
+            next_check, reasons = validator.determine_next_check_date(row_data, row_results)
             row_results['next_check'] = next_check.isoformat() if next_check else None
             row_results['reasons'] = reasons
             
@@ -678,52 +684,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 }
             }
-            
-            # Create a validation_history structure for easier future lookups
-            # Each record will have detailed validation history for each field
-            if 'validation_history' in event:
-                # Start with existing history (if there is any)
-                validation_history = event['validation_history']
-            else:
-                validation_history = {}
-            
-            # Extract results and add to validation history
-            for row_idx, results in validation_results.items():
-                # Get the row data
-                row = rows[row_idx] if row_idx < len(rows) else {}
-                
-                # Generate row key
-                row_key = generate_row_key(row, validator.primary_key)
-                
-                # Initialize history for this row if doesn't exist yet
-                if row_key not in validation_history:
-                    validation_history[row_key] = {}
-                
-                # Add an entry for each field (except metadata fields)
-                timestamp = datetime.now(timezone.utc).isoformat()
-                
-                for field, result in results.items():
-                    # Skip metadata fields
-                    if field in ['holistic_validation', 'next_check', 'reasons', '_raw_responses']:
-                        continue
-                    
-                    # Create history entry
-                    history_entry = {
-                        "timestamp": timestamp,
-                        "value": result.get('value', ''),
-                        "confidence_level": result.get('confidence_level', ''),
-                        "quote": result.get('quote', ''),
-                        "sources": result.get('sources', [])
-                    }
-                    
-                    # Add to history list for this field
-                    if field not in validation_history[row_key]:
-                        validation_history[row_key][field] = []
-                    
-                    validation_history[row_key][field].append(history_entry)
-            
-            # Add validation history to the response
-            response['body']['validation_history'] = validation_history
             
             # Add the raw responses for debugging if in test_mode
             test_mode = event.get('test_mode', False)

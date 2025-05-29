@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 import random
 from datetime import datetime, timedelta
+from row_key_utils import generate_row_key
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -69,12 +70,12 @@ def generate_mock_validation(input_data, api_key=None):
         if all(key in row for key in ratio_primary_keys):
             # This looks like RatioCompetitiveIntelligence data, use its primary keys
             row_key_parts = [str(row.get(key, "")) for key in ratio_primary_keys]
-            row_key = "|".join(row_key_parts)
+            row_key = "||".join(row_key_parts)
             logger.info(f"Using RatioCompetitiveIntelligence primary key: {row_key}")
         else:
             # Fall back to using the first field as the key
             primary_key = list(row.keys())[0] if row else "unknown"
-            row_key = f"{primary_key}|{row.get(primary_key, row_idx)}"
+            row_key = generate_row_key(row, primary_key_columns)
             logger.info(f"Using generic primary key: {row_key}")
         
         # Initialize validation results for this row

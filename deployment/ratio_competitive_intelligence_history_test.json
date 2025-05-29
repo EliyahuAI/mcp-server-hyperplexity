@@ -1,12 +1,10 @@
 {
   "config": {
-    "primary_key": ["Product Name", "Developer", "Target"],
-    "general_notes": "This table tracks radiopharmaceutical products (diagnostic, therapeutic and theranostic) in development that could compete with Ratio Therapeutics over the next 1–5 years. Focus on agents in pre-registration through Phase 1 and likely to reach market in 2024-2030.",
+    "general_notes": "This table tracks radiopharmaceutical products (diagnostic, therapeutic and theranostic) in development that could compete with Ratio Therapeutics over the next 1–5 years. The list focuses on agents in pre-registration through Phase 1 and likely to reach market in 2024-2030. Your key goal is to monitor this competitive landscape. Please use the most recent information available from public sources, including clinicaltrials.gov, company press releases, and news articles.",
+    "default_model": "sonar-pro",
     "validation_targets": [
       {
         "column": "Product Name",
-        "validation_type": "string",
-        "rules": {},
         "description": "Official code or INN of the radiopharmaceutical",
         "importance": "ID",
         "format": "String",
@@ -16,8 +14,6 @@
       },
       {
         "column": "Developer",
-        "validation_type": "string",
-        "rules": {},
         "description": "Lead company (add parent in parentheses if acquired)",
         "importance": "ID",
         "format": "String",
@@ -27,8 +23,6 @@
       },
       {
         "column": "Target",
-        "validation_type": "string",
-        "rules": {},
         "description": "Molecular target or receptor the agent binds",
         "importance": "ID",
         "format": "String",
@@ -38,8 +32,6 @@
       },
       {
         "column": "Indication",
-        "validation_type": "string",
-        "rules": {},
         "description": "Main disease(s) or tumour type(s) the product is being developed for",
         "importance": "CRITICAL",
         "format": "String",
@@ -49,8 +41,6 @@
       },
       {
         "column": "Therapeutic Radionuclide",
-        "validation_type": "string",
-        "rules": {},
         "description": "Radionuclide used for therapy (if applicable) for this product",
         "importance": "CRITICAL",
         "format": "String",
@@ -60,8 +50,6 @@
       },
       {
         "column": "Diagnostic Radionuclide",
-        "validation_type": "string",
-        "rules": {},
         "description": "Radionuclide used for imaging (if theranostic or diagnostic-only) for this product",
         "importance": "CRITICAL",
         "format": "String",
@@ -71,8 +59,6 @@
       },
       {
         "column": "Modality Type",
-        "validation_type": "string",
-        "rules": {},
         "description": "Classification (theranostic, therapeutic, diagnostic)",
         "importance": "CRITICAL",
         "format": "String",
@@ -82,8 +68,6 @@
       },
       {
         "column": "Development Stage",
-        "validation_type": "string",
-        "rules": {},
         "description": "Highest disclosed stage of development",
         "importance": "CRITICAL",
         "format": "String",
@@ -93,8 +77,6 @@
       },
       {
         "column": "Key Trial ID",
-        "validation_type": "string",
-        "rules": {},
         "description": "Primary clinical-trials.gov identifier",
         "importance": "CRITICAL",
         "format": "String",
@@ -104,8 +86,6 @@
       },
       {
         "column": "Projected Launch",
-        "validation_type": "string",
-        "rules": {},
         "description": "Estimated first commercial approval year",
         "importance": "HIGH",
         "format": "String",
@@ -115,8 +95,6 @@
       },
       {
         "column": "FDA-EMA Designation",
-        "validation_type": "string",
-        "rules": {},
         "description": "Notable regulatory designations (BTD, Fast Track, Orphan-Drug)",
         "importance": "HIGH",
         "format": "String",
@@ -126,8 +104,6 @@
       },
       {
         "column": "Strategic Partners",
-        "validation_type": "string",
-        "rules": {},
         "description": "Key collaborators or licensees",
         "importance": "HIGH",
         "format": "String",
@@ -137,33 +113,19 @@
       },
       {
         "column": "Recent News",
-        "validation_type": "string",
-        "rules": {},
         "description": "Latest important news on the product development (includes date of information release)",
         "importance": "CRITICAL",
         "format": "String",
-        "notes": "Bullets with aggregated news on a product. Include past news and append new news to the beginning of the list. Starts with date (colon)news (confidence level)",
-        "examples": ["- 4/10/2025: BLA resubmission in Q1 2025 after OS update requested (High Confidence)"],
+        "notes": "Bullets with aggregated news on a product. Confidence is only assesed for new news that is to be added - all other data is past forward. Include past news and append new news to the beginning of the list. Starts with a dash, date: news (confidence level). Use \u000A to separate each line.",
+        "examples": ["- 4/10/2025: BLA resubmission in Q1 2025 after OS update requested (High Confidence)\u000A- 3/10/2025: Phase 3 trial results expected in Q2 2025 (High Confidence)\u000A- 2/10/2025: Phase 3 trial initiated (High Confidence)\u000A- 1/10/2025: Phase 2 trial results expected in Q4 2025 (High Confidence)"],
         "search_group": 4
       }
-    ],
-    "field_relationships": [
-      {
-        "type": "dependent",
-        "primary": "Therapeutic Radionuclide",
-        "dependent": ["Development Stage", "Projected Launch"]
-      },
-      {
-        "type": "dependent",
-        "primary": "Diagnostic Radionuclide",
-        "dependent": ["Development Stage", "Projected Launch"]
-      }
-    ],
-    "cache_ttl_days": 7
+    ]
   },
   "validation_data": {
     "rows": [
       {
+        "_row_key": "[^64Cu]RTX-1363S (FAP-PET tracer)||Ratio Therapeutics / Lantheus||FAP",
         "Product Name": "[^64Cu]RTX-1363S (FAP-PET tracer)",
         "Developer": "Ratio Therapeutics / Lantheus",
         "Target": "FAP",
@@ -179,6 +141,7 @@
         "Recent News": "- 05/15/2024: First patient dosed in Phase 1 study (High Confidence)\n- 02/10/2024: IND cleared by FDA (High Confidence)"
       },
       {
+        "_row_key": "FAP-α 225Ac Radiotherapeutic||Ratio Therapeutics||FAP",
         "Product Name": "FAP-α 225Ac Radiotherapeutic",
         "Developer": "Ratio Therapeutics",
         "Target": "FAP",
@@ -194,6 +157,7 @@
         "Recent News": "- 01/15/2024: Preclinical data presented at conference showing promising results in animal models (Medium Confidence)"
       },
       {
+        "_row_key": "SSTR2-targeted Radiotherapeutic||Ratio Therapeutics / Novartis||SSTR2",
         "Product Name": "SSTR2-targeted Radiotherapeutic",
         "Developer": "Ratio Therapeutics / Novartis",
         "Target": "SSTR2",
@@ -209,6 +173,7 @@
         "Recent News": "- 04/20/2024: Interim Phase 2 results show 60% response rate (High Confidence)\n- 12/05/2023: Fast Track designation granted by FDA (High Confidence)"
       },
       {
+        "_row_key": "Granzyme B PET Tracer||Ratio Therapeutics (licensed from Merck)||Granzyme B",
         "Product Name": "Granzyme B PET Tracer",
         "Developer": "Ratio Therapeutics (licensed from Merck)",
         "Target": "Granzyme B",

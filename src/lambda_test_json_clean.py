@@ -18,6 +18,7 @@ from pathlib import Path
 import botocore.config
 import math
 import xlsxwriter
+from typing import Dict, List, Any
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -178,6 +179,170 @@ def load_excel_data(excel_path, sheet_name=0):
         logger.error(f"Error loading Excel file: {str(e)}")
         raise
 
+def load_validation_history_from_excel(excel_path):
+    """Load validation history from an Excel file's History worksheet, or Details worksheet as fallback."""
+    try:
+        # Import the sanitization function
+        from row_key_utils import convert_legacy_row_key
+        
+        # Check if the Excel file has a History worksheet
+        try:
+            sheet_list = pd.ExcelFile(excel_path).sheet_names
+            if 'History' not in sheet_list:
+                logger.info("No History worksheet found in Excel file")
+                
+                # Fallback: Try to load from Details worksheet
+                if 'Details' in sheet_list:
+                    logger.info("Attempting to load validation history from Details worksheet")
+                    return load_validation_history_from_details(excel_path)
+                else:
+                    logger.info("No Details worksheet found either")
+                    return {}
+        except Exception as e:
+            logger.warning(f"Could not read sheet list from Excel file: {e}")
+            return {}
+        
+        # Load the History worksheet
+        try:
+            history_df = pd.read_excel(excel_path, sheet_name='History', engine='openpyxl')
+            logger.info(f"Loaded History worksheet with {len(history_df)} rows")
+        except Exception as e:
+            logger.warning(f"Could not read History worksheet: {e}")
+            return {}
+        
+        if len(history_df) == 0:
+            logger.info("History worksheet is empty")
+            return {}
+        
+        # Convert the History worksheet to validation_history structure
+        validation_history = {}
+        
+        for _, row in history_df.iterrows():
+            try:
+                # Extract fields from the row
+                row_key = str(row.get('Row Key', ''))
+                column = str(row.get('Column', ''))
+                value = str(row.get('Value', ''))
+                confidence = str(row.get('Confidence', ''))
+                timestamp = str(row.get('Timestamp', ''))
+                
+                # Skip empty rows
+                if not row_key or not column:
+                    continue
+                
+                # SANITIZE THE ROW KEY to ensure Unicode characters are converted to ASCII
+                sanitized_row_key = convert_legacy_row_key(row_key)
+                
+                # Initialize row in validation_history if needed
+                if sanitized_row_key not in validation_history:
+                    validation_history[sanitized_row_key] = {}
+                
+                # Initialize column in row if needed
+                if column not in validation_history[sanitized_row_key]:
+                    validation_history[sanitized_row_key][column] = []
+                
+                # Create history entry
+                history_entry = {
+                    'timestamp': timestamp,
+                    'value': value,
+                    'confidence_level': confidence,
+                    'quote': '',  # Quote not stored in simple History format
+                    'sources': []  # Sources not stored in simple History format
+                }
+                
+                # Add to the list for this column
+                validation_history[sanitized_row_key][column].append(history_entry)
+                
+            except Exception as row_error:
+                logger.warning(f"Error processing history row: {row_error}")
+                continue
+        
+        logger.info(f"Loaded validation history for {len(validation_history)} row keys")
+        for row_key, row_history in validation_history.items():
+            logger.info(f"  {row_key}: {len(row_history)} columns with history")
+        
+        return validation_history
+        
+    except Exception as e:
+        logger.error(f"Error loading validation history from Excel: {e}")
+        return {}
+
+def load_validation_history_from_details(excel_path):
+    """Load validation history from an Excel file's Details worksheet."""
+    try:
+        # Import the sanitization function
+        from row_key_utils import convert_legacy_row_key
+        
+        # Load the Details worksheet
+        details_df = pd.read_excel(excel_path, sheet_name='Details', engine='openpyxl')
+        logger.info(f"Loaded Details worksheet with {len(details_df)} rows for validation history")
+        
+        if len(details_df) == 0:
+            logger.info("Details worksheet is empty")
+            return {}
+        
+        # Convert the Details worksheet to validation_history structure
+        validation_history = {}
+        
+        for _, row in details_df.iterrows():
+            try:
+                # Extract fields from the Details row
+                row_key = str(row.get('Row Key', ''))
+                column = str(row.get('Column', ''))
+                value = str(row.get('Validated Value', ''))
+                confidence = str(row.get('Confidence', ''))
+                quote = str(row.get('Quote', ''))
+                sources_str = str(row.get('Sources', ''))
+                timestamp = str(row.get('Timestamp', ''))  # Get the original timestamp
+                
+                # Skip empty rows or rows without key info
+                if not row_key or not column:
+                    continue
+                
+                # SANITIZE THE ROW KEY to ensure Unicode characters are converted to ASCII
+                sanitized_row_key = convert_legacy_row_key(row_key)
+                
+                # Initialize row in validation_history if needed
+                if sanitized_row_key not in validation_history:
+                    validation_history[sanitized_row_key] = {}
+                
+                # Initialize column in row if needed
+                if column not in validation_history[sanitized_row_key]:
+                    validation_history[sanitized_row_key][column] = []
+                
+                # Parse sources string back to list
+                sources = []
+                if sources_str and sources_str != 'N/A' and sources_str.strip():
+                    sources = [s.strip() for s in sources_str.split(';') if s.strip()]
+                
+                # Use the original timestamp if available, otherwise use current time
+                if not timestamp or timestamp == 'N/A' or timestamp == 'nan':
+                    from datetime import datetime
+                    timestamp = datetime.now().isoformat()
+                
+                # Create history entry with the preserved timestamp
+                history_entry = {
+                    'timestamp': timestamp,
+                    'value': value,
+                    'confidence_level': confidence,
+                    'quote': quote if quote != 'N/A' else '',
+                    'sources': sources
+                }
+                
+                # Add to the list for this column
+                validation_history[sanitized_row_key][column].append(history_entry)
+                
+            except Exception as row_error:
+                logger.warning(f"Error processing details row for validation history: {row_error}")
+                continue
+        
+        logger.info(f"Loaded validation history from Details worksheet for {len(validation_history)} row keys")
+        return validation_history
+        
+    except Exception as e:
+        logger.warning(f"Could not load validation history from Details worksheet: {e}")
+        return {}
+
 def load_config_file(config_path):
     """Load configuration from JSON file."""
     try:
@@ -189,15 +354,28 @@ def load_config_file(config_path):
         logger.error(f"Error loading config file: {str(e)}")
         raise
 
-def create_lambda_payload(row_data, config, row_key):
+def create_lambda_payload(row_data, config, row_key, validation_history=None):
     """Create a payload for the Lambda function."""
+    # Add the row_key to the row data
+    row_with_key = {
+        "_row_key": row_key,  # Include pre-computed row key
+        **row_data
+    }
+    
     payload = {
         "test_mode": True,
         "config": config,
         "validation_data": {
-            "rows": [row_data]
+            "rows": [row_with_key]
         }
     }
+    
+    # Add validation history if provided
+    if validation_history:
+        payload["validation_history"] = validation_history
+        logger.info(f"Including validation history for {len(validation_history)} row keys in Lambda payload")
+    else:
+        payload["validation_history"] = {}
     
     # Clean payload to remove any NaN values
     def clean_dict(d):
@@ -478,41 +656,12 @@ def process_lambda_response(response, row_data, row_key):
         traceback.print_exc()
         return None
 
-def generate_row_key(row, primary_keys):
-    """Generate a unique key for a row based on primary key columns."""
-    key_parts = []
-    for key in primary_keys:
-        # Try to match the key to a column in the row using normalization
-        matched_key = None
-        if key in row:
-            matched_key = key
-        else:
-            # Try to find a normalized match
-            key_norm = normalize_column_name(key)
-            for col in row.keys():
-                if normalize_column_name(col) == key_norm:
-                    matched_key = col
-                    break
-        
-        if matched_key:
-            # Convert to string and handle None/NaN values
-            value = row[matched_key]
-            if pd.isna(value) or value is None:
-                value = "NULL"
-            else:
-                value = str(value)
-                # Keep alphanumeric, spaces, and some basic punctuation
-                value = ''.join(c for c in value if c.isalnum() or c in ' -_')
-            key_parts.append(value)
-        else:
-            key_parts.append("MISSING")
-    
-    # Join key parts with a separator
-    row_key = "||".join(key_parts)
-    logger.info(f"Generated row key: {row_key}")
-    return row_key
+def generate_row_key(row_data: Dict[str, Any], primary_keys: List[str]) -> str:
+    """Generate a unique row key using the centralized function."""
+    from row_key_utils import generate_row_key as centralized_generate_row_key
+    return centralized_generate_row_key(row_data, primary_keys)
 
-def save_results_to_excel(df, results_dict, output_path, config):
+def save_results_to_excel(df, results_dict, output_path, config, input_file_path=None):
     """Save validation results to Excel with robust column handling."""
     try:
         # Generate timestamp for the output file
@@ -554,9 +703,9 @@ def save_results_to_excel(df, results_dict, output_path, config):
             }
             with pd.ExcelWriter(output_path, **writer_options) as writer:
                 # Process the Excel output
-                _write_excel_content(df_safe, results_dict, writer, config, safe_for_excel)
+                _write_excel_content(df_safe, results_dict, writer, config, safe_for_excel, input_file_path)
                 return output_path
-        except TypeError:
+        except TypeError as te:
             # For older pandas versions
             try:
                 writer = pd.ExcelWriter(output_path, engine='xlsxwriter')
@@ -567,7 +716,7 @@ def save_results_to_excel(df, results_dict, output_path, config):
                 })
                 
                 # Process the Excel output
-                _write_excel_content(df_safe, results_dict, writer, config, safe_for_excel)
+                _write_excel_content(df_safe, results_dict, writer, config, safe_for_excel, input_file_path)
                 writer.close()
                 return output_path
             except Exception as e:
@@ -607,8 +756,12 @@ def save_results_to_excel(df, results_dict, output_path, config):
                 logger.error("All Excel/CSV save attempts failed")
         raise
 
-def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
+def _write_excel_content(df, results_dict, writer, config, safe_for_excel, input_file_path=None):
     """Write content to Excel with the given writer."""
+    import os
+    import re
+    import glob
+    
     # Create a copy of the original DataFrame to avoid modifying the input
     result_df = df.copy().fillna('')
     
@@ -651,6 +804,39 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
         logger.info(f"Using fallback primary key: {primary_key_columns}")
         logger.info(f"ID fields (fallback): {id_fields}")
     
+    # Load validation history to include historical entries
+    # We need to get the Excel file path from somewhere - check if it's in config or writer
+    excel_file_path = input_file_path
+    if not excel_file_path and hasattr(writer, 'path'):
+        # Extract the input file path from the output path
+        # This is a bit hacky but works for now
+        import re
+        output_path = writer.path
+        # Try to find the input file path pattern
+        match = re.search(r'(.+?)_validated[A-Z]*_\d+_\d+\.xlsx', output_path)
+        if match:
+            base_path = match.group(1)
+            # Try to find an existing validated file
+            import glob
+            import os
+            dir_path = os.path.dirname(output_path)
+            pattern = os.path.join(dir_path, f"{os.path.basename(base_path)}_validated*.xlsx")
+            existing_files = glob.glob(pattern)
+            # Sort by modification time and get the most recent
+            if existing_files:
+                existing_files.sort(key=os.path.getmtime, reverse=True)
+                excel_file_path = existing_files[0]
+                logger.info(f"Found existing validated file for history: {excel_file_path}")
+    
+    # Load validation history if we found a file
+    validation_history = {}
+    if excel_file_path and os.path.exists(excel_file_path):
+        try:
+            validation_history = load_validation_history_from_excel(excel_file_path)
+            logger.info(f"Loaded validation history with {len(validation_history)} row keys")
+        except Exception as e:
+            logger.warning(f"Could not load validation history: {e}")
+    
     # Create workbook and formats
     workbook = writer.book
     
@@ -661,7 +847,6 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
     worksheet = workbook.add_worksheet('Results')
     detail_worksheet = workbook.add_worksheet('Details')
     reasons_worksheet = workbook.add_worksheet('Reasons')
-    history_worksheet = workbook.add_worksheet('History')
     
     # Formats
     header_format = workbook.add_format({'bold': True, 'text_wrap': True, 'valign': 'top',
@@ -770,11 +955,10 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
     # Initialize counters for details and reasons worksheets
     detail_row = 1  # Start at 1 to leave room for header
     reasons_row = 1
-    history_row_counter = 1
-    used_result_keys = set()  # Initialize here to avoid scoping issues
+    used_result_keys = set()  # Track which result keys have been used
     
     # Write headers for detail worksheet
-    detail_headers = ["Row Key", "Identifier", "Column", "Original Value", "Validated Value", "Confidence", "Quote", "Sources", "Explanation", "Update Required", "Substantially Different", "Consistent with Model"]
+    detail_headers = ["Row Key", "Identifier", "Column", "Original Value", "Validated Value", "Confidence", "Quote", "Sources", "Explanation", "Update Required", "Substantially Different", "Consistent with Model", "Timestamp", "New"]
     for col_idx, header in enumerate(detail_headers):
         detail_worksheet.write(0, col_idx, header, header_format)
     
@@ -791,6 +975,8 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
     detail_worksheet.set_column(9, 9, 15)  # Update Required
     detail_worksheet.set_column(10, 10, 20)  # Substantially Different
     detail_worksheet.set_column(11, 11, 25)  # Consistent with Model
+    detail_worksheet.set_column(12, 12, 20)  # Timestamp
+    detail_worksheet.set_column(13, 13, 10)  # New
     
     # Write headers for reasons worksheet
     reasons_headers = ["Row Key", "Identifier", "Holistic Validation", "Reason"]
@@ -802,21 +988,6 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
     reasons_worksheet.set_column(1, 1, 30)  # Identifier
     reasons_worksheet.set_column(2, 2, 20)  # Holistic Validation
     reasons_worksheet.set_column(3, 3, 80)  # Reason
-    
-    # Write headers for history worksheet
-    history_headers = ["Row Key"] + primary_key_columns + ["Column", "Value", "Confidence", "Timestamp"]
-    for col_idx, header in enumerate(history_headers):
-        history_worksheet.write(0, col_idx, header, header_format)
-    
-    # Set column widths for history worksheet
-    history_worksheet.set_column(0, 0, 15)  # Row Key
-    for i in range(len(primary_key_columns)):
-        history_worksheet.set_column(1+i, 1+i, 25)  # Primary key columns
-    hist_offset = len(primary_key_columns) + 1
-    history_worksheet.set_column(hist_offset, hist_offset, 25)  # Column
-    history_worksheet.set_column(hist_offset+1, hist_offset+1, 30)  # Value
-    history_worksheet.set_column(hist_offset+2, hist_offset+2, 15)  # Confidence
-    history_worksheet.set_column(hist_offset+3, hist_offset+3, 20)  # Timestamp
     
     # Process each row's validation results
     for row_idx, (_, row) in enumerate(result_df.iterrows()):
@@ -842,7 +1013,7 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
                         row_data = data
                         break
         
-        if not matched_key or not row_data:
+        if matched_key is None or not row_data:
             logger.warning(f"No validation results found for row {row_idx+1}")
             continue
             
@@ -855,6 +1026,18 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
             continue
         
         logger.info(f"Processing row {row_idx+1} with matched key: {matched_key}")
+        logger.info(f"Row data keys: {list(row_data.keys())[:10]}")  # Log the fields in the result
+        
+        # Generate the actual row key from primary key values using centralized function
+        row_dict_for_key = {}
+        for col, val in row.to_dict().items():
+            if not pd.isna(val) and val is not None:
+                row_dict_for_key[col] = str(val)
+            else:
+                row_dict_for_key[col] = None
+        
+        actual_row_key = generate_row_key(row_dict_for_key, primary_key_columns)
+        logger.info(f"Generated actual row key: '{actual_row_key}' (instead of matched_key: '{matched_key}')")
         
         # Generate identifier from primary key values
         identifier_parts = []
@@ -866,6 +1049,9 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
         
         identifier = " | ".join(identifier_parts) if identifier_parts else f"Row {row_idx+1}"
         
+        # Count how many fields we'll write
+        fields_to_write = 0
+        
         # Process individual column validations
         for col_name, col_data in row_data.items():
             # Skip special fields and non-dictionary values
@@ -874,6 +1060,8 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
                 
             if not isinstance(col_data, dict):
                 continue
+            
+            fields_to_write += 1
             
             # Extract validation details
             value = col_data.get('value', 'N/A')
@@ -933,8 +1121,8 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
             substantially_different = safe_for_excel(substantially_different)
             consistent_with_model = safe_for_excel(consistent_with_model)
             
-            # Write to detail worksheet
-            detail_worksheet.write(detail_row, 0, matched_key)  # Row Key
+            # Write to detail worksheet - use actual_row_key instead of matched_key
+            detail_worksheet.write(detail_row, 0, actual_row_key)  # Row Key - FIXED!
             detail_worksheet.write(detail_row, 1, identifier)  # Identifier
             detail_worksheet.write(detail_row, 2, col_name)  # Column
             detail_worksheet.write(detail_row, 3, original_value)  # Original Value
@@ -953,7 +1141,17 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
             detail_worksheet.write(detail_row, 10, substantially_different)  # Substantially Different
             detail_worksheet.write(detail_row, 11, consistent_with_model)  # Consistent with Model
             
+            # Add current timestamp
+            from datetime import datetime
+            current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            detail_worksheet.write(detail_row, 12, current_timestamp)  # Timestamp
+            
+            # Add 'New' column - all current validation results are "New"
+            detail_worksheet.write(detail_row, 13, 'New')
+            
             detail_row += 1
+        
+        logger.info(f"Wrote {fields_to_write} new fields for row {row_idx+1}")
         
         # Process holistic validation and reasons
         if 'holistic_validation' in row_data and 'reasons' in row_data:
@@ -967,13 +1165,118 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
                 
                 reason = safe_for_excel(reason)
                 
-                # Write to reasons worksheet
-                reasons_worksheet.write(reasons_row, 0, matched_key)  # Row Key
+                # Write to reasons worksheet - use actual_row_key here too
+                reasons_worksheet.write(reasons_row, 0, actual_row_key)  # Row Key - FIXED!
                 reasons_worksheet.write(reasons_row, 1, identifier)  # Identifier
                 reasons_worksheet.write(reasons_row, 2, holistic_result)  # Holistic Validation
                 reasons_worksheet.write(reasons_row, 3, reason)  # Reason
                 
                 reasons_row += 1
+        
+    # Now add historical entries from validation_history to Details worksheet
+    if validation_history:
+        logger.info(f"Adding historical entries from validation history to Details worksheet")
+        
+        # Process each row in the DataFrame to find its historical entries
+        for row_idx, (_, row) in enumerate(result_df.iterrows()):
+            # Generate the row key for this row using the centralized function
+            row_data = {}
+            for col, val in row.to_dict().items():
+                if not pd.isna(val) and val is not None:
+                    row_data[col] = str(val)
+                else:
+                    row_data[col] = None
+            
+            actual_row_key = generate_row_key(row_data, primary_key_columns)
+            
+            # Check if we have historical entries for this row key
+            if actual_row_key in validation_history:
+                row_history = validation_history[actual_row_key]
+                
+                # Generate identifier from primary key values
+                identifier_parts = []
+                for pk in primary_key_columns:
+                    if pk in row and not pd.isna(row[pk]):
+                        identifier_parts.append(str(row[pk]))
+                    else:
+                        identifier_parts.append("?")
+                
+                identifier = " | ".join(identifier_parts) if identifier_parts else f"Row {row_idx+1}"
+                
+                # Process each column's historical entries
+                for col_name, history_entries in row_history.items():
+                    if not isinstance(history_entries, list):
+                        continue
+                    
+                    # Get original value from the DataFrame
+                    original_value = 'N/A'
+                    if col_name in row:
+                        original_value = row[col_name]
+                        if pd.isna(original_value):
+                            original_value = 'N/A'
+                        else:
+                            original_value = str(original_value)
+                    
+                    # Write each historical entry
+                    for entry in history_entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        
+                        # Extract historical data
+                        hist_value = entry.get('value', 'N/A')
+                        hist_confidence = entry.get('confidence_level', 'N/A')
+                        hist_quote = entry.get('quote', 'N/A')
+                        hist_sources = entry.get('sources', [])
+                        hist_timestamp = entry.get('timestamp', 'N/A')
+                        
+                        # Convert sources list to string
+                        if isinstance(hist_sources, list):
+                            hist_sources_str = '; '.join(hist_sources) if hist_sources else 'N/A'
+                        else:
+                            hist_sources_str = str(hist_sources) if hist_sources else 'N/A'
+                        
+                        # Ensure all values are strings and safe for Excel
+                        hist_value = safe_for_excel(str(hist_value))
+                        hist_confidence = safe_for_excel(str(hist_confidence))
+                        hist_quote = safe_for_excel(str(hist_quote))
+                        hist_sources_str = safe_for_excel(hist_sources_str)
+                        
+                        # Write to detail worksheet
+                        detail_worksheet.write(detail_row, 0, actual_row_key)  # Row Key
+                        detail_worksheet.write(detail_row, 1, identifier)  # Identifier
+                        detail_worksheet.write(detail_row, 2, col_name)  # Column
+                        detail_worksheet.write(detail_row, 3, original_value)  # Original Value
+                        detail_worksheet.write(detail_row, 4, hist_value)  # Validated Value
+                        
+                        # Apply confidence formatting (skip for ID fields)
+                        if col_name not in id_fields and hist_confidence.upper() in confidence_formats:
+                            detail_worksheet.write(detail_row, 5, hist_confidence, confidence_formats[hist_confidence.upper()])
+                        else:
+                            detail_worksheet.write(detail_row, 5, hist_confidence)
+                            
+                        detail_worksheet.write(detail_row, 6, hist_quote)  # Quote
+                        detail_worksheet.write(detail_row, 7, hist_sources_str)  # Sources
+                        detail_worksheet.write(detail_row, 8, '')  # Explanation - leave empty for historical
+                        detail_worksheet.write(detail_row, 9, '')  # Update Required - not applicable to historical
+                        detail_worksheet.write(detail_row, 10, '')  # Substantially Different - not applicable
+                        detail_worksheet.write(detail_row, 11, '')  # Consistent with Model - not applicable
+                        
+                        # Write timestamp
+                        formatted_timestamp = hist_timestamp
+                        try:
+                            # Try to parse and format timestamp nicely
+                            from datetime import datetime
+                            if hist_timestamp and hist_timestamp != 'N/A':
+                                dt = datetime.fromisoformat(hist_timestamp.replace('Z', '+00:00'))
+                                formatted_timestamp = dt.strftime('%Y-%m-%d %H:%M:%S')
+                        except:
+                            pass
+                        detail_worksheet.write(detail_row, 12, formatted_timestamp)  # Timestamp
+                        
+                        # Mark as Historical
+                        detail_worksheet.write(detail_row, 13, 'Historical')
+                        
+                        detail_row += 1
     
     # Try adding autofilter to each worksheet
     try:
@@ -990,11 +1293,6 @@ def _write_excel_content(df, results_dict, writer, config, safe_for_excel):
         reasons_worksheet.autofilter(0, 0, reasons_row - 1, len(reasons_headers) - 1)
     except Exception as reasons_filter_error:
         logger.error(f"Error adding autofilter to reasons worksheet: {str(reasons_filter_error)}")
-    
-    try:
-        history_worksheet.autofilter(0, 0, history_row_counter - 1, len(history_headers) - 1)
-    except Exception as history_filter_error:
-        logger.error(f"Error adding autofilter to history worksheet: {str(history_filter_error)}")
 
 def main():
     """Main function to test Lambda with rows from the Excel file."""
@@ -1018,6 +1316,9 @@ def main():
         logger.info(f"Loading data from: {args.input}")
         sheet_name = args.sheet if args.sheet is not None else 0
         df = load_excel_data(args.input, sheet_name=sheet_name)
+        
+        # Load validation history once for all rows
+        validation_history = load_validation_history_from_excel(args.input)
         
         # Take the specified number of rows
         test_df = df.head(args.rows) if args.rows > 0 else df
@@ -1049,8 +1350,8 @@ def main():
                 if args.api_key:
                     config['api_key'] = args.api_key
                 
-                # Create Lambda payload
-                payload = create_lambda_payload(row_data, config, row_key)
+                # Create Lambda payload with complete validation history
+                payload = create_lambda_payload(row_data, config, row_key, validation_history)
                 
                 # Invoke Lambda function
                 response = invoke_lambda(payload)
@@ -1087,7 +1388,7 @@ def main():
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 output_path = f"validation_results_{timestamp}.xlsx"
             
-            save_results_to_excel(df, all_results, output_path, config)
+            save_results_to_excel(df, all_results, output_path, config, args.input)
             logger.info(f"Results saved to {output_path}")
         else:
             logger.warning("No results to save to Excel")

@@ -21,6 +21,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from typing import Dict, List, Any, Tuple, Optional, Union
 import logging
+from row_key_utils import generate_row_key
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -270,11 +271,7 @@ class ExcelProcessor:
             df_row_idx, row_data = df_row
             
             # Build row key
-            row_key_parts = []
-            for key in primary_key:
-                if key in row_data:
-                    row_key_parts.append(str(row_data[key]))
-            row_key = '|'.join(row_key_parts)
+            row_key = generate_row_key(row_data, primary_key)
             
             # Check if we have validation results for this row
             if row_key not in data:

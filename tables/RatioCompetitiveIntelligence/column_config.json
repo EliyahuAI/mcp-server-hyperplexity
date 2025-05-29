@@ -1,5 +1,5 @@
 {
-  "general_notes": "This table tracks radiopharmaceutical products (diagnostic, therapeutic and theranostic) in development that could compete with Ratio Therapeutics over the next 1–5 years. Focus on agents in pre-registration through Phase 1 and likely to reach market in 2024-2030.",
+  "general_notes": "This table tracks radiopharmaceutical products (diagnostic, therapeutic and theranostic) in development that could compete with Ratio Therapeutics over the next 1–5 years. The list focuses on agents in pre-registration through Phase 1 and likely to reach market in 2024-2030. Your key goal is to monitor this competitive landscape. Please use the most recent information available from public sources, including clinicaltrials.gov, company press releases, and news articles.",
   "primary_key": ["Product Name", "Developer", "Target"],
   "validation_targets": [
     {
@@ -141,8 +141,8 @@
       "description": "Latest important news on the product development (includes date of information release)",
       "importance": "CRITICAL",
       "format": "String",
-      "notes": "Bullets with aggregated news on a product. Include past news and append new news to the beginning of the list. Starts with date (colon)news (confidence level)",
-      "examples": ["- 4/10/2025: BLA resubmission in Q1 2025 after OS update requested (High Confidence)"],
+      "notes": "Bullets with aggregated news on a product. Confidence is only assesed for new news that is to be added - all other data is past forward. Include past news and append new news to the beginning of the list. Starts with a dash, date: news (confidence level). Use \u000A to separate each line.",
+      "examples": ["- 4/10/2025: BLA resubmission in Q1 2025 after OS update requested (High Confidence)\u000A- 3/10/2025: Phase 3 trial results expected in Q2 2025 (High Confidence)\u000A- 2/10/2025: Phase 3 trial initiated (High Confidence)\u000A- 1/10/2025: Phase 2 trial results expected in Q4 2025 (High Confidence)"],
       "search_group": 4
     }
   ],

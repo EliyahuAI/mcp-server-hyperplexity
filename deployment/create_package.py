@@ -177,6 +177,13 @@ def copy_source_files():
     # Copy schema_validator.py
     schema_source = SRC_DIR / "schema_validator.py"
     shutil.copy(schema_source, PACKAGE_DIR)
+    # Copy schema_validator_simplified.py
+    schema_simplified_source = SRC_DIR / "schema_validator_simplified.py"
+    if schema_simplified_source.exists():
+        shutil.copy(schema_simplified_source, PACKAGE_DIR)
+        logger.info("Copied schema_validator_simplified.py")
+    else:
+        logger.warning(f"schema_validator_simplified.py not found at {schema_simplified_source}")
     # Copy perplexity_schema.py
     perplexity_schema = SRC_DIR / "perplexity_schema.py"
     if perplexity_schema.exists():
@@ -191,6 +198,14 @@ def copy_source_files():
         logger.info("Copied prompt_loader.py")
     else:
         logger.warning(f"prompt_loader.py not found at {prompt_loader}")
+    
+    # Copy row_key_utils.py - CRITICAL for validation history!
+    row_key_utils = SRC_DIR / "row_key_utils.py"
+    if row_key_utils.exists():
+        shutil.copy(row_key_utils, PACKAGE_DIR)
+        logger.info("Copied row_key_utils.py - critical for validation history")
+    else:
+        logger.error("row_key_utils.py not found! This is critical for validation history functionality!")
     
     # Copy test_logging.py
     test_logging = SRC_DIR / "test_logging.py"
@@ -452,7 +467,7 @@ def test_lambda_function(function_name, region=None, test_event=None):
             if response_payload.get('statusCode') == 200:
                 results = response_payload['body']
                 logger.info("Validation completed successfully!")
-                logger.info(f"Cache stats: {results['cache_stats']}")
+                logger.info(f"Cache stats: {results['metadata']}")
                 
                 # Print validation results
                 if results.get('validation_results'):

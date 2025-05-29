@@ -15,12 +15,12 @@ MULTIPLEX_RESPONSE_SCHEMA = {
                 "enum": ["HIGH", "MEDIUM", "LOW"], 
                 "description": "Confidence level in the validation"
             },
-            "quote": {"type": "string", "description": "Direct quote from a source that supports the answer"},
+            "quote": {"type": "string", "description": "Direct quote from a source that supports the answer - only if one exists. If it is accepted general knowledge you can specify the sources as accepted general knowledge."},
             "sources": {"type": "array", "items": {"type": "string"}, "description": "List of source URLs that support the validation"},
-            "update_required": {"type": "boolean", "description": "Whether the existing value needs to be updated"},
-            "explanation": {"type": "string", "description": "Explanation of the validation result"},
-            "substantially_different": {"type": "boolean", "description": "Whether the validated value is substantially different from the input"},
-            "consistent_with_model_knowledge": {"type": "string", "description": "Whether the answer is consistent with general knowledge"}
+            "update_required": {"type": "boolean", "description": "Whether the existing value needs to be updated - only if it is substantially_different"},
+            "explanation": {"type": "string", "description": "Explanation of the validation result, succinct reason you believe the provided answer is correct"},
+            "substantially_different": {"type": "boolean", "description": "Whether the validated value is substantially different from the input. Would you want to notify someone about this change - or is it trivial?"},
+            "consistent_with_model_knowledge": {"type": "string", "description": "Whether the answer is consistent with general knowledge outside of the provided sources"}
         },
         "required": ["column", "answer", "confidence", "sources", "update_required"]
     }
