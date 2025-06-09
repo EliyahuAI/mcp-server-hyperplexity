@@ -584,14 +584,17 @@ def generate_presigned_url(bucket, key, expiration=3600):
         return None
 
 def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, preview_first_row=False):
-    """Invoke the existing perplexity-validator Lambda function."""
+    """Invoke the validator Lambda function with the Excel and config files from S3."""
     try:
-        # Read config file from S3
-        config_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=config_s3_key)
-        config_data = json.loads(config_response['Body'].read().decode('utf-8'))
+        logger.info(f"Invoking validator Lambda with excel: {excel_s3_key}, config: {config_s3_key}")
+        logger.info(f"Parameters - max_rows: {max_rows}, batch_size: {batch_size}, preview_first_row: {preview_first_row}")
         
-        # Read Excel file from S3
+        # Download files from S3
         excel_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=excel_s3_key)
+        config_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=config_s3_key)
+        
+        # Parse config
+        config_data = json.loads(config_response['Body'].read().decode('utf-8'))
         excel_content = excel_response['Body'].read()
         
         # Process Excel file
@@ -666,22 +669,20 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                 logger.warning(f"Could not load validation history: {e}")
                 validation_history = {}
         
-        # Create proper payload format
-        payload = {
-            "test_mode": preview_first_row,  # Use preview mode for test_mode
-            "config": config_data,
-            "validation_data": {
-                "rows": rows
-            },
-            "validation_history": validation_history
-        }
-        
-        logger.info(f"Created payload with {len(rows)} rows for validation")
-        logger.info(f"Validation history included: {len(validation_history)} entries")
-        logger.info(f"Sample row keys: {[row['_row_key'][:50] + '...' if len(row['_row_key']) > 50 else row['_row_key'] for row in rows[:2]]}")
-        
+        # For preview mode, just process the first row
         if preview_first_row:
-            # For preview mode, use shorter timeout and fallback approach
+            # Create payload for single row
+            payload = {
+                "test_mode": True,
+                "config": config_data,
+                "validation_data": {
+                    "rows": rows[:1]  # Just first row
+                },
+                "validation_history": validation_history
+            }
+            
+            logger.info(f"Created payload with 1 row for preview validation")
+            
             try:
                 # Use synchronous invocation with monitoring for timeout
                 response = lambda_client.invoke(
@@ -694,7 +695,6 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                 logger.info(f"Validator response keys: {list(response_payload.keys()) if isinstance(response_payload, dict) else 'Not a dict'}")
                 
                 # Parse the actual validator response structure
-                # Validator returns: {statusCode: 200, body: {data: {rows: {...}}}}
                 validation_results = None
                 if isinstance(response_payload, dict):
                     if 'body' in response_payload and isinstance(response_payload['body'], dict):
@@ -704,8 +704,6 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                             if 'rows' in data and isinstance(data['rows'], dict):
                                 validation_results = data['rows']
                                 logger.info(f"Found validation results with {len(validation_results)} rows")
-                    
-                    # Also check for direct validation_results key (backwards compatibility)
                     elif 'validation_results' in response_payload:
                         validation_results = response_payload['validation_results']
                         logger.info(f"Found direct validation_results")
@@ -719,59 +717,89 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                 
             except Exception as e:
                 logger.warning(f"Validator Lambda timeout or error in preview mode: {str(e)}")
-                # Return fallback demo data with timeout info
                 return {
                     'status': 'timeout',
                     'total_rows': total_rows,
-                    'validation_results': None,  # Will trigger fallback in handler
+                    'validation_results': None,
                     'note': f'Validation timed out (>25s), using demo data. Error: {str(e)}'
                 }
         else:
-            # For normal mode, also use synchronous invocation to get real results
-            try:
-                # Use synchronous invocation to get validation results  
-                response = lambda_client.invoke(
-                    FunctionName=VALIDATOR_LAMBDA_NAME,
-                    InvocationType='RequestResponse',  # Changed from 'Event' to 'RequestResponse'
-                    Payload=json.dumps(payload)
-                )
+            # For normal mode, process in batches
+            all_validation_results = {}
+            total_batches = (len(rows) + batch_size - 1) // batch_size
+            
+            logger.info(f"Processing {len(rows)} rows in {total_batches} batches of size {batch_size}")
+            
+            for batch_num in range(total_batches):
+                start_idx = batch_num * batch_size
+                end_idx = min(start_idx + batch_size, len(rows))
+                batch_rows = rows[start_idx:end_idx]
                 
-                response_payload = json.loads(response['Payload'].read().decode('utf-8'))
-                logger.info(f"Validator response keys: {list(response_payload.keys()) if isinstance(response_payload, dict) else 'Not a dict'}")
+                logger.info(f"Processing batch {batch_num+1}/{total_batches}, rows {start_idx+1}-{end_idx}")
                 
-                # Parse the actual validator response structure  
-                # Validator returns: {statusCode: 200, body: {data: {rows: {...}}}}
-                validation_results = None
-                if isinstance(response_payload, dict):
-                    if 'body' in response_payload and isinstance(response_payload['body'], dict):
-                        body = response_payload['body']
-                        if 'data' in body and isinstance(body['data'], dict):
-                            data = body['data']
-                            if 'rows' in data and isinstance(data['rows'], dict):
-                                validation_results = data['rows']
-                                logger.info(f"Found validation results with {len(validation_results)} rows")
-                    
-                    # Also check for direct validation_results key (backwards compatibility)
-                    elif 'validation_results' in response_payload:
-                        validation_results = response_payload['validation_results']
-                        logger.info(f"Found direct validation_results")
-                
-                # Add total_rows info to response
-                if isinstance(response_payload, dict):
-                    response_payload['total_rows'] = total_rows
-                    response_payload['validation_results'] = validation_results
-                
-                return response_payload
-                
-            except Exception as e:
-                logger.warning(f"Validator Lambda error in normal mode: {str(e)}")
-                # Return fallback response
-                return {
-                    'status': 'error',
-                    'total_rows': total_rows,
-                    'validation_results': None,
-                    'note': f'Validation failed: {str(e)}'
+                # Create payload for this batch
+                batch_payload = {
+                    "test_mode": False,
+                    "config": config_data,
+                    "validation_data": {
+                        "rows": batch_rows
+                    },
+                    "validation_history": validation_history
                 }
+                
+                try:
+                    # Invoke validator for this batch
+                    response = lambda_client.invoke(
+                        FunctionName=VALIDATOR_LAMBDA_NAME,
+                        InvocationType='RequestResponse',
+                        Payload=json.dumps(batch_payload)
+                    )
+                    
+                    response_payload = json.loads(response['Payload'].read().decode('utf-8'))
+                    logger.info(f"Batch {batch_num+1} validator response keys: {list(response_payload.keys()) if isinstance(response_payload, dict) else 'Not a dict'}")
+                    
+                    # Parse the batch validation results
+                    batch_validation_results = None
+                    if isinstance(response_payload, dict):
+                        if 'body' in response_payload and isinstance(response_payload['body'], dict):
+                            body = response_payload['body']
+                            if 'data' in body and isinstance(body['data'], dict):
+                                data = body['data']
+                                if 'rows' in data and isinstance(data['rows'], dict):
+                                    batch_validation_results = data['rows']
+                                    logger.info(f"Found validation results with {len(batch_validation_results)} rows in batch {batch_num+1}")
+                        elif 'validation_results' in response_payload:
+                            batch_validation_results = response_payload['validation_results']
+                            logger.info(f"Found direct validation_results in batch {batch_num+1}")
+                    
+                    # Merge batch results into all_validation_results
+                    if batch_validation_results:
+                        # Map numeric keys from batch to overall row indices
+                        for batch_key, batch_result in batch_validation_results.items():
+                            # Convert batch key to overall row index
+                            if batch_key.isdigit():
+                                overall_idx = start_idx + int(batch_key)
+                                all_validation_results[str(overall_idx)] = batch_result
+                            else:
+                                # Use the key as-is
+                                all_validation_results[batch_key] = batch_result
+                    
+                except Exception as e:
+                    logger.error(f"Error processing batch {batch_num+1}: {str(e)}")
+                    # Continue with next batch
+                
+                # Add a small delay between batches to avoid rate limiting
+                if batch_num < total_batches - 1:
+                    time.sleep(0.5)
+            
+            logger.info(f"Completed processing all batches. Total results: {len(all_validation_results)}")
+            
+            # Return combined results
+            return {
+                'total_rows': total_rows,
+                'validation_results': all_validation_results,
+                'status': 'completed'
+            }
             
     except Exception as e:
         logger.error(f"Error invoking validator Lambda: {str(e)}")

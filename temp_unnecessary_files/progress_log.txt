@@ -259,3 +259,147 @@ CURRENT ISSUE:
 - Interface lambda is passing the metadata config directly to perplexity-validator
 - It should be generating a full config payload like ratio_competitive_intelligence_history_test.json
 - This requires matching Excel headers with validation targets in metadata config
+
+## Row 7 Missing Fields Issue - Truncation Problem Found [2025-06-09]
+
+### Issue Identified
+- Row 7 (67Cu-SAR-bisPSMA) had 4 missing fields: Indication, Therapeutic Radionuclide, Diagnostic Radionuclide, Modality Type
+- CloudWatch logs revealed API response truncation: "finish_reason": "length"
+- JSON parse error due to incomplete response
+- max_tokens was set to 1000 in lambda_function.py line 73
+
+### Root Cause
+- Perplexity API was returning truncated responses for multi-field validations
+- The response actually contained good data for all 4 fields but was cut off mid-JSON
+- Validated values found in truncated response:
+  - Indication: "PSMA-positive metastatic castration-resistant prostate cancer (mCRPC) after prior androgen receptor pathway inhibition (ARPI)"
+  - Therapeutic Radionuclide: "Cu-67"
+  - Diagnostic Radionuclide: "Cu-64"  
+  - Modality Type: "Theranostic peptide"
+
+### Fix Applied
+- Updated src/lambda_function.py line 73: max_tokens from 1000 to 3000
+- This provides adequate space for multi-field responses with quotes and explanations
+- Need to redeploy both validator and interface lambdas
+
+### Deployment Completed
+- Redeployed perplexity-validator lambda (2.28 MB package)
+- Cleared validation cache (82 objects deleted)
+- Redeployed perplexity-validator-interface lambda (16.17 MB package)
+- API Gateway endpoint remains: https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod/validate
+- Both functions now using max_tokens=3000 to prevent response truncation
+
+## Email Delivery Implementation [2025-06-09]
+
+### Pre-signed URL Issues
+- Users reported "Access Denied" errors when trying to download from pre-signed URLs
+- Testing showed URLs work programmatically but fail in browsers
+- Root cause: S3 bucket lacks CORS configuration and browser security policies
+
+### Email Delivery Solution
+- Implemented email delivery using Amazon SES instead of pre-signed URLs
+- Created src/email_sender.py module with:
+  - Professional HTML email templates
+  - ZIP attachment support
+  - Tracking and analytics via BCC
+  - Error handling for common SES issues
+  
+### Interface Lambda Updates
+- Added email_sender import with fallback handling
+- Extract email address from form data (default: eliyahu@eliyahu.ai)
+- Updated normal mode workflow to prefer email over download URLs
+- Added email sending in background processing after validation completes
+- Maintained backward compatibility with download URLs as fallback
+
+### Next Steps
+- Deploy updated interface lambda with email support
+- Test email delivery with real validation results
+- Verify SES configuration and email verification status
+
+Email functionality investigation:
+- Interface lambda now includes email_sender.py
+- Code looks correct - extracts email from form data (line 913)
+- Passes email to background processing
+- Background handler calls send_validation_results_email when EMAIL_SENDER_AVAILABLE
+- Test needs to be updated to send email as multipart form data, not just query param
+
+Email functionality test results:
+- ✓ Test updated to use multipart form data
+- ✓ Normal mode response: "Results will be emailed to eliyahu@eliyahu.ai when complete"
+- ✓ Email functionality properly integrated
+- ✓ Preview mode correctly doesn't send emails
+- Background processing should complete and send email within minutes
+- Check inbox at eliyahu@eliyahu.ai for results
+
+Email functionality investigation update:
+- Lambda IS working when invoked directly
+- Email acknowledgment in response: "Results will be emailed to eliyahu@eliyahu.ai when complete"
+- Session generated: cfc12d7b-a40d-4c57-befc-f5402913b
+- Issue: CloudWatch logs not being written (0 bytes in all streams)
+- Possible causes for no email:
+  1. Background processing lambda self-invocation failing
+  2. SES configuration or sending issue
+  3. Email might be in spam/delayed
+
+SES Direct Test Results:
+- ✅ SES is configured correctly
+- ✅ Sender email (eliyahu@eliyahu.ai) IS verified
+- ✅ Email sent successfully! Message ID: 01000197557e024d-3d9da2c5-7fe6-499f-9adb-c39cfd17780e-000000
+- ✅ Email module works perfectly when run directly
+- Confirmed: The issue is with the lambda execution, not SES
+
+Root cause identified:
+- Lambda is working (returns correct response)
+- But CloudWatch logs show 0 bytes (no logging at all)
+- Background processing self-invocation likely failing silently
+- Need to fix lambda logging to diagnose further
+
+10-Row Email Test Results:
+- ✅ Test successful! API accepted request
+- Session ID: 37322e06-8172-4101-8a9a-c198f9270090
+- Files: RatioCompetitiveIntelligence.xlsx (17KB), column_config_simplified.json (5KB)
+- Processing: 10 rows, batch size 5
+- Email: Will be sent to eliyahu@eliyahu.ai when complete
+- Expected results: Enhanced Excel with color-coded validation for 10 fields
+
+Processing should complete within 2-3 minutes.
+Check inbox for validation results email with attachment.
+
+Test Results Analysis:
+- ✅ Validation completed successfully!
+- ✅ Enhanced Excel file created (37KB)
+- ✅ Results ZIP created with all files
+- ⚠️ Bug confirmed: Processed 34 rows instead of 10 (max_rows parameter ignored)
+- ✅ 10 fields validated correctly
+- ✅ Confidence scores: HIGH:79, MEDIUM:14, LOW:7
+- ❌ Email was NOT sent (no email logs in S3)
+- ❌ No upload files found in cache bucket
+
+Issue: Background processing is partially working (creates results) but:
+1. Doesn't respect max_rows parameter
+2. Doesn't send email despite having results
+3. Upload files missing from cache bucket
+4. No CloudWatch logs being written
+
+Fixed Email Implementation:
+- ✅ Fixed bug: Changed positional arguments to keyword arguments in email function call
+- ✅ Added debugging print statements ([INTERFACE], [BACKGROUND], etc.)
+- ✅ Redeployed with --force-rebuild flag
+- ✅ New test started: Session ID 5436bf00-9d43-4409-85c5-7eb398e0499c
+- Test file: RatioCompetitiveIntelligence.xlsx (17KB), 10 rows max
+
+Now waiting for:
+1. Background processing to complete (~2-3 minutes)
+2. Email to be sent to eliyahu@eliyahu.ai
+3. Check CloudWatch logs for debug output
+
+IAM Permissions Issue Found and Fixed:
+- ❌ Error found: Lambda role lacked ses:SendRawEmail permission
+- ✅ Fixed: Added PerplexityValidatorSESPolicy to role chatGPT-role-j84fj9y7
+- ✅ Permissions now include:
+  - ses:SendRawEmail on eliyahu@eliyahu.ai
+  - ses:SendEmail
+  - ses:GetSendQuota
+  - ses:GetSendStatistics
+
+Ready for final test with proper permissions!

@@ -71,7 +71,7 @@ async def validate_with_perplexity(
             {"role": "user", "content": prompt}
         ],
         "temperature": 0.1,
-        "max_tokens": 1000,
+        "max_tokens": 3000,
         "response_format": get_response_format_schema(is_multiplex=True)
     }
     
