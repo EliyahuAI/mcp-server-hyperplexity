@@ -70,6 +70,15 @@ except ImportError:
     EXCEL_ENHANCEMENT_AVAILABLE = False
     logger.warning("Enhanced Excel functionality not available")
 
+# Email sending functionality
+try:
+    from email_sender import send_validation_results_email, create_preview_email_body
+    EMAIL_SENDER_AVAILABLE = True
+    logger.info("Email sender functionality available")
+except ImportError:
+    EMAIL_SENDER_AVAILABLE = False
+    logger.warning("Email sender functionality not available - will use download URLs")
+
 # AWS clients
 s3_client = boto3.client('s3')
 lambda_client = boto3.client('lambda')
@@ -861,10 +870,15 @@ def lambda_handler(event, context):
     3. Background processing: Async invocation to update S3 files with real results
     """
     try:
+        # Add print statements for debugging
+        print(f"[INTERFACE] Lambda handler started")
+        print(f"[INTERFACE] Event type: {event.get('httpMethod', 'background' if event.get('background_processing') else 'unknown')}")
+        
         logger.info(f"Received event: {json.dumps(event, default=str)}")
         
         # Check if this is a background processing call (self-invoke)
         if event.get('background_processing'):
+            print(f"[INTERFACE] Background processing mode detected")
             logger.info("Background processing mode detected")
             return handle_background_processing(event, context)
         
@@ -901,6 +915,10 @@ def lambda_handler(event, context):
         if 'multipart/form-data' in content_type:
             try:
                 files, form_data = parse_multipart_form_data(body, content_type, is_base64_encoded)
+                
+                # Extract email from form data (with default for testing)
+                email_address = form_data.get('email', 'eliyahu@eliyahu.ai')
+                logger.info(f"Email address: {email_address}")
                 
                 # Validate required files
                 excel_file = files.get('excel_file')
@@ -1095,13 +1113,19 @@ def lambda_handler(event, context):
                         ):
                             raise Exception("Failed to upload placeholder file to S3")
                         
-                        # Generate presigned URL for download (24 hour expiration)
-                        download_url = generate_presigned_url(S3_RESULTS_BUCKET, results_key, 86400)
-                        if not download_url:
-                            raise Exception("Failed to generate download URL")
-                        
-                        # Generate a simple password (in production, this should be more secure)
-                        password = f"val_{session_id[:8]}"
+                        # Check if email sending is available
+                        if EMAIL_SENDER_AVAILABLE and email_address:
+                            print(f"[BACKGROUND] Email sender available, preparing to send to {email_address}")
+                            # Email will be sent after processing
+                            message = f"Processing started. Results will be emailed to {email_address} when complete."
+                            include_download_url = False
+                        else:
+                            # Fallback to download URL
+                            download_url = generate_presigned_url(S3_RESULTS_BUCKET, results_key, 86400)
+                            if not download_url:
+                                raise Exception("Failed to generate download URL")
+                            message = f"Processing started. Download URL will be available when complete."
+                            include_download_url = True
                         
                         # Trigger background processing asynchronously
                         background_payload = {
@@ -1112,7 +1136,8 @@ def lambda_handler(event, context):
                             "config_s3_key": config_s3_key,
                             "results_key": results_key,
                             "max_rows": max_rows,
-                            "batch_size": batch_size
+                            "batch_size": batch_size,
+                            "email_address": email_address  # Add email to payload
                         }
                         
                         try:
@@ -1130,12 +1155,13 @@ def lambda_handler(event, context):
                         response_body = {
                             "status": "processing_started",
                             "session_id": session_id,
-                            "download_url": download_url,
-                            "password": password,
-                            "message": f"Processing started. Initial file available immediately, enhanced results will replace it shortly.",
+                            "message": message,
                             "processing_time": processing_time,
                             "note": "File will be updated with enhanced Excel results when processing completes"
                         }
+                        
+                        if include_download_url:
+                            response_body['download_url'] = download_url
                         
                     except Exception as e:
                         logger.error(f"Error in normal mode processing: {str(e)}")
@@ -1223,6 +1249,7 @@ def lambda_handler(event, context):
 def handle_background_processing(event, context):
     """Handle background processing for normal mode validation."""
     try:
+        print(f"[BACKGROUND] Starting background processing")
         logger.info("Starting background processing")
         
         # Extract parameters from event
@@ -1233,7 +1260,9 @@ def handle_background_processing(event, context):
         results_key = event['results_key']
         max_rows = event.get('max_rows', 1000)
         batch_size = event.get('batch_size', 10)
+        email_address = event.get('email_address', 'eliyahu@eliyahu.ai')
         
+        print(f"[BACKGROUND] Session: {session_id}, Email: {email_address}")
         logger.info(f"Background processing for session {session_id}")
         
         # Invoke validator Lambda to get real results
@@ -1269,6 +1298,53 @@ def handle_background_processing(event, context):
             ):
                 logger.info(f"Enhanced results uploaded to {results_key}")
                 
+                # Send email if available and address provided
+                email_sent = False
+                if EMAIL_SENDER_AVAILABLE and email_address:
+                    print(f"[BACKGROUND] Email sender available, preparing to send to {email_address}")
+                    # Extract summary data for email
+                    all_fields = set()
+                    confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+                    
+                    for row_key, row_data in real_results.items():
+                        for field_name, field_data in row_data.items():
+                            if isinstance(field_data, dict) and 'confidence_level' in field_data:
+                                all_fields.add(field_name)
+                                conf_level = field_data.get('confidence_level', 'UNKNOWN')
+                                if conf_level in confidence_counts:
+                                    confidence_counts[conf_level] += 1
+                    
+                    summary_data = {
+                        'total_rows': total_rows,
+                        'fields_validated': list(all_fields),
+                        'confidence_distribution': confidence_counts
+                    }
+                    
+                    print(f"[BACKGROUND] Summary prepared: {len(all_fields)} fields, {total_rows} rows")
+                    
+                    # Calculate processing time (you might want to track this more accurately)
+                    processing_time = None  # Could be calculated from start time if tracked
+                    
+                    # Send email with results
+                    print(f"[BACKGROUND] Calling send_validation_results_email...")
+                    email_result = send_validation_results_email(
+                        email_address=email_address,
+                        zip_content=enhanced_zip,
+                        session_id=session_id,
+                        summary_data=summary_data,
+                        processing_time=processing_time
+                    )
+                    
+                    print(f"[BACKGROUND] Email result: {email_result}")
+                    
+                    if email_result['success']:
+                        logger.info(f"Email sent successfully to {email_address}")
+                        email_sent = True
+                    else:
+                        logger.error(f"Failed to send email: {email_result['message']}")
+                else:
+                    print(f"[BACKGROUND] Email NOT sent - Available: {EMAIL_SENDER_AVAILABLE}, Address: {email_address}")
+                
                 # Clean up upload files (optional)
                 try:
                     s3_client.delete_object(Bucket=S3_CACHE_BUCKET, Key=excel_s3_key)
@@ -1282,7 +1358,8 @@ def handle_background_processing(event, context):
                     'body': json.dumps({
                         'status': 'background_completed',
                         'session_id': session_id,
-                        'enhanced_file_uploaded': True
+                        'enhanced_file_uploaded': True,
+                        'email_sent': email_sent
                     })
                 }
             else:

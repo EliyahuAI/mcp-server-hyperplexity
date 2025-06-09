@@ -143,6 +143,7 @@ def copy_source_files():
         "prompt_loader.py",  # Prompt loading utilities
         "row_key_utils.py",  # Row key generation utilities
         "lambda_test_json_clean.py",  # Validation history loader
+        "email_sender.py",  # Email sending functionality
     ]
     
     for file_name in interface_files:
