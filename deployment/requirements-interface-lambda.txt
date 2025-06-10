@@ -1,0 +1,6 @@
+boto3>=1.26.0
+botocore>=1.29.0
+python-multipart>=0.0.5
+openpyxl>=3.0.0
+typing-extensions>=4.0.0
+xlsxwriter>=3.0.0 

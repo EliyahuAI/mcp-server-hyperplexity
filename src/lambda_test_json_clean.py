@@ -124,8 +124,12 @@ def load_excel_data(excel_path, sheet_name=0):
             sheet_list = pd.ExcelFile(excel_path).sheet_names
             logger.info(f"Excel file has {len(sheet_list)} sheets: {sheet_list}")
             
-            # If we have 'Main View' sheet, always use that as our main data source
-            if 'Main View' in sheet_list:
+            # If we have 'Results' sheet, always use that as our main data source
+            if 'Results' in sheet_list:
+                logger.info("Found 'Results' sheet, using it as the main data source")
+                sheet_name = 'Results'
+            # If we have 'Main View' sheet, use that as secondary option
+            elif 'Main View' in sheet_list:
                 logger.info("Found 'Main View' sheet, using it as the main data source")
                 sheet_name = 'Main View'
             # If we have a numeric sheet_name but also have other sheets like 'Detailed View', 
@@ -182,8 +186,7 @@ def load_excel_data(excel_path, sheet_name=0):
 def load_validation_history_from_excel(excel_path):
     """Load validation history from an Excel file's History worksheet, or Details worksheet as fallback."""
     try:
-        # Import the sanitization function
-        from row_key_utils import convert_legacy_row_key
+        # No sanitization needed for hash-based row keys
         
         # Check if the Excel file has a History worksheet
         try:
@@ -270,8 +273,7 @@ def load_validation_history_from_excel(excel_path):
 def load_validation_history_from_details(excel_path):
     """Load validation history from an Excel file's Details worksheet."""
     try:
-        # Import the sanitization function
-        from row_key_utils import convert_legacy_row_key
+        # No sanitization needed for hash-based row keys
         
         # Load the Details worksheet
         details_df = pd.read_excel(excel_path, sheet_name='Details', engine='openpyxl')
@@ -299,8 +301,8 @@ def load_validation_history_from_details(excel_path):
                 if not row_key or not column:
                     continue
                 
-                # SANITIZE THE ROW KEY to ensure Unicode characters are converted to ASCII
-                sanitized_row_key = convert_legacy_row_key(row_key)
+                # Use the row key as-is (no conversion needed for hash-based keys)
+                sanitized_row_key = row_key
                 
                 # Initialize row in validation_history if needed
                 if sanitized_row_key not in validation_history:
@@ -1329,6 +1331,21 @@ def main():
         errors = 0
         success = 0
         
+        # Determine primary keys using SimplifiedSchemaValidator
+        try:
+            from schema_validator_simplified import SimplifiedSchemaValidator
+            validator = SimplifiedSchemaValidator(config)
+            primary_keys = validator.primary_key
+            logger.info(f"Using primary keys from SimplifiedSchemaValidator: {primary_keys}")
+        except Exception as e:
+            logger.warning(f"Could not create SimplifiedSchemaValidator: {e}")
+            # Fallback to finding ID fields manually
+            primary_keys = []
+            for target in config.get('validation_targets', []):
+                if target.get('importance', '').upper() == 'ID':
+                    primary_keys.append(target['column'])
+            logger.info(f"Using fallback primary keys: {primary_keys}")
+        
         for index, row in test_df.iterrows():
             try:
                 # Clean row data
@@ -1342,8 +1359,8 @@ def main():
                         else:
                             row_data[col] = None
                 
-                # Generate row key
-                row_key = generate_row_key(row_data, config.get('primary_key', []))
+                # Generate row key using determined primary keys
+                row_key = generate_row_key(row_data, primary_keys)
                 logger.info(f"Processing row {index+1}/{len(test_df)}: {row_key}")
                 
                 # Add API key if provided

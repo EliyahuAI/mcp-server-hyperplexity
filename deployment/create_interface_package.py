@@ -97,31 +97,17 @@ def clean_directory(dir_path):
 
 def install_dependencies():
     """Install dependencies to package directory."""
-    logger.info("Installing interface Lambda dependencies...")
-    
-    # Interface-specific dependencies
-    dependencies = [
-        'boto3>=1.26.0',
-        'botocore>=1.29.0',
-        'python-multipart>=0.0.5',
-        'openpyxl>=3.0.0',
-        'typing-extensions>=4.0.0',
-        'xlsxwriter>=3.0.0'
-        # Temporarily removed heavy dependencies:
-        # 'pandas>=1.5.0'
-    ]
+    logger.info(f"Installing interface Lambda dependencies from {SCRIPT_DIR / 'requirements-interface-lambda.txt'}...")
     
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
-            for requirement in dependencies:
-                logger.info(f"Installing {requirement}...")
-                subprocess.check_call([
-                    sys.executable, "-m", "pip", "install",
-                    requirement,
-                    "-t", str(PACKAGE_DIR),
-                    "--no-cache-dir"
-                ])
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install",
+                "-r", str(SCRIPT_DIR / "requirements-interface-lambda.txt"),
+                "-t", str(PACKAGE_DIR),
+                "--no-cache-dir"
+            ])
             logger.info("Dependencies installed successfully.")
             break
         except subprocess.CalledProcessError as e:
@@ -144,6 +130,7 @@ def copy_source_files():
         "row_key_utils.py",  # Row key generation utilities
         "lambda_test_json_clean.py",  # Validation history loader
         "email_sender.py",  # Email sending functionality
+        "schema_validator_simplified.py",  # Schema validator for primary key determination
     ]
     
     for file_name in interface_files:
@@ -157,6 +144,21 @@ def copy_source_files():
             if file_name == "interface_lambda_function.py":
                 logger.info("Creating placeholder interface_lambda_function.py")
                 create_placeholder_lambda_handler()
+    
+    # Copy prompts.yml file
+    prompts_yml = SRC_DIR / "prompts.yml"
+    if prompts_yml.exists():
+        shutil.copy(prompts_yml, PACKAGE_DIR)
+        logger.info("Copied prompts.yml")
+    else:
+        logger.warning(f"prompts.yml not found at {prompts_yml}")
+        # Try looking in project root as fallback
+        fallback_prompts_yml = PROJECT_DIR / "prompts.yml"
+        if fallback_prompts_yml.exists():
+            shutil.copy(fallback_prompts_yml, PACKAGE_DIR)
+            logger.info("Copied prompts.yml from project root (fallback)")
+        else:
+            logger.error("prompts.yml not found in either src or project root!")
 
 def create_placeholder_lambda_handler():
     """Create a placeholder Lambda handler for the interface function."""

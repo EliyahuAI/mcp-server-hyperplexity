@@ -79,14 +79,14 @@ def clean_directory(dir_path):
 
 def install_dependencies():
     """Install dependencies to package directory."""
-    logger.info(f"Installing dependencies from {PROJECT_DIR / 'requirements-lambda.txt'}...")
+    logger.info(f"Installing dependencies from {SCRIPT_DIR / 'requirements-lambda.txt'}...")
     
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
             subprocess.check_call([
                 sys.executable, "-m", "pip", "install",
-                "-r", str(PROJECT_DIR / "requirements-lambda.txt"),
+                "-r", str(SCRIPT_DIR / "requirements-lambda.txt"),
                 "-t", str(PACKAGE_DIR),
                 "--no-cache-dir"
             ])

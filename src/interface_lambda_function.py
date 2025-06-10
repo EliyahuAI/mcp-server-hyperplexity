@@ -33,13 +33,7 @@ except ImportError as e:
     ROW_KEY_UTILS_AVAILABLE = False
     logger.warning(f"Row key utilities not available: {e}")
     
-    # Fallback function
-    def generate_row_key(row_data, id_fields):
-        """Fallback row key generation"""
-        key_parts = []
-        for field in id_fields:
-            key_parts.append(str(row_data.get(field, "")))
-        return "||".join(key_parts)
+    # Row key generation is now handled by the imported function
 
 try:
     from lambda_test_json_clean import load_validation_history_from_excel
@@ -49,10 +43,164 @@ except ImportError as e:
     VALIDATION_HISTORY_AVAILABLE = False
     logger.warning(f"Validation history loader not available: {e}")
     
-    # Fallback function
+    # Fallback function using openpyxl instead of pandas
     def load_validation_history_from_excel(excel_path):
-        """Fallback validation history loader"""
-        return {}
+        """Load validation history from Excel using openpyxl (pandas-free implementation)."""
+        logger.info(f"Using fallback validation history loader for: {excel_path}")
+        try:
+            # Import row key utilities if available
+            # No sanitization needed for hash-based row keys
+            
+            # Load workbook with openpyxl
+            logger.info(f"Loading workbook with openpyxl from: {excel_path}")
+            workbook = openpyxl.load_workbook(excel_path, read_only=True)
+            
+            # Log available sheet names
+            sheet_names = workbook.sheetnames
+            logger.info(f"Available sheets: {sheet_names}")
+            
+            # Check for Details sheet
+            if 'Details' not in sheet_names:
+                logger.info("No Details worksheet found in Excel file")
+                workbook.close()
+                return {}
+            
+            # Load Details worksheet
+            details_sheet = workbook['Details']
+            logger.info("Found Details worksheet")
+            
+            # Get headers from first row
+            headers = []
+            for cell in details_sheet[1]:
+                if cell.value:
+                    headers.append(str(cell.value))
+                else:
+                    headers.append('')
+            
+            logger.info(f"Details sheet headers: {headers}")
+            
+            # Create mapping for ID columns (handle ID: prefix for backwards compatibility)
+            id_column_mapping = {}
+            for header in headers:
+                if header.startswith('ID:'):
+                    # Map ID:ColumnName to ColumnName for backwards compatibility
+                    clean_name = header[3:]  # Remove 'ID:' prefix
+                    id_column_mapping[clean_name] = header
+            
+            logger.info(f"ID column mapping (for backwards compatibility): {id_column_mapping}")
+            
+            # Find column indices
+            col_indices = {
+                'row_key': None,
+                'column': None,
+                'value': None,
+                'confidence': None,
+                'quote': None,
+                'sources': None,
+                'timestamp': None
+            }
+            
+            for idx, header in enumerate(headers):
+                header_lower = header.lower()
+                if 'row key' in header_lower:
+                    col_indices['row_key'] = idx
+                elif header_lower == 'column':
+                    col_indices['column'] = idx
+                elif 'validated value' in header_lower:
+                    col_indices['value'] = idx
+                elif header_lower == 'confidence':
+                    col_indices['confidence'] = idx
+                elif header_lower == 'quote':
+                    col_indices['quote'] = idx
+                elif header_lower == 'sources':
+                    col_indices['sources'] = idx
+                elif header_lower == 'timestamp':
+                    col_indices['timestamp'] = idx
+            
+            logger.info(f"Column indices found: {col_indices}")
+            
+            # Check if we have minimum required columns
+            if col_indices['row_key'] is None or col_indices['column'] is None:
+                logger.warning("Required columns (Row Key, Column) not found in Details sheet")
+                workbook.close()
+                return {}
+            
+            # Convert to validation_history structure
+            validation_history = {}
+            row_count = 0
+            
+            # Iterate through rows (skip header)
+            for row_idx, row in enumerate(details_sheet.iter_rows(min_row=2, values_only=True), 2):
+                try:
+                    # Extract values with safe indexing
+                    row_key = str(row[col_indices['row_key']] or '') if col_indices['row_key'] < len(row) else ''
+                    column = str(row[col_indices['column']] or '') if col_indices['column'] < len(row) else ''
+                    
+                    # Skip empty rows
+                    if not row_key or not column:
+                        continue
+                    
+                    # Get other values safely
+                    value = str(row[col_indices['value']] or '') if col_indices['value'] and col_indices['value'] < len(row) else ''
+                    confidence = str(row[col_indices['confidence']] or '') if col_indices['confidence'] and col_indices['confidence'] < len(row) else ''
+                    quote = str(row[col_indices['quote']] or '') if col_indices['quote'] and col_indices['quote'] < len(row) else ''
+                    sources_str = str(row[col_indices['sources']] or '') if col_indices['sources'] and col_indices['sources'] < len(row) else ''
+                    timestamp = str(row[col_indices['timestamp']] or '') if col_indices['timestamp'] and col_indices['timestamp'] < len(row) else ''
+                    
+                    # Use the row key as-is (no conversion needed for hash-based keys)
+                    sanitized_row_key = row_key
+                    
+                    # Initialize structures
+                    if sanitized_row_key not in validation_history:
+                        validation_history[sanitized_row_key] = {}
+                    
+                    if column not in validation_history[sanitized_row_key]:
+                        validation_history[sanitized_row_key][column] = []
+                    
+                    # Parse sources
+                    sources = []
+                    if sources_str and sources_str != 'N/A' and sources_str.strip():
+                        sources = [s.strip() for s in sources_str.split(';') if s.strip()]
+                    
+                    # Default timestamp if missing
+                    if not timestamp or timestamp == 'N/A' or timestamp == 'nan':
+                        timestamp = datetime.utcnow().isoformat()
+                    
+                    # Create history entry
+                    history_entry = {
+                        'timestamp': timestamp,
+                        'value': value,
+                        'confidence_level': confidence,
+                        'quote': quote if quote != 'N/A' else '',
+                        'sources': sources
+                    }
+                    
+                    validation_history[sanitized_row_key][column].append(history_entry)
+                    row_count += 1
+                    
+                    # Log first few entries for debugging
+                    if row_count <= 3:
+                        logger.info(f"Sample entry {row_count}: row_key='{sanitized_row_key}', column='{column}', value='{value}'")
+                    
+                except Exception as row_error:
+                    logger.warning(f"Error processing row {row_idx}: {row_error}")
+                    continue
+            
+            workbook.close()
+            logger.info(f"Loaded validation history from Details worksheet for {len(validation_history)} row keys ({row_count} entries)")
+            
+            # Log sample keys for debugging
+            if validation_history:
+                sample_keys = list(validation_history.keys())[:3]
+                logger.info(f"Sample validation history keys: {sample_keys}")
+            
+            return validation_history
+            
+        except Exception as e:
+            logger.error(f"Error loading validation history from Excel: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
 
 # Import multipart handling
 try:
@@ -296,11 +444,66 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
                     row_data[header] = str(cell_value) if cell_value is not None else ""
             rows_data.append(row_data)
         
-        # Get ID fields from config
+        # Get ID fields from config for proper row key generation
         id_fields = []
         for target in config_data.get('validation_targets', []):
             if target.get('importance', '').upper() == 'ID':
                 id_fields.append(target['column'])
+        
+        # If no ID fields found, try to use SimplifiedSchemaValidator to determine primary keys
+        if not id_fields:
+            try:
+                from schema_validator_simplified import SimplifiedSchemaValidator
+                validator = SimplifiedSchemaValidator(config_data)
+                id_fields = validator.primary_key
+                logger.info(f"Using primary keys from SimplifiedSchemaValidator: {id_fields}")
+            except ImportError:
+                logger.warning("SimplifiedSchemaValidator not available in deployment package")
+            except Exception as e:
+                logger.warning(f"Could not use SimplifiedSchemaValidator: {e}")
+        
+        # Generate row keys for each row
+        row_keys = []
+        for row_data in rows_data:
+            if ROW_KEY_UTILS_AVAILABLE and id_fields:
+                row_key = generate_row_key(row_data, id_fields)
+            else:
+                # Fallback to simple join
+                key_columns = id_fields if id_fields else list(headers)[:3]
+                row_key = "||".join([str(row_data.get(col, "")) for col in key_columns])
+            row_keys.append(row_key)
+        
+        # Load existing Details entries from the original Excel (for history preservation)
+        existing_details = []
+        details_sheet_exists = False
+        try:
+            if 'Details' in workbook.sheetnames:
+                details_sheet_exists = True
+                details_worksheet = workbook['Details']
+                
+                # Read existing details headers
+                details_headers = [cell.value for cell in details_worksheet[1]]
+                
+                # Read existing details data
+                for row_idx in range(2, details_worksheet.max_row + 1):
+                    detail_row = {}
+                    for col_idx, header in enumerate(details_headers):
+                        if header:
+                            cell_value = details_worksheet.cell(row=row_idx, column=col_idx + 1).value
+                            detail_row[header] = cell_value
+                    
+                    # Mark existing entries as "History"
+                    if detail_row:
+                        # If the row already has a 'New' column, preserve its value unless it's 'New'
+                        if 'New' in detail_row and detail_row['New'] == 'New':
+                            detail_row['New'] = 'History'
+                        elif 'New' not in detail_row:
+                            detail_row['New'] = 'History'
+                        existing_details.append(detail_row)
+                
+                logger.info(f"Loaded {len(existing_details)} existing detail entries from Excel")
+        except Exception as e:
+            logger.warning(f"Could not load existing Details sheet: {e}")
         
         # Create Excel with xlsxwriter for advanced formatting
         with xlsxwriter.Workbook(excel_buffer, {'options': {'strings_to_urls': False}}) as workbook:
@@ -326,10 +529,15 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
                 results_sheet.set_column(col_idx, col_idx, 20)  # Set column width
             
             # Write data rows with formatting
-            for row_idx, row_data in enumerate(rows_data):
-                # Get validation results for this row
+            for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
+                # Get validation results for this row - try multiple key formats
                 row_validation_data = None
-                if str(row_idx) in validation_results:
+                
+                # First try the actual row key
+                if row_key in validation_results:
+                    row_validation_data = validation_results[row_key]
+                # Then try position-based keys for backwards compatibility
+                elif str(row_idx) in validation_results:
                     row_validation_data = validation_results[str(row_idx)]
                 elif row_idx in validation_results:
                     row_validation_data = validation_results[row_idx]
@@ -378,52 +586,227 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
                             except Exception as e:
                                 logger.warning(f"Could not add comment: {e}")
             
-            # Create Details worksheet
+            # Create Details worksheet with proper structure matching local version
             details_sheet = workbook.add_worksheet('Details')
-            detail_headers = ["Row", "Field", "Original_Value", "Validated_Value", "Confidence", "Quote", "Sources", "Timestamp"]
+            
+            # Build detail headers dynamically to include ID fields
+            detail_headers = ["Row Key", "Identifier"]
+            
+            # Add ID field columns without "ID:" prefix
+            for id_field in id_fields:
+                detail_headers.append(id_field)
+            
+            # Add the rest of the standard columns
+            detail_headers.extend(["Column", "Original Value", "Validated Value", 
+                            "Confidence", "Quote", "Sources", "Explanation", "Update Required", 
+                            "Substantially Different", "Consistent with Model", "Timestamp", "New"])
             
             for col_idx, header in enumerate(detail_headers):
                 details_sheet.write(0, col_idx, header, header_format)
-                details_sheet.set_column(col_idx, col_idx, 25)
+            
+            # Set column widths dynamically
+            col_idx = 0
+            details_sheet.set_column(col_idx, col_idx, 15)  # Row Key
+            col_idx += 1
+            details_sheet.set_column(col_idx, col_idx, 30)  # Identifier
+            col_idx += 1
+            
+            # ID field columns
+            for _ in id_fields:
+                details_sheet.set_column(col_idx, col_idx, 20)
+                col_idx += 1
+            
+            # Standard columns
+            details_sheet.set_column(col_idx, col_idx, 25)  # Column
+            col_idx += 1
+            details_sheet.set_column(col_idx, col_idx, 30)  # Original Value
+            col_idx += 1
+            details_sheet.set_column(col_idx, col_idx, 30)  # Validated Value
+            col_idx += 1
+            details_sheet.set_column(col_idx, col_idx, 15)  # Confidence
+            col_idx += 1
+            details_sheet.set_column(col_idx, col_idx, 50)  # Quote
+            col_idx += 1
+            details_sheet.set_column(col_idx, col_idx, 40)  # Sources
+            col_idx += 1
+            details_sheet.set_column(col_idx, col_idx, 60)  # Explanation
+            col_idx += 1
+            details_sheet.set_column(col_idx, col_idx, 15)  # Update Required
+            col_idx += 1
+            details_sheet.set_column(col_idx, col_idx, 20)  # Substantially Different
+            col_idx += 1
+            details_sheet.set_column(col_idx, col_idx, 25)  # Consistent with Model
+            col_idx += 1
+            details_sheet.set_column(col_idx, col_idx, 20)  # Timestamp
+            col_idx += 1
+            details_sheet.set_column(col_idx, col_idx, 10)  # New
             
             detail_row = 1
             current_timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
             
-            for row_idx, validation_data in validation_results.items():
-                if isinstance(validation_data, dict):
-                    for field_name, field_data in validation_data.items():
+            # Track which row keys have been processed to avoid duplicates
+            processed_row_keys = set()
+            
+            # First, write NEW validation results
+            for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
+                # Get validation results for this row
+                row_validation_data = None
+                
+                # First try the actual row key
+                if row_key in validation_results:
+                    row_validation_data = validation_results[row_key]
+                # Then try position-based keys for backwards compatibility
+                elif str(row_idx) in validation_results:
+                    row_validation_data = validation_results[str(row_idx)]
+                elif row_idx in validation_results:
+                    row_validation_data = validation_results[row_idx]
+                
+                if row_validation_data and isinstance(row_validation_data, dict):
+                    # Create identifier from ID fields
+                    identifier_parts = []
+                    for id_field in id_fields:
+                        if id_field in row_data:
+                            identifier_parts.append(f"{id_field}: {row_data[id_field]}")
+                    identifier = ", ".join(identifier_parts) if identifier_parts else f"Row {row_idx + 1}"
+                    
+                    for field_name, field_data in row_validation_data.items():
                         if isinstance(field_data, dict) and 'confidence_level' in field_data:
-                            # Write detail row
-                            details_sheet.write(detail_row, 0, str(row_idx))
-                            details_sheet.write(detail_row, 1, field_name)
-                            details_sheet.write(detail_row, 2, str(field_data.get('original_value', '')))
-                            details_sheet.write(detail_row, 3, str(field_data.get('value', '')))
+                            # Write detail row with all columns
+                            col_idx = 0
+                            details_sheet.write(detail_row, col_idx, row_key)  # Row Key
+                            col_idx += 1
+                            details_sheet.write(detail_row, col_idx, identifier)  # Identifier
+                            col_idx += 1
+                            
+                            # Write ID field values
+                            for id_field in id_fields:
+                                value = row_data.get(id_field, '')
+                                details_sheet.write(detail_row, col_idx, str(value))
+                                col_idx += 1
+                            
+                            # Write standard columns
+                            details_sheet.write(detail_row, col_idx, field_name)  # Column
+                            col_idx += 1
+                            details_sheet.write(detail_row, col_idx, str(row_data.get(field_name, '')))  # Original value
+                            col_idx += 1
+                            details_sheet.write(detail_row, col_idx, str(field_data.get('value', '')))  # Validated value
+                            col_idx += 1
                             
                             confidence = field_data.get('confidence_level', '')
                             confidence_format = confidence_formats.get(confidence.upper()) if confidence else None
-                            details_sheet.write(detail_row, 4, confidence, confidence_format)
+                            details_sheet.write(detail_row, col_idx, confidence, confidence_format)
+                            col_idx += 1
                             
-                            details_sheet.write(detail_row, 5, str(field_data.get('quote', '')))
+                            details_sheet.write(detail_row, col_idx, str(field_data.get('quote', '')))
+                            col_idx += 1
                             sources_text = ', '.join(field_data.get('sources', []))
-                            details_sheet.write(detail_row, 6, sources_text)
-                            details_sheet.write(detail_row, 7, current_timestamp)
+                            details_sheet.write(detail_row, col_idx, sources_text)
+                            col_idx += 1
+                            details_sheet.write(detail_row, col_idx, str(field_data.get('explanation', '')))
+                            col_idx += 1
+                            details_sheet.write(detail_row, col_idx, str(field_data.get('update_required', '')))
+                            col_idx += 1
+                            details_sheet.write(detail_row, col_idx, str(field_data.get('substantially_different', '')))
+                            col_idx += 1
+                            details_sheet.write(detail_row, col_idx, str(field_data.get('consistent_with_model_knowledge', '')))
+                            col_idx += 1
+                            details_sheet.write(detail_row, col_idx, current_timestamp)
+                            col_idx += 1
+                            details_sheet.write(detail_row, col_idx, 'New')  # Mark all current validations as "New"
                             
+                            # Track this combination as processed
+                            processed_row_keys.add((row_key, field_name))
                             detail_row += 1
+            
+            # Then, append existing HISTORICAL details
+            for existing_detail in existing_details:
+                # Check if this is a duplicate of a new entry
+                existing_row_key = existing_detail.get('Row Key', '')
+                existing_column = existing_detail.get('Column', '')
+                
+                if (existing_row_key, existing_column) not in processed_row_keys:
+                    # Write the historical entry
+                    col_idx = 0
+                    
+                    # Row Key
+                    details_sheet.write(detail_row, col_idx, str(existing_detail.get('Row Key', '')))
+                    col_idx += 1
+                    
+                    # Identifier
+                    details_sheet.write(detail_row, col_idx, str(existing_detail.get('Identifier', '')))
+                    col_idx += 1
+                    
+                    # ID field values - extract from existing detail or try to reconstruct
+                    for id_field in id_fields:
+                        # Check for ID field with or without "ID:" prefix (for backwards compatibility)
+                        value = ''
+                        
+                        # First try without prefix (new format)
+                        if id_field in existing_detail:
+                            value = existing_detail.get(id_field, '')
+                        # Then try with prefix (old format)
+                        elif f"ID:{id_field}" in existing_detail:
+                            value = existing_detail.get(f"ID:{id_field}", '')
+                        else:
+                            # Try to extract from Row Key if not present
+                            # This is a fallback for very old format Details sheets
+                            if existing_row_key and '||' in existing_row_key:
+                                # Try to parse the row key (assuming it follows the pattern)
+                                key_parts = existing_row_key.split('||')
+                                # This is approximate - we can't always reconstruct perfectly
+                                id_field_index = id_fields.index(id_field) if id_field in id_fields else -1
+                                if 0 <= id_field_index < len(key_parts):
+                                    value = key_parts[id_field_index]
+                        
+                        details_sheet.write(detail_row, col_idx, str(value))
+                        col_idx += 1
+                    
+                    # Standard columns
+                    standard_columns = ['Column', 'Original Value', 'Validated Value', 'Confidence', 
+                                      'Quote', 'Sources', 'Explanation', 'Update Required', 
+                                      'Substantially Different', 'Consistent with Model', 'Timestamp', 'New']
+                    
+                    for col_name in standard_columns:
+                        value = existing_detail.get(col_name, '')
+                        
+                        # Apply confidence formatting if applicable
+                        if col_name == 'Confidence' and value and value.upper() in confidence_formats:
+                            details_sheet.write(detail_row, col_idx, value, confidence_formats[value.upper()])
+                        else:
+                            details_sheet.write(detail_row, col_idx, str(value) if value is not None else '')
+                        
+                        col_idx += 1
+                    
+                    detail_row += 1
+            
+            logger.info(f"Wrote {detail_row - 1} total detail entries (new + historical)")
             
             # Create Reasons worksheet
             reasons_sheet = workbook.add_worksheet('Reasons')
-            reasons_headers = ["Row", "Field", "Explanation", "Update_Required", "Substantially_Different"]
+            reasons_headers = ["Row Key", "Field", "Explanation", "Update Required", "Substantially Different"]
             
             for col_idx, header in enumerate(reasons_headers):
                 reasons_sheet.write(0, col_idx, header, header_format)
                 reasons_sheet.set_column(col_idx, col_idx, 30)
             
             reasons_row = 1
-            for row_idx, validation_data in validation_results.items():
-                if isinstance(validation_data, dict):
-                    for field_name, field_data in validation_data.items():
+            for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
+                # Get validation results for this row
+                row_validation_data = None
+                
+                # First try the actual row key
+                if row_key in validation_results:
+                    row_validation_data = validation_results[row_key]
+                # Then try position-based keys for backwards compatibility
+                elif str(row_idx) in validation_results:
+                    row_validation_data = validation_results[str(row_idx)]
+                elif row_idx in validation_results:
+                    row_validation_data = validation_results[row_idx]
+                
+                if row_validation_data and isinstance(row_validation_data, dict):
+                    for field_name, field_data in row_validation_data.items():
                         if isinstance(field_data, dict) and 'explanation' in field_data:
-                            reasons_sheet.write(reasons_row, 0, str(row_idx))
+                            reasons_sheet.write(reasons_row, 0, row_key)  # Use actual row key
                             reasons_sheet.write(reasons_row, 1, field_name)
                             reasons_sheet.write(reasons_row, 2, str(field_data.get('explanation', '')))
                             reasons_sheet.write(reasons_row, 3, str(field_data.get('update_required', '')))
@@ -584,27 +967,51 @@ def generate_presigned_url(bucket, key, expiration=3600):
         return None
 
 def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, preview_first_row=False):
-    """Invoke the validator Lambda function with the Excel and config files from S3."""
+    """Invoke the core validator Lambda with Excel data."""
+    logger.info(">>> ENTER invoke_validator_lambda <<<")
+    logger.info(f">>> Parameters: excel_s3_key={excel_s3_key}, preview={preview_first_row} <<<")
+    
     try:
-        logger.info(f"Invoking validator Lambda with excel: {excel_s3_key}, config: {config_s3_key}")
-        logger.info(f"Parameters - max_rows: {max_rows}, batch_size: {batch_size}, preview_first_row: {preview_first_row}")
+        logger.info(f"Starting invoke_validator_lambda - preview_first_row: {preview_first_row}")
+        logger.info(f"Excel S3 key: {excel_s3_key}")
+        logger.info(f"Config S3 key: {config_s3_key}")
         
-        # Download files from S3
+        # Download Excel file from S3
         excel_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=excel_s3_key)
-        config_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=config_s3_key)
-        
-        # Parse config
-        config_data = json.loads(config_response['Body'].read().decode('utf-8'))
         excel_content = excel_response['Body'].read()
         
-        # Process Excel file
+        # Download config file from S3
+        config_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=config_s3_key)
+        config_data = json.loads(config_response['Body'].read().decode('utf-8'))
         
-        # Load workbook from bytes
+        # Load Excel data
         workbook = openpyxl.load_workbook(io.BytesIO(excel_content))
-        worksheet = workbook.active
         
-        # Get headers from first row
-        headers = [cell.value for cell in worksheet[1]]
+        # Log available sheet names
+        logger.info(f"Available sheets in Excel: {workbook.sheetnames}")
+        
+        # Select the appropriate sheet
+        if 'Results' in workbook.sheetnames:
+            worksheet = workbook['Results']
+            logger.info(f"Using 'Results' sheet as data source")
+        elif len(workbook.sheetnames) > 0:
+            worksheet = workbook[workbook.sheetnames[0]]
+            logger.info(f"Using first sheet '{worksheet.title}' as data source")
+        else:
+            worksheet = workbook.active
+            logger.info(f"Using active sheet: {worksheet.title}")
+        
+        # Read headers from first row
+        headers = []
+        for cell in worksheet[1]:
+            header = cell.value
+            if header:
+                headers.append(str(header).strip())
+            else:
+                headers.append('')
+        
+        logger.info(f"Excel headers found: {headers}")
+        logger.info(f"Total columns: {len(headers)}")
         
         # Process data rows
         rows = []
@@ -624,7 +1031,27 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
             if target.get('importance', '').upper() == 'ID':
                 id_fields.append(target['column'])
         
+        # If no ID fields found, try to use SimplifiedSchemaValidator to determine primary keys
+        if not id_fields:
+            try:
+                from schema_validator_simplified import SimplifiedSchemaValidator
+                validator = SimplifiedSchemaValidator(config_data)
+                id_fields = validator.primary_key
+                logger.info(f"Using primary keys from SimplifiedSchemaValidator: {id_fields}")
+            except ImportError:
+                logger.warning("SimplifiedSchemaValidator not available in deployment package")
+            except Exception as e:
+                logger.warning(f"Could not use SimplifiedSchemaValidator: {e}")
+        
         logger.info(f"ID fields for row key generation: {id_fields}")
+        
+        # Show sample row data to understand what keys will be generated
+        if rows and len(rows) > 0:
+            sample_row = rows[0]
+            logger.info("Sample row data for first row:")
+            for id_field in id_fields:
+                value = sample_row.get(id_field, 'NOT FOUND')
+                logger.info(f"  {id_field}: {value}")
         
         # Process each data row
         for row_idx in range(2, min(2 + max_process_rows, worksheet.max_row + 1)):
@@ -635,6 +1062,13 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                 if header:  # Skip empty headers
                     cell_value = worksheet.cell(row=row_idx, column=col_idx + 1).value
                     row_data[header] = str(cell_value) if cell_value is not None else ""
+            
+            # Debug: Log first row's data to see what we're getting
+            if row_idx == 2:  # First data row
+                logger.info(f"First row data extracted: {json.dumps(row_data)}")
+                logger.info(f"Looking for ID fields: {id_fields}")
+                for id_field in id_fields:
+                    logger.info(f"  {id_field}: '{row_data.get(id_field, 'NOT FOUND')}'")
             
             # Generate row key using row_key_utils if available
             if ROW_KEY_UTILS_AVAILABLE and id_fields:
@@ -651,22 +1085,80 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
         
         # Load validation history if available and we have the Excel content
         validation_history = {}
-        if VALIDATION_HISTORY_AVAILABLE and not preview_first_row:
+        if not preview_first_row:  # Remove VALIDATION_HISTORY_AVAILABLE check
             try:
                 # Save Excel content to a temporary file for history extraction
                 with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_file:
                     tmp_file.write(excel_content)
                     tmp_file_path = tmp_file.name
                 
-                # Load validation history from Excel
-                validation_history = load_validation_history_from_excel(tmp_file_path)
-                logger.info(f"Loaded validation history for {len(validation_history)} row keys")
+                # Use the appropriate validation history loader
+                if VALIDATION_HISTORY_AVAILABLE:
+                    # Use the imported function if available
+                    logger.info("Using imported validation history loader (pandas-based)")
+                    
+                    # Before loading validation history, update the load function to use our ID fields
+                    # This is a bit of a hack but ensures consistency
+                    import lambda_test_json_clean
+                    original_load_func = lambda_test_json_clean.load_validation_history_from_details
+                    
+                    def custom_load_validation_history_from_details(excel_path):
+                        """Custom loader that uses our current ID fields"""
+                        result = original_load_func(excel_path)
+                        
+                        # If the Details sheet has ID columns, the function will handle it
+                        # If not, we need to check if we can remap the keys
+                        if result and id_fields:
+                            # Log what we're working with
+                            logger.info(f"Validation history loaded with {len(result)} entries")
+                            logger.info(f"Current ID fields for remapping: {id_fields}")
+                        
+                        return result
+                    
+                    # Temporarily replace the function
+                    lambda_test_json_clean.load_validation_history_from_details = custom_load_validation_history_from_details
+                    
+                    # Load validation history from Excel
+                    original_validation_history = load_validation_history_from_excel(tmp_file_path)
+                    
+                    # Restore original function
+                    lambda_test_json_clean.load_validation_history_from_details = original_load_func
+                else:
+                    # Use the fallback function defined in this file
+                    logger.info("Using fallback validation history loader (openpyxl-based)")
+                    original_validation_history = load_validation_history_from_excel(tmp_file_path)
+                
+                logger.info(f"Loaded validation history for {len(original_validation_history)} row keys from Excel")
+                
+                if original_validation_history:
+                    # Log sample history keys for debugging
+                    history_keys = list(original_validation_history.keys())[:3]
+                    logger.info(f"Sample validation history keys from Excel: {history_keys}")
+                    
+                    # Since the new Details format includes ID fields, the keys should now match
+                    # For old format files, we still try direct matching
+                    validation_history = original_validation_history
+                    
+                    # Log matching summary
+                    matched_count = 0
+                    for row in rows:
+                        payload_key = row.get('_row_key', '')
+                        if payload_key and payload_key in validation_history:
+                            matched_count += 1
+                    
+                    logger.info(f"Matched {matched_count} out of {len(rows)} rows with validation history")
+                    
+                    if matched_count == 0 and len(validation_history) > 0:
+                        logger.warning("No rows matched with validation history - may be using different primary keys")
+                        logger.info(f"Current primary keys: {id_fields}")
                 
                 # Clean up temp file
                 os.unlink(tmp_file_path)
                 
             except Exception as e:
                 logger.warning(f"Could not load validation history: {e}")
+                import traceback
+                traceback.print_exc()
                 validation_history = {}
         
         # For preview mode, just process the first row
@@ -682,6 +1174,32 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
             }
             
             logger.info(f"Created payload with 1 row for preview validation")
+            
+            # LOG DETAILED PAYLOAD STRUCTURE FOR DEBUGGING
+            logger.info("=== PAYLOAD DEBUG INFO ===")
+            logger.info(f"Payload has validation_history: {'validation_history' in payload}")
+            logger.info(f"Validation history size: {len(validation_history)}")
+            
+            if validation_history:
+                # Log first few entries of validation history
+                history_keys = list(validation_history.keys())[:2]
+                for hist_key in history_keys:
+                    logger.info(f"History key: {hist_key}")
+                    if hist_key in validation_history:
+                        columns = list(validation_history[hist_key].keys())[:2]
+                        for col in columns:
+                            logger.info(f"  Column: {col}")
+                            if isinstance(validation_history[hist_key][col], list) and validation_history[hist_key][col]:
+                                first_entry = validation_history[hist_key][col][0]
+                                logger.info(f"    Sample entry: value={first_entry.get('value', 'N/A')}, confidence={first_entry.get('confidence_level', 'N/A')}")
+            
+            # Log row keys being sent
+            if rows:
+                logger.info(f"Row keys in payload:")
+                for i, row in enumerate(rows[:3]):  # First 3 rows
+                    logger.info(f"  Row {i}: {row.get('_row_key', 'NO KEY')}")
+            
+            logger.info("=== END PAYLOAD DEBUG ===")
             
             try:
                 # Use synchronous invocation with monitoring for timeout
@@ -746,6 +1264,27 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                     },
                     "validation_history": validation_history
                 }
+                
+                # LOG BATCH PAYLOAD DEBUG INFO
+                if batch_num == 0:  # Only log for first batch to avoid spam
+                    logger.info("=== BATCH PAYLOAD DEBUG INFO ===")
+                    logger.info(f"Batch payload has validation_history: {'validation_history' in batch_payload}")
+                    logger.info(f"Validation history size: {len(validation_history)}")
+                    logger.info(f"Batch rows count: {len(batch_rows)}")
+                    
+                    # Log sample row keys from batch
+                    if batch_rows:
+                        logger.info(f"Sample row keys from batch:")
+                        for i, row in enumerate(batch_rows[:2]):
+                            logger.info(f"  Row {i}: {row.get('_row_key', 'NO KEY')}")
+                    
+                    # Check if any batch rows match validation history
+                    matches = 0
+                    for row in batch_rows:
+                        if row.get('_row_key') in validation_history:
+                            matches += 1
+                    logger.info(f"Rows with matching validation history: {matches}/{len(batch_rows)}")
+                    logger.info("=== END BATCH PAYLOAD DEBUG ===")
                 
                 try:
                     # Invoke validator for this batch

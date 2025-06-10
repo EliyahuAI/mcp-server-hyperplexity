@@ -224,6 +224,17 @@ class SimplifiedSchemaValidator:
     
     def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None, validation_history: Dict[str, List[Dict[str, Any]]] = None) -> str:
         """Generate a validation prompt for multiple targets (multiplex) using prompts.yml template."""
+        # LOG VALIDATION HISTORY DEBUG INFO
+        logger.info("=== GENERATE_MULTIPLEX_PROMPT DEBUG ===")
+        logger.info(f"Validation history received: {validation_history is not None}")
+        if validation_history:
+            logger.info(f"Validation history has {len(validation_history)} fields")
+            for field_name, entries in validation_history.items():
+                logger.info(f"  Field '{field_name}': {len(entries)} entries")
+        else:
+            logger.info("No validation history provided to generate_multiplex_prompt")
+        logger.info("=== END DEBUG ===")
+        
         # Load prompts from YAML file
         prompts_file = Path(__file__).parent / "prompts.yml"
         try:
@@ -400,6 +411,17 @@ class SimplifiedSchemaValidator:
         # Clean up multiple consecutive newlines
         while "\n\n\n" in prompt:
             prompt = prompt.replace("\n\n\n", "\n\n")
+        
+        # LOG IF HISTORY IS IN THE PROMPT
+        if validation_history:
+            history_included = "Previous validation entries:" in prompt
+            logger.info(f"Validation history included in prompt: {history_included}")
+            if history_included:
+                # Count how many history entries are in the prompt
+                history_count = prompt.count("- [20")  # Dates start with [20xx
+                logger.info(f"Number of history entries in prompt: {history_count}")
+            else:
+                logger.warning("Validation history was provided but NOT included in prompt!")
             
         return prompt
     

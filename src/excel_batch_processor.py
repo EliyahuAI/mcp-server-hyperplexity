@@ -64,8 +64,32 @@ def normalize_column_name(col):
 def load_excel_data(excel_path, sheet_name=0):
     """Load data from Excel file into a DataFrame with robust column handling."""
     try:
+        # First check available sheets and select the most appropriate one
+        excel_file = pd.ExcelFile(excel_path)
+        sheet_list = excel_file.sheet_names
+        logger.info(f"Excel file has {len(sheet_list)} sheets: {sheet_list}")
+        
+        # If we have 'Results' sheet, always use that as our main data source
+        if 'Results' in sheet_list:
+            logger.info("Found 'Results' sheet, using it as the main data source")
+            sheet_name = 'Results'
+        # If we have 'Main View' sheet, use that as secondary option
+        elif 'Main View' in sheet_list:
+            logger.info("Found 'Main View' sheet, using it as the main data source")
+            sheet_name = 'Main View'
+        # If we have a numeric sheet_name but also have other sheets like 'Detailed View', 
+        # make sure we're using the first/primary data sheet
+        elif isinstance(sheet_name, int) and sheet_name == 0 and len(sheet_list) > 1:
+            if 'Detailed View' in sheet_list or 'Reasons & Notes' in sheet_list or 'Details' in sheet_list:
+                # This looks like a previously processed file, so use the first non-detail sheet
+                for sheet in sheet_list:
+                    if sheet not in ['Detailed View', 'Reasons & Notes', 'Details', 'History', 'Reasons']:
+                        logger.info(f"Using sheet '{sheet}' as main data source")
+                        sheet_name = sheet
+                        break
+        
         df = pd.read_excel(excel_path, sheet_name=sheet_name)
-        logger.info(f"Loaded Excel file with {len(df)} rows and {len(df.columns)} columns")
+        logger.info(f"Loaded Excel file sheet '{sheet_name}' with {len(df)} rows and {len(df.columns)} columns")
         
         # Identify columns with non-breaking spaces
         nonbreaking_space_cols = [col for col in df.columns if '\xa0' in str(col)]

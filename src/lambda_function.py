@@ -417,9 +417,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 if filtered_validation_history:
                     logger.info(f"Including validation history for {len(filtered_validation_history)} fields")
+                    # LOG DETAILED HISTORY INFO
+                    for field, history_entries in filtered_validation_history.items():
+                        logger.info(f"  Field '{field}' has {len(history_entries)} history entries")
+                        if history_entries:
+                            logger.info(f"    First entry: value='{history_entries[0].get('value', 'N/A')}', confidence={history_entries[0].get('confidence_level', 'N/A')}")
+                else:
+                    logger.info("No matching validation history for fields in this group")
+            else:
+                logger.info("No validation history provided to process_multiplex_group")
             
             # Generate multiplex prompt first - we need this for the cache key
             logger.info(f"Generating multiplex prompt for {len(validation_targets)} field(s) with context from previous groups")
+            logger.info(f"Passing validation_history to generate_multiplex_prompt: {filtered_validation_history is not None}")
             prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history)
             
             # Use default model
