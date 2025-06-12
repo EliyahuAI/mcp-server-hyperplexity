@@ -19,6 +19,8 @@ from datetime import datetime
 from urllib.parse import unquote_plus
 import io
 import openpyxl
+import csv
+from io import StringIO
 
 # Set up logging FIRST before any logger usage
 logger = logging.getLogger()
@@ -200,7 +202,7 @@ except ImportError as e:
             logger.error(f"Error loading validation history from Excel: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            return {}
+        return {}
 
 # Import multipart handling
 try:
@@ -400,25 +402,82 @@ Processing Details:
         
         # Create CSV report for easy viewing
         if validation_results:
-            csv_lines = ['Field,Value,Confidence,Sources,Quote']
+            # Use Python's csv module for proper escaping
+            csv_buffer = StringIO()
+            csv_writer = csv.writer(csv_buffer)
+            
+            # Write header
+            csv_writer.writerow(['Field', 'Value', 'Confidence', 'Sources', 'Quote'])
             
             for row_key, row_data in validation_results.items():
                 for field_name, field_data in row_data.items():
                     if isinstance(field_data, dict) and 'confidence_level' in field_data:
-                        value = str(field_data.get('value', '')).replace(',', ';')
+                        value = str(field_data.get('value', ''))
                         confidence = field_data.get('confidence_level', 'UNKNOWN')
-                        sources = '; '.join(field_data.get('sources', []))[:100] + '...' if len(field_data.get('sources', [])) > 0 else ''
+                        sources = ', '.join(field_data.get('sources', []))[:100] + '...' if len(field_data.get('sources', [])) > 0 else ''
                         quote = str(field_data.get('quote', ''))[:100] + '...' if len(str(field_data.get('quote', ''))) > 100 else str(field_data.get('quote', ''))
                         
-                        csv_lines.append(f'"{field_name}","{value}","{confidence}","{sources}","{quote}"')
+                        csv_writer.writerow([field_name, value, confidence, sources, quote])
             
-            zip_file.writestr('validation_results.csv', '\n'.join(csv_lines))
+            zip_file.writestr('validation_results.csv', csv_buffer.getvalue())
+            csv_buffer.close()
     
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
 
-def create_enhanced_excel_with_validation(excel_file_content, validation_results, config_data, session_id):
-    """Create enhanced Excel output with color-coding, comments, and multiple worksheets."""
+def safe_for_excel(value):
+    """Convert value to Excel-safe format, handling control characters but NOT XML escaping."""
+    if value is None:
+        return ""
+    if isinstance(value, (int, float)):
+        # Check for NaN without pandas
+        if value != value:  # NaN check
+            return ""
+        # Check for infinity
+        if isinstance(value, float) and (value == float('inf') or value == float('-inf')):
+            return ""
+    
+    # Convert to string for processing
+    value_str = str(value)
+    
+    # First, handle control characters that are illegal in XML
+    # Replace all control characters except tab (9), newline (10), and carriage return (13)
+    cleaned = []
+    for char in value_str:
+        code = ord(char)
+        if code < 32 and code not in (9, 10, 13):
+            # Replace illegal control characters with space
+            cleaned.append(' ')
+        elif code > 127 and code < 160:
+            # Replace non-breaking spaces and other problematic high ASCII
+            cleaned.append(' ')
+        elif code == 8232 or code == 8233:
+            # Replace Unicode line/paragraph separators with regular newlines
+            cleaned.append('\n')
+        else:
+            cleaned.append(char)
+    value_str = ''.join(cleaned)
+    
+    # IMPORTANT: Do NOT escape XML characters here!
+    # xlsxwriter handles XML escaping internally.
+    # Double-escaping causes corruption.
+    
+    # Handle Excel's cell content limit
+    if len(value_str) > 32767:
+        return value_str[:32700] + "..."
+    
+    return value_str
+
+def create_enhanced_excel_with_validation(excel_file_content, validation_results, config_data, session_id, skip_history=False):
+    """Create color-coded Excel file with validation results and history tracking.
+    
+    Args:
+        excel_file_content: Original Excel file content
+        validation_results: Validation results from the validator
+        config_data: Configuration data
+        session_id: Session ID for tracking
+        skip_history: If True, skip loading existing Details sheet (for fallback mode)
+    """
     if not EXCEL_ENHANCEMENT_AVAILABLE:
         logger.warning("Enhanced Excel not available, skipping Excel creation")
         return None
@@ -429,7 +488,17 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
         
         # Load original Excel data
         workbook = openpyxl.load_workbook(io.BytesIO(excel_file_content))
+        
+        # Select the appropriate sheet (same logic as invoke_validator_lambda)
+        if 'Results' in workbook.sheetnames:
+            worksheet = workbook['Results']
+            logger.info(f"Using 'Results' sheet as data source for enhanced Excel creation")
+        elif len(workbook.sheetnames) > 0:
+            worksheet = workbook[workbook.sheetnames[0]]
+            logger.info(f"Using first sheet '{worksheet.title}' as data source for enhanced Excel creation")
+        else:
         worksheet = workbook.active
+            logger.info(f"Using active sheet: {worksheet.title}")
         
         # Get headers and data
         headers = [cell.value for cell in worksheet[1]]
@@ -506,7 +575,7 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
             logger.warning(f"Could not load existing Details sheet: {e}")
         
         # Create Excel with xlsxwriter for advanced formatting
-        with xlsxwriter.Workbook(excel_buffer, {'options': {'strings_to_urls': False}}) as workbook:
+        with xlsxwriter.Workbook(excel_buffer, {'strings_to_urls': False, 'nan_inf_to_errors': True}) as workbook:
             
             # Define formats
             header_format = workbook.add_format({
@@ -567,7 +636,7 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
                         cell_format = confidence_formats[confidence_level.upper()]
                     
                     # Write cell value
-                    results_sheet.write(row_idx + 1, col_idx, validated_value or '', cell_format)
+                    results_sheet.write(row_idx + 1, col_idx, safe_for_excel(validated_value or ''), cell_format)
                     
                     # Add comment if we have quote or sources
                     if quote or sources:
@@ -673,44 +742,44 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
                         if isinstance(field_data, dict) and 'confidence_level' in field_data:
                             # Write detail row with all columns
                             col_idx = 0
-                            details_sheet.write(detail_row, col_idx, row_key)  # Row Key
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(row_key))  # Row Key
                             col_idx += 1
-                            details_sheet.write(detail_row, col_idx, identifier)  # Identifier
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(identifier))  # Identifier
                             col_idx += 1
                             
                             # Write ID field values
                             for id_field in id_fields:
                                 value = row_data.get(id_field, '')
-                                details_sheet.write(detail_row, col_idx, str(value))
+                                details_sheet.write(detail_row, col_idx, safe_for_excel(str(value)))
                                 col_idx += 1
                             
                             # Write standard columns
-                            details_sheet.write(detail_row, col_idx, field_name)  # Column
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(field_name))  # Column
                             col_idx += 1
-                            details_sheet.write(detail_row, col_idx, str(row_data.get(field_name, '')))  # Original value
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(row_data.get(field_name, ''))))  # Original value
                             col_idx += 1
-                            details_sheet.write(detail_row, col_idx, str(field_data.get('value', '')))  # Validated value
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('value', ''))))  # Validated value
                             col_idx += 1
                             
                             confidence = field_data.get('confidence_level', '')
                             confidence_format = confidence_formats.get(confidence.upper()) if confidence else None
-                            details_sheet.write(detail_row, col_idx, confidence, confidence_format)
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(confidence), confidence_format)
                             col_idx += 1
                             
-                            details_sheet.write(detail_row, col_idx, str(field_data.get('quote', '')))
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('quote', ''))))
                             col_idx += 1
                             sources_text = ', '.join(field_data.get('sources', []))
-                            details_sheet.write(detail_row, col_idx, sources_text)
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(sources_text))
                             col_idx += 1
-                            details_sheet.write(detail_row, col_idx, str(field_data.get('explanation', '')))
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('explanation', ''))))
                             col_idx += 1
-                            details_sheet.write(detail_row, col_idx, str(field_data.get('update_required', '')))
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('update_required', ''))))
                             col_idx += 1
-                            details_sheet.write(detail_row, col_idx, str(field_data.get('substantially_different', '')))
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('substantially_different', ''))))
                             col_idx += 1
-                            details_sheet.write(detail_row, col_idx, str(field_data.get('consistent_with_model_knowledge', '')))
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('consistent_with_model_knowledge', ''))))
                             col_idx += 1
-                            details_sheet.write(detail_row, col_idx, current_timestamp)
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(current_timestamp))
                             col_idx += 1
                             details_sheet.write(detail_row, col_idx, 'New')  # Mark all current validations as "New"
                             
@@ -729,11 +798,11 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
                     col_idx = 0
                     
                     # Row Key
-                    details_sheet.write(detail_row, col_idx, str(existing_detail.get('Row Key', '')))
+                    details_sheet.write(detail_row, col_idx, safe_for_excel(str(existing_detail.get('Row Key', ''))))
                     col_idx += 1
                     
                     # Identifier
-                    details_sheet.write(detail_row, col_idx, str(existing_detail.get('Identifier', '')))
+                    details_sheet.write(detail_row, col_idx, safe_for_excel(str(existing_detail.get('Identifier', ''))))
                     col_idx += 1
                     
                     # ID field values - extract from existing detail or try to reconstruct
@@ -758,7 +827,7 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
                                 if 0 <= id_field_index < len(key_parts):
                                     value = key_parts[id_field_index]
                         
-                        details_sheet.write(detail_row, col_idx, str(value))
+                        details_sheet.write(detail_row, col_idx, safe_for_excel(str(value)))
                         col_idx += 1
                     
                     # Standard columns
@@ -771,9 +840,9 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
                         
                         # Apply confidence formatting if applicable
                         if col_name == 'Confidence' and value and value.upper() in confidence_formats:
-                            details_sheet.write(detail_row, col_idx, value, confidence_formats[value.upper()])
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(value), confidence_formats[value.upper()])
                         else:
-                            details_sheet.write(detail_row, col_idx, str(value) if value is not None else '')
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(value) if value is not None else ''))
                         
                         col_idx += 1
                     
@@ -806,11 +875,11 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
                 if row_validation_data and isinstance(row_validation_data, dict):
                     for field_name, field_data in row_validation_data.items():
                         if isinstance(field_data, dict) and 'explanation' in field_data:
-                            reasons_sheet.write(reasons_row, 0, row_key)  # Use actual row key
-                            reasons_sheet.write(reasons_row, 1, field_name)
-                            reasons_sheet.write(reasons_row, 2, str(field_data.get('explanation', '')))
-                            reasons_sheet.write(reasons_row, 3, str(field_data.get('update_required', '')))
-                            reasons_sheet.write(reasons_row, 4, str(field_data.get('substantially_different', '')))
+                            reasons_sheet.write(reasons_row, 0, safe_for_excel(row_key))  # Use actual row key
+                            reasons_sheet.write(reasons_row, 1, safe_for_excel(field_name))
+                            reasons_sheet.write(reasons_row, 2, safe_for_excel(str(field_data.get('explanation', ''))))
+                            reasons_sheet.write(reasons_row, 3, safe_for_excel(str(field_data.get('update_required', ''))))
+                            reasons_sheet.write(reasons_row, 4, safe_for_excel(str(field_data.get('substantially_different', ''))))
                             
                             reasons_row += 1
         
@@ -875,20 +944,26 @@ def create_enhanced_result_zip(validation_results, session_id, total_rows, excel
         
         # Create CSV report for easy viewing
         if validation_results:
-            csv_lines = ['Row,Field,Original_Value,Validated_Value,Confidence,Sources,Quote']
+            # Use Python's csv module for proper escaping
+            csv_buffer = StringIO()
+            csv_writer = csv.writer(csv_buffer)
+            
+            # Write header
+            csv_writer.writerow(['Row', 'Field', 'Original_Value', 'Validated_Value', 'Confidence', 'Sources', 'Quote'])
             
             for row_key, row_data in validation_results.items():
                 for field_name, field_data in row_data.items():
                     if isinstance(field_data, dict) and 'confidence_level' in field_data:
-                        original = str(field_data.get('original_value', '')).replace(',', ';')
-                        value = str(field_data.get('value', '')).replace(',', ';')
+                        original = str(field_data.get('original_value', ''))
+                        value = str(field_data.get('value', ''))
                         confidence = field_data.get('confidence_level', 'UNKNOWN')
-                        sources = '; '.join(field_data.get('sources', []))[:100] + '...' if len(field_data.get('sources', [])) > 0 else ''
+                        sources = ', '.join(field_data.get('sources', []))[:100] + '...' if len(field_data.get('sources', [])) > 0 else ''
                         quote = str(field_data.get('quote', ''))[:100] + '...' if len(str(field_data.get('quote', ''))) > 100 else str(field_data.get('quote', ''))
                         
-                        csv_lines.append(f'"{row_key}","{field_name}","{original}","{value}","{confidence}","{sources}","{quote}"')
+                        csv_writer.writerow([row_key, field_name, original, value, confidence, sources, quote])
             
-            zip_file.writestr('validation_results.csv', '\n'.join(csv_lines))
+            zip_file.writestr('validation_results.csv', csv_buffer.getvalue())
+            csv_buffer.close()
         
         # Create enhanced summary report
         summary_report = f"""
@@ -998,7 +1073,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
             worksheet = workbook[workbook.sheetnames[0]]
             logger.info(f"Using first sheet '{worksheet.title}' as data source")
         else:
-            worksheet = workbook.active
+        worksheet = workbook.active
             logger.info(f"Using active sheet: {worksheet.title}")
         
         # Read headers from first row
@@ -1117,8 +1192,8 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                     
                     # Temporarily replace the function
                     lambda_test_json_clean.load_validation_history_from_details = custom_load_validation_history_from_details
-                    
-                    # Load validation history from Excel
+                
+                # Load validation history from Excel
                     original_validation_history = load_validation_history_from_excel(tmp_file_path)
                     
                     # Restore original function

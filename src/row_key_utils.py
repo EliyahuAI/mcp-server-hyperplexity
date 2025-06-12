@@ -79,12 +79,12 @@ def validate_row_key(row_key: str) -> bool:
     
     # SHA-256 produces 64 hex characters
     if len(row_key) != 64:
-            return False
+        return False
     
     # Check if all characters are valid hex
     try:
         int(row_key, 16)
-    return True
+        return True
     except ValueError:
         return False
 

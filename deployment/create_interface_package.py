@@ -104,7 +104,7 @@ def install_dependencies():
         try:
             subprocess.check_call([
                 sys.executable, "-m", "pip", "install",
-                "-r", str(SCRIPT_DIR / "requirements-interface-lambda.txt"),
+            "-r", str(SCRIPT_DIR / "requirements-interface-lambda.txt"),
                 "-t", str(PACKAGE_DIR),
                 "--no-cache-dir"
             ])
@@ -663,14 +663,33 @@ def setup_api_gateway(lambda_client, function_name, region):
         
         # Add Lambda permission for API Gateway
         try:
-            lambda_client.add_permission(
-                FunctionName=function_name,
-                StatementId=f'apigateway-invoke-{int(time.time())}',
-                Action='lambda:InvokeFunction',
-                Principal='apigateway.amazonaws.com',
-                SourceArn=f"arn:aws:execute-api:{region}:400232868802:{api_id}/*/*"
-            )
-            logger.info("Added Lambda permission for API Gateway")
+            # First, check if any API Gateway permission already exists
+            try:
+                policy_response = lambda_client.get_policy(FunctionName=function_name)
+                policy = json.loads(policy_response['Policy'])
+                
+                # Check if we already have a permission for this API
+                permission_exists = False
+                for statement in policy['Statement']:
+                    if (statement.get('Principal', {}).get('Service') == 'apigateway.amazonaws.com' and
+                        f":{api_id}/" in statement.get('Condition', {}).get('ArnLike', {}).get('AWS:SourceArn', '')):
+                        permission_exists = True
+                        logger.info("Lambda permission for API Gateway already exists")
+                        break
+                
+                if not permission_exists:
+                    raise lambda_client.exceptions.ResourceNotFoundException()
+                    
+            except lambda_client.exceptions.ResourceNotFoundException:
+                # No policy exists or permission not found, add it
+                lambda_client.add_permission(
+                    FunctionName=function_name,
+                    StatementId=f'apigateway-invoke-{api_id}',  # Use API ID instead of timestamp
+                    Action='lambda:InvokeFunction',
+                    Principal='apigateway.amazonaws.com',
+                    SourceArn=f"arn:aws:execute-api:{region}:400232868802:{api_id}/*/*"
+                )
+                logger.info("Added Lambda permission for API Gateway")
         except lambda_client.exceptions.ResourceConflictException:
             logger.info("Lambda permission already exists")
         

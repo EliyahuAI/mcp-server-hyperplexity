@@ -684,9 +684,37 @@ def save_results_to_excel(df, results_dict, output_path, config, input_file_path
                 return ""
             if isinstance(value, float) and (pd.isna(value) or np.isnan(value) or np.isinf(value)):
                 return ""
-            if isinstance(value, str) and len(value) > 32767:  # Excel's cell content limit
-                return value[:32700] + "..."
-            return value
+            
+            # Convert to string for processing
+            value_str = str(value)
+            
+            # First, handle control characters that are illegal in XML
+            # Replace all control characters except tab (9), newline (10), and carriage return (13)
+            cleaned = []
+            for char in value_str:
+                code = ord(char)
+                if code < 32 and code not in (9, 10, 13):
+                    # Replace illegal control characters with space
+                    cleaned.append(' ')
+                elif code > 127 and code < 160:
+                    # Replace non-breaking spaces and other problematic high ASCII
+                    cleaned.append(' ')
+                elif code == 8232 or code == 8233:
+                    # Replace Unicode line/paragraph separators with regular newlines
+                    cleaned.append('\n')
+                else:
+                    cleaned.append(char)
+            value_str = ''.join(cleaned)
+            
+            # IMPORTANT: Do NOT escape XML characters here!
+            # xlsxwriter handles XML escaping internally.
+            # Double-escaping causes corruption.
+            
+            # Handle Excel's cell content limit
+            if len(value_str) > 32767:
+                return value_str[:32700] + "..."
+            
+            return value_str
         
         # Pre-process the dataframe to handle problematic values
         df_safe = df.copy()
