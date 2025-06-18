@@ -13,6 +13,8 @@ from botocore.config import Config
 import traceback
 from perplexity_schema import get_response_format_schema
 from row_key_utils import generate_row_key  # Import centralized row key generation
+import random
+import time
 
 # Configure logging
 logger = logging.getLogger()
@@ -35,6 +37,8 @@ config = Config(
 )
 s3 = boto3.client('s3', config=config)
 ssm = boto3.client('ssm', config=config)
+# Bedrock not needed - using direct Anthropic API for web search support
+# bedrock = boto3.client('bedrock-runtime', config=config)
 
 def get_perplexity_api_key() -> str:
     """Get Perplexity API key from environment or SSM."""
@@ -50,6 +54,233 @@ def get_perplexity_api_key() -> str:
             logger.error(f"Failed to get API key from SSM: {str(e)}")
             raise
     return api_key
+
+def get_anthropic_api_key() -> str:
+    """Get Anthropic API key from environment or SSM."""
+    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        # Try both parameter name variants (with and without leading slash)
+        # ARN shows: arn:aws:ssm:us-east-1:400232868802:parameter/Anthropic_API_Key
+        param_names = ['/Anthropic_API_Key', 'Anthropic_API_Key']
+        
+        for param_name in param_names:
+            try:
+                logger.info(f"Attempting to retrieve Anthropic API key from SSM parameter: {param_name}")
+                
+                response = ssm.get_parameter(
+                    Name=param_name,
+                    WithDecryption=True
+                )
+                api_key = response['Parameter']['Value']
+                logger.info(f"Successfully retrieved Anthropic API key from {param_name}")
+                break
+                
+            except Exception as e:
+                logger.warning(f"Failed to get Anthropic API key from SSM parameter '{param_name}': {str(e)}")
+                continue
+        
+        if not api_key:
+            logger.error("Failed to retrieve Anthropic API key from any SSM parameter variant")
+            
+            # Try to list parameters to help with debugging
+            try:
+                logger.info("Attempting to list SSM parameters for debugging...")
+                params_response = ssm.describe_parameters(
+                    ParameterFilters=[
+                        {
+                            'Key': 'Name',
+                            'Option': 'BeginsWith',
+                            'Values': ['Anthropic']
+                        }
+                    ]
+                )
+                if params_response['Parameters']:
+                    logger.info(f"Found parameters starting with 'Anthropic': {[p['Name'] for p in params_response['Parameters']]}")
+                else:
+                    logger.warning("No parameters found starting with 'Anthropic'")
+                    
+            except Exception as list_error:
+                logger.error(f"Failed to list SSM parameters: {str(list_error)}")
+            
+            raise Exception(f"Anthropic API key not found in SSM. Tried parameters: {param_names}")
+    else:
+        logger.info("Using Anthropic API key from environment variable")
+    return api_key
+
+def determine_api_provider(model: str) -> str:
+    """Determine which API provider to use based on model name."""
+    if model.startswith('anthropic/') or model.startswith('anthropic.'):
+        return 'anthropic'
+    else:
+        return 'perplexity'
+
+def normalize_anthropic_model(model: str) -> str:
+    """Convert anthropic/ format to direct API format if needed."""
+    if model.startswith('anthropic/'):
+        # Convert anthropic/claude-sonnet-4-20250514 to claude-sonnet-4-20250514
+        return model.replace('anthropic/', '')
+    elif model.startswith('anthropic.'):
+        # Convert anthropic.claude-sonnet-4-20250514-v1:0 to claude-sonnet-4-20250514
+        return model.replace('anthropic.', '').replace('-v1:0', '')
+    return model
+
+async def validate_with_anthropic(
+    session: aiohttp.ClientSession,
+    prompt: str,
+    api_key: str,
+    model: str = "claude-sonnet-4-20250514"
+) -> Dict[str, Any]:
+    """Validate a prompt using direct Anthropic API with web search."""
+    # Normalize the model name for direct API
+    anthropic_model = normalize_anthropic_model(model)
+    
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json"
+    }
+    
+    # Get the JSON schema for structured responses
+    schema = get_response_format_schema(is_multiplex=True)
+    array_schema = schema['json_schema']['schema']
+    
+    # Wrap the array schema in an object for tool calling (Anthropic requires type: object)
+    tool_schema = {
+        "type": "object",
+        "properties": {
+            "validation_results": array_schema
+        },
+        "required": ["validation_results"]
+    }
+    
+    # Create system prompt for validation expert
+    system_prompt = """You are a data validation expert with access to web search. Use web search to find current, accurate information for validation. Use the validate_data tool to provide your structured response."""
+
+    # Create the request body with both web search and validation tools
+    data = {
+        "model": anthropic_model,
+        "max_tokens": 3000,
+        "temperature": 0.1,
+        "system": system_prompt,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "tools": [
+            {
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": 10  # Allow multiple searches for thorough validation
+            },
+            {
+                "name": "validate_data",
+                "description": "Provide structured validation results for data fields",
+                "input_schema": tool_schema
+            }
+        ],
+        "tool_choice": {
+            "type": "tool",
+            "name": "validate_data"
+        }
+    }
+    
+    try:
+        logger.info(f"Sending request to Anthropic API with model: {anthropic_model}")
+        
+        # Log the formatted prompt for better diagnostics
+        prompt_lines = prompt.split('\n')
+        formatted_prompt = "\n".join([f"  {line}" for line in prompt_lines])
+        logger.info(f"Formatted prompt:\n{formatted_prompt}")
+        
+        # Log simplified request data
+        simplified_request = {
+            "model": anthropic_model,
+            "temperature": data["temperature"],
+            "max_tokens": data["max_tokens"],
+            "tools": [{"type": "web_search_20250305", "max_uses": 10}]
+        }
+        logger.info(f"Request config: {json.dumps(simplified_request, indent=2)}")
+        
+        # Make the direct Anthropic API call with increased timeout
+        timeout = aiohttp.ClientTimeout(total=120)  # 2 minutes for web search operations
+        async with session.post(
+            "https://api.anthropic.com/v1/messages",
+            headers=headers,
+            json=data,
+            timeout=timeout
+        ) as response:
+            response_text = await response.text()
+            logger.info(f"Anthropic API Response status: {response.status}")
+            
+            if response.status == 429:
+                # Rate limit error - include more details for retry logic
+                raise Exception(f"Anthropic API rate limit exceeded (429): {response_text}")
+            elif response.status == 499:
+                # Client disconnect - treat as timeout
+                raise Exception(f"Anthropic API client disconnected (499): {response_text}")
+            elif response.status != 200:
+                raise Exception(f"Anthropic API returned status {response.status}: {response_text}")
+            
+            response_json = json.loads(response_text)
+            
+            # Log the response for debugging
+            logger.info(f"Anthropic API Response: {json.dumps(response_json, indent=2)}")
+            
+            # Convert Anthropic response format to match Perplexity format for compatibility
+            if 'content' in response_json and len(response_json['content']) > 0:
+                # Look for tool_use content (our structured validation data)
+                validation_data = None
+                text_content = ""
+                
+                for content_item in response_json['content']:
+                    if content_item['type'] == 'text':
+                        text_content += content_item['text']
+                    elif content_item['type'] == 'tool_use' and content_item['name'] == 'validate_data':
+                        # Extract the structured validation data from the tool call
+                        tool_input = content_item['input']
+                        # Extract the validation_results array from the wrapper object
+                        if 'validation_results' in tool_input:
+                            validation_data = tool_input['validation_results']
+                            logger.info(f"Found structured validation data: {validation_data}")
+                        else:
+                            logger.warning("Tool input missing validation_results field")
+                            validation_data = tool_input  # Fallback to raw input
+                
+                # If we got structured data from the tool, convert it to JSON string format
+                if validation_data:
+                    # Convert the structured data to a JSON string for compatibility with existing parser
+                    content = json.dumps(validation_data)
+                else:
+                    # Fallback to text content if no tool call found
+                    content = text_content
+                    logger.warning("No structured validation data found in tool call, using text content")
+                
+                # Create a response format compatible with the existing parsing logic
+                formatted_response = {
+                    'choices': [{
+                        'message': {
+                            'role': 'assistant',
+                            'content': content
+                        }
+                    }]
+                }
+                
+                # Add any citations from web searches if available
+                if 'usage' in response_json:
+                    formatted_response['usage'] = response_json['usage']
+                
+                return formatted_response
+            else:
+                raise Exception(f"Unexpected Anthropic response format: {response_json}")
+            
+    except asyncio.TimeoutError as e:
+        logger.error(f"Anthropic API timeout error: {str(e)}")
+        raise Exception(f"Anthropic API timeout: {str(e)}")
+    except aiohttp.ClientError as e:
+        logger.error(f"Anthropic API client error: {str(e)}")
+        raise Exception(f"Anthropic API client error: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error calling Anthropic API: {str(e)}")
+        raise
 
 async def validate_with_perplexity(
     session: aiohttp.ClientSession,
@@ -93,11 +324,12 @@ async def validate_with_perplexity(
         }
         logger.info(f"Request config: {json.dumps(simplified_data, indent=2)}")
         
+        timeout = aiohttp.ClientTimeout(total=60)  # Increased timeout for Perplexity
         async with session.post(
             "https://api.perplexity.ai/chat/completions",
             headers=headers,
             json=data,
-            timeout=30
+            timeout=timeout
         ) as response:
             response_text = await response.text()
             logger.info(f"API Response status: {response.status}")
@@ -139,10 +371,22 @@ async def validate_with_perplexity(
                 # If response isn't valid JSON, log as is
                 logger.info(f"API Response body (raw): {response_text}")
             
-            if response.status != 200:
-                raise Exception(f"API returned status {response.status}: {response_text}")
+            if response.status == 429:
+                # Rate limit error
+                raise Exception(f"Perplexity API rate limit exceeded (429): {response_text}")
+            elif response.status == 499:
+                # Client disconnect - treat as timeout
+                raise Exception(f"Perplexity API client disconnected (499): {response_text}")
+            elif response.status != 200:
+                raise Exception(f"Perplexity API returned status {response.status}: {response_text}")
             
             return json.loads(response_text)
+    except asyncio.TimeoutError as e:
+        logger.error(f"Perplexity API timeout error: {str(e)}")
+        raise Exception(f"Perplexity API timeout: {str(e)}")
+    except aiohttp.ClientError as e:
+        logger.error(f"Perplexity API client error: {str(e)}")
+        raise Exception(f"Perplexity API client error: {str(e)}")
     except Exception as e:
         logger.error(f"Error calling Perplexity API: {str(e)}")
         raise
@@ -160,6 +404,159 @@ def get_cache_key(prompt: str, model: str = "sonar-pro") -> str:
     """
     # Create a hash of prompt + model for a deterministic cache key
     return hashlib.md5(f"{prompt}:{model}".encode()).hexdigest()
+
+def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List[str]]:
+    """
+    Resolve model conflicts within a search group.
+    
+    Rules:
+    1. If all targets use default model -> use default
+    2. If any target has preferred_model -> prefer that over default
+    3. If multiple different preferred_models -> pick first one and warn
+    
+    Returns:
+        Tuple of (selected_model, list_of_warnings)
+    """
+    warnings = []
+    models_in_group = set()
+    preferred_models = []
+    
+    # Collect all models used in this group
+    for target in targets:
+        if target.preferred_model:
+            models_in_group.add(target.preferred_model)
+            preferred_models.append((target.column, target.preferred_model))
+        else:
+            models_in_group.add(validator.default_model)
+    
+    # If only one model is used, that's our answer
+    if len(models_in_group) == 1:
+        selected_model = list(models_in_group)[0]
+        logger.info(f"Search group uses consistent model: {selected_model}")
+        return selected_model, warnings
+    
+    # If we have conflicts, prefer any specified model over default
+    non_default_models = [m for m in models_in_group if m != validator.default_model]
+    
+    if len(non_default_models) == 1:
+        # Only one non-default model, use that
+        selected_model = non_default_models[0]
+        logger.info(f"Search group has mixed models, preferring specified model: {selected_model} over default: {validator.default_model}")
+        return selected_model, warnings
+    
+    elif len(non_default_models) > 1:
+        # Multiple conflicting preferred models - pick the first one and warn
+        selected_model = preferred_models[0][1]  # Use the first preferred model encountered
+        
+        # Build detailed warning message
+        conflict_details = []
+        for column, model in preferred_models:
+            conflict_details.append(f"'{column}' -> {model}")
+        
+        warning_msg = f"Search group has conflicting preferred models: {', '.join(conflict_details)}. Selected '{selected_model}' (from '{preferred_models[0][0]}')"
+        warnings.append(warning_msg)
+        logger.warning(warning_msg)
+        return selected_model, warnings
+    
+    else:
+        # Fallback to default (shouldn't reach here given the logic above)
+        selected_model = validator.default_model
+        logger.info(f"Search group using default model: {selected_model}")
+        return selected_model, warnings
+
+async def retry_api_call_with_backoff(
+    api_call_func,
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 60.0,
+    backoff_multiplier: float = 2.0,
+    jitter: bool = True,
+    custom_delays: List[float] = None
+):
+    """
+    Retry an API call with exponential backoff for rate limiting and timeout errors.
+    
+    Args:
+        api_call_func: Async function to call
+        max_retries: Maximum number of retry attempts
+        base_delay: Initial delay between retries (seconds)
+        max_delay: Maximum delay between retries (seconds)
+        backoff_multiplier: Multiplier for exponential backoff
+        jitter: Add random jitter to prevent thundering herd
+        custom_delays: List of specific delays to use instead of exponential backoff
+    
+    Returns:
+        Result of the API call
+        
+    Raises:
+        Exception: If all retries are exhausted
+    """
+    last_exception = None
+    
+    for attempt in range(max_retries + 1):  # +1 for initial attempt
+        try:
+            # Try the API call
+            result = await api_call_func()
+            if attempt > 0:
+                logger.info(f"API call succeeded on attempt {attempt + 1}")
+            return result
+            
+        except Exception as e:
+            last_exception = e
+            error_str = str(e).lower()
+            
+            # Check if this is a retryable error
+            is_rate_limit = "rate_limit" in error_str or "429" in error_str
+            is_timeout = "timeout" in error_str or "499" in error_str or "client disconnected" in error_str
+            is_server_error = "500" in error_str or "502" in error_str or "503" in error_str or "504" in error_str
+            
+            if not (is_rate_limit or is_timeout or is_server_error):
+                # Non-retryable error, raise immediately
+                logger.error(f"Non-retryable error on attempt {attempt + 1}: {str(e)}")
+                raise e
+            
+            if attempt >= max_retries:
+                # Last attempt failed, raise the exception
+                logger.error(f"All retry attempts exhausted. Final error: {str(e)}")
+                raise e
+            
+            # Calculate delay - use custom delays if provided, otherwise exponential backoff
+            if custom_delays:
+                # Use specific delays from the list (attempt is 0-indexed for delays)
+                if attempt < len(custom_delays):
+                    delay = custom_delays[attempt]
+                else:
+                    # If we've exhausted custom delays, use the last one
+                    delay = custom_delays[-1]
+            else:
+                # Use exponential backoff
+                delay = min(base_delay * (backoff_multiplier ** attempt), max_delay)
+                
+                # Add jitter to prevent thundering herd
+                if jitter:
+                    delay = delay * (0.5 + random.random() * 0.5)  # Random between 50-100% of calculated delay
+            
+            # Special handling for rate limits - but respect custom delays if provided
+            if is_rate_limit:
+                try:
+                    # Try to extract retry-after from error message or use longer delay
+                    if "rate_limit" in error_str:
+                        # Only apply minimum delay if not using custom delays
+                        if not custom_delays:
+                            delay = max(delay, 30)  # 30 seconds minimum for rate limits
+                        logger.warning(f"Rate limit hit on attempt {attempt + 1}, waiting {delay:.2f}s before retry")
+                    else:
+                        logger.warning(f"Server error on attempt {attempt + 1}, waiting {delay:.2f}s before retry")
+                except Exception:
+                    pass
+            else:
+                logger.warning(f"Retryable error on attempt {attempt + 1}: {str(e)}, waiting {delay:.2f}s before retry")
+            
+            # Wait before retrying
+            await asyncio.sleep(delay)
+    
+    # Should never reach here, but just in case
+    raise last_exception
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests."""
@@ -244,8 +641,40 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
         validator = SimplifiedSchemaValidator(config)
         
-        # Get API key and S3 bucket
-        api_key = get_perplexity_api_key()
+        # Get API keys and S3 bucket - get both keys if we might need mixed models
+        perplexity_api_key = None
+        anthropic_api_key = None
+        
+        # Check if we need mixed API support by examining all column models
+        needs_perplexity = False
+        needs_anthropic = False
+        
+        # Check default model
+        default_provider = determine_api_provider(validator.default_model)
+        if default_provider == 'anthropic':
+            needs_anthropic = True
+        else:
+            needs_perplexity = True
+        
+        # Check individual column preferred models
+        for target in validator.validation_targets:
+            if target.preferred_model:
+                provider = determine_api_provider(target.preferred_model)
+                if provider == 'anthropic':
+                    needs_anthropic = True
+                else:
+                    needs_perplexity = True
+        
+        logger.info(f"API requirements - Perplexity: {needs_perplexity}, Anthropic: {needs_anthropic}")
+        
+        # Get required API keys
+        if needs_anthropic:
+            anthropic_api_key = get_anthropic_api_key()
+            logger.info("Retrieved Anthropic API key")
+        if needs_perplexity:
+            perplexity_api_key = get_perplexity_api_key()
+            logger.info("Retrieved Perplexity API key")
+            
         s3_bucket = os.environ['S3_CACHE_BUCKET']
         
         # Process rows
@@ -427,13 +856,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             else:
                 logger.info("No validation history provided to process_multiplex_group")
             
+            # Resolve which model to use for this search group
+            model, model_warnings = resolve_search_group_model(validation_targets, validator)
+            
+            # Log any model conflict warnings
+            for warning in model_warnings:
+                logger.warning(f"Search group model conflict: {warning}")
+            
             # Generate multiplex prompt first - we need this for the cache key
             logger.info(f"Generating multiplex prompt for {len(validation_targets)} field(s) with context from previous groups")
+            logger.info(f"Using resolved model for search group: {model}")
             logger.info(f"Passing validation_history to generate_multiplex_prompt: {filtered_validation_history is not None}")
             prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history)
-            
-            # Use default model
-            model = "sonar-pro"
             
             # Generate cache key based on the prompt and model only
             cache_key = get_cache_key(prompt, model)
@@ -458,7 +892,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'prompt': prompt,
                     'response': cached_api_response,
                     'is_cached': True,
-                    'fields': [t.column for t in validation_targets]
+                    'fields': [t.column for t in validation_targets],
+                    'model': model  # Add model information
                 }
                 
                 # Parse the cached API response
@@ -477,7 +912,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             'main_source': parsed_result[5],
                             'update_required': parsed_result[6],
                             'substantially_different': parsed_result[7],
-                            'response_id': response_id  # Reference which API response this came from
+                            'response_id': response_id,  # Reference which API response this came from
+                            'model': model  # Add model information from our context
                         }
                         
                         # Add consistent_with_model_knowledge if available
@@ -485,6 +921,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
                 
                 logger.info(f"Applied cached results for {len(parsed_results)} fields")
+                
                 return
                 
             except Exception as e:
@@ -492,8 +929,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 total_cache_misses += 1
                 logger.info(f"Cache miss for prompt with key: {cache_key[:8]}..., will call API")
             
-            # Call Perplexity API
-            result = await validate_with_perplexity(session, prompt, api_key, model)
+            # Route to appropriate API based on model
+            api_provider = determine_api_provider(model)
+            if api_provider == 'anthropic':
+                logger.info(f"Routing to Anthropic API with model: {model}")
+                result = await retry_api_call_with_backoff(
+                    lambda: validate_with_anthropic(session, prompt, anthropic_api_key, model),
+                    max_retries=5,  # 6 total attempts with specific delays
+                    custom_delays=[1, 5, 10, 20, 30, 60]  # 1s, 5s, 10s, 20s, 30s, 60s
+                )
+            else:
+                logger.info(f"Routing to Perplexity API with model: {model}")
+                result = await retry_api_call_with_backoff(
+                    lambda: validate_with_perplexity(session, prompt, perplexity_api_key, model),
+                    max_retries=5,  # 6 total attempts with specific delays
+                    custom_delays=[1, 5, 10, 20, 30, 60]  # 1s, 5s, 10s, 20s, 30s, 60s
+                )
             
             # Store the raw API response for this prompt in row_results
             response_id = f"response_{len(row_results.get('_raw_responses', {})) + 1}"
@@ -503,7 +954,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'prompt': prompt,
                 'response': result,
                 'is_cached': False,
-                'fields': [t.column for t in validation_targets]
+                'fields': [t.column for t in validation_targets],
+                'model': model  # Add model information
             }
             
             # Cache the complete API response
@@ -527,110 +979,26 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 quote_text = parsed_result[4] if len(parsed_result) > 4 else "N/A"
                 logger.info(f"  {col}: quote='{quote_text[:50]}{'...' if len(quote_text) > 50 else ''}'")
             
-            # Process and store results for each column
+            # Process the API response results
             for target in validation_targets:
                 if target.column in parsed_results:
                     parsed_result = parsed_results[target.column]
-                    value = parsed_result[0]
-                    numeric_confidence = parsed_result[1]
-                    sources = parsed_result[2]
-                    confidence_level = parsed_result[3]
-                    quote = parsed_result[4]
-                    main_source = parsed_result[5]
-                    update_required = parsed_result[6]
-                    substantially_different = parsed_result[7]
-                    consistent_with_model_knowledge = parsed_result[8] if len(parsed_result) > 8 else None
-                    
-                    # If update_required wasn't set by the API, set it based on substantially_different
-                    if update_required is None:
-                        update_required = substantially_different
-                    
-                    # Fallback logic: ensure correct update_required and substantially_different
-                    original_value = str(row.get(target.column, "")).strip()
-                    validated_value = str(value).strip()
-                    
-                    # If original was empty and now we have a value, both should be True
-                    if not original_value and validated_value:
-                        update_required = True
-                        substantially_different = True
-                        logger.info(f"Empty→filled for {target.column}: setting both flags to True")
-                    
-                    # If values are different, update_required should be True
-                    elif original_value != validated_value:
-                        update_required = True
-                        # Keep substantially_different as determined by API unless it's clearly wrong
-                        if not substantially_different and original_value and validated_value:
-                            # Only override if the change seems substantial (length difference > 50% or completely different words)
-                            if abs(len(original_value) - len(validated_value)) > max(len(original_value), len(validated_value)) * 0.5:
-                                substantially_different = True
-                                logger.info(f"Large change detected for {target.column}: setting substantially_different to True")
-                    
-                    # If values are the same, both should be False
-                    elif original_value == validated_value:
-                        update_required = False
-                        substantially_different = False
-                    
                     row_results[target.column] = {
-                        'value': value,
-                        'confidence': numeric_confidence,
-                        'sources': sources,
-                        'confidence_level': confidence_level,
-                        'quote': quote,
-                        'main_source': main_source,
-                        'update_required': update_required,
-                        'substantially_different': substantially_different,
-                        'response_id': response_id  # Reference which API response this came from
+                        'value': parsed_result[0],
+                        'confidence': parsed_result[1],
+                        'sources': parsed_result[2],
+                        'confidence_level': parsed_result[3],
+                        'quote': parsed_result[4],
+                        'main_source': parsed_result[5],
+                        'update_required': parsed_result[6],
+                        'substantially_different': parsed_result[7],
+                        'response_id': response_id,  # Reference which API response this came from
+                        'model': model  # Add model information from our context
                     }
                     
                     # Add consistent_with_model_knowledge if available
-                    if consistent_with_model_knowledge:
-                        row_results[target.column]['consistent_with_model_knowledge'] = consistent_with_model_knowledge
-                    
-                    # Include any citations from the API response
-                    if 'citations' in result:
-                        row_results[target.column]['api_citations'] = result['citations']
-                        
-                        # If quote is empty but we have citations, try to extract a quote
-                        if not quote and result['citations']:
-                            # Try to extract a meaningful quote from the first citation
-                            try:
-                                # Log the citations for debugging
-                                logger.info(f"No quote found for {target.column}, trying to extract from citations")
-                                logger.info(f"Available citations: {result['citations'][:2]}")  # Log first 2 citations
-                                
-                                # For now, use a simple fallback - we could enhance this later
-                                quote = f"Source information available from {len(result['citations'])} citations"
-                                row_results[target.column]['quote'] = quote
-                                logger.info(f"Generated fallback quote for {target.column}: {quote}")
-                            except Exception as quote_error:
-                                logger.error(f"Error generating fallback quote: {str(quote_error)}")
-                        
-                        # If sources contains numeric references, convert them to URLs
-                        if 'sources' in row_results[target.column] and isinstance(row_results[target.column]['sources'], list):
-                            from url_extractor import ensure_url_sources
-                            source_obj = {
-                                "sources": row_results[target.column]['sources'],
-                                "main_source": row_results[target.column].get('main_source', '')
-                            }
-                            processed = ensure_url_sources(source_obj, result['citations'])
-                            row_results[target.column]['sources'] = processed['sources']
-                            row_results[target.column]['main_source'] = processed['main_source']
-                else:
-                    # If column wasn't found in multiplex result, log an error and set a placeholder
-                    logger.error(f"Column {target.column} not found in multiplex result")
-                    # Set a placeholder result with error information
-                    row_results[target.column] = {
-                        'value': row.get(target.column, ""),  # Keep original value
-                        'confidence': 0.0,
-                        'confidence_level': "LOW",
-                        'sources': [],
-                        'quote': "",
-                        'main_source': "",
-                        'update_required': False,
-                        'substantially_different': False,
-                        'error': "Field not found in multiplex validation result",
-                        'response_id': response_id  # Reference which API response this came from
-                    }
+                    if len(parsed_result) > 8:
+                        row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
         
         # Run the async function
         loop = asyncio.new_event_loop()
