@@ -21,6 +21,7 @@ import io
 import openpyxl
 import csv
 from io import StringIO
+import secrets
 
 # Set up logging FIRST before any logger usage
 logger = logging.getLogger()
@@ -237,6 +238,43 @@ lambda_client = boto3.client('lambda')
 S3_CACHE_BUCKET = os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
 S3_RESULTS_BUCKET = os.environ.get('S3_RESULTS_BUCKET', 'perplexity-results')
 VALIDATOR_LAMBDA_NAME = os.environ.get('VALIDATOR_LAMBDA_NAME', 'perplexity-validator')
+
+def generate_reference_pin() -> str:
+    """Generate a 6-digit reference pin for the run."""
+    return f"{secrets.randbelow(900000) + 100000:06d}"
+
+def create_email_folder_path(email_address: str) -> str:
+    """
+    Create S3 folder path based on email address.
+    If @ is allowed in S3 keys, use email directly.
+    Otherwise, use domain/user structure.
+    """
+    if not email_address:
+        return "no-email"
+    
+    try:
+        # Clean the email address for use in S3 paths
+        cleaned_email = email_address.lower().strip()
+        
+        # S3 allows @ in object keys, so we can use it directly
+        # But let's replace @ with underscore for better compatibility
+        # and avoid potential issues with some tools
+        if '@' in cleaned_email:
+            user, domain = cleaned_email.split('@', 1)
+            # Use domain/user structure for better organization
+            folder_path = f"{domain}/{user}"
+        else:
+            # If no @ found, use as-is
+            folder_path = cleaned_email
+        
+        # Sanitize for S3 compatibility
+        # Replace any remaining special characters
+        folder_path = folder_path.replace(' ', '_').replace('+', 'plus')
+        
+        return folder_path
+    except Exception as e:
+        logger.warning(f"Error creating email folder path for {email_address}: {e}")
+        return "email-error"
 
 def parse_multipart_form_data(body, content_type, is_base64_encoded=False):
     """Parse multipart form data from the request body."""
@@ -894,7 +932,7 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
         logger.error(f"Error creating enhanced Excel: {str(e)}")
         return None
 
-def create_enhanced_result_zip(validation_results, session_id, total_rows, excel_file_content, config_data):
+def create_enhanced_result_zip(validation_results, session_id, total_rows, excel_file_content, config_data, reference_pin=None, input_filename='input.xlsx', config_filename='config.json', metadata=None):
     """Create enhanced ZIP file with color-coded Excel and comprehensive reports."""
     zip_buffer = io.BytesIO()
     timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
@@ -905,6 +943,7 @@ def create_enhanced_result_zip(validation_results, session_id, total_rows, excel
         results_data = {
             "session_id": session_id,
             "timestamp": timestamp,
+            "reference_pin": reference_pin,
             "validation_results": validation_results,
             "summary": {
                 "total_rows": total_rows,
@@ -912,6 +951,10 @@ def create_enhanced_result_zip(validation_results, session_id, total_rows, excel
                 "confidence_distribution": {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
             }
         }
+        
+        # Add token usage metadata if available
+        if metadata:
+            results_data["metadata"] = metadata
         
         # Analyze results for summary
         if validation_results:
@@ -969,12 +1012,66 @@ def create_enhanced_result_zip(validation_results, session_id, total_rows, excel
             zip_file.writestr('validation_results.csv', csv_buffer.getvalue())
             csv_buffer.close()
         
+        # Add original input and config files to the ZIP
+        if excel_file_content:
+            zip_file.writestr(f'original_files/{input_filename}', excel_file_content)
+            logger.info(f"Added original input file to ZIP as: original_files/{input_filename}")
+        
+        if config_data:
+            if isinstance(config_data, dict):
+                config_json = json.dumps(config_data, indent=2)
+            else:
+                config_json = str(config_data)
+            zip_file.writestr(f'original_files/{config_filename}', config_json)
+            logger.info(f"Added config file to ZIP as: original_files/{config_filename}")
+        
         # Create enhanced summary report
+        pin_section = f"""
+Reference Pin: {reference_pin}
+""" if reference_pin else ""
+        
+        # Generate token usage section
+        token_usage_section = ""
+        if metadata and 'token_usage' in metadata:
+            token_usage = metadata['token_usage']
+            token_usage_section = f"""
+
+Token Usage & Cost Analysis:
+============================
+Total Tokens: {token_usage.get('total_tokens', 0):,}
+Total Cost: ${token_usage.get('total_cost', 0.0):.6f}
+API Calls: {token_usage.get('api_calls', 0)} new, {token_usage.get('cached_calls', 0)} cached
+
+Provider Breakdown:
+"""
+            # Add provider-specific details
+            if 'by_provider' in token_usage:
+                for provider, provider_data in token_usage['by_provider'].items():
+                    if provider_data.get('calls', 0) > 0:
+                        if provider == 'perplexity':
+                            token_usage_section += f"""- Perplexity API: {provider_data.get('prompt_tokens', 0):,} prompt + {provider_data.get('completion_tokens', 0):,} completion = {provider_data.get('total_tokens', 0):,} tokens
+  Cost: ${provider_data.get('input_cost', 0.0):.6f} input + ${provider_data.get('output_cost', 0.0):.6f} output = ${provider_data.get('total_cost', 0.0):.6f} total
+  Calls: {provider_data.get('calls', 0)}
+"""
+                        elif provider == 'anthropic':
+                            token_usage_section += f"""- Anthropic API: {provider_data.get('input_tokens', 0):,} input + {provider_data.get('output_tokens', 0):,} output
+  Cache: {provider_data.get('cache_creation_tokens', 0):,} creation + {provider_data.get('cache_read_tokens', 0):,} read = {provider_data.get('total_tokens', 0):,} total tokens
+  Cost: ${provider_data.get('input_cost', 0.0):.6f} input + ${provider_data.get('output_cost', 0.0):.6f} output = ${provider_data.get('total_cost', 0.0):.6f} total
+  Calls: {provider_data.get('calls', 0)}
+"""
+            
+            # Add model breakdown
+            if 'by_model' in token_usage and token_usage['by_model']:
+                token_usage_section += f"\nModel Breakdown:\n"
+                for model, model_data in token_usage['by_model'].items():
+                    api_provider = model_data.get('api_provider', 'unknown')
+                    token_usage_section += f"- {model} ({api_provider}): {model_data.get('total_tokens', 0):,} tokens, ${model_data.get('total_cost', 0.0):.6f}, {model_data.get('calls', 0)} calls\n"
+        
         summary_report = f"""
 Enhanced Validation Results Summary
 ==================================
 
-Session ID: {session_id}
+Session ID: {session_id}{pin_section}
 Generated: {timestamp}
 Total Rows Processed: {total_rows}
 
@@ -983,7 +1080,7 @@ Fields Validated: {', '.join(results_data['summary']['fields_validated'])}
 Confidence Distribution:
 - HIGH: {results_data['summary']['confidence_distribution']['HIGH']} fields
 - MEDIUM: {results_data['summary']['confidence_distribution']['MEDIUM']} fields  
-- LOW: {results_data['summary']['confidence_distribution']['LOW']} fields
+- LOW: {results_data['summary']['confidence_distribution']['LOW']} fields{token_usage_section}
 
 Files Included:
 ==============
@@ -992,6 +1089,8 @@ Files Included:
 - validation_results.csv           : Simple CSV format for basic analysis
 - SUMMARY.txt                      : This summary file
 - COMPLETED.txt                    : Processing completion marker
+- original_files/{input_filename}  : Original input file
+- original_files/{config_filename} : Original configuration file
 
 Enhanced Excel Features:
 =======================
@@ -1240,6 +1339,40 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                 traceback.print_exc()
                 validation_history = {}
         
+        # Initialize aggregated metadata
+        aggregated_metadata = {
+            'total_rows': total_rows,
+            'token_usage': {
+                'total_tokens': 0,
+                'total_cost': 0.0,
+                'api_calls': 0,
+                'cached_calls': 0,
+                'by_provider': {
+                    'perplexity': {
+                        'prompt_tokens': 0,
+                        'completion_tokens': 0,
+                        'total_tokens': 0,
+                        'calls': 0,
+                        'input_cost': 0.0,
+                        'output_cost': 0.0,
+                        'total_cost': 0.0
+                    },
+                    'anthropic': {
+                        'input_tokens': 0,
+                        'output_tokens': 0,
+                        'cache_creation_tokens': 0,
+                        'cache_read_tokens': 0,
+                        'total_tokens': 0,
+                        'calls': 0,
+                        'input_cost': 0.0,
+                        'output_cost': 0.0,
+                        'total_cost': 0.0
+                    }
+                },
+                'by_model': {}
+            }
+        }
+        
         # For preview mode, just process the first row
         if preview_first_row:
             # Create payload for single row
@@ -1293,6 +1426,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                 
                 # Parse the actual validator response structure
                 validation_results = None
+                metadata = None
                 if isinstance(response_payload, dict):
                     if 'body' in response_payload and isinstance(response_payload['body'], dict):
                         body = response_payload['body']
@@ -1301,16 +1435,30 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                             if 'rows' in data and isinstance(data['rows'], dict):
                                 validation_results = data['rows']
                                 logger.info(f"Found validation results with {len(validation_results)} rows")
+                        # Extract metadata including token usage
+                        if 'metadata' in body:
+                            metadata = body['metadata']
+                            logger.info(f"Found metadata: {list(metadata.keys()) if isinstance(metadata, dict) else 'Not a dict'}")
+                            # Merge token usage into aggregated metadata
+                            if 'token_usage' in metadata:
+                                token_usage = metadata['token_usage']
+                                aggregated_metadata['token_usage'] = token_usage
+                                logger.info(f"Token usage - Total tokens: {token_usage.get('total_tokens', 0)}, Total cost: ${token_usage.get('total_cost', 0.0):.6f}")
                     elif 'validation_results' in response_payload:
                         validation_results = response_payload['validation_results']
                         logger.info(f"Found direct validation_results")
                 
                 # Add total_rows info to response
-                if isinstance(response_payload, dict):
-                    response_payload['total_rows'] = total_rows
-                    response_payload['validation_results'] = validation_results
+                result_response = {
+                    'total_rows': total_rows,
+                    'validation_results': validation_results,
+                    'metadata': aggregated_metadata
+                }
                 
-                return response_payload
+                if isinstance(response_payload, dict):
+                    result_response.update(response_payload)
+                
+                return result_response
                 
             except Exception as e:
                 logger.warning(f"Validator Lambda timeout or error in preview mode: {str(e)}")
@@ -1318,6 +1466,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                     'status': 'timeout',
                     'total_rows': total_rows,
                     'validation_results': None,
+                    'metadata': aggregated_metadata,
                     'note': f'Validation timed out (>25s), using demo data. Error: {str(e)}'
                 }
         else:
@@ -1378,6 +1527,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                     
                     # Parse the batch validation results
                     batch_validation_results = None
+                    batch_metadata = None
                     if isinstance(response_payload, dict):
                         if 'body' in response_payload and isinstance(response_payload['body'], dict):
                             body = response_payload['body']
@@ -1386,6 +1536,40 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                                 if 'rows' in data and isinstance(data['rows'], dict):
                                     batch_validation_results = data['rows']
                                     logger.info(f"Found validation results with {len(batch_validation_results)} rows in batch {batch_num+1}")
+                            # Extract metadata including token usage from this batch
+                            if 'metadata' in body:
+                                batch_metadata = body['metadata']
+                                if 'token_usage' in batch_metadata:
+                                    batch_token_usage = batch_metadata['token_usage']
+                                    # Aggregate token usage across batches
+                                    agg_token_usage = aggregated_metadata['token_usage']
+                                    agg_token_usage['total_tokens'] += batch_token_usage.get('total_tokens', 0)
+                                    agg_token_usage['total_cost'] += batch_token_usage.get('total_cost', 0.0)
+                                    agg_token_usage['api_calls'] += batch_token_usage.get('api_calls', 0)
+                                    agg_token_usage['cached_calls'] += batch_token_usage.get('cached_calls', 0)
+                                    
+                                    # Aggregate by provider
+                                    if 'by_provider' in batch_token_usage:
+                                        for provider, provider_data in batch_token_usage['by_provider'].items():
+                                            if provider in agg_token_usage['by_provider']:
+                                                agg_provider = agg_token_usage['by_provider'][provider]
+                                                for key, value in provider_data.items():
+                                                    if isinstance(value, (int, float)):
+                                                        agg_provider[key] = agg_provider.get(key, 0) + value
+                                    
+                                    # Aggregate by model
+                                    if 'by_model' in batch_token_usage:
+                                        for model, model_data in batch_token_usage['by_model'].items():
+                                            if model not in agg_token_usage['by_model']:
+                                                agg_token_usage['by_model'][model] = {}
+                                            agg_model = agg_token_usage['by_model'][model]
+                                            for key, value in model_data.items():
+                                                if isinstance(value, (int, float)):
+                                                    agg_model[key] = agg_model.get(key, 0) + value
+                                                else:
+                                                    agg_model[key] = value  # Non-numeric values like api_provider
+                                    
+                                    logger.info(f"Batch {batch_num+1} token usage - Tokens: {batch_token_usage.get('total_tokens', 0)}, Cost: ${batch_token_usage.get('total_cost', 0.0):.6f}")
                         elif 'validation_results' in response_payload:
                             batch_validation_results = response_payload['validation_results']
                             logger.info(f"Found direct validation_results in batch {batch_num+1}")
@@ -1411,11 +1595,13 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                     time.sleep(0.5)
             
             logger.info(f"Completed processing all batches. Total results: {len(all_validation_results)}")
+            logger.info(f"Total aggregated token usage - Tokens: {aggregated_metadata['token_usage']['total_tokens']}, Cost: ${aggregated_metadata['token_usage']['total_cost']:.6f}")
             
             # Return combined results
             return {
                 'total_rows': total_rows,
                 'validation_results': all_validation_results,
+                'metadata': aggregated_metadata,
                 'status': 'completed'
             }
             
@@ -1594,13 +1780,17 @@ def lambda_handler(event, context):
                         })
                     }
                 
-                # Generate unique session ID
+                # Generate unique session ID and reference pin
                 session_id = str(uuid.uuid4())
                 timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                reference_pin = generate_reference_pin()
                 
-                # Upload files to S3
-                excel_s3_key = f"uploads/{session_id}/{timestamp}_excel_{excel_file['filename']}"
-                config_s3_key = f"uploads/{session_id}/{timestamp}_config_{config_file['filename']}"
+                # Create email-based folder structure
+                email_folder = create_email_folder_path(email_address)
+                
+                # Upload files to S3 with new structure
+                excel_s3_key = f"uploads/{email_folder}/{timestamp}_{reference_pin}_excel_{excel_file['filename']}"
+                config_s3_key = f"uploads/{email_folder}/{timestamp}_{reference_pin}_config_{config_file['filename']}"
                 
                 # Upload Excel file
                 if not upload_file_to_s3(
@@ -1647,6 +1837,7 @@ def lambda_handler(event, context):
                             response_body = {
                                 "status": "preview_completed",
                                 "session_id": session_id,
+                                "reference_pin": reference_pin,
                                 "markdown_table": markdown_table,
                                 "total_rows": total_rows,
                                 "first_row_processing_time": processing_time,
@@ -1666,6 +1857,7 @@ def lambda_handler(event, context):
                             response_body = {
                                 "status": "preview_completed",
                                 "session_id": session_id,
+                                "reference_pin": reference_pin,
                                 "markdown_table": markdown_table,
                                 "total_rows": total_rows,
                                 "first_row_processing_time": processing_time,
@@ -1693,6 +1885,7 @@ def lambda_handler(event, context):
                             response_body = {
                                 "status": "preview_completed",
                                 "session_id": session_id,
+                                "reference_pin": reference_pin,
                                 "markdown_table": markdown_table,
                                 "total_rows": total_rows,
                                 "first_row_processing_time": processing_time,
@@ -1716,6 +1909,7 @@ def lambda_handler(event, context):
                             response_body = {
                                 "status": "preview_completed",
                                 "session_id": session_id,
+                                "reference_pin": reference_pin,
                                 "markdown_table": markdown_table,
                                 "total_rows": total_rows,
                                 "first_row_processing_time": processing_time,
@@ -1736,6 +1930,7 @@ def lambda_handler(event, context):
                         response_body = {
                             "status": "preview_completed",
                             "session_id": session_id,
+                            "reference_pin": reference_pin,
                             "markdown_table": markdown_table,
                             "total_rows": 1,
                             "first_row_processing_time": processing_time,
@@ -1747,8 +1942,8 @@ def lambda_handler(event, context):
                     start_time = time.time()
                     
                     try:
-                        # Create placeholder ZIP file immediately 
-                        results_key = f"results/{session_id}/{timestamp}_results.zip"
+                        # Create placeholder ZIP file immediately with new naming structure
+                        results_key = f"results/{email_folder}/{timestamp}_{reference_pin}.zip"
                         placeholder_zip = create_placeholder_zip()
                         
                         if not upload_file_to_s3(
@@ -1778,12 +1973,14 @@ def lambda_handler(event, context):
                             "background_processing": True,
                             "session_id": session_id,
                             "timestamp": timestamp,
+                            "reference_pin": reference_pin,
                             "excel_s3_key": excel_s3_key,
                             "config_s3_key": config_s3_key,
                             "results_key": results_key,
                             "max_rows": max_rows,
                             "batch_size": batch_size,
-                            "email_address": email_address  # Add email to payload
+                            "email_address": email_address,
+                            "email_folder": email_folder
                         }
                         
                         try:
@@ -1801,6 +1998,7 @@ def lambda_handler(event, context):
                         response_body = {
                             "status": "processing_started",
                             "session_id": session_id,
+                            "reference_pin": reference_pin,
                             "message": message,
                             "processing_time": processing_time,
                             "note": "File will be updated with enhanced Excel results when processing completes"
@@ -1901,6 +2099,7 @@ def handle_background_processing(event, context):
         # Extract parameters from event
         session_id = event['session_id']
         timestamp = event['timestamp']
+        reference_pin = event.get('reference_pin', '000000')
         excel_s3_key = event['excel_s3_key']
         config_s3_key = event['config_s3_key']
         results_key = event['results_key']
@@ -1923,6 +2122,13 @@ def handle_background_processing(event, context):
             real_results = validation_results['validation_results']
             total_rows = validation_results.get('total_rows', 1)
             
+            # Extract token usage and cost information
+            metadata = validation_results.get('metadata', {})
+            token_usage = metadata.get('token_usage', {})
+            if token_usage:
+                logger.info(f"Token usage summary - Total tokens: {token_usage.get('total_tokens', 0)}, Total cost: ${token_usage.get('total_cost', 0.0):.6f}")
+                logger.info(f"API calls: {token_usage.get('api_calls', 0)} new, {token_usage.get('cached_calls', 0)} cached")
+            
             # Get original files for enhanced Excel creation
             excel_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=excel_s3_key)
             excel_content = excel_response['Body'].read()
@@ -1930,9 +2136,15 @@ def handle_background_processing(event, context):
             config_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=config_s3_key)
             config_data = json.loads(config_response['Body'].read().decode('utf-8'))
             
+            # Extract filenames from S3 keys
+            input_filename = excel_s3_key.split('/')[-1].replace(f'{timestamp}_{reference_pin}_excel_', '')
+            config_filename = config_s3_key.split('/')[-1].replace(f'{timestamp}_{reference_pin}_config_', '')
+            
             # Create enhanced result ZIP with real validation data
             enhanced_zip = create_enhanced_result_zip(
-                real_results, session_id, total_rows, excel_content, config_data
+                real_results, session_id, total_rows, excel_content, config_data,
+                reference_pin=reference_pin, input_filename=input_filename, config_filename=config_filename,
+                metadata=metadata
             )
             
             # Upload enhanced results to replace placeholder
@@ -1978,7 +2190,9 @@ def handle_background_processing(event, context):
                         zip_content=enhanced_zip,
                         session_id=session_id,
                         summary_data=summary_data,
-                        processing_time=processing_time
+                        processing_time=processing_time,
+                        reference_pin=reference_pin,
+                        metadata=metadata
                     )
                     
                     print(f"[BACKGROUND] Email result: {email_result}")

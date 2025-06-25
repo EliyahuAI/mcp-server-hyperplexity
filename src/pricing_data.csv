@@ -1,0 +1,10 @@
+model_name,api_provider,input_cost_per_million_tokens,output_cost_per_million_tokens,notes
+sonar,perplexity,1.00,1.00,Base Sonar model
+sonar-pro,perplexity,3.00,15.00,Enhanced Sonar Pro model
+claude-sonnet-4-20250514,anthropic,3.00,15.00,Claude 4 Sonnet latest version
+claude-4-sonnet,anthropic,3.00,15.00,Claude 4 Sonnet generic
+claude-sonnet-4,anthropic,3.00,15.00,Claude 4 Sonnet generic
+claude-3.5-sonnet,anthropic,3.00,15.00,Claude 3.5 Sonnet (fallback pricing)
+claude-3-sonnet,anthropic,3.00,15.00,Claude 3 Sonnet (fallback pricing)
+claude-3-opus,anthropic,15.00,75.00,Claude 3 Opus (estimated higher tier pricing)
+claude-3-haiku,anthropic,0.25,1.25,Claude 3 Haiku (estimated lower tier pricing) 

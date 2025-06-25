@@ -1,0 +1,42 @@
+diff --git a/src/interface_lambda_function.py b/src/interface_lambda_function.py
+index 227422b..1d57efc 100644
+--- a/src/interface_lambda_function.py
++++ b/src/interface_lambda_function.py
+@@ -417,8 +417,16 @@ Processing Details:
+     zip_buffer.seek(0)
+     return zip_buffer.getvalue()
+ 
+-def create_enhanced_excel_with_validation(excel_file_content, validation_results, config_data, session_id):
+-    """Create enhanced Excel output with color-coding, comments, and multiple worksheets."""
++def create_enhanced_excel_with_validation(excel_file_content, validation_results, config_data, session_id, skip_history=False):
++    """Create color-coded Excel file with validation results and history tracking.
++    
++    Args:
++        excel_file_content: Original Excel file content
++        validation_results: Validation results from the validator
++        config_data: Configuration data
++        session_id: Session ID for tracking
++        skip_history: If True, skip loading existing Details sheet (for fallback mode)
++    """
+     if not EXCEL_ENHANCEMENT_AVAILABLE:
+         logger.warning("Enhanced Excel not available, skipping Excel creation")
+         return None
+@@ -429,7 +437,17 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
+         
+         # Load original Excel data
+         workbook = openpyxl.load_workbook(io.BytesIO(excel_file_content))
+-        worksheet = workbook.active
++        
++        # Select the appropriate sheet (same logic as invoke_validator_lambda)
++        if 'Results' in workbook.sheetnames:
++            worksheet = workbook['Results']
++            logger.info(f"Using 'Results' sheet as data source for enhanced Excel creation")
++        elif len(workbook.sheetnames) > 0:
++            worksheet = workbook[workbook.sheetnames[0]]
++            logger.info(f"Using first sheet '{worksheet.title}' as data source for enhanced Excel creation")
++        else:
++            worksheet = workbook.active
++            logger.info(f"Using active sheet: {worksheet.title}")
+         
+         # Get headers and data
+         headers = [cell.value for cell in worksheet[1]]

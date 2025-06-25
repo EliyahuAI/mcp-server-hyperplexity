@@ -15,6 +15,8 @@ from perplexity_schema import get_response_format_schema
 from row_key_utils import generate_row_key  # Import centralized row key generation
 import random
 import time
+import csv
+from io import StringIO
 
 # Configure logging
 logger = logging.getLogger()
@@ -109,7 +111,9 @@ def get_anthropic_api_key() -> str:
 
 def determine_api_provider(model: str) -> str:
     """Determine which API provider to use based on model name."""
-    if model.startswith('anthropic/') or model.startswith('anthropic.'):
+    if (model.startswith('anthropic/') or 
+        model.startswith('anthropic.') or 
+        model.startswith('claude-')):
         return 'anthropic'
     else:
         return 'perplexity'
@@ -222,6 +226,19 @@ async def validate_with_anthropic(
             
             response_json = json.loads(response_text)
             
+            # Extract and log token usage information for Anthropic
+            if 'usage' in response_json:
+                usage = response_json['usage']
+                input_tokens = usage.get('input_tokens', 0)
+                output_tokens = usage.get('output_tokens', 0)
+                cache_creation_tokens = usage.get('cache_creation_tokens', 0)
+                cache_read_tokens = usage.get('cache_read_tokens', 0)
+                total_tokens = input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens
+                
+                logger.info(f"Anthropic API Token Usage - Input: {input_tokens}, Output: {output_tokens}, Cache Creation: {cache_creation_tokens}, Cache Read: {cache_read_tokens}, Total: {total_tokens}")
+            else:
+                logger.warning("No usage information found in Anthropic API response")
+            
             # Log the response for debugging
             logger.info(f"Anthropic API Response: {json.dumps(response_json, indent=2)}")
             
@@ -286,7 +303,8 @@ async def validate_with_perplexity(
     session: aiohttp.ClientSession,
     prompt: str,
     api_key: str,
-    model: str = "sonar-pro"
+    model: str = "sonar-pro",
+    search_context_size: str = "low"
 ) -> Dict[str, Any]:
     """Validate a prompt using Perplexity API."""
     headers = {
@@ -303,7 +321,10 @@ async def validate_with_perplexity(
         ],
         "temperature": 0.1,
         "max_tokens": 3000,
-        "response_format": get_response_format_schema(is_multiplex=True)
+        "response_format": get_response_format_schema(is_multiplex=True),
+        "web_search_options": {
+            "search_context_size": search_context_size
+        }
     }
     
     try:
@@ -380,7 +401,25 @@ async def validate_with_perplexity(
             elif response.status != 200:
                 raise Exception(f"Perplexity API returned status {response.status}: {response_text}")
             
-            return json.loads(response_text)
+            parsed_response = json.loads(response_text)
+            
+            # Extract and log token usage information
+            if 'usage' in parsed_response:
+                usage = parsed_response['usage']
+                prompt_tokens = usage.get('prompt_tokens', 0)
+                completion_tokens = usage.get('completion_tokens', 0) 
+                total_tokens = usage.get('total_tokens', 0)
+                
+                logger.info(f"Perplexity API Token Usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {total_tokens}")
+                
+                # Add search_context_size to usage tracking if available
+                if 'search_context_size' in usage:
+                    search_context_from_response = usage.get('search_context_size', 'unknown')
+                    logger.info(f"API confirmed search_context_size: {search_context_from_response}")
+            else:
+                logger.warning("No usage information found in Perplexity API response")
+            
+            return parsed_response
     except asyncio.TimeoutError as e:
         logger.error(f"Perplexity API timeout error: {str(e)}")
         raise Exception(f"Perplexity API timeout: {str(e)}")
@@ -391,19 +430,175 @@ async def validate_with_perplexity(
         logger.error(f"Error calling Perplexity API: {str(e)}")
         raise
 
-def get_cache_key(prompt: str, model: str = "sonar-pro") -> str:
+def extract_token_usage(result: Dict[str, Any], model: str, search_context_size: str = None) -> Dict[str, Any]:
     """
-    Generate a unique cache key for validation request based only on the prompt and model.
+    Extract token usage information from API response, handling both Perplexity and Anthropic formats.
+    
+    Args:
+        result: The API response dictionary
+        model: The model name to determine API provider
+        search_context_size: Search context size (only applicable for Perplexity)
+        
+    Returns:
+        Normalized token usage dictionary
+    """
+    if 'usage' not in result:
+        return {}
+    
+    usage = result['usage']
+    api_provider = determine_api_provider(model)
+    
+    if api_provider == 'anthropic':
+        # Anthropic format: input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
+        input_tokens = usage.get('input_tokens', 0)
+        output_tokens = usage.get('output_tokens', 0)
+        cache_creation_tokens = usage.get('cache_creation_tokens', 0)
+        cache_read_tokens = usage.get('cache_read_tokens', 0)
+        total_tokens = input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens
+        
+        return {
+            'api_provider': 'anthropic',
+            'input_tokens': input_tokens,
+            'output_tokens': output_tokens,
+            'cache_creation_tokens': cache_creation_tokens,
+            'cache_read_tokens': cache_read_tokens,
+            'total_tokens': total_tokens,
+            'model': model
+        }
+    else:
+        # Perplexity format: prompt_tokens, completion_tokens, total_tokens, search_context_size
+        prompt_tokens = usage.get('prompt_tokens', 0)
+        completion_tokens = usage.get('completion_tokens', 0)
+        total_tokens = usage.get('total_tokens', 0)
+        
+        return {
+            'api_provider': 'perplexity',
+            'prompt_tokens': prompt_tokens,
+            'completion_tokens': completion_tokens,
+            'total_tokens': total_tokens,
+            'search_context_size': usage.get('search_context_size', search_context_size),
+            'model': model
+        }
+
+def load_pricing_data() -> Dict[str, Dict[str, float]]:
+    """Load pricing data from CSV file."""
+    pricing_data = {}
+    
+    # Default pricing for unknown models
+    default_pricing = {
+        'perplexity': {'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0},
+        'anthropic': {'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0}
+    }
+    
+    try:
+        # Try multiple possible locations for the CSV file
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), 'pricing_data.csv'),  # Same directory as lambda_function.py
+            os.path.join(os.path.dirname(__file__), '..', 'pricing_data.csv'),  # Parent directory
+            'pricing_data.csv',  # Current working directory
+            'src/pricing_data.csv'  # Relative path from project root
+        ]
+        
+        csv_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                csv_path = path
+                logger.info(f"Found pricing CSV at: {csv_path}")
+                break
+        
+        if csv_path and os.path.exists(csv_path):
+            with open(csv_path, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    model_name = row['model_name']
+                    pricing_data[model_name] = {
+                        'api_provider': row['api_provider'],
+                        'input_cost_per_million_tokens': float(row['input_cost_per_million_tokens']),
+                        'output_cost_per_million_tokens': float(row['output_cost_per_million_tokens']),
+                        'notes': row.get('notes', '')
+                    }
+        else:
+            logger.warning(f"Pricing CSV file not found in any of the expected locations, using defaults")
+            
+    except Exception as e:
+        logger.warning(f"Failed to load pricing data from CSV: {str(e)}, using defaults")
+    
+    return pricing_data
+
+def calculate_token_costs(token_usage: Dict[str, Any], pricing_data: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+    """Calculate costs based on token usage and pricing data."""
+    if not token_usage:
+        return {'input_cost': 0.0, 'output_cost': 0.0, 'total_cost': 0.0}
+    
+    api_provider = token_usage.get('api_provider', 'unknown')
+    model = token_usage.get('model', 'unknown')
+    
+    # Try to find exact model match first
+    pricing = None
+    if model in pricing_data:
+        pricing = pricing_data[model]
+    else:
+        # Try to find a partial match for the model
+        for pricing_model in pricing_data:
+            if pricing_model.lower() in model.lower() or model.lower() in pricing_model.lower():
+                pricing = pricing_data[pricing_model]
+                logger.info(f"Using pricing for {pricing_model} for model {model}")
+                break
+    
+    # Fallback to default pricing by provider
+    if not pricing:
+        logger.warning(f"No pricing found for model {model}, using default {api_provider} pricing")
+        if api_provider == 'perplexity':
+            pricing = {'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0}  # sonar-pro rates
+        elif api_provider == 'anthropic':
+            pricing = {'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0}  # claude-4-sonnet rates
+        else:
+            pricing = {'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0}  # default
+    
+    # Calculate costs based on API provider
+    input_cost = 0.0
+    output_cost = 0.0
+    
+    if api_provider == 'perplexity':
+        input_tokens = token_usage.get('prompt_tokens', 0)
+        output_tokens = token_usage.get('completion_tokens', 0)
+    elif api_provider == 'anthropic':
+        input_tokens = token_usage.get('input_tokens', 0)
+        output_tokens = token_usage.get('output_tokens', 0)
+        # Note: cache tokens are typically free or heavily discounted, not including in cost calculation
+    else:
+        # Unknown provider, try to use total tokens
+        input_tokens = token_usage.get('total_tokens', 0) // 2  # rough estimate
+        output_tokens = token_usage.get('total_tokens', 0) // 2
+    
+    # Calculate costs (pricing is per million tokens)
+    input_cost = (input_tokens / 1_000_000) * pricing['input_cost_per_million_tokens']
+    output_cost = (output_tokens / 1_000_000) * pricing['output_cost_per_million_tokens']
+    total_cost = input_cost + output_cost
+    
+    return {
+        'input_cost': round(input_cost, 6),
+        'output_cost': round(output_cost, 6), 
+        'total_cost': round(total_cost, 6),
+        'input_tokens': input_tokens,
+        'output_tokens': output_tokens,
+        'pricing_model': pricing.get('model_name', model)
+    }
+
+def get_cache_key(prompt: str, model: str = "sonar-pro", search_context_size: str = "low") -> str:
+    """
+    Generate a unique cache key for validation request based on prompt, model, and search context size.
     
     Args:
         prompt: The prompt text sent to the API
         model: The model name used for the request
+        search_context_size: The search context size for Perplexity API
         
     Returns:
         A hash string to use as the cache key
     """
-    # Create a hash of prompt + model for a deterministic cache key
-    return hashlib.md5(f"{prompt}:{model}".encode()).hexdigest()
+    # Create a hash of prompt + model + search_context_size for a deterministic cache key
+    return hashlib.md5(f"{prompt}:{model}:{search_context_size}".encode()).hexdigest()
 
 def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List[str]]:
     """
@@ -463,6 +658,40 @@ def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List
         selected_model = validator.default_model
         logger.info(f"Search group using default model: {selected_model}")
         return selected_model, warnings
+
+def resolve_search_group_context_size(targets: List[Any], validator) -> str:
+    """
+    Resolve search context size within a search group.
+    
+    Rules:
+    1. Use the largest context size among all columns in the search group
+    2. Priority order: high > medium > low
+    3. If no column-specific context size is set, use default
+    
+    Returns:
+        Selected search context size ("low", "medium", or "high")
+    """
+    context_sizes = []
+    
+    # Define priority order (higher number = higher priority)
+    priority_map = {"low": 1, "medium": 2, "high": 3}
+    
+    # Collect all context sizes used in this group
+    for target in targets:
+        if hasattr(target, 'search_context_size') and target.search_context_size:
+            context_sizes.append(target.search_context_size)
+        else:
+            context_sizes.append(validator.default_search_context_size)
+    
+    # Find the highest priority context size
+    if not context_sizes:
+        selected_context_size = validator.default_search_context_size
+    else:
+        # Get the context size with the highest priority
+        selected_context_size = max(context_sizes, key=lambda x: priority_map.get(x, 0))
+    
+    logger.info(f"Search group context sizes: {context_sizes}, selected: {selected_context_size}")
+    return selected_context_size
 
 async def retry_api_call_with_backoff(
     api_call_func,
@@ -863,14 +1092,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             for warning in model_warnings:
                 logger.warning(f"Search group model conflict: {warning}")
             
+            # Resolve search context size for this search group
+            search_context_size = resolve_search_group_context_size(validation_targets, validator)
+            
             # Generate multiplex prompt first - we need this for the cache key
             logger.info(f"Generating multiplex prompt for {len(validation_targets)} field(s) with context from previous groups")
             logger.info(f"Using resolved model for search group: {model}")
+            logger.info(f"Using resolved search context size for search group: {search_context_size}")
             logger.info(f"Passing validation_history to generate_multiplex_prompt: {filtered_validation_history is not None}")
             prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history)
             
-            # Generate cache key based on the prompt and model only
-            cache_key = get_cache_key(prompt, model)
+            # Generate cache key based on the prompt, model, and search context size
+            cache_key = get_cache_key(prompt, model, search_context_size)
             logger.info(f"Using cache key based on prompt hash: {cache_key[:8]}...")
             
             # Check if this exact prompt has been cached before
@@ -888,12 +1121,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 response_id = f"response_{len(row_results.get('_raw_responses', {})) + 1}"
                 if '_raw_responses' not in row_results:
                     row_results['_raw_responses'] = {}
+                
+                # Extract token usage information from cached response
+                cached_token_usage = extract_token_usage(cached_api_response, model, search_context_size)
+                
                 row_results['_raw_responses'][response_id] = {
                     'prompt': prompt,
                     'response': cached_api_response,
                     'is_cached': True,
                     'fields': [t.column for t in validation_targets],
-                    'model': model  # Add model information
+                    'model': model,  # Add model information
+                    'token_usage': cached_token_usage  # Add token usage tracking
                 }
                 
                 # Parse the cached API response
@@ -939,9 +1177,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     custom_delays=[1, 5, 10, 20, 30, 60]  # 1s, 5s, 10s, 20s, 30s, 60s
                 )
             else:
-                logger.info(f"Routing to Perplexity API with model: {model}")
+                logger.info(f"Routing to Perplexity API with model: {model} and search_context_size: {search_context_size}")
                 result = await retry_api_call_with_backoff(
-                    lambda: validate_with_perplexity(session, prompt, perplexity_api_key, model),
+                    lambda: validate_with_perplexity(session, prompt, perplexity_api_key, model, search_context_size),
                     max_retries=5,  # 6 total attempts with specific delays
                     custom_delays=[1, 5, 10, 20, 30, 60]  # 1s, 5s, 10s, 20s, 30s, 60s
                 )
@@ -950,12 +1188,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             response_id = f"response_{len(row_results.get('_raw_responses', {})) + 1}"
             if '_raw_responses' not in row_results:
                 row_results['_raw_responses'] = {}
+            
+            # Extract token usage information from the API response
+            token_usage = extract_token_usage(result, model, search_context_size)
+            
             row_results['_raw_responses'][response_id] = {
                 'prompt': prompt,
                 'response': result,
                 'is_cached': False,
                 'fields': [t.column for t in validation_targets],
-                'model': model  # Add model information
+                'model': model,  # Add model information
+                'token_usage': token_usage  # Add token usage tracking
             }
             
             # Cache the complete API response
@@ -1011,17 +1254,154 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Ensure we're returning the complete validation results for each row
             logger.info(f"Returning full validation results for {len(validation_results)} rows")
             
-            # Collect all raw responses from all rows
+            # Load pricing data for cost calculations
+            pricing_data = load_pricing_data()
+            
+            # Collect all raw responses from all rows and aggregate token usage
             all_raw_responses = {}
+            total_token_usage = {
+                'total_tokens': 0,
+                'api_calls': 0,
+                'cached_calls': 0,
+                'total_cost': 0.0,
+                'by_provider': {
+                    'perplexity': {
+                        'prompt_tokens': 0,
+                        'completion_tokens': 0,
+                        'total_tokens': 0,
+                        'calls': 0,
+                        'input_cost': 0.0,
+                        'output_cost': 0.0,
+                        'total_cost': 0.0
+                    },
+                    'anthropic': {
+                        'input_tokens': 0,
+                        'output_tokens': 0,
+                        'cache_creation_tokens': 0,
+                        'cache_read_tokens': 0,
+                        'total_tokens': 0,
+                        'calls': 0,
+                        'input_cost': 0.0,
+                        'output_cost': 0.0,
+                        'total_cost': 0.0
+                    }
+                },
+                'by_model': {}
+            }
+            
             for row_idx, row_result in validation_results.items():
                 if '_raw_responses' in row_result:
                     # Add a row prefix to each response ID to avoid collisions
                     for response_id, response_data in row_result['_raw_responses'].items():
                         new_response_id = f"row{row_idx}_{response_id}"
                         all_raw_responses[new_response_id] = response_data
+                        
+                        # Aggregate token usage
+                        if 'token_usage' in response_data:
+                            usage = response_data['token_usage']
+                            if usage:  # Only process if token_usage is not empty
+                                api_provider = usage.get('api_provider', 'unknown')
+                                total_tokens = usage.get('total_tokens', 0)
+                                total_token_usage['total_tokens'] += total_tokens
+                                
+                                # Calculate costs for this usage
+                                costs = calculate_token_costs(usage, pricing_data)
+                                total_token_usage['total_cost'] += costs['total_cost']
+                                
+                                # Count API calls
+                                if response_data.get('is_cached', False):
+                                    total_token_usage['cached_calls'] += 1
+                                else:
+                                    total_token_usage['api_calls'] += 1
+                                
+                                # Aggregate by provider
+                                if api_provider == 'perplexity':
+                                    provider_usage = total_token_usage['by_provider']['perplexity']
+                                    provider_usage['prompt_tokens'] += usage.get('prompt_tokens', 0)
+                                    provider_usage['completion_tokens'] += usage.get('completion_tokens', 0)
+                                    provider_usage['total_tokens'] += total_tokens
+                                    provider_usage['calls'] += 1
+                                    provider_usage['input_cost'] += costs['input_cost']
+                                    provider_usage['output_cost'] += costs['output_cost']
+                                    provider_usage['total_cost'] += costs['total_cost']
+                                elif api_provider == 'anthropic':
+                                    provider_usage = total_token_usage['by_provider']['anthropic']
+                                    provider_usage['input_tokens'] += usage.get('input_tokens', 0)
+                                    provider_usage['output_tokens'] += usage.get('output_tokens', 0)
+                                    provider_usage['cache_creation_tokens'] += usage.get('cache_creation_tokens', 0)
+                                    provider_usage['cache_read_tokens'] += usage.get('cache_read_tokens', 0)
+                                    provider_usage['total_tokens'] += total_tokens
+                                    provider_usage['calls'] += 1
+                                    provider_usage['input_cost'] += costs['input_cost']
+                                    provider_usage['output_cost'] += costs['output_cost']
+                                    provider_usage['total_cost'] += costs['total_cost']
+                                
+                                # Track by model
+                                model = response_data.get('model', 'unknown')
+                                if model not in total_token_usage['by_model']:
+                                    total_token_usage['by_model'][model] = {
+                                        'api_provider': api_provider,
+                                        'total_tokens': 0,
+                                        'calls': 0,
+                                        'input_cost': 0.0,
+                                        'output_cost': 0.0,
+                                        'total_cost': 0.0
+                                    }
+                                    # Add provider-specific fields
+                                    if api_provider == 'perplexity':
+                                        total_token_usage['by_model'][model].update({
+                                            'prompt_tokens': 0,
+                                            'completion_tokens': 0
+                                        })
+                                    elif api_provider == 'anthropic':
+                                        total_token_usage['by_model'][model].update({
+                                            'input_tokens': 0,
+                                            'output_tokens': 0,
+                                            'cache_creation_tokens': 0,
+                                            'cache_read_tokens': 0
+                                        })
+                                
+                                # Update model-specific usage
+                                model_usage = total_token_usage['by_model'][model]
+                                model_usage['total_tokens'] += total_tokens
+                                model_usage['calls'] += 1
+                                model_usage['input_cost'] += costs['input_cost']
+                                model_usage['output_cost'] += costs['output_cost']
+                                model_usage['total_cost'] += costs['total_cost']
+                                
+                                if api_provider == 'perplexity':
+                                    model_usage['prompt_tokens'] += usage.get('prompt_tokens', 0)
+                                    model_usage['completion_tokens'] += usage.get('completion_tokens', 0)
+                                elif api_provider == 'anthropic':
+                                    model_usage['input_tokens'] += usage.get('input_tokens', 0)
+                                    model_usage['output_tokens'] += usage.get('output_tokens', 0)
+                                    model_usage['cache_creation_tokens'] += usage.get('cache_creation_tokens', 0)
+                                    model_usage['cache_read_tokens'] += usage.get('cache_read_tokens', 0)
                     
                     # Remove the raw responses from the row result to avoid duplication
                     del row_result['_raw_responses']
+            
+            # Log token usage and cost summary
+            logger.info(f"Token Usage Summary: {total_token_usage['total_tokens']} total tokens")
+            logger.info(f"Total Estimated Cost: ${total_token_usage['total_cost']:.6f}")
+            logger.info(f"API Calls: {total_token_usage['api_calls']} new, {total_token_usage['cached_calls']} cached")
+            
+            # Log by provider
+            perplexity_usage = total_token_usage['by_provider']['perplexity']
+            anthropic_usage = total_token_usage['by_provider']['anthropic']
+            
+            if perplexity_usage['calls'] > 0:
+                logger.info(f"Perplexity API: {perplexity_usage['prompt_tokens']} prompt + {perplexity_usage['completion_tokens']} completion = {perplexity_usage['total_tokens']} total tokens across {perplexity_usage['calls']} calls")
+                logger.info(f"Perplexity Cost: ${perplexity_usage['input_cost']:.6f} input + ${perplexity_usage['output_cost']:.6f} output = ${perplexity_usage['total_cost']:.6f} total")
+            
+            if anthropic_usage['calls'] > 0:
+                logger.info(f"Anthropic API: {anthropic_usage['input_tokens']} input + {anthropic_usage['output_tokens']} output + {anthropic_usage['cache_creation_tokens']} cache_creation + {anthropic_usage['cache_read_tokens']} cache_read = {anthropic_usage['total_tokens']} total tokens across {anthropic_usage['calls']} calls")
+                logger.info(f"Anthropic Cost: ${anthropic_usage['input_cost']:.6f} input + ${anthropic_usage['output_cost']:.6f} output = ${anthropic_usage['total_cost']:.6f} total")
+            
+            # Log by model
+            for model, model_usage in total_token_usage['by_model'].items():
+                api_provider = model_usage.get('api_provider', 'unknown')
+                logger.info(f"Model {model} ({api_provider}): {model_usage['total_tokens']} tokens across {model_usage['calls']} calls, cost: ${model_usage['total_cost']:.6f}")
             
             # Log the size of the response data (approximately)
             response_json = json.dumps({
@@ -1058,7 +1438,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         "cache_hits": total_cache_hits,
                         "cache_misses": total_cache_misses,
                         "multiplex_validations": total_multiplex_validations,
-                        "single_validations": total_single_validations
+                        "single_validations": total_single_validations,
+                        "token_usage": total_token_usage
                     }
                 }
             }
