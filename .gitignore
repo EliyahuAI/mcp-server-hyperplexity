@@ -36,6 +36,36 @@ ENV/
 deployment.zip
 package/
 
+# Deployment packages and ZIP files
+deployment/interface_package/
+deployment/lambda_package.zip
+deployment/interface_lambda_package.zip
+*.zip
+*.tar.gz
+
+# Python packages and dependencies
+deployment/interface_package/
+boto3/
+botocore/
+botocore-*/
+boto3-*/
+*-dist-info/
+*.dist-info/
+dateutil/
+et_xmlfile/
+jmespath/
+multipart/
+openpyxl/
+python_dateutil-*/
+python_multipart-*/
+s3transfer/
+six-*/
+six.py
+typing_extensions-*/
+typing_extensions.py
+urllib3-*/
+xlsxwriter-*/
+
 # Testing
 .coverage
 htmlcov/
@@ -62,10 +92,18 @@ temp_*.py
 test_*.py
 !excel_test.py
 
+# Temporary unnecessary files directory
+temp_unnecessary_files/
+
+# Excel backup files
+*_.xlsx
+*_Verified*.xlsx
+*_Copy*.xlsx
+
 # Other temporary files
 *.tmp
 
 # Don't ignore essential test files
 !run_lambda_test.py
 !src/run_ratio_test.py
-!src/test_logging.py temp_unnecessary_files/ 
+!src/test_logging.py 
