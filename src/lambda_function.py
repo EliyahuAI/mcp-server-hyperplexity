@@ -1112,18 +1112,28 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     Bucket=s3_bucket,
                     Key=f"validation_cache/{cache_key}.json"
                 )
-                # The cache contains the full API response
-                cached_api_response = json.loads(cache_response['Body'].read())
+                cached_data = json.loads(cache_response['Body'].read())
                 total_cache_hits += 1
                 logger.info(f"Cache hit for prompt with key: {cache_key[:8]}...")
+                
+                # Handle both old and new cache formats
+                if 'api_response' in cached_data:
+                    # New format with metadata
+                    cached_api_response = cached_data['api_response']
+                    cached_token_usage = cached_data.get('token_usage', {})
+                    cached_processing_time = cached_data.get('processing_time')
+                    cached_at = cached_data.get('cached_at')
+                else:
+                    # Legacy format - just the API response
+                    cached_api_response = cached_data
+                    cached_token_usage = extract_token_usage(cached_api_response, model, search_context_size)
+                    cached_processing_time = None
+                    cached_at = None
                 
                 # Store the raw API response for this prompt in row_results
                 response_id = f"response_{len(row_results.get('_raw_responses', {})) + 1}"
                 if '_raw_responses' not in row_results:
                     row_results['_raw_responses'] = {}
-                
-                # Extract token usage information from cached response
-                cached_token_usage = extract_token_usage(cached_api_response, model, search_context_size)
                 
                 row_results['_raw_responses'][response_id] = {
                     'prompt': prompt,
@@ -1131,7 +1141,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'is_cached': True,
                     'fields': [t.column for t in validation_targets],
                     'model': model,  # Add model information
-                    'token_usage': cached_token_usage  # Add token usage tracking
+                    'token_usage': cached_token_usage,  # Add token usage tracking
+                    'processing_time': cached_processing_time,  # Add cached processing time
+                    'cached_at': cached_at  # Add cache timestamp
                 }
                 
                 # Parse the cached API response
@@ -1169,6 +1181,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Route to appropriate API based on model
             api_provider = determine_api_provider(model)
+            start_time = time.time()  # Track API call timing
             if api_provider == 'anthropic':
                 logger.info(f"Routing to Anthropic API with model: {model}")
                 result = await retry_api_call_with_backoff(
@@ -1183,6 +1196,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     max_retries=5,  # 6 total attempts with specific delays
                     custom_delays=[1, 5, 10, 20, 30, 60]  # 1s, 5s, 10s, 20s, 30s, 60s
                 )
+            processing_time = time.time() - start_time
             
             # Store the raw API response for this prompt in row_results
             response_id = f"response_{len(row_results.get('_raw_responses', {})) + 1}"
@@ -1198,18 +1212,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'is_cached': False,
                 'fields': [t.column for t in validation_targets],
                 'model': model,  # Add model information
-                'token_usage': token_usage  # Add token usage tracking
+                'token_usage': token_usage,  # Add token usage tracking
+                'processing_time': processing_time  # Add actual processing time
             }
             
-            # Cache the complete API response
+            # Cache the complete API response with metadata
             try:
+                # Add timing and cost metadata to the cached entry
+                cache_entry = {
+                    'api_response': result,
+                    'cached_at': datetime.now(timezone.utc).isoformat(),
+                    'model': model,
+                    'search_context_size': search_context_size,
+                    'token_usage': token_usage,
+                    'processing_time': processing_time
+                }
+                
                 s3.put_object(
                     Bucket=s3_bucket,
                     Key=f"validation_cache/{cache_key}.json",
-                    Body=json.dumps(result),
+                    Body=json.dumps(cache_entry),
                     ContentType='application/json'
                 )
-                logger.info(f"Cached API response with key: {cache_key[:8]}...")
+                logger.info(f"Cached API response with metadata, key: {cache_key[:8]}...")
             except Exception as e:
                 logger.error(f"Failed to cache API response: {str(e)}")
             
@@ -1257,8 +1282,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Load pricing data for cost calculations
             pricing_data = load_pricing_data()
             
-            # Collect all raw responses from all rows and aggregate token usage
+            # Collect all raw responses from all rows and aggregate token usage and processing time
             all_raw_responses = {}
+            total_processing_time = 0.0  # Aggregate processing time
             total_token_usage = {
                 'total_tokens': 0,
                 'api_calls': 0,
@@ -1296,6 +1322,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         new_response_id = f"row{row_idx}_{response_id}"
                         all_raw_responses[new_response_id] = response_data
                         
+                        # Count API calls (move this OUTSIDE token usage check)
+                        is_cached = response_data.get('is_cached', False)
+                        if is_cached:
+                            total_token_usage['cached_calls'] += 1
+                            logger.info(f"DEBUG: Counting as cached call - response_id: {new_response_id}, is_cached: {is_cached}")
+                        else:
+                            total_token_usage['api_calls'] += 1
+                            logger.info(f"DEBUG: Counting as API call - response_id: {new_response_id}, is_cached: {is_cached}")
+                        
                         # Aggregate token usage
                         if 'token_usage' in response_data:
                             usage = response_data['token_usage']
@@ -1307,13 +1342,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 # Calculate costs for this usage
                                 costs = calculate_token_costs(usage, pricing_data)
                                 total_token_usage['total_cost'] += costs['total_cost']
-                                
-                                # Count API calls
-                                if response_data.get('is_cached', False):
-                                    total_token_usage['cached_calls'] += 1
-                                else:
-                                    total_token_usage['api_calls'] += 1
-                                
+                        
+                        # Aggregate processing time for all calls (both cached and non-cached)
+                        if 'processing_time' in response_data:
+                            proc_time = response_data.get('processing_time', 0.0)
+                            if proc_time and isinstance(proc_time, (int, float)):
+                                # For cached calls, this is the original processing time when it was first computed
+                                # For non-cached calls, this is the actual processing time just measured
+                                total_processing_time += proc_time
+                                is_cached = response_data.get('is_cached', False)
+                                logger.info(f"Added {'cached' if is_cached else 'new'} processing time: {proc_time:.3f}s to total: {total_processing_time:.3f}s")
+                        
+                        # Continue with provider-specific token usage aggregation
+                        if 'token_usage' in response_data:
+                            usage = response_data['token_usage']
+                            if usage:  # Only process if token_usage is not empty
+                                api_provider = usage.get('api_provider', 'unknown')
+                                costs = calculate_token_costs(usage, pricing_data)
                                 # Aggregate by provider
                                 if api_provider == 'perplexity':
                                     provider_usage = total_token_usage['by_provider']['perplexity']
@@ -1381,10 +1426,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Remove the raw responses from the row result to avoid duplication
                     del row_result['_raw_responses']
             
+            # Log aggregation results BEFORE adding to metadata
+            logger.info(f"DEBUG: About to add processing_time to metadata")
+            logger.info(f"DEBUG: total_processing_time value = {total_processing_time}")
+            logger.info(f"DEBUG: type of total_processing_time = {type(total_processing_time)}")
+            
             # Log token usage and cost summary
             logger.info(f"Token Usage Summary: {total_token_usage['total_tokens']} total tokens")
             logger.info(f"Total Estimated Cost: ${total_token_usage['total_cost']:.6f}")
             logger.info(f"API Calls: {total_token_usage['api_calls']} new, {total_token_usage['cached_calls']} cached")
+            logger.info(f"Total Processing Time: {total_processing_time:.3f}s")
             
             # Log by provider
             perplexity_usage = total_token_usage['by_provider']['perplexity']
@@ -1439,10 +1490,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         "cache_misses": total_cache_misses,
                         "multiplex_validations": total_multiplex_validations,
                         "single_validations": total_single_validations,
-                        "token_usage": total_token_usage
+                        "token_usage": total_token_usage,
+                        "processing_time": total_processing_time  # Add total processing time
                     }
                 }
             }
+            
+            # DEBUG: Log what we're actually returning in metadata
+            logger.info(f"DEBUG: Metadata being returned: {list(response['body']['metadata'].keys())}")
+            logger.info(f"DEBUG: processing_time in metadata = {response['body']['metadata'].get('processing_time', 'NOT FOUND')}")
             
             # Add the raw responses for debugging if in test_mode
             test_mode = event.get('test_mode', False)

@@ -246,6 +246,14 @@ def copy_source_files():
         else:
             logger.error("prompts.yml not found in either src or project root!")
 
+    # Copy pricing_data.csv - CRITICAL for cost calculations!
+    pricing_data = SRC_DIR / "pricing_data.csv"
+    if pricing_data.exists():
+        shutil.copy(pricing_data, PACKAGE_DIR)
+        logger.info("Copied pricing_data.csv - critical for sonar-pro and other model pricing")
+    else:
+        logger.error("pricing_data.csv not found! This is critical for cost calculations!")
+
 def create_zip():
     """Create deployment zip file."""
     logger.info(f"Creating ZIP file: {OUTPUT_ZIP}")
