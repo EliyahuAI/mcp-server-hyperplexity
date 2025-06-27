@@ -1144,10 +1144,10 @@ def generate_presigned_url(bucket, key, expiration=3600):
         logger.error(f"Error generating presigned URL: {str(e)}")
         return None
 
-def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, preview_first_row=False):
+def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, preview_first_row=False, preview_max_rows=5, sequential_call=None):
     """Invoke the core validator Lambda with Excel data."""
     logger.info(">>> ENTER invoke_validator_lambda <<<")
-    logger.info(f">>> Parameters: excel_s3_key={excel_s3_key}, preview={preview_first_row} <<<")
+    logger.info(f">>> Parameters: excel_s3_key={excel_s3_key}, preview={preview_first_row}, sequential_call={sequential_call} <<<")
     
     try:
         logger.info(f"Starting invoke_validator_lambda - preview_first_row: {preview_first_row}")
@@ -1197,7 +1197,9 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
         
         # Limit rows for preview mode or max_rows
         if preview_first_row:
-            max_process_rows = 1
+            # For preview mode, we want to load all rows up to preview_max_rows
+            # so the validator can process them sequentially and use caching
+            max_process_rows = min(preview_max_rows, total_rows)
         else:
             max_process_rows = min(max_rows, total_rows) if max_rows else total_rows
         
@@ -1296,7 +1298,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                     # Temporarily replace the function
                     lambda_test_json_clean.load_validation_history_from_details = custom_load_validation_history_from_details
                 
-                # Load validation history from Excel
+                    # Load validation history from Excel
                     original_validation_history = load_validation_history_from_excel(tmp_file_path)
                     
                     # Restore original function
@@ -1373,53 +1375,64 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
             }
         }
         
-        # For preview mode, just process the first row
+        # For sequential calls, we'll use validator response metadata instead of trying to predict cache hits
+
+        # For preview mode, process rows sequentially
         if preview_first_row:
-            # Create payload for single row
+            # Intelligent sequential processing: send up to 5 rows, let validator find next non-cached row
+            # This eliminates the need for users to specify --sequential-call numbers
+            
+            if sequential_call is not None:
+                # Legacy support: user specified sequential call number
+                total_rows_to_send = min(sequential_call, preview_max_rows, len(rows))
+                logger.info(f"Legacy sequential call #{sequential_call}: sending {total_rows_to_send} rows to validator")
+            else:
+                # Intelligent mode: send up to preview_max_rows, let validator handle sequential processing
+                total_rows_to_send = min(preview_max_rows, len(rows))
+                logger.info(f"Intelligent preview mode: sending {total_rows_to_send} rows to validator for sequential processing")
+                logger.info(f"Validator will use cached results and process next non-cached row")
+            
+            preview_rows = rows[:total_rows_to_send]
+            
+            # Create payload - let validator check its own cache
             payload = {
                 "test_mode": True,
                 "config": config_data,
                 "validation_data": {
-                    "rows": rows[:1]  # Just first row
+                    "rows": preview_rows
                 },
-                "validation_history": validation_history
+                "validation_history": {}  # Empty - relying on validator's own cache checking
             }
             
-            logger.info(f"Created payload with 1 row for preview validation")
+            logger.info(f"Created payload with {len(preview_rows)} rows for preview validation")
             
-            # LOG DETAILED PAYLOAD STRUCTURE FOR DEBUGGING
+            # LOG PAYLOAD INFO
             logger.info("=== PAYLOAD DEBUG INFO ===")
-            logger.info(f"Payload has validation_history: {'validation_history' in payload}")
-            logger.info(f"Validation history size: {len(validation_history)}")
-            
-            if validation_history:
-                # Log first few entries of validation history
-                history_keys = list(validation_history.keys())[:2]
-                for hist_key in history_keys:
-                    logger.info(f"History key: {hist_key}")
-                    if hist_key in validation_history:
-                        columns = list(validation_history[hist_key].keys())[:2]
-                        for col in columns:
-                            logger.info(f"  Column: {col}")
-                            if isinstance(validation_history[hist_key][col], list) and validation_history[hist_key][col]:
-                                first_entry = validation_history[hist_key][col][0]
-                                logger.info(f"    Sample entry: value={first_entry.get('value', 'N/A')}, confidence={first_entry.get('confidence_level', 'N/A')}")
+            logger.info(f"Sending {len(preview_rows)} rows to validator for cache checking")
+            if sequential_call:
+                logger.info(f"Sequential call #{sequential_call}: validator will check its own cache")
             
             # Log row keys being sent
-            if rows:
+            if preview_rows:
                 logger.info(f"Row keys in payload:")
-                for i, row in enumerate(rows[:3]):  # First 3 rows
-                    logger.info(f"  Row {i}: {row.get('_row_key', 'NO KEY')}")
+                for i, row in enumerate(preview_rows):
+                    logger.info(f"  Row {i+1}: {row.get('_row_key', 'NO KEY')}")
             
             logger.info("=== END PAYLOAD DEBUG ===")
             
             try:
+                # Track actual validation processing time
+                validation_start_time = time.time()
+                
                 # Use synchronous invocation with monitoring for timeout
                 response = lambda_client.invoke(
                     FunctionName=VALIDATOR_LAMBDA_NAME,
                     InvocationType='RequestResponse',
                     Payload=json.dumps(payload)
                 )
+                
+                validation_processing_time = time.time() - validation_start_time
+                logger.info(f"Validator Lambda processing took {validation_processing_time:.2f} seconds")
                 
                 response_payload = json.loads(response['Payload'].read().decode('utf-8'))
                 logger.info(f"Validator response keys: {list(response_payload.keys()) if isinstance(response_payload, dict) else 'Not a dict'}")
@@ -1439,20 +1452,105 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                         if 'metadata' in body:
                             metadata = body['metadata']
                             logger.info(f"Found metadata: {list(metadata.keys()) if isinstance(metadata, dict) else 'Not a dict'}")
-                            # Merge token usage into aggregated metadata
-                            if 'token_usage' in metadata:
-                                token_usage = metadata['token_usage']
-                                aggregated_metadata['token_usage'] = token_usage
-                                logger.info(f"Token usage - Total tokens: {token_usage.get('total_tokens', 0)}, Total cost: ${token_usage.get('total_cost', 0.0):.6f}")
+                            # Merge ALL metadata fields, not just token_usage
+                            for key, value in metadata.items():
+                                if key == 'token_usage':
+                                    # Special handling for token_usage to merge with aggregated
+                                    aggregated_metadata['token_usage'] = value
+                                    logger.info(f"Token usage - Total tokens: {value.get('total_tokens', 0)}, Total cost: ${value.get('total_cost', 0.0):.6f}")
+                                else:
+                                    # Copy other metadata fields directly
+                                    aggregated_metadata[key] = value
+                                    logger.info(f"Metadata {key}: {value}")
                     elif 'validation_results' in response_payload:
                         validation_results = response_payload['validation_results']
                         logger.info(f"Found direct validation_results")
                 
-                # Add total_rows info to response
+                # Log the validation invocation time for debugging
+                logger.info(f"Interface Lambda invocation time: {validation_processing_time:.2f}s")
+                
+                # Analyze cache pattern and determine which row was newly processed
+                if metadata and 'token_usage' in metadata:
+                    token_usage = metadata['token_usage']
+                    total_api_calls = token_usage.get('api_calls', 0)
+                    total_cached_calls = token_usage.get('cached_calls', 0)
+                    
+                    logger.info(f"Preview validation cache analysis:")
+                    logger.info(f"  API calls: {total_api_calls}, Cached calls: {total_cached_calls}")
+                    
+                    # Determine which row was newly processed based on validation results
+                    new_row_processed = None
+                    if validation_results:
+                        # Find the highest numbered row that has non-cached responses
+                        for row_key in sorted(validation_results.keys(), key=lambda x: int(x) if x.isdigit() else -1, reverse=True):
+                            row_data = validation_results[row_key]
+                            if isinstance(row_data, dict) and '_raw_responses' in row_data:
+                                # Check if this row has any non-cached responses
+                                has_new_data = False
+                                for resp_id, resp_data in row_data['_raw_responses'].items():
+                                    if not resp_data.get('is_cached', True):
+                                        has_new_data = True
+                                        break
+                                if has_new_data:
+                                    new_row_processed = int(row_key) + 1  # Convert to 1-based
+                                    break
+                    
+                    # If no new data found but we have API calls, assume first row was processed
+                    if new_row_processed is None and total_api_calls > 0:
+                        new_row_processed = 1
+                    
+                    logger.info(f"Identified newly processed row: {new_row_processed}")
+                    
+                    # Only validate cache pattern for legacy sequential calls
+                    if sequential_call is not None:
+                        logger.info(f"Legacy sequential call #{sequential_call} - validating expected pattern")
+                        # Keep existing validation for backward compatibility
+                        if sequential_call == 1:
+                            cache_pattern_valid = (total_api_calls > 0)
+                        else:
+                            cache_pattern_valid = (total_api_calls > 0 and total_cached_calls > 0)
+                        
+                        if not cache_pattern_valid:
+                            error_msg = f"Sequential call #{sequential_call} failed: Unexpected cache pattern (API: {total_api_calls}, Cached: {total_cached_calls})"
+                            logger.error(error_msg)
+                            return {
+                                'status': 'cache_validation_failed',
+                                'error': error_msg,
+                                'total_rows': total_rows,
+                                'sequential_call': sequential_call,
+                                'actual_api_calls': total_api_calls,
+                                'actual_cached_calls': total_cached_calls
+                            }
+                else:
+                    # No metadata available
+                    new_row_processed = 1 if total_processed_rows > 0 else None
+                
+                # For preview mode, return ALL validation results (not just "new" ones)
+                # The preview should show validation results regardless of caching status
+                total_processed_rows = len(validation_results) if validation_results else 0
+                
+                # Determine preview completion: we're done when we've processed 5 rows OR reached end of file OR no new row was processed
+                preview_complete = (
+                    new_row_processed is None or  # No new row processed (all cached)
+                    new_row_processed >= preview_max_rows or  # Reached preview limit (5 rows)
+                    new_row_processed >= len(rows)  # Reached end of file
+                )
+                
+                logger.info(f"Preview mode: returning {total_processed_rows} validation results")
+                logger.info(f"New row processed: {new_row_processed}, Preview complete: {preview_complete}")
+                if validation_results:
+                    logger.info(f"Validation result keys: {list(validation_results.keys())}")
+                    for key, value in validation_results.items():
+                        logger.info(f"  {key}: {type(value)} with {len(value) if isinstance(value, dict) else 0} fields")
+                
+                # Add total_rows info to response  
                 result_response = {
                     'total_rows': total_rows,
-                    'validation_results': validation_results,
-                    'metadata': aggregated_metadata
+                    'validation_results': validation_results,  # Return ALL results for preview
+                    'metadata': aggregated_metadata,
+                    'total_processed_rows': total_processed_rows,
+                    'new_row_number': new_row_processed,
+                    'preview_complete': preview_complete
                 }
                 
                 if isinstance(response_payload, dict):
@@ -1611,53 +1709,116 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
         traceback.print_exc()
         raise
 
-def create_markdown_table_from_results(validation_results):
-    """Convert real validation results from validator Lambda to markdown table format."""
+def create_markdown_table_from_results(validation_results, preview_row_count=3):
+    """Convert real validation results from validator Lambda to markdown table format.
+    Always shows the first 3 rows in a transposed table format with confidence emojis.
+    """
     if not validation_results:
         return "No validation results available."
     
-    # Extract results from the validator response structure
-    # Validator returns results organized by row index (0, 1, 2...), then by field
-    table_lines = [
-        "| Field                  | Confidence | Value                     |",
-        "|------------------------|------------|--------------------------|"
-    ]
+    # Get confidence emoji mapping
+    def get_confidence_emoji(confidence_level):
+        confidence_map = {
+            'HIGH': '🟢',
+            'MEDIUM': '🟡', 
+            'LOW': '🔴',
+            'UNKNOWN': '⚫'
+        }
+        return confidence_map.get(confidence_level.upper(), '⚫')
     
-    # Process results from first row (for preview mode)
-    # The validator uses numeric keys like "0", "1", "2" for rows
+    # Process rows in the validation results
     row_keys = list(validation_results.keys())
-    if row_keys:
-        first_row_key = row_keys[0]  # Get first row (usually "0")
-        row_results = validation_results[first_row_key]
+    if not row_keys:
+        return "No validation results available."
+    
+    # Sort row keys numerically to show in order (row 1, row 2, etc.)
+    try:
+        numeric_keys = [(int(k), k) for k in row_keys if k.isdigit()]
+        if numeric_keys:
+            numeric_keys.sort()  # Sort by numeric value
+            sorted_row_keys = [k[1] for k in numeric_keys]
+        else:
+            sorted_row_keys = row_keys
+    except (ValueError, IndexError):
+        sorted_row_keys = row_keys
+    
+    # Always limit to first 3 rows
+    max_rows_to_show = min(3, len(sorted_row_keys))
+    sorted_row_keys = sorted_row_keys[:max_rows_to_show]
+    
+    if not sorted_row_keys:
+        return "No data processed - check input files."
+    
+    # Get all field names from the first row to establish table structure
+    first_row_results = validation_results[sorted_row_keys[0]]
+    field_keys = [k for k in first_row_results.keys() if k not in ['next_check', 'reasons', '_raw_responses']]
+    
+    # Create transposed table: fields as rows, data rows as columns
+    table_lines = []
+    
+    # Add legend at the top
+    legend = "**Confidence Legend:** 🟢 High • 🟡 Medium • 🔴 Low\n"
+    table_lines.append(legend)
+    
+    # Create header row
+    header = "| Field"
+    for i, row_key in enumerate(sorted_row_keys):
+        row_number = i + 1
+        header += f" | Row {row_number}"
+    header += " |"
+    table_lines.append(header)
+    
+    # Create separator row
+    separator = "|" + "-" * 26
+    for _ in sorted_row_keys:
+        separator += "|" + "-" * 31
+    separator += "|"
+    table_lines.append(separator)
+    
+    # Create data rows (one for each field)
+    for field_name in field_keys:
+        # Truncate long field names
+        if len(field_name) > 24:
+            display_field = field_name[:21] + "..."
+        else:
+            display_field = field_name
         
-        # Skip non-field keys like 'next_check', 'reasons'
-        field_keys = [k for k in row_results.keys() if k not in ['next_check', 'reasons']]
+        # Escape pipe characters in field name
+        display_field = display_field.replace('|', '\\|')
         
-        for field_name in field_keys:
-            field_result = row_results[field_name]
+        row_line = f"| {display_field:<24}"
+        
+        # Add values for each data row
+        for row_key in sorted_row_keys:
+            row_results = validation_results[row_key]
+            field_result = row_results.get(field_name, {})
+            
             if isinstance(field_result, dict):
                 confidence = field_result.get('confidence_level', 'UNKNOWN')
                 value = field_result.get('value', '')
                 
-                # Truncate long values and field names for table display
-                if len(str(value)) > 25:
-                    display_value = str(value)[:22] + "..."
-                else:
-                    display_value = str(value)
+                # Get confidence emoji
+                emoji = get_confidence_emoji(confidence)
                 
-                if len(field_name) > 22:
-                    display_field = field_name[:19] + "..."
+                # Prepare value with emoji prefix
+                if value:
+                    display_value = f"{emoji} {value}"
                 else:
-                    display_field = field_name
+                    display_value = f"{emoji} (empty)"
                 
-                # Escape any pipe characters
+                # Truncate long values
+                if len(str(display_value)) > 29:
+                    display_value = str(display_value)[:26] + "..."
+                
+                # Escape pipe characters
                 display_value = display_value.replace('|', '\\|')
-                display_field = display_field.replace('|', '\\|')
                 
-                table_lines.append(f"| {display_field:<22} | {confidence:<10} | {display_value:<25} |")
-    
-    if len(table_lines) == 2:  # Only headers, no data
-        table_lines.append("| No data processed      | N/A        | Check input files        |")
+                row_line += f" | {display_value:<29}"
+            else:
+                row_line += f" | {'N/A':<29}"
+        
+        row_line += " |"
+        table_lines.append(row_line)
     
     return '\n'.join(table_lines)
 
@@ -1692,16 +1853,381 @@ def create_markdown_table(validation_results):
     
     return '\n'.join(table_lines)
 
-def lambda_handler(event, context):
-    """
-    Lambda handler for the perplexity-validator-interface function.
-    
-    Supports two main workflows:
-    1. Normal workflow: Upload files to S3, return immediate download link, then async process
-    2. Preview workflow: Process first row only, return Markdown table
-    3. Background processing: Async invocation to update S3 files with real results
-    """
+def handle_status_check_request(request_data, context):
+    """Handle status check requests via JSON POST body"""
     try:
+        session_id = request_data.get('session_id')
+        is_preview = request_data.get('preview_mode', False)
+        
+        logger.info(f"Status check for session: {session_id}, preview: {is_preview}")
+        
+        if is_preview:
+            # Parse session ID to get timestamp and reference pin
+            parts = session_id.split('_')
+            if len(parts) >= 4 and parts[-1] == 'preview':
+                # Session ID format: {date}_{time}_{reference_pin}_preview
+                timestamp = f"{parts[0]}_{parts[1]}"  # Combine date and time
+                reference_pin = parts[2]
+                
+                # Extract email folder from the session - for now use a broader search pattern
+                # Since we don't have email info in status check, we'll search for the file
+                email_folder = "default"  # fallback
+                
+                # Try multiple possible email folder patterns
+                possible_keys = [
+                    f"preview_results/default/{timestamp}_{reference_pin}_preview.json",
+                    f"preview_results/eliyahu.ai/eliyahu/{timestamp}_{reference_pin}_preview.json",
+                    f"preview_results/eliyahu.ai/{timestamp}_{reference_pin}_preview.json",
+                    f"preview_results/{timestamp}_{reference_pin}_preview.json",  # Direct path
+                ]
+                
+                # Also try to list all keys to see what's actually there
+                logger.info(f"Searching for preview results with timestamp: {timestamp}, reference_pin: {reference_pin}")
+                try:
+                    list_response = s3_client.list_objects_v2(
+                        Bucket=S3_RESULTS_BUCKET,
+                        Prefix=f"preview_results/",
+                        MaxKeys=50
+                    )
+                    if 'Contents' in list_response:
+                        logger.info(f"Found {len(list_response['Contents'])} preview result files:")
+                        for obj in list_response['Contents']:
+                            logger.info(f"  - {obj['Key']}")
+                            if f"{timestamp}_{reference_pin}" in obj['Key']:
+                                logger.info(f"  ⭐ MATCH: {obj['Key']}")
+                                possible_keys.insert(0, obj['Key'])  # Try this first
+                    else:
+                        logger.info("No preview result files found in S3")
+                except Exception as e:
+                    logger.warning(f"Failed to list S3 objects: {e}")
+                
+                preview_results_key = None
+                preview_results = None
+                
+                # Try each possible key
+                for key in possible_keys:
+                    try:
+                        results_response = s3_client.get_object(Bucket=S3_RESULTS_BUCKET, Key=key)
+                        preview_results = json.loads(results_response['Body'].read().decode('utf-8'))
+                        preview_results_key = key
+                        logger.info(f"Found preview results at: {key}")
+                        break
+                    except s3_client.exceptions.NoSuchKey:
+                        continue
+                    except Exception as e:
+                        logger.warning(f"Error checking key {key}: {e}")
+                        continue
+                
+                if preview_results:
+                    # Return the complete preview results
+                    return {
+                        'statusCode': 200,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps(preview_results)
+                    }
+                else:
+                    # Preview still processing
+                    return {
+                        'statusCode': 200,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps({
+                            'session_id': session_id,
+                            'status': 'processing',
+                            'preview_mode': True,
+                            'message': 'Preview validation is still in progress'
+                        })
+                    }
+            else:
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'Invalid preview session ID format'})
+                }
+        else:
+            # Normal mode status check - check for results ZIP file
+            parts = session_id.split('_')
+            if len(parts) >= 2:
+                timestamp = parts[0]
+                reference_pin = parts[1]
+                
+                email_folder = "default"  # Could be enhanced
+                results_key = f"results/{email_folder}/{timestamp}_{reference_pin}.zip"
+                
+                try:
+                    s3_client.head_object(Bucket=S3_RESULTS_BUCKET, Key=results_key)
+                    # File exists - processing complete
+                    download_url = generate_presigned_url(S3_RESULTS_BUCKET, results_key, 86400)
+                    
+                    return {
+                        'statusCode': 200,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps({
+                            'session_id': session_id,
+                            'status': 'completed',
+                            'download_url': download_url,
+                            'message': 'Processing completed successfully'
+                        })
+                    }
+                except s3_client.exceptions.NoSuchKey:
+                    # File doesn't exist - still processing
+                    return {
+                        'statusCode': 200,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps({
+                            'session_id': session_id,
+                            'status': 'processing',
+                            'message': 'Validation is still in progress'
+                        })
+                    }
+            else:
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'Invalid session ID format'})
+                }
+        
+    except Exception as e:
+        logger.error(f"Error in status check handler: {str(e)}")
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({'error': 'Internal server error'})
+        }
+
+def handle_status_request(event, context):
+    """Handle GET requests to check processing status."""
+    try:
+        # Extract session ID from path: /status/{session_id}
+        path_parts = event.get('path', '').split('/')
+        if len(path_parts) < 3:
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps({'error': 'Invalid status request path'})
+            }
+        
+        session_id = path_parts[2]
+        logger.info(f"Status check for session: {session_id}")
+        
+        # Check if this is a preview status request
+        query_params = event.get('queryStringParameters') or {}
+        is_preview = query_params.get('preview', 'false').lower() == 'true'
+        
+        if is_preview:
+            # For preview mode, check S3 for stored results using same pattern as normal mode
+            # Parse session ID to extract timestamp and reference pin
+            parts = session_id.split('_')
+            if len(parts) >= 4 and parts[-1] == 'preview':
+                # Session ID format: {date}_{time}_{reference_pin}_preview
+                timestamp = f"{parts[0]}_{parts[1]}"  # Combine date and time
+                reference_pin = parts[2]
+                
+                # Try multiple possible email folder patterns
+                possible_keys = [
+                    f"preview_results/default/{timestamp}_{reference_pin}_preview.json",
+                    f"preview_results/eliyahu.ai/eliyahu/{timestamp}_{reference_pin}_preview.json",
+                    f"preview_results/eliyahu.ai/{timestamp}_{reference_pin}_preview.json",
+                    f"preview_results/{timestamp}_{reference_pin}_preview.json",  # Direct path
+                ]
+                
+                # Also try to list all keys to see what's actually there
+                logger.info(f"GET Status: Searching for preview results with timestamp: {timestamp}, reference_pin: {reference_pin}")
+                try:
+                    list_response = s3_client.list_objects_v2(
+                        Bucket=S3_RESULTS_BUCKET,
+                        Prefix=f"preview_results/",
+                        MaxKeys=50
+                    )
+                    if 'Contents' in list_response:
+                        logger.info(f"Found {len(list_response['Contents'])} preview result files:")
+                        for obj in list_response['Contents']:
+                            logger.info(f"  - {obj['Key']}")
+                            if f"{timestamp}_{reference_pin}" in obj['Key']:
+                                logger.info(f"  ⭐ MATCH: {obj['Key']}")
+                                possible_keys.insert(0, obj['Key'])  # Try this first
+                    else:
+                        logger.info("No preview result files found in S3")
+                except Exception as e:
+                    logger.warning(f"Failed to list S3 objects: {e}")
+                
+                preview_results = None
+                
+                # Try each possible key
+                for key in possible_keys:
+                    try:
+                        results_response = s3_client.get_object(Bucket=S3_RESULTS_BUCKET, Key=key)
+                        preview_results = json.loads(results_response['Body'].read().decode('utf-8'))
+                        logger.info(f"Found preview results at: {key}")
+                        break
+                    except s3_client.exceptions.NoSuchKey:
+                        continue
+                    except Exception as e:
+                        logger.warning(f"Error checking key {key}: {e}")
+                        continue
+                
+                if preview_results:
+                    # Return the complete preview results
+                    return {
+                        'statusCode': 200,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps(preview_results)
+                    }
+                else:
+                    # Preview still processing
+                    return {
+                        'statusCode': 200,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps({
+                            'session_id': session_id,
+                            'status': 'processing',
+                            'preview_mode': True,
+                            'message': 'Preview validation is still in progress'
+                        })
+                    }
+            else:
+                return {
+                    'statusCode': 400,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'Invalid preview session ID format'})
+                }
+        else:
+            # For normal mode, check S3 for results file
+            try:
+                # Parse session ID to extract timestamp and reference pin
+                parts = session_id.split('_')
+                if len(parts) >= 2:
+                    timestamp = parts[0]
+                    reference_pin = parts[1]
+                    
+                    # Check if results file exists in S3
+                    email_folder = "status-check"  # Default for status checks
+                    results_key = f"results/{email_folder}/{timestamp}_{reference_pin}.zip"
+                    
+                    try:
+                        s3_client.head_object(Bucket=S3_RESULTS_BUCKET, Key=results_key)
+                        # File exists - processing complete
+                        download_url = generate_presigned_url(S3_RESULTS_BUCKET, results_key, 86400)
+                        
+                        return {
+                            'statusCode': 200,
+                            'headers': {
+                                'Content-Type': 'application/json',
+                                'Access-Control-Allow-Origin': '*'
+                            },
+                            'body': json.dumps({
+                                'session_id': session_id,
+                                'status': 'completed',
+                                'download_url': download_url,
+                                'message': 'Processing completed successfully'
+                            })
+                        }
+                    except s3_client.exceptions.NoSuchKey:
+                        # File doesn't exist - still processing
+                        return {
+                            'statusCode': 200,
+                            'headers': {
+                                'Content-Type': 'application/json',
+                                'Access-Control-Allow-Origin': '*'
+                            },
+                            'body': json.dumps({
+                                'session_id': session_id,
+                                'status': 'processing',
+                                'message': 'Validation is still in progress'
+                            })
+                        }
+                else:
+                    return {
+                        'statusCode': 400,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps({'error': 'Invalid session ID format'})
+                    }
+                    
+            except Exception as e:
+                logger.error(f"Error checking status: {str(e)}")
+                return {
+                    'statusCode': 500,
+                    'headers': {
+                        'Content-Type': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    },
+                    'body': json.dumps({'error': 'Error checking status'})
+                }
+        
+    except Exception as e:
+        logger.error(f"Error in status handler: {str(e)}")
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({'error': 'Internal server error'})
+        }
+
+def lambda_handler(event, context):
+    """Handle HTTP requests to the interface Lambda."""
+    logger.info("=== Interface Lambda Handler Start ===")
+    logger.info(f"Event: {json.dumps(event, default=str)}")
+    
+    try:
+        # Check if this is a status polling request
+        if event.get('httpMethod') == 'GET' and event.get('path', '').startswith('/status/'):
+            return handle_status_request(event, context)
+        
+        # Check if this is a background processing request
+        if event.get('background_processing'):
+            return handle_background_processing(event, context)
+        
+        # Check if this is a status check request (JSON body with status_check=True)
+        if event.get('httpMethod') == 'POST':
+            try:
+                body = event.get('body', '{}')
+                if event.get('isBase64Encoded'):
+                    body = base64.b64decode(body).decode('utf-8')
+                
+                if body and body.strip():
+                    request_data = json.loads(body)
+                    if request_data.get('status_check') and request_data.get('session_id'):
+                        return handle_status_check_request(request_data, context)
+            except:
+                pass  # Not a status check, continue with normal processing
+        
         # Add print statements for debugging
         print(f"[INTERFACE] Lambda handler started")
         print(f"[INTERFACE] Event type: {event.get('httpMethod', 'background' if event.get('background_processing') else 'unknown')}")
@@ -1735,10 +2261,33 @@ def lambda_handler(event, context):
         # Parse query parameters
         query_params = event.get('queryStringParameters') or {}
         preview_first_row = query_params.get('preview_first_row', 'false').lower() == 'true'
+        async_mode = query_params.get('async', 'false').lower() == 'true'
         max_rows = int(query_params.get('max_rows', '1000'))
         batch_size = int(query_params.get('batch_size', '10'))
         
-        logger.info(f"Parameters - preview_first_row: {preview_first_row}, max_rows: {max_rows}, batch_size: {batch_size}")
+        # Parse sequential call parameter
+        sequential_call = query_params.get('sequential_call')
+        sequential_call_num = None
+        if sequential_call:
+            try:
+                sequential_call_num = int(sequential_call)
+                if sequential_call_num < 1:
+                    raise ValueError("Sequential call must be >= 1")
+                logger.info(f"Sequential call #{sequential_call_num} requested - will process rows 1-{sequential_call_num}")
+            except ValueError as e:
+                logger.warning(f"Invalid sequential_call parameter: {sequential_call} - {e}")
+                sequential_call_num = None
+        
+        logger.info(f"Parameters - preview_first_row: {preview_first_row}, async_mode: {async_mode}, max_rows: {max_rows}, batch_size: {batch_size}, sequential_call: {sequential_call_num}")
+        
+        # For preview mode, get max rows to process (default 5, or sequential call number)
+        preview_max_rows = 5
+        if preview_first_row:
+            if sequential_call_num is not None:
+                preview_max_rows = min(sequential_call_num, 5)  # Use sequential call number, capped at 5
+                logger.info(f"Sequential call: processing {preview_max_rows} rows for call #{sequential_call_num}")
+            else:
+                preview_max_rows = min(int(query_params.get('preview_max_rows', '5')), 5)  # Cap at 5
         
         # Get content type
         content_type = headers.get('Content-Type') or headers.get('content-type', '')
@@ -1812,6 +2361,79 @@ def lambda_handler(event, context):
                 
                 logger.info(f"Files uploaded - Excel: {excel_s3_key}, Config: {config_s3_key}")
                 
+                # Check for async preview mode
+                if preview_first_row and async_mode:
+                    # Async preview mode - trigger background processing and return immediately
+                    logger.info("Async preview mode - triggering background processing")
+                    
+                    # Generate unique session ID for this preview 
+                    preview_session_id = f"{timestamp}_{reference_pin}_preview"
+                    
+                    # Trigger background preview processing
+                    background_payload = {
+                        "background_processing": True,
+                        "preview_mode": True,
+                        "session_id": preview_session_id,
+                        "timestamp": timestamp,
+                        "reference_pin": reference_pin,
+                        "excel_s3_key": excel_s3_key,
+                        "config_s3_key": config_s3_key,
+                        "preview_max_rows": preview_max_rows,
+                        "email_folder": email_folder,
+                        "max_rows": max_rows,
+                        "batch_size": batch_size,
+                        "sequential_call": sequential_call_num
+                    }
+                    
+                    try:
+                        # Use hardcoded function name as fallback if context.function_name fails
+                        function_name = context.function_name if hasattr(context, 'function_name') else 'interface-validator'
+                        logger.info(f"Invoking function: {function_name}")
+                        
+                        lambda_client.invoke(
+                            FunctionName=function_name,  # Self-invoke
+                            InvocationType='Event',  # Asynchronous
+                            Payload=json.dumps(background_payload)
+                        )
+                        logger.info("Background preview processing triggered successfully")
+                    except Exception as e:
+                        logger.error(f"CRITICAL: Failed to trigger background preview processing: {str(e)}")
+                        logger.error(f"Function name was: {function_name if 'function_name' in locals() else 'NOT SET'}")
+                        # Return error immediately instead of pretending it's processing
+                        return {
+                            'statusCode': 500,
+                            'headers': {
+                                'Content-Type': 'application/json',
+                                'Access-Control-Allow-Origin': '*'
+                            },
+                            'body': json.dumps({
+                                'error': 'Failed to start background processing',
+                                'message': str(e),
+                                'session_id': preview_session_id
+                            })
+                        }
+                    
+                    # Return immediately with session ID for polling
+                    response_body = {
+                        "status": "processing",
+                        "session_id": preview_session_id,
+                        "reference_pin": reference_pin,
+                        "message": "Preview processing started in background",
+                        "preview_mode": True,
+                        "async_mode": True,
+                        "poll_url": f"/status/{preview_session_id}?preview=true",
+                        "total_rows": 0  # Will be updated when processing completes
+                    }
+                    
+                    return {
+                        'statusCode': 200,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps(response_body)
+                    }
+                
                 # Process based on workflow type
                 if preview_first_row:
                     # Preview workflow - process first row synchronously
@@ -1820,7 +2442,7 @@ def lambda_handler(event, context):
                     try:
                         # Try to invoke validator Lambda for preview
                         validation_results = invoke_validator_lambda(
-                            excel_s3_key, config_s3_key, max_rows, batch_size, True
+                            excel_s3_key, config_s3_key, max_rows, batch_size, True, preview_max_rows, sequential_call_num
                         )
                         
                         processing_time = time.time() - start_time
@@ -1831,8 +2453,18 @@ def lambda_handler(event, context):
                             real_results = validation_results['validation_results']
                             total_rows = validation_results.get('total_rows', 1)
                             
-                            # Convert to markdown format
-                            markdown_table = create_markdown_table_from_results(real_results)
+                            # Convert to markdown format - always show first 3 rows
+                            markdown_table = create_markdown_table_from_results(real_results, 3)
+                            
+                            # Extract cost and time metadata from validation results
+                            metadata = validation_results.get('metadata', {})
+                            token_usage = metadata.get('token_usage', {})
+                            
+                            # Calculate per-row cost and time estimates
+                            total_cost = token_usage.get('total_cost', 0.0)
+                            total_tokens = token_usage.get('total_tokens', 0)
+                            api_calls = token_usage.get('api_calls', 0)
+                            cached_calls = token_usage.get('cached_calls', 0)
                             
                             response_body = {
                                 "status": "preview_completed",
@@ -1840,8 +2472,20 @@ def lambda_handler(event, context):
                                 "reference_pin": reference_pin,
                                 "markdown_table": markdown_table,
                                 "total_rows": total_rows,
-                                "first_row_processing_time": processing_time,
-                                "estimated_total_processing_time": total_rows * processing_time
+                                "total_processed_rows": validation_results.get('total_processed_rows', 1),
+                                "new_row_number": validation_results.get('new_row_number', 1),
+                                "preview_complete": validation_results.get('preview_complete', True),
+                                "preview_processing_time": processing_time,
+                                "estimated_total_processing_time": total_rows * processing_time,
+                                "cost_estimates": {
+                                    "preview_cost": total_cost,  # Total cost for this preview 
+                                    "estimated_total_cost": (total_cost / validation_results.get('total_processed_rows', 1)) * total_rows,  # Per-row estimate
+                                    "preview_tokens": total_tokens,  # Total tokens for this preview
+                                    "estimated_total_tokens": (total_tokens / validation_results.get('total_processed_rows', 1)) * total_rows,  # Per-token estimate
+                                    "api_calls": api_calls,
+                                    "cached_calls": cached_calls
+                                },
+                                "token_usage": token_usage  # Include full token usage details
                             }
                         elif validation_results and validation_results.get('status') == 'timeout':
                             # Handle timeout scenario with realistic demo data
@@ -1860,7 +2504,10 @@ def lambda_handler(event, context):
                                 "reference_pin": reference_pin,
                                 "markdown_table": markdown_table,
                                 "total_rows": total_rows,
-                                "first_row_processing_time": processing_time,
+                                "total_processed_rows": 0,
+                                "new_row_number": None,
+                                "preview_complete": False,
+                                "preview_processing_time": processing_time,
                                 "estimated_total_processing_time": total_rows * processing_time * 10,  # Estimate longer time
                                 "note": validation_results.get('note', 'Validation timed out, showing demo data')
                             }
@@ -1888,7 +2535,10 @@ def lambda_handler(event, context):
                                 "reference_pin": reference_pin,
                                 "markdown_table": markdown_table,
                                 "total_rows": total_rows,
-                                "first_row_processing_time": processing_time,
+                                "total_processed_rows": 0,
+                                "new_row_number": None,
+                                "preview_complete": False,
+                                "preview_processing_time": processing_time,
                                 "estimated_total_processing_time": total_rows * processing_time * 5,  # Estimate 5x longer
                                 "note": f"{note_msg} - Showing demo data structure"
                             }
@@ -1912,7 +2562,10 @@ def lambda_handler(event, context):
                                 "reference_pin": reference_pin,
                                 "markdown_table": markdown_table,
                                 "total_rows": total_rows,
-                                "first_row_processing_time": processing_time,
+                                "total_processed_rows": 0,
+                                "new_row_number": None,
+                                "preview_complete": False,
+                                "preview_processing_time": processing_time,
                                 "estimated_total_processing_time": estimated_total_time,
                                 "note": "No validation response - showing demo data structure"
                             }
@@ -1933,7 +2586,10 @@ def lambda_handler(event, context):
                             "reference_pin": reference_pin,
                             "markdown_table": markdown_table,
                             "total_rows": 1,
-                            "first_row_processing_time": processing_time,
+                            "total_processed_rows": 0,
+                            "new_row_number": None,
+                            "preview_complete": False,
+                            "preview_processing_time": processing_time,
                             "estimated_total_processing_time": processing_time,
                             "warning": f"Preview processing encountered an error: {str(e)}"
                         }
@@ -1984,14 +2640,20 @@ def lambda_handler(event, context):
                         }
                         
                         try:
+                            # Use hardcoded function name as fallback if context.function_name fails
+                            function_name = context.function_name if hasattr(context, 'function_name') else 'interface-validator'
+                            logger.info(f"Invoking function: {function_name}")
+                            
                             lambda_client.invoke(
-                                FunctionName=context.function_name,  # Self-invoke
+                                FunctionName=function_name,  # Self-invoke
                                 InvocationType='Event',  # Asynchronous
                                 Payload=json.dumps(background_payload)
                             )
                             logger.info("Background processing triggered")
                         except Exception as e:
-                            logger.warning(f"Failed to trigger background processing: {str(e)}")
+                            logger.error(f"CRITICAL: Failed to trigger background processing: {str(e)}")
+                            logger.error(f"Function name was: {function_name if 'function_name' in locals() else 'NOT SET'}")
+                            # Don't fail completely, but log the issue prominently
                         
                         processing_time = time.time() - start_time
                         
@@ -2052,7 +2714,8 @@ def lambda_handler(event, context):
                     "status": "preview_completed",
                     "markdown_table": markdown_table,
                     "total_rows": 100,
-                    "first_row_processing_time": processing_time,
+                    "preview_row_number": preview_row_number,
+                    "preview_processing_time": processing_time,
                     "estimated_total_processing_time": 100 * processing_time
                 }
             else:
@@ -2091,10 +2754,13 @@ def lambda_handler(event, context):
         }
 
 def handle_background_processing(event, context):
-    """Handle background processing for normal mode validation."""
+    """Handle background processing for both normal mode and preview mode validation."""
     try:
         print(f"[BACKGROUND] Starting background processing")
         logger.info("Starting background processing")
+        
+        # Check if this is preview mode
+        is_preview = event.get('preview_mode', False)
         
         # Extract parameters from event
         session_id = event['session_id']
@@ -2102,24 +2768,95 @@ def handle_background_processing(event, context):
         reference_pin = event.get('reference_pin', '000000')
         excel_s3_key = event['excel_s3_key']
         config_s3_key = event['config_s3_key']
-        results_key = event['results_key']
         max_rows = event.get('max_rows', 1000)
         batch_size = event.get('batch_size', 10)
-        email_address = event.get('email_address', 'eliyahu@eliyahu.ai')
+        email_folder = event.get('email_folder', 'default')
         
-        print(f"[BACKGROUND] Session: {session_id}, Email: {email_address}")
-        logger.info(f"Background processing for session {session_id}")
+        # Quick S3 bucket access verification
+        try:
+            print(f"[BACKGROUND] Verifying S3 bucket access: {S3_RESULTS_BUCKET}")
+            s3_client.head_bucket(Bucket=S3_RESULTS_BUCKET)
+            print(f"[BACKGROUND] ✅ S3 bucket access verified")
+        except Exception as s3_check_error:
+            print(f"[BACKGROUND] ⚠️ S3 bucket access issue: {s3_check_error}")
+            logger.warning(f"S3 bucket access issue: {s3_check_error}")
+        
+        if is_preview:
+            # Preview mode processing
+            preview_max_rows = event.get('preview_max_rows', 5)
+            sequential_call_num = event.get('sequential_call')
+            logger.info(f"Background preview processing for session {session_id}")
+            print(f"[BACKGROUND] Preview mode - max rows: {preview_max_rows}")
+            if sequential_call_num:
+                print(f"[BACKGROUND] Sequential call #{sequential_call_num} - validating cache integrity")
+        else:
+            # Normal mode processing
+            results_key = event['results_key']
+            email_address = event.get('email_address', 'eliyahu@eliyahu.ai')
+            logger.info(f"Background normal processing for session {session_id}")
+            print(f"[BACKGROUND] Normal mode - Email: {email_address}")
         
         # Invoke validator Lambda to get real results
-        validation_results = invoke_validator_lambda(
-            excel_s3_key, config_s3_key, max_rows, batch_size, False  # False = normal mode
-        )
-        
-        if validation_results and 'validation_results' in validation_results and validation_results['validation_results']:
-            logger.info("Got real validation results, creating enhanced ZIP")
+        if is_preview:
+            print(f"[BACKGROUND] Starting preview validation for session {session_id}")
+            print(f"[BACKGROUND] Calling invoke_validator_lambda with:")
+            print(f"[BACKGROUND]   excel_s3_key: {excel_s3_key}")
+            print(f"[BACKGROUND]   config_s3_key: {config_s3_key}")
+            print(f"[BACKGROUND]   max_rows: {max_rows}")
+            print(f"[BACKGROUND]   batch_size: {batch_size}")
+            print(f"[BACKGROUND]   preview_mode: True")
+            print(f"[BACKGROUND]   preview_max_rows: {preview_max_rows}")
+            if sequential_call_num:
+                print(f"[BACKGROUND]   sequential_call: {sequential_call_num}")
             
-            # Get real validation results
+            # Simple preview mode: just process 3 rows with batch_size=3
+            print(f"[BACKGROUND] ✅ SIMPLIFIED PREVIEW: Processing exactly 3 rows with batch_size=3")
+            print(f"[BACKGROUND] ✅ Removing all sequential logic - just simple 3-row preview")
+            
+            validation_results = invoke_validator_lambda(
+                excel_s3_key=excel_s3_key,
+                config_s3_key=config_s3_key,
+                max_rows=3,  # Process exactly 3 rows
+                batch_size=3,  # Process all 3 rows in one batch
+                preview_first_row=True,
+                preview_max_rows=3
+                # NO sequential_call parameter - removed completely
+            )
+            
+            print(f"[BACKGROUND] Preview validation completed, got results: {validation_results is not None}")
+            print(f"[BACKGROUND] Raw validation_results type: {type(validation_results)}")
+            print(f"[BACKGROUND] Raw validation_results: {validation_results}")
+            
+            if validation_results:
+                print(f"[BACKGROUND] Validation results keys: {list(validation_results.keys())}")
+                for key, value in validation_results.items():
+                    print(f"[BACKGROUND]   {key}: {type(value)} = {value}")
+                    
+                # No sequential call validation needed - simple 3-row preview
+        else:
+            print(f"[BACKGROUND] Starting normal validation for session {session_id}, Email: {email_address}")
+            logger.info(f"Background processing for session {session_id}")
+            validation_results = invoke_validator_lambda(
+                excel_s3_key, config_s3_key, max_rows, batch_size, False, 5, sequential_call_num  # False = normal mode
+            )
+        
+        # Check if we got validation results - be more careful about the check
+        has_results = (validation_results and 
+                      'validation_results' in validation_results and 
+                      validation_results['validation_results'] is not None)
+        
+        if has_results:
             real_results = validation_results['validation_results']
+            result_count = len(real_results) if isinstance(real_results, dict) else 0
+            print(f"[BACKGROUND] ✅ Got validation results with {result_count} rows")
+            print(f"[BACKGROUND] Real results type: {type(real_results)}")
+            print(f"[BACKGROUND] Real results content: {real_results}")
+            
+            if result_count == 0:
+                print(f"[BACKGROUND] ⚠️ Validation results dict is empty, using fallback")
+                has_results = False
+        
+        if has_results:
             total_rows = validation_results.get('total_rows', 1)
             
             # Extract token usage and cost information
@@ -2129,110 +2866,395 @@ def handle_background_processing(event, context):
                 logger.info(f"Token usage summary - Total tokens: {token_usage.get('total_tokens', 0)}, Total cost: ${token_usage.get('total_cost', 0.0):.6f}")
                 logger.info(f"API calls: {token_usage.get('api_calls', 0)} new, {token_usage.get('cached_calls', 0)} cached")
             
-            # Get original files for enhanced Excel creation
-            excel_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=excel_s3_key)
-            excel_content = excel_response['Body'].read()
-            
-            config_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=config_s3_key)
-            config_data = json.loads(config_response['Body'].read().decode('utf-8'))
-            
-            # Extract filenames from S3 keys
-            input_filename = excel_s3_key.split('/')[-1].replace(f'{timestamp}_{reference_pin}_excel_', '')
-            config_filename = config_s3_key.split('/')[-1].replace(f'{timestamp}_{reference_pin}_config_', '')
-            
-            # Create enhanced result ZIP with real validation data
-            enhanced_zip = create_enhanced_result_zip(
-                real_results, session_id, total_rows, excel_content, config_data,
-                reference_pin=reference_pin, input_filename=input_filename, config_filename=config_filename,
-                metadata=metadata
-            )
-            
-            # Upload enhanced results to replace placeholder
-            if upload_file_to_s3(
-                enhanced_zip,
-                S3_RESULTS_BUCKET,
-                results_key,
-                'application/zip'
-            ):
-                logger.info(f"Enhanced results uploaded to {results_key}")
+            if is_preview:
+                # Preview mode - store results in S3 for status polling
+                logger.info("Got preview validation results, storing for polling")
+                print(f"[BACKGROUND] Preview mode: got {len(real_results)} validation results")
                 
-                # Send email if available and address provided
-                email_sent = False
-                if EMAIL_SENDER_AVAILABLE and email_address:
-                    print(f"[BACKGROUND] Email sender available, preparing to send to {email_address}")
-                    # Extract summary data for email
-                    all_fields = set()
-                    confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+                # Simple preview analysis: just process the 3 rows we got
+                token_usage = metadata.get('token_usage', {})
+                total_api_calls = token_usage.get('api_calls', 0)
+                total_cached_calls = token_usage.get('cached_calls', 0)
+                total_cost = token_usage.get('total_cost', 0.0)
+                total_tokens = token_usage.get('total_tokens', 0)
+                
+                print(f"[BACKGROUND] ✅ SIMPLE PREVIEW ANALYSIS:")
+                print(f"[BACKGROUND] Token usage: {total_api_calls} API calls, {total_cached_calls} cached calls, ${total_cost:.6f} total cost")
+                
+                # Simple analysis: we processed 3 rows, that's it
+                total_rows_processed = len(real_results)  # Should be 3
+                expected_api_calls = total_rows_processed * 5  # About 5 API calls per row
+                
+                print(f"[BACKGROUND] Simple math:")
+                print(f"[BACKGROUND]   Rows processed: {total_rows_processed}")
+                print(f"[BACKGROUND]   Expected API calls: {expected_api_calls} (5 per row)")
+                print(f"[BACKGROUND]   Actual API calls: {total_api_calls}")
+                print(f"[BACKGROUND]   Actual cached calls: {total_cached_calls}")
+                print(f"[BACKGROUND]   Total cost: ${total_cost:.6f}")
+                print(f"[BACKGROUND]   Total tokens: {total_tokens}")
+                
+                # Report actual API call counts from validator (don't "correct" them)
+                total_calls_reported = total_api_calls + total_cached_calls
+                print(f"[BACKGROUND] ✅ Actual API call counts from validator:")
+                print(f"[BACKGROUND]   Expected calls: {expected_api_calls} (5 per row × {total_rows_processed} rows)")
+                print(f"[BACKGROUND]   Actual new calls: {total_api_calls}")
+                print(f"[BACKGROUND]   Actual cached calls: {total_cached_calls}")
+                print(f"[BACKGROUND]   Total calls: {total_calls_reported}")
+                
+                if total_calls_reported != expected_api_calls:
+                    print(f"[BACKGROUND] ℹ️ Call count difference may indicate partial caching or different search group count")
+                
+                # DEBUG: Comprehensive analysis of available timing data
+                print(f"[BACKGROUND] ============ DEBUGGING TIMING DATA ============")
+                
+                # Check all metadata keys
+                print(f"[BACKGROUND] Available metadata keys: {list(metadata.keys())}")
+                validator_processing_time = metadata.get('processing_time', 0.0)
+                print(f"[BACKGROUND] Validator metadata processing_time: {validator_processing_time:.1f}s")
+                
+                # Print full metadata structure for debugging
+                if metadata:
+                    print(f"[BACKGROUND] Full metadata structure:")
+                    import json
+                    print(f"[BACKGROUND] {json.dumps(metadata, indent=2, default=str)}")
+                
+                # Check structure of validation results
+                print(f"[BACKGROUND] Validation results structure:")
+                for row_key, row_data in real_results.items():
+                    print(f"[BACKGROUND] Row {row_key} keys: {list(row_data.keys())}")
                     
-                    for row_key, row_data in real_results.items():
-                        for field_name, field_data in row_data.items():
-                            if isinstance(field_data, dict) and 'confidence_level' in field_data:
-                                all_fields.add(field_name)
-                                conf_level = field_data.get('confidence_level', 'UNKNOWN')
-                                if conf_level in confidence_counts:
-                                    confidence_counts[conf_level] += 1
+                    # Look for any timing-related keys
+                    for key, value in row_data.items():
+                        if 'time' in key.lower() or 'duration' in key.lower():
+                            print(f"[BACKGROUND] Found timing key {key}: {value}")
                     
-                    summary_data = {
-                        'total_rows': total_rows,
-                        'fields_validated': list(all_fields),
-                        'confidence_distribution': confidence_counts
-                    }
-                    
-                    print(f"[BACKGROUND] Summary prepared: {len(all_fields)} fields, {total_rows} rows")
-                    
-                    # Calculate processing time (you might want to track this more accurately)
-                    processing_time = None  # Could be calculated from start time if tracked
-                    
-                    # Send email with results
-                    print(f"[BACKGROUND] Calling send_validation_results_email...")
-                    email_result = send_validation_results_email(
-                        email_address=email_address,
-                        zip_content=enhanced_zip,
-                        session_id=session_id,
-                        summary_data=summary_data,
-                        processing_time=processing_time,
-                        reference_pin=reference_pin,
-                        metadata=metadata
-                    )
-                    
-                    print(f"[BACKGROUND] Email result: {email_result}")
-                    
-                    if email_result['success']:
-                        logger.info(f"Email sent successfully to {email_address}")
-                        email_sent = True
-                    else:
-                        logger.error(f"Failed to send email: {email_result['message']}")
+                    # Check _raw_responses structure if it exists
+                    if '_raw_responses' in row_data:
+                        raw_responses = row_data['_raw_responses']
+                        print(f"[BACKGROUND] Row {row_key} _raw_responses has {len(raw_responses)} entries")
+                        
+                        for field_name, response_data in raw_responses.items():
+                            if isinstance(response_data, dict):
+                                response_keys = list(response_data.keys())
+                                print(f"[BACKGROUND]   {field_name} keys: {response_keys}")
+                                
+                                # Look for any timing data
+                                for resp_key, resp_value in response_data.items():
+                                    if 'time' in resp_key.lower() or 'duration' in resp_key.lower():
+                                        print(f"[BACKGROUND]   Found timing: {resp_key} = {resp_value}")
+                
+                # Extract actual processing time
+                total_processing_time = 0.0
+                processing_time_sources = []
+                
+                # First check if processing_time is directly in metadata (it should be!)
+                if validator_processing_time > 0:
+                    total_processing_time = validator_processing_time
+                    processing_time_sources.append(f"metadata.processing_time: {validator_processing_time:.1f}s")
+                    print(f"[BACKGROUND] ✅ Found processing time in metadata: {validator_processing_time:.1f}s")
                 else:
-                    print(f"[BACKGROUND] Email NOT sent - Available: {EMAIL_SENDER_AVAILABLE}, Address: {email_address}")
+                    # Fallback: Try to extract from metadata token_usage (shouldn't be needed)
+                    if 'token_usage' in metadata:
+                        token_metadata = metadata['token_usage']
+                        print(f"[BACKGROUND] Token usage metadata keys: {list(token_metadata.keys())}")
+                        
+                        # Look for timing in token usage
+                        for key, value in token_metadata.items():
+                            if 'time' in key.lower() or 'duration' in key.lower():
+                                print(f"[BACKGROUND] Found token timing: {key} = {value}")
+                                if isinstance(value, (int, float)) and value > 0:
+                                    total_processing_time += value
+                                    processing_time_sources.append(f"token_usage.{key}: {value:.1f}s")
                 
-                # Clean up upload files (optional)
-                try:
-                    s3_client.delete_object(Bucket=S3_CACHE_BUCKET, Key=excel_s3_key)
-                    s3_client.delete_object(Bucket=S3_CACHE_BUCKET, Key=config_s3_key)
-                    logger.info("Cleaned up upload files")
-                except Exception as e:
-                    logger.warning(f"Failed to clean up upload files: {e}")
+                # If no timing found, report 0.0 - don't make up times
+                if total_processing_time == 0:
+                    print(f"[BACKGROUND] ❌ No timing data found in validator response!")
+                    print(f"[BACKGROUND] This indicates validator timing metadata is not being captured")
+                    print(f"[BACKGROUND] Processing time will be 0.0 until validator timing is fixed")
+                    processing_time_sources.append("No timing data found in validator response")
+                
+                processing_time = total_processing_time
+                print(f"[BACKGROUND] ============ FINAL TIMING RESULT ============")
+                print(f"[BACKGROUND] Total processing time: {processing_time:.1f}s")
+                print(f"[BACKGROUND] Sources: {processing_time_sources}")
+                
+                # Simple cost calculation: total cost ÷ 3 rows = per-row cost
+                if total_rows_processed > 0:
+                    per_row_cost = total_cost / total_rows_processed
+                    per_row_tokens = total_tokens / total_rows_processed  
+                    per_row_time = processing_time / total_rows_processed
+                    
+                    print(f"[BACKGROUND] ✅ Simple calculations:")
+                    print(f"[BACKGROUND]   Total cost for {total_rows_processed} rows: ${total_cost:.6f}")
+                    print(f"[BACKGROUND]   Per-row cost: ${per_row_cost:.6f}")
+                    print(f"[BACKGROUND]   Per-row tokens: {per_row_tokens:.0f}")
+                    print(f"[BACKGROUND]   Per-row time: {per_row_time:.1f}s")
+                else:
+                    # Fallback if no rows processed
+                    per_row_cost = 0.02
+                    per_row_tokens = 200
+                    per_row_time = 20.0
+                    print(f"[BACKGROUND] Using fallback per-row estimates")
+                
+                # Create simple preview table
+                print(f"[BACKGROUND] Creating preview table for {total_rows_processed} rows")
+                markdown_table = create_markdown_table_from_results(real_results, 3)
+                
+                # Calculate batch processing estimates
+                import math
+                total_batches = math.ceil(total_rows / 5)
+                estimated_batch_time_seconds = total_batches * per_row_time
+                estimated_batch_time_minutes = estimated_batch_time_seconds / 60
+                
+                # Simple preview results - no complex sequential logic
+                preview_results = {
+                    "status": "preview_completed",
+                    "session_id": session_id,
+                    "reference_pin": reference_pin,
+                    "markdown_table": markdown_table,
+                    "total_rows": total_rows,
+                    "total_processed_rows": total_rows_processed,  # Simple: rows we processed (should be 3)
+                    "new_row_number": total_rows_processed,  # Simple: last row processed
+                    "preview_complete": True,  # Preview is always complete for 3-row mode
+                    "preview_processing_time": processing_time,  # Actual time from validator
+                    "per_row_processing_time": per_row_time,  # Time per row
+                    "estimated_total_processing_time": estimated_batch_time_seconds,
+                    "estimated_total_time_minutes": round(estimated_batch_time_minutes, 1),
+                    "estimated_batches": total_batches,
+                    "cost_estimates": {
+                        "preview_cost": total_cost,  # Total cost for this preview (3 rows)
+                        "estimated_total_cost": per_row_cost * total_rows,  # Estimate: per_row_cost × total_rows
+                        "preview_tokens": total_tokens,  # Total tokens for this preview
+                        "estimated_total_tokens": per_row_tokens * total_rows,  # Estimate: per_row_tokens × total_rows
+                        "api_calls": total_api_calls,
+                        "cached_calls": total_cached_calls,
+                        "per_row_cost": per_row_cost,  # Cost per row
+                        "per_row_tokens": per_row_tokens,  # Tokens per row
+                        "per_row_time": per_row_time,  # Time per row
+                        "rows_processed": total_rows_processed  # Number of rows in this preview
+                    },
+                    "token_usage": token_usage
+                }
+                
+                # Store preview results in S3 using the same pattern as normal mode
+                # Use the results bucket and a predictable filename structure
+                preview_results_key = f"preview_results/{email_folder}/{timestamp}_{reference_pin}_preview.json"
+                print(f"[BACKGROUND] Storing preview results to S3: {preview_results_key}")
+                
+                # More robust S3 storage with detailed error handling
+                s3_write_success = False
+                s3_error = None
+                for attempt in range(3):  # Try up to 3 times
+                    try:
+                        print(f"[BACKGROUND] S3 write attempt {attempt + 1}/3")
+                        s3_client.put_object(
+                            Bucket=S3_RESULTS_BUCKET,  # Use same bucket as normal results
+                            Key=preview_results_key,
+                            Body=json.dumps(preview_results, indent=2),
+                            ContentType='application/json'
+                        )
+                        logger.info(f"Preview results stored at {preview_results_key}")
+                        print(f"[BACKGROUND] ✅ Successfully stored preview results to S3 on attempt {attempt + 1}")
+                        s3_write_success = True
+                        break
+                    except Exception as e:
+                        s3_error = str(e)
+                        logger.error(f"Attempt {attempt + 1} failed to store preview results: {e}")
+                        print(f"[BACKGROUND] ❌ Attempt {attempt + 1} failed to store preview results: {e}")
+                        if attempt < 2:  # Don't sleep on last attempt
+                            import time
+                            time.sleep(1)  # Wait 1 second before retry
+                
+                if not s3_write_success:
+                    print(f"[BACKGROUND] 🚨 CRITICAL: All S3 write attempts failed - {s3_error}")
+                    logger.error(f"CRITICAL: All S3 write attempts failed - {s3_error}")
                 
                 return {
                     'statusCode': 200,
                     'body': json.dumps({
-                        'status': 'background_completed',
+                        'status': 'preview_completed',
                         'session_id': session_id,
-                        'enhanced_file_uploaded': True,
-                        'email_sent': email_sent
+                        'results_stored': s3_write_success,
+                        's3_error': s3_error if not s3_write_success else None
                     })
                 }
+            
             else:
-                logger.error("Failed to upload enhanced results")
-                return {
-                    'statusCode': 500,
-                    'body': json.dumps({
-                        'status': 'background_failed',
-                        'error': 'Failed to upload enhanced results'
-                    })
-                }
+                # Normal mode - create enhanced ZIP as before
+                logger.info("Got real validation results, creating enhanced ZIP")
+                
+                # Get original files for enhanced Excel creation
+                excel_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=excel_s3_key)
+                excel_content = excel_response['Body'].read()
+                
+                config_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=config_s3_key)
+                config_data = json.loads(config_response['Body'].read().decode('utf-8'))
+                
+                # Extract filenames from S3 keys
+                input_filename = excel_s3_key.split('/')[-1].replace(f'{timestamp}_{reference_pin}_excel_', '')
+                config_filename = config_s3_key.split('/')[-1].replace(f'{timestamp}_{reference_pin}_config_', '')
+                
+                # Create enhanced result ZIP with real validation data
+                enhanced_zip = create_enhanced_result_zip(
+                    real_results, session_id, total_rows, excel_content, config_data,
+                    reference_pin=reference_pin, input_filename=input_filename, config_filename=config_filename,
+                    metadata=metadata
+                )
+                
+                # Upload enhanced results to replace placeholder
+                if upload_file_to_s3(
+                    enhanced_zip,
+                    S3_RESULTS_BUCKET,
+                    results_key,
+                    'application/zip'
+                ):
+                    logger.info(f"Enhanced results uploaded to {results_key}")
+                    
+                    # Send email if available and address provided
+                    email_sent = False
+                    if EMAIL_SENDER_AVAILABLE and email_address:
+                        print(f"[BACKGROUND] Email sender available, preparing to send to {email_address}")
+                        # Extract summary data for email
+                        all_fields = set()
+                        confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+                        
+                        for row_key, row_data in real_results.items():
+                            for field_name, field_data in row_data.items():
+                                if isinstance(field_data, dict) and 'confidence_level' in field_data:
+                                    all_fields.add(field_name)
+                                    conf_level = field_data.get('confidence_level', 'UNKNOWN')
+                                    if conf_level in confidence_counts:
+                                        confidence_counts[conf_level] += 1
+                        
+                        summary_data = {
+                            'total_rows': total_rows,
+                            'fields_validated': list(all_fields),
+                            'confidence_distribution': confidence_counts
+                        }
+                        
+                        print(f"[BACKGROUND] Summary prepared: {len(all_fields)} fields, {total_rows} rows")
+                        
+                        # Calculate processing time (you might want to track this more accurately)
+                        processing_time = None  # Could be calculated from start time if tracked
+                        
+                        # Send email with results
+                        print(f"[BACKGROUND] Calling send_validation_results_email...")
+                        email_result = send_validation_results_email(
+                            email_address=email_address,
+                            zip_content=enhanced_zip,
+                            session_id=session_id,
+                            summary_data=summary_data,
+                            processing_time=processing_time,
+                            reference_pin=reference_pin,
+                            metadata=metadata
+                        )
+                        
+                        print(f"[BACKGROUND] Email result: {email_result}")
+                        
+                        if email_result['success']:
+                            logger.info(f"Email sent successfully to {email_address}")
+                            email_sent = True
+                        else:
+                            logger.error(f"Failed to send email: {email_result['message']}")
+                    else:
+                        print(f"[BACKGROUND] Email NOT sent - Available: {EMAIL_SENDER_AVAILABLE}, Address: {email_address}")
+                    
+                    # Clean up upload files (optional)
+                    try:
+                        s3_client.delete_object(Bucket=S3_CACHE_BUCKET, Key=excel_s3_key)
+                        s3_client.delete_object(Bucket=S3_CACHE_BUCKET, Key=config_s3_key)
+                        logger.info("Cleaned up upload files")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up upload files: {e}")
+                    
+                    return {
+                        'statusCode': 200,
+                        'body': json.dumps({
+                            'status': 'background_completed',
+                            'session_id': session_id,
+                            'enhanced_file_uploaded': True,
+                            'email_sent': email_sent
+                        })
+                    }
+                else:
+                    logger.error("Failed to upload enhanced results")
+                    return {
+                        'statusCode': 500,
+                        'body': json.dumps({
+                            'status': 'background_failed',
+                            'error': 'Failed to upload enhanced results'
+                        })
+                    }
         else:
             logger.warning("No validation results from validator Lambda")
+            print(f"[BACKGROUND] ⚠️ No validation results returned from validator")
+            if validation_results:
+                print(f"[BACKGROUND] Available keys in response: {list(validation_results.keys())}")
+                if 'validation_results' in validation_results:
+                    print(f"[BACKGROUND] validation_results key exists but content: {validation_results['validation_results']}")
+                    print(f"[BACKGROUND] validation_results type: {type(validation_results['validation_results'])}")
+            else:
+                print(f"[BACKGROUND] validation_results is None or empty")
+            
+            # For preview mode, still store a response so polling doesn't hang
+            if is_preview:
+                print(f"[BACKGROUND] Creating fallback preview response")
+                fallback_preview_results = {
+                    "status": "preview_completed",
+                    "session_id": session_id,
+                    "reference_pin": reference_pin,
+                    "markdown_table": "| Field | Confidence | Value |\n|-------|------------|-------|\n| No results | N/A | Validation returned no data |",
+                    "total_rows": 0,
+                    "total_processed_rows": 0,
+                    "new_row_number": None,
+                    "preview_complete": True,
+                    "preview_processing_time": 1.0,
+                    "estimated_total_processing_time": 0,
+                    "note": "Validation completed but returned no results"
+                }
+                
+                preview_results_key = f"preview_results/{email_folder}/{timestamp}_{reference_pin}_preview.json"
+                print(f"[BACKGROUND] Storing fallback preview results to S3: {preview_results_key}")
+                
+                # More robust S3 storage with detailed error handling
+                s3_write_success = False
+                s3_error = None
+                for attempt in range(3):  # Try up to 3 times
+                    try:
+                        print(f"[BACKGROUND] S3 write attempt {attempt + 1}/3")
+                        s3_client.put_object(
+                            Bucket=S3_RESULTS_BUCKET,
+                            Key=preview_results_key,
+                            Body=json.dumps(fallback_preview_results, indent=2),
+                            ContentType='application/json'
+                        )
+                        logger.info(f"Fallback preview results stored at {preview_results_key}")
+                        print(f"[BACKGROUND] ✅ Successfully stored fallback preview results to S3 on attempt {attempt + 1}")
+                        s3_write_success = True
+                        break
+                    except Exception as e:
+                        s3_error = str(e)
+                        logger.error(f"Attempt {attempt + 1} failed to store fallback preview results: {e}")
+                        print(f"[BACKGROUND] ❌ Attempt {attempt + 1} failed to store fallback preview results: {e}")
+                        if attempt < 2:  # Don't sleep on last attempt
+                            import time
+                            time.sleep(1)  # Wait 1 second before retry
+                
+                if not s3_write_success:
+                    print(f"[BACKGROUND] 🚨 CRITICAL: All S3 write attempts failed - {s3_error}")
+                    logger.error(f"CRITICAL: All S3 write attempts failed - {s3_error}")
+                
+                return {
+                    'statusCode': 200,
+                    'body': json.dumps({
+                        'status': 'preview_completed',
+                        'session_id': session_id,
+                        'results_stored': s3_write_success,
+                        'note': 'No validation results available',
+                        's3_error': s3_error if not s3_write_success else None
+                    })
+                }
+            
             return {
                 'statusCode': 200,
                 'body': json.dumps({
@@ -2247,6 +3269,44 @@ def handle_background_processing(event, context):
         logger.error(f"Error in background processing: {str(e)}")
         import traceback
         traceback.print_exc()
+        
+        # For preview mode, still try to store an error response so polling doesn't hang
+        if event.get('preview_mode', False):
+            try:
+                session_id = event.get('session_id', 'unknown')
+                timestamp = event.get('timestamp', 'unknown')
+                reference_pin = event.get('reference_pin', '000000')
+                email_folder = event.get('email_folder', 'default')
+                
+                error_preview_results = {
+                    "status": "preview_error",
+                    "session_id": session_id,
+                    "reference_pin": reference_pin,
+                    "markdown_table": "| Field | Confidence | Value |\n|-------|------------|-------|\n| Error | N/A | Background processing failed |",
+                    "total_rows": 0,
+                    "total_processed_rows": 0,
+                    "new_row_number": None,
+                    "preview_complete": True,
+                    "preview_processing_time": 0,
+                    "estimated_total_processing_time": 0,
+                    "error": str(e),
+                    "note": "Background processing encountered an error"
+                }
+                
+                preview_results_key = f"preview_results/{email_folder}/{timestamp}_{reference_pin}_preview.json"
+                print(f"[BACKGROUND] 🚨 Storing error preview results to S3: {preview_results_key}")
+                
+                s3_client.put_object(
+                    Bucket=S3_RESULTS_BUCKET,
+                    Key=preview_results_key,
+                    Body=json.dumps(error_preview_results, indent=2),
+                    ContentType='application/json'
+                )
+                print(f"[BACKGROUND] ✅ Error response stored to prevent polling timeout")
+                
+            except Exception as s3_error:
+                print(f"[BACKGROUND] 🚨 CRITICAL: Could not store error response to S3: {s3_error}")
+                logger.error(f"CRITICAL: Could not store error response to S3: {s3_error}")
         
         return {
             'statusCode': 500,
