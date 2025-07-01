@@ -38,8 +38,10 @@ package/
 
 # Deployment packages and ZIP files
 deployment/interface_package/
+deployment/sqs_processor_package/
 deployment/lambda_package.zip
 deployment/interface_lambda_package.zip
+deployment/sqs_processor_lambda_package.zip
 *.zip
 *.tar.gz
 
@@ -103,7 +105,12 @@ temp_unnecessary_files/
 # Other temporary files
 *.tmp
 
+# Test results directories
+test_results/
+tables/*/test_results/
+
 # Don't ignore essential test files
 !run_lambda_test.py
 !src/run_ratio_test.py
 !src/test_logging.py 
+!test_validation.py 

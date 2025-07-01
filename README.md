@@ -1,165 +1,126 @@
-# AWS Perplexity Validator
+# Perplexity Validator
 
-A serverless AWS Lambda function that validates data using the Perplexity.AI API with caching support.
+A serverless system that validates Excel data using the Perplexity.AI API, with synchronous and asynchronous processing options.
 
 ## Features
 
-- Parallel validation of multiple data points
-- S3-based caching to reduce API calls
-- Configurable validation rules and targets
-- Automatic next check date calculation
-- Comprehensive error handling
-- Local testing support
+- **Multi-mode Processing**: Synchronous preview, asynchronous preview, and full validation modes
+- **Excel Processing**: Handles large Excel files with batch processing
+- **Intelligent Caching**: S3-based caching to reduce API calls and costs
+- **Comprehensive Tracking**: DynamoDB tracking of all validation sessions
+- **Email Delivery**: Automatic email delivery of validation results
+- **History Tracking**: Maintains validation history for trend analysis
+- **API Gateway Interface**: REST API for easy integration
 
-## Prerequisites
+## Architecture
 
-- Python 3.8 or higher
-- AWS CLI configured with appropriate credentials
-- Perplexity.AI API key
-- AWS S3 bucket for caching
-- AWS Systems Manager Parameter Store for API key storage
-
-## Setup
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd perplexity-validator
+```
+API Gateway → Interface Lambda → Validator Lambda
+                    ↓
+                  SQS (for async)
+                    ↓
+             Background Processing
 ```
 
-2. Install dependencies:
+## Quick Start
+
+See [QUICK_START.md](QUICK_START.md) for detailed setup and usage instructions.
+
+### Test Script
+
 ```bash
-pip install -r requirements.txt
+# Run all tests
+python test_validation.py
+
+# Test specific mode
+python test_validation.py --mode async_preview --name "my_test"
+
+# Use custom files
+python test_validation.py --excel "data.xlsx" --config "config.json"
 ```
 
-3. Set up AWS resources:
-   - Create an S3 bucket for caching
-   - Store your Perplexity API key in AWS Systems Manager Parameter Store:
-     ```bash
-     aws ssm put-parameter \
-         --name "/Perplexity_API_Key" \
-         --value "your-api-key" \
-         --type SecureString
-     ```
+## API Endpoints
 
-4. Configure Lambda function:
-   - Set environment variables:
-     - `PERPLEXITY_API_KEY` (optional, if not using SSM)
-   - Configure IAM role with permissions for:
-     - S3 access
-     - SSM Parameter Store access
-     - CloudWatch Logs
+- **POST** `/validate` - Main validation endpoint
+- **GET** `/status/{sessionId}` - Check validation status
+- **POST** `/validate-config` - Validate configuration file
 
-## Local Testing
+## Configuration
 
-1. Run automated tests:
-```bash
-pytest
+Create a JSON configuration file specifying validation targets:
+
+```json
+{
+  "validation_targets": [
+    {
+      "column": "Product Name",
+      "description": "Official product name",
+      "importance": "CRITICAL",
+      "format": "String"
+    }
+  ]
+}
 ```
 
-2. Run local test script:
-```bash
-python tests/local_test.py
-```
+## Output
+
+The system produces:
+
+1. **Enhanced Excel File**: Original data with color-coded validation results
+2. **Validation Details**: Comprehensive validation results with sources
+3. **DynamoDB Records**: Session tracking and metrics
+4. **Email Report**: Summary sent to specified email
 
 ## Deployment
 
-1. Create a deployment package:
+For administrators deploying the system:
+
 ```bash
-pip install -r requirements.txt -t package/
-cp src/*.py package/
-cd package
-zip -r ../deployment.zip .
+cd deployment
+
+# Deploy core validator
+python create_package.py --deploy --force-rebuild
+
+# Deploy interface with API Gateway
+python create_interface_package.py --deploy --force-rebuild
 ```
 
-2. Deploy to AWS Lambda:
-```bash
-aws lambda create-function \
-    --function-name perplexity-validator \
-    --runtime python3.9 \
-    --handler lambda_function.lambda_handler \
-    --zip-file fileb://deployment.zip \
-    --role arn:aws:iam::<account-id>:role/<role-name>
+## Project Structure
+
+```
+perplexityValidator/
+├── src/                      # Source code
+│   ├── interface_lambda_function.py
+│   ├── lambda_function.py
+│   ├── validator.py
+│   └── ...
+├── deployment/               # Deployment scripts
+│   ├── create_package.py
+│   └── create_interface_package.py
+├── test_validation.py        # Main test script
+├── tables/                   # Example data
+└── test_results/            # Test outputs
 ```
 
-## Usage
+## Requirements
 
-Invoke the Lambda function with the following event structure:
-
-```json
-{
-    "config": {
-        "primary_key": ["id"],
-        "cache_ttl_days": 30,
-        "validation_targets": [
-            {
-                "column": "name",
-                "validation_type": "string",
-                "rules": {
-                    "min_length": 2,
-                    "max_length": 100
-                },
-                "description": "Validate name length"
-            }
-        ]
-    },
-    "validation_data": {
-        "rows": [
-            {
-                "id": 1,
-                "name": "John Doe"
-            }
-        ]
-    },
-    "bucket_name": "your-cache-bucket"
-}
-```
-
-### Response Format
-
-```json
-{
-    "statusCode": 200,
-    "body": {
-        "results": {
-            "name": ["John Doe", 0.95, "Name is valid"],
-            "1_next_check": ["2024-03-20T00:00:00Z", 1.0, ["All validations passed"]]
-        }
-    }
-}
-```
-
-## Error Handling
-
-The function handles various error scenarios:
-- Invalid API responses
-- Cache access failures
-- Configuration errors
-- Validation failures
-
-Errors are logged to CloudWatch Logs and returned in the response with appropriate status codes.
-
-## Monitoring
-
-Monitor the function using:
-- CloudWatch Logs
-- CloudWatch Metrics
-- X-Ray traces (if enabled)
+- Python 3.8+
+- AWS Account with appropriate permissions
+- Perplexity API key (stored in AWS Parameter Store)
 
 ## Cost Optimization
 
-- Caching reduces API calls
-- Configurable cache TTL
-- Parallel processing for efficient execution
-- Automatic retry logic for transient failures
+- Intelligent caching reduces API calls by ~80%
+- Batch processing for efficiency
+- Configurable row limits
+- Preview mode for testing
 
-## Contributing
+## Monitoring
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+- CloudWatch Logs for Lambda execution
+- DynamoDB for session tracking
+- S3 for result storage
+- Email notifications for completion
 
 ## License
 

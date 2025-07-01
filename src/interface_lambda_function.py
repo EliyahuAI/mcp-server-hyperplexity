@@ -15,7 +15,7 @@ import time
 import uuid
 import tempfile
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import unquote_plus
 import io
 import openpyxl
@@ -230,6 +230,49 @@ except ImportError:
     EMAIL_SENDER_AVAILABLE = False
     logger.warning("Email sender functionality not available - will use download URLs")
 
+# SQS and DynamoDB integration
+SQS_INTEGRATION_AVAILABLE = False
+SQS_IMPORT_ERROR = None
+
+try:
+    # Try importing each module separately to identify which one fails
+    import_errors = []
+    
+    try:
+        from sqs_service import send_preview_request, send_full_request, create_all_queues
+        logger.info("sqs_service imported successfully")
+    except Exception as e:
+        import_errors.append(f"sqs_service: {str(e)}")
+        logger.error(f"Failed to import sqs_service: {e}")
+        
+    try:
+        from dynamodb_schemas import track_validation_call, create_call_tracking_table, create_token_usage_table, update_processing_metrics
+        logger.info("dynamodb_schemas imported successfully")
+    except Exception as e:
+        import_errors.append(f"dynamodb_schemas: {str(e)}")
+        logger.error(f"Failed to import dynamodb_schemas: {e}")
+        
+    try:
+        from api_gateway_validation import validate_api_request, create_validation_error_response
+        logger.info("api_gateway_validation imported successfully")
+    except Exception as e:
+        import_errors.append(f"api_gateway_validation: {str(e)}")
+        logger.error(f"Failed to import api_gateway_validation: {e}")
+    
+    # If all imports succeeded, enable SQS integration
+    if not import_errors:
+        SQS_INTEGRATION_AVAILABLE = True
+        logger.info("SQS and DynamoDB integration available - all imports successful")
+    else:
+        SQS_IMPORT_ERROR = "; ".join(import_errors)
+        logger.error(f"SQS integration not available due to import errors: {SQS_IMPORT_ERROR}")
+        
+except Exception as e:
+    SQS_IMPORT_ERROR = str(e)
+    logger.error(f"Critical error during SQS imports: {e}")
+    import traceback
+    logger.error(traceback.format_exc())
+
 # AWS clients
 s3_client = boto3.client('s3')
 lambda_client = boto3.client('lambda')
@@ -336,10 +379,18 @@ def parse_multipart_form_data(body, content_type, is_base64_encoded=False):
                 if filename:  # File field
                     files[name] = {
                         'filename': filename,
-                        'content': content
+                        'content': content  # Keep binary content as-is
                     }
-                else:  # Regular form field
-                    form_data[name] = content.decode('utf-8', errors='ignore')
+                else:  # Regular form field (text only)
+                    try:
+                        form_data[name] = content.decode('utf-8')
+                    except UnicodeDecodeError:
+                        # If can't decode as UTF-8, treat as binary data
+                        logger.warning(f"Field '{name}' contains binary data, storing as binary")
+                        files[name] = {
+                            'filename': None,
+                            'content': content
+                        }
         
         return files, form_data
         
@@ -1874,7 +1925,12 @@ def handle_status_check_request(request_data, context):
                 email_folder = "default"  # fallback
                 
                 # Try multiple possible email folder patterns
+                # First try the new format using the exact session_id
                 possible_keys = [
+                    f"preview_results/eliyahu.ai/eliyahu/{session_id}.json",  # New format with exact session_id
+                    f"preview_results/default/{session_id}.json",
+                    f"preview_results/{session_id}.json",
+                    # Also try old format for backward compatibility
                     f"preview_results/default/{timestamp}_{reference_pin}_preview.json",
                     f"preview_results/eliyahu.ai/eliyahu/{timestamp}_{reference_pin}_preview.json",
                     f"preview_results/eliyahu.ai/{timestamp}_{reference_pin}_preview.json",
@@ -2047,7 +2103,12 @@ def handle_status_request(event, context):
                 reference_pin = parts[2]
                 
                 # Try multiple possible email folder patterns
+                # First try the new format using the exact session_id
                 possible_keys = [
+                    f"preview_results/eliyahu.ai/eliyahu/{session_id}.json",  # New format with exact session_id
+                    f"preview_results/default/{session_id}.json",
+                    f"preview_results/{session_id}.json",
+                    # Also try old format for backward compatibility
                     f"preview_results/default/{timestamp}_{reference_pin}_preview.json",
                     f"preview_results/eliyahu.ai/eliyahu/{timestamp}_{reference_pin}_preview.json",
                     f"preview_results/eliyahu.ai/{timestamp}_{reference_pin}_preview.json",
@@ -2206,6 +2267,56 @@ def lambda_handler(event, context):
     logger.info(f"Event: {json.dumps(event, default=str)}")
     
     try:
+        # Check if this is an SQS event
+        if 'Records' in event:
+            logger.info("Detected SQS event")
+            for record in event['Records']:
+                if record.get('eventSource') == 'aws:sqs':
+                    # Parse SQS message
+                    try:
+                        message_body = json.loads(record['body'])
+                        logger.info(f"Processing SQS message: {json.dumps(message_body, default=str)}")
+                        
+                        # Transform SQS message to background processing format
+                        # Handle both old format (preview_mode) and new format (request_type)
+                        request_type = message_body.get('request_type', '')
+                        is_preview = (request_type == 'preview') or message_body.get('preview_mode', False)
+                        
+                        background_event = {
+                            "background_processing": True,
+                            "preview_mode": is_preview,
+                            "session_id": message_body.get('session_id'),
+                            "timestamp": message_body.get('timestamp', datetime.utcnow().strftime('%Y%m%d_%H%M%S')),
+                            "reference_pin": message_body.get('reference_pin'),
+                            "excel_s3_key": message_body.get('excel_s3_key'),
+                            "config_s3_key": message_body.get('config_s3_key'),
+                            "results_key": message_body.get('results_key'),
+                            "preview_max_rows": message_body.get('preview_max_rows', 5),
+                            "email_folder": message_body.get('email_folder'),
+                            "max_rows": message_body.get('max_rows', 1000),
+                            "batch_size": message_body.get('batch_size', 10),
+                            "sequential_call": message_body.get('sequential_call'),
+                            "email": message_body.get('email'),
+                            "email_address": message_body.get('email')  # For compatibility
+                        }
+                        
+                        # Process using existing background handler
+                        result = handle_background_processing(background_event, context)
+                        logger.info(f"SQS message processed successfully: {result}")
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing SQS message: {str(e)}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+                        # Re-raise to let Lambda retry
+                        raise
+            
+            # Return success for SQS batch
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'message': 'SQS messages processed successfully'})
+            }
+        
         # Check if this is a status polling request
         if event.get('httpMethod') == 'GET' and event.get('path', '').startswith('/status/'):
             return handle_status_request(event, context)
@@ -2225,8 +2336,356 @@ def lambda_handler(event, context):
                     request_data = json.loads(body)
                     if request_data.get('status_check') and request_data.get('session_id'):
                         return handle_status_check_request(request_data, context)
-            except:
-                pass  # Not a status check, continue with normal processing
+                    
+                    # Handle JSON action requests
+                    action = request_data.get('action')
+                    if action:
+                        logger.info(f"Processing JSON action: {action}")
+                        
+                        # Handle validateConfig action
+                        if action == 'validateConfig':
+                            config_content = request_data.get('config', '')
+                            if not config_content:
+                                return {
+                                    'statusCode': 400,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'error': 'Missing config content',
+                                        'valid': False
+                                    })
+                                }
+                            
+                            # Parse and validate the config
+                            try:
+                                if isinstance(config_content, str):
+                                    config_data = json.loads(config_content)
+                                else:
+                                    config_data = config_content
+                                
+                                # Basic validation - check for required fields
+                                if 'validation_targets' in config_data and isinstance(config_data['validation_targets'], list):
+                                    return {
+                                        'statusCode': 200,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'valid': True,
+                                            'message': 'Configuration is valid'
+                                        })
+                                    }
+                                else:
+                                    return {
+                                        'statusCode': 200,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'valid': False,
+                                            'message': 'Configuration must contain validation_targets array'
+                                        })
+                                    }
+                            except json.JSONDecodeError as e:
+                                return {
+                                    'statusCode': 200,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'valid': False,
+                                        'message': f'Invalid JSON: {str(e)}'
+                                    })
+                                }
+                        
+                        # Handle processExcel action
+                        elif action == 'processExcel':
+                            excel_base64 = request_data.get('excel_file', '')
+                            config_base64 = request_data.get('config_file', '')
+                            email_address = request_data.get('email', 'test@example.com')
+                            preview = request_data.get('preview', False)
+                            async_mode = request_data.get('async', False)
+                            preview_max_rows = request_data.get('preview_max_rows', 5)
+                            max_rows = request_data.get('max_rows', 1000)
+                            batch_size = request_data.get('batch_size', 10)
+                            
+                            if not excel_base64 or not config_base64:
+                                return {
+                                    'statusCode': 400,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'error': 'Missing excel_file or config_file'
+                                    })
+                                }
+                            
+                            # Decode base64 files
+                            try:
+                                excel_content = base64.b64decode(excel_base64)
+                                config_content = base64.b64decode(config_base64)
+                            except Exception as e:
+                                return {
+                                    'statusCode': 400,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'error': f'Invalid base64 encoding: {str(e)}'
+                                    })
+                                }
+                            
+                            # Generate session ID and reference PIN
+                            session_id = str(uuid.uuid4())
+                            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                            reference_pin = generate_reference_pin()
+                            email_folder = create_email_folder_path(email_address)
+                            
+                            # Upload files to S3
+                            excel_s3_key = f"uploads/{email_folder}/{timestamp}_{reference_pin}_excel_test.xlsx"
+                            config_s3_key = f"uploads/{email_folder}/{timestamp}_{reference_pin}_config_test.json"
+                            
+                            try:
+                                # Upload Excel file
+                                if not upload_file_to_s3(
+                                    excel_content, 
+                                    S3_CACHE_BUCKET, 
+                                    excel_s3_key,
+                                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                                ):
+                                    raise Exception("Failed to upload Excel file to S3")
+                                
+                                # Upload config file
+                                if not upload_file_to_s3(
+                                    config_content, 
+                                    S3_CACHE_BUCKET, 
+                                    config_s3_key,
+                                    'application/json'
+                                ):
+                                    raise Exception("Failed to upload config file to S3")
+                                
+                                logger.info(f"JSON action files uploaded - Excel: {excel_s3_key}, Config: {config_s3_key}")
+                                
+                                # Track in DynamoDB if available
+                                if SQS_INTEGRATION_AVAILABLE:
+                                    track_validation_call(
+                                        session_id=session_id,
+                                        email=email_address,
+                                        reference_pin=reference_pin,
+                                        request_type='preview' if preview else 'full',
+                                        excel_s3_key=excel_s3_key,
+                                        config_s3_key=config_s3_key
+                                    )
+                                
+                                # Handle preview mode
+                                if preview:
+                                    if async_mode:
+                                        # Async preview - send to SQS
+                                        preview_session_id = f"{timestamp}_{reference_pin}_preview"
+                                        
+                                        if SQS_INTEGRATION_AVAILABLE:
+                                            message_id = send_preview_request(
+                                                session_id=preview_session_id,
+                                                excel_s3_key=excel_s3_key,
+                                                config_s3_key=config_s3_key,
+                                                email=email_address,
+                                                reference_pin=reference_pin,
+                                                preview_max_rows=preview_max_rows,
+                                                email_folder=email_folder,
+                                                max_rows=max_rows,
+                                                batch_size=batch_size,
+                                                sequential_call=None,
+                                                async_mode=True
+                                            )
+                                            
+                                            if message_id:
+                                                logger.info(f"Preview request sent to SQS: {message_id}")
+                                                return {
+                                                    'statusCode': 200,
+                                                    'headers': {
+                                                        'Content-Type': 'application/json',
+                                                        'Access-Control-Allow-Origin': '*'
+                                                    },
+                                                    'body': json.dumps({
+                                                        'status': 'processing',
+                                                        'session_id': preview_session_id,
+                                                        'reference_pin': reference_pin,
+                                                        'message': 'Preview processing started',
+                                                        'async_mode': True
+                                                    })
+                                                }
+                                        
+                                        # Fallback if SQS not available
+                                        return {
+                                            'statusCode': 500,
+                                            'headers': {
+                                                'Content-Type': 'application/json',
+                                                'Access-Control-Allow-Origin': '*'
+                                            },
+                                            'body': json.dumps({
+                                                'error': 'SQS integration not available'
+                                            })
+                                        }
+                                    else:
+                                        # Sync preview - process immediately
+                                        start_time = time.time()
+                                        validation_results = invoke_validator_lambda(
+                                            excel_s3_key, config_s3_key, preview_max_rows, 
+                                            batch_size, True, preview_max_rows, None
+                                        )
+                                        processing_time = time.time() - start_time
+                                        
+                                        # Return preview results
+                                        if validation_results and 'validation_results' in validation_results:
+                                            markdown_table = create_markdown_table_from_results(
+                                                validation_results['validation_results'], 3
+                                            )
+                                            return {
+                                                'statusCode': 200,
+                                                'headers': {
+                                                    'Content-Type': 'application/json',
+                                                    'Access-Control-Allow-Origin': '*'
+                                                },
+                                                'body': json.dumps({
+                                                    'status': 'preview_completed',
+                                                    'reference_pin': reference_pin,
+                                                    'markdown_table': markdown_table,
+                                                    'total_rows': validation_results.get('total_rows', 1),
+                                                    'total_processed_rows': validation_results.get('total_processed_rows', 1),
+                                                    'processing_time': processing_time
+                                                })
+                                            }
+                                        else:
+                                            return {
+                                                'statusCode': 200,
+                                                'headers': {
+                                                    'Content-Type': 'application/json',
+                                                    'Access-Control-Allow-Origin': '*'
+                                                },
+                                                'body': json.dumps({
+                                                    'status': 'preview_completed',
+                                                    'reference_pin': reference_pin,
+                                                    'total_rows': 0,
+                                                    'total_processed_rows': 0,
+                                                    'processing_time': processing_time,
+                                                    'message': 'No validation results'
+                                                })
+                                            }
+                                
+                                # Handle full processing
+                                else:
+                                    results_key = f"results/{email_folder}/{timestamp}_{reference_pin}.zip"
+                                    
+                                    if SQS_INTEGRATION_AVAILABLE:
+                                        message_id = send_full_request(
+                                            session_id=session_id,
+                                            excel_s3_key=excel_s3_key,
+                                            config_s3_key=config_s3_key,
+                                            email=email_address,
+                                            reference_pin=reference_pin,
+                                            results_key=results_key,
+                                            max_rows=max_rows,
+                                            batch_size=batch_size,
+                                            email_folder=email_folder
+                                        )
+                                        
+                                        if message_id:
+                                            logger.info(f"Full processing request sent to SQS: {message_id}")
+                                            return {
+                                                'statusCode': 200,
+                                                'headers': {
+                                                    'Content-Type': 'application/json',
+                                                    'Access-Control-Allow-Origin': '*'
+                                                },
+                                                'body': json.dumps({
+                                                    'status': 'processing_started',
+                                                    'reference_pin': reference_pin,
+                                                    'message': 'Processing started. Results will be sent to your email.'
+                                                })
+                                            }
+                                    
+                                    # Fallback response
+                                    return {
+                                        'statusCode': 200,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'status': 'processing_started',
+                                            'reference_pin': reference_pin,
+                                            'message': 'Processing started (fallback mode)'
+                                        })
+                                    }
+                                    
+                            except Exception as e:
+                                logger.error(f"Error processing JSON action: {str(e)}")
+                                return {
+                                    'statusCode': 500,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'error': f'Processing failed: {str(e)}'
+                                    })
+                                }
+                        
+                        # Handle checkStatus action
+                        elif action == 'checkStatus':
+                            # Delegate to existing status check handler
+                            return handle_status_check_request(request_data, context)
+                        
+                        # Handle diagnostics action
+                        elif action == 'diagnostics':
+                            # Return diagnostic information
+                            diagnostics = {
+                                'sqs_integration_available': SQS_INTEGRATION_AVAILABLE,
+                                'sqs_import_error': SQS_IMPORT_ERROR,
+                                'environment': {
+                                    'S3_CACHE_BUCKET': S3_CACHE_BUCKET,
+                                    'S3_RESULTS_BUCKET': S3_RESULTS_BUCKET,
+                                    'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME
+                                },
+                                'boto3_version': boto3.__version__,
+                                'python_version': os.sys.version,
+                                'lambda_function_version': context.function_version if hasattr(context, 'function_version') else 'N/A',
+                                'memory_limit': context.memory_limit_in_mb if hasattr(context, 'memory_limit_in_mb') else 'N/A'
+                            }
+                            
+                            return {
+                                'statusCode': 200,
+                                'headers': {
+                                    'Content-Type': 'application/json',
+                                    'Access-Control-Allow-Origin': '*'
+                                },
+                                'body': json.dumps(diagnostics, indent=2)
+                            }
+                        
+                        else:
+                            return {
+                                'statusCode': 400,
+                                'headers': {
+                                    'Content-Type': 'application/json',
+                                    'Access-Control-Allow-Origin': '*'
+                                },
+                                'body': json.dumps({
+                                    'error': f'Unknown action: {action}'
+                                })
+                            }
+                        
+            except json.JSONDecodeError:
+                pass  # Not JSON, continue with other handlers
+            except Exception as e:
+                logger.error(f"Error processing JSON request: {str(e)}")
+                pass  # Continue with other handlers
         
         # Add print statements for debugging
         print(f"[INTERFACE] Lambda handler started")
@@ -2301,7 +2760,29 @@ def lambda_handler(event, context):
                 email_address = form_data.get('email', 'eliyahu@eliyahu.ai')
                 logger.info(f"Email address: {email_address}")
                 
-                # Validate required files
+                # Validate request using API Gateway validation if available
+                if SQS_INTEGRATION_AVAILABLE:
+                    # Combine files and form_data into single request_data dict
+                    request_data = {
+                        'action': 'processExcel',
+                        'files': files,
+                        'form_data': form_data
+                    }
+                    is_valid, validation_result = validate_api_request(request_data)
+                    if not is_valid:
+                        logger.warning(f"Request validation failed: {validation_result}")
+                        return create_validation_error_response(validation_result)
+                    
+                    # Initialize infrastructure if needed
+                    try:
+                        create_all_queues()
+                        create_call_tracking_table()
+                        create_token_usage_table()
+                        logger.info("SQS and DynamoDB infrastructure initialized")
+                    except Exception as e:
+                        logger.warning(f"Infrastructure initialization warning: {e}")
+                
+                # Validate required files (fallback validation)
                 excel_file = files.get('excel_file')
                 config_file = files.get('config_file')
                 
@@ -2363,43 +2844,71 @@ def lambda_handler(event, context):
                 
                 # Check for async preview mode
                 if preview_first_row and async_mode:
-                    # Async preview mode - trigger background processing and return immediately
-                    logger.info("Async preview mode - triggering background processing")
+                    # Async preview mode - send to SQS priority queue
+                    logger.info("Async preview mode - sending to SQS preview queue")
                     
                     # Generate unique session ID for this preview 
                     preview_session_id = f"{timestamp}_{reference_pin}_preview"
                     
-                    # Trigger background preview processing
-                    background_payload = {
-                        "background_processing": True,
-                        "preview_mode": True,
-                        "session_id": preview_session_id,
-                        "timestamp": timestamp,
-                        "reference_pin": reference_pin,
-                        "excel_s3_key": excel_s3_key,
-                        "config_s3_key": config_s3_key,
-                        "preview_max_rows": preview_max_rows,
-                        "email_folder": email_folder,
-                        "max_rows": max_rows,
-                        "batch_size": batch_size,
-                        "sequential_call": sequential_call_num
-                    }
-                    
-                    try:
-                        # Use hardcoded function name as fallback if context.function_name fails
-                        function_name = context.function_name if hasattr(context, 'function_name') else 'interface-validator'
-                        logger.info(f"Invoking function: {function_name}")
-                        
-                        lambda_client.invoke(
-                            FunctionName=function_name,  # Self-invoke
-                            InvocationType='Event',  # Asynchronous
-                            Payload=json.dumps(background_payload)
+                    # Track in DynamoDB if available
+                    if SQS_INTEGRATION_AVAILABLE:
+                        track_validation_call(
+                            session_id=preview_session_id,
+                            email=email_address,
+                            reference_pin=reference_pin,
+                            request_type='preview',
+                            excel_s3_key=excel_s3_key,
+                            config_s3_key=config_s3_key
                         )
-                        logger.info("Background preview processing triggered successfully")
+                    
+                    # Send to SQS preview queue
+                    try:
+                        if SQS_INTEGRATION_AVAILABLE:
+                            message_id = send_preview_request(
+                                session_id=preview_session_id,
+                                excel_s3_key=excel_s3_key,
+                                config_s3_key=config_s3_key,
+                                email=email_address,
+                                reference_pin=reference_pin,
+                                preview_max_rows=preview_max_rows,
+                                email_folder=email_folder,
+                                max_rows=max_rows,
+                                batch_size=batch_size,
+                                sequential_call=sequential_call_num,
+                                async_mode=True
+                            )
+                            
+                            if message_id:
+                                logger.info(f"Preview request sent to SQS: {message_id}")
+                            else:
+                                raise Exception("Failed to send message to SQS preview queue")
+                        else:
+                            # Fallback to old lambda invocation if SQS not available
+                            background_payload = {
+                                "background_processing": True,
+                                "preview_mode": True,
+                                "session_id": preview_session_id,
+                                "timestamp": timestamp,
+                                "reference_pin": reference_pin,
+                                "excel_s3_key": excel_s3_key,
+                                "config_s3_key": config_s3_key,
+                                "preview_max_rows": preview_max_rows,
+                                "email_folder": email_folder,
+                                "max_rows": max_rows,
+                                "batch_size": batch_size,
+                                "sequential_call": sequential_call_num
+                            }
+                            
+                            function_name = context.function_name if hasattr(context, 'function_name') else 'interface-validator'
+                            lambda_client.invoke(
+                                FunctionName=function_name,
+                                InvocationType='Event',
+                                Payload=json.dumps(background_payload)
+                            )
+                            logger.info("Fallback: Background preview processing triggered via lambda")
+                    
                     except Exception as e:
-                        logger.error(f"CRITICAL: Failed to trigger background preview processing: {str(e)}")
-                        logger.error(f"Function name was: {function_name if 'function_name' in locals() else 'NOT SET'}")
-                        # Return error immediately instead of pretending it's processing
+                        logger.error(f"CRITICAL: Failed to trigger preview processing: {str(e)}")
                         return {
                             'statusCode': 500,
                             'headers': {
@@ -2407,7 +2916,7 @@ def lambda_handler(event, context):
                                 'Access-Control-Allow-Origin': '*'
                             },
                             'body': json.dumps({
-                                'error': 'Failed to start background processing',
+                                'error': 'Failed to start preview processing',
                                 'message': str(e),
                                 'session_id': preview_session_id
                             })
@@ -2439,6 +2948,24 @@ def lambda_handler(event, context):
                     # Preview workflow - process first row synchronously
                     start_time = time.time()
                     
+                    # Track initial DynamoDB call for sync preview
+                    if SQS_INTEGRATION_AVAILABLE:
+                        try:
+                            track_validation_call(
+                                session_id=session_id,
+                                email=email_address,
+                                reference_pin=reference_pin,
+                                request_type='preview',
+                                excel_s3_key=excel_s3_key,
+                                config_s3_key=config_s3_key,
+                                async_mode=False,  # This is sync preview
+                                trigger_source='api_gateway',
+                                trigger_method='sync'
+                            )
+                            logger.info(f"Tracked sync preview call in DynamoDB: {session_id}")
+                        except Exception as e:
+                            logger.warning(f"Failed to track initial preview call: {e}")
+                    
                     try:
                         # Try to invoke validator Lambda for preview
                         validation_results = invoke_validator_lambda(
@@ -2465,6 +2992,66 @@ def lambda_handler(event, context):
                             total_tokens = token_usage.get('total_tokens', 0)
                             api_calls = token_usage.get('api_calls', 0)
                             cached_calls = token_usage.get('cached_calls', 0)
+                            
+                            # Update DynamoDB with completion metrics for sync preview
+                            if SQS_INTEGRATION_AVAILABLE:
+                                try:
+                                    from dynamodb_schemas import update_processing_metrics
+                                    
+                                    # Map validation response data to DynamoDB schema fields
+                                    processed_rows = validation_results.get('total_processed_rows', 1)
+                                    by_provider = token_usage.get('by_provider', {})
+                                    
+                                    # First update status using update_call_status
+                                    from dynamodb_schemas import update_call_status
+                                    update_call_status(session_id, 'completed')
+                                    
+                                    # Then update metrics
+                                    metrics_update = {
+                                        # Timestamps
+                                        'completed_processing_at': datetime.utcnow().isoformat() + 'Z',
+                                        
+                                        # Row counts
+                                        'total_rows': total_rows,
+                                        'processed_rows': processed_rows,
+                                        'preview_max_rows': preview_max_rows,
+                                        
+                                        # Timing metrics
+                                        'processing_time_seconds': processing_time,
+                                        'validation_time_seconds': processing_time,
+                                        'avg_time_per_row_seconds': processing_time / processed_rows if processed_rows > 0 else 0,
+                                        
+                                        # Cost metrics
+                                        'total_cost_usd': total_cost,
+                                        'avg_cost_per_row_usd': total_cost / processed_rows if processed_rows > 0 else 0,
+                                        
+                                        # Token metrics
+                                        'total_tokens': total_tokens,
+                                        'avg_tokens_per_row': total_tokens / processed_rows if processed_rows > 0 else 0,
+                                        'total_api_calls': api_calls + cached_calls,
+                                        'total_cached_calls': cached_calls,
+                                        
+                                        # Provider-specific metrics
+                                        'perplexity_api_calls': by_provider.get('perplexity', {}).get('calls', 0),
+                                        'perplexity_total_tokens': by_provider.get('perplexity', {}).get('total_tokens', 0),
+                                        'perplexity_cost_usd': by_provider.get('perplexity', {}).get('total_cost', 0.0),
+                                        'anthropic_api_calls': by_provider.get('anthropic', {}).get('calls', 0),
+                                        'anthropic_total_tokens': by_provider.get('anthropic', {}).get('total_tokens', 0),
+                                        'anthropic_cost_usd': by_provider.get('anthropic', {}).get('total_cost', 0.0),
+                                        
+                                        # Models used
+                                        'perplexity_models_used': list(token_usage.get('by_model', {}).keys()),
+                                        
+                                        # Cache hit rate
+                                        'cache_hit_rate': cached_calls / (api_calls + cached_calls) if (api_calls + cached_calls) > 0 else 0
+                                    }
+                                    
+                                    update_processing_metrics(session_id, metrics_update)
+                                    logger.info(f"Updated DynamoDB metrics for sync preview: {session_id}")
+                                    
+                                except Exception as e:
+                                    logger.error(f"Failed to update DynamoDB metrics: {e}")
+                                    # Don't fail the request, just log the error
                             
                             response_body = {
                                 "status": "preview_completed",
@@ -2574,6 +3161,24 @@ def lambda_handler(event, context):
                         logger.error(f"Error in preview processing: {str(e)}")
                         # Return demonstration data instead of error
                         processing_time = time.time() - start_time
+                        
+                        # Update DynamoDB with error status
+                        if SQS_INTEGRATION_AVAILABLE:
+                            try:
+                                from dynamodb_schemas import update_call_status, update_processing_metrics
+                                # First update status
+                                update_call_status(session_id, 'error', error_message=str(e))
+                                
+                                # Then update metrics
+                                metrics_update = {
+                                    'processing_time_seconds': processing_time,
+                                    'completed_processing_at': datetime.utcnow().isoformat() + 'Z'
+                                }
+                                update_processing_metrics(session_id, metrics_update)
+                                logger.info(f"Updated DynamoDB with error status for: {session_id}")
+                            except Exception as db_error:
+                                logger.warning(f"Failed to update DynamoDB with error: {db_error}")
+                        
                         markdown_table = """| Field   | Confidence | Value                     |
 |---------|------------|--------------------------|
 | Name    | HIGH       | Preview Error            |
@@ -2624,35 +3229,63 @@ def lambda_handler(event, context):
                             message = f"Processing started. Download URL will be available when complete."
                             include_download_url = True
                         
-                        # Trigger background processing asynchronously
-                        background_payload = {
-                            "background_processing": True,
-                            "session_id": session_id,
-                            "timestamp": timestamp,
-                            "reference_pin": reference_pin,
-                            "excel_s3_key": excel_s3_key,
-                            "config_s3_key": config_s3_key,
-                            "results_key": results_key,
-                            "max_rows": max_rows,
-                            "batch_size": batch_size,
-                            "email_address": email_address,
-                            "email_folder": email_folder
-                        }
-                        
-                        try:
-                            # Use hardcoded function name as fallback if context.function_name fails
-                            function_name = context.function_name if hasattr(context, 'function_name') else 'interface-validator'
-                            logger.info(f"Invoking function: {function_name}")
-                            
-                            lambda_client.invoke(
-                                FunctionName=function_name,  # Self-invoke
-                                InvocationType='Event',  # Asynchronous
-                                Payload=json.dumps(background_payload)
+                        # Track in DynamoDB if available
+                        if SQS_INTEGRATION_AVAILABLE:
+                            track_validation_call(
+                                session_id=session_id,
+                                email=email_address,
+                                reference_pin=reference_pin,
+                                request_type='full',
+                                excel_s3_key=excel_s3_key,
+                                config_s3_key=config_s3_key,
+                                results_s3_key=results_key
                             )
-                            logger.info("Background processing triggered")
+                        
+                        # Send to SQS standard queue for full processing
+                        try:
+                            if SQS_INTEGRATION_AVAILABLE:
+                                message_id = send_full_request(
+                                    session_id=session_id,
+                                    excel_s3_key=excel_s3_key,
+                                    config_s3_key=config_s3_key,
+                                    email=email_address,
+                                    reference_pin=reference_pin,
+                                    results_key=results_key,
+                                    max_rows=max_rows,
+                                    batch_size=batch_size,
+                                    email_folder=email_folder
+                                )
+                                
+                                if message_id:
+                                    logger.info(f"Full processing request sent to SQS: {message_id}")
+                                else:
+                                    raise Exception("Failed to send message to SQS standard queue")
+                            else:
+                                # Fallback to old lambda invocation if SQS not available
+                                background_payload = {
+                                    "background_processing": True,
+                                    "session_id": session_id,
+                                    "timestamp": timestamp,
+                                    "reference_pin": reference_pin,
+                                    "excel_s3_key": excel_s3_key,
+                                    "config_s3_key": config_s3_key,
+                                    "results_key": results_key,
+                                    "max_rows": max_rows,
+                                    "batch_size": batch_size,
+                                    "email_address": email_address,
+                                    "email_folder": email_folder
+                                }
+                                
+                                function_name = context.function_name if hasattr(context, 'function_name') else 'interface-validator'
+                                lambda_client.invoke(
+                                    FunctionName=function_name,
+                                    InvocationType='Event',
+                                    Payload=json.dumps(background_payload)
+                                )
+                                logger.info("Fallback: Background processing triggered via lambda")
+                        
                         except Exception as e:
-                            logger.error(f"CRITICAL: Failed to trigger background processing: {str(e)}")
-                            logger.error(f"Function name was: {function_name if 'function_name' in locals() else 'NOT SET'}")
+                            logger.error(f"CRITICAL: Failed to trigger full processing: {str(e)}")
                             # Don't fail completely, but log the issue prominently
                         
                         processing_time = time.time() - start_time
@@ -2836,6 +3469,8 @@ def handle_background_processing(event, context):
         else:
             print(f"[BACKGROUND] Starting normal validation for session {session_id}, Email: {email_address}")
             logger.info(f"Background processing for session {session_id}")
+            # Get sequential_call from event, or None for normal mode
+            sequential_call_num = event.get('sequential_call')
             validation_results = invoke_validator_lambda(
                 excel_s3_key, config_s3_key, max_rows, batch_size, False, 5, sequential_call_num  # False = normal mode
             )
@@ -2915,7 +3550,6 @@ def handle_background_processing(event, context):
                 # Print full metadata structure for debugging
                 if metadata:
                     print(f"[BACKGROUND] Full metadata structure:")
-                    import json
                     print(f"[BACKGROUND] {json.dumps(metadata, indent=2, default=str)}")
                 
                 # Check structure of validation results
@@ -3037,9 +3671,88 @@ def handle_background_processing(event, context):
                 }
                 
                 # Store preview results in S3 using the same pattern as normal mode
-                # Use the results bucket and a predictable filename structure
-                preview_results_key = f"preview_results/{email_folder}/{timestamp}_{reference_pin}_preview.json"
+                # Use the exact session_id to ensure consistency
+                preview_results_key = f"preview_results/{email_folder}/{session_id}.json"
                 print(f"[BACKGROUND] Storing preview results to S3: {preview_results_key}")
+                
+                # ADD: Update DynamoDB with comprehensive preview metrics
+                if SQS_INTEGRATION_AVAILABLE:
+                    try:
+                        from dynamodb_schemas import update_processing_metrics
+                        
+                        # Map validation response data to DynamoDB schema fields
+                        metrics_update = {
+                            # Processing status
+                            'status': 'completed',
+                            'processing_completed_at': datetime.now(timezone.utc).isoformat(),
+                            
+                            # Row processing metrics
+                            'total_rows': total_rows,
+                            'processed_rows': total_rows_processed,
+                            'new_rows_processed': total_rows_processed,  # For preview, all rows are "new"
+                            
+                            # Timing metrics (with correct units)
+                            'processing_time_seconds': processing_time,
+                            'validation_time_seconds': processing_time,  # Same as processing time
+                            'avg_time_per_row_seconds': per_row_time,
+                            
+                            # Cost and token metrics (with correct units)
+                            'total_cost_usd': total_cost,
+                            'total_tokens': total_tokens,
+                            'total_api_calls': total_api_calls,
+                            'total_cached_calls': total_cached_calls,
+                            'avg_cost_per_row_usd': per_row_cost,
+                            'avg_tokens_per_row': per_row_tokens,
+                            
+                            # Preview-specific estimates
+                            'preview_per_row_cost_usd': per_row_cost,
+                            'preview_per_row_tokens': per_row_tokens,
+                            'preview_per_row_time_seconds': per_row_time,
+                            'preview_estimated_total_cost_usd': per_row_cost * total_rows,
+                            'preview_estimated_total_tokens': per_row_tokens * total_rows,
+                            'preview_estimated_total_time_hours': (per_row_time * total_rows) / 3600,
+                        }
+                        
+                        # Add API provider-specific metrics if available
+                        if 'by_provider' in token_usage:
+                            for provider, provider_data in token_usage['by_provider'].items():
+                                if provider.lower() == 'perplexity':
+                                    metrics_update.update({
+                                        'perplexity_api_calls': provider_data.get('api_calls', 0),
+                                        'perplexity_cached_calls': provider_data.get('cached_calls', 0),
+                                        'perplexity_prompt_tokens': provider_data.get('prompt_tokens', 0),
+                                        'perplexity_completion_tokens': provider_data.get('completion_tokens', 0),
+                                        'perplexity_total_tokens': provider_data.get('total_tokens', 0),
+                                        'perplexity_cost_usd': provider_data.get('cost', 0.0),
+                                        'perplexity_models_used': list(provider_data.get('models', {}).keys())
+                                    })
+                                elif provider.lower() == 'anthropic':
+                                    metrics_update.update({
+                                        'anthropic_api_calls': provider_data.get('api_calls', 0),
+                                        'anthropic_cached_calls': provider_data.get('cached_calls', 0),
+                                        'anthropic_input_tokens': provider_data.get('input_tokens', 0),
+                                        'anthropic_output_tokens': provider_data.get('output_tokens', 0),
+                                        'anthropic_cache_tokens': provider_data.get('cache_tokens', 0),
+                                        'anthropic_total_tokens': provider_data.get('total_tokens', 0),
+                                        'anthropic_cost_usd': provider_data.get('cost', 0.0),
+                                        'anthropic_models_used': list(provider_data.get('models', {}).keys())
+                                    })
+                        
+                        # Update DynamoDB with comprehensive metrics
+                        update_success = update_processing_metrics(session_id, metrics_update)
+                        
+                        if update_success:
+                            print(f"[BACKGROUND] ✅ DynamoDB updated with comprehensive preview metrics")
+                            logger.info(f"DynamoDB updated for session {session_id} with {len(metrics_update)} fields")
+                        else:
+                            print(f"[BACKGROUND] ❌ Failed to update DynamoDB metrics")
+                            logger.error(f"Failed to update DynamoDB metrics for session {session_id}")
+                            
+                    except Exception as db_error:
+                        print(f"[BACKGROUND] ❌ DynamoDB update error: {db_error}")
+                        logger.error(f"Error updating DynamoDB metrics: {db_error}")
+                else:
+                    print(f"[BACKGROUND] ⚠️ SQS integration not available, skipping DynamoDB update")
                 
                 # More robust S3 storage with detailed error handling
                 s3_write_success = False
@@ -3062,7 +3775,6 @@ def handle_background_processing(event, context):
                         logger.error(f"Attempt {attempt + 1} failed to store preview results: {e}")
                         print(f"[BACKGROUND] ❌ Attempt {attempt + 1} failed to store preview results: {e}")
                         if attempt < 2:  # Don't sleep on last attempt
-                            import time
                             time.sleep(1)  # Wait 1 second before retry
                 
                 if not s3_write_success:
@@ -3100,6 +3812,113 @@ def handle_background_processing(event, context):
                     reference_pin=reference_pin, input_filename=input_filename, config_filename=config_filename,
                     metadata=metadata
                 )
+                
+                # ADD: Update DynamoDB with comprehensive full validation metrics
+                if SQS_INTEGRATION_AVAILABLE:
+                    try:
+                        from dynamodb_schemas import update_processing_metrics
+                        
+                        # Extract metrics from validation response
+                        token_usage = metadata.get('token_usage', {})
+                        processing_time = metadata.get('processing_time', 0.0)
+                        total_cost = token_usage.get('total_cost', 0.0)
+                        total_tokens = token_usage.get('total_tokens', 0)
+                        total_api_calls = token_usage.get('api_calls', 0)
+                        total_cached_calls = token_usage.get('cached_calls', 0)
+                        
+                        # Calculate per-row metrics
+                        processed_rows = len(real_results)
+                        per_row_cost = total_cost / processed_rows if processed_rows > 0 else 0.0
+                        per_row_tokens = total_tokens / processed_rows if processed_rows > 0 else 0
+                        per_row_time = processing_time / processed_rows if processed_rows > 0 else 0.0
+                        
+                        # Count validation confidence levels
+                        confidence_counts = {"high": 0, "medium": 0, "low": 0}
+                        validation_targets_count = 0
+                        
+                        for row_data in real_results.values():
+                            for field_name, field_data in row_data.items():
+                                if isinstance(field_data, dict) and 'confidence_level' in field_data:
+                                    validation_targets_count += 1
+                                    conf_level = field_data.get('confidence_level', '').lower()
+                                    if conf_level in confidence_counts:
+                                        confidence_counts[conf_level] += 1
+                        
+                        # Map validation response data to DynamoDB schema fields  
+                        metrics_update = {
+                            # Processing status
+                            'status': 'completed',
+                            'processing_completed_at': datetime.now(timezone.utc).isoformat(),
+                            
+                            # Row processing metrics
+                            'total_rows': total_rows,
+                            'processed_rows': processed_rows,
+                            'new_rows_processed': processed_rows,
+                            'validation_targets_count': validation_targets_count,
+                            
+                            # Timing metrics (with correct units)
+                            'processing_time_seconds': processing_time,
+                            'validation_time_seconds': processing_time,
+                            'avg_time_per_row_seconds': per_row_time,
+                            
+                            # Cost and token metrics (with correct units) 
+                            'total_cost_usd': total_cost,
+                            'total_tokens': total_tokens,
+                            'total_api_calls': total_api_calls,
+                            'total_cached_calls': total_cached_calls,
+                            'avg_cost_per_row_usd': per_row_cost,
+                            'avg_tokens_per_row': per_row_tokens,
+                            
+                            # Quality metrics
+                            'high_confidence_count': confidence_counts['high'],
+                            'medium_confidence_count': confidence_counts['medium'],
+                            'low_confidence_count': confidence_counts['low'],
+                            'validation_accuracy_score': confidence_counts['high'] / validation_targets_count if validation_targets_count > 0 else 0.0,
+                            
+                            # File information
+                            'original_excel_filename': input_filename,
+                            'original_config_filename': config_filename,
+                            'results_file_size_bytes': len(enhanced_zip),
+                        }
+                        
+                        # Add API provider-specific metrics if available
+                        if 'by_provider' in token_usage:
+                            for provider, provider_data in token_usage['by_provider'].items():
+                                if provider.lower() == 'perplexity':
+                                    metrics_update.update({
+                                        'perplexity_api_calls': provider_data.get('api_calls', 0),
+                                        'perplexity_cached_calls': provider_data.get('cached_calls', 0),
+                                        'perplexity_prompt_tokens': provider_data.get('prompt_tokens', 0),
+                                        'perplexity_completion_tokens': provider_data.get('completion_tokens', 0),
+                                        'perplexity_total_tokens': provider_data.get('total_tokens', 0),
+                                        'perplexity_cost_usd': provider_data.get('cost', 0.0),
+                                        'perplexity_models_used': list(provider_data.get('models', {}).keys())
+                                    })
+                                elif provider.lower() == 'anthropic':
+                                    metrics_update.update({
+                                        'anthropic_api_calls': provider_data.get('api_calls', 0),
+                                        'anthropic_cached_calls': provider_data.get('cached_calls', 0),
+                                        'anthropic_input_tokens': provider_data.get('input_tokens', 0),
+                                        'anthropic_output_tokens': provider_data.get('output_tokens', 0),
+                                        'anthropic_cache_tokens': provider_data.get('cache_tokens', 0),
+                                        'anthropic_total_tokens': provider_data.get('total_tokens', 0),
+                                        'anthropic_cost_usd': provider_data.get('cost', 0.0),
+                                        'anthropic_models_used': list(provider_data.get('models', {}).keys())
+                                    })
+                        
+                        # Update DynamoDB with comprehensive metrics
+                        update_success = update_processing_metrics(session_id, metrics_update)
+                        
+                        if update_success:
+                            print(f"[BACKGROUND] ✅ DynamoDB updated with comprehensive full validation metrics")
+                            logger.info(f"DynamoDB updated for session {session_id} with {len(metrics_update)} fields")
+                        else:
+                            print(f"[BACKGROUND] ❌ Failed to update DynamoDB metrics")
+                            logger.error(f"Failed to update DynamoDB metrics for session {session_id}")
+                            
+                    except Exception as db_error:
+                        print(f"[BACKGROUND] ❌ DynamoDB update error: {db_error}")
+                        logger.error(f"Error updating DynamoDB metrics: {db_error}")
                 
                 # Upload enhanced results to replace placeholder
                 if upload_file_to_s3(
@@ -3154,10 +3973,55 @@ def handle_background_processing(event, context):
                         if email_result['success']:
                             logger.info(f"Email sent successfully to {email_address}")
                             email_sent = True
+                            
+                            # Track email delivery in DynamoDB
+                            if SQS_INTEGRATION_AVAILABLE:
+                                try:
+                                    from dynamodb_schemas import track_email_delivery
+                                    track_email_delivery(
+                                        session_id=session_id,
+                                        email_sent=True,
+                                        delivery_status='delivered',
+                                        message_id=email_result.get('message_id', ''),
+                                        bounce_reason=''
+                                    )
+                                    logger.info(f"Email delivery tracked in DynamoDB for session {session_id}")
+                                except Exception as e:
+                                    logger.error(f"Failed to track email delivery in DynamoDB: {e}")
                         else:
                             logger.error(f"Failed to send email: {email_result['message']}")
+                            
+                            # Track email failure in DynamoDB
+                            if SQS_INTEGRATION_AVAILABLE:
+                                try:
+                                    from dynamodb_schemas import track_email_delivery
+                                    track_email_delivery(
+                                        session_id=session_id,
+                                        email_sent=False,
+                                        delivery_status='failed',
+                                        message_id='',
+                                        bounce_reason=email_result.get('message', 'Unknown error')
+                                    )
+                                    logger.info(f"Email failure tracked in DynamoDB for session {session_id}")
+                                except Exception as e:
+                                    logger.error(f"Failed to track email failure in DynamoDB: {e}")
                     else:
                         print(f"[BACKGROUND] Email NOT sent - Available: {EMAIL_SENDER_AVAILABLE}, Address: {email_address}")
+                        
+                        # Track email not sent in DynamoDB
+                        if SQS_INTEGRATION_AVAILABLE:
+                            try:
+                                from dynamodb_schemas import track_email_delivery
+                                track_email_delivery(
+                                    session_id=session_id,
+                                    email_sent=False,
+                                    delivery_status='not_attempted',
+                                    message_id='',
+                                    bounce_reason='Email sender not available or no email address'
+                                )
+                                logger.info(f"Email not sent tracked in DynamoDB for session {session_id}")
+                            except Exception as e:
+                                logger.error(f"Failed to track email not sent in DynamoDB: {e}")
                     
                     # Clean up upload files (optional)
                     try:
@@ -3213,7 +4077,7 @@ def handle_background_processing(event, context):
                     "note": "Validation completed but returned no results"
                 }
                 
-                preview_results_key = f"preview_results/{email_folder}/{timestamp}_{reference_pin}_preview.json"
+                preview_results_key = f"preview_results/{email_folder}/{session_id}.json"
                 print(f"[BACKGROUND] Storing fallback preview results to S3: {preview_results_key}")
                 
                 # More robust S3 storage with detailed error handling
@@ -3237,7 +4101,6 @@ def handle_background_processing(event, context):
                         logger.error(f"Attempt {attempt + 1} failed to store fallback preview results: {e}")
                         print(f"[BACKGROUND] ❌ Attempt {attempt + 1} failed to store fallback preview results: {e}")
                         if attempt < 2:  # Don't sleep on last attempt
-                            import time
                             time.sleep(1)  # Wait 1 second before retry
                 
                 if not s3_write_success:
@@ -3293,7 +4156,7 @@ def handle_background_processing(event, context):
                     "note": "Background processing encountered an error"
                 }
                 
-                preview_results_key = f"preview_results/{email_folder}/{timestamp}_{reference_pin}_preview.json"
+                preview_results_key = f"preview_results/{email_folder}/{session_id}.json"
                 print(f"[BACKGROUND] 🚨 Storing error preview results to S3: {preview_results_key}")
                 
                 s3_client.put_object(

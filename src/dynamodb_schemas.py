@@ -1,0 +1,835 @@
+"""
+DynamoDB table schemas for Perplexity Validator SQS Architecture.
+
+This module defines the table structures and provides helper functions for
+creating and managing DynamoDB tables for the perplexity validator service.
+"""
+
+import boto3
+import json
+from datetime import datetime, timezone
+from typing import Dict, Any, Optional, List
+from botocore.exceptions import ClientError
+from decimal import Decimal
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Initialize DynamoDB client - avoid resource client which can have issues in Lambda
+try:
+    dynamodb_client = boto3.client('dynamodb', region_name='us-east-1')
+    # Create resource client lazily when needed
+    _dynamodb_resource = None
+except Exception as e:
+    logger.error(f"Failed to initialize DynamoDB client: {e}")
+    dynamodb_client = None
+    _dynamodb_resource = None
+
+def get_dynamodb_resource():
+    """Get DynamoDB resource client, creating it if needed."""
+    global _dynamodb_resource
+    if _dynamodb_resource is None:
+        _dynamodb_resource = boto3.resource('dynamodb', region_name='us-east-1')
+    return _dynamodb_resource
+
+def convert_floats_to_decimal(obj):
+    """Convert float values to Decimal for DynamoDB compatibility."""
+    if isinstance(obj, dict):
+        return {key: convert_floats_to_decimal(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_floats_to_decimal(item) for item in obj]
+    elif isinstance(obj, float):
+        return Decimal(str(obj))
+    else:
+        return obj
+
+class DynamoDBSchemas:
+    """DynamoDB table schemas and operations for perplexity validator."""
+    
+    # Table names
+    CALL_TRACKING_TABLE = "perplexity-validator-call-tracking"
+    TOKEN_USAGE_TABLE = "perplexity-validator-token-usage"
+    COST_TRACKING_TABLE = "perplexity-validator-cost-tracking"
+    
+    @classmethod
+    def get_call_tracking_schema(cls) -> Dict[str, Any]:
+        """Schema for the main call tracking table."""
+        return {
+            'TableName': cls.CALL_TRACKING_TABLE,
+            'KeySchema': [
+                {
+                    'AttributeName': 'session_id',
+                    'KeyType': 'HASH'  # Partition key
+                }
+            ],
+            'AttributeDefinitions': [
+                {
+                    'AttributeName': 'session_id',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'created_at',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'email_domain',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'status',
+                    'AttributeType': 'S'
+                }
+            ],
+            'GlobalSecondaryIndexes': [
+                {
+                    'IndexName': 'EmailDomainIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'email_domain',
+                            'KeyType': 'HASH'
+                        },
+                        {
+                            'AttributeName': 'created_at',
+                            'KeyType': 'RANGE'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                },
+                {
+                    'IndexName': 'StatusIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'status',
+                            'KeyType': 'HASH'
+                        },
+                        {
+                            'AttributeName': 'created_at',
+                            'KeyType': 'RANGE'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                }
+            ],
+            'BillingMode': 'PAY_PER_REQUEST',
+            'Tags': [
+                {
+                    'Key': 'Service',
+                    'Value': 'perplexity-validator'
+                },
+                {
+                    'Key': 'Purpose',
+                    'Value': 'call-tracking'
+                }
+            ]
+        }
+    
+    @classmethod
+    def get_token_usage_schema(cls) -> Dict[str, Any]:
+        """Schema for detailed token usage tracking."""
+        return {
+            'TableName': cls.TOKEN_USAGE_TABLE,
+            'KeySchema': [
+                {
+                    'AttributeName': 'session_id',
+                    'KeyType': 'HASH'  # Partition key
+                },
+                {
+                    'AttributeName': 'timestamp',
+                    'KeyType': 'RANGE'  # Sort key
+                }
+            ],
+            'AttributeDefinitions': [
+                {
+                    'AttributeName': 'session_id',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'timestamp',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'api_provider',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'model',
+                    'AttributeType': 'S'
+                }
+            ],
+            'GlobalSecondaryIndexes': [
+                {
+                    'IndexName': 'ApiProviderIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'api_provider',
+                            'KeyType': 'HASH'
+                        },
+                        {
+                            'AttributeName': 'timestamp',
+                            'KeyType': 'RANGE'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                },
+                {
+                    'IndexName': 'ModelIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'model',
+                            'KeyType': 'HASH'
+                        },
+                        {
+                            'AttributeName': 'timestamp',
+                            'KeyType': 'RANGE'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                }
+            ],
+            'BillingMode': 'PAY_PER_REQUEST',
+            'Tags': [
+                {
+                    'Key': 'Service',
+                    'Value': 'perplexity-validator'
+                },
+                {
+                    'Key': 'Purpose',
+                    'Value': 'token-usage'
+                }
+            ]
+        }
+
+class CallTrackingRecord:
+    """Enhanced helper class for comprehensive call tracking records."""
+    
+    def __init__(self, session_id: str, email: str, reference_pin: str, request_type: str):
+        self.session_id = session_id
+        self.email = email
+        self.reference_pin = reference_pin
+        self.request_type = request_type  # 'preview' or 'full'
+        self.email_domain = email.split('@')[-1] if '@' in email else 'unknown'
+        self.created_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = self.created_at
+        self.status = 'queued'
+        self._data = self.to_dynamodb_item()
+    
+    def update_status(self, status: str, **kwargs):
+        """Update status and other fields."""
+        self.status = status
+        self._data['status'] = status
+        self._data['updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        # Update any additional fields passed as kwargs
+        for key, value in kwargs.items():
+            if key in self._data:
+                self._data[key] = value
+    
+    def set_processing_started(self, lambda_request_id: str = '', api_gateway_request_id: str = ''):
+        """Mark processing as started."""
+        timestamp = datetime.now(timezone.utc).isoformat()
+        self.update_status('processing', 
+                          started_processing_at=timestamp,
+                          lambda_request_id=lambda_request_id,
+                          api_gateway_request_id=api_gateway_request_id)
+    
+    def set_processing_completed(self, success: bool = True):
+        """Mark processing as completed."""
+        timestamp = datetime.now(timezone.utc).isoformat()
+        status = 'completed' if success else 'failed'
+        self.update_status(status, completed_processing_at=timestamp)
+    
+    def add_api_usage(self, provider: str, calls: int, tokens: int, cost: float, model: str = '', cached_calls: int = 0):
+        """Add API usage data."""
+        if provider.lower() == 'perplexity':
+            self._data['perplexity_api_calls'] += calls
+            self._data['perplexity_cached_calls'] += cached_calls
+            self._data['perplexity_total_tokens'] += tokens
+            self._data['perplexity_cost_usd'] += cost
+            if model and model not in self._data['perplexity_models_used']:
+                self._data['perplexity_models_used'].append(model)
+        elif provider.lower() == 'anthropic':
+            self._data['anthropic_api_calls'] += calls
+            self._data['anthropic_cached_calls'] += cached_calls
+            self._data['anthropic_total_tokens'] += tokens
+            self._data['anthropic_cost_usd'] += cost
+            if model and model not in self._data['anthropic_models_used']:
+                self._data['anthropic_models_used'].append(model)
+        
+        # Update totals
+        self._data['total_api_calls'] = self._data['perplexity_api_calls'] + self._data['anthropic_api_calls']
+        self._data['total_cached_calls'] = self._data['perplexity_cached_calls'] + self._data['anthropic_cached_calls']
+        self._data['total_tokens'] = self._data['perplexity_total_tokens'] + self._data['anthropic_total_tokens']
+        self._data['total_cost_usd'] = self._data['perplexity_cost_usd'] + self._data['anthropic_cost_usd']
+    
+    def add_error(self, error_message: str):
+        """Add an error message."""
+        self._data['error_count'] += 1
+        self._data['error_messages'].append({
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'message': error_message
+        })
+    
+    def add_warning(self, warning_message: str):
+        """Add a warning message."""
+        self._data['warnings'].append({
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'message': warning_message
+        })
+    
+    def set_preview_estimates(self, per_row_cost: float, per_row_tokens: int, per_row_time: float, 
+                             per_row_time_without_cache: float, total_rows: int):
+        """Set preview estimates with both cached and non-cached time estimates."""
+        self._data['preview_per_row_cost_usd'] = per_row_cost
+        self._data['preview_per_row_tokens'] = per_row_tokens
+        self._data['preview_per_row_time_seconds'] = per_row_time
+        self._data['preview_per_row_time_without_cache_seconds'] = per_row_time_without_cache
+        self._data['preview_estimated_total_cost_usd'] = per_row_cost * total_rows
+        self._data['preview_estimated_total_tokens'] = per_row_tokens * total_rows
+        self._data['preview_estimated_total_time_hours'] = (per_row_time * total_rows) / 3600
+        self._data['preview_estimated_total_time_without_cache_hours'] = (per_row_time_without_cache * total_rows) / 3600
+    
+    def set_file_info(self, excel_s3_key: str = '', config_s3_key: str = '', results_s3_key: str = '', 
+                     excel_size: int = 0, config_size: int = 0, results_size: int = 0, 
+                     excel_filename: str = '', config_filename: str = '', results_filename: str = ''):
+        """Set file information with separate filenames for each file type."""
+        if excel_s3_key:
+            self._data['excel_s3_key'] = excel_s3_key
+        if config_s3_key:
+            self._data['config_s3_key'] = config_s3_key
+        if results_s3_key:
+            self._data['results_s3_key'] = results_s3_key
+        if excel_size:
+            self._data['excel_file_size_bytes'] = excel_size
+        if config_size:
+            self._data['config_file_size_bytes'] = config_size
+        if results_size:
+            self._data['results_file_size_bytes'] = results_size
+        if excel_filename:
+            self._data['original_excel_filename'] = excel_filename
+        if config_filename:
+            self._data['original_config_filename'] = config_filename
+        if results_filename:
+            self._data['original_results_filename'] = results_filename
+    
+    def calculate_performance_metrics(self):
+        """Calculate performance metrics based on current data."""
+        if self._data['processed_rows'] > 0:
+            self._data['avg_time_per_row_seconds'] = self._data['processing_time_seconds'] / self._data['processed_rows']
+            self._data['avg_cost_per_row_usd'] = self._data['total_cost_usd'] / self._data['processed_rows']
+            self._data['avg_tokens_per_row'] = self._data['total_tokens'] / self._data['processed_rows']
+    
+    def get_data(self) -> Dict[str, Any]:
+        """Get the current data dictionary."""
+        return self._data.copy()
+        
+    def to_dynamodb_item(self) -> Dict[str, Any]:
+        """Convert to comprehensive DynamoDB item format."""
+        if hasattr(self, '_data'):
+            return self._data.copy()
+        
+        return {
+            # Basic identification
+            'session_id': self.session_id,
+            'email': self.email,
+            'email_domain': self.email_domain,
+            'reference_pin': self.reference_pin,
+            'request_type': self.request_type,
+            'status': self.status,
+            
+            # Timestamps
+            'created_at': self.created_at,
+            'updated_at': self.updated_at,
+            'started_processing_at': '',
+            'completed_processing_at': '',
+            'response_sent_at': '',
+            
+            # Trigger information
+            'trigger_source': 'api_gateway',  # 'api_gateway', 'sqs', 'direct'
+            'trigger_method': 'json_action',  # 'json_action', 'multipart', 'sqs_message'
+            'client_ip': '',
+            'user_agent': '',
+            'api_gateway_request_id': '',
+            'lambda_request_id': '',
+            
+            # File information
+            'excel_s3_key': '',
+            'config_s3_key': '',
+            'results_s3_key': '',
+            'excel_file_size_bytes': 0,
+            'config_file_size_bytes': 0,
+            'results_file_size_bytes': 0,
+            'original_excel_filename': '',
+            'original_config_filename': '',
+            'original_results_filename': '',
+            
+            # Processing parameters
+            'max_rows': 0,
+            'batch_size': 0,
+            'preview_max_rows': 0,
+            'async_mode': False,
+            'sequential_call': 0,
+            
+            # Row processing
+            'total_rows': 0,
+            'processed_rows': 0,
+            'cached_rows': 0,
+            'new_rows_processed': 0,
+            'validation_targets_count': 0,
+            
+            # API usage - Perplexity
+            'perplexity_api_calls': 0,
+            'perplexity_cached_calls': 0,
+            'perplexity_prompt_tokens': 0,
+            'perplexity_completion_tokens': 0,
+            'perplexity_total_tokens': 0,
+            'perplexity_cost_usd': 0.0,
+            'perplexity_models_used': [],
+            
+            # API usage - Anthropic
+            'anthropic_api_calls': 0,
+            'anthropic_cached_calls': 0,
+            'anthropic_input_tokens': 0,
+            'anthropic_output_tokens': 0,
+            'anthropic_cache_tokens': 0,
+            'anthropic_total_tokens': 0,
+            'anthropic_cost_usd': 0.0,
+            'anthropic_models_used': [],
+            
+            # Total costs and tokens
+            'total_api_calls': 0,
+            'total_cached_calls': 0,
+            'total_tokens': 0,
+            'total_cost_usd': 0.0,
+            
+            # Preview estimates (for preview mode)
+            'preview_per_row_cost_usd': 0.0,
+            'preview_per_row_tokens': 0,
+            'preview_per_row_time_seconds': 0.0,
+            'preview_per_row_time_without_cache_seconds': 0.0,
+            'preview_estimated_total_cost_usd': 0.0,
+            'preview_estimated_total_tokens': 0,
+            'preview_estimated_total_time_hours': 0.0,
+            'preview_estimated_total_time_without_cache_hours': 0.0,
+            
+            # Timing (all in seconds)
+            'processing_time_seconds': 0.0,
+            'queue_wait_time_seconds': 0.0,
+            'validation_time_seconds': 0.0,
+            'file_upload_time_seconds': 0.0,
+            'result_creation_time_seconds': 0.0,
+            'email_send_time_seconds': 0.0,
+            
+            # Performance metrics
+            'avg_time_per_row_seconds': 0.0,
+            'avg_cost_per_row_usd': 0.0,
+            'avg_tokens_per_row': 0.0,
+            
+            # Quality metrics
+            'high_confidence_count': 0,
+            'medium_confidence_count': 0,
+            'low_confidence_count': 0,
+            'validation_accuracy_score': 0.0,
+            
+            # Infrastructure
+            'sqs_message_id': '',
+            'lambda_memory_used': 0,
+            'lambda_duration': 0.0,
+            'lambda_billed_duration': 0.0,
+            
+            # Error handling
+            'error_count': 0,
+            'error_messages': [],
+            'warnings': [],
+            'retry_count': 0,
+            
+            # Email delivery
+            'email_sent': False,
+            'email_delivery_status': '',
+            'email_message_id': '',
+            'email_bounce_reason': '',
+            
+            # Results metadata
+            'result_format': '',  # 'excel', 'json', 'csv'
+            'download_count': 0,
+            'last_downloaded_at': '',
+            'expires_at': '',
+            
+            # Search context usage
+            'search_context_usage': {},  # {'low': 5, 'medium': 3, 'high': 2}
+            'search_group_counts': {},   # Details about search groups
+            
+            # Custom fields
+            'notes': '',
+            'tags': [],
+            'priority': 'normal',
+            'version': '1.0'
+        }
+
+def create_call_tracking_table():
+    """Create the call tracking table."""
+    schemas = DynamoDBSchemas()
+    try:
+        dynamodb_client.create_table(**schemas.get_call_tracking_schema())
+        logger.info(f"Created {schemas.CALL_TRACKING_TABLE} table")
+        return True
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            logger.info(f"Table {schemas.CALL_TRACKING_TABLE} already exists")
+            return True
+        else:
+            logger.error(f"Error creating call tracking table: {e}")
+            return False
+
+def create_token_usage_table():
+    """Create the token usage table."""
+    schemas = DynamoDBSchemas()
+    try:
+        dynamodb_client.create_table(**schemas.get_token_usage_schema())
+        logger.info(f"Created {schemas.TOKEN_USAGE_TABLE} table")
+        return True
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            logger.info(f"Table {schemas.TOKEN_USAGE_TABLE} already exists")
+            return True
+        else:
+            logger.error(f"Error creating token usage table: {e}")
+            return False
+
+def track_validation_call(session_id: str, email: str, reference_pin: str, 
+                         request_type: str, **kwargs) -> bool:
+    """Track a validation call in DynamoDB."""
+    try:
+        schemas = DynamoDBSchemas()
+        dynamodb = get_dynamodb_resource()
+        table = dynamodb.Table(schemas.CALL_TRACKING_TABLE)
+        
+        record = CallTrackingRecord(session_id, email, reference_pin, request_type)
+        item = record.to_dynamodb_item()
+        
+        # Update any additional fields
+        for key, value in kwargs.items():
+            item[key] = value
+        
+        # Convert floats to Decimal for DynamoDB
+        item = convert_floats_to_decimal(item)
+        
+        table.put_item(Item=item)
+        return True
+    except Exception as e:
+        logger.error(f"Error tracking validation call: {e}")
+        return False
+
+def update_call_status(session_id: str, status: str, **kwargs) -> bool:
+    """Update call status in DynamoDB."""
+    try:
+        schemas = DynamoDBSchemas()
+        dynamodb = get_dynamodb_resource()
+        table = dynamodb.Table(schemas.CALL_TRACKING_TABLE)
+        
+        updates = {
+            'status': status,
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        updates.update(kwargs)
+        
+        # Build update expression with attribute names for reserved keywords
+        update_expression = "SET "
+        expression_attribute_values = {}
+        expression_attribute_names = {}
+        
+        for key, value in updates.items():
+            if key == 'status':
+                # Handle reserved keyword
+                update_expression += f"#status = :status, "
+                expression_attribute_names['#status'] = 'status'
+                expression_attribute_values[':status'] = value
+            else:
+                update_expression += f"{key} = :{key}, "
+                expression_attribute_values[f":{key}"] = value
+        
+        # Remove trailing comma and space
+        update_expression = update_expression.rstrip(", ")
+        
+        # Convert floats to Decimal for DynamoDB
+        expression_attribute_values = convert_floats_to_decimal(expression_attribute_values)
+        
+        update_kwargs = {
+            'Key': {'session_id': session_id},
+            'UpdateExpression': update_expression,
+            'ExpressionAttributeValues': expression_attribute_values
+        }
+        
+        if expression_attribute_names:
+            update_kwargs['ExpressionAttributeNames'] = expression_attribute_names
+        
+        table.update_item(**update_kwargs)
+        return True
+    except Exception as e:
+        logger.error(f"Error updating call status: {e}")
+        return False
+
+def get_call_record(session_id: str) -> Optional[Dict[str, Any]]:
+    """Get call tracking record by session ID."""
+    try:
+        schemas = DynamoDBSchemas()
+        dynamodb = get_dynamodb_resource()
+        table = dynamodb.Table(schemas.CALL_TRACKING_TABLE)
+        response = table.get_item(Key={'session_id': session_id})
+        return response.get('Item')
+    except Exception as e:
+        logger.error(f"Error getting call record: {e}")
+        return None
+
+def track_token_usage(session_id: str, api_provider: str, model: str,
+                     input_tokens: int, output_tokens: int, total_cost: float,
+                     search_context_size: str = None) -> bool:
+    """Track token usage in DynamoDB."""
+    try:
+        schemas = DynamoDBSchemas()
+        dynamodb = get_dynamodb_resource()
+        table = dynamodb.Table(schemas.TOKEN_USAGE_TABLE)
+        
+        item = {
+            'session_id': session_id,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'api_provider': api_provider,
+            'model': model,
+            'input_tokens': input_tokens,
+            'output_tokens': output_tokens,
+            'total_tokens': input_tokens + output_tokens,
+            'total_cost': total_cost,
+            'search_context_size': search_context_size or 'unknown'
+        }
+        
+        # Convert floats to Decimal for DynamoDB
+        item = convert_floats_to_decimal(item)
+        
+        table.put_item(Item=item)
+        return True
+    except Exception as e:
+        logger.error(f"Error tracking token usage: {e}")
+        return False
+
+
+def update_processing_metrics(session_id: str, metrics: Dict[str, Any]) -> bool:
+    """Update processing metrics for a call."""
+    try:
+        table = get_dynamodb_resource().Table(DynamoDBSchemas.CALL_TRACKING_TABLE)
+        
+        # Build update expression dynamically
+        update_parts = []
+        expression_values = {}
+        expression_names = {}
+        
+        for key, value in metrics.items():
+            if key not in ['session_id']:
+                placeholder = f':val_{len(expression_values)}'
+                if key in ['status', 'search_context_usage', 'search_group_counts']:
+                    # These might be reserved words or complex structures
+                    name_placeholder = f'#attr_{len(expression_names)}'
+                    expression_names[name_placeholder] = key
+                    update_parts.append(f"{name_placeholder} = {placeholder}")
+                else:
+                    update_parts.append(f"{key} = {placeholder}")
+                expression_values[placeholder] = value
+        
+        # Always update timestamp
+        update_parts.append("updated_at = :updated_at")
+        expression_values[':updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        update_expression = "SET " + ", ".join(update_parts)
+        
+        # Convert floats to Decimal for DynamoDB
+        expression_values = convert_floats_to_decimal(expression_values)
+        
+        kwargs = {
+            'Key': {'session_id': session_id},
+            'UpdateExpression': update_expression,
+            'ExpressionAttributeValues': expression_values
+        }
+        
+        if expression_names:
+            kwargs['ExpressionAttributeNames'] = expression_names
+        
+        table.update_item(**kwargs)
+        return True
+    except Exception as e:
+        logger.error(f"Error updating processing metrics: {e}")
+        return False
+
+
+def track_api_usage_detailed(session_id: str, provider: str, usage_data: Dict[str, Any]) -> bool:
+    """Track detailed API usage for a specific provider."""
+    try:
+        table = get_dynamodb_resource().Table(DynamoDBSchemas.CALL_TRACKING_TABLE)
+        
+        # Get current record to calculate new totals
+        response = table.get_item(Key={'session_id': session_id})
+        if 'Item' not in response:
+            logger.error(f"Session {session_id} not found for API usage tracking")
+            return False
+        
+        current_data = response['Item']
+        
+        # Helper function to convert to number for arithmetic
+        def to_num(val):
+            if isinstance(val, Decimal):
+                return float(val)
+            return val
+        
+        # Calculate updates based on provider
+        updates = {}
+        if provider.lower() == 'perplexity':
+            updates['perplexity_api_calls'] = to_num(current_data.get('perplexity_api_calls', 0)) + usage_data.get('api_calls', 0)
+            updates['perplexity_cached_calls'] = to_num(current_data.get('perplexity_cached_calls', 0)) + usage_data.get('cached_calls', 0)
+            updates['perplexity_prompt_tokens'] = to_num(current_data.get('perplexity_prompt_tokens', 0)) + usage_data.get('prompt_tokens', 0)
+            updates['perplexity_completion_tokens'] = to_num(current_data.get('perplexity_completion_tokens', 0)) + usage_data.get('completion_tokens', 0)
+            updates['perplexity_total_tokens'] = to_num(current_data.get('perplexity_total_tokens', 0)) + usage_data.get('total_tokens', 0)
+            updates['perplexity_cost_usd'] = to_num(current_data.get('perplexity_cost_usd', 0)) + usage_data.get('cost', 0)
+            
+            # Handle models list
+            current_models = current_data.get('perplexity_models_used', [])
+            new_model = usage_data.get('model', '')
+            if new_model and new_model not in current_models:
+                current_models.append(new_model)
+            updates['perplexity_models_used'] = current_models
+            
+        elif provider.lower() == 'anthropic':
+            updates['anthropic_api_calls'] = to_num(current_data.get('anthropic_api_calls', 0)) + usage_data.get('api_calls', 0)
+            updates['anthropic_cached_calls'] = to_num(current_data.get('anthropic_cached_calls', 0)) + usage_data.get('cached_calls', 0)
+            updates['anthropic_input_tokens'] = to_num(current_data.get('anthropic_input_tokens', 0)) + usage_data.get('input_tokens', 0)
+            updates['anthropic_output_tokens'] = to_num(current_data.get('anthropic_output_tokens', 0)) + usage_data.get('output_tokens', 0)
+            updates['anthropic_cache_tokens'] = to_num(current_data.get('anthropic_cache_tokens', 0)) + usage_data.get('cache_tokens', 0)
+            updates['anthropic_total_tokens'] = to_num(current_data.get('anthropic_total_tokens', 0)) + usage_data.get('total_tokens', 0)
+            updates['anthropic_cost_usd'] = to_num(current_data.get('anthropic_cost_usd', 0)) + usage_data.get('cost', 0)
+            
+            # Handle models list
+            current_models = current_data.get('anthropic_models_used', [])
+            new_model = usage_data.get('model', '')
+            if new_model and new_model not in current_models:
+                current_models.append(new_model)
+            updates['anthropic_models_used'] = current_models
+        
+        # Calculate new totals
+        updates['total_api_calls'] = updates.get('perplexity_api_calls', to_num(current_data.get('perplexity_api_calls', 0))) + updates.get('anthropic_api_calls', to_num(current_data.get('anthropic_api_calls', 0)))
+        updates['total_cached_calls'] = updates.get('perplexity_cached_calls', to_num(current_data.get('perplexity_cached_calls', 0))) + updates.get('anthropic_cached_calls', to_num(current_data.get('anthropic_cached_calls', 0)))
+        updates['total_tokens'] = updates.get('perplexity_total_tokens', to_num(current_data.get('perplexity_total_tokens', 0))) + updates.get('anthropic_total_tokens', to_num(current_data.get('anthropic_total_tokens', 0)))
+        updates['total_cost_usd'] = updates.get('perplexity_cost_usd', to_num(current_data.get('perplexity_cost_usd', 0))) + updates.get('anthropic_cost_usd', to_num(current_data.get('anthropic_cost_usd', 0)))
+        
+        # Calculate performance metrics if we have processed rows
+        processed_rows = to_num(current_data.get('processed_rows', 0))
+        if processed_rows > 0:
+            updates['avg_cost_per_row_usd'] = updates['total_cost_usd'] / processed_rows
+            updates['avg_tokens_per_row'] = updates['total_tokens'] / processed_rows
+        
+        return update_processing_metrics(session_id, updates)
+        
+    except Exception as e:
+        logger.error(f"Error tracking detailed API usage: {e}")
+        return False
+
+
+def track_email_delivery(session_id: str, email_sent: bool, delivery_status: str = '', 
+                        message_id: str = '', bounce_reason: str = '') -> bool:
+    """Track email delivery status."""
+    try:
+        updates = {
+            'email_sent': email_sent,
+            'email_delivery_status': delivery_status,
+            'email_message_id': message_id,
+            'email_bounce_reason': bounce_reason,
+            'response_sent_at': datetime.now(timezone.utc).isoformat()
+        }
+        return update_processing_metrics(session_id, updates)
+    except Exception as e:
+        logger.error(f"Error tracking email delivery: {e}")
+        return False
+
+
+def track_lambda_performance(session_id: str, memory_used: int, duration: float, 
+                           billed_duration: float) -> bool:
+    """Track Lambda performance metrics."""
+    try:
+        updates = {
+            'lambda_memory_used': memory_used,
+            'lambda_duration': duration,
+            'lambda_billed_duration': billed_duration
+        }
+        return update_processing_metrics(session_id, updates)
+    except Exception as e:
+        logger.error(f"Error tracking Lambda performance: {e}")
+        return False
+
+
+def get_call_analytics(session_id: str = None, email: str = None, date_range: tuple = None) -> Dict[str, Any]:
+    """Get comprehensive analytics for calls."""
+    try:
+        table = get_dynamodb_resource().Table(DynamoDBSchemas.CALL_TRACKING_TABLE)
+        
+        if session_id:
+            # Get specific session
+            response = table.get_item(Key={'session_id': session_id})
+            if 'Item' in response:
+                return {'sessions': [response['Item']], 'count': 1}
+        
+        # Scan for multiple records
+        scan_kwargs = {}
+        
+        if email:
+            scan_kwargs['FilterExpression'] = 'email = :email'
+            scan_kwargs['ExpressionAttributeValues'] = {':email': email}
+        
+        response = table.scan(**scan_kwargs)
+        items = response.get('Items', [])
+        
+        # Filter by date range if provided
+        if date_range and len(date_range) == 2:
+            start_date, end_date = date_range
+            filtered_items = []
+            for item in items:
+                created_at = item.get('created_at', '')
+                if start_date <= created_at <= end_date:
+                    filtered_items.append(item)
+            items = filtered_items
+        
+        # Helper function to convert Decimal to float
+        def to_num(val):
+            if isinstance(val, Decimal):
+                return float(val)
+            return val
+        
+        # Calculate summary statistics
+        total_cost = sum(to_num(item.get('total_cost_usd', 0)) for item in items)
+        total_tokens = sum(to_num(item.get('total_tokens', 0)) for item in items)
+        total_api_calls = sum(to_num(item.get('total_api_calls', 0)) for item in items)
+        total_cached_calls = sum(to_num(item.get('total_cached_calls', 0)) for item in items)
+        total_rows_processed = sum(to_num(item.get('processed_rows', 0)) for item in items)
+        
+        # Remove cache hit rate calculation as requested
+        
+        return {
+            'sessions': items,
+            'count': len(items),
+            'summary': {
+                'total_cost': total_cost,
+                'total_tokens': total_tokens,
+                'total_api_calls': total_api_calls,
+                'total_cached_calls': total_cached_calls,
+                'total_rows_processed': total_rows_processed,
+
+                'avg_cost_per_session': total_cost / len(items) if items else 0,
+                'avg_tokens_per_session': total_tokens / len(items) if items else 0
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting call analytics: {e}")
+        return {'sessions': [], 'count': 0, 'summary': {}} 

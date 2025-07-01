@@ -131,6 +131,9 @@ def copy_source_files():
         "lambda_test_json_clean.py",  # Validation history loader
         "email_sender.py",  # Email sending functionality
         "schema_validator_simplified.py",  # Schema validator for primary key determination
+        "sqs_service.py",  # SQS integration for priority processing
+        "dynamodb_schemas.py",  # DynamoDB tracking and schemas
+        "api_gateway_validation.py",  # API Gateway validation functions
     ]
     
     for file_name in interface_files:
@@ -523,11 +526,12 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
         return False, None
 
 def setup_api_gateway(lambda_client, function_name, region):
-    """Set up API Gateway for the Lambda function."""
-    logger.info("Setting up API Gateway...")
+    """Set up API Gateway for the Lambda function with single /validate endpoint."""
+    logger.info("Setting up API Gateway with Lambda proxy integration...")
     
     try:
         apigateway_client = boto3.client('apigateway', region_name=region)
+        account_id = boto3.client('sts').get_caller_identity()['Account']
         
         # Create or find REST API
         api_name = API_GATEWAY_CONFIG["ApiName"]
@@ -581,34 +585,96 @@ def setup_api_gateway(lambda_client, function_name, region):
             validate_resource_id = validate_resource['id']
             logger.info("Using existing /validate resource")
         
-        # Create POST method
+        # Create /status resource for status checking
+        status_resource = None
+        for resource in resources['items']:
+            if resource['path'] == '/status':
+                status_resource = resource
+                break
+        
+        if not status_resource:
+            status_response = apigateway_client.create_resource(
+                restApiId=api_id,
+                parentId=root_resource_id,
+                pathPart='status'
+            )
+            status_resource_id = status_response['id']
+            logger.info("Created /status resource")
+        else:
+            status_resource_id = status_resource['id']
+            logger.info("Using existing /status resource")
+        
+        # Create /status/{sessionId} resource
+        status_session_resource = None
+        for resource in resources['items']:
+            if resource.get('pathPart') == '{sessionId}' and resource.get('parentId') == status_resource_id:
+                status_session_resource = resource
+                break
+        
+        if not status_session_resource:
+            status_session_response = apigateway_client.create_resource(
+                restApiId=api_id,
+                parentId=status_resource_id,
+                pathPart='{sessionId}'
+            )
+            status_session_resource_id = status_session_response['id']
+            logger.info("Created /status/{sessionId} resource")
+        else:
+            status_session_resource_id = status_session_resource['id']
+            logger.info("Using existing /status/{sessionId} resource")
+        
+        # Create POST method for main /validate endpoint
         try:
             apigateway_client.put_method(
                 restApiId=api_id,
                 resourceId=validate_resource_id,
                 httpMethod='POST',
-                authorizationType='NONE'
+                authorizationType='NONE',
+                requestParameters={
+                    'method.request.querystring.async': False,
+                    'method.request.querystring.preview_first_row': False,
+                    'method.request.querystring.max_rows': False,
+                    'method.request.querystring.batch_size': False
+                }
             )
-            logger.info("Created POST method")
+            logger.info("Created POST method for /validate")
         except apigateway_client.exceptions.ConflictException:
-            logger.info("POST method already exists")
+            logger.info("POST method already exists for /validate")
         
-        # Create OPTIONS method for CORS
+        # Create GET method for /status/{sessionId}
         try:
             apigateway_client.put_method(
                 restApiId=api_id,
-                resourceId=validate_resource_id,
-                httpMethod='OPTIONS',
-                authorizationType='NONE'
+                resourceId=status_session_resource_id,
+                httpMethod='GET',
+                authorizationType='NONE',
+                requestParameters={
+                    'method.request.path.sessionId': True,
+                    'method.request.querystring.preview': False
+                }
             )
-            logger.info("Created OPTIONS method for CORS")
+            logger.info("Created GET method for /status/{sessionId}")
         except apigateway_client.exceptions.ConflictException:
-            logger.info("OPTIONS method already exists")
+            logger.info("GET method already exists for /status/{sessionId}")
         
-        # Set up Lambda integration for POST
-        lambda_arn = f"arn:aws:lambda:{region}:400232868802:function:{function_name}"
-        integration_uri = f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
+        # Create OPTIONS method for CORS on all endpoints
+        for resource_id in [validate_resource_id, status_resource_id, status_session_resource_id]:
+            try:
+                apigateway_client.put_method(
+                    restApiId=api_id,
+                    resourceId=resource_id,
+                    httpMethod='OPTIONS',
+                    authorizationType='NONE'
+                )
+                logger.info(f"Created OPTIONS method for CORS on resource {resource_id}")
+            except apigateway_client.exceptions.ConflictException:
+                logger.info(f"OPTIONS method already exists for resource {resource_id}")
         
+        # Set up Lambda proxy integration for all endpoints
+        lambda_arn = f"arn:aws:lambda:{region}:{account_id}:function:{function_name}"
+        lambda_integration_uri = f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
+        
+        # 1. Lambda integration for /validate
         try:
             apigateway_client.put_integration(
                 restApiId=api_id,
@@ -616,50 +682,68 @@ def setup_api_gateway(lambda_client, function_name, region):
                 httpMethod='POST',
                 type='AWS_PROXY',
                 integrationHttpMethod='POST',
-                uri=integration_uri
+                uri=lambda_integration_uri
             )
-            logger.info("Set up Lambda integration for POST")
+            logger.info("Set up Lambda proxy integration for /validate")
         except apigateway_client.exceptions.ConflictException:
-            logger.info("Lambda integration for POST already exists")
+            logger.info("Lambda integration already exists for /validate")
         
-        # Set up CORS integration for OPTIONS
+        # 2. Lambda integration for /status/{sessionId}
         try:
             apigateway_client.put_integration(
                 restApiId=api_id,
-                resourceId=validate_resource_id,
-                httpMethod='OPTIONS',
-                type='MOCK',
-                requestTemplates={
-                    'application/json': '{"statusCode": 200}'
-                }
+                resourceId=status_session_resource_id,
+                httpMethod='GET',
+                type='AWS_PROXY',
+                integrationHttpMethod='POST',
+                uri=lambda_integration_uri
             )
-            
-            apigateway_client.put_integration_response(
-                restApiId=api_id,
-                resourceId=validate_resource_id,
-                httpMethod='OPTIONS',
-                statusCode='200',
-                responseParameters={
-                    'method.response.header.Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
-                    'method.response.header.Access-Control-Allow-Methods': "'OPTIONS,POST'",
-                    'method.response.header.Access-Control-Allow-Origin': "'*'"
-                }
-            )
-            
-            apigateway_client.put_method_response(
-                restApiId=api_id,
-                resourceId=validate_resource_id,
-                httpMethod='OPTIONS',
-                statusCode='200',
-                responseParameters={
-                    'method.response.header.Access-Control-Allow-Headers': False,
-                    'method.response.header.Access-Control-Allow-Methods': False,
-                    'method.response.header.Access-Control-Allow-Origin': False
-                }
-            )
-            logger.info("Set up CORS integration for OPTIONS")
+            logger.info("Set up Lambda proxy integration for /status/{sessionId}")
         except apigateway_client.exceptions.ConflictException:
-            logger.info("CORS integration already exists")
+            logger.info("Lambda integration already exists for /status/{sessionId}")
+        
+        # Set up CORS integration for OPTIONS on all endpoints
+        for resource_id, resource_name in [(validate_resource_id, '/validate'), 
+                                           (status_resource_id, '/status'),
+                                           (status_session_resource_id, '/status/{sessionId}')]:
+            try:
+                apigateway_client.put_integration(
+                    restApiId=api_id,
+                    resourceId=resource_id,
+                    httpMethod='OPTIONS',
+                    type='MOCK',
+                    requestTemplates={
+                        'application/json': '{"statusCode": 200}'
+                    }
+                )
+                
+                # First create method response, then integration response
+                apigateway_client.put_method_response(
+                    restApiId=api_id,
+                    resourceId=resource_id,
+                    httpMethod='OPTIONS',
+                    statusCode='200',
+                    responseParameters={
+                        'method.response.header.Access-Control-Allow-Headers': False,
+                        'method.response.header.Access-Control-Allow-Methods': False,
+                        'method.response.header.Access-Control-Allow-Origin': False
+                    }
+                )
+                
+                apigateway_client.put_integration_response(
+                    restApiId=api_id,
+                    resourceId=resource_id,
+                    httpMethod='OPTIONS',
+                    statusCode='200',
+                    responseParameters={
+                        'method.response.header.Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+                        'method.response.header.Access-Control-Allow-Methods': "'OPTIONS,POST,GET'",
+                        'method.response.header.Access-Control-Allow-Origin': "'*'"
+                    }
+                )
+                logger.info(f"Set up CORS integration for OPTIONS on {resource_name}")
+            except apigateway_client.exceptions.ConflictException:
+                logger.info(f"CORS integration already exists for {resource_name}")
         
         # Add Lambda permission for API Gateway
         try:
@@ -684,10 +768,10 @@ def setup_api_gateway(lambda_client, function_name, region):
                 # No policy exists or permission not found, add it
                 lambda_client.add_permission(
                     FunctionName=function_name,
-                    StatementId=f'apigateway-invoke-{api_id}',  # Use API ID instead of timestamp
+                    StatementId=f'apigateway-invoke-{api_id}',
                     Action='lambda:InvokeFunction',
                     Principal='apigateway.amazonaws.com',
-                    SourceArn=f"arn:aws:execute-api:{region}:400232868802:{api_id}/*/*"
+                    SourceArn=f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*/*"
                 )
                 logger.info("Added Lambda permission for API Gateway")
         except lambda_client.exceptions.ResourceConflictException:
@@ -697,12 +781,23 @@ def setup_api_gateway(lambda_client, function_name, region):
         deployment_response = apigateway_client.create_deployment(
             restApiId=api_id,
             stageName='prod',
-            description='Production deployment for perplexity validator interface'
+            description='Production deployment - Lambda handles all routing'
         )
         logger.info("Deployed API to 'prod' stage")
         
-        # Return API URL
-        api_url = f"https://{api_id}.execute-api.{region}.amazonaws.com/prod/validate"
+        # Log all endpoints
+        base_url = f"https://{api_id}.execute-api.{region}.amazonaws.com/prod"
+        logger.info("\n=== API Gateway Endpoints ===")
+        logger.info(f"Main endpoint: {base_url}/validate")
+        logger.info(f"  - Lambda decides sync/async based on ?async parameter")
+        logger.info(f"  - Sync: Process immediately and return results")
+        logger.info(f"  - Async: Lambda sends to SQS for background processing")
+        logger.info(f"Status endpoint: {base_url}/status/{{sessionId}}")
+        logger.info(f"  - Check async processing status")
+        logger.info("=============================\n")
+        
+        # Return main API URL
+        api_url = f"{base_url}/validate"
         return api_url
         
     except Exception as e:
