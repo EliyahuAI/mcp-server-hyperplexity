@@ -992,27 +992,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'substantially_different': False
                     }
             
-            # Process ID fields - DON'T add them to results since they're not validated
+            # Process ID fields - Include original values in results for preview table display
             if id_fields:
-                logger.info(f"Skipping {len(id_fields)} ID fields - they are not validated, only used for context")
-                # ID fields are used for context and row identification only
-                # They should not appear in validation results or have confidence levels
-                # for id_field in id_fields:
-                #     # Simply copy the original value to the result without validation
-                #     original_value = row_data.get(id_field.column, "")
-                #     row_results[id_field.column] = {
-                #         'value': original_value,
-                #         'confidence': 1.0,  # Max confidence since we're not checking
-                #         'confidence_level': "HIGH",
-                #         'sources': [],
-                #         'quote': "",
-                #         'main_source': "",
-                #         'update_required': False,  # Never update ID fields
-                #         'substantially_different': False
-                #     }
-                #     
-                #     # Add ID field results to accumulated results
-                #     accumulated_results[id_field.column] = row_results[id_field.column]
+                logger.info(f"Including {len(id_fields)} ID fields with original values for preview display")
+                for id_field in id_fields:
+                    # Simply copy the original value to the result without validation
+                    original_value = row_data.get(id_field.column, "")
+                    row_results[id_field.column] = {
+                        'value': original_value,
+                        'confidence': 1.0,  # Max confidence since we're not checking
+                        'confidence_level': "ID",  # Special confidence level for ID fields
+                        'sources': [],
+                        'quote': "",
+                        'main_source': "",
+                        'update_required': False,  # Never update ID fields
+                        'substantially_different': False
+                    }
+                    
+                    # Add ID field results to accumulated results
+                    accumulated_results[id_field.column] = row_results[id_field.column]
             
             # Group validation targets by search group - exclude ID and IGNORED fields 
             validation_targets = [t for t in validator.validation_targets if t.importance.upper() not in ["ID", "IGNORED"]]

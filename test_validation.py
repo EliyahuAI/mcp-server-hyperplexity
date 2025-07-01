@@ -496,6 +496,12 @@ def test_full_validation(args, output_dir):
                 "results_s3_key": db_record.get('results_s3_key')
             }
             log_output(output_dir, "03_full_validation_s3_paths.json", s3_info)
+            
+            # Download and extract results ZIP file
+            results_s3_key = db_record.get('results_s3_key')
+            if results_s3_key:
+                print(f"\n📦 Downloading results ZIP file...")
+                download_and_extract_results(results_s3_key, output_dir)
         else:
             print("⏱️  Timeout waiting for validation completion")
         
@@ -503,6 +509,52 @@ def test_full_validation(args, output_dir):
     else:
         print(f"❌ Failed: {response.text}")
         return None 
+
+def download_and_extract_results(results_s3_key, output_dir):
+    """Download and extract the results ZIP file from S3"""
+    import boto3
+    import zipfile
+    import os
+    from pathlib import Path
+    
+    try:
+        # Create S3 client
+        s3_client = boto3.client('s3')
+        
+        # Download the results ZIP file
+        bucket = 'perplexity-results'
+        zip_filename = f"validation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        local_zip_path = output_dir / zip_filename
+        
+        print(f"   Downloading from s3://{bucket}/{results_s3_key}")
+        s3_client.download_file(bucket, results_s3_key, str(local_zip_path))
+        print(f"   ✅ Downloaded: {local_zip_path}")
+        
+        # Extract the ZIP file
+        extract_dir = output_dir / "extracted_results"
+        extract_dir.mkdir(exist_ok=True)
+        
+        print(f"   📂 Extracting to: {extract_dir}")
+        with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_dir)
+        
+        # List extracted contents
+        print(f"   📄 Extracted files:")
+        for root, dirs, files in os.walk(extract_dir):
+            for file in files:
+                relative_path = Path(root).relative_to(extract_dir) / file
+                print(f"      {relative_path}")
+        
+        print(f"   ✅ Extraction complete!")
+        
+        return True
+        
+    except Exception as e:
+        print(f"   ❌ Error downloading/extracting results: {e}")
+        import traceback
+        error_details = traceback.format_exc()
+        log_output(output_dir, "03_download_error.txt", error_details)
+        return False
 
 def generate_summary(results, output_dir, args):
     """Generate test summary report"""

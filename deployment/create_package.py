@@ -174,8 +174,8 @@ def copy_source_files():
     # Copy lambda_function.py
     lambda_source = SRC_DIR / "lambda_function.py"
     shutil.copy(lambda_source, PACKAGE_DIR)
-    # Copy schema_validator.py
-    schema_source = SRC_DIR / "schema_validator.py"
+    # Copy schema_validator_simplified.py
+    schema_source = SRC_DIR / "schema_validator_simplified.py"
     shutil.copy(schema_source, PACKAGE_DIR)
     # Copy schema_validator_simplified.py
     schema_simplified_source = SRC_DIR / "schema_validator_simplified.py"

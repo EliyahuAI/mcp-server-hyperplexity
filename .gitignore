@@ -109,6 +109,14 @@ temp_unnecessary_files/
 test_results/
 tables/*/test_results/
 
+# Test case generated files (keep only Python generation scripts)
+test_cases/*/*.xlsx
+test_cases/*/*.json
+test_cases/*/20250*
+test_cases/real_*.xlsx
+test_cases/real_*.json
+test_cases/simple_*.json
+
 # Don't ignore essential test files
 !run_lambda_test.py
 !src/run_ratio_test.py

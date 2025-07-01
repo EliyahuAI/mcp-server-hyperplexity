@@ -51,7 +51,7 @@ Only ask when genuinely unclear or need confirmation:
 - ❌ Clear data formats (evident from sample data)
 - ❌ Standard examples (use real data from table)
 - ❌ Basic groupings (infer from logical relationships)
-- ❌ Model preferences (use default sonar-pro)
+- ❌ Model preferences (default to sonar-pro unless complex reasoning needed)
 
 ### Step 4: Generate Configuration
 Create the simplified `column_config.json` based on analysis and any clarifications:
@@ -60,6 +60,7 @@ Create the simplified `column_config.json` based on analysis and any clarificati
 {
   "general_notes": "Inferred purpose, validation guidelines, and suggested preferred sources",
   "default_model": "sonar-pro",
+  "default_search_context_size": "low",
   "validation_targets": [
     {
       "column": "Column Name",
@@ -68,13 +69,36 @@ Create the simplified `column_config.json` based on analysis and any clarificati
       "format": "String|Date|Number|URL|Email|etc.",
       "notes": "Inferred formatting rules and validation guidelines",
       "examples": ["real_value1", "real_value2", "real_value3"],
-      "search_group": 0
+      "search_group": 0,
+      "search_context_size": "high"
     }
   ]
 }
 ```
 
 ## Configuration Guidelines
+
+### Model Selection
+- **Default Model**: `sonar-pro` is the default for most use cases
+- **Alternative Models**: You can specify alternative models including:
+  - Perplexity models: `sonar`, `sonar-pro` (recommended for most validation tasks)
+  - Anthropic models: `claude-sonnet-4-20250514`, `claude-3-opus`, `claude-3-haiku`
+- **Per-Column Model**: Use `preferred_model` field to override default for specific columns
+- **Best Practices**:
+  - Use Perplexity models (`sonar-pro`) for standard web search and validation tasks
+  - Only use Anthropic models when deeper reasoning, complex analysis, or nuanced understanding is specifically required
+  - Anthropic models may have higher costs and different rate limits
+  - Consider the validation complexity before choosing Anthropic models
+
+### Search Context Size (Perplexity Models)
+- **Values**: `"low"`, `"high"`
+- **Global Default**: Set `default_search_context_size` at the root level (defaults to `"low"`)
+- **Per-Column Override**: Use `search_context_size` field for specific columns
+- **Best Practices**:
+  - Use `"low"` for most columns (faster, cheaper, usually sufficient)
+  - Use `"high"` only when search results are missing critical information
+  - Avoid `"high"` unless necessary as it increases cost and latency
+- **Search Group Behavior**: When multiple columns in a search group have different context sizes, the highest value is used for the entire group
 
 ### Importance Level Inference
 - **ID**: Columns with "id", "name", "code" in names + unique values
@@ -142,7 +166,8 @@ ANALYST: I've analyzed your pharmaceutical products table. Here's my assessment:
 ✅ **Intelligent defaults** - Makes logical assumptions
 ✅ **A/B clarifications** - Clear choice format for ambiguous items
 ✅ **Clear presentation** - Shows reasoning transparently
-✅ **Default model** - Always uses sonar-pro, no model questions
+✅ **Flexible models** - Support for both Perplexity and Anthropic models
+✅ **Context control** - Fine-grained search context size settings
 
 ## Start Your Analysis
 
@@ -153,6 +178,7 @@ Please provide your table file (Excel or CSV), and I'll analyze it efficiently a
 {
   "general_notes": "This table tracks radiopharmaceutical products (diagnostic, therapeutic and theranostic) in development that could compete with Ratio Therapeutics over the next 1–5 years. The list focuses on agents in pre-registration through Phase 1 and likely to reach market in 2024-2030. Your key goal is to monitor this competitive landscape. Please use the most recent information available from public sources, including clinicaltrials.gov, company press releases, and news articles.",
   "default_model": "sonar-pro",
+  "default_search_context_size": "low",
   "validation_targets": [
     {
       "column": "Product Name",
@@ -270,7 +296,8 @@ Please provide your table file (Excel or CSV), and I'll analyze it efficiently a
       "notes": "Bullets with aggregated news on a product. Confidence is only assesed for new news that is to be added - all other data is past forward. Include past news and append new news to the beginning of the list. Starts with a dash, date: news (confidence level). Use \u000A to separate each line.",
       "examples": ["- 4/10/2025: BLA resubmission in Q1 2025 after OS update requested (High Confidence)\u000A- 3/10/2025: Phase 3 trial results expected in Q2 2025 (High Confidence)\u000A- 2/10/2025: Phase 3 trial initiated (High Confidence)\u000A- 1/10/2025: Phase 2 trial results expected in Q4 2025 (High Confidence)"],
       "search_group": 4,
-      "preferred_model": "sonar-pro"
+      "preferred_model": "claude-sonnet-4-20250514",
+      "search_context_size": "high"
     }
   ]
 } 
