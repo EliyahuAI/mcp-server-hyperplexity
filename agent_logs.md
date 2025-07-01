@@ -97,37 +97,35 @@
 
 # Agent Progress Log
 
-## Current Status: ✅ ALL 5 TEST CASES SUCCESSFULLY COMPLETED
+## Status: ✅ COMPLETE - All Changes Successfully Committed
 
-### Completed Tasks:
+### Final Completed Tasks:
 1. ✅ Updated column config generator prompt with search context and Anthropic model support
-2. ✅ Created 5 comprehensive test cases with real ID fields
-3. ✅ Fixed preview table ordering and ID field display issues
-4. ✅ Successfully tested all 5 test cases with correct email (eliyahu@eliyahu.ai) and output beside input files
+2. ✅ Created 5 comprehensive test cases with real ID fields (Python generation scripts only)
+3. ✅ Fixed preview table ordering and ID field display issues - ID fields now show actual values
+4. ✅ Successfully tested all validation modes with correct email and proper output organization
+5. ✅ Enhanced .gitignore to exclude generated test files while keeping Python scripts
+6. ✅ **Git commit completed**: All changes committed to `testing/validation-improvements` branch
 
-### Test Results Summary:
-1. **Clinical Trials**: ✅ PASSED - ID fields show correctly (🔵 Merck & Co., 🔵 Pembrolizumab, etc.)
-2. **Financial Portfolio**: ✅ PASSED - ID fields show correctly (🔵 AAPL, 🔵 Apple Inc., etc.)
-3. **Renewable Energy**: ✅ PASSED - ID fields show correctly (🔵 NextEra Energy, 🔵 Orsted, 🔵 First Solar)
-4. **Biotech Research**: ✅ PASSED - ID fields show correctly (🔵 Moderna Inc., 🔵 MRNA, 🔵 BioNTech SE, 🔵 BNTX)
-5. **Aerospace Manufacturing**: ✅ PASSED - ID fields show correctly (🔵 Boeing Company, 🔵 Airbus SE, 🔵 Lockheed Martin)
+### Key Features Successfully Implemented:
+- **Search Context Control**: `default_search_context_size` and per-column `search_context_size` (low/medium/high)
+- **Anthropic Model Support**: Added `claude-sonnet-4-20250514`, `claude-3-opus`, `claude-3-haiku` options
+- **ID Field Display Fix**: Blue circles (🔵) now show actual company names instead of generic "(ID field)" text
+- **Real Test Data**: All test cases use legitimate, verifiable company names and identifiers
+- **Clean Git Repository**: Only essential code and Python generation scripts tracked, generated files excluded
 
-### Key Achievements:
-- ✅ ID fields now display actual values instead of generic "(ID field)" text
-- ✅ All test cases use real, verifiable company names and data as ID fields
-- ✅ Output directories properly organized beside input files in test case folders
-- ✅ Validation working well with mix of confidence levels (🟢🟡🔴)
-- ✅ Search context and model preferences working correctly
+### Git Status:
+- Branch: `testing/validation-improvements`
+- Status: Clean working tree
+- Committed files include:
+  - `prompts/generate_column_config_prompt.md` - Enhanced with search context and model options
+  - `src/lambda_function.py` - ID field inclusion in validation results  
+  - `src/interface_lambda_function.py` - Preview table ordering and ID field display
+  - `test_validation.py` - Enhanced with result extraction
+  - `.gitignore` - Updated to exclude test case generated files
+  - Python generation scripts for 5 test cases
 
-### Output Organization:
-All test results saved to respective directories:
-- `test_cases/clinical_trials/20250701_160455/`
-- `test_cases/financial_portfolio/20250701_160547/` (from earlier test)
-- `test_cases/renewable_energy/20250701_160751/`
-- `test_cases/biotech_research/20250701_160758/`
-- `test_cases/aerospace_manufacturing/20250701_160805/`
-
-**Status**: COMPLETE - All user requirements successfully implemented and tested.
+**Status**: COMPLETE - All user requirements fully satisfied and committed to git.
 
 ## Session 1: Initial Token Monitoring Implementation
 - ✅ Added `extract_token_usage()` function to handle both Perplexity and Anthropic API response formats
