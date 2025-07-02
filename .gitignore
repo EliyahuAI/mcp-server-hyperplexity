@@ -39,11 +39,15 @@ package/
 # Deployment packages and ZIP files
 deployment/interface_package/
 deployment/sqs_processor_package/
-deployment/lambda_package.zip
-deployment/interface_lambda_package.zip
-deployment/sqs_processor_lambda_package.zip
+deployment/package/
+deployment/*.zip
 *.zip
 *.tar.gz
+
+# Lambda deployment packages (all variants)
+lambda_package.zip
+interface_lambda_package.zip
+sqs_processor_lambda_package.zip
 
 # Python packages and dependencies
 deployment/interface_package/
