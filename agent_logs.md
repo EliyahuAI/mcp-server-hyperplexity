@@ -900,3 +900,31 @@ python create_interface_package.py --deploy --force-rebuild
 ```
 
 ## 🎉 MISSION ACCOMPLISHED - INTERACTIVE PRIVACY SYSTEM FULLY OPERATIONAL
+
+## Latest: CSV Column Ordering Fix (2025-07-02)
+✅ **ISSUE**: CSV exports had random alphabetical column ordering - completely disorganized
+✅ **SOLUTION**: Implemented logical column groupings at DynamoDB level in `src/manage_dynamodb_tables.py`
+
+**Column Organization:**
+- **USER_VALIDATION_COLUMNS**: Identity → Timestamps → Status → System  
+- **USER_TRACKING_COLUMNS**: Identity → Account Info → Email Validation History → Usage Stats → Costs
+- **CALL_TRACKING_COLUMNS**: 15 logical groups from Session Identity to Result Format
+
+**Key improvements:**
+- Session Identity (session_id, reference_pin, email, email_domain) comes first
+- Request Info and Processing Status follow logically  
+- File Information and S3 Keys grouped together
+- Performance Metrics and Cost tracking in dedicated sections
+- API Details (Perplexity/Anthropic) clearly separated
+- System/Infrastructure data at the end
+- Graceful fallback to alphabetical for unknown tables
+- Any extra columns automatically appended alphabetically
+
+**Result**: CSV files now have sensible, readable column organization instead of chaotic alphabetical sorting.
+
+## Previous Work Completed
+- Email validation system with privacy policy integration
+- DynamoDB infrastructure with proper date tracking  
+- CSV export functionality for all tables
+- Repository cleanup and documentation updates
+- All changes committed to feature/access-control branch
