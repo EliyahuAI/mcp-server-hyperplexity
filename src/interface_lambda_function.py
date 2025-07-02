@@ -3020,6 +3020,37 @@ def lambda_handler(event, context):
                 email_address = form_data.get('email', 'eliyahu@eliyahu.ai')
                 logger.info(f"Email address: {email_address}")
                 
+                # Validate email is authenticated
+                try:
+                    from dynamodb_schemas import is_email_validated
+                    if not is_email_validated(email_address):
+                        return {
+                            'statusCode': 403,
+                            'headers': {
+                                'Content-Type': 'application/json',
+                                'Access-Control-Allow-Origin': '*'
+                            },
+                            'body': json.dumps({
+                                'success': False,
+                                'error': 'email_not_validated',
+                                'message': 'Email address must be validated before processing. Please request and enter a validation code first.'
+                            })
+                        }
+                except Exception as e:
+                    logger.error(f"Error checking email validation: {e}")
+                    return {
+                        'statusCode': 500,
+                        'headers': {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        },
+                        'body': json.dumps({
+                            'success': False,
+                            'error': 'validation_check_failed',
+                            'message': 'Unable to verify email validation status'
+                        })
+                    }
+                
                 # Validate request using API Gateway validation if available
                 if SQS_INTEGRATION_AVAILABLE:
                     # Combine files and form_data into single request_data dict
