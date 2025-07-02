@@ -4,6 +4,8 @@
 
 The Perplexity Validator is a system that validates data in Excel tables using the Perplexity AI API. It supports both synchronous and asynchronous processing through a unified API Gateway interface.
 
+⚠️ **Email Validation Required**: All users must validate their email address before processing Excel files.
+
 ## Architecture
 
 The system uses a simplified architecture:
@@ -33,6 +35,12 @@ python test_validation.py --output-dir "my_tests" --max-rows 20 --preview-rows 5
 ## API Endpoints
 
 **Base URL**: `https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod`
+
+### Email Validation Endpoints (Required First)
+- **POST** `/validate` with JSON body:
+  - `{"action": "requestEmailValidation", "email": "user@company.com"}` - Request validation code
+  - `{"action": "validateEmailCode", "email": "user@company.com", "code": "123456"}` - Validate email
+  - `{"action": "getUserStats", "email": "user@company.com"}` - Get user statistics
 
 ### Main Validation Endpoint
 - **POST** `/validate`
@@ -168,19 +176,39 @@ python test_validation.py \
 ```python
 import requests
 
-# Preview request
+base_url = "https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod"
+email = "user@example.com"
+
+# Step 1: Validate email
+# Request validation code
+response = requests.post(f"{base_url}/validate", json={
+    "action": "requestEmailValidation",
+    "email": email
+})
+print("Validation code sent:", response.json())
+
+# Enter code from email
+code = input("Enter 6-digit code from email: ")
+response = requests.post(f"{base_url}/validate", json={
+    "action": "validateEmailCode",
+    "email": email, 
+    "code": code
+})
+print("Validation result:", response.json())
+
+# Step 2: Process Excel file
 files = {
     'excel_file': open('data.xlsx', 'rb'),
     'config_file': open('config.json', 'rb')
 }
-data = {'email': 'user@example.com'}
+data = {'email': email}
 
 response = requests.post(
-    'https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod/validate?preview_first_row=true',
+    f'{base_url}/validate?preview_first_row=true',
     files=files,
     data=data
 )
-print(response.json())
+print("Processing result:", response.json())
 ```
 
 ## Deployment (For Administrators)

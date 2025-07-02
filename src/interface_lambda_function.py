@@ -2391,8 +2391,146 @@ def lambda_handler(event, context):
                     if action:
                         logger.info(f"Processing JSON action: {action}")
                         
+                        # Handle email validation actions
+                        if action == 'requestEmailValidation':
+                            email = request_data.get('email', '').strip()
+                            if not email:
+                                return {
+                                    'statusCode': 400,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'success': False,
+                                        'error': 'missing_email',
+                                        'message': 'Email address is required'
+                                    })
+                                }
+                            
+                            # Try to create email validation request
+                            try:
+                                from dynamodb_schemas import create_email_validation_request
+                                result = create_email_validation_request(email)
+                                
+                                return {
+                                    'statusCode': 200,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps(result)
+                                }
+                            except Exception as e:
+                                logger.error(f"Error creating email validation request: {e}")
+                                return {
+                                    'statusCode': 500,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'success': False,
+                                        'error': 'internal_error',
+                                        'message': 'Failed to create validation request'
+                                    })
+                                }
+                        
+                        # Handle email code validation
+                        elif action == 'validateEmailCode':
+                            email = request_data.get('email', '').strip()
+                            code = request_data.get('code', '').strip()
+                            
+                            if not email or not code:
+                                return {
+                                    'statusCode': 400,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'success': False,
+                                        'error': 'missing_parameters',
+                                        'message': 'Email and validation code are required'
+                                    })
+                                }
+                            
+                            try:
+                                from dynamodb_schemas import validate_email_code
+                                result = validate_email_code(email, code)
+                                
+                                return {
+                                    'statusCode': 200,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps(result)
+                                }
+                            except Exception as e:
+                                logger.error(f"Error validating email code: {e}")
+                                return {
+                                    'statusCode': 500,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'success': False,
+                                        'error': 'internal_error',
+                                        'message': 'Failed to validate email code'
+                                    })
+                                }
+                        
+                        # Handle user stats lookup
+                        elif action == 'getUserStats':
+                            email = request_data.get('email', '').strip()
+                            if not email:
+                                return {
+                                    'statusCode': 400,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'success': False,
+                                        'error': 'missing_email',
+                                        'message': 'Email address is required'
+                                    })
+                                }
+                            
+                            try:
+                                from dynamodb_schemas import get_user_stats
+                                stats = get_user_stats(email)
+                                
+                                return {
+                                    'statusCode': 200,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'success': True,
+                                        'stats': stats
+                                    })
+                                }
+                            except Exception as e:
+                                logger.error(f"Error getting user stats: {e}")
+                                return {
+                                    'statusCode': 500,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'success': False,
+                                        'error': 'internal_error',
+                                        'message': 'Failed to get user stats'
+                                    })
+                                }
+                        
                         # Handle validateConfig action
-                        if action == 'validateConfig':
+                        elif action == 'validateConfig':
                             config_content = request_data.get('config', '')
                             if not config_content:
                                 return {
@@ -2462,6 +2600,37 @@ def lambda_handler(event, context):
                             preview_max_rows = request_data.get('preview_max_rows', 5)
                             max_rows = request_data.get('max_rows', 1000)
                             batch_size = request_data.get('batch_size', 10)
+                            
+                            # Validate email is authenticated
+                            try:
+                                from dynamodb_schemas import is_email_validated
+                                if not is_email_validated(email_address):
+                                    return {
+                                        'statusCode': 403,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'success': False,
+                                            'error': 'email_not_validated',
+                                            'message': 'Email address must be validated before processing. Please request and enter a validation code first.'
+                                        })
+                                    }
+                            except Exception as e:
+                                logger.error(f"Error checking email validation: {e}")
+                                return {
+                                    'statusCode': 500,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps({
+                                        'success': False,
+                                        'error': 'validation_check_failed',
+                                        'message': 'Unable to verify email validation status'
+                                    })
+                                }
                             
                             if not excel_base64 or not config_base64:
                                 return {
@@ -2556,6 +2725,17 @@ def lambda_handler(event, context):
                                             
                                             if message_id:
                                                 logger.info(f"Preview request sent to SQS: {message_id}")
+                                                
+                                                # Track async preview request
+                                                try:
+                                                    from dynamodb_schemas import track_user_request
+                                                    track_user_request(
+                                                        email=email_address,
+                                                        request_type='preview'
+                                                    )
+                                                except Exception as e:
+                                                    logger.warning(f"Failed to track async preview request: {e}")
+                                                
                                                 return {
                                                     'statusCode': 200,
                                                     'headers': {
@@ -2593,6 +2773,26 @@ def lambda_handler(event, context):
                                         
                                         # Return preview results
                                         if validation_results and 'validation_results' in validation_results:
+                                            # Track user request in USER_TRACKING_TABLE
+                                            try:
+                                                from dynamodb_schemas import track_user_request
+                                                # Extract token usage from validation results if available
+                                                metadata = validation_results.get('metadata', {})
+                                                token_usage = metadata.get('token_usage', {})
+                                                
+                                                track_user_request(
+                                                    email=email_address,
+                                                    request_type='preview',
+                                                    tokens_used=token_usage.get('total_tokens', 0),
+                                                    cost_usd=token_usage.get('total_cost', 0.0),
+                                                    perplexity_tokens=token_usage.get('perplexity_tokens', 0),
+                                                    perplexity_cost=token_usage.get('perplexity_cost', 0.0),
+                                                    anthropic_tokens=token_usage.get('anthropic_tokens', 0),
+                                                    anthropic_cost=token_usage.get('anthropic_cost', 0.0)
+                                                )
+                                            except Exception as e:
+                                                logger.warning(f"Failed to track user request: {e}")
+                                            
                                             markdown_table = create_markdown_table_from_results(
                                                 validation_results['validation_results'], 3, config_s3_key
                                             )
@@ -2647,6 +2847,17 @@ def lambda_handler(event, context):
                                         
                                         if message_id:
                                             logger.info(f"Full processing request sent to SQS: {message_id}")
+                                            
+                                            # Track full processing request
+                                            try:
+                                                from dynamodb_schemas import track_user_request
+                                                track_user_request(
+                                                    email=email_address,
+                                                    request_type='full'
+                                                )
+                                            except Exception as e:
+                                                logger.warning(f"Failed to track full processing request: {e}")
+                                            
                                             return {
                                                 'statusCode': 200,
                                                 'headers': {
@@ -4022,6 +4233,23 @@ def handle_background_processing(event, context):
                         if email_result['success']:
                             logger.info(f"Email sent successfully to {email_address}")
                             email_sent = True
+                            
+                            # Track user request completion with final token usage
+                            try:
+                                from dynamodb_schemas import track_user_request
+                                track_user_request(
+                                    email=email_address,
+                                    request_type='full',  # This is background processing for full requests
+                                    tokens_used=total_tokens,
+                                    cost_usd=total_cost,
+                                    perplexity_tokens=token_usage.get('by_provider', {}).get('perplexity', {}).get('total_tokens', 0),
+                                    perplexity_cost=token_usage.get('by_provider', {}).get('perplexity', {}).get('cost', 0.0),
+                                    anthropic_tokens=token_usage.get('by_provider', {}).get('anthropic', {}).get('total_tokens', 0),
+                                    anthropic_cost=token_usage.get('by_provider', {}).get('anthropic', {}).get('cost', 0.0)
+                                )
+                                logger.info(f"User request tracking updated for {email_address}")
+                            except Exception as e:
+                                logger.warning(f"Failed to track user request completion: {e}")
                             
                             # Track email delivery in DynamoDB
                             if SQS_INTEGRATION_AVAILABLE:

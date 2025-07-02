@@ -290,6 +290,273 @@ def send_validation_results_email(email_address, zip_content, session_id, summar
             'message': f"Unexpected error: {str(e)}"
         }
 
+
+def send_validation_code_email(email_address: str, validation_code: str):
+    """
+    Send email validation code to user.
+    
+    Args:
+        email_address: Recipient email
+        validation_code: 6-digit numerical code
+        
+    Returns:
+        dict: Response with status and message ID
+    """
+    try:
+        # Create message
+        message = MIMEMultipart()
+        message["From"] = SENDER
+        message["To"] = email_address
+        message["Subject"] = "Perplexity Validator - Email Verification Code"
+        
+        # Create email body with validation code
+        body_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Email Verification - Perplexity Validator</title>
+            <style>
+                body {{
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    line-height: 1.6;
+                    color: #000000;
+                    max-width: 600px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    background-color: #ffffff;
+                }}
+                .header {{
+                    background: #000000;
+                    color: white;
+                    padding: 30px;
+                    text-align: center;
+                    border-radius: 8px 8px 0 0;
+                }}
+                .content {{
+                    background: #ffffff;
+                    padding: 30px;
+                    border: 1px solid #E5E5E5;
+                    border-radius: 0 0 8px 8px;
+                }}
+                .verification-code {{
+                    background: #F8F9FA;
+                    border: 2px solid #00FF00;
+                    color: #000000;
+                    font-size: 32px;
+                    font-weight: bold;
+                    padding: 20px;
+                    text-align: center;
+                    border-radius: 8px;
+                    letter-spacing: 8px;
+                    margin: 20px 0;
+                    font-family: 'Courier New', monospace;
+                    position: relative;
+                    transition: all 0.3s ease;
+                }}
+                .verification-code.hidden {{
+                    background: #E5E5E5;
+                    border-color: #E5E5E5;
+                    color: #E5E5E5;
+                    user-select: none;
+                }}
+                .verification-code.hidden::after {{
+                    content: '●●●●●●';
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    color: #666666;
+                    font-size: 24px;
+                    letter-spacing: 12px;
+                }}
+                .code-notice {{
+                    background: #FFFFFF;
+                    border: 1px solid #00FF00;
+                    color: #000000;
+                    padding: 12px 20px;
+                    border-radius: 8px;
+                    margin: 15px 0;
+                    text-align: center;
+                    border-left: 4px solid #00FF00;
+                    font-size: 14px;
+                }}
+                .code-notice.hidden {{
+                    display: none;
+                }}
+                .privacy-notice {{
+                    background: #FFFFFF;
+                    border: 1px solid #00FF00;
+                    color: #000000;
+                    padding: 25px;
+                    border-radius: 8px;
+                    margin: 25px 0;
+                    border-left: 4px solid #00FF00;
+                    text-align: center;
+                }}
+                .privacy-link {{
+                    color: #000000;
+                    text-decoration: none;
+                    border-bottom: 2px solid #00FF00;
+                    font-weight: bold;
+                }}
+                .privacy-link:hover {{
+                    background-color: #00FF00;
+                    color: #000000;
+                }}
+                .acceptance-warning {{
+                    background: #FFFFFF;
+                    border: 2px solid #00FF00;
+                    color: #000000;
+                    padding: 15px;
+                    border-radius: 8px;
+                    margin: 15px 0;
+                    text-align: center;
+                    font-size: 14px;
+                    border-left: 6px solid #00FF00;
+                }}
+                .privacy-link-container {{
+                    text-align: center;
+                    margin: 20px 0;
+                }}
+                .privacy-button {{
+                    display: inline-block;
+                    background: #000000;
+                    color: white;
+                    text-decoration: none;
+                    padding: 15px 30px;
+                    border-radius: 8px;
+                    font-size: 16px;
+                    font-weight: bold;
+                    border: 2px solid #00FF00;
+                    transition: all 0.3s ease;
+                }}
+                .privacy-button:hover {{
+                    background: #00FF00;
+                    color: #000000;
+                    text-decoration: none;
+                }}
+
+                .warning {{
+                    background: #FFFFFF;
+                    border: 1px solid #E5E5E5;
+                    color: #000000;
+                    padding: 15px;
+                    border-radius: 8px;
+                    margin: 20px 0;
+                    border-left: 4px solid #00FF00;
+                }}
+                .footer {{
+                    text-align: center;
+                    color: #666666;
+                    font-size: 14px;
+                    margin-top: 32px;
+                    padding-top: 20px;
+                    border-top: 1px solid #E5E5E5;
+                }}
+                .logo {{
+                    color: #00FF00;
+                    font-weight: bold;
+                }}
+            </style>
+
+        </head>
+        <body>
+            <div class="header">
+                <h1>🔐 Email Verification</h1>
+                <p>Perplexity Validator Access Request</p>
+            </div>
+            
+            <div class="content">
+                <h2>Verify Your Email Address</h2>
+                <p>You have requested access to the Perplexity Validator service. Use the verification code below to complete your registration:</p>
+                
+                <div class="verification-code">
+                    {validation_code}
+                </div>
+                
+                <div class="privacy-notice">
+                    <p><strong>📋 Privacy Notice Acceptance Required</strong></p>
+                    <p><strong>⚠️ IMPORTANT: Entering and submitting this verification code in the Perplexity Validator interface constitutes your explicit acceptance of our <a href="https://eliyahu.ai/privacy-notice" target="_blank" class="privacy-link">Privacy Notice</a> and consent to data processing.</strong></p>
+                    
+                    <div class="privacy-link-container">
+                        <a href="https://eliyahu.ai/privacy-notice" target="_blank" class="privacy-button">
+                            📖 Read Our Privacy Notice
+                        </a>
+                    </div>
+                    
+                    <p class="acceptance-warning"><strong>🔒 By proceeding with email verification, you acknowledge that you have read and agree to our Privacy Notice.</strong></p>
+                </div>
+                
+                <div class="warning">
+                    <strong>⏰ Important:</strong> This verification code will expire in <strong>10 minutes</strong>.
+                    You have up to 3 attempts to enter the correct code.
+                </div>
+                
+                <h3>How to Use Your Code:</h3>
+                <ol>
+                    <li>Copy the 6-digit verification code above</li>
+                    <li>Return to the Perplexity Validator interface</li>
+                    <li>Enter the code and click "Verify Email"</li>
+                </ol>
+                
+                <p><strong>If you didn't request this verification,</strong> you can safely ignore this email. The code will expire automatically.</p>
+                
+                <p><strong>Need help?</strong> Reply to this email and our team will assist you.</p>
+            </div>
+            
+            <div class="footer">
+                <p>Best regards,<br>
+                The <span class="logo">Eliyahu.AI</span> Team</p>
+                
+                <p><small>This is an automated security email for Perplexity Validator access verification.</small></p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Attach HTML body
+        part = MIMEText(body_html, 'html', CHARSET)
+        message.attach(part)
+        
+        # Send email via SES
+        ses_client = boto3.client('ses')
+        
+        response = ses_client.send_raw_email(
+            Source=SENDER,
+            Destinations=[email_address],
+            RawMessage={
+                'Data': message.as_string()
+            }
+        )
+        
+        message_id = response['MessageId']
+        logger.info(f"Validation email sent successfully! Message ID: {message_id}")
+        
+        return {
+            'success': True,
+            'message_id': message_id,
+            'message': f"Verification code sent to {email_address}"
+        }
+        
+    except ClientError as e:
+        error_message = e.response['Error']['Message']
+        logger.error(f"SES error sending validation email: {error_message}")
+        
+        return {
+            'success': False,
+            'error': error_message,
+            'message': f"Failed to send verification email: {error_message}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Unexpected error sending validation email: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e),
+            'message': f"Unexpected error: {str(e)}"
+        }
+
 def create_preview_email_body(markdown_table, total_rows, processing_time):
     """Create email body for preview mode results"""
     

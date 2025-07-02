@@ -1,11 +1,51 @@
-# Enhanced Cost and Time Estimation Features
+# Perplexity Validator Features Summary
 
 ## Overview
-This update adds comprehensive cost and time tracking to the perplexity validator system, with enhanced preview functionality that provides accurate cost estimates even when using cached responses.
+The Perplexity Validator provides comprehensive data validation with advanced cost tracking, email authentication, and flexible processing modes. This document summarizes all major features including the latest email validation system and enhanced cost estimation capabilities.
 
-## New Features
+## Core Features
 
-### 1. Enhanced Cache Structure with Cost/Time Metadata
+### 1. Email Validation System (Latest)
+
+**What It Provides:**
+- Required email verification before processing
+- Secure 6-digit validation codes with 10-minute expiry
+- Comprehensive user activity tracking
+- Privacy policy acceptance integration
+- Automatic date tracking for compliance
+
+**Email Validation Flow:**
+1. **Request Validation**: User requests validation code for their email
+2. **Email Delivery**: 6-digit code sent with privacy policy notice
+3. **Code Validation**: User submits code to verify email ownership
+4. **Access Granted**: User can now process Excel files
+
+**Technical Implementation:**
+```json
+{
+  "action": "requestEmailValidation",
+  "email": "user@company.com"
+}
+```
+
+**Tracking Data:**
+- `first_email_validation_request` - When user first requested validation
+- `most_recent_email_validation_request` - Most recent validation request
+- `first_email_validation` - When user first successfully validated
+- `most_recent_email_validation` - Most recent successful validation
+
+**Privacy Policy Integration:**
+- Clear notice: "By entering and submitting this verification code, you explicitly accept our Privacy Notice"
+- Links to `eliyahu.ai/privacy-notice`
+- Professional email styling with Eliyahu.AI branding
+
+**Benefits:**
+- User authentication and access control
+- Compliance tracking for GDPR/privacy requirements
+- Usage analytics by email domain
+- Protection against unauthorized API usage
+
+### 2. Enhanced Cache Structure with Cost/Time Metadata
 
 **What Changed:**
 - Cache entries now store cost and time metadata alongside API responses
@@ -34,7 +74,7 @@ This update adds comprehensive cost and time tracking to the perplexity validato
 - Cache hit/miss tracking for cost analysis
 - Historical processing time data preserved
 
-### 2. Preview Row Selection
+### 3. Preview Row Selection
 
 **What Changed:**
 - New `preview_row_number` parameter (1-5) for API requests
@@ -51,7 +91,7 @@ GET /api?preview_first_row=true&preview_row_number=3
 - Better preview capabilities for varied data sets
 - Improved debugging and testing workflows
 
-### 3. Enhanced Preview Response with Cost Data
+### 4. Enhanced Preview Response with Cost Data
 
 **What Changed:**
 - Preview responses now include detailed cost breakdowns
@@ -87,6 +127,18 @@ GET /api?preview_first_row=true&preview_row_number=3
 
 ## API Changes
 
+### New Email Validation Endpoints
+
+1. **POST /validate** (JSON Actions)
+   - `requestEmailValidation` - Request validation code
+   - `validateEmailCode` - Submit validation code  
+   - `getUserStats` - Get user activity statistics
+
+2. **Email Validation Required**
+   - All Excel processing now requires validated email
+   - Returns 403 error if email not validated
+   - Automatic re-validation handling
+
 ### New Parameters
 
 1. **`preview_row_number`** (optional)
@@ -94,6 +146,11 @@ GET /api?preview_first_row=true&preview_row_number=3
    - Default: 1
    - Used with: `preview_first_row=true`
    - Purpose: Select which row to preview
+
+2. **Email Actions** (required for validation endpoints)
+   - `action` - One of: requestEmailValidation, validateEmailCode, getUserStats
+   - `email` - User email address
+   - `code` - 6-digit validation code (for validateEmailCode)
 
 ### Enhanced Response Fields
 

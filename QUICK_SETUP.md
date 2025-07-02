@@ -46,7 +46,9 @@ python test_validation.py --mode sync_preview --preview-rows 1
 
 ## That's It! 🎉
 
-You now have a working Perplexity Validator system.
+You now have a working Perplexity Validator system with email validation enabled.
+
+⚠️ **Note**: All users must validate their email address before processing Excel files. The system will automatically prompt for email validation during testing.
 
 ## What You Can Do Now
 

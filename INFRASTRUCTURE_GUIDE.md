@@ -77,6 +77,8 @@ The Perplexity Validator is a serverless application that validates Excel data u
 - **Event Source Mapping**: Triggers Interface Lambda
 
 ### 4. DynamoDB Tables
+
+#### Core Processing Tables
 - **Main Table**: `perplexity-validator-call-tracking`
   - Primary Key: `session_id` (String)
   - GSI: EmailDomainIndex, StatusIndex
@@ -84,12 +86,38 @@ The Perplexity Validator is a serverless application that validates Excel data u
 - **Token Usage Table**: `perplexity-validator-token-usage`
   - Composite Key: `session_id` (Hash), `timestamp` (Range)
   - Detailed API usage tracking
-- **Attributes**:
-  - Status tracking
-  - Processing metrics (time, rows, cost)
-  - API usage (Perplexity and Anthropic)
-  - Email delivery status
-  - File metadata
+
+#### Email Validation Tables (New)
+- **User Validation Table**: `perplexity-validator-user-validation`
+  - Primary Key: `email` (String)
+  - GSI: ValidationCodeIndex
+  - Stores temporary validation codes (10-minute TTL)
+  - Tracks validation attempts and expiry
+- **User Tracking Table**: `perplexity-validator-user-tracking`
+  - Primary Key: `email` (String)
+  - GSI: EmailDomainIndex (email_domain + last_access)
+  - Comprehensive user activity tracking
+
+#### User Tracking Attributes
+- **Identity**: `email`, `email_domain`, `created_at`
+- **Validation History**:
+  - `first_email_validation_request` - First time user requested validation
+  - `most_recent_email_validation_request` - Most recent validation request
+  - `first_email_validation` - First successful validation completion
+  - `most_recent_email_validation` - Most recent successful validation
+- **Usage Metrics**: 
+  - `total_preview_requests`, `total_full_requests`
+  - `total_tokens_used`, `total_cost_usd`
+  - `perplexity_tokens`, `perplexity_cost`
+  - `anthropic_tokens`, `anthropic_cost`
+- **Access Tracking**: `last_access`
+
+#### Processing Session Attributes
+- **Status tracking**: Processing state and completion status
+- **Processing metrics**: Time, rows processed, cost breakdown
+- **API usage**: Perplexity and Anthropic token/cost tracking
+- **Email delivery status**: Notification delivery confirmation
+- **File metadata**: S3 keys, file sizes, reference PINs
 
 ### 5. S3 Buckets
 - **Cache Bucket**: `perplexity-cache`
@@ -162,6 +190,7 @@ This will:
 - Create API Gateway if needed
 - Set up SQS event source mapping
 - Configure all integrations
+- **Create DynamoDB tables for email validation**
 
 ### Step 4: Verify Deployment
 ```bash
@@ -272,7 +301,74 @@ Check validation job status.
 }
 ```
 
-#### 3. POST /validate-config
+#### 3. POST /validate (Email Validation Actions)
+Email validation endpoints using JSON actions.
+
+##### Request Email Validation Code
+**Request**:
+```json
+{
+  "action": "requestEmailValidation",
+  "email": "user@company.com"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Validation code sent to email",
+  "expires_at": "2025-07-02T18:44:33.316871+00:00"
+}
+```
+
+##### Validate Email Code
+**Request**:
+```json
+{
+  "action": "validateEmailCode",
+  "email": "user@company.com", 
+  "code": "123456"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "Email validated successfully"
+}
+```
+
+##### Get User Statistics
+**Request**:
+```json
+{
+  "action": "getUserStats",
+  "email": "user@company.com"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "stats": {
+    "email": "user@company.com",
+    "email_domain": "company.com",
+    "first_email_validation_request": "2025-07-02T18:28:06.935505+00:00",
+    "most_recent_email_validation_request": "2025-07-02T18:34:33.316871+00:00",
+    "first_email_validation": "2025-07-02T18:33:36.857713+00:00",
+    "most_recent_email_validation": "2025-07-02T18:34:51.226114+00:00",
+    "total_preview_requests": 1,
+    "total_full_requests": 0,
+    "total_tokens_used": 100,
+    "total_cost_usd": 0.01
+  }
+}
+```
+
+#### 4. POST /validate-config
 Validate configuration file format.
 
 **Request**:
@@ -304,9 +400,48 @@ All endpoints return consistent error format:
 
 Common status codes:
 - `400`: Bad Request (invalid input)
+- `403`: Forbidden (email not validated)
 - `404`: Not Found (session not found)
 - `500`: Internal Server Error
 - `504`: Gateway Timeout (sync request too long)
+
+### Email Validation Error Responses
+
+#### Email Not Validated
+```json
+{
+  "statusCode": 403,
+  "error": "email_not_validated", 
+  "message": "Email address must be validated before processing. Please request and enter a validation code first."
+}
+```
+
+#### Invalid Validation Code
+```json
+{
+  "success": false,
+  "error": "invalid_code",
+  "message": "Invalid validation code"
+}
+```
+
+#### Code Expired
+```json
+{
+  "success": false,
+  "error": "code_expired",
+  "message": "Validation code has expired"
+}
+```
+
+#### Too Many Attempts
+```json
+{
+  "success": false,
+  "error": "too_many_attempts", 
+  "message": "Too many validation attempts"
+}
+```
 
 ## Testing Guide
 
@@ -374,24 +509,107 @@ test_results/
 ```python
 import requests
 
-# Prepare files
+base_url = "https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod"
+
+# Step 1: Validate email
+email = "test@example.com"
+
+# Request validation code
+response = requests.post(f"{base_url}/validate", json={
+    "action": "requestEmailValidation",
+    "email": email
+})
+print("Validation code sent:", response.json())
+
+# Validate with code (replace with actual code from email)
+response = requests.post(f"{base_url}/validate", json={
+    "action": "validateEmailCode", 
+    "email": email,
+    "code": "123456"
+})
+print("Validation result:", response.json())
+
+# Step 2: Process files
 files = {
     'excel_file': open('data.xlsx', 'rb'),
     'config': open('config.json', 'rb')
 }
-data = {'email': 'test@example.com'}
+data = {'email': email}
 
-# Sync preview
+# Sync preview  
 response = requests.post(
-    'https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod/validate?preview_first_row=true',
+    f'{base_url}/validate?preview_first_row=true',
     files=files,
     data=data
 )
 
+if response.status_code == 403:
+    print("Email validation required!")
+else:
+    print("Processing successful:", response.json())
+
 # Check status
 session_id = response.json()['session_id']
-status = requests.get(
-    f'https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod/status/{session_id}'
+status = requests.get(f'{base_url}/status/{session_id}')
+```
+
+### Email Validation Testing
+
+```python
+import requests
+
+def test_email_validation_flow(base_url, email):
+    """Test complete email validation flow"""
+    
+    print(f"🔐 Testing email validation for: {email}")
+    
+    # 1. Request validation code
+    response = requests.post(f"{base_url}/validate", json={
+        "action": "requestEmailValidation",
+        "email": email
+    })
+    
+    if not response.json().get('success'):
+        print(f"❌ Failed to request validation: {response.json()}")
+        return False
+    
+    print(f"✅ Validation code sent, expires at: {response.json()['expires_at']}")
+    
+    # 2. Simulate validation (in real testing, get code from email)
+    code = input("📧 Enter 6-digit code from email: ")
+    
+    response = requests.post(f"{base_url}/validate", json={
+        "action": "validateEmailCode",
+        "email": email, 
+        "code": code
+    })
+    
+    if not response.json().get('success'):
+        print(f"❌ Validation failed: {response.json()}")
+        return False
+    
+    print("✅ Email validated successfully")
+    
+    # 3. Check user stats
+    response = requests.post(f"{base_url}/validate", json={
+        "action": "getUserStats",
+        "email": email
+    })
+    
+    if response.json().get('success'):
+        stats = response.json()['stats']
+        print(f"📊 User Stats:")
+        print(f"  - First validation request: {stats.get('first_email_validation_request')}")
+        print(f"  - First validation: {stats.get('first_email_validation')}")
+        print(f"  - Total requests: {stats.get('total_preview_requests', 0) + stats.get('total_full_requests', 0)}")
+        print(f"  - Total cost: ${stats.get('total_cost_usd', 0):.4f}")
+    
+    return True
+
+# Test it
+test_email_validation_flow(
+    "https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod",
+    "test@example.com"
 )
 ```
 

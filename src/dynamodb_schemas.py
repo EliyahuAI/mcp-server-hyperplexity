@@ -50,6 +50,8 @@ class DynamoDBSchemas:
     CALL_TRACKING_TABLE = "perplexity-validator-call-tracking"
     TOKEN_USAGE_TABLE = "perplexity-validator-token-usage"
     COST_TRACKING_TABLE = "perplexity-validator-cost-tracking"
+    USER_VALIDATION_TABLE = "perplexity-validator-user-validation"
+    USER_TRACKING_TABLE = "perplexity-validator-user-tracking"
     
     @classmethod
     def get_call_tracking_schema(cls) -> Dict[str, Any]:
@@ -203,6 +205,110 @@ class DynamoDBSchemas:
                 {
                     'Key': 'Purpose',
                     'Value': 'token-usage'
+                }
+            ]
+        }
+    
+    @classmethod
+    def get_user_validation_schema(cls) -> Dict[str, Any]:
+        """Schema for user email validation table."""
+        return {
+            'TableName': cls.USER_VALIDATION_TABLE,
+            'KeySchema': [
+                {
+                    'AttributeName': 'email',
+                    'KeyType': 'HASH'  # Partition key
+                }
+            ],
+            'AttributeDefinitions': [
+                {
+                    'AttributeName': 'email',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'validation_code',
+                    'AttributeType': 'S'
+                }
+            ],
+            'GlobalSecondaryIndexes': [
+                {
+                    'IndexName': 'ValidationCodeIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'validation_code',
+                            'KeyType': 'HASH'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                }
+            ],
+            'BillingMode': 'PAY_PER_REQUEST',
+            'Tags': [
+                {
+                    'Key': 'Service',
+                    'Value': 'perplexity-validator'
+                },
+                {
+                    'Key': 'Purpose',
+                    'Value': 'user-validation'
+                }
+            ]
+        }
+    
+    @classmethod
+    def get_user_tracking_schema(cls) -> Dict[str, Any]:
+        """Schema for user usage tracking table."""
+        return {
+            'TableName': cls.USER_TRACKING_TABLE,
+            'KeySchema': [
+                {
+                    'AttributeName': 'email',
+                    'KeyType': 'HASH'  # Partition key
+                }
+            ],
+            'AttributeDefinitions': [
+                {
+                    'AttributeName': 'email',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'email_domain',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'last_access',
+                    'AttributeType': 'S'
+                }
+            ],
+            'GlobalSecondaryIndexes': [
+                {
+                    'IndexName': 'EmailDomainIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'email_domain',
+                            'KeyType': 'HASH'
+                        },
+                        {
+                            'AttributeName': 'last_access',
+                            'KeyType': 'RANGE'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                }
+            ],
+            'BillingMode': 'PAY_PER_REQUEST',
+            'Tags': [
+                {
+                    'Key': 'Service',
+                    'Value': 'perplexity-validator'
+                },
+                {
+                    'Key': 'Purpose',
+                    'Value': 'user-tracking'
                 }
             ]
         }
@@ -832,4 +938,480 @@ def get_call_analytics(session_id: str = None, email: str = None, date_range: tu
         
     except Exception as e:
         logger.error(f"Error getting call analytics: {e}")
-        return {'sessions': [], 'count': 0, 'summary': {}} 
+        return {'sessions': [], 'count': 0, 'summary': {}}
+
+
+def create_user_validation_table():
+    """Create the user validation table."""
+    schemas = DynamoDBSchemas()
+    try:
+        dynamodb_client.create_table(**schemas.get_user_validation_schema())
+        logger.info(f"Created {schemas.USER_VALIDATION_TABLE} table")
+        
+        # Enable TTL after table creation
+        try:
+            # Wait a moment for table to be ready
+            import time
+            time.sleep(2)
+            
+            dynamodb_client.update_time_to_live(
+                TableName=schemas.USER_VALIDATION_TABLE,
+                TimeToLiveSpecification={
+                    'AttributeName': 'ttl',
+                    'Enabled': True
+                }
+            )
+            logger.info(f"TTL enabled for {schemas.USER_VALIDATION_TABLE}")
+        except Exception as ttl_error:
+            logger.warning(f"Failed to enable TTL (may already be enabled): {ttl_error}")
+        
+        return True
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            logger.info(f"Table {schemas.USER_VALIDATION_TABLE} already exists")
+            
+            # Try to enable TTL if table exists
+            try:
+                dynamodb_client.update_time_to_live(
+                    TableName=schemas.USER_VALIDATION_TABLE,
+                    TimeToLiveSpecification={
+                        'AttributeName': 'ttl',
+                        'Enabled': True
+                    }
+                )
+                logger.info(f"TTL enabled for existing {schemas.USER_VALIDATION_TABLE}")
+            except Exception as ttl_error:
+                logger.warning(f"Failed to enable TTL (may already be enabled): {ttl_error}")
+            
+            return True
+        else:
+            logger.error(f"Error creating user validation table: {e}")
+            return False
+
+
+def create_user_tracking_table():
+    """Create the user tracking table."""
+    schemas = DynamoDBSchemas()
+    try:
+        dynamodb_client.create_table(**schemas.get_user_tracking_schema())
+        logger.info(f"Created {schemas.USER_TRACKING_TABLE} table")
+        return True
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            logger.info(f"Table {schemas.USER_TRACKING_TABLE} already exists")
+            return True
+        else:
+            logger.error(f"Error creating user tracking table: {e}")
+            return False
+
+
+def generate_validation_code() -> str:
+    """Generate a 6-digit numerical validation code."""
+    import random
+    return f"{random.randint(100000, 999999)}"
+
+
+def send_validation_email(email: str, validation_code: str) -> bool:
+    """Send validation email with 6-digit code."""
+    try:
+        from email_sender import send_validation_code_email
+        result = send_validation_code_email(email, validation_code)
+        return result.get('success', False)
+    except ImportError:
+        logger.error("Email sender module not available")
+        return False
+    except Exception as e:
+        logger.error(f"Error sending validation email: {e}")
+        return False
+
+
+def create_email_validation_request(email: str) -> Dict[str, Any]:
+    """
+    Create email validation request and send validation code.
+    Returns validation data or error info.
+    """
+    try:
+        import re
+        from datetime import timedelta
+        
+        # Validate email format
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, email):
+            return {
+                'success': False,
+                'error': 'invalid_email',
+                'message': 'Invalid email address format'
+            }
+        
+        # Generate validation code and expiry
+        validation_code = generate_validation_code()
+        created_at = datetime.now(timezone.utc)
+        expires_at = created_at + timedelta(minutes=10)
+        ttl = int(expires_at.timestamp())  # TTL for DynamoDB
+        
+        # Store validation request in DynamoDB
+        table = get_dynamodb_resource().Table(DynamoDBSchemas.USER_VALIDATION_TABLE)
+        
+        validation_item = {
+            'email': email,
+            'validation_code': validation_code,
+            'created_at': created_at.isoformat(),
+            'expires_at': expires_at.isoformat(),
+            'ttl': ttl,
+            'attempts': 0,
+            'validated': False,
+            'validation_requested_at': created_at.isoformat()
+        }
+        
+        table.put_item(Item=validation_item)
+        
+        # Send validation email
+        email_sent = send_validation_email(email, validation_code)
+        
+        if not email_sent:
+            # Clean up the validation record if email failed
+            table.delete_item(Key={'email': email})
+            return {
+                'success': False,
+                'error': 'email_send_failed',
+                'message': 'Failed to send validation email'
+            }
+        
+        # Track that validation was requested (first time or repeat)
+        track_validation_request(email, created_at.isoformat())
+        
+        return {
+            'success': True,
+            'message': 'Validation code sent to email',
+            'expires_at': expires_at.isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error creating email validation request: {e}")
+        return {
+            'success': False,
+            'error': 'internal_error',
+            'message': f'Internal error: {str(e)}'
+        }
+
+
+def validate_email_code(email: str, code: str) -> Dict[str, Any]:
+    """
+    Validate email with provided code.
+    Returns validation result.
+    """
+    try:
+        table = get_dynamodb_resource().Table(DynamoDBSchemas.USER_VALIDATION_TABLE)
+        
+        # Get validation record
+        response = table.get_item(Key={'email': email})
+        
+        if 'Item' not in response:
+            return {
+                'success': False,
+                'error': 'no_validation_request',
+                'message': 'No validation request found for this email'
+            }
+        
+        validation_record = response['Item']
+        
+        # Check if already validated
+        if validation_record.get('validated', False):
+            return {
+                'success': True,
+                'message': 'Email already validated'
+            }
+        
+        # Check expiry
+        expires_at = datetime.fromisoformat(validation_record['expires_at'].replace('Z', '+00:00'))
+        if datetime.now(timezone.utc) > expires_at:
+            # Clean up expired record
+            table.delete_item(Key={'email': email})
+            return {
+                'success': False,
+                'error': 'code_expired',
+                'message': 'Validation code has expired'
+            }
+        
+        # Check attempts limit
+        attempts = validation_record.get('attempts', 0)
+        if attempts >= 3:
+            # Clean up after too many attempts
+            table.delete_item(Key={'email': email})
+            return {
+                'success': False,
+                'error': 'too_many_attempts',
+                'message': 'Too many validation attempts'
+            }
+        
+        # Check code
+        if validation_record['validation_code'] != code:
+            # Increment attempts
+            table.update_item(
+                Key={'email': email},
+                UpdateExpression="SET attempts = attempts + :inc",
+                ExpressionAttributeValues={':inc': 1}
+            )
+            return {
+                'success': False,
+                'error': 'invalid_code',
+                'message': 'Invalid validation code'
+            }
+        
+        # Code is correct - mark as validated
+        validated_at = datetime.now(timezone.utc).isoformat()
+        table.update_item(
+            Key={'email': email},
+            UpdateExpression="SET validated = :val, validated_at = :timestamp",
+            ExpressionAttributeValues={
+                ':val': True,
+                ':timestamp': validated_at
+            }
+        )
+        
+        # Initialize/update user tracking record with validation date
+        initialize_user_tracking(email, validated_at)
+        
+        return {
+            'success': True,
+            'message': 'Email validated successfully'
+        }
+        
+    except Exception as e:
+        logger.error(f"Error validating email code: {e}")
+        return {
+            'success': False,
+            'error': 'internal_error',
+            'message': f'Internal error: {str(e)}'
+        }
+
+
+def is_email_validated(email: str) -> bool:
+    """Check if email is validated."""
+    try:
+        table = get_dynamodb_resource().Table(DynamoDBSchemas.USER_VALIDATION_TABLE)
+        response = table.get_item(Key={'email': email})
+        
+        if 'Item' not in response:
+            return False
+        
+        validation_record = response['Item']
+        
+        # Check if validated and not expired
+        if not validation_record.get('validated', False):
+            return False
+        
+        expires_at = datetime.fromisoformat(validation_record['expires_at'].replace('Z', '+00:00'))
+        if datetime.now(timezone.utc) > expires_at:
+            # Clean up expired record
+            table.delete_item(Key={'email': email})
+            return False
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error checking email validation: {e}")
+        return False
+
+
+def initialize_user_tracking(email: str, validated_at: str = None) -> bool:
+    """Initialize user tracking record for a newly validated email."""
+    try:
+        email_domain = email.split('@')[-1] if '@' in email else 'unknown'
+        current_time = validated_at or datetime.now(timezone.utc).isoformat()
+        
+        table = get_dynamodb_resource().Table(DynamoDBSchemas.USER_TRACKING_TABLE)
+        
+        # Check if user tracking already exists
+        response = table.get_item(Key={'email': email})
+        
+        if 'Item' in response:
+            # User already exists, update last access and validation dates
+            current_data = response['Item']
+            update_expr = "SET last_access = :timestamp"
+            expr_values = {':timestamp': current_time}
+            
+            # If this is a new validation (validated_at provided), update validation dates
+            if validated_at:
+                # Check if this is the first validation for this user
+                if 'first_email_validation' not in current_data:
+                    # First validation - set both first and most recent
+                    update_expr += ", first_email_validation = :validation_date, most_recent_email_validation = :validation_date"
+                    expr_values[':validation_date'] = validated_at
+                else:
+                    # Subsequent validation - only update most recent
+                    update_expr += ", most_recent_email_validation = :validation_date"
+                    expr_values[':validation_date'] = validated_at
+            
+            table.update_item(
+                Key={'email': email},
+                UpdateExpression=update_expr,
+                ExpressionAttributeValues=expr_values
+            )
+            return True
+        
+        # Create new user tracking record
+        user_record = {
+            'email': email,
+            'email_domain': email_domain,
+            'created_at': current_time,
+            'last_access': current_time,
+            'total_preview_requests': 0,
+            'total_full_requests': 0,
+            'total_tokens_used': 0,
+            'total_cost_usd': Decimal('0.0'),
+            'perplexity_tokens': 0,
+            'perplexity_cost': Decimal('0.0'),
+            'anthropic_tokens': 0,
+            'anthropic_cost': Decimal('0.0')
+        }
+        
+        # Add validation dates if this is a validation event
+        if validated_at:
+            user_record['first_email_validation'] = validated_at
+            user_record['most_recent_email_validation'] = validated_at
+        
+        table.put_item(Item=user_record)
+        logger.info(f"Initialized user tracking for {email}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error initializing user tracking: {e}")
+        return False
+
+
+def track_user_request(email: str, request_type: str, tokens_used: int = 0, 
+                      cost_usd: float = 0.0, provider: str = '', 
+                      perplexity_tokens: int = 0, perplexity_cost: float = 0.0,
+                      anthropic_tokens: int = 0, anthropic_cost: float = 0.0) -> bool:
+    """Track user request and update usage statistics."""
+    try:
+        table = get_dynamodb_resource().Table(DynamoDBSchemas.USER_TRACKING_TABLE)
+        
+        # Get current user record
+        response = table.get_item(Key={'email': email})
+        
+        if 'Item' not in response:
+            # Initialize if doesn't exist
+            initialize_user_tracking(email)
+            response = table.get_item(Key={'email': email})
+        
+        current_data = response['Item']
+        
+        # Helper function to convert to number for arithmetic
+        def to_num(val):
+            if isinstance(val, Decimal):
+                return float(val)
+            return val
+        
+        # Calculate updates
+        updates = {
+            'last_access': datetime.now(timezone.utc).isoformat(),
+            'total_tokens_used': to_num(current_data.get('total_tokens_used', 0)) + tokens_used,
+            'total_cost_usd': to_num(current_data.get('total_cost_usd', 0)) + cost_usd,
+            'perplexity_tokens': to_num(current_data.get('perplexity_tokens', 0)) + perplexity_tokens,
+            'perplexity_cost': to_num(current_data.get('perplexity_cost', 0)) + perplexity_cost,
+            'anthropic_tokens': to_num(current_data.get('anthropic_tokens', 0)) + anthropic_tokens,
+            'anthropic_cost': to_num(current_data.get('anthropic_cost', 0)) + anthropic_cost
+        }
+        
+        # Update request type count
+        if request_type == 'preview':
+            updates['total_preview_requests'] = to_num(current_data.get('total_preview_requests', 0)) + 1
+        elif request_type == 'full':
+            updates['total_full_requests'] = to_num(current_data.get('total_full_requests', 0)) + 1
+        
+        # Build update expression
+        update_parts = []
+        expression_values = {}
+        
+        for key, value in updates.items():
+            placeholder = f":{key}"
+            update_parts.append(f"{key} = {placeholder}")
+            expression_values[placeholder] = value
+        
+        update_expression = "SET " + ", ".join(update_parts)
+        
+        # Convert floats to Decimal for DynamoDB
+        expression_values = convert_floats_to_decimal(expression_values)
+        
+        table.update_item(
+            Key={'email': email},
+            UpdateExpression=update_expression,
+            ExpressionAttributeValues=expression_values
+        )
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error tracking user request: {e}")
+        return False
+
+
+def track_validation_request(email: str, requested_at: str) -> bool:
+    """Track when an email validation was requested."""
+    try:
+        # Initialize/update user tracking with request date if user doesn't exist
+        table = get_dynamodb_resource().Table(DynamoDBSchemas.USER_TRACKING_TABLE)
+        response = table.get_item(Key={'email': email})
+        
+        if 'Item' not in response:
+            # First time user - create record with first validation request date
+            initialize_user_tracking(email)
+            table.update_item(
+                Key={'email': email},
+                UpdateExpression="SET first_email_validation_request = :req_date, most_recent_email_validation_request = :req_date",
+                ExpressionAttributeValues={
+                    ':req_date': requested_at
+                }
+            )
+        else:
+            # Existing user - update most recent request date
+            # Only set first request date if it doesn't exist
+            current_data = response['Item']
+            if 'first_email_validation_request' not in current_data:
+                table.update_item(
+                    Key={'email': email},
+                    UpdateExpression="SET first_email_validation_request = :req_date, most_recent_email_validation_request = :req_date",
+                    ExpressionAttributeValues={
+                        ':req_date': requested_at
+                    }
+                )
+            else:
+                table.update_item(
+                    Key={'email': email},
+                    UpdateExpression="SET most_recent_email_validation_request = :req_date",
+                    ExpressionAttributeValues={
+                        ':req_date': requested_at
+                    }
+                )
+        
+        logger.info(f"Tracked validation request for {email} at {requested_at}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error tracking validation request: {e}")
+        return False
+
+
+def get_user_stats(email: str) -> Dict[str, Any]:
+    """Get user usage statistics."""
+    try:
+        table = get_dynamodb_resource().Table(DynamoDBSchemas.USER_TRACKING_TABLE)
+        response = table.get_item(Key={'email': email})
+        
+        if 'Item' not in response:
+            return {'exists': False}
+        
+        # Convert Decimals to floats for JSON serialization
+        user_data = response['Item']
+        for key, value in user_data.items():
+            if isinstance(value, Decimal):
+                user_data[key] = float(value)
+        
+        user_data['exists'] = True
+        return user_data
+        
+    except Exception as e:
+        logger.error(f"Error getting user stats: {e}")
+        return {'exists': False, 'error': str(e)} 

@@ -842,6 +842,165 @@ def test_api_endpoint(api_url):
         logger.error(f"Error testing API endpoint: {str(e)}")
         return False
 
+def setup_dynamodb_tables(region="us-east-1"):
+    """Set up DynamoDB tables required for email validation and user tracking."""
+    logger.info("Setting up DynamoDB tables for email validation and user tracking...")
+    
+    try:
+        dynamodb_client = boto3.client('dynamodb', region_name=region)
+        
+        # Table schemas
+        user_validation_table = "perplexity-validator-user-validation"
+        user_tracking_table = "perplexity-validator-user-tracking"
+        
+        # Check and create user validation table
+        logger.info(f"Checking {user_validation_table} table...")
+        try:
+            response = dynamodb_client.describe_table(TableName=user_validation_table)
+            logger.info(f"✅ {user_validation_table} table already exists")
+        except dynamodb_client.exceptions.ResourceNotFoundException:
+            logger.info(f"Creating {user_validation_table} table...")
+            
+            # Create user validation table
+            validation_table_config = {
+                'TableName': user_validation_table,
+                'KeySchema': [
+                    {
+                        'AttributeName': 'email',
+                        'KeyType': 'HASH'  # Partition key
+                    }
+                ],
+                'AttributeDefinitions': [
+                    {
+                        'AttributeName': 'email',
+                        'AttributeType': 'S'
+                    },
+                    {
+                        'AttributeName': 'validation_code',
+                        'AttributeType': 'S'
+                    }
+                ],
+                'GlobalSecondaryIndexes': [
+                    {
+                        'IndexName': 'ValidationCodeIndex',
+                        'KeySchema': [
+                            {
+                                'AttributeName': 'validation_code',
+                                'KeyType': 'HASH'
+                            }
+                        ],
+                        'Projection': {
+                            'ProjectionType': 'ALL'
+                        }
+                    }
+                ],
+                'BillingMode': 'PAY_PER_REQUEST',
+                'Tags': [
+                    {
+                        'Key': 'Service',
+                        'Value': 'perplexity-validator'
+                    },
+                    {
+                        'Key': 'Purpose',
+                        'Value': 'user-validation'
+                    }
+                ]
+            }
+            
+            dynamodb_client.create_table(**validation_table_config)
+            logger.info(f"✅ {user_validation_table} table created")
+            
+            # Wait for table to be active before enabling TTL
+            logger.info("Waiting for table to be active...")
+            waiter = dynamodb_client.get_waiter('table_exists')
+            waiter.wait(TableName=user_validation_table, WaiterConfig={'Delay': 5, 'MaxAttempts': 12})
+            
+            # Enable TTL
+            try:
+                dynamodb_client.update_time_to_live(
+                    TableName=user_validation_table,
+                    TimeToLiveSpecification={
+                        'AttributeName': 'ttl',
+                        'Enabled': True
+                    }
+                )
+                logger.info(f"✅ TTL enabled for {user_validation_table}")
+            except Exception as ttl_error:
+                logger.warning(f"Failed to enable TTL (may already be enabled): {ttl_error}")
+        
+        # Check and create user tracking table
+        logger.info(f"Checking {user_tracking_table} table...")
+        try:
+            response = dynamodb_client.describe_table(TableName=user_tracking_table)
+            logger.info(f"✅ {user_tracking_table} table already exists")
+        except dynamodb_client.exceptions.ResourceNotFoundException:
+            logger.info(f"Creating {user_tracking_table} table...")
+            
+            # Create user tracking table
+            tracking_table_config = {
+                'TableName': user_tracking_table,
+                'KeySchema': [
+                    {
+                        'AttributeName': 'email',
+                        'KeyType': 'HASH'  # Partition key
+                    }
+                ],
+                'AttributeDefinitions': [
+                    {
+                        'AttributeName': 'email',
+                        'AttributeType': 'S'
+                    },
+                    {
+                        'AttributeName': 'email_domain',
+                        'AttributeType': 'S'
+                    },
+                    {
+                        'AttributeName': 'last_access',
+                        'AttributeType': 'S'
+                    }
+                ],
+                'GlobalSecondaryIndexes': [
+                    {
+                        'IndexName': 'EmailDomainIndex',
+                        'KeySchema': [
+                            {
+                                'AttributeName': 'email_domain',
+                                'KeyType': 'HASH'
+                            },
+                            {
+                                'AttributeName': 'last_access',
+                                'KeyType': 'RANGE'
+                            }
+                        ],
+                        'Projection': {
+                            'ProjectionType': 'ALL'
+                        }
+                    }
+                ],
+                'BillingMode': 'PAY_PER_REQUEST',
+                'Tags': [
+                    {
+                        'Key': 'Service',
+                        'Value': 'perplexity-validator'
+                    },
+                    {
+                        'Key': 'Purpose',
+                        'Value': 'user-tracking'
+                    }
+                ]
+            }
+            
+            dynamodb_client.create_table(**tracking_table_config)
+            logger.info(f"✅ {user_tracking_table} table created")
+        
+        logger.info("✅ All DynamoDB tables are ready!")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error setting up DynamoDB tables: {e}")
+        return False
+
+
 def main():
     """Main function."""
     global PACKAGE_DIR
@@ -854,6 +1013,8 @@ def main():
     parser.add_argument('--test-api', action='store_true', help='Test the API endpoint after deployment')
     parser.add_argument('--force-rebuild', action='store_true', help='Force rebuilding the package even if it exists')
     parser.add_argument('--no-rebuild', action='store_true', help='Skip rebuilding the package')
+    parser.add_argument('--setup-db', action='store_true', help='Set up DynamoDB tables for email validation and user tracking')
+    parser.add_argument('--skip-db-setup', action='store_true', help='Skip DynamoDB table setup during deployment')
     args = parser.parse_args()
     
     # Get Lambda function name
@@ -905,6 +1066,15 @@ def main():
                 return 1
     else:
         logger.info(f"Using existing package: {OUTPUT_ZIP}")
+    
+    # Set up DynamoDB tables if requested or if deploying
+    if args.setup_db or (args.deploy and not args.skip_db_setup):
+        logger.info("Setting up DynamoDB tables...")
+        db_success = setup_dynamodb_tables(args.region)
+        if not db_success:
+            logger.error("Failed to set up DynamoDB tables")
+            if args.deploy:
+                logger.warning("Continuing with deployment despite DB setup failure...")
     
     # Deploy if requested
     if args.deploy:

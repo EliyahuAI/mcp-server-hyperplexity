@@ -5,6 +5,76 @@
 https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod
 ```
 
+## Email Validation (Required)
+
+All validation requests require email verification. You must first validate your email before processing Excel files.
+
+### Example 0: Email Validation Workflow
+
+#### Step 1: Request Validation Code
+```bash
+curl -X POST "https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod/validate" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "requestEmailValidation", "email": "user@company.com"}'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Validation code sent to email",
+  "expires_at": "2025-07-02T18:44:33.316871+00:00"
+}
+```
+
+#### Step 2: Validate Email Code
+Check your email for a 6-digit code (e.g., 123456) and submit it:
+
+```bash
+curl -X POST "https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod/validate" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "validateEmailCode", "email": "user@company.com", "code": "123456"}'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Email validated successfully"
+}
+```
+
+#### Step 3: Check Validation Status (Optional)
+```bash
+curl -X POST "https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod/validate" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "getUserStats", "email": "user@company.com"}'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "stats": {
+    "email": "user@company.com",
+    "email_domain": "company.com",
+    "first_email_validation_request": "2025-07-02T18:28:06.935505+00:00",
+    "most_recent_email_validation_request": "2025-07-02T18:34:33.316871+00:00",
+    "first_email_validation": "2025-07-02T18:33:36.857713+00:00",
+    "most_recent_email_validation": "2025-07-02T18:34:51.226114+00:00",
+    "total_preview_requests": 1,
+    "total_full_requests": 0,
+    "total_tokens_used": 100,
+    "total_cost_usd": 0.01,
+    "exists": true
+  }
+}
+```
+
+### Privacy Notice Acceptance
+
+⚠️ **IMPORTANT**: By entering and submitting your validation code, you explicitly accept our [Privacy Notice](https://eliyahu.ai/privacy-notice) and consent to data processing.
+
 ## Example 1: Synchronous Preview
 
 Preview the first row for immediate validation testing.
@@ -421,6 +491,44 @@ if result:
 }
 ```
 
+### Email Validation Error Responses
+
+#### Email Not Validated
+```json
+{
+  "statusCode": 403,
+  "error": "email_not_validated",
+  "message": "Email address must be validated before processing. Please request and enter a validation code first."
+}
+```
+
+#### Invalid Validation Code
+```json
+{
+  "success": false,
+  "error": "invalid_code",
+  "message": "Invalid validation code"
+}
+```
+
+#### Code Expired
+```json
+{
+  "success": false,
+  "error": "code_expired", 
+  "message": "Validation code has expired"
+}
+```
+
+#### Too Many Attempts
+```json
+{
+  "success": false,
+  "error": "too_many_attempts",
+  "message": "Too many validation attempts"
+}
+```
+
 ### Status Response
 ```json
 {
@@ -433,4 +541,170 @@ if result:
     "percentage": 45
   }
 }
-``` 
+```
+
+## Email Validation Helper Functions
+
+### Python Email Validation Class
+
+```python
+import requests
+import time
+import json
+
+class EmailValidator:
+    def __init__(self, base_url):
+        self.base_url = base_url
+        self.validated_emails = set()
+    
+    def request_validation(self, email):
+        """Request a validation code for an email address"""
+        url = f"{self.base_url}/validate"
+        data = {
+            "action": "requestEmailValidation",
+            "email": email
+        }
+        
+        response = requests.post(url, json=data)
+        result = response.json()
+        
+        if result.get('success'):
+            print(f"✅ Validation code sent to {email}")
+            print(f"Code expires at: {result.get('expires_at')}")
+            return True
+        else:
+            print(f"❌ Failed to send validation code: {result.get('message')}")
+            return False
+    
+    def validate_code(self, email, code):
+        """Validate an email with the provided code"""
+        url = f"{self.base_url}/validate"
+        data = {
+            "action": "validateEmailCode",
+            "email": email,
+            "code": code
+        }
+        
+        response = requests.post(url, json=data)
+        result = response.json()
+        
+        if result.get('success'):
+            print(f"✅ Email {email} validated successfully")
+            self.validated_emails.add(email)
+            return True
+        else:
+            print(f"❌ Validation failed: {result.get('message')}")
+            return False
+    
+    def get_user_stats(self, email):
+        """Get user statistics and validation history"""
+        url = f"{self.base_url}/validate"
+        data = {
+            "action": "getUserStats",
+            "email": email
+        }
+        
+        response = requests.post(url, json=data)
+        result = response.json()
+        
+        if result.get('success'):
+            return result['stats']
+        else:
+            return None
+    
+    def interactive_validation(self, email):
+        """Interactive validation process"""
+        print(f"🔐 Validating email: {email}")
+        
+        # Request validation code
+        if not self.request_validation(email):
+            return False
+        
+        # Get code from user
+        code = input("📧 Enter the 6-digit code from your email: ").strip()
+        
+        if len(code) != 6 or not code.isdigit():
+            print("❌ Invalid code format. Code must be 6 digits.")
+            return False
+        
+        # Validate code
+        return self.validate_code(email, code)
+    
+    def ensure_validated(self, email):
+        """Ensure email is validated, prompt if not"""
+        if email in self.validated_emails:
+            return True
+        
+        # Check if already validated
+        stats = self.get_user_stats(email)
+        if stats and stats.get('exists'):
+            print(f"✅ Email {email} is already validated")
+            self.validated_emails.add(email)
+            return True
+        
+        # Need validation
+        print(f"🔐 Email {email} requires validation")
+        return self.interactive_validation(email)
+
+# Usage example
+validator = EmailValidator("https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod")
+
+# Validate an email interactively
+if validator.ensure_validated("user@company.com"):
+    print("Ready to process files!")
+    
+# Or validate programmatically if you have the code
+validator.request_validation("user@company.com")
+# ... user checks email ...
+validator.validate_code("user@company.com", "123456")
+```
+
+### Complete Validation + Processing Example
+
+```python
+import requests
+import os
+
+class PerplexityValidatorWithAuth:
+    def __init__(self, base_url):
+        self.base_url = base_url
+        self.validator = EmailValidator(base_url)
+    
+    def process_with_validation(self, excel_path, config_path, email, preview=True):
+        """Process file with automatic email validation"""
+        
+        # Ensure email is validated
+        if not self.validator.ensure_validated(email):
+            print("❌ Email validation failed. Cannot process file.")
+            return None
+        
+        # Process file
+        url = f"{self.base_url}/validate"
+        params = {}
+        if preview:
+            params["preview_first_row"] = "true"
+        
+        with open(excel_path, 'rb') as excel, open(config_path, 'rb') as config:
+            files = {
+                'excel_file': (os.path.basename(excel_path), excel),
+                'config': (os.path.basename(config_path), config)
+            }
+            data = {'email': email}
+            
+            response = requests.post(url, params=params, files=files, data=data)
+            
+            if response.status_code == 403:
+                # Email validation expired, re-validate
+                print("🔄 Email validation expired, re-validating...")
+                if self.validator.interactive_validation(email):
+                    # Retry processing
+                    response = requests.post(url, params=params, files=files, data=data)
+                else:
+                    return None
+            
+            return response.json()
+
+# Usage
+processor = PerplexityValidatorWithAuth("https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod")
+result = processor.process_with_validation("data.xlsx", "config.json", "user@company.com")
+```
