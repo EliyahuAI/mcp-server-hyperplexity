@@ -113,6 +113,9 @@ temp_unnecessary_files/
 test_results/
 tables/*/test_results/
 
+# CSV exports
+exports/
+
 # Test case generated files (keep only Python generation scripts)
 test_cases/*/*.xlsx
 test_cases/*/*.json
