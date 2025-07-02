@@ -7,6 +7,8 @@ Provides functions to view, clear, and manage validation and tracking tables.
 import boto3
 import json
 import sys
+import csv
+import os
 from datetime import datetime, timezone
 from decimal import Decimal
 from botocore.exceptions import ClientError
@@ -258,6 +260,158 @@ def get_call_tracking_records(limit=10):
         print(f"Error accessing call tracking table: {e}")
         return []
 
+def export_table_to_csv(table_name, output_dir="exports", limit=None):
+    """Export a DynamoDB table to CSV file"""
+    try:
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{table_name}_{timestamp}.csv"
+        filepath = os.path.join(output_dir, filename)
+        
+        # Get table data
+        dynamodb = get_dynamodb_resource()
+        table = dynamodb.Table(table_name)
+        
+        scan_kwargs = {}
+        if limit:
+            scan_kwargs['Limit'] = limit
+        
+        print(f"🔄 Scanning table {table_name}...")
+        response = table.scan(**scan_kwargs)
+        items = response.get('Items', [])
+        
+        if not items:
+            print(f"❌ No items found in table {table_name}")
+            return None
+        
+        print(f"📊 Found {len(items)} items to export")
+        
+        # Get all unique keys from all items (DynamoDB items can have different schemas)
+        all_keys = set()
+        for item in items:
+            all_keys.update(item.keys())
+        
+        # Sort keys for consistent output
+        fieldnames = sorted(list(all_keys))
+        
+        # Write to CSV
+        with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            
+            for item in items:
+                # Convert Decimal objects to float for CSV compatibility
+                csv_row = {}
+                for key in fieldnames:
+                    value = item.get(key, '')
+                    if isinstance(value, Decimal):
+                        csv_row[key] = float(value)
+                    elif isinstance(value, dict) or isinstance(value, list):
+                        # Convert complex objects to JSON strings
+                        csv_row[key] = json.dumps(value, default=decimal_default)
+                    else:
+                        csv_row[key] = value
+                writer.writerow(csv_row)
+        
+        print(f"✅ Successfully exported {len(items)} items to {filepath}")
+        print(f"📁 Columns: {', '.join(fieldnames)}")
+        return filepath
+        
+    except Exception as e:
+        print(f"❌ Error exporting table {table_name} to CSV: {e}")
+        return None
+
+def export_all_tables_to_csv(output_dir="exports", limit=None):
+    """Export all perplexity-validator tables to CSV files"""
+    tables_to_export = [USER_VALIDATION_TABLE, USER_TRACKING_TABLE, CALL_TRACKING_TABLE]
+    exported_files = []
+    
+    print(f"🚀 Starting export of all DynamoDB tables to {output_dir}/")
+    print("=" * 60)
+    
+    for table_name in tables_to_export:
+        print(f"\n📊 Exporting {table_name}...")
+        filepath = export_table_to_csv(table_name, output_dir, limit)
+        if filepath:
+            exported_files.append(filepath)
+    
+    print("\n" + "=" * 60)
+    print(f"🎉 Export complete! {len(exported_files)} files created:")
+    for filepath in exported_files:
+        file_size = os.path.getsize(filepath) / 1024  # KB
+        print(f"   📄 {filepath} ({file_size:.1f} KB)")
+    
+    return exported_files
+
+def export_user_data_to_csv(email, output_dir="exports"):
+    """Export all data for a specific user email to CSV files"""
+    print(f"🔍 Exporting all data for user: {email}")
+    exported_files = []
+    
+    # Create user-specific directory
+    user_dir = os.path.join(output_dir, f"user_{email.replace('@', '_at_').replace('.', '_')}")
+    os.makedirs(user_dir, exist_ok=True)
+    
+    # Export user validation record
+    validation_records = get_user_validation_records(email)
+    if validation_records:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"validation_{email.replace('@', '_at_')}_{timestamp}.csv"
+        filepath = os.path.join(user_dir, filename)
+        
+        with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+            if validation_records:
+                fieldnames = list(validation_records[0].keys())
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                for record in validation_records:
+                    csv_row = {}
+                    for key, value in record.items():
+                        if isinstance(value, Decimal):
+                            csv_row[key] = float(value)
+                        else:
+                            csv_row[key] = value
+                    writer.writerow(csv_row)
+                
+                exported_files.append(filepath)
+                print(f"✅ Exported validation data to {filepath}")
+    
+    # Export user tracking record
+    tracking_records = get_user_tracking_records(email)
+    if tracking_records:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"tracking_{email.replace('@', '_at_')}_{timestamp}.csv"
+        filepath = os.path.join(user_dir, filename)
+        
+        with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+            if tracking_records:
+                fieldnames = list(tracking_records[0].keys())
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                for record in tracking_records:
+                    csv_row = {}
+                    for key, value in record.items():
+                        if isinstance(value, Decimal):
+                            csv_row[key] = float(value)
+                        else:
+                            csv_row[key] = value
+                    writer.writerow(csv_row)
+                
+                exported_files.append(filepath)
+                print(f"✅ Exported tracking data to {filepath}")
+    
+    if exported_files:
+        print(f"🎉 User data export complete! {len(exported_files)} files created in {user_dir}/")
+    else:
+        print(f"❌ No data found for user {email}")
+    
+    return exported_files
+
 def main():
     """Main function with command line interface"""
     if len(sys.argv) < 2:
@@ -275,11 +429,19 @@ Usage:
     python manage_dynamodb_tables.py clear <table_name>      # Clear all items from table
     python manage_dynamodb_tables.py calls                   # Show recent call tracking
     python manage_dynamodb_tables.py summary                 # Show summary of all tables
+    
+CSV Export Commands:
+    python manage_dynamodb_tables.py export-csv <table_name> [limit]    # Export single table to CSV
+    python manage_dynamodb_tables.py export-all-csv [limit]             # Export all tables to CSV
+    python manage_dynamodb_tables.py export-user-csv <email>            # Export user data to CSV
 
 Examples:
     python manage_dynamodb_tables.py validation eliyahu@eliyahu.ai
     python manage_dynamodb_tables.py delete-validation eliyahu@eliyahu.ai
     python manage_dynamodb_tables.py clear perplexity-validator-user-validation
+    python manage_dynamodb_tables.py export-csv perplexity-validator-user-tracking
+    python manage_dynamodb_tables.py export-all-csv 100
+    python manage_dynamodb_tables.py export-user-csv eliyahu@eliyahu.ai
         """)
         return
     
@@ -345,6 +507,25 @@ Examples:
         for table_name in [USER_VALIDATION_TABLE, USER_TRACKING_TABLE, CALL_TRACKING_TABLE]:
             if table_name in tables:
                 describe_table(table_name)
+    
+    elif command == "export-csv":
+        if len(sys.argv) < 3:
+            print("Usage: python manage_dynamodb_tables.py export-csv <table_name> [limit]")
+            return
+        table_name = sys.argv[2]
+        limit = int(sys.argv[3]) if len(sys.argv) > 3 else None
+        export_table_to_csv(table_name, limit=limit)
+    
+    elif command == "export-all-csv":
+        limit = int(sys.argv[2]) if len(sys.argv) > 2 else None
+        export_all_tables_to_csv(limit=limit)
+    
+    elif command == "export-user-csv":
+        if len(sys.argv) < 3:
+            print("Usage: python manage_dynamodb_tables.py export-user-csv <email>")
+            return
+        email = sys.argv[2]
+        export_user_data_to_csv(email)
     
     else:
         print(f"Unknown command: {command}")
