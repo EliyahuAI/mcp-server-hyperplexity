@@ -18,11 +18,235 @@ USER_VALIDATION_TABLE = "perplexity-validator-user-validation"
 USER_TRACKING_TABLE = "perplexity-validator-user-tracking"
 CALL_TRACKING_TABLE = "perplexity-validator-call-tracking"
 
+# Logical column ordering for CSV exports
+USER_VALIDATION_COLUMNS = [
+    # Identity
+    'email',
+    'validation_code',
+    
+    # Timestamps
+    'created_at',
+    'expires_at',
+    'validated_at',
+    'validation_requested_at',
+    
+    # Status
+    'validated',
+    'attempts',
+    
+    # System
+    'ttl'
+]
+
+USER_TRACKING_COLUMNS = [
+    # Identity
+    'email',
+    'email_domain',
+    
+    # Account Info
+    'created_at',
+    'last_access',
+    
+    # Email Validation History
+    'first_email_validation_request',
+    'most_recent_email_validation_request', 
+    'first_email_validation',
+    'most_recent_email_validation',
+    
+    # Usage Statistics
+    'total_preview_requests',
+    'total_full_requests',
+    
+    # Token Usage
+    'total_tokens_used',
+    'perplexity_tokens',
+    'anthropic_tokens',
+    
+    # Cost Tracking
+    'total_cost_usd',
+    'perplexity_cost',
+    'anthropic_cost'
+]
+
+CALL_TRACKING_COLUMNS = [
+    # Session Identity
+    'session_id',
+    'reference_pin',
+    'email',
+    'email_domain',
+    
+    # Request Info
+    'created_at',
+    'request_type',
+    'async_mode',
+    'trigger_method',
+    'trigger_source',
+    
+    # Processing Status & Timing
+    'status',
+    'started_processing_at',
+    'processing_completed_at',
+    'completed_processing_at',
+    'response_sent_at',
+    
+    # File Information
+    'original_excel_filename',
+    'original_config_filename',
+    'original_results_filename',
+    'excel_file_size_bytes',
+    'config_file_size_bytes',
+    'results_file_size_bytes',
+    
+    # S3 Keys
+    'excel_s3_key',
+    'config_s3_key',
+    'results_s3_key',
+    
+    # Processing Configuration
+    'max_rows',
+    'batch_size',
+    'preview_max_rows',
+    'validation_targets_count',
+    
+    # Processing Results
+    'total_rows',
+    'processed_rows',
+    'new_rows_processed',
+    'cached_rows',
+    
+    # Validation Results
+    'high_confidence_count',
+    'medium_confidence_count', 
+    'low_confidence_count',
+    'validation_accuracy_score',
+    
+    # Performance Metrics
+    'processing_time_seconds',
+    'validation_time_seconds',
+    'file_upload_time_seconds',
+    'result_creation_time_seconds',
+    'queue_wait_time_seconds',
+    'avg_time_per_row_seconds',
+    
+    # Cost & Token Summary
+    'total_cost_usd',
+    'total_tokens',
+    'total_api_calls',
+    'total_cached_calls',
+    'avg_cost_per_row_usd',
+    'avg_tokens_per_row',
+    'cache_hit_rate',
+    
+    # Perplexity API Details
+    'perplexity_cost_usd',
+    'perplexity_total_tokens',
+    'perplexity_prompt_tokens',
+    'perplexity_completion_tokens',
+    'perplexity_api_calls',
+    'perplexity_cached_calls',
+    'perplexity_models_used',
+    
+    # Anthropic API Details
+    'anthropic_cost_usd',
+    'anthropic_total_tokens',
+    'anthropic_input_tokens',
+    'anthropic_output_tokens',
+    'anthropic_api_calls',
+    'anthropic_cached_calls',
+    'anthropic_cache_tokens',
+    'anthropic_models_used',
+    
+    # Preview Estimates
+    'preview_per_row_cost_usd',
+    'preview_per_row_tokens',
+    'preview_per_row_time_seconds',
+    'preview_per_row_time_without_cache_seconds',
+    'preview_estimated_total_cost_usd',
+    'preview_estimated_total_tokens',
+    'preview_estimated_total_time_hours',
+    'preview_estimated_total_time_without_cache_hours',
+    
+    # Email Delivery
+    'email_sent',
+    'email_delivery_status',
+    'email_message_id',
+    'email_send_time_seconds',
+    'email_bounce_reason',
+    
+    # System & Infrastructure
+    'lambda_request_id',
+    'lambda_duration',
+    'lambda_billed_duration',
+    'lambda_memory_used',
+    'api_gateway_request_id',
+    'sqs_message_id',
+    'client_ip',
+    'user_agent',
+    
+    # Error Tracking
+    'error_count',
+    'error_message',
+    'error_messages',
+    'retry_count',
+    
+    # Metadata
+    'priority',
+    'sequential_call',
+    'search_context_usage',
+    'search_group_counts',
+    'version',
+    'tags',
+    'notes',
+    'warnings',
+    
+    # Access Tracking
+    'download_count',
+    'last_downloaded_at',
+    'expires_at',
+    'updated_at',
+    
+    # Result Format
+    'result_format'
+]
+
 def decimal_default(obj):
     """JSON serializer for Decimal objects"""
     if isinstance(obj, Decimal):
         return float(obj)
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+def get_ordered_columns(table_name, items):
+    """Get logically ordered columns for a specific table"""
+    # Get all available columns from the data
+    all_keys = set()
+    for item in items:
+        all_keys.update(item.keys())
+    
+    # Get the predefined order for this table
+    if table_name == USER_VALIDATION_TABLE:
+        column_order = USER_VALIDATION_COLUMNS
+    elif table_name == USER_TRACKING_TABLE:
+        column_order = USER_TRACKING_COLUMNS
+    elif table_name == CALL_TRACKING_TABLE:
+        column_order = CALL_TRACKING_COLUMNS
+    else:
+        # Fallback to alphabetical if table not recognized
+        return sorted(list(all_keys))
+    
+    # Build ordered columns: predefined order first, then any extra columns alphabetically
+    ordered_columns = []
+    
+    # Add columns in predefined order if they exist in the data
+    for col in column_order:
+        if col in all_keys:
+            ordered_columns.append(col)
+            all_keys.remove(col)
+    
+    # Add any remaining columns alphabetically at the end
+    if all_keys:
+        ordered_columns.extend(sorted(list(all_keys)))
+    
+    return ordered_columns
 
 def get_dynamodb_client(region="us-east-1"):
     """Get DynamoDB client"""
@@ -289,13 +513,8 @@ def export_table_to_csv(table_name, output_dir="exports", limit=None):
         
         print(f"📊 Found {len(items)} items to export")
         
-        # Get all unique keys from all items (DynamoDB items can have different schemas)
-        all_keys = set()
-        for item in items:
-            all_keys.update(item.keys())
-        
-        # Sort keys for consistent output
-        fieldnames = sorted(list(all_keys))
+        # Get logically ordered columns for this table
+        fieldnames = get_ordered_columns(table_name, items)
         
         # Write to CSV
         with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
