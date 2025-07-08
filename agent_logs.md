@@ -60,7 +60,7 @@
 - **S3 Package Ready**: All files properly located in src/ for Lambda deployment
 
 ✅ **Cost accuracy verified:**
-- Sonar: $1/M input, $1/M output
+- Sonar: $1/M input, $1/M output  
 - Sonar Pro: $3/M input, $15/M output  
 - Claude 4 Sonnet: $3/M input, $15/M output
 - Fallback pricing for unknown models
@@ -498,32 +498,218 @@ The validator WAS working correctly and DID return results. The interface had mu
 - CloudWatch shows "normal perplexity-validator behavior" 
 - This suggests validator is working but S3 write failing in interface lambda
 
-### Analysis:
-Background processing has two execution paths for preview:
-1. **Success path**: `has_results = True` → Complex processing → S3 storage
-2. **Fallback path**: `has_results = False` → Simple fallback → S3 storage
+### Email Parameter Solution ✅
+- **Problem**: Status handler couldn't find results because they're stored in email-specific folders
+- **Solution**: Pass email as query parameter from web interface
+- **Implementation**:
+  - Updated web interface to send `?email=user@example.com` with status requests
+  - Modified status handlers to use email parameter to construct exact S3 path
+  - Added fallback patterns if email not provided
+  - Works for both preview and full validation status checks
+- **Result**: Direct path construction without inefficient S3 listing/searching
+- **Deployed**: Successfully deployed to Lambda
 
-### Potential Root Causes:
-1. **Validation Results Check Failure**: 
-   - `validation_results['validation_results']` might be empty dict `{}`
-   - Empty dict passes `is not None` but triggers `result_count == 0`
-   - This forces fallback path
+### Full Validation Status Issue ✅ FIXED
+- **Problem**: User reports full validation status not detecting completion
+- **Investigation**: 
+  - Confirmed results_key is correctly generated with email folder: `results/{email_folder}/{timestamp}_{reference_pin}.zip`
+  - Status handler expects session ID format: `{timestamp}_{reference_pin}`
+  - Email parameter is now passed and used to construct exact path
+  - Verified results ARE being uploaded to S3 successfully
+- **Root Cause**: Session ID parsing issue
+  - Session IDs have 3 parts: `YYYYMMDD_HHMMSS_PIN` (e.g., `20250708_205400_409217`)
+  - Status handler was only expecting 2 parts when splitting by underscore
+  - This caused incorrect timestamp/pin extraction
+- **Fix Applied**: 
+  - Updated session ID parsing to handle both 3-part and 2-part formats
+  - 3-part: timestamp=`{date}_{time}`, pin=`{pin}`
+  - 2-part: timestamp=`{timestamp}`, pin=`{pin}` (backward compatibility)
+- **Result**: Status endpoint now correctly returns "completed" with download URL
 
-2. **S3 Write Exception**: 
-   - Either success or fallback S3 write might be throwing exception
-   - Exception could prevent file storage despite validation completing
+## Session: Web Interface Debugging & Status Fix ✅
 
-3. **Lambda Timeout**: 
-   - Background processing might be timing out before S3 write
-   - Would explain validator working but no S3 file
+### Issues Fixed:
+1. **CORS Errors**: Added proper CORS headers to Lambda responses
+2. **Missing AWS Resources**: Created required SQS queues and DynamoDB tables
+3. **File Upload Format**: Fixed multipart/form-data handling
+4. **UTF-8 Decoding**: Added encoding fallbacks for config files
+5. **Status Polling**: Fixed session ID parsing for 3-part format
+6. **Email Parameter**: Added email query parameter for efficient S3 path construction
 
-### Investigation Plan:
-1. Check CloudWatch logs for interface lambda errors
-2. Verify S3 permissions and bucket access
-3. Add more robust error handling and logging around S3 writes
-4. Test fallback path specifically
+### Final Status:
+- ✅ All validation modes working (sync preview, async preview, full validation)
+- ✅ Status checking correctly detects completion
+- ✅ Results properly stored and retrievable from S3
+- ✅ Email parameter optimization implemented
+- ✅ Deployed to production
 
-### Status: ✅ RESOLVED
+## Cleanup Session ✅
+
+### Issue:
+- User reported CORS error from https://eliyahu.ai when calling API
+- Error: "Access to fetch... has been blocked by CORS policy"
+
+### Root Cause:
+- API Gateway MOCK integration for OPTIONS was failing with 500 errors
+- Mix of AWS_PROXY and non-proxy integrations caused CORS configuration conflicts
+
+### Solution Implemented:
+1. Fixed Lambda OPTIONS handling - moved to top of lambda_handler
+2. Created fix script to switch all OPTIONS from MOCK to AWS_PROXY integration
+3. Successfully updated all endpoints to use Lambda proxy for OPTIONS
+4. Redeployed API Gateway with unified proxy integration
+
+### Final Status:
+- ✅ Lambda code fixed to handle OPTIONS at top level
+- ✅ API Gateway updated - all OPTIONS now use AWS_PROXY
+- ✅ Deployment successful for all endpoints
+- ⚠️ User should clear browser cache and try again
+
+## New Session: Perplexity Validator Web Interface Development
+
+### Task: Build JavaScript webpage for Squarespace integration
+- Created comprehensive single-page application in `perplexity_validator_interface.html`
+- Follows design patterns from reference tool (professional Eliyahu.AI styling)
+- Implements all required functionality:
+  - Email validation flow (check-or-send, verify code)
+  - File upload with drag-and-drop for Excel and Config files
+  - Config validation endpoint integration
+  - Preview mode (1-5 rows, sync/async toggle)
+  - Full processing mode (max_rows, batch_size=5)
+  - Markdown table result display with confidence levels
+  - Progress tracking with async polling
+  - Cost/time estimates display
+
+### Key Features Implemented:
+1. **Email Validation**: Two-step process with localStorage persistence
+2. **File Upload**: Drag-and-drop zones with visual feedback
+3. **Processing Modes**: Preview and Full mode with configurable options
+4. **Results Display**: Clean markdown table renderer with confidence badges
+5. **Progress Tracking**: Real-time polling with progress bar
+6. **Responsive Design**: Mobile-friendly card-based layout
+7. **Error Handling**: User-friendly messages and retry mechanisms
+
+### Technical Details:
+- Pure vanilla JavaScript (no external dependencies)
+- Self-contained HTML/CSS/JS for easy Squarespace integration
+- Multipart/form-data handling for API requirements
+- CSS variables for consistent theming
+- Loading overlays and spinner animations
+- Clean API integration with all endpoints
+
+### Status: ✅ COMPLETE
+File created: `perplexity_validator_interface.html`
+
+### Network Error Troubleshooting
+- User reported "Network error. Please try again." when submitting email
+- Root causes identified:
+  1. Running HTML file locally (file:// protocol) causes CORS issues
+  2. API_BASE URL in code may not match actual deployed API endpoint
+  3. API Gateway might not be deployed
+
+### Fixes Applied:
+1. Enhanced error handling with detailed debugging information
+2. Added protocol detection to identify file:// usage
+3. Created debug information panel showing current settings
+4. Added clear instructions for finding correct API endpoint
+5. Created `TROUBLESHOOTING_PERPLEXITY_VALIDATOR.md` guide
+
+### Key Solutions:
+- **For local testing**: Use `python -m http.server 8000` and visit http://localhost:8000
+- **For production**: Upload to web server (Squarespace) and update API_BASE
+- **To find API endpoint**: Run deployment script and look for "API Gateway Endpoints" output
+
+### CORS Error Resolution (Final Fix)
+- User reported CORS error when accessing from https://eliyahu.ai
+- Root cause: Non-proxy integration endpoints (/check-or-send, /verify-email) were failing
+- Solution: Updated interface to use main /validate endpoint with action parameters
+- Changes made:
+  1. Email validation: POST /validate with action: 'checkOrSendValidation'
+  2. Code verification: POST /validate with action: 'validateEmailCode'  
+  3. Config validation: POST /validate with action: 'validateConfig'
+- Verified working with curl tests showing proper CORS headers
+- Created test_cors_fix.html for simple verification
+- **Status**: ✅ FIXED - Interface now uses working proxy integration endpoint
+
+## New Task: OpenAI GPT Interface Documentation
+- [x] Create comprehensive GPT instructions (GPT_INSTRUCTIONS.md)
+- [x] Create OpenAPI 3.1.0 schema (openapi_schema.json)
+
+### GPT Instructions Created:
+- Overview and core capabilities
+- Email validation workflow (required first step)
+- Column configuration development process
+- Preview mode testing (rows 1-5)
+- Full table validation
+- Status monitoring
+- Workflow examples for all use cases
+- Best practices and cost optimization
+- Common issues and solutions
+- Privacy and security guidelines
+
+### OpenAPI Schema Created:
+- All endpoints documented (/validate, /validate-config, /status/{session_id})
+- Email validation operations included
+- Complete request/response schemas
+- Error response formats
+- Multipart form data support for file uploads
+- Query parameters for all options
+- Comprehensive schema definitions
+
+✅ COMPLETE - GPT interface documentation and OpenAPI schema ready for use
+
+## OpenAPI Schema Fix for GPT Compatibility
+- **Issue**: OpenAI GPT Actions don't support `oneOf` in request/response bodies
+- **Fixed**: 
+  - Changed email operations endpoint from `/validate` to `/email-validate` to avoid conflict
+  - Replaced `oneOf` request schema with single `EmailOperation` object schema
+  - Replaced `oneOf` response schema with single `EmailOperationResponse` object schema
+  - Updated GPT instructions to reflect new endpoint
+- **Result**: Schema now fully compatible with OpenAI GPT Actions requirements
+
+## Fix for "Missing Authentication Token" Error
+- **Issue**: GPT was getting 403 error because `/email-validate` endpoint doesn't exist
+- **Root Cause**: Tried to use different paths for clarity but API only has `/validate`
+- **Solution**: 
+  - Merged both operations into single `/validate` endpoint
+  - Added both content types (multipart/form-data and application/json) to request body
+  - Created unified `SuccessResponse` schema to handle all response types
+  - Updated GPT instructions to clarify content type usage
+- **Result**: Single endpoint handles both file uploads and email operations based on content type
+
+## Solution for "Only 3 Actions Available" Issue
+- **Issue**: User only saw 3 actions, email operations were missing
+- **Root Cause**: OpenAI GPT Actions shows one action per operationId, and duplicate paths aren't allowed
+- **Solution**:
+  - Created separate `/email-validate` path in OpenAPI schema for email operations
+  - Added clear instructions for GPT to remap `/email-validate` to `/validate` when executing
+  - Emphasized path remapping in multiple places in the instructions
+  - This gives 4 distinct actions in the GPT interface while still using the same API endpoint
+- **Result**: User now sees 4 actions: validateTable, emailOperations, validateConfig, checkStatus
+
+## Fix for "preview_row_number is not defined" Error
+- **Issue**: GPT getting error when trying to use preview_row_number parameter
+- **Root Cause**: GPT was sending parameters in request body instead of URL query string
+- **Solution**:
+  - Added CRITICAL sections in instructions emphasizing query parameter usage
+  - Provided clear examples of correct vs incorrect parameter placement
+  - Added specific error to Common Issues section
+  - Emphasized in multiple places that ALL parameters go in URL, not body
+  - Added concrete examples showing proper URL construction
+- **Result**: GPT now knows to send parameters like `/validate?preview_first_row=true&preview_row_number=3`
+
+## Correction: preview_max_rows vs max_rows for Preview Mode
+- **Issue**: Initially suggested using `max_rows` parameter for preview mode
+- **Investigation**: Checked actual implementation in interface_lambda_function.py
+- **Finding**: Preview mode uses `preview_max_rows` parameter, NOT `max_rows`
+  - `max_rows` is only used for full validation mode
+  - `preview_max_rows` is used for preview mode (capped at 5)
+- **Solution**:
+  - Added `preview_max_rows` to OpenAPI schema
+  - Updated all GPT instructions to use correct parameter name
+  - Clarified that preview supports 1-5 rows maximum
+  - Fixed all examples to show correct usage
+- **Result**: Preview mode now correctly documented with `/validate?preview_first_row=true&preview_max_rows=3`
 
 ### Root Cause Found:
 The validation_history is loaded from Excel file's "Details" sheet, but interface lambda doesn't save results back to Excel.
@@ -587,35 +773,6 @@ Replace Excel-based validation_history with S3-based cache lookup for interface 
 Added check_s3_cache_for_row() function that:
 1. Uses same cache key generation logic as main validator (prompt + model + search_context_size)
 2. Checks S3 bucket for validation_cache/{cache_key}.json entries  
-3. Counts consecutive rows with complete cache coverage
-4. Replaces Excel-based validation_history logic for preview mode
-
-**Files Modified:**
-- src/interface_lambda_function.py: Added S3-based cache validation for sequential calls
-
-**Status:** Fix implemented, ready for testing
-
-**CORRECTION AFTER USER FEEDBACK:**
-User clarified two distinct mechanisms:
-1. **Validation History** - Prior results stored in Excel, used as context in prompts
-2. **Cached Results** - API response caching in S3 via prompt hashing
-
-The sequential logic checks validation_history to see if rows were "completed" in prior calls.
-Since interface lambda doesn't persist to Excel, validation_history stays empty.
-
-**Two possible solutions:**
-1. Make interface lambda persist results to Excel (proper validation history)
-2. Modify sequential logic to use "all API responses cached" as proxy for "row completed"
-
-**Status:** Need to clarify approach - persist to Excel or use cached API responses as completion indicator
-
-**FINAL IMPLEMENTATION - CACHE-ONLY APPROACH:**
-
-Implemented Option 2: Use S3 cached API responses as "row completed" indicator
-
-**Key Changes:**
-1. `check_s3_cache_for_row()` function checks if ALL required API responses are cached in S3
-2. Uses same cache key generation as main validator: `md5(prompt:model:search_context_size)`
 3. Counts consecutive rows with complete API response cache
 4. Sequential validation uses empty validation_history, relies purely on S3 cache hits
 5. Clear logging distinguishes "cached API responses" vs "validation history"
@@ -966,3 +1123,309 @@ python create_interface_package.py --deploy --force-rebuild
 - CSV export functionality for all tables
 - Repository cleanup and documentation updates
 - All changes committed to feature/access-control branch
+
+## 5. Preview Parameter Confusion: preview_row_number vs preview_max_rows
+
+### Issue Description
+User reported that GPT was sending `preview_row_number` in request body instead of URL, causing error: "name 'preview_row_number' is not defined"
+
+### Investigation Results
+1. **Code Analysis**: The interface_lambda_function.py clearly expects `preview_max_rows` parameter (lines 3002-3008)
+2. **Error Location**: Line 3640 has `"preview_row_number": preview_row_number,` in response body, but `preview_row_number` variable is never defined
+3. **User Claims**: User says `preview_row_number` works when sent as URL parameter
+
+### Clarifications from User
+- `preview_row_number` means "first n rows" not a specific row number
+- The parameter must be sent in URL query string, not request body
+- User provided working Python example using `preview_row_number`
+
+### Resolution
+- Documented that the correct parameter name in current code is `preview_max_rows`
+- Added warning about sending parameters in URL vs body
+- Noted the discrepancy for future investigation (possible API version difference)
+
+### Current Status
+- GPT instructions use `preview_max_rows` (correct per code analysis)
+- OpenAPI schema uses `preview_max_rows` (correct per code analysis)
+- User confusion might stem from API returning `preview_row_number` in response
+
+## 6. Eliyahu.AI Branding and Email-First Conversation Flow
+
+### User Request
+User requested that conversations start with:
+1. An email request
+2. A note about interacting with Eliyahu.AI to validate tables
+3. Mention that validated email is needed to use their API
+
+### Changes Made
+1. **Added Initial Greeting Section**: Every conversation now starts with welcome message mentioning Eliyahu.AI
+2. **Updated Overview**: Now mentions "Perplexity Validator API powered by Eliyahu.AI"
+3. **Enhanced Email Validation Section**: Explicitly mentions validating with Eliyahu.AI
+4. **Added Standard Conversation Flow**: Shows expected flow starting with email
+5. **Updated Security Section**: Emphasizes Eliyahu.AI's infrastructure and data handling
+
+### Result
+GPT will now:
+- Always start conversations by requesting email for Eliyahu.AI validation
+- Clearly communicate that the service is provided by Eliyahu.AI
+- Explain email validation is required for API access
+
+## 7. Email Operations Solution for GPT Actions
+
+### Developer Feedback
+User revealed they are the developers and questioned why email operations weren't available as Actions.
+
+### Solution Implemented
+1. **Added new endpoints to OpenAPI schema**:
+   - `/validate-email` → requestEmailValidation
+   - `/verify-email` → verifyEmailCode
+   
+2. **How it works**:
+   - These endpoints need to be configured in API Gateway to route to `/validate` with the appropriate `action` parameter
+   - The Lambda function already handles these actions when it receives JSON with `action` field
+
+3. **API Gateway Configuration Required**:
+   - `/validate-email` → Transform to `{"action": "requestEmailValidation", "email": "$email"}`
+   - `/verify-email` → Transform to `{"action": "validateEmailCode", "email": "$email", "code": "$code"}`
+
+### Updated GPT Instructions
+- Changed from "Email operations are NOT available as Actions" to using the new Actions
+- Now shows 5 available Actions instead of 3
+- Workflow uses Actions instead of providing Python code
+
+### Next Steps for Deployment
+1. Update API Gateway to add the new routes
+2. Configure request mapping templates to transform requests
+3. Test the new endpoints work correctly
+
+### Implementation Results (Completed)
+1. **Updated create_interface_package.py** to add email endpoints to API Gateway setup
+2. **Deployed changes** using `--force-rebuild --deploy` flags
+3. **Successfully created endpoints**:
+   - https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod/validate-email
+   - https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod/verify-email
+4. **Tested both endpoints** - working correctly with proper request transformation
+
+### Note on Response Format
+The responses are wrapped in Lambda response format (statusCode, headers, body) because the Lambda function is already returning API Gateway-formatted responses. This is expected behavior for non-proxy integrations.
+
+## Technical Implementation Details
+- API Gateway uses AWS integration (not proxy) for email endpoints with VTL mapping templates
+- Email validation records have TTL and expire after time
+- Already validated emails return success immediately when checking validation
+- Re-validation is allowed and overwrites existing validation records
+- Eliyahu.AI branding added throughout instructions
+
+### Issue Identified: Email Validation Expiry
+- User correctly noted that the system currently applies a 10-minute TTL to ALL validation records
+- This means even successfully validated emails expire after 10 minutes
+- Current implementation in `dynamodb_schemas.py` sets `expires_at = created_at + timedelta(minutes=10)` for all records
+- The `validate_email_code` function marks emails as validated but doesn't remove or extend the TTL
+- This is a design issue: validated emails should persist, only unvalidated codes should expire
+- User needs to either remove TTL for validated emails or store validated status separately
+
+### TTL Fix Implemented
+- Modified `validate_email_code()` to remove TTL when email is successfully validated
+- Updated `is_email_validated()` to only check expiry for unvalidated records
+- Now: Unvalidated codes expire after 10 minutes, validated emails persist indefinitely
+- Added new `check_or_send_validation()` function that combines check and send in one call
+- Added `checkOrSendValidation` action to interface lambda for convenient single-call validation
+
+### Single Function Enhancement
+- User requested single function that checks if validated or sends code
+- Created check_or_send_validation() function combining both operations
+- Added checkOrSendValidation action to Lambda
+- Returns either "already validated" or sends code and returns "code sent"
+
+### Final State
+- GPT has 6 available Actions for email operations
+- OpenAPI schema updated with all endpoints
+- GPT instructions updated to check validation first, mention Eliyahu.AI branding
+- Deployment successful with all changes
+- Test script created for new combined function
+- All parameters must be in URL query string, not request body
+- Validated emails now persist indefinitely (TTL removed on successful validation)
+
+### Documentation Updates (Latest)
+- Updated GPT_INSTRUCTIONS.md to highlight checkOrSendValidation as PREFERRED method
+- Added streamlined workflow as RECOMMENDED approach
+- Updated action count from 6 to 7 total actions
+- Added /check-or-send endpoint to openapi_schema.json with full OpenAPI spec
+- Emphasized one-call approach for better user experience
+
+### API Gateway Missing Endpoint Fix
+- User reported "Missing Authentication Token" error when calling /check-or-send
+- Investigation revealed endpoint was never added to API Gateway configuration
+- Added /check-or-send resource creation in setup_api_gateway() function
+- Added POST method configuration for the endpoint
+- Added Lambda integration with proper VTL mapping template
+- Added to CORS configuration for both resource and OPTIONS method
+- Updated endpoint logging to include new endpoint
+- Updated API_GATEWAY_EMAIL_ENDPOINTS.md documentation
+- User must redeploy to apply these changes
+
+### Email Validation Simplification
+- Identified that `requestEmailValidation` doesn't check if email is already validated
+- This could overwrite existing validation and un-validate already-validated emails
+- Decision: Simplify OpenAPI schema to only expose `checkOrSendValidation` and `verifyEmailCode`
+- Removed `/validate-email` (requestEmailValidation) and `/check-email` (checkEmailValidation) from OpenAPI
+- Updated GPT instructions to only reference the two remaining email actions
+- Removed "Alternative Flow" section that referenced deprecated actions
+- Total actions reduced from 7 to 5 (2 for email, 3 for table processing)
+- This prevents GPT from accidentally invalidating already-validated emails
+
+### Critical Bugs Fixed
+- **preview_row_number undefined error**: Fixed line 3732 in interface_lambda_function.py
+  - Changed `"preview_row_number": preview_row_number,` to `"preview_rows_processed": preview_max_rows,`
+  - This was causing all preview requests to fail with NameError
+- **Email case sensitivity**: All emails now normalized to lowercase
+  - Updated 11 email-related functions in dynamodb_schemas.py to call `.lower().strip()` on emails
+  - Functions updated: create_email_validation_request, validate_email_code, is_email_validated, 
+    check_or_send_validation, initialize_user_tracking, track_user_request, track_validation_request,
+    get_user_stats, CallTrackingRecord.__init__
+  - Now "Eliyahu@eliyahu.ai" and "eliyahu@eliyahu.ai" are treated as the same email
+  - Prevents duplicate validation requirements for different cases of the same email
+
+### Preview Returns Dummy Data Issue
+- User reported preview requests returning dummy "John Smith" data instead of real validation
+- Investigation revealed Lambda was treating request as "non-multipart request (for testing)"
+- Added logging to debug content type detection:
+  - Log Content-Type header value
+  - Log when multipart/form-data is detected
+  - Log when non-multipart request falls through
+  - Check if GPT is sending JSON instead of multipart
+- Added error response if GPT sends JSON when multipart/form-data is expected
+- This helps identify why the Lambda isn't processing the actual files
+
+### GPT File Upload Limitation Discovery
+- CloudWatch logs revealed GPT sending: `Content-Type: application/json` with empty body `{}`
+- GPT is NOT sending multipart/form-data with actual file contents
+- This is a fundamental limitation of ChatGPT Actions - they cannot handle binary file uploads
+- GPT Actions can only send JSON data, not multipart/form-data with binary files
+- Updated GPT_INSTRUCTIONS.md to document this limitation
+- Identified available workarounds:
+  - Use web interface for file uploads
+  - Direct API integration for developers
+  - Focus on JSON-based endpoints (email validation, config validation, status checks)
+- File upload functionality (/validate endpoint) cannot work through GPT Actions
+
+## Current Issue: UTF-8 Decoding Error (2025-07-08) ✅ FIXED
+
+### Error Details
+```
+[ERROR] 2025-07-08T16:09:45.563Z 35a9d196-614e-4ca1-b447-3cf01a257ab8 
+Error processing JSON request: 'utf-8' codec can't decode byte 0xc7 in position 240: invalid continuation byte
+```
+
+### Investigation
+- Error occurs during POST to `/validate?preview_first_row=true&preview_max_rows=3`
+- HTTP 400 Bad Request response
+- Error happens in `parse_multipart_form_data` function when decoding form fields
+- Also happens when decoding JSON body from base64
+- Web interface sends JSON while test_validation.py sends multipart/form-data
+
+### Root Cause Analysis
+1. The multipart parser (line ~372) tries to decode ALL form fields as UTF-8
+2. The config_file is being sent as a form field (not a file field) 
+3. The config_file content contains non-UTF-8 data at position 240 (byte 0xc7)
+4. Validation logic in api_gateway_validation.py expects config_file in either files OR form_data
+5. JSON body decoding also fails when base64-decoded content isn't valid UTF-8
+6. Web interface sends JSON requests but Lambda was rejecting them
+
+### Possible Causes
+- Config JSON contains non-UTF-8 characters
+- Config data is being sent as binary instead of text
+- Data corruption during transmission
+- Frontend encoding mismatch
+- Web interface using wrong content type
+
+### Solution Implemented ✅
+1. **Updated parse_multipart_form_data function** in interface_lambda_function.py:
+   - Added special handling for config_file field
+   - Tries UTF-8 decoding first
+   - Falls back to latin-1, cp1252, iso-8859-1 encodings
+   - Attempts to extract JSON content if all encodings fail
+   - Validates extracted content is valid JSON
+   - Logs warnings for non-UTF-8 content
+
+2. **Enhanced error handling** for all form fields:
+   - Standard fields try UTF-8 then latin-1
+   - Failed decoding stores hex representation
+   - Better logging for debugging
+
+3. **Fixed duplicate base64 import** (line 413):
+   - Removed redundant `import base64` inside function
+   - Uses the module-level import from line 10
+
+4. **Fixed JSON body decoding** in lambda_handler (line ~2450):
+   - Added try/except for UTF-8 decoding of base64 body
+   - Falls back to multiple encodings (latin-1, cp1252, iso-8859-1)
+   - Uses latin-1 with replacement as last resort
+   - Better error logging for debugging
+
+5. **Added JSON parsing error handling** (line ~2464):
+   - Catches JSONDecodeError and returns proper error response
+   - Logs body preview for debugging
+   - Returns 400 status with clear error message
+
+6. **Fixed web interface JSON request handling** (line ~3800):
+   - Detects JSON requests with excel_file/config_file fields
+   - Redirects to JSON action handler instead of rejecting
+   - Adds missing 'action' field if not present
+   - Preserves preview parameters from query string
+   - Allows both multipart AND JSON request formats
+
+### Update: Syntax Error After Initial Fix
+- Fixed the JSON parsing to only run for `application/json` content type
+- This caused a syntax error: `invalid syntax (interface_lambda_function.py, line 2459)`
+- Error: `if event.get('isBase64Encoded'):` had incorrect indentation
+- The except blocks at lines 3152-3156 were misaligned with the try block
+
+### Fix Applied:
+- Created a Python script to fix the indentation
+- Changed except blocks from 16 spaces to 20 spaces indentation
+- Verified the fix and deployed successfully
+- Still getting 502 error - need to check CloudWatch logs for the actual error
+
+### Final Resolution ✅
+- The except blocks were incorrectly indented with 20 spaces
+- The matching try block at line 2451 has 16 spaces
+- Fixed by changing except blocks at lines 3152 and 3154 to have 16 spaces
+- Deployed successfully
+- Test validation now passes with status 200
+- Application is fully functional!
+
+### Web Interface 400 Error Fix
+- Web interface (hyperplexity-table) sends config_file as form field text, not a file
+- test_validation.py sends it as an actual file in the files dictionary
+- Lambda was only checking files dictionary for config_file
+- Fixed by adding fallback to check form_data if config_file not in files
+- Creates a file-like structure from the text content for consistent processing
+
+### Web Interface Status Polling Fix
+- Web interface was calling /status endpoint for sync preview requests
+- Sync preview should return results immediately, no polling needed
+- Issue: Web interface checked for session_id presence to determine async/sync
+- Problem: Sync preview responses also include session_id
+- Fixed by checking status field instead: "preview_completed" = sync, "processing" = async
+- Also fixed markdown table display to use data.markdown_table from response
+- Added convertMarkdownToHtml function to properly render the table
+- Updated cost estimates display to use correct field names from response
+
+### Async Preview Status Polling Fix
+- Async preview requests were failing with 500 error on status endpoint
+- Issue: Status URL was missing ?preview=true parameter for async preview
+- Web interface sends async=true for async preview mode
+- Session ID format for async preview: {timestamp}_{reference_pin}_preview
+- Status handler expects ?preview=true to look in preview_results/ path
+- Fixed by adding preview parameter to status URL when mode is preview
+- Also fixed response handling to display markdown_table when preview completes
+- Added handling for preview_completed status in polling response
+
+### Full Validation Status Polling Fix
+- Full validation was failing with 400 error on status endpoint
+- Session ID was UUID format but status handler expected {timestamp}_{reference_pin}
+- Fixed by changing session ID generation to use timestamp_referencePin format
+- Also fixed status handler to search multiple possible S3 paths for results
+- Status handler now lists S3 objects to find results in any email folder
+- This handles the case where status endpoint doesn't know which email folder was used

@@ -1,0 +1,1594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hyperplexity Table Validator - Powered by Eliyahu.AI</title>
+    
+    <style type="text/css">
+    /* Base Variables */
+    :root {
+        --primary-color: #4CAF50;
+        --primary-hover: #45a049;
+        --secondary-color: #2196F3;
+        --secondary-hover: #1976D2;
+        --danger-color: #f44336;
+        --warning-color: #ff9800;
+        --background-color: #f7f7f7;
+        --card-background: #ffffff;
+        --text-color: #333333;
+        --text-secondary: #666666;
+        --border-radius: 8px;
+        --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        --transition: all 0.3s ease;
+        
+        /* Typography */
+        --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        --font-size-base: 16px;
+        --font-size-small: 14px;
+        --font-size-heading: 24px;
+        --font-size-subheading: 20px;
+        --line-height: 1.5;
+    }
+
+    /* Base Styles */
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: var(--font-family);
+        font-size: var(--font-size-base);
+        line-height: var(--line-height);
+        color: var(--text-color);
+        margin: 0;
+        padding: 0;
+        background-color: var(--background-color);
+    }
+
+    /* Container */
+    .validator-container {
+        max-width: 1200px;
+        margin: 2rem auto;
+        padding: 0 2rem;
+    }
+
+    /* Header */
+    .validator-header {
+        text-align: center;
+        margin-bottom: 3rem;
+    }
+
+    .validator-header h1 {
+        font-size: 32px;
+        color: var(--text-color);
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+    }
+
+    .validator-header p {
+        color: var(--text-secondary);
+        font-size: 18px;
+        margin-bottom: 0.5rem;
+    }
+
+    .powered-by {
+        color: var(--primary-color);
+        font-size: var(--font-size-small);
+        text-decoration: none;
+    }
+
+    .powered-by:hover {
+        text-decoration: underline;
+    }
+
+    /* Cards */
+    .card {
+        background-color: var(--card-background);
+        border-radius: var(--border-radius);
+        box-shadow: var(--box-shadow);
+        padding: 2rem;
+        margin-bottom: 2rem;
+        transition: var(--transition);
+    }
+
+    .card.disabled {
+        opacity: 0.6;
+        pointer-events: none;
+    }
+
+    .card-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .card-icon {
+        width: 40px;
+        height: 40px;
+        background-color: var(--primary-color);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 1rem;
+        color: white;
+        font-weight: bold;
+    }
+
+    .card-title {
+        font-size: var(--font-size-subheading);
+        font-weight: 600;
+        margin: 0;
+    }
+
+    .card-subtitle {
+        color: var(--text-secondary);
+        font-size: var(--font-size-small);
+        margin-top: 0.25rem;
+    }
+
+    /* Status Badge */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: var(--font-size-small);
+        font-weight: 500;
+        margin-left: auto;
+    }
+
+    .status-badge.success {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .status-badge.pending {
+        background-color: #fff3e0;
+        color: #f57c00;
+    }
+
+    /* Forms */
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: var(--text-color);
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border: 1px solid #ddd;
+        border-radius: var(--border-radius);
+        font-size: var(--font-size-base);
+        font-family: var(--font-family);
+        transition: var(--transition);
+    }
+
+    .form-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+    }
+
+    .form-row {
+        display: flex;
+        gap: 1rem;
+        align-items: flex-end;
+    }
+
+    .form-row .form-group {
+        flex: 1;
+    }
+
+    /* Buttons */
+    .btn {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: var(--border-radius);
+        font-size: var(--font-size-base);
+        font-family: var(--font-family);
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+    .btn-primary {
+        background-color: var(--primary-color);
+        color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        background-color: var(--primary-hover);
+        transform: translateY(-2px);
+    }
+
+    .btn-secondary {
+        background-color: var(--secondary-color);
+        color: white;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+        background-color: var(--secondary-hover);
+        transform: translateY(-2px);
+    }
+
+    .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .btn-block {
+        width: 100%;
+    }
+
+    /* File Upload */
+    .file-upload-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+    }
+
+    .drop-zone {
+        border: 2px dashed #ddd;
+        border-radius: var(--border-radius);
+        padding: 3rem 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: var(--transition);
+        position: relative;
+        background-color: #fafafa;
+    }
+
+    .drop-zone:hover {
+        border-color: var(--primary-color);
+        background-color: #f0f8f0;
+    }
+
+    .drop-zone.drag-over {
+        border-color: var(--primary-color);
+        background-color: #e8f5e9;
+        transform: scale(1.02);
+    }
+
+    .drop-zone-icon {
+        font-size: 48px;
+        color: #bbb;
+        margin-bottom: 1rem;
+    }
+
+    .drop-zone-text {
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+    }
+
+    .file-input {
+        display: none;
+    }
+
+    .file-info {
+        margin-top: 1rem;
+        padding: 0.75rem;
+        background-color: #f5f5f5;
+        border-radius: var(--border-radius);
+        font-size: var(--font-size-small);
+    }
+
+    .file-info-name {
+        font-weight: 600;
+        color: var(--text-color);
+    }
+
+    .file-info-size {
+        color: var(--text-secondary);
+    }
+
+    /* Processing Options */
+    .mode-selector {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .mode-option {
+        flex: 1;
+        padding: 1.5rem;
+        border: 2px solid #ddd;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        transition: var(--transition);
+        text-align: center;
+    }
+
+    .mode-option:hover {
+        border-color: var(--primary-color);
+    }
+
+    .mode-option.active {
+        border-color: var(--primary-color);
+        background-color: #e8f5e9;
+    }
+
+    .mode-option-title {
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .mode-option-description {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+    }
+
+    .options-container {
+        display: none;
+    }
+
+    .options-container.active {
+        display: block;
+    }
+
+    .option-group {
+        margin-bottom: 1.5rem;
+        padding: 1rem;
+        background-color: #f8f8f8;
+        border-radius: var(--border-radius);
+    }
+
+    .toggle-container {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .toggle-switch {
+        position: relative;
+        display: inline-block;
+        width: 50px;
+        height: 24px;
+    }
+
+    .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        transition: .4s;
+        border-radius: 24px;
+    }
+
+    .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 16px;
+        width: 16px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+        background-color: var(--primary-color);
+    }
+
+    input:checked + .toggle-slider:before {
+        transform: translateX(26px);
+    }
+
+    .range-container {
+        margin-top: 1rem;
+    }
+
+    .range-input {
+        width: 100%;
+        margin: 1rem 0;
+    }
+
+    .range-labels {
+        display: flex;
+        justify-content: space-between;
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+    }
+
+    /* Results */
+    .results-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .results-actions {
+        display: flex;
+        gap: 1rem;
+    }
+
+    .markdown-preview {
+        background-color: #f8f8f8;
+        border: 1px solid #e0e0e0;
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        overflow-x: auto;
+    }
+
+    .markdown-preview table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+    }
+
+    .markdown-preview th,
+    .markdown-preview td {
+        border: 1px solid #ddd;
+        padding: 0.75rem;
+        text-align: left;
+    }
+
+    .markdown-preview th {
+        background-color: #f0f0f0;
+        font-weight: 600;
+    }
+
+    .markdown-preview tr:nth-child(even) {
+        background-color: #fafafa;
+    }
+
+    .confidence-badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: var(--font-size-small);
+        font-weight: 500;
+    }
+
+    .confidence-high {
+        background-color: #c8e6c9;
+        color: #1b5e20;
+    }
+
+    .confidence-medium {
+        background-color: #fff9c4;
+        color: #f57f17;
+    }
+
+    .confidence-low {
+        background-color: #ffcdd2;
+        color: #b71c1c;
+    }
+
+    .cost-estimate {
+        margin-top: 1rem;
+        padding: 1rem;
+        background-color: #e3f2fd;
+        border-radius: var(--border-radius);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .cost-item {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .cost-label {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+    }
+
+    .cost-value {
+        font-weight: 600;
+        color: var(--secondary-color);
+    }
+
+    /* Progress */
+    .progress-container {
+        margin: 2rem 0;
+    }
+
+    .progress-bar {
+        width: 100%;
+        height: 24px;
+        background-color: #e0e0e0;
+        border-radius: 12px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background-color: var(--primary-color);
+        transition: width 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .progress-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: var(--font-size-small);
+        font-weight: 500;
+        color: var(--text-color);
+    }
+
+    .status-message {
+        margin-top: 1rem;
+        text-align: center;
+        color: var(--text-secondary);
+    }
+
+    /* Loading Spinner */
+    .spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid rgba(0,0,0,0.1);
+        border-radius: 50%;
+        border-top-color: var(--primary-color);
+        animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .loading-overlay.active {
+        display: flex;
+    }
+
+    .loading-modal {
+        background-color: white;
+        padding: 2rem;
+        border-radius: var(--border-radius);
+        text-align: center;
+        max-width: 400px;
+    }
+
+    /* Messages */
+    .message {
+        padding: 1rem;
+        border-radius: var(--border-radius);
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .message-icon {
+        font-size: 24px;
+    }
+
+    .message-success {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+        border: 1px solid #c8e6c9;
+    }
+
+    .message-error {
+        background-color: #ffebee;
+        color: #c62828;
+        border: 1px solid #ffcdd2;
+    }
+
+    .message-warning {
+        background-color: #fff8e1;
+        color: #f57c00;
+        border: 1px solid #ffe0b2;
+    }
+
+    .message-info {
+        background-color: #e3f2fd;
+        color: #1565c0;
+        border: 1px solid #bbdefb;
+    }
+
+    .message span:last-child {
+        flex: 1;
+        line-height: 1.6;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .validator-container {
+            padding: 0 1rem;
+        }
+
+        .file-upload-container {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        .mode-selector {
+            flex-direction: column;
+        }
+
+        .form-row {
+            flex-direction: column;
+        }
+
+        .results-header {
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .cost-estimate {
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .card {
+            padding: 1.5rem;
+        }
+    }
+    </style>
+</head>
+<body>
+    <div class="validator-container">
+        <!-- Header -->
+        <div class="validator-header">
+            <h1>Hyperplexity Table Validator</h1>
+            <p>AI-powered Excel table validation and enrichment</p>
+            <a href="https://eliyahu.ai" target="_blank" class="powered-by">Powered by Eliyahu.AI</a>
+        </div>
+
+        <!-- Email Validation Card -->
+        <div class="card" id="emailCard">
+            <div class="card-header">
+                <div class="card-icon">1</div>
+                <div>
+                    <h2 class="card-title">Email Validation</h2>
+                    <p class="card-subtitle">Verify your email to access the validator</p>
+                </div>
+                <div class="status-badge pending" id="emailStatus">
+                    <span>Not Validated</span>
+                </div>
+            </div>
+
+            <div id="emailForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="emailInput">Email Address</label>
+                        <input type="email" id="emailInput" class="form-input" placeholder="your.email@example.com" required>
+                    </div>
+                    <div class="form-group">
+                        <button class="btn btn-primary" id="sendCodeBtn" onclick="checkOrSendValidation()">
+                            <span>Validate Email</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="codeSection" style="display: none;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="codeInput">Verification Code</label>
+                            <input type="text" id="codeInput" class="form-input" placeholder="Enter 6-digit code" maxlength="6">
+                        </div>
+                        <div class="form-group">
+                            <button class="btn btn-secondary" id="verifyCodeBtn" onclick="verifyCode()">
+                                <span>Verify Code</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="emailMessage"></div>
+            </div>
+
+            <div id="emailSuccess" style="display: none;">
+                <div class="message message-success">
+                    <span class="message-icon">✓</span>
+                    <span>Email validated successfully! You can now use the table validator.</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- File Upload Card -->
+        <div class="card disabled" id="uploadCard">
+            <div class="card-header">
+                <div class="card-icon">2</div>
+                <div>
+                    <h2 class="card-title">Upload Files</h2>
+                    <p class="card-subtitle">Select your Excel file and configuration</p>
+                </div>
+            </div>
+
+            <div class="file-upload-container">
+                <!-- Excel File Upload -->
+                <div class="drop-zone" id="excelDropZone" onclick="document.getElementById('excelFile').click()">
+                    <div class="drop-zone-icon">📊</div>
+                    <div class="drop-zone-text">
+                        <p><strong>Drop Excel/CSV file here</strong></p>
+                        <p>or click to browse</p>
+                    </div>
+                    <input type="file" id="excelFile" class="file-input" accept=".xlsx,.xls,.csv" onchange="handleFileSelect(event, 'excel')">
+                    <div id="excelFileInfo" class="file-info" style="display: none;">
+                        <div class="file-info-name"></div>
+                        <div class="file-info-size"></div>
+                    </div>
+                </div>
+
+                <!-- Config File Upload -->
+                <div class="drop-zone" id="configDropZone" onclick="document.getElementById('configFile').click()">
+                    <div class="drop-zone-icon">⚙️</div>
+                    <div class="drop-zone-text">
+                        <p><strong>Drop Config JSON here</strong></p>
+                        <p>or click to browse</p>
+                    </div>
+                    <input type="file" id="configFile" class="file-input" accept=".json" onchange="handleFileSelect(event, 'config')">
+                    <div id="configFileInfo" class="file-info" style="display: none;">
+                        <div class="file-info-name"></div>
+                        <div class="file-info-size"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 1rem;">
+                <button class="btn btn-secondary" onclick="validateConfig()" id="validateConfigBtn" disabled>
+                    Validate Configuration
+                </button>
+            </div>
+        </div>
+
+        <!-- Processing Options Card -->
+        <div class="card disabled" id="optionsCard">
+            <div class="card-header">
+                <div class="card-icon">3</div>
+                <div>
+                    <h2 class="card-title">Processing Options</h2>
+                    <p class="card-subtitle">Choose how to process your table</p>
+                </div>
+            </div>
+
+            <div class="mode-selector">
+                <div class="mode-option active" onclick="selectMode('preview')" id="previewMode">
+                    <div class="mode-option-title">Preview Mode</div>
+                    <div class="mode-option-description">Test with 1-5 rows first</div>
+                </div>
+                <div class="mode-option" onclick="selectMode('full')" id="fullMode">
+                    <div class="mode-option-title">Full Mode</div>
+                    <div class="mode-option-description">Process entire table</div>
+                </div>
+            </div>
+
+            <!-- Preview Options -->
+            <div class="options-container active" id="previewOptions">
+                <div class="option-group">
+                    <label class="form-label">Preview Rows</label>
+                    <div class="range-container">
+                        <input type="range" id="previewRows" class="range-input" min="1" max="5" value="3" onchange="updatePreviewRows()">
+                        <div class="range-labels">
+                            <span>1</span>
+                            <span>2</span>
+                            <span>3</span>
+                            <span>4</span>
+                            <span>5</span>
+                        </div>
+                        <p style="text-align: center; margin-top: 0.5rem;">
+                            <strong id="previewRowsValue">3</strong> rows
+                        </p>
+                    </div>
+                </div>
+
+                <div class="option-group">
+                    <div class="toggle-container">
+                        <label class="form-label" style="margin: 0;">Async Processing</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="asyncToggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">
+                        Enable for better performance with large previews
+                    </p>
+                </div>
+            </div>
+
+            <!-- Full Mode Options -->
+            <div class="options-container" id="fullOptions">
+                <div class="option-group">
+                    <div class="form-group">
+                        <label class="form-label" for="maxRows">Maximum Rows</label>
+                        <input type="number" id="maxRows" class="form-input" placeholder="Leave empty for all rows" min="1">
+                        <p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">
+                            Limit the number of rows to process
+                        </p>
+                    </div>
+                </div>
+
+                <div class="option-group">
+                    <div class="form-group">
+                        <label class="form-label">Batch Size</label>
+                        <input type="number" class="form-input" value="5" disabled>
+                        <p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">
+                            Fixed at 5 rows per batch for optimal performance
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 2rem;">
+                <button class="btn btn-primary btn-block" onclick="processTable()" id="processBtn" disabled>
+                    <span id="processBtnText">Process Table</span>
+                    <span class="spinner" id="processSpinner" style="display: none;"></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Results Card -->
+        <div class="card" id="resultsCard" style="display: none;">
+            <div class="card-header">
+                <div class="card-icon">4</div>
+                <div>
+                    <h2 class="card-title">Results</h2>
+                    <p class="card-subtitle" id="resultsSubtitle">Preview results</p>
+                </div>
+            </div>
+
+            <div class="results-header">
+                <div>
+                    <p id="resultsInfo"></p>
+                </div>
+                <div class="results-actions">
+                    <button class="btn btn-secondary" onclick="downloadResults()" id="downloadBtn" style="display: none;">
+                        Download Results
+                    </button>
+                    <button class="btn btn-primary" onclick="resetValidator()">
+                        New Validation
+                    </button>
+                </div>
+            </div>
+
+            <div id="markdownPreview" class="markdown-preview"></div>
+
+            <div id="costEstimate" class="cost-estimate" style="display: none;">
+                <div class="cost-item">
+                    <span class="cost-label">Estimated Cost</span>
+                    <span class="cost-value" id="estimatedCost">$0.00</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Processing Time</span>
+                    <span class="cost-value" id="estimatedTime">0 min</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Total Rows</span>
+                    <span class="cost-value" id="totalRows">0</span>
+                </div>
+            </div>
+
+            <div id="progressContainer" class="progress-container" style="display: none;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill" style="width: 0%;">
+                        <span class="progress-text" id="progressText">0%</span>
+                    </div>
+                </div>
+                <p class="status-message" id="statusMessage">Processing...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-modal">
+            <div class="spinner" style="width: 40px; height: 40px; margin: 0 auto 1rem;"></div>
+            <p id="loadingMessage">Processing your request...</p>
+        </div>
+    </div>
+
+    <script>
+    // ============================================
+    // IMPORTANT: CONFIGURATION REQUIRED
+    // ============================================
+    // 1. Deploy your API first:
+    //    cd deployment && python create_interface_package.py --deploy --setup-db
+    //
+    // 2. Replace the API_BASE below with your actual endpoint from the deployment output
+    //
+    // 3. Serve this file from a web server (not file://)
+    //    Quick test: python -m http.server 8000
+    // ============================================
+
+    // Global state
+    const state = {
+        email: '',
+        emailValidated: false,
+        excelFile: null,
+        configFile: null,
+        mode: 'preview',
+        sessionId: null,
+        results: null
+    };
+
+    // API Configuration
+    // IMPORTANT: Replace this with your actual API Gateway endpoint!
+    // You can find it in AWS Console > API Gateway > perplexity-validator-api > Stages > prod
+    // Or from the deployment script output
+    // 
+    // TO DEPLOY YOUR API:
+    // cd deployment && python create_interface_package.py --deploy --setup-db
+    //
+    // Your deployed API endpoint (confirmed from deployment output):
+    const API_BASE = 'https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod';
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+        // Check for stored email
+        const storedEmail = localStorage.getItem('validatedEmail');
+        if (storedEmail) {
+            document.getElementById('emailInput').value = storedEmail;
+            checkOrSendValidation();
+        }
+
+        // Setup drag and drop
+        setupDragAndDrop();
+    });
+
+    // Email Validation Functions
+    async function checkOrSendValidation() {
+        const emailInput = document.getElementById('emailInput');
+        const email = emailInput.value.trim();
+        
+        if (!validateEmail(email)) {
+            showMessage('emailMessage', 'Please enter a valid email address', 'error');
+            return;
+        }
+
+        const sendBtn = document.getElementById('sendCodeBtn');
+        sendBtn.disabled = true;
+        sendBtn.innerHTML = '<span class="spinner"></span> Checking...';
+
+        try {
+            // Use the /validate endpoint with action parameter
+            const response = await fetch(`${API_BASE}/validate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    action: 'checkOrSendValidation',
+                    email: email 
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                if (data.validated === true) {
+                    // Email is already validated
+                    handleEmailValidated(email);
+                } else if (data.message && data.message.includes('sent')) {
+                    // Show code input
+                    state.email = email;
+                    document.getElementById('codeSection').style.display = 'block';
+                    showMessage('emailMessage', 'Validation code sent to your email!', 'success');
+                    document.getElementById('codeInput').focus();
+                }
+            } else {
+                showMessage('emailMessage', data.message || data.error || 'Failed to send validation code', 'error');
+            }
+        } catch (error) {
+            // Enhanced error handling with debugging info
+            console.error('Network Error Details:', {
+                error: error,
+                message: error.message,
+                stack: error.stack,
+                apiUrl: `${API_BASE}/check-or-send`,
+                email: email,
+                protocol: window.location.protocol
+            });
+            
+            let errorMsg = 'Network error: ';
+            
+            if (window.location.protocol === 'file:') {
+                errorMsg = 'Cannot run from file://. Please either:<br>' +
+                          '1. Upload to your web server (recommended)<br>' +
+                          '2. Use a local server: python -m http.server 8000<br>' +
+                          '3. Make sure API_BASE URL is correct in the code';
+            } else if (error.message && error.message.includes('Failed to fetch')) {
+                errorMsg = 'Failed to connect to API. Please check:<br>' +
+                          '1. API_BASE URL is correct (currently: ' + API_BASE + ')<br>' +
+                          '2. API Gateway is deployed and accessible<br>' +
+                          '3. Check browser console (F12) for detailed error';
+            } else {
+                errorMsg += error.message || 'Unknown error. Check browser console (F12).';
+            }
+            
+            showMessage('emailMessage', errorMsg, 'error');
+            
+            // Add a debug section
+            if (!document.getElementById('debugInfo')) {
+                const debugDiv = document.createElement('div');
+                debugDiv.id = 'debugInfo';
+                debugDiv.style.cssText = 'margin-top: 1rem; padding: 1rem; background: #f0f0f0; border-radius: 8px; font-family: monospace; font-size: 12px;';
+                debugDiv.innerHTML = `
+                    <strong>Debug Information:</strong><br>
+                    Current Protocol: ${window.location.protocol}<br>
+                    API Endpoint: ${API_BASE}/validate<br>
+                    Email: ${email}<br>
+                    <br>
+                    <strong>API Status:</strong><br>
+                    ✓ Using proxy integration endpoint (/validate)<br>
+                    ✓ CORS headers configured<br>
+                    ✓ Your API ID: a0tk95o95g<br>
+                    <br>
+                    <strong>If still having issues:</strong><br>
+                    1. Check CloudWatch logs for Lambda errors<br>
+                    2. Ensure you're serving from http:// or https://<br>
+                    3. Try the test_cors_fix.html file first
+                `;
+                document.getElementById('emailMessage').appendChild(debugDiv);
+            }
+        } finally {
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = '<span>Validate Email</span>';
+        }
+    }
+
+    async function verifyCode() {
+        const code = document.getElementById('codeInput').value.trim();
+        
+        if (code.length !== 6) {
+            showMessage('emailMessage', 'Please enter a 6-digit code', 'error');
+            return;
+        }
+
+        const verifyBtn = document.getElementById('verifyCodeBtn');
+        verifyBtn.disabled = true;
+        verifyBtn.innerHTML = '<span class="spinner"></span> Verifying...';
+
+        try {
+            // Use the /validate endpoint with action parameter
+            const response = await fetch(`${API_BASE}/validate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    action: 'validateEmailCode',
+                    email: state.email,
+                    code: code
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                handleEmailValidated(state.email);
+            } else {
+                showMessage('emailMessage', data.message || data.error || 'Invalid code', 'error');
+            }
+        } catch (error) {
+            showMessage('emailMessage', 'Network error. Please try again.', 'error');
+            console.error('Error:', error);
+        } finally {
+            verifyBtn.disabled = false;
+            verifyBtn.innerHTML = '<span>Verify Code</span>';
+        }
+    }
+
+    function handleEmailValidated(email) {
+        state.email = email;
+        state.emailValidated = true;
+        
+        // Store in localStorage
+        localStorage.setItem('validatedEmail', email);
+        
+        // Update UI
+        document.getElementById('emailForm').style.display = 'none';
+        document.getElementById('emailSuccess').style.display = 'block';
+        document.getElementById('emailStatus').className = 'status-badge success';
+        document.getElementById('emailStatus').innerHTML = '<span>Validated</span>';
+        
+        // Enable file upload
+        document.getElementById('uploadCard').classList.remove('disabled');
+    }
+
+    // File Handling Functions
+    function setupDragAndDrop() {
+        const excelDropZone = document.getElementById('excelDropZone');
+        const configDropZone = document.getElementById('configDropZone');
+
+        [excelDropZone, configDropZone].forEach((zone, index) => {
+            const type = index === 0 ? 'excel' : 'config';
+            
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                zone.classList.add('drag-over');
+            });
+
+            zone.addEventListener('dragleave', () => {
+                zone.classList.remove('drag-over');
+            });
+
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                zone.classList.remove('drag-over');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    const fakeEvent = {
+                        target: { files: [files[0]] }
+                    };
+                    handleFileSelect(fakeEvent, type);
+                }
+            });
+        });
+    }
+
+    function handleFileSelect(event, type) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        if (type === 'excel') {
+            const validTypes = ['.xlsx', '.xls', '.csv'];
+            const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+            
+            if (!validTypes.includes(fileExt)) {
+                showMessage('emailMessage', 'Please select a valid Excel or CSV file', 'error');
+                return;
+            }
+            
+            state.excelFile = file;
+            displayFileInfo('excel', file);
+        } else if (type === 'config') {
+            if (!file.name.endsWith('.json')) {
+                showMessage('emailMessage', 'Please select a valid JSON configuration file', 'error');
+                return;
+            }
+            
+            state.configFile = file;
+            displayFileInfo('config', file);
+        }
+
+        // Enable validate config button if config is selected
+        if (state.configFile) {
+            document.getElementById('validateConfigBtn').disabled = false;
+        }
+
+        // Enable processing if both files are selected
+        if (state.excelFile && state.configFile) {
+            document.getElementById('optionsCard').classList.remove('disabled');
+            document.getElementById('processBtn').disabled = false;
+        }
+    }
+
+    function displayFileInfo(type, file) {
+        const infoElement = document.getElementById(`${type}FileInfo`);
+        const nameElement = infoElement.querySelector('.file-info-name');
+        const sizeElement = infoElement.querySelector('.file-info-size');
+        
+        nameElement.textContent = file.name;
+        sizeElement.textContent = formatFileSize(file.size);
+        infoElement.style.display = 'block';
+    }
+
+    // Config Validation
+    async function validateConfig() {
+        if (!state.configFile) return;
+
+        showLoading('Validating configuration...');
+
+        try {
+            const configContent = await readFileAsText(state.configFile);
+            const config = JSON.parse(configContent);
+
+            // Use the /validate endpoint with action parameter
+            const response = await fetch(`${API_BASE}/validate`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    action: 'validateConfig',
+                    config: config 
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.valid) {
+                showMessage('emailMessage', data.message || 'Configuration is valid!', 'success');
+            } else {
+                showMessage('emailMessage', `Configuration error: ${data.message || data.error}`, 'error');
+            }
+        } catch (error) {
+            showMessage('emailMessage', 'Invalid JSON configuration file', 'error');
+            console.error('Error:', error);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // Mode Selection
+    function selectMode(mode) {
+        state.mode = mode;
+        
+        // Update UI
+        document.querySelectorAll('.mode-option').forEach(opt => opt.classList.remove('active'));
+        document.getElementById(`${mode}Mode`).classList.add('active');
+        
+        document.querySelectorAll('.options-container').forEach(opt => opt.classList.remove('active'));
+        document.getElementById(`${mode}Options`).classList.add('active');
+        
+        // Update button text
+        document.getElementById('processBtnText').textContent = mode === 'preview' ? 'Preview Table' : 'Process Full Table';
+    }
+
+    function updatePreviewRows() {
+        const value = document.getElementById('previewRows').value;
+        document.getElementById('previewRowsValue').textContent = value;
+    }
+
+    // Table Processing
+    async function processTable() {
+        if (!state.excelFile || !state.configFile || !state.emailValidated) return;
+
+        const processBtn = document.getElementById('processBtn');
+        processBtn.disabled = true;
+        document.getElementById('processSpinner').style.display = 'inline-block';
+
+        try {
+            // Read config file as text before creating FormData
+            const configContent = await readFileAsText(state.configFile);
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('excel_file', state.excelFile, state.excelFile.name);
+            
+            // Send config content as a plain text field, not a file/blob
+            formData.append('config_file', configContent);
+            
+            formData.append('email', state.email);
+
+            // Build URL with parameters
+            let url = `${API_BASE}/validate?`;
+            
+            if (state.mode === 'preview') {
+                url += `preview_first_row=true&preview_max_rows=${document.getElementById('previewRows').value}`;
+                
+                if (document.getElementById('asyncToggle').checked) {
+                    url += '&async=true';
+                }
+            } else {
+                const maxRows = document.getElementById('maxRows').value;
+                if (maxRows) {
+                    url += `max_rows=${maxRows}&`;
+                }
+                url += 'batch_size=5&async=true';
+            }
+
+            // Make request
+            const response = await fetch(url, {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // Check the status field to determine if it's async or sync
+                if (data.status === 'preview_completed') {
+                    // Sync preview - results are already in the response
+                    showResults(data, false);
+                } else if (data.status === 'processing' || data.status === 'processing_started') {
+                    // Async processing - need to poll for results
+                    state.sessionId = data.session_id;
+                    showResults(data, true);
+                    startPolling();
+                } else {
+                    // Unknown status, treat as sync
+                    showResults(data, false);
+                }
+            } else {
+                showMessage('emailMessage', `Error: ${data.error}`, 'error');
+            }
+        } catch (error) {
+            showMessage('emailMessage', 'Failed to process table. Please try again.', 'error');
+            console.error('Error:', error);
+        } finally {
+            processBtn.disabled = false;
+            document.getElementById('processSpinner').style.display = 'none';
+        }
+    }
+
+    // Polling for Async Results
+    async function startPolling() {
+        const pollInterval = setInterval(async () => {
+            try {
+                // Add parameters for status request
+                let statusUrl = `${API_BASE}/status/${state.sessionId}`;
+                const params = new URLSearchParams();
+                
+                if (state.mode === 'preview') {
+                    params.append('preview', 'true');
+                }
+                
+                // Always include email to help find the results
+                if (state.email) {
+                    params.append('email', state.email);
+                }
+                
+                if (params.toString()) {
+                    statusUrl += '?' + params.toString();
+                }
+                
+                const response = await fetch(statusUrl);
+                const data = await response.json();
+
+                if (data.status === 'completed' || data.status === 'preview_completed') {
+                    clearInterval(pollInterval);
+                    updateProgress(100, 'Completed!');
+                    
+                    // Check if this is a preview result
+                    if (data.markdown_table) {
+                        // This is a preview result - display it
+                        showResults(data, false);
+                    } else if (data.result_url) {
+                        // This is a full processing result
+                        document.getElementById('downloadBtn').style.display = 'inline-block';
+                        document.getElementById('downloadBtn').onclick = () => window.open(data.result_url, '_blank');
+                    }
+                } else if (data.status === 'processing') {
+                    const progress = data.progress || 0;
+                    updateProgress(progress, `Processing... ${progress}%`);
+                } else if (data.status === 'failed' || data.status === 'error') {
+                    clearInterval(pollInterval);
+                    showMessage('emailMessage', `Processing failed: ${data.error || data.message || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                console.error('Polling error:', error);
+            }
+        }, 3000);
+    }
+
+    function updateProgress(percent, message) {
+        document.getElementById('progressFill').style.width = `${percent}%`;
+        document.getElementById('progressText').textContent = `${percent}%`;
+        document.getElementById('statusMessage').textContent = message;
+    }
+
+    // Results Display
+    function showResults(data, isAsync) {
+        document.getElementById('resultsCard').style.display = 'block';
+        document.getElementById('resultsCard').scrollIntoView({ behavior: 'smooth' });
+
+        if (isAsync) {
+            document.getElementById('resultsSubtitle').textContent = 'Processing your table...';
+            document.getElementById('progressContainer').style.display = 'block';
+            document.getElementById('resultsInfo').textContent = `Session ID: ${data.session_id}`;
+            
+            if (data.reference_pin) {
+                document.getElementById('resultsInfo').innerHTML += `<br>Reference PIN: <strong>${data.reference_pin}</strong>`;
+            }
+        } else {
+            // Preview results
+            document.getElementById('resultsSubtitle').textContent = 'Preview Results';
+            
+            // Hide progress bar for sync results
+            document.getElementById('progressContainer').style.display = 'none';
+            
+            // Display the markdown table if available
+            if (data.markdown_table) {
+                // Convert markdown table to HTML
+                const htmlTable = convertMarkdownToHtml(data.markdown_table);
+                document.getElementById('markdownPreview').innerHTML = htmlTable;
+                document.getElementById('markdownPreview').style.display = 'block';
+            } else {
+                // Fallback to old format if needed
+                document.getElementById('markdownPreview').innerHTML = renderMarkdownTable(data);
+            }
+            
+            // Display cost estimates if available
+            if (data.cost_estimates) {
+                document.getElementById('costEstimate').style.display = 'flex';
+                document.getElementById('estimatedCost').textContent = `$${data.cost_estimates.estimated_total_cost.toFixed(4)}`;
+                const estimatedTime = data.estimated_total_processing_time || 0;
+                document.getElementById('estimatedTime').textContent = `${Math.ceil(estimatedTime / 60)} min`;
+                document.getElementById('totalRows').textContent = data.total_rows || 'N/A';
+            }
+            
+            // Show session info
+            if (data.session_id || data.reference_pin) {
+                let info = '';
+                if (data.session_id) info += `Session ID: ${data.session_id}`;
+                if (data.reference_pin) info += `${info ? '<br>' : ''}Reference PIN: <strong>${data.reference_pin}</strong>`;
+                document.getElementById('resultsInfo').innerHTML = info;
+            }
+        }
+    }
+
+    function renderMarkdownTable(data) {
+        if (!data.preview_results) return '<p>No preview data available</p>';
+
+        let html = '<table><thead><tr>';
+        
+        // Headers
+        const firstRow = data.preview_results[0];
+        for (const key in firstRow) {
+            html += `<th>${escapeHtml(key)}</th>`;
+        }
+        html += '</tr></thead><tbody>';
+
+        // Rows
+        data.preview_results.forEach(row => {
+            html += '<tr>';
+            for (const key in row) {
+                const value = row[key];
+                html += '<td>';
+                
+                if (typeof value === 'object' && value.value !== undefined) {
+                    // Has confidence level
+                    html += escapeHtml(value.value || '');
+                    if (value.confidence) {
+                        const confClass = value.confidence > 0.8 ? 'high' : value.confidence > 0.5 ? 'medium' : 'low';
+                        html += ` <span class="confidence-badge confidence-${confClass}">${Math.round(value.confidence * 100)}%</span>`;
+                    }
+                } else {
+                    html += escapeHtml(value || '');
+                }
+                
+                html += '</td>';
+            }
+            html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        return html;
+    }
+
+    // Utility Functions
+    function validateEmail(email) {
+        const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return re.test(email);
+    }
+
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = e => resolve(e.target.result);
+            reader.onerror = reject;
+            reader.readAsText(file);
+        });
+    }
+
+    function showMessage(containerId, message, type) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = `<div class="message message-${type}">
+            <span class="message-icon">${type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ'}</span>
+            <span>${message}</span>
+        </div>`;
+    }
+
+    function showLoading(message = 'Processing...') {
+        document.getElementById('loadingMessage').textContent = message;
+        document.getElementById('loadingOverlay').classList.add('active');
+    }
+
+    function hideLoading() {
+        document.getElementById('loadingOverlay').classList.remove('active');
+    }
+
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return String(text).replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function convertMarkdownToHtml(markdown) {
+        // Split the markdown into lines
+        const lines = markdown.trim().split('\n');
+        
+        // Parse the table
+        let html = '<table class="markdown-table"><thead><tr>';
+        
+        // Process header row
+        const headers = lines[0].split('|').filter(h => h.trim());
+        headers.forEach(header => {
+            html += `<th>${escapeHtml(header.trim())}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+        
+        // Skip the separator line (line 1)
+        // Process data rows
+        for (let i = 2; i < lines.length; i++) {
+            const cells = lines[i].split('|').filter(c => c.trim());
+            if (cells.length > 0) {
+                html += '<tr>';
+                cells.forEach(cell => {
+                    const trimmedCell = cell.trim();
+                    
+                    // Check if this cell contains a confidence level (e.g., "HIGH", "MEDIUM", "LOW")
+                    let cellHtml = escapeHtml(trimmedCell);
+                    
+                    // Add confidence styling if applicable
+                    if (trimmedCell === 'HIGH') {
+                        cellHtml = `<span class="confidence-badge confidence-high">${cellHtml}</span>`;
+                    } else if (trimmedCell === 'MEDIUM') {
+                        cellHtml = `<span class="confidence-badge confidence-medium">${cellHtml}</span>`;
+                    } else if (trimmedCell === 'LOW') {
+                        cellHtml = `<span class="confidence-badge confidence-low">${cellHtml}</span>`;
+                    }
+                    
+                    html += `<td>${cellHtml}</td>`;
+                });
+                html += '</tr>';
+            }
+        }
+        
+        html += '</tbody></table>';
+        return html;
+    }
+
+    function resetValidator() {
+        // Reset state (keep email)
+        state.excelFile = null;
+        state.configFile = null;
+        state.sessionId = null;
+        state.results = null;
+
+        // Reset UI
+        document.getElementById('excelFileInfo').style.display = 'none';
+        document.getElementById('configFileInfo').style.display = 'none';
+        document.getElementById('excelFile').value = '';
+        document.getElementById('configFile').value = '';
+        document.getElementById('resultsCard').style.display = 'none';
+        document.getElementById('optionsCard').classList.add('disabled');
+        document.getElementById('processBtn').disabled = true;
+        document.getElementById('validateConfigBtn').disabled = true;
+        
+        // Scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    </script>
+</body>
+</html> 

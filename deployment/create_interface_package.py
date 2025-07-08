@@ -526,8 +526,8 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
         return False, None
 
 def setup_api_gateway(lambda_client, function_name, region):
-    """Set up API Gateway for the Lambda function with single /validate endpoint."""
-    logger.info("Setting up API Gateway with Lambda proxy integration...")
+    """Set up API Gateway for the Lambda function with /validate and email endpoints."""
+    logger.info("Setting up API Gateway with Lambda integration...")
     
     try:
         apigateway_client = boto3.client('apigateway', region_name=region)
@@ -623,6 +623,85 @@ def setup_api_gateway(lambda_client, function_name, region):
             status_session_resource_id = status_session_resource['id']
             logger.info("Using existing /status/{sessionId} resource")
         
+        # Refresh resources list to see newly created resources
+        resources = apigateway_client.get_resources(restApiId=api_id)
+        
+        # Create /validate-email resource
+        validate_email_resource = None
+        for resource in resources['items']:
+            if resource['path'] == '/validate-email':
+                validate_email_resource = resource
+                break
+        
+        if not validate_email_resource:
+            validate_email_response = apigateway_client.create_resource(
+                restApiId=api_id,
+                parentId=root_resource_id,
+                pathPart='validate-email'
+            )
+            validate_email_resource_id = validate_email_response['id']
+            logger.info("Created /validate-email resource")
+        else:
+            validate_email_resource_id = validate_email_resource['id']
+            logger.info("Using existing /validate-email resource")
+        
+        # Create /verify-email resource
+        verify_email_resource = None
+        for resource in resources['items']:
+            if resource['path'] == '/verify-email':
+                verify_email_resource = resource
+                break
+        
+        if not verify_email_resource:
+            verify_email_response = apigateway_client.create_resource(
+                restApiId=api_id,
+                parentId=root_resource_id,
+                pathPart='verify-email'
+            )
+            verify_email_resource_id = verify_email_response['id']
+            logger.info("Created /verify-email resource")
+        else:
+            verify_email_resource_id = verify_email_resource['id']
+            logger.info("Using existing /verify-email resource")
+        
+        # Create /check-email resource
+        check_email_resource = None
+        for resource in resources['items']:
+            if resource['path'] == '/check-email':
+                check_email_resource = resource
+                break
+        
+        if not check_email_resource:
+            check_email_response = apigateway_client.create_resource(
+                restApiId=api_id,
+                parentId=root_resource_id,
+                pathPart='check-email'
+            )
+            check_email_resource_id = check_email_response['id']
+            logger.info("Created /check-email resource")
+        else:
+            check_email_resource_id = check_email_resource['id']
+            logger.info("Using existing /check-email resource")
+        
+        # Create /check-or-send resource
+        check_or_send_resource = None
+        for resource in resources['items']:
+            if resource['path'] == '/check-or-send':
+                check_or_send_resource = resource
+                break
+        
+        if not check_or_send_resource:
+            check_or_send_response = apigateway_client.create_resource(
+                restApiId=api_id,
+                parentId=root_resource_id,
+                pathPart='check-or-send'
+            )
+            check_or_send_resource_id = check_or_send_response['id']
+            logger.info("Created /check-or-send resource")
+        else:
+            check_or_send_resource_id = check_or_send_resource['id']
+            logger.info("Using existing /check-or-send resource")
+        
         # Create POST method for main /validate endpoint
         try:
             apigateway_client.put_method(
@@ -657,8 +736,56 @@ def setup_api_gateway(lambda_client, function_name, region):
         except apigateway_client.exceptions.ConflictException:
             logger.info("GET method already exists for /status/{sessionId}")
         
+        # Create POST method for /validate-email
+        try:
+            apigateway_client.put_method(
+                restApiId=api_id,
+                resourceId=validate_email_resource_id,
+                httpMethod='POST',
+                authorizationType='NONE'
+            )
+            logger.info("Created POST method for /validate-email")
+        except apigateway_client.exceptions.ConflictException:
+            logger.info("POST method already exists for /validate-email")
+        
+        # Create POST method for /verify-email
+        try:
+            apigateway_client.put_method(
+                restApiId=api_id,
+                resourceId=verify_email_resource_id,
+                httpMethod='POST',
+                authorizationType='NONE'
+            )
+            logger.info("Created POST method for /verify-email")
+        except apigateway_client.exceptions.ConflictException:
+            logger.info("POST method already exists for /verify-email")
+        
+        # Create POST method for /check-email
+        try:
+            apigateway_client.put_method(
+                restApiId=api_id,
+                resourceId=check_email_resource_id,
+                httpMethod='POST',
+                authorizationType='NONE'
+            )
+            logger.info("Created POST method for /check-email")
+        except apigateway_client.exceptions.ConflictException:
+            logger.info("POST method already exists for /check-email")
+        
+        # Create POST method for /check-or-send
+        try:
+            apigateway_client.put_method(
+                restApiId=api_id,
+                resourceId=check_or_send_resource_id,
+                httpMethod='POST',
+                authorizationType='NONE'
+            )
+            logger.info("Created POST method for /check-or-send")
+        except apigateway_client.exceptions.ConflictException:
+            logger.info("POST method already exists for /check-or-send")
+        
         # Create OPTIONS method for CORS on all endpoints
-        for resource_id in [validate_resource_id, status_resource_id, status_session_resource_id]:
+        for resource_id in [validate_resource_id, status_resource_id, status_session_resource_id, validate_email_resource_id, verify_email_resource_id, check_email_resource_id, check_or_send_resource_id]:
             try:
                 apigateway_client.put_method(
                     restApiId=api_id,
@@ -702,19 +829,150 @@ def setup_api_gateway(lambda_client, function_name, region):
         except apigateway_client.exceptions.ConflictException:
             logger.info("Lambda integration already exists for /status/{sessionId}")
         
+        # 3. Lambda integration for /validate-email (non-proxy with mapping template)
+        try:
+            apigateway_client.put_integration(
+                restApiId=api_id,
+                resourceId=validate_email_resource_id,
+                httpMethod='POST',
+                type='AWS',
+                integrationHttpMethod='POST',
+                uri=lambda_integration_uri,
+                requestTemplates={
+                    'application/json': '''#set($inputRoot = $input.path('$'))
+{
+  "httpMethod": "POST",
+  "path": "/validate",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\\"action\\": \\"requestEmailValidation\\", \\"email\\": \\"$inputRoot.email\\"}"
+}'''
+                }
+            )
+            logger.info("Set up Lambda integration for /validate-email with request mapping")
+        except apigateway_client.exceptions.ConflictException:
+            logger.info("Lambda integration already exists for /validate-email")
+        
+        # 4. Lambda integration for /verify-email (non-proxy with mapping template)
+        try:
+            apigateway_client.put_integration(
+                restApiId=api_id,
+                resourceId=verify_email_resource_id,
+                httpMethod='POST',
+                type='AWS',
+                integrationHttpMethod='POST',
+                uri=lambda_integration_uri,
+                requestTemplates={
+                    'application/json': '''#set($inputRoot = $input.path('$'))
+{
+  "httpMethod": "POST",
+  "path": "/validate",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\\"action\\": \\"validateEmailCode\\", \\"email\\": \\"$inputRoot.email\\", \\"code\\": \\"$inputRoot.code\\"}"
+}'''
+                }
+            )
+            logger.info("Set up Lambda integration for /verify-email with request mapping")
+        except apigateway_client.exceptions.ConflictException:
+            logger.info("Lambda integration already exists for /verify-email")
+        
+        # 5. Lambda integration for /check-email (non-proxy with mapping template)
+        try:
+            apigateway_client.put_integration(
+                restApiId=api_id,
+                resourceId=check_email_resource_id,
+                httpMethod='POST',
+                type='AWS',
+                integrationHttpMethod='POST',
+                uri=lambda_integration_uri,
+                requestTemplates={
+                    'application/json': '''#set($inputRoot = $input.path('$'))
+{
+  "httpMethod": "POST",
+  "path": "/validate",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\\"action\\": \\"checkEmailValidation\\", \\"email\\": \\"$inputRoot.email\\"}"
+}'''
+                }
+            )
+            logger.info("Set up Lambda integration for /check-email with request mapping")
+        except apigateway_client.exceptions.ConflictException:
+            logger.info("Lambda integration already exists for /check-email")
+        
+        # 6. Lambda integration for /check-or-send (non-proxy with mapping template)
+        try:
+            apigateway_client.put_integration(
+                restApiId=api_id,
+                resourceId=check_or_send_resource_id,
+                httpMethod='POST',
+                type='AWS',
+                integrationHttpMethod='POST',
+                uri=lambda_integration_uri,
+                requestTemplates={
+                    'application/json': '''#set($inputRoot = $input.path('$'))
+{
+  "httpMethod": "POST",
+  "path": "/validate",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\\"action\\": \\"checkOrSendValidation\\", \\"email\\": \\"$inputRoot.email\\"}"
+}'''
+                }
+            )
+            logger.info("Set up Lambda integration for /check-or-send with request mapping")
+        except apigateway_client.exceptions.ConflictException:
+            logger.info("Lambda integration already exists for /check-or-send")
+        
+        # Set up integration responses for email endpoints (required for non-proxy integration)
+        for resource_id, method in [(validate_email_resource_id, 'POST'), (verify_email_resource_id, 'POST'), (check_email_resource_id, 'POST'), (check_or_send_resource_id, 'POST')]:
+            try:
+                # Create method response first
+                apigateway_client.put_method_response(
+                    restApiId=api_id,
+                    resourceId=resource_id,
+                    httpMethod=method,
+                    statusCode='200',
+                    responseModels={
+                        'application/json': 'Empty'
+                    }
+                )
+                
+                # Create integration response
+                apigateway_client.put_integration_response(
+                    restApiId=api_id,
+                    resourceId=resource_id,
+                    httpMethod=method,
+                    statusCode='200',
+                    responseTemplates={
+                        'application/json': '$input.json("$")'
+                    }
+                )
+                logger.info(f"Set up integration response for resource {resource_id}")
+            except apigateway_client.exceptions.ConflictException:
+                logger.info(f"Integration response already exists for resource {resource_id}")
+        
         # Set up CORS integration for OPTIONS on all endpoints
         for resource_id, resource_name in [(validate_resource_id, '/validate'), 
                                            (status_resource_id, '/status'),
-                                           (status_session_resource_id, '/status/{sessionId}')]:
+                                           (status_session_resource_id, '/status/{sessionId}'),
+                                           (validate_email_resource_id, '/validate-email'),
+                                           (verify_email_resource_id, '/verify-email'),
+                                           (check_email_resource_id, '/check-email'),
+                                           (check_or_send_resource_id, '/check-or-send')]:
             try:
                 apigateway_client.put_integration(
                     restApiId=api_id,
                     resourceId=resource_id,
                     httpMethod='OPTIONS',
-                    type='MOCK',
-                    requestTemplates={
-                        'application/json': '{"statusCode": 200}'
-                    }
+                    type='AWS_PROXY',
+                    integrationHttpMethod='POST',
+                    uri=lambda_integration_uri
                 )
                 
                 # First create method response, then integration response
@@ -792,6 +1050,14 @@ def setup_api_gateway(lambda_client, function_name, region):
         logger.info(f"  - Lambda decides sync/async based on ?async parameter")
         logger.info(f"  - Sync: Process immediately and return results")
         logger.info(f"  - Async: Lambda sends to SQS for background processing")
+        logger.info(f"Email validation: {base_url}/validate-email")
+        logger.info(f"  - Request validation code for email")
+        logger.info(f"Email verification: {base_url}/verify-email")
+        logger.info(f"  - Submit validation code to verify email")
+        logger.info(f"Email check: {base_url}/check-email")
+        logger.info(f"  - Check if email is already validated")
+        logger.info(f"Email check or send: {base_url}/check-or-send")
+        logger.info(f"  - Combined: check if validated, send code if not")
         logger.info(f"Status endpoint: {base_url}/status/{{sessionId}}")
         logger.info(f"  - Check async processing status")
         logger.info("=============================\n")

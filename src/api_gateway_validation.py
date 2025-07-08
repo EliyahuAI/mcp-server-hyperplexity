@@ -30,9 +30,9 @@ def validate_api_request(request_data: Dict[str, Any]) -> Tuple[bool, str]:
         if not files.get('excel_file'):
             return False, "Missing excel_file in upload"
         
-        # Either config file or config JSON in form_data is required
-        if not files.get('config_file') and not files.get('config'):
-            return False, "Missing config file or config data"
+        # Check for config data in either files or form_data
+        if not files.get('config_file') and not form_data.get('config_file'):
+            return False, "Missing config_file content"
     
     elif action == 'checkStatus':
         # These actions have their own validation logic

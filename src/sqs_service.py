@@ -35,7 +35,7 @@ class SQSConfig:
     PREVIEW_MESSAGE_GROUP = "preview-group"
     
     @classmethod
-    def get_preview_queue_attributes(cls) -> Dict[str, str]:
+    def get_preview_queue_attributes(cls, dlq_arn: str) -> Dict[str, str]:
         """Get attributes for the preview FIFO queue."""
         return {
             'FifoQueue': 'true',
@@ -43,19 +43,19 @@ class SQSConfig:
             'VisibilityTimeoutSeconds': '300',  # 5 minutes
             'MessageRetentionPeriod': '1209600',  # 14 days
             'RedrivePolicy': json.dumps({
-                'deadLetterTargetArn': f'arn:aws:sqs:us-east-1:400232868802:queue/{cls.DLQ_PREVIEW_NAME}',
+                'deadLetterTargetArn': dlq_arn,
                 'maxReceiveCount': 3
             })
         }
     
     @classmethod
-    def get_standard_queue_attributes(cls) -> Dict[str, str]:
+    def get_standard_queue_attributes(cls, dlq_arn: str) -> Dict[str, str]:
         """Get attributes for the standard queue."""
         return {
-            'VisibilityTimeoutSeconds': '600',  # 10 minutes for longer processing
+            'VisibilityTimeout': '600',  # 10 minutes for longer processing
             'MessageRetentionPeriod': '1209600',  # 14 days
             'RedrivePolicy': json.dumps({
-                'deadLetterTargetArn': f'arn:aws:sqs:us-east-1:400232868802:queue/{cls.DLQ_STANDARD_NAME}',
+                'deadLetterTargetArn': dlq_arn,
                 'maxReceiveCount': 3
             })
         }
@@ -124,15 +124,24 @@ class SQSManager:
         self._standard_queue_url = None
     
     def create_queues(self) -> bool:
-        """Create all required SQS queues."""
+        """Create all required SQS queues, ensuring DLQs are created first."""
         try:
-            # Create dead letter queues first
+            # Get the account ID to construct ARNs dynamically
+            sts_client = boto3.client('sts')
+            account_id = sts_client.get_caller_identity()['Account']
+            region = self.sqs.meta.region_name
+
+            # Construct DLQ ARNs
+            dlq_preview_arn = f"arn:aws:sqs:{region}:{account_id}:{self.config.DLQ_PREVIEW_NAME}"
+            dlq_standard_arn = f"arn:aws:sqs:{region}:{account_id}:{self.config.DLQ_STANDARD_NAME}"
+
+            # Create dead letter queues first, as they must exist before being referenced.
             self._create_dlq(self.config.DLQ_PREVIEW_NAME, is_fifo=True)
             self._create_dlq(self.config.DLQ_STANDARD_NAME, is_fifo=False)
             
-            # Create main queues
-            self._create_preview_queue()
-            self._create_standard_queue()
+            # Create main queues with correct RedrivePolicy pointing to the now-existing DLQs
+            self._create_preview_queue(dlq_preview_arn)
+            self._create_standard_queue(dlq_standard_arn)
             
             logger.info("All SQS queues created successfully!")
             return True
@@ -157,12 +166,24 @@ class SQSManager:
             else:
                 raise
     
-    def _create_preview_queue(self) -> str:
+    def _create_preview_queue(self, dlq_arn: str) -> str:
         """Create the high-priority preview queue (FIFO)."""
         try:
+            # Corrected attributes for FIFO queue
+            attributes = {
+                'FifoQueue': 'true',
+                'ContentBasedDeduplication': 'true',
+                'VisibilityTimeout': '300',
+                'MessageRetentionPeriod': '1209600',
+                'RedrivePolicy': json.dumps({
+                    'deadLetterTargetArn': dlq_arn,
+                    'maxReceiveCount': 3
+                })
+            }
+            
             response = self.sqs.create_queue(
                 QueueName=self.config.PREVIEW_QUEUE_NAME,
-                Attributes=self.config.get_preview_queue_attributes()
+                Attributes=attributes
             )
             self._preview_queue_url = response['QueueUrl']
             logger.info(f"Created preview queue: {self.config.PREVIEW_QUEUE_NAME}")
@@ -175,12 +196,14 @@ class SQSManager:
             else:
                 raise
     
-    def _create_standard_queue(self) -> str:
+    def _create_standard_queue(self, dlq_arn: str) -> str:
         """Create the standard priority queue."""
         try:
+            attributes = self.config.get_standard_queue_attributes(dlq_arn)
+
             response = self.sqs.create_queue(
                 QueueName=self.config.STANDARD_QUEUE_NAME,
-                Attributes=self.config.get_standard_queue_attributes()
+                Attributes=attributes
             )
             self._standard_queue_url = response['QueueUrl']
             logger.info(f"Created standard queue: {self.config.STANDARD_QUEUE_NAME}")

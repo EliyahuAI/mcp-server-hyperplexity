@@ -116,17 +116,7 @@ class DynamoDBSchemas:
                     }
                 }
             ],
-            'BillingMode': 'PAY_PER_REQUEST',
-            'Tags': [
-                {
-                    'Key': 'Service',
-                    'Value': 'perplexity-validator'
-                },
-                {
-                    'Key': 'Purpose',
-                    'Value': 'call-tracking'
-                }
-            ]
+            'BillingMode': 'PAY_PER_REQUEST'
         }
     
     @classmethod
@@ -196,17 +186,7 @@ class DynamoDBSchemas:
                     }
                 }
             ],
-            'BillingMode': 'PAY_PER_REQUEST',
-            'Tags': [
-                {
-                    'Key': 'Service',
-                    'Value': 'perplexity-validator'
-                },
-                {
-                    'Key': 'Purpose',
-                    'Value': 'token-usage'
-                }
-            ]
+            'BillingMode': 'PAY_PER_REQUEST'
         }
     
     @classmethod
@@ -244,17 +224,7 @@ class DynamoDBSchemas:
                     }
                 }
             ],
-            'BillingMode': 'PAY_PER_REQUEST',
-            'Tags': [
-                {
-                    'Key': 'Service',
-                    'Value': 'perplexity-validator'
-                },
-                {
-                    'Key': 'Purpose',
-                    'Value': 'user-validation'
-                }
-            ]
+            'BillingMode': 'PAY_PER_REQUEST'
         }
     
     @classmethod
@@ -300,17 +270,7 @@ class DynamoDBSchemas:
                     }
                 }
             ],
-            'BillingMode': 'PAY_PER_REQUEST',
-            'Tags': [
-                {
-                    'Key': 'Service',
-                    'Value': 'perplexity-validator'
-                },
-                {
-                    'Key': 'Purpose',
-                    'Value': 'user-tracking'
-                }
-            ]
+            'BillingMode': 'PAY_PER_REQUEST'
         }
 
 class CallTrackingRecord:
@@ -318,10 +278,10 @@ class CallTrackingRecord:
     
     def __init__(self, session_id: str, email: str, reference_pin: str, request_type: str):
         self.session_id = session_id
-        self.email = email
+        self.email = email.lower().strip()  # Normalize email to lowercase
         self.reference_pin = reference_pin
         self.request_type = request_type  # 'preview' or 'full'
-        self.email_domain = email.split('@')[-1] if '@' in email else 'unknown'
+        self.email_domain = self.email.split('@')[-1] if '@' in self.email else 'unknown'
         self.created_at = datetime.now(timezone.utc).isoformat()
         self.updated_at = self.created_at
         self.status = 'queued'
@@ -617,6 +577,7 @@ def track_validation_call(session_id: str, email: str, reference_pin: str,
         dynamodb = get_dynamodb_resource()
         table = dynamodb.Table(schemas.CALL_TRACKING_TABLE)
         
+        # Email normalization is handled in CallTrackingRecord.__init__
         record = CallTrackingRecord(session_id, email, reference_pin, request_type)
         item = record.to_dynamodb_item()
         
@@ -1034,11 +995,15 @@ def create_email_validation_request(email: str) -> Dict[str, Any]:
         import re
         from datetime import timedelta
         
+        # Normalize email to lowercase
+        email = email.lower().strip()
+        
         # Validate email format
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, email):
             return {
                 'success': False,
+                'validated': False,
                 'error': 'invalid_email',
                 'message': 'Invalid email address format'
             }
@@ -1073,6 +1038,7 @@ def create_email_validation_request(email: str) -> Dict[str, Any]:
             table.delete_item(Key={'email': email})
             return {
                 'success': False,
+                'validated': False,
                 'error': 'email_send_failed',
                 'message': 'Failed to send validation email'
             }
@@ -1090,6 +1056,7 @@ def create_email_validation_request(email: str) -> Dict[str, Any]:
         logger.error(f"Error creating email validation request: {e}")
         return {
             'success': False,
+            'validated': False,
             'error': 'internal_error',
             'message': f'Internal error: {str(e)}'
         }
@@ -1101,6 +1068,9 @@ def validate_email_code(email: str, code: str) -> Dict[str, Any]:
     Returns validation result.
     """
     try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
+        
         table = get_dynamodb_resource().Table(DynamoDBSchemas.USER_VALIDATION_TABLE)
         
         # Get validation record
@@ -1109,6 +1079,7 @@ def validate_email_code(email: str, code: str) -> Dict[str, Any]:
         if 'Item' not in response:
             return {
                 'success': False,
+                'validated': False,
                 'error': 'no_validation_request',
                 'message': 'No validation request found for this email'
             }
@@ -1119,6 +1090,7 @@ def validate_email_code(email: str, code: str) -> Dict[str, Any]:
         if validation_record.get('validated', False):
             return {
                 'success': True,
+                'validated': True,
                 'message': 'Email already validated'
             }
         
@@ -1129,6 +1101,7 @@ def validate_email_code(email: str, code: str) -> Dict[str, Any]:
             table.delete_item(Key={'email': email})
             return {
                 'success': False,
+                'validated': False,
                 'error': 'code_expired',
                 'message': 'Validation code has expired'
             }
@@ -1140,6 +1113,7 @@ def validate_email_code(email: str, code: str) -> Dict[str, Any]:
             table.delete_item(Key={'email': email})
             return {
                 'success': False,
+                'validated': False,
                 'error': 'too_many_attempts',
                 'message': 'Too many validation attempts'
             }
@@ -1154,15 +1128,19 @@ def validate_email_code(email: str, code: str) -> Dict[str, Any]:
             )
             return {
                 'success': False,
+                'validated': False,
                 'error': 'invalid_code',
                 'message': 'Invalid validation code'
             }
         
-        # Code is correct - mark as validated
+        # Code is correct - mark as validated and remove TTL
         validated_at = datetime.now(timezone.utc).isoformat()
         table.update_item(
             Key={'email': email},
-            UpdateExpression="SET validated = :val, validated_at = :timestamp",
+            UpdateExpression="SET validated = :val, validated_at = :timestamp REMOVE #ttl",
+            ExpressionAttributeNames={
+                '#ttl': 'ttl'
+            },
             ExpressionAttributeValues={
                 ':val': True,
                 ':timestamp': validated_at
@@ -1174,6 +1152,7 @@ def validate_email_code(email: str, code: str) -> Dict[str, Any]:
         
         return {
             'success': True,
+            'validated': True,
             'message': 'Email validated successfully'
         }
         
@@ -1181,6 +1160,7 @@ def validate_email_code(email: str, code: str) -> Dict[str, Any]:
         logger.error(f"Error validating email code: {e}")
         return {
             'success': False,
+            'validated': False,
             'error': 'internal_error',
             'message': f'Internal error: {str(e)}'
         }
@@ -1189,6 +1169,9 @@ def validate_email_code(email: str, code: str) -> Dict[str, Any]:
 def is_email_validated(email: str) -> bool:
     """Check if email is validated."""
     try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
+        
         table = get_dynamodb_resource().Table(DynamoDBSchemas.USER_VALIDATION_TABLE)
         response = table.get_item(Key={'email': email})
         
@@ -1197,17 +1180,20 @@ def is_email_validated(email: str) -> bool:
         
         validation_record = response['Item']
         
-        # Check if validated and not expired
-        if not validation_record.get('validated', False):
-            return False
+        # Check if validated - no need to check expiry for validated emails
+        # since we remove TTL on successful validation
+        if validation_record.get('validated', False):
+            return True
         
-        expires_at = datetime.fromisoformat(validation_record['expires_at'].replace('Z', '+00:00'))
-        if datetime.now(timezone.utc) > expires_at:
-            # Clean up expired record
-            table.delete_item(Key={'email': email})
-            return False
+        # For unvalidated records, check if expired
+        if 'expires_at' in validation_record:
+            expires_at = datetime.fromisoformat(validation_record['expires_at'].replace('Z', '+00:00'))
+            if datetime.now(timezone.utc) > expires_at:
+                # Clean up expired unvalidated record
+                table.delete_item(Key={'email': email})
+                return False
         
-        return True
+        return False
         
     except Exception as e:
         logger.error(f"Error checking email validation: {e}")
@@ -1217,6 +1203,8 @@ def is_email_validated(email: str) -> bool:
 def initialize_user_tracking(email: str, validated_at: str = None) -> bool:
     """Initialize user tracking record for a newly validated email."""
     try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
         email_domain = email.split('@')[-1] if '@' in email else 'unknown'
         current_time = validated_at or datetime.now(timezone.utc).isoformat()
         
@@ -1286,6 +1274,9 @@ def track_user_request(email: str, request_type: str, tokens_used: int = 0,
                       anthropic_tokens: int = 0, anthropic_cost: float = 0.0) -> bool:
     """Track user request and update usage statistics."""
     try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
+        
         table = get_dynamodb_resource().Table(DynamoDBSchemas.USER_TRACKING_TABLE)
         
         # Get current user record
@@ -1351,6 +1342,9 @@ def track_user_request(email: str, request_type: str, tokens_used: int = 0,
 def track_validation_request(email: str, requested_at: str) -> bool:
     """Track when an email validation was requested."""
     try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
+        
         # Initialize/update user tracking with request date if user doesn't exist
         table = get_dynamodb_resource().Table(DynamoDBSchemas.USER_TRACKING_TABLE)
         response = table.get_item(Key={'email': email})
@@ -1397,6 +1391,9 @@ def track_validation_request(email: str, requested_at: str) -> bool:
 def get_user_stats(email: str) -> Dict[str, Any]:
     """Get user usage statistics."""
     try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
+        
         table = get_dynamodb_resource().Table(DynamoDBSchemas.USER_TRACKING_TABLE)
         response = table.get_item(Key={'email': email})
         
@@ -1414,4 +1411,44 @@ def get_user_stats(email: str) -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"Error getting user stats: {e}")
-        return {'exists': False, 'error': str(e)} 
+        return {'exists': False, 'error': str(e)}
+
+
+def check_or_send_validation(email: str) -> Dict[str, Any]:
+    """
+    Single function to check if email is validated or send validation code.
+    
+    Returns:
+        - If validated: {'success': True, 'validated': True, 'message': 'Email is already validated'}
+        - If not validated: Sends code and returns {'success': True, 'validated': False, 'message': 'Validation code sent to email', 'expires_at': '...'}
+        - On error: {'success': False, 'error': '...', 'message': '...'}
+    """
+    try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
+        
+        # First check if email is already validated
+        if is_email_validated(email):
+            return {
+                'success': True,
+                'validated': True,
+                'message': 'Email is already validated'
+            }
+        
+        # Email not validated, send validation code
+        result = create_email_validation_request(email)
+        
+        # Add validated flag to response
+        if result.get('success'):
+            result['validated'] = False
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in check_or_send_validation: {e}")
+        return {
+            'success': False,
+            'validated': False,
+            'error': 'internal_error',
+            'message': f'Internal error: {str(e)}'
+        } 
