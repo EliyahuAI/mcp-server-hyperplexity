@@ -519,37 +519,58 @@
         color: #2e7d32;
     }
 
-    /* Progress */
+    /* Processing Animation */
     .progress-container {
         margin: 2rem 0;
     }
 
-    .progress-bar {
-        width: 100%;
-        height: 24px;
-        background-color: #e0e0e0;
-        border-radius: 12px;
-        overflow: hidden;
-        position: relative;
+    .processing-animation {
+        text-align: center;
+        padding: 2rem;
     }
 
-    .progress-fill {
-        height: 100%;
-        background-color: var(--primary-color);
-        transition: width 0.3s ease;
+    .processing-text {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--primary-color);
+        margin-bottom: 1rem;
+    }
+
+    .processing-dots {
         display: flex;
-        align-items: center;
         justify-content: center;
+        gap: 0.5rem;
     }
 
-    .progress-text {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        font-size: var(--font-size-small);
-        font-weight: 500;
-        color: var(--text-color);
+    .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background-color: var(--primary-color);
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .dot:nth-child(1) {
+        animation-delay: 0s;
+    }
+
+    .dot:nth-child(2) {
+        animation-delay: 0.3s;
+    }
+
+    .dot:nth-child(3) {
+        animation-delay: 0.6s;
+    }
+
+    @keyframes pulse {
+        0%, 80%, 100% {
+            transform: scale(0.8);
+            opacity: 0.5;
+        }
+        40% {
+            transform: scale(1.2);
+            opacity: 1;
+        }
     }
 
     .status-message {
@@ -823,7 +844,7 @@
                     <button class="btn btn-secondary" onclick="downloadResults()" id="downloadBtn" style="display: none;">
                         Download Results
                     </button>
-                    <button class="btn btn-primary" onclick="resetValidator()">
+                    <button class="btn btn-primary" onclick="resetValidator()" id="newValidationBtn" style="display: none;">
                         New Validation
                     </button>
                 </div>
@@ -878,12 +899,15 @@
             </div>
 
             <div id="progressContainer" class="progress-container" style="display: none;">
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill" style="width: 0%;">
-                        <span class="progress-text" id="progressText">0%</span>
+                <div class="processing-animation">
+                    <div class="processing-text">Processing Table</div>
+                    <div class="processing-dots">
+                        <span class="dot"></span>
+                        <span class="dot"></span>
+                        <span class="dot"></span>
                     </div>
                 </div>
-                <p class="status-message" id="statusMessage">Processing...</p>
+                <p class="status-message" id="statusMessage">Your validation is being processed...</p>
             </div>
         </div>
     </div>
@@ -1155,6 +1179,9 @@
             
             state.excelFile = file;
             displayFileInfo('excel', file);
+            
+            // Reset state when new excel file is uploaded
+            resetValidationState();
         } else if (type === 'config') {
             if (!file.name.endsWith('.json')) {
                 showMessage('emailMessage', 'Please select a valid JSON configuration file', 'error');
@@ -1164,12 +1191,29 @@
             state.configFile = file;
             state.configValidated = false;
             displayFileInfo('config', file);
+            
+            // Reset state when new config file is uploaded
+            resetValidationState();
+            
             // Automatically validate configuration when a new config is loaded
             validateConfig();
         }
 
         // Re-evaluate readiness every time a file is selected
         checkReadyToProcess();
+    }
+
+    function resetValidationState() {
+        // Reset validation state when new files are uploaded
+        state.sessionId = null;
+        state.results = null;
+        state.mode = 'preview';
+        
+        // Hide results and full processing cards
+        document.getElementById('resultsCard').style.display = 'none';
+        document.getElementById('fullProcessingCard').style.display = 'none';
+        document.getElementById('newValidationBtn').style.display = 'none';
+        document.getElementById('downloadBtn').style.display = 'none';
     }
 
     function displayFileInfo(type, file) {
@@ -1274,9 +1318,8 @@
                     document.getElementById('resultsInfo').innerHTML += `<br>Reference PIN: <strong>${data.reference_pin}</strong>`;
                 }
                 
-                // Hide the full processing card and scroll to results
+                // Hide the full processing card (don't scroll - let user see the processing status)
                 document.getElementById('fullProcessingCard').style.display = 'none';
-                document.getElementById('resultsCard').scrollIntoView({ behavior: 'smooth' });
                 
                 startPolling();
             } else {
@@ -1376,7 +1419,9 @@
 
                 if (data.status === 'completed' || data.status === 'preview_completed') {
                     clearInterval(pollInterval);
-                    updateProgress(100, 'Completed!');
+                    
+                    // Hide processing animation
+                    document.getElementById('progressContainer').style.display = 'none';
                     
                     // Check if this is a preview result
                     if (data.markdown_table) {
@@ -1386,12 +1431,23 @@
                         // This is a full processing result
                         document.getElementById('downloadBtn').style.display = 'inline-block';
                         document.getElementById('downloadBtn').onclick = () => window.open(data.result_url, '_blank');
+                        
+                        // Show New Validation button after full processing
+                        document.getElementById('newValidationBtn').style.display = 'inline-block';
+                        
+                        // Update status message for email delivery
+                        document.getElementById('statusMessage').innerHTML = 
+                            '✅ <strong>Processing Complete!</strong><br>' +
+                            'Your results are being prepared and will be emailed to you within the next few minutes.<br>' +
+                            'You can also download them directly using the button above.';
+                        document.getElementById('statusMessage').style.display = 'block';
                     }
                 } else if (data.status === 'processing') {
-                    const progress = data.progress || 0;
-                    updateProgress(progress, `Processing... ${progress}%`);
+                    // Keep processing animation running - no progress updates needed
+                    document.getElementById('statusMessage').textContent = 'Your validation is being processed...';
                 } else if (data.status === 'failed' || data.status === 'error') {
                     clearInterval(pollInterval);
+                    document.getElementById('progressContainer').style.display = 'none';
                     showMessage('emailMessage', `Processing failed: ${data.error || data.message || 'Unknown error'}`, 'error');
                 }
             } catch (error) {
@@ -1400,11 +1456,7 @@
         }, 3000);
     }
 
-    function updateProgress(percent, message) {
-        document.getElementById('progressFill').style.width = `${percent}%`;
-        document.getElementById('progressText').textContent = `${percent}%`;
-        document.getElementById('statusMessage').textContent = message;
-    }
+
 
     // Results Display
     function showResults(data, isAsync) {
@@ -1721,8 +1773,15 @@
         document.getElementById('configFile').value = '';
         document.getElementById('resultsCard').style.display = 'none';
         document.getElementById('fullProcessingCard').style.display = 'none';
+        document.getElementById('progressContainer').style.display = 'none';
+        document.getElementById('newValidationBtn').style.display = 'none';
+        document.getElementById('downloadBtn').style.display = 'none';
         document.getElementById('previewCard').classList.add('disabled');
         document.getElementById('processBtn').disabled = true;
+        
+        // Clear any messages
+        document.getElementById('configMessage').innerHTML = '';
+        
         // Re-evaluate readiness after reset
         checkReadyToProcess();
         // Scroll to top
