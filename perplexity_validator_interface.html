@@ -845,8 +845,8 @@
                     <p id="resultsInfo"></p>
                 </div>
                 <div class="results-actions">
-                    <button class="btn btn-primary" onclick="resetValidator()" id="newValidationBtn" style="display: none;">
-                        New Validation
+                    <button class="btn btn-primary" onclick="resetValidator()" id="tryAgainBtn" style="display: none;">
+                        Try Again with New Configuration
                     </button>
                 </div>
             </div>
@@ -909,6 +909,26 @@
                     </div>
                 </div>
                 <p class="status-message" id="statusMessage">Your validation is being processed...</p>
+            </div>
+        </div>
+
+        <!-- New Validation Card - Only shown after full processing -->
+        <div class="card" id="newValidationCard" style="display: none;">
+            <div class="card-header">
+                <div class="card-icon">🎉</div>
+                <div>
+                    <h2 class="card-title">Validation Complete</h2>
+                    <p class="card-subtitle">Ready to start a new validation</p>
+                </div>
+            </div>
+
+            <div style="text-align: center; padding: 2rem;">
+                <p style="margin-bottom: 2rem; color: var(--text-secondary);">
+                    Your validation has been completed successfully. You can now start a new validation with different files.
+                </p>
+                <button class="btn btn-primary btn-block" onclick="resetValidator()" style="max-width: 300px; margin: 0 auto;">
+                    New Validation
+                </button>
             </div>
         </div>
     </div>
@@ -1213,7 +1233,8 @@
         // Hide results and full processing cards
         document.getElementById('resultsCard').style.display = 'none';
         document.getElementById('fullProcessingCard').style.display = 'none';
-        document.getElementById('newValidationBtn').style.display = 'none';
+        document.getElementById('tryAgainBtn').style.display = 'none';
+        document.getElementById('newValidationCard').style.display = 'none';
         document.getElementById('progressContainer').style.display = 'none';
         
         // Reset processing animation
@@ -1465,14 +1486,18 @@
                         document.querySelector('.processing-text').textContent = 'Processing Complete!';
                         document.querySelector('.processing-dots').style.display = 'none';
                         
-                        // Always show New Validation button after any processing completion
-                        console.log('🔍 Showing New Validation button');
-                        const newValidationBtn = document.getElementById('newValidationBtn');
-                        if (newValidationBtn) {
-                            newValidationBtn.style.display = 'inline-block';
-                            console.log('🔍 New Validation button should now be visible');
+                        // Show New Validation card at bottom after full processing completion
+                        console.log('🔍 Showing New Validation card for full processing completion');
+                        const newValidationCard = document.getElementById('newValidationCard');
+                        if (newValidationCard) {
+                            newValidationCard.style.display = 'block';
+                            console.log('🔍 New Validation card should now be visible');
+                            // Scroll to the new validation card
+                            setTimeout(() => {
+                                newValidationCard.scrollIntoView({ behavior: 'smooth' });
+                            }, 500);
                         } else {
-                            console.error('🔍 New Validation button element not found!');
+                            console.error('🔍 New Validation card element not found!');
                         }
                         
                         // Update status message for email delivery (email only)
@@ -1627,9 +1652,10 @@
                     }
                 }
                 
-                // Show full processing option after preview
+                // Show full processing option and try again button after preview
                 if (state.mode === 'preview') {
                     document.getElementById('fullProcessingCard').style.display = 'block';
+                    document.getElementById('tryAgainBtn').style.display = 'inline-block';
                 }
             }
             
@@ -1813,7 +1839,8 @@
         document.getElementById('resultsCard').style.display = 'none';
         document.getElementById('fullProcessingCard').style.display = 'none';
         document.getElementById('progressContainer').style.display = 'none';
-        document.getElementById('newValidationBtn').style.display = 'none';
+        document.getElementById('tryAgainBtn').style.display = 'none';
+        document.getElementById('newValidationCard').style.display = 'none';
         document.getElementById('previewCard').classList.add('disabled');
         document.getElementById('processBtn').disabled = true;
         
