@@ -536,6 +536,10 @@
         margin-bottom: 1rem;
     }
 
+    .processing-animation.completed .processing-text {
+        margin-bottom: 0.5rem;
+    }
+
     .processing-dots {
         display: flex;
         justify-content: center;
@@ -1215,6 +1219,14 @@
         document.getElementById('newValidationBtn').style.display = 'none';
         document.getElementById('downloadBtn').style.display = 'none';
         document.getElementById('progressContainer').style.display = 'none';
+        
+        // Reset processing animation
+        const processingAnimation = document.querySelector('.processing-animation');
+        if (processingAnimation) {
+            processingAnimation.classList.remove('completed');
+            document.querySelector('.processing-text').textContent = 'Processing Table';
+            document.querySelector('.processing-dots').style.display = 'flex';
+        }
     }
 
     function displayFileInfo(type, file) {
@@ -1445,17 +1457,23 @@
                 if (data.status === 'completed' || data.status === 'preview_completed') {
                     clearInterval(pollInterval);
                     
-                    // Hide processing animation
-                    document.getElementById('progressContainer').style.display = 'none';
-                    
                     // Check if this is a preview result
                     if (data.markdown_table) {
-                        // This is a preview result - display it
+                        // This is a preview result - display it and hide processing
+                        document.getElementById('progressContainer').style.display = 'none';
                         showResults(data, false);
-                    } else if (data.result_url) {
-                        // This is a full processing result
-                        document.getElementById('downloadBtn').style.display = 'inline-block';
-                        document.getElementById('downloadBtn').onclick = () => window.open(data.result_url, '_blank');
+                    } else if (data.result_url || state.mode === 'full') {
+                        // This is a full processing result - show completion status
+                        // Keep the processing container visible but update it to show completion
+                        document.querySelector('.processing-animation').classList.add('completed');
+                        document.querySelector('.processing-text').textContent = 'Processing Complete!';
+                        document.querySelector('.processing-dots').style.display = 'none';
+                        
+                        // Show download button if available
+                        if (data.result_url) {
+                            document.getElementById('downloadBtn').style.display = 'inline-block';
+                            document.getElementById('downloadBtn').onclick = () => window.open(data.result_url, '_blank');
+                        }
                         
                         // Show New Validation button after full processing
                         document.getElementById('newValidationBtn').style.display = 'inline-block';
@@ -1464,8 +1482,11 @@
                         document.getElementById('statusMessage').innerHTML = 
                             '✅ <strong>Processing Complete!</strong><br>' +
                             'Your results are being prepared and will be emailed to you within the next few minutes.<br>' +
-                            'You can also download them directly using the button above.';
+                            (data.result_url ? 'You can also download them directly using the button above.' : 'The download link will be available once the results are ready.');
                         document.getElementById('statusMessage').style.display = 'block';
+                    } else {
+                        // Fallback - hide processing animation
+                        document.getElementById('progressContainer').style.display = 'none';
                     }
                 } else if (data.status === 'processing') {
                     // Keep processing animation running - no progress updates needed
@@ -1806,6 +1827,14 @@
         
         // Clear any messages
         document.getElementById('configMessage').innerHTML = '';
+        
+        // Reset processing animation
+        const processingAnimation = document.querySelector('.processing-animation');
+        if (processingAnimation) {
+            processingAnimation.classList.remove('completed');
+            document.querySelector('.processing-text').textContent = 'Processing Table';
+            document.querySelector('.processing-dots').style.display = 'flex';
+        }
         
         // Re-evaluate readiness after reset
         checkReadyToProcess();
