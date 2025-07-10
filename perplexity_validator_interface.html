@@ -1454,28 +1454,32 @@
                     clearInterval(pollInterval);
                     
                     // Check if this is a preview result
-                    if (data.markdown_table) {
+                    if (data.markdown_table && state.mode === 'preview') {
                         // This is a preview result - display it and hide processing
                         document.getElementById('progressContainer').style.display = 'none';
                         showResults(data, false);
-                    } else if (data.result_url || state.mode === 'full') {
-                        // This is a full processing result - show completion status
+                    } else {
+                        // This is a full processing result OR any other completion - show completion status
                         // Keep the processing container visible but update it to show completion
                         document.querySelector('.processing-animation').classList.add('completed');
                         document.querySelector('.processing-text').textContent = 'Processing Complete!';
                         document.querySelector('.processing-dots').style.display = 'none';
                         
-                        // Show New Validation button after full processing
-                        document.getElementById('newValidationBtn').style.display = 'inline-block';
+                        // Always show New Validation button after any processing completion
+                        console.log('🔍 Showing New Validation button');
+                        const newValidationBtn = document.getElementById('newValidationBtn');
+                        if (newValidationBtn) {
+                            newValidationBtn.style.display = 'inline-block';
+                            console.log('🔍 New Validation button should now be visible');
+                        } else {
+                            console.error('🔍 New Validation button element not found!');
+                        }
                         
                         // Update status message for email delivery (email only)
                         document.getElementById('statusMessage').innerHTML = 
                             '✅ <strong>Processing Complete!</strong><br>' +
                             'Your results will be emailed to you within the next few minutes.';
                         document.getElementById('statusMessage').style.display = 'block';
-                    } else {
-                        // Fallback - hide processing animation
-                        document.getElementById('progressContainer').style.display = 'none';
                     }
                 } else if (data.status === 'processing') {
                     // Keep processing animation running - no progress updates needed
