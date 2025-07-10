@@ -1214,6 +1214,7 @@
         document.getElementById('fullProcessingCard').style.display = 'none';
         document.getElementById('newValidationBtn').style.display = 'none';
         document.getElementById('downloadBtn').style.display = 'none';
+        document.getElementById('progressContainer').style.display = 'none';
     }
 
     function displayFileInfo(type, file) {
@@ -1357,6 +1358,8 @@
 
             // Build URL with parameters for preview mode
             let url = `${API_BASE}/validate?preview_first_row=true&preview_max_rows=3&async=true`;
+            
+            console.log('🔍 Starting preview mode with URL:', url);
 
             // Make request
             const response = await fetch(url, {
@@ -1367,9 +1370,19 @@
             const data = await response.json();
 
             if (response.ok) {
+                // Set preview mode before processing
+                state.mode = 'preview';
+                state.sessionId = data.session_id;
+                
+                console.log('🔍 Preview response received:', {
+                    status: data.status,
+                    session_id: data.session_id,
+                    reference_pin: data.reference_pin,
+                    state_mode: state.mode
+                });
+                
                 // All processing is now async - need to poll for results
                 if (data.status === 'processing' || data.status === 'processing_started') {
-                    state.sessionId = data.session_id;
                     showResults(data, true);
                     startPolling();
                 } else if (data.status === 'preview_completed') {
@@ -1377,7 +1390,6 @@
                     showResults(data, false);
                 } else {
                     // Unknown status, treat as async
-                    state.sessionId = data.session_id || 'unknown';
                     showResults(data, true);
                     startPolling();
                 }
@@ -1405,6 +1417,12 @@
                     params.append('preview', 'true');
                 }
                 
+                console.log('🔍 Polling status with:', {
+                    url: statusUrl,
+                    mode: state.mode,
+                    params: params.toString()
+                });
+                
                 // Always include email to help find the results
                 if (state.email) {
                     params.append('email', state.email);
@@ -1416,6 +1434,13 @@
                 
                 const response = await fetch(statusUrl);
                 const data = await response.json();
+                
+                console.log('🔍 Status response:', {
+                    status: data.status,
+                    has_markdown_table: !!data.markdown_table,
+                    has_result_url: !!data.result_url,
+                    mode: state.mode
+                });
 
                 if (data.status === 'completed' || data.status === 'preview_completed') {
                     clearInterval(pollInterval);
