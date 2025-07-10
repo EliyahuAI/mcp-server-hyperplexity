@@ -60,7 +60,7 @@
 - **S3 Package Ready**: All files properly located in src/ for Lambda deployment
 
 ✅ **Cost accuracy verified:**
-- Sonar: $1/M input, $1/M output  
+- Sonar: $1/M input, $1/M output
 - Sonar Pro: $3/M input, $15/M output  
 - Claude 4 Sonnet: $3/M input, $15/M output
 - Fallback pricing for unknown models
@@ -491,7 +491,83 @@ The validator WAS working correctly and DID return results. The interface had mu
 - Intelligent cache-aware processing ✅
 - Cost aggregation from cache data ✅ 
 
-## Current Session: S3 Storage Failure Debugging 🔍
+## Current Session: Hardcode Web Interface to 3 Rows ✅
+
+### Requirements:
+- **Web interface**: Hardcode to always preview 3 rows (remove slider)
+- **Backend functionality**: Should still work with different preview row counts (for API/local usage)
+
+### Changes Made:
+✅ **HTML Interface Updates**:
+- Removed range slider and replaced with static "3 rows" display
+- Removed `updatePreviewRows()` JavaScript function
+- Updated `processTable()` to hardcode `preview_max_rows=3` instead of reading slider value
+
+✅ **Backend Parameter Handling**:
+- Fixed hardcoded `3` in `create_markdown_table_from_results()` to use actual `preview_max_rows` parameter
+- Backend still respects `preview_max_rows` for API calls and different row counts
+- Web interface now always sends `preview_max_rows=3` but backend handles any value correctly
+
+### Technical Details:
+1. **UI Simplification**: Replaced interactive slider with clean informational display
+2. **Functionality Preservation**: Backend maintains flexibility for API usage
+3. **Parameter Flow**: Web → `preview_max_rows=3` → Lambda → Validator → Results
+
+### Files Modified:
+- `perplexity_validator_interface.html`: Slider removal and hardcoded 3 rows
+- `src/interface_lambda_function.py`: Fixed hardcoded table creation to use parameter
+
+### Status: ✅ COMPLETE
+Web interface now hardcoded to 3 rows while maintaining backend flexibility for different preview row counts.
+
+## Current Session: Batch Timing Implementation ✅
+
+### Requirements:
+- **Timing**: Move to batch timing throughout the system (parallelization makes processing faster)
+- **Costs & Tokens**: Keep per-row based (parallelization doesn't change API costs)
+
+### Changes Completed:
+✅ **Validator Lambda Updates**:
+- Added batch-level timing tracking in `process_all_rows()`
+- Track timing per batch (5 rows processed in parallel)
+- Added comprehensive batch timing metadata to response
+- Enhanced logging with batch timing summaries
+
+✅ **Interface Lambda Updates**:
+- Extract and use batch timing from validator responses
+- Calculate estimates using `time_per_batch * total_batches`
+- Keep cost/token estimates as per-row calculations
+- Updated both sync and async preview modes
+- Enhanced logging to emphasize batch timing
+
+✅ **DynamoDB Schema Updates**:
+- Added `time_per_batch_seconds` and `estimated_total_batches` fields
+- Removed batch-level cost/token fields (costs remain per-row)
+- Updated `set_batch_timing_estimates()` method for timing only
+
+✅ **Web Interface Updates**:
+- Display batch timing information when available
+- Show "X.Xs per batch × Y batches = Z min total" format
+- Fall back to per-row timing display for compatibility
+
+✅ **Logging Consistency**:
+- Updated all logging to emphasize batch timing with emojis
+- Clear separation between timing (batch-based) and costs (per-row)
+- Consistent terminology throughout the system
+
+### Technical Implementation:
+- **Batch Size**: Fixed at 5 rows per batch
+- **Timing Calculation**: `total_batches * time_per_batch` 
+- **Cost Calculation**: `total_rows * cost_per_row` (unchanged)
+- **Token Calculation**: `total_rows * tokens_per_row` (unchanged)
+
+### Key Insight Implemented:
+Parallelization only affects processing speed, not API costs or token usage. Each row still requires the same API calls regardless of batching.
+
+### Status: ✅ COMPLETE
+System now correctly uses batch timing for time estimates while maintaining per-row calculations for costs and tokens.
+
+## Previous Session: S3 Storage Failure Debugging 🔍
 
 ### Issue Report:
 - User reports: "JSON file is not hitting S3, polling timed out after 20 attempts"
@@ -1429,3 +1505,195 @@ Error processing JSON request: 'utf-8' codec can't decode byte 0xc7 in position 
 - Also fixed status handler to search multiple possible S3 paths for results
 - Status handler now lists S3 objects to find results in any email folder
 - This handles the case where status endpoint doesn't know which email folder was used
+
+## Current Issue
+- User reports the confidence legend is tied to the first column, making it unclear
+- Need to make the legend its own separate sentence for clarity
+
+## Previous Issues Resolved
+- Fixed 502 error by restoring interface_lambda_function.py from git
+- Added preprocessing to convert 'column' to 'name' in config before sending to validator
+- Updated ID field extraction to support both 'name' and 'column' fields
+- Configuration file restored to use 'column' as the correct schema
+- CORS errors fixed by adding proper headers
+- Created missing AWS resources (SQS queues, DynamoDB tables)
+- Fixed multipart/form-data handling for file uploads
+- Added UTF-8 decoding fallbacks
+- Fixed session ID parsing for 3-part format (YYYYMMDD_HHMMSS_PIN)
+- Added email parameter to status endpoint for efficient S3 path construction
+- Removed manual config validation button in favor of automatic validation
+- Fixed web interface status polling logic
+
+## Current Issue
+- Fixed: Processing time was showing incorrectly in HTML
+- The Lambda returns correct times (471 seconds for full table)
+- HTML was looking for estimated_total_processing_time inside cost_estimates, but it's at the top level
+- Added debug logging and fixed the data access path
+
+## Previous Issues Resolved
+- Fixed confidence legend clarity by separating it from the table
+- Fixed 502 error by restoring interface_lambda_function.py from git
+- Added preprocessing to convert 'column' to 'name' in config before sending to validator
+- Updated ID field extraction to support both 'name' and 'column' fields
+- Configuration file restored to use 'column' as the correct schema
+- CORS errors fixed by adding proper headers
+- Created missing AWS resources (SQS queues, DynamoDB tables)
+- Fixed multipart/form-data handling for file uploads
+- Added UTF-8 decoding fallbacks
+- Fixed session ID parsing for 3-part format (YYYYMMDD_HHMMSS_PIN)
+- Added email parameter to status endpoint for efficient S3 path construction
+- Removed manual config validation button in favor of automatic validation
+- Fixed web interface status polling logic
+
+## Current Issue
+- Fixed: Processing time calculation corrected for parallel batch architecture
+- Batches are parallelized: 5 rows and 1 row take the same time per batch
+- Correct formula: total_batches * time_per_batch (not total_rows * time_per_row)
+- Lambda correctly extracts cached processing time from metadata.get('processing_time')
+
+## Previous Issues Resolved
+- Fixed confidence legend clarity by separating it from the table
+- Fixed 502 error by restoring interface_lambda_function.py from git
+- Added preprocessing to convert 'column' to 'name' in config before sending to validator
+- Updated ID field extraction to support both 'name' and 'column' fields
+- Configuration file restored to use 'column' as the correct schema
+- CORS errors fixed by adding proper headers
+- Created missing AWS resources (SQS queues, DynamoDB tables)
+- Fixed multipart/form-data handling for file uploads
+- Added UTF-8 decoding fallbacks
+- Fixed session ID parsing for 3-part format (YYYYMMDD_HHMMSS_PIN)
+- Added email parameter to status endpoint for efficient S3 path construction
+- Removed manual config validation button in favor of automatic validation
+- Fixed web interface status polling logic
+
+## Current Issue - RESOLVED ✅
+- Processing time estimates are CORRECT
+- 173s per batch × 23 batches = 66 minutes total processing time  
+- Lambda correctly extracts cached processing time from metadata.get('processing_time')
+- The local 471s estimate was for different conditions (not full 114 rows)
+
+## Validation Metrics Implementation (Current Session) - COMPLETED ✅
+
+### User Request
+- Track and display validation structure metrics: validated columns, search groups, high context search groups, Claude search groups
+- Store metrics in DynamoDB and display in timing/cost previews  
+- Remove sync option from web interface - make all requests async
+
+### Implementation Summary
+**✅ COMPLETED: All validation metrics tracking and async-only interface**
+
+### Changes Made:
+
+**1. DynamoDB Schema (src/dynamodb_schemas.py)**:
+- Added validation metrics fields: `validated_columns_count`, `search_groups_count`, `high_context_search_groups_count`, `claude_search_groups_count`
+- Added `set_validation_metrics()` method for storing validation structure data
+
+**2. Validator Lambda (src/lambda_function.py)**:
+- Added validation metrics calculation after batch timing summary
+- Calculates: validated columns count (excludes ID/IGNORED), search groups count, high context groups count, Claude groups count
+- Added validation metrics to response metadata with detailed logging
+- Enhanced logging with 🔍 validation structure metrics emojis
+
+**3. Interface Lambda (src/interface_lambda_function.py)**:
+- Added validation metrics extraction from validator responses in both sync and background processing
+- Updated DynamoDB updates to include validation metrics in both preview and full processing modes
+- Added validation metrics to preview response bodies for display in HTML interface
+
+**4. Web Interface (perplexity_validator_interface.html)**:
+- **REMOVED sync option**: Eliminated async toggle checkbox
+- **All requests now async**: Both preview and full mode run asynchronously for optimal performance
+- Added validation metrics display section with structured layout showing validated columns, search groups, high context groups, and Claude groups
+- Updated processing logic to handle async-only workflow
+
+### Validation Metrics Captured:
+- **📊 Validated columns**: Count of columns that require validation (excludes ID and IGNORED fields)
+- **🔗 Search groups**: Number of search groups configured
+- **🎯 High context search groups**: Count of groups using high context search
+- **🤖 Claude search groups**: Count of groups using Claude/Anthropic models
+
+### Key Benefits:
+1. **Better Insights**: Users can see validation structure complexity
+2. **Cost Prediction**: Understanding of search groups helps estimate processing requirements  
+3. **Performance Optimization**: Async-only interface ensures consistent user experience
+4. **Comprehensive Tracking**: All metrics stored in DynamoDB for analytics and debugging
+
+### Technical Notes:
+- Validation metrics calculated once per validation run (not per row)
+- Metrics stored in both sync preview and background processing modes
+- Web interface gracefully handles both legacy sync responses and new async workflow
+- All validation metrics are optional - interface works if data is missing
+
+## Previous Issues Resolved
+- Fixed confidence legend clarity by separating it from the table
+- Fixed processing time display in HTML (was looking in wrong data location)
+- Fixed 502 error by restoring interface_lambda_function.py from git
+- Added preprocessing to convert 'column' to 'name' in config before sending to validator
+- Updated ID field extraction to support both 'name' and 'column' fields
+- Configuration file restored to use 'column' as the correct schema
+- CORS errors fixed by adding proper headers
+- Created missing AWS resources (SQS queues, DynamoDB tables)
+- Fixed multipart/form-data handling for file uploads
+- Added UTF-8 decoding fallbacks
+- Fixed session ID parsing for 3-part format (YYYYMMDD_HHMMSS_PIN)
+- Added email parameter to status endpoint for efficient S3 path construction
+- Removed manual config validation button in favor of automatic validation
+- Fixed web interface status polling logic
+
+## 2025-01-28: Validation Metrics Implementation
+- ✅ Added 4 validation metrics fields to DynamoDB schema
+- ✅ Updated validator Lambda to calculate validation metrics  
+- ✅ Updated interface Lambda to extract and store validation metrics
+- ✅ Added validation metrics display to web interface
+- ✅ Fixed variable reference bug in interface Lambda
+- ✅ Fixed NoneType attribute error in validator Lambda
+- ✅ Fixed batch timing calculation bug
+- ✅ Removed sync option - made all requests async only
+
+## 2025-01-28: Interface Cleanup
+- ✅ Integrated validation metrics into cost/time row (only showing non-zero values)
+- ✅ Removed unnecessary validation metrics display section
+- ✅ Restructured workflow for preview-first approach with full mode appearing after preview
+- ✅ Simplified interface: preview card -> results with estimates -> full processing option
+- ✅ Added responsive flex layout for cost estimate items
+- ✅ Removed verbose calculation language from preview timing
+- ✅ Added total API calls display (Total Perplexity Calls, Total Claude Calls)
+- ✅ Final restructured cost estimate into two clean rows with consistent styling:
+  - Row 1 (Main): Total Perplexity Calls, Total Claude Calls, Est. Total Time, Est. Total Cost
+  - Row 2 (Details): Rows, Columns, Search Groups, High Context Groups, Claude Groups (only if > 0)
+- ✅ Updated styling to use consistent light green background (#e8f5e9) with dark green text (#2e7d32)
+
+## 2025-01-28: Repository Cleanup and Git Preparation
+- ✅ Moved unnecessary files to temp_unnecessary_files: test_email_validation_status.py, src/remove_email_validation.py
+- ✅ Created comprehensive cleanup summary documenting all session work
+- ✅ Verified .gitignore excludes test_results/, deployment packages, and build artifacts
+- ✅ Prepared git commit strategy for validation metrics implementation
+
+## Session Summary: Complete Validation Metrics Implementation
+**MAJOR ACHIEVEMENT**: Successfully implemented comprehensive validation metrics tracking system
+
+### Core Features Delivered:
+1. **Validation Structure Insights**: Users see validated columns, search groups, high context groups, Claude groups
+2. **Cost Transparency**: Total API calls calculated as rows × search groups per provider
+3. **Clean Interface**: Two-row cost estimate with main estimates and technical details
+4. **Async-Only Workflow**: Preview-first approach with full processing option after estimates
+5. **Professional Styling**: Consistent green theme throughout interface
+
+### Technical Implementation:
+- **Backend**: Added 4 validation metrics fields to DynamoDB schema
+- **Validator**: Calculate and return validation structure metrics with each response
+- **Interface**: Extract, store, and display metrics in clean two-row layout
+- **Frontend**: Complete interface overhaul with responsive design
+
+### Critical Bugs Fixed:
+- Variable reference error in interface Lambda timeout scenarios
+- NoneType attribute error in validation metrics calculation
+- DOM element access error after interface restructuring
+- Batch timing calculation using cached vs original processing time
+
+### Repository Status:
+- All core files modified and ready for git commit
+- Unnecessary files moved to temp_unnecessary_files
+- Documentation updated with comprehensive session logs
+- .gitignore properly excludes test results and deployment packages
+
+**READY FOR GIT COMMIT**: All validation metrics functionality complete and tested

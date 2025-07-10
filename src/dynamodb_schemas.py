@@ -362,6 +362,23 @@ class CallTrackingRecord:
         self._data['preview_estimated_total_time_hours'] = (per_row_time * total_rows) / 3600
         self._data['preview_estimated_total_time_without_cache_hours'] = (per_row_time_without_cache * total_rows) / 3600
     
+    def set_batch_timing_estimates(self, time_per_batch: float, total_batches: int):
+        """Set batch-level timing estimates (costs and tokens remain per-row)."""
+        self._data['time_per_batch_seconds'] = time_per_batch
+        self._data['estimated_total_batches'] = total_batches
+        
+        # Update preview time estimates using batch calculations
+        if total_batches > 0:
+            self._data['preview_estimated_total_time_hours'] = (time_per_batch * total_batches) / 3600
+    
+    def set_validation_metrics(self, validated_columns: int, search_groups: int, 
+                              high_context_groups: int, claude_groups: int):
+        """Set validation structure metrics."""
+        self._data['validated_columns_count'] = validated_columns
+        self._data['search_groups_count'] = search_groups
+        self._data['high_context_search_groups_count'] = high_context_groups
+        self._data['claude_search_groups_count'] = claude_groups
+    
     def set_file_info(self, excel_s3_key: str = '', config_s3_key: str = '', results_s3_key: str = '', 
                      excel_size: int = 0, config_size: int = 0, results_size: int = 0, 
                      excel_filename: str = '', config_filename: str = '', results_filename: str = ''):
@@ -497,6 +514,16 @@ class CallTrackingRecord:
             'avg_time_per_row_seconds': 0.0,
             'avg_cost_per_row_usd': 0.0,
             'avg_tokens_per_row': 0.0,
+            
+            # Batch timing metrics (timing only - costs/tokens are per-row)
+            'estimated_total_batches': 0,
+            'time_per_batch_seconds': 0.0,
+            
+            # Validation structure metrics
+            'validated_columns_count': 0,
+            'search_groups_count': 0,
+            'high_context_search_groups_count': 0,
+            'claude_search_groups_count': 0,
             
             # Quality metrics
             'high_confidence_count': 0,

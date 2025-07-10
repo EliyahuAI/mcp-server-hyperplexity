@@ -481,9 +481,25 @@
     .cost-estimate {
         margin-top: 1rem;
         padding: 1rem;
-        background-color: #e3f2fd;
+        background-color: #e8f5e9;
         border-radius: var(--border-radius);
         display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .cost-estimate-header {
+        font-weight: 600;
+        color: #2e7d32;
+        margin-bottom: 0.5rem;
+        text-align: center;
+        font-size: var(--font-size-base);
+    }
+    
+    .cost-estimate-items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
         justify-content: space-between;
         align-items: center;
     }
@@ -500,7 +516,7 @@
 
     .cost-value {
         font-weight: 600;
-        color: var(--secondary-color);
+        color: #2e7d32;
     }
 
     /* Progress */
@@ -553,9 +569,16 @@
         animation: spin 1s ease-in-out infinite;
     }
 
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
+            @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+            20% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+        }
 
     .loading-overlay {
         position: fixed;
@@ -760,93 +783,23 @@
                 </div>
             </div>
 
-            <div style="margin-top: 1rem;">
-                <button class="btn btn-secondary" onclick="validateConfig()" id="validateConfigBtn" disabled>
-                    Validate Configuration
-                </button>
-            </div>
+            <!-- Replace manual validation UI with message container only -->
+            <div id="configMessage" style="margin-top: 0.5rem;"></div>
         </div>
 
-        <!-- Processing Options Card -->
-        <div class="card disabled" id="optionsCard">
+        <!-- Preview Processing Card -->
+        <div class="card disabled" id="previewCard">
             <div class="card-header">
                 <div class="card-icon">3</div>
                 <div>
-                    <h2 class="card-title">Processing Options</h2>
-                    <p class="card-subtitle">Choose how to process your table</p>
-                </div>
-            </div>
-
-            <div class="mode-selector">
-                <div class="mode-option active" onclick="selectMode('preview')" id="previewMode">
-                    <div class="mode-option-title">Preview Mode</div>
-                    <div class="mode-option-description">Test with 1-5 rows first</div>
-                </div>
-                <div class="mode-option" onclick="selectMode('full')" id="fullMode">
-                    <div class="mode-option-title">Full Mode</div>
-                    <div class="mode-option-description">Process entire table</div>
-                </div>
-            </div>
-
-            <!-- Preview Options -->
-            <div class="options-container active" id="previewOptions">
-                <div class="option-group">
-                    <label class="form-label">Preview Rows</label>
-                    <div class="range-container">
-                        <input type="range" id="previewRows" class="range-input" min="1" max="5" value="3" onchange="updatePreviewRows()">
-                        <div class="range-labels">
-                            <span>1</span>
-                            <span>2</span>
-                            <span>3</span>
-                            <span>4</span>
-                            <span>5</span>
-                        </div>
-                        <p style="text-align: center; margin-top: 0.5rem;">
-                            <strong id="previewRowsValue">3</strong> rows
-                        </p>
-                    </div>
-                </div>
-
-                <div class="option-group">
-                    <div class="toggle-container">
-                        <label class="form-label" style="margin: 0;">Async Processing</label>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="asyncToggle">
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                    <p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">
-                        Enable for better performance with large previews
-                    </p>
-                </div>
-            </div>
-
-            <!-- Full Mode Options -->
-            <div class="options-container" id="fullOptions">
-                <div class="option-group">
-                    <div class="form-group">
-                        <label class="form-label" for="maxRows">Maximum Rows</label>
-                        <input type="number" id="maxRows" class="form-input" placeholder="Leave empty for all rows" min="1">
-                        <p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">
-                            Limit the number of rows to process
-                        </p>
-                    </div>
-                </div>
-
-                <div class="option-group">
-                    <div class="form-group">
-                        <label class="form-label">Batch Size</label>
-                        <input type="number" class="form-input" value="5" disabled>
-                        <p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">
-                            Fixed at 5 rows per batch for optimal performance
-                        </p>
-                    </div>
+                    <h2 class="card-title">Preview Table</h2>
+                    <p class="card-subtitle">Test the first 3 rows to see how it works</p>
                 </div>
             </div>
 
             <div style="margin-top: 2rem;">
                 <button class="btn btn-primary btn-block" onclick="processTable()" id="processBtn" disabled>
-                    <span id="processBtnText">Process Table</span>
+                    <span id="processBtnText">Preview Table</span>
                     <span class="spinner" id="processSpinner" style="display: none;"></span>
                 </button>
             </div>
@@ -879,17 +832,48 @@
             <div id="markdownPreview" class="markdown-preview"></div>
 
             <div id="costEstimate" class="cost-estimate" style="display: none;">
-                <div class="cost-item">
-                    <span class="cost-label">Estimated Cost</span>
-                    <span class="cost-value" id="estimatedCost">$0.00</span>
+                <div class="cost-estimate-header">Estimates for Processing Entire Table</div>
+                <div class="cost-estimate-items" id="mainEstimates">
+                    <!-- Main estimates will be populated dynamically -->
                 </div>
-                <div class="cost-item">
-                    <span class="cost-label">Processing Time</span>
-                    <span class="cost-value" id="estimatedTime">0 min</span>
+                <div class="cost-estimate-items" id="detailMetrics">
+                    <div class="cost-item">
+                        <span class="cost-label">Rows</span>
+                        <span class="cost-value" id="totalRows">0</span>
+                    </div>
+                    <div class="cost-item">
+                        <span class="cost-label">Columns</span>
+                        <span class="cost-value" id="totalColumns">0</span>
+                    </div>
+                    <!-- Additional detail metrics will be added dynamically -->
                 </div>
-                <div class="cost-item">
-                    <span class="cost-label">Total Rows</span>
-                    <span class="cost-value" id="totalRows">0</span>
+            </div>
+
+            <!-- Full Processing Card - Only shown after preview -->
+            <div id="fullProcessingCard" class="card" style="display: none; margin-top: 2rem;">
+                <div class="card-header">
+                    <div class="card-icon">✨</div>
+                    <div>
+                        <h2 class="card-title">Process Full Table</h2>
+                        <p class="card-subtitle">Ready to process the entire table</p>
+                    </div>
+                </div>
+
+                <div class="option-group">
+                    <div class="form-group">
+                        <label class="form-label" for="maxRowsFull">Maximum Rows (Optional)</label>
+                        <input type="number" id="maxRowsFull" class="form-input" placeholder="Leave empty for all rows" min="1">
+                        <p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">
+                            Limit the number of rows to process
+                        </p>
+                    </div>
+                </div>
+
+                <div style="margin-top: 2rem;">
+                    <button class="btn btn-primary btn-block" onclick="processFullTable()" id="processFullBtn">
+                        <span id="processFullBtnText">Process Full Table</span>
+                        <span class="spinner" id="processFullSpinner" style="display: none;"></span>
+                    </button>
                 </div>
             </div>
 
@@ -931,6 +915,7 @@
         emailValidated: false,
         excelFile: null,
         configFile: null,
+        configValidated: false,
         mode: 'preview',
         sessionId: null,
         results: null
@@ -1118,6 +1103,9 @@
         
         // Enable file upload
         document.getElementById('uploadCard').classList.remove('disabled');
+
+        // Re-evaluate readiness in case files were already selected & config validated
+        checkReadyToProcess();
     }
 
     // File Handling Functions
@@ -1174,19 +1162,14 @@
             }
             
             state.configFile = file;
+            state.configValidated = false;
             displayFileInfo('config', file);
+            // Automatically validate configuration when a new config is loaded
+            validateConfig();
         }
 
-        // Enable validate config button if config is selected
-        if (state.configFile) {
-            document.getElementById('validateConfigBtn').disabled = false;
-        }
-
-        // Enable processing if both files are selected
-        if (state.excelFile && state.configFile) {
-            document.getElementById('optionsCard').classList.remove('disabled');
-            document.getElementById('processBtn').disabled = false;
-        }
+        // Re-evaluate readiness every time a file is selected
+        checkReadyToProcess();
     }
 
     function displayFileInfo(type, file) {
@@ -1203,57 +1186,109 @@
     async function validateConfig() {
         if (!state.configFile) return;
 
-        showLoading('Validating configuration...');
+        // Indicate validation in progress
+        showMessage('configMessage', 'Validating configuration...', 'info');
+        state.configValidated = false;
+        checkReadyToProcess();
 
         try {
             const configContent = await readFileAsText(state.configFile);
-            const config = JSON.parse(configContent);
+            let config;
+            try {
+                config = JSON.parse(configContent);
+            } catch (jsonError) {
+                showMessage('configMessage', 'Invalid JSON format: ' + jsonError.message, 'error');
+                return;
+            }
 
-            // Use the /validate endpoint with action parameter
             const response = await fetch(`${API_BASE}/validate`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ 
-                    action: 'validateConfig',
-                    config: config 
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'validateConfig', config })
+            });
+            const data = await response.json();
+
+            if (response.ok && data.valid) {
+                showMessage('configMessage', '✅ ' + (data.message || 'Configuration is valid!'), 'success');
+                state.configValidated = true;
+            } else {
+                const errorMsg = `❌ Configuration error: ${data.message || data.error || 'Unknown error'}`;
+                showMessage('configMessage', errorMsg, 'error');
+                state.configValidated = false;
+            }
+        } catch (error) {
+            const errorMsg = 'Network error or invalid configuration: ' + error.message;
+            showMessage('configMessage', errorMsg, 'error');
+            state.configValidated = false;
+            console.error('Error:', error);
+        } finally {
+            checkReadyToProcess();
+        }
+    }
+
+    // Process Full Table Function
+    async function processFullTable() {
+        if (!state.excelFile || !state.configFile || !state.emailValidated) return;
+
+        const processFullBtn = document.getElementById('processFullBtn');
+        processFullBtn.disabled = true;
+        document.getElementById('processFullSpinner').style.display = 'inline-block';
+
+        try {
+            // Read config file as text before creating FormData
+            const configContent = await readFileAsText(state.configFile);
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('excel_file', state.excelFile, state.excelFile.name);
+            formData.append('config_file', configContent);
+            formData.append('email', state.email);
+
+            // Build URL for full processing
+            let url = `${API_BASE}/validate?`;
+            const maxRows = document.getElementById('maxRowsFull').value;
+            if (maxRows) {
+                url += `max_rows=${maxRows}&`;
+            }
+            url += 'batch_size=5&async=true';
+
+            // Make request
+            const response = await fetch(url, {
+                method: 'POST',
+                body: formData
             });
 
             const data = await response.json();
 
-            if (response.ok && data.valid) {
-                showMessage('emailMessage', data.message || 'Configuration is valid!', 'success');
+            if (response.ok) {
+                // Start new session for full processing
+                state.sessionId = data.session_id;
+                state.mode = 'full';
+                
+                // Update results display for full processing
+                document.getElementById('resultsSubtitle').textContent = 'Processing full table...';
+                document.getElementById('progressContainer').style.display = 'block';
+                document.getElementById('resultsInfo').textContent = `Session ID: ${data.session_id}`;
+                
+                if (data.reference_pin) {
+                    document.getElementById('resultsInfo').innerHTML += `<br>Reference PIN: <strong>${data.reference_pin}</strong>`;
+                }
+                
+                // Hide the full processing card and scroll to results
+                document.getElementById('fullProcessingCard').style.display = 'none';
+                document.getElementById('resultsCard').scrollIntoView({ behavior: 'smooth' });
+                
+                startPolling();
             } else {
-                showMessage('emailMessage', `Configuration error: ${data.message || data.error}`, 'error');
+                showMessage('emailMessage', `Error: ${data.error}`, 'error');
             }
         } catch (error) {
-            showMessage('emailMessage', 'Invalid JSON configuration file', 'error');
+            showMessage('emailMessage', 'Failed to process table. Please try again.', 'error');
             console.error('Error:', error);
         } finally {
-            hideLoading();
+            processFullBtn.disabled = false;
+            document.getElementById('processFullSpinner').style.display = 'none';
         }
-    }
-
-    // Mode Selection
-    function selectMode(mode) {
-        state.mode = mode;
-        
-        // Update UI
-        document.querySelectorAll('.mode-option').forEach(opt => opt.classList.remove('active'));
-        document.getElementById(`${mode}Mode`).classList.add('active');
-        
-        document.querySelectorAll('.options-container').forEach(opt => opt.classList.remove('active'));
-        document.getElementById(`${mode}Options`).classList.add('active');
-        
-        // Update button text
-        document.getElementById('processBtnText').textContent = mode === 'preview' ? 'Preview Table' : 'Process Full Table';
-    }
-
-    function updatePreviewRows() {
-        const value = document.getElementById('previewRows').value;
-        document.getElementById('previewRowsValue').textContent = value;
     }
 
     // Table Processing
@@ -1277,22 +1312,8 @@
             
             formData.append('email', state.email);
 
-            // Build URL with parameters
-            let url = `${API_BASE}/validate?`;
-            
-            if (state.mode === 'preview') {
-                url += `preview_first_row=true&preview_max_rows=${document.getElementById('previewRows').value}`;
-                
-                if (document.getElementById('asyncToggle').checked) {
-                    url += '&async=true';
-                }
-            } else {
-                const maxRows = document.getElementById('maxRows').value;
-                if (maxRows) {
-                    url += `max_rows=${maxRows}&`;
-                }
-                url += 'batch_size=5&async=true';
-            }
+            // Build URL with parameters for preview mode
+            let url = `${API_BASE}/validate?preview_first_row=true&preview_max_rows=3&async=true`;
 
             // Make request
             const response = await fetch(url, {
@@ -1303,18 +1324,19 @@
             const data = await response.json();
 
             if (response.ok) {
-                // Check the status field to determine if it's async or sync
-                if (data.status === 'preview_completed') {
-                    // Sync preview - results are already in the response
-                    showResults(data, false);
-                } else if (data.status === 'processing' || data.status === 'processing_started') {
-                    // Async processing - need to poll for results
+                // All processing is now async - need to poll for results
+                if (data.status === 'processing' || data.status === 'processing_started') {
                     state.sessionId = data.session_id;
                     showResults(data, true);
                     startPolling();
-                } else {
-                    // Unknown status, treat as sync
+                } else if (data.status === 'preview_completed') {
+                    // Legacy sync response - shouldn't happen but handle gracefully
                     showResults(data, false);
+                } else {
+                    // Unknown status, treat as async
+                    state.sessionId = data.session_id || 'unknown';
+                    showResults(data, true);
+                    startPolling();
                 }
             } else {
                 showMessage('emailMessage', `Error: ${data.error}`, 'error');
@@ -1415,13 +1437,109 @@
                 document.getElementById('markdownPreview').innerHTML = renderMarkdownTable(data);
             }
             
+            // Debug log the entire data object
+            console.log('Full data object received:', data);
+            
             // Display cost estimates if available
-            if (data.cost_estimates) {
+            if (data.cost_estimates || data.estimated_total_processing_time) {
                 document.getElementById('costEstimate').style.display = 'flex';
-                document.getElementById('estimatedCost').textContent = `$${data.cost_estimates.estimated_total_cost.toFixed(4)}`;
-                const estimatedTime = data.estimated_total_processing_time || 0;
-                document.getElementById('estimatedTime').textContent = `${Math.ceil(estimatedTime / 60)} min`;
+                
+                // Debug logging
+                console.log('Processing time data:', {
+                    estimated_total_processing_time: data.estimated_total_processing_time,
+                    preview_processing_time: data.preview_processing_time,
+                    total_rows: data.total_rows,
+                    cost_estimates: data.cost_estimates,
+                    validation_metrics: data.validation_metrics
+                });
+                
+                // Populate the new two-row layout
+                const mainEstimates = document.getElementById('mainEstimates');
+                const detailMetrics = document.getElementById('detailMetrics');
+                
+                // Clear main estimates
+                mainEstimates.innerHTML = '';
+                
+                // Update basic info in detail row
                 document.getElementById('totalRows').textContent = data.total_rows || 'N/A';
+                
+                if (data.validation_metrics) {
+                    const metrics = data.validation_metrics;
+                    
+                    // Update columns in detail row
+                    document.getElementById('totalColumns').textContent = metrics.validated_columns_count || 0;
+                    
+                    // Calculate total API calls
+                    const totalRows = data.total_rows || 0;
+                    const perplexityGroups = (metrics.search_groups_count || 0) - (metrics.claude_search_groups_count || 0);
+                    const claudeGroups = metrics.claude_search_groups_count || 0;
+                    const totalPerplexityCalls = totalRows * perplexityGroups;
+                    const totalClaudeCalls = totalRows * claudeGroups;
+                    
+                    // Row 1: Main Estimates (Total API Calls, Time, Cost)
+                    if (totalPerplexityCalls > 0) {
+                        const item = document.createElement('div');
+                        item.className = 'cost-item';
+                        item.innerHTML = `<span class="cost-label">Total Perplexity Calls</span><span class="cost-value">${totalPerplexityCalls.toLocaleString()}</span>`;
+                        mainEstimates.appendChild(item);
+                    }
+                    
+                    if (totalClaudeCalls > 0) {
+                        const item = document.createElement('div');
+                        item.className = 'cost-item';
+                        item.innerHTML = `<span class="cost-label">Total Claude Calls</span><span class="cost-value">${totalClaudeCalls.toLocaleString()}</span>`;
+                        mainEstimates.appendChild(item);
+                    }
+                    
+                    // Add time estimate
+                    const estimatedTime = data.estimated_total_processing_time || 0;
+                    const timeItem = document.createElement('div');
+                    timeItem.className = 'cost-item';
+                    timeItem.innerHTML = `<span class="cost-label">Est. Total Time</span><span class="cost-value">${Math.ceil(estimatedTime / 60)} min</span>`;
+                    mainEstimates.appendChild(timeItem);
+                    
+                    // Add cost estimate
+                    if (data.cost_estimates && data.cost_estimates.estimated_total_cost) {
+                        const costItem = document.createElement('div');
+                        costItem.className = 'cost-item';
+                        costItem.innerHTML = `<span class="cost-label">Est. Total Cost</span><span class="cost-value">$${data.cost_estimates.estimated_total_cost.toFixed(4)}</span>`;
+                        mainEstimates.appendChild(costItem);
+                    }
+                    
+                    // Row 2: Details (Rows, Columns already added in HTML, add search groups)
+                    // Clear any existing dynamic detail items first
+                    const existingDynamicItems = detailMetrics.querySelectorAll('.dynamic-detail-item');
+                    existingDynamicItems.forEach(item => item.remove());
+                    
+                    // Add search groups
+                    if (metrics.search_groups_count > 0) {
+                        const item = document.createElement('div');
+                        item.className = 'cost-item dynamic-detail-item';
+                        item.innerHTML = `<span class="cost-label">Search Groups</span><span class="cost-value">${metrics.search_groups_count}</span>`;
+                        detailMetrics.appendChild(item);
+                    }
+                    
+                    // Add high context groups (only if > 0)
+                    if (metrics.high_context_search_groups_count > 0) {
+                        const item = document.createElement('div');
+                        item.className = 'cost-item dynamic-detail-item';
+                        item.innerHTML = `<span class="cost-label">High Context Groups</span><span class="cost-value">${metrics.high_context_search_groups_count}</span>`;
+                        detailMetrics.appendChild(item);
+                    }
+                    
+                    // Add Claude groups (only if > 0)
+                    if (metrics.claude_search_groups_count > 0) {
+                        const item = document.createElement('div');
+                        item.className = 'cost-item dynamic-detail-item';
+                        item.innerHTML = `<span class="cost-label">Claude Groups</span><span class="cost-value">${metrics.claude_search_groups_count}</span>`;
+                        detailMetrics.appendChild(item);
+                    }
+                }
+                
+                // Show full processing option after preview
+                if (state.mode === 'preview') {
+                    document.getElementById('fullProcessingCard').style.display = 'block';
+                }
             }
             
             // Show session info
@@ -1528,29 +1646,47 @@
         // Split the markdown into lines
         const lines = markdown.trim().split('\n');
         
-        // Parse the table
-        let html = '<table class="markdown-table"><thead><tr>';
+        let html = '';
+        let tableStartIndex = 0;
+        
+        // Check if the first line is the confidence legend
+        if (lines[0].includes('**Confidence Legend:**')) {
+            // Extract and format the legend
+            const legendLine = lines[0];
+            html += '<div style="margin-bottom: 1rem; font-weight: bold;">' + 
+                    legendLine.replace(/\*\*/g, '') + 
+                    '</div>';
+            
+            // Skip empty lines after the legend
+            tableStartIndex = 1;
+            while (tableStartIndex < lines.length && lines[tableStartIndex].trim() === '') {
+                tableStartIndex++;
+            }
+        }
+        
+        // Parse the table starting from the correct index
+        html += '<table class="markdown-table"><thead><tr>';
         
         // Process header row
-        const headers = lines[0].split('|').filter(h => h.trim());
+        const headers = lines[tableStartIndex].split('|').filter(h => h.trim());
         headers.forEach(header => {
             html += `<th>${escapeHtml(header.trim())}</th>`;
         });
         html += '</tr></thead><tbody>';
         
-        // Skip the separator line (line 1)
+        // Skip the separator line
         // Process data rows
-        for (let i = 2; i < lines.length; i++) {
+        for (let i = tableStartIndex + 2; i < lines.length; i++) {
             const cells = lines[i].split('|').filter(c => c.trim());
             if (cells.length > 0) {
                 html += '<tr>';
                 cells.forEach(cell => {
                     const trimmedCell = cell.trim();
                     
-                    // Check if this cell contains a confidence level (e.g., "HIGH", "MEDIUM", "LOW")
+                    // Check if this cell contains a confidence emoji
                     let cellHtml = escapeHtml(trimmedCell);
                     
-                    // Add confidence styling if applicable
+                    // Add confidence styling if applicable (for text values)
                     if (trimmedCell === 'HIGH') {
                         cellHtml = `<span class="confidence-badge confidence-high">${cellHtml}</span>`;
                     } else if (trimmedCell === 'MEDIUM') {
@@ -1573,8 +1709,10 @@
         // Reset state (keep email)
         state.excelFile = null;
         state.configFile = null;
+        state.configValidated = false;
         state.sessionId = null;
         state.results = null;
+        state.mode = 'preview';
 
         // Reset UI
         document.getElementById('excelFileInfo').style.display = 'none';
@@ -1582,12 +1720,23 @@
         document.getElementById('excelFile').value = '';
         document.getElementById('configFile').value = '';
         document.getElementById('resultsCard').style.display = 'none';
-        document.getElementById('optionsCard').classList.add('disabled');
+        document.getElementById('fullProcessingCard').style.display = 'none';
+        document.getElementById('previewCard').classList.add('disabled');
         document.getElementById('processBtn').disabled = true;
-        document.getElementById('validateConfigBtn').disabled = true;
-        
+        // Re-evaluate readiness after reset
+        checkReadyToProcess();
         // Scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function checkReadyToProcess() {
+        if (state.emailValidated && state.excelFile && state.configValidated) {
+            document.getElementById('previewCard').classList.remove('disabled');
+            document.getElementById('processBtn').disabled = false;
+        } else {
+            document.getElementById('previewCard').classList.add('disabled');
+            document.getElementById('processBtn').disabled = true;
+        }
     }
     </script>
 </body>

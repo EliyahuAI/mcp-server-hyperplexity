@@ -914,22 +914,50 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         total_multiplex_validations = 0
         total_single_validations = 0
         
+        # Track batch-level timing
+        batch_timing_data = []
+        total_batches = 0
+        
         async def process_all_rows():
-            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations
+            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, batch_timing_data, total_batches
             
             # Process rows in batches
-            batch_size = 5  # Adjust based on API limits
+            batch_size = 5  # Fixed batch size for parallel processing
+            total_batches = (len(rows) + batch_size - 1) // batch_size  # Calculate total number of batches
+            
+            logger.info(f"🚀 BATCH PROCESSING: {len(rows)} rows in {total_batches} batches of {batch_size} rows each")
+            
             async with aiohttp.ClientSession() as session:
-                for i in range(0, len(rows), batch_size):
-                    batch = rows[i:i + batch_size]
-                    row_tasks = []
+                for batch_num in range(0, len(rows), batch_size):
+                    batch_start_time = time.time()  # Start timing this batch
                     
+                    batch = rows[batch_num:batch_num + batch_size]
+                    actual_batch_size = len(batch)
+                    batch_index = batch_num // batch_size + 1
+                    
+                    logger.info(f"🎯 Starting batch {batch_index}/{total_batches} with {actual_batch_size} rows")
+                    
+                    row_tasks = []
                     for row_idx, row in enumerate(batch):
-                        task = asyncio.create_task(process_row(session, row, i + row_idx))
+                        task = asyncio.create_task(process_row(session, row, batch_num + row_idx))
                         row_tasks.append(task)
                     
                     # Wait for all rows in the batch to complete
                     batch_results = await asyncio.gather(*row_tasks)
+                    
+                    batch_end_time = time.time()
+                    batch_processing_time = batch_end_time - batch_start_time
+                    
+                    # Store batch timing data
+                    batch_timing_info = {
+                        'batch_number': batch_index,
+                        'batch_size': actual_batch_size,
+                        'processing_time_seconds': batch_processing_time,
+                        'time_per_row_in_batch': batch_processing_time / actual_batch_size if actual_batch_size > 0 else 0
+                    }
+                    batch_timing_data.append(batch_timing_info)
+                    
+                    logger.info(f"✅ Completed batch {batch_index}/{total_batches} in {batch_processing_time:.2f}s (avg {batch_processing_time/actual_batch_size:.2f}s per row in batch)")
                     
                     # Store results
                     for idx, result in batch_results:
@@ -1471,6 +1499,56 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info(f"Raw responses size: approximately {raw_size_kb:.2f} KB")
             logger.info(f"Total estimated response size: {response_size_kb + raw_size_kb:.2f} KB")
             
+            # Calculate batch timing statistics using ORIGINAL processing time (not wall-clock batch time)
+            # For timing estimates, we want to use what it would take without caching
+            num_batches = len(batch_timing_data)
+            if num_batches > 0:
+                avg_batch_time = total_processing_time / num_batches  # Original time per batch
+                avg_time_per_row_across_batches = total_processing_time / len(validation_results) if validation_results else 0
+                total_batch_time = total_processing_time  # Use original time, not wall-clock time
+            else:
+                avg_batch_time = 0
+                avg_time_per_row_across_batches = 0
+                total_batch_time = 0
+            
+            # Log batch timing summary
+            logger.info(f"📊 BATCH TIMING SUMMARY:")
+            logger.info(f"  🚀 Total batches processed: {len(batch_timing_data)}")
+            logger.info(f"  ⏱️ Average time per batch: {avg_batch_time:.2f}s")
+            logger.info(f"  → Average time per row across all batches: {avg_time_per_row_across_batches:.2f}s")
+            logger.info(f"  ✅ Total batch processing time: {total_batch_time:.2f}s")
+            
+            # Calculate validation structure metrics
+            validation_targets = [t for t in validator.validation_targets if t.importance.upper() not in ["ID", "IGNORED"]]
+            validated_columns_count = len(validation_targets)
+            grouped_targets = validator.group_columns_by_search_group(validation_targets)
+            search_groups_count = len(grouped_targets)
+            
+            # Count high context and Claude search groups
+            high_context_groups_count = 0
+            claude_groups_count = 0
+            for group_id, targets in grouped_targets.items():
+                if targets:
+                    # Check if any target in this group has high context
+                    group_has_high_context = any(
+                        (getattr(target, 'search_context_size', '') or '').lower() == 'high'
+                        for target in targets
+                    )
+                    if group_has_high_context:
+                        high_context_groups_count += 1
+                    
+                    # Check if any target in this group uses Claude/Anthropic model
+                    group_model, _ = resolve_search_group_model(targets, validator)
+                    if determine_api_provider(group_model) == 'anthropic':
+                        claude_groups_count += 1
+            
+            # Log validation metrics summary
+            logger.info(f"🔍 VALIDATION STRUCTURE METRICS:")
+            logger.info(f"  📊 Validated columns: {validated_columns_count}")
+            logger.info(f"  🔗 Search groups: {search_groups_count}")
+            logger.info(f"  🎯 High context search groups: {high_context_groups_count}")
+            logger.info(f"  🤖 Claude search groups: {claude_groups_count}")
+            
             # Create a single response
             response = {
                 "statusCode": 200,
@@ -1489,7 +1567,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         "multiplex_validations": total_multiplex_validations,
                         "single_validations": total_single_validations,
                         "token_usage": total_token_usage,
-                        "processing_time": total_processing_time  # Add total processing time
+                        "processing_time": total_processing_time,  # Keep for backward compatibility
+                        # NEW: Batch timing data
+                        "batch_timing": {
+                            "total_batches": len(batch_timing_data),
+                            "batch_size": 5,  # Fixed batch size
+                            "total_batch_time_seconds": total_batch_time,
+                            "average_batch_time_seconds": avg_batch_time,
+                            "average_time_per_row_seconds": avg_time_per_row_across_batches,
+                            "batch_details": batch_timing_data
+                        },
+                        # NEW: Validation structure metrics
+                        "validation_metrics": {
+                            "validated_columns_count": validated_columns_count,
+                            "search_groups_count": search_groups_count,
+                            "high_context_search_groups_count": high_context_groups_count,
+                            "claude_search_groups_count": claude_groups_count
+                        }
                     }
                 }
             }
