@@ -419,15 +419,15 @@ def parse_multipart_form_data(body, content_type, is_base64_encoded=False):
                                     form_data[name] = str(content)  # Store raw representation
                     else:
                         # For other form fields, use standard UTF-8 decoding
-                    try:
-                        form_data[name] = content.decode('utf-8')
-                    except UnicodeDecodeError:
-                            logger.warning(f"Could not decode form field '{name}' as UTF-8. Trying latin-1.")
-                            try:
-                                form_data[name] = content.decode('latin-1')
-                            except Exception:
-                                logger.error(f"Could not decode form field '{name}'. Storing as hex.")
-                                form_data[name] = content.hex()
+                        try:
+                            form_data[name] = content.decode('utf-8')
+                        except UnicodeDecodeError:
+                                logger.warning(f"Could not decode form field '{name}' as UTF-8. Trying latin-1.")
+                                try:
+                                    form_data[name] = content.decode('latin-1')
+                                except Exception:
+                                    logger.error(f"Could not decode form field '{name}'. Storing as hex.")
+                                    form_data[name] = content.hex()
         
         # Log parsed data for debugging
         logger.info(f"Parsed form data fields: {list(form_data.keys())}")
@@ -2325,8 +2325,8 @@ def handle_status_request(event, context):
                         reference_pin = parts[2]
                     else:
                         # Format: TIMESTAMP_PIN
-                    timestamp = parts[0]
-                    reference_pin = parts[1]
+                        timestamp = parts[0]
+                        reference_pin = parts[1]
                     
                     # Check if results file exists in S3
                     possible_results_keys = []
@@ -2379,10 +2379,10 @@ def handle_status_request(event, context):
                     
                     # Try each possible key
                     for results_key in possible_results_keys:
-                    try:
-                        s3_client.head_object(Bucket=S3_RESULTS_BUCKET, Key=results_key)
-                        # File exists - processing complete
-                        download_url = generate_presigned_url(S3_RESULTS_BUCKET, results_key, 86400)
+                        try:
+                            s3_client.head_object(Bucket=S3_RESULTS_BUCKET, Key=results_key)
+                            # File exists - processing complete
+                            download_url = generate_presigned_url(S3_RESULTS_BUCKET, results_key, 86400)
                             results_found = True
                             logger.info(f"Found results at: {results_key}")
                             break
@@ -2537,18 +2537,18 @@ def lambda_handler(event, context):
             
             # Only process as JSON if content type indicates JSON
             if 'application/json' in content_type:
-            try:
-                body = event.get('body', '{}')
-                    
+                try:
+                    body = event.get('body', '{}')
+                        
                     # Log the raw body for debugging
                     logger.info(f"Raw body type: {type(body)}, isBase64Encoded: {event.get('isBase64Encoded')}")
                     if body:
                         logger.info(f"Raw body length: {len(body)}")
                         logger.info(f"Raw body preview (first 100 chars): {repr(body[:100])}")
-                    
-                if event.get('isBase64Encoded'):
+                
+                    if event.get('isBase64Encoded'):
                         try:
-                    body = base64.b64decode(body).decode('utf-8')
+                            body = base64.b64decode(body).decode('utf-8')
                         except UnicodeDecodeError:
                             # Try other encodings if UTF-8 fails
                             decoded_body = base64.b64decode(body)
@@ -2563,14 +2563,14 @@ def lambda_handler(event, context):
                                 # If all encodings fail, use latin-1 which never fails
                                 body = decoded_body.decode('latin-1', errors='replace')
                                 logger.error("Could not decode body with any standard encoding, using latin-1 with replacement")
+                        
+                        # Ensure body is not None
+                        if body is None:
+                            body = '{}'
                     
-                    # Ensure body is not None
-                    if body is None:
-                        body = '{}'
-                
-                if body and body.strip():
+                    if body and body.strip():
                         try:
-                    request_data = json.loads(body)
+                            request_data = json.loads(body)
                         except json.JSONDecodeError as e:
                             logger.error(f"Failed to parse JSON body: {e}")
                             logger.error(f"Body type: {type(body)}, Body length: {len(body) if body else 0}")
@@ -2588,270 +2588,127 @@ def lambda_handler(event, context):
                                     'body_length': len(body) if body else 0
                                 })
                             }
-                        
-                    if request_data.get('status_check') and request_data.get('session_id'):
-                        return handle_status_check_request(request_data, context)
-                    
-                    # Handle JSON action requests
-                    action = request_data.get('action')
-                    if action:
-                        logger.info(f"Processing JSON action: {action}")
-                        
-                        # Handle email validation actions
-                        if action == 'requestEmailValidation':
-                            email = request_data.get('email', '').strip()
-                            if not email:
-                                return {
-                                    'statusCode': 400,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': False,
-                                        'error': 'missing_email',
-                                        'message': 'Email address is required'
-                                    })
-                                }
                             
-                            # Try to create email validation request
-                            try:
-                                from dynamodb_schemas import create_email_validation_request
-                                result = create_email_validation_request(email)
+                        if request_data.get('status_check') and request_data.get('session_id'):
+                            return handle_status_check_request(request_data, context)
+                        
+                        # Handle JSON action requests
+                        action = request_data.get('action')
+                        if action:
+                            logger.info(f"Processing JSON action: {action}")
+                            
+                            # Handle email validation actions
+                            if action == 'requestEmailValidation':
+                                email = request_data.get('email', '').strip()
+                                if not email:
+                                    return {
+                                        'statusCode': 400,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'success': False,
+                                            'error': 'missing_email',
+                                            'message': 'Email address is required'
+                                        })
+                                    }
                                 
-                                return {
-                                    'statusCode': 200,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps(result)
-                                }
-                            except Exception as e:
-                                logger.error(f"Error creating email validation request: {e}")
-                                return {
-                                    'statusCode': 500,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': False,
-                                        'error': 'internal_error',
-                                        'message': 'Failed to create validation request'
-                                    })
-                                }
-                        
-                        # Handle email code validation
-                        elif action == 'validateEmailCode':
-                            email = request_data.get('email', '').strip()
-                            code = request_data.get('code', '').strip()
+                                # Try to create email validation request
+                                try:
+                                    from dynamodb_schemas import create_email_validation_request
+                                    result = create_email_validation_request(email)
+                                    
+                                    return {
+                                        'statusCode': 200,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps(result)
+                                    }
+                                except Exception as e:
+                                    logger.error(f"Error creating email validation request: {e}")
+                                    return {
+                                        'statusCode': 500,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'success': False,
+                                            'error': 'internal_error',
+                                            'message': 'Failed to create validation request'
+                                        })
+                                    }
                             
-                            if not email or not code:
-                                return {
-                                    'statusCode': 400,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': False,
-                                        'error': 'missing_parameters',
-                                        'message': 'Email and validation code are required'
-                                    })
-                                }
-                            
-                            try:
-                                from dynamodb_schemas import validate_email_code
-                                result = validate_email_code(email, code)
+                            # Handle email code validation
+                            elif action == 'validateEmailCode':
+                                email = request_data.get('email', '').strip()
+                                code = request_data.get('code', '').strip()
                                 
-                                return {
-                                    'statusCode': 200,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps(result)
-                                }
-                            except Exception as e:
-                                logger.error(f"Error validating email code: {e}")
-                                return {
-                                    'statusCode': 500,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': False,
-                                        'error': 'internal_error',
-                                        'message': 'Failed to validate email code'
-                                    })
-                                }
-                        
-                        # Handle email validation check
-                        elif action == 'checkEmailValidation':
-                            email = request_data.get('email', '').strip()
-                            if not email:
-                                return {
-                                    'statusCode': 400,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': False,
-                                        'error': 'missing_email',
-                                        'message': 'Email address is required'
-                                    })
-                                }
-                            
-                            try:
-                                from dynamodb_schemas import is_email_validated
-                                is_validated = is_email_validated(email)
+                                if not email or not code:
+                                    return {
+                                        'statusCode': 400,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'success': False,
+                                            'error': 'missing_parameters',
+                                            'message': 'Email and validation code are required'
+                                        })
+                                    }
                                 
-                                return {
-                                    'statusCode': 200,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': True,
-                                        'validated': is_validated,
-                                        'message': 'Email is validated and ready to use' if is_validated else 'Email validation required'
-                                    })
-                                }
-                            except Exception as e:
-                                logger.error(f"Error checking email validation: {e}")
-                                return {
-                                    'statusCode': 500,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': False,
-                                        'error': 'internal_error',
-                                        'message': 'Failed to check email validation'
-                                    })
-                                }
-                        
-                        # Handle combined check or send validation
-                        elif action == 'checkOrSendValidation':
-                            email = request_data.get('email', '').strip()
-                            if not email:
-                                return {
-                                    'statusCode': 400,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': False,
-                                        'error': 'missing_email',
-                                        'message': 'Email address is required'
-                                    })
-                                }
+                                try:
+                                    from dynamodb_schemas import validate_email_code
+                                    result = validate_email_code(email, code)
+                                    
+                                    return {
+                                        'statusCode': 200,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps(result)
+                                    }
+                                except Exception as e:
+                                    logger.error(f"Error validating email code: {e}")
+                                    return {
+                                        'statusCode': 500,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'success': False,
+                                            'error': 'internal_error',
+                                            'message': 'Failed to validate email code'
+                                        })
+                                    }
                             
-                            try:
-                                from dynamodb_schemas import check_or_send_validation
-                                result = check_or_send_validation(email)
+                            # Handle email validation check
+                            elif action == 'checkEmailValidation':
+                                email = request_data.get('email', '').strip()
+                                if not email:
+                                    return {
+                                        'statusCode': 400,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'success': False,
+                                            'error': 'missing_email',
+                                            'message': 'Email address is required'
+                                        })
+                                    }
                                 
-                                return {
-                                    'statusCode': 200,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps(result)
-                                }
-                            except Exception as e:
-                                logger.error(f"Error in check or send validation: {e}")
-                                return {
-                                    'statusCode': 500,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': False,
-                                        'error': 'internal_error',
-                                        'message': 'Failed to process email validation'
-                                    })
-                                }
-                        
-                        # Handle user stats lookup
-                        elif action == 'getUserStats':
-                            email = request_data.get('email', '').strip()
-                            if not email:
-                                return {
-                                    'statusCode': 400,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': False,
-                                        'error': 'missing_email',
-                                        'message': 'Email address is required'
-                                    })
-                                }
-                            
-                            try:
-                                from dynamodb_schemas import get_user_stats
-                                stats = get_user_stats(email)
-                                
-                                return {
-                                    'statusCode': 200,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': True,
-                                        'stats': stats
-                                    })
-                                }
-                            except Exception as e:
-                                logger.error(f"Error getting user stats: {e}")
-                                return {
-                                    'statusCode': 500,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': False,
-                                        'error': 'internal_error',
-                                        'message': 'Failed to get user stats'
-                                    })
-                                }
-                        
-                        # Handle validateConfig action
-                        elif action == 'validateConfig':
-                            config_content = request_data.get('config', '')
-                            if not config_content:
-                                return {
-                                    'statusCode': 400,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'error': 'Missing config content',
-                                        'valid': False
-                                    })
-                                }
-                            
-                            # Parse and validate the config
-                            try:
-                                if isinstance(config_content, str):
-                                    config_data = json.loads(config_content)
-                                else:
-                                    config_data = config_content
-                                
-                                # Basic validation - check for required fields
-                                if 'validation_targets' in config_data and isinstance(config_data['validation_targets'], list):
+                                try:
+                                    from dynamodb_schemas import is_email_validated
+                                    is_validated = is_email_validated(email)
+                                    
                                     return {
                                         'statusCode': 200,
                                         'headers': {
@@ -2859,11 +2716,166 @@ def lambda_handler(event, context):
                                             'Access-Control-Allow-Origin': '*'
                                         },
                                         'body': json.dumps({
-                                            'valid': True,
-                                            'message': 'Configuration is valid'
+                                            'success': True,
+                                            'validated': is_validated,
+                                            'message': 'Email is validated and ready to use' if is_validated else 'Email validation required'
                                         })
                                     }
-                                else:
+                                except Exception as e:
+                                    logger.error(f"Error checking email validation: {e}")
+                                    return {
+                                        'statusCode': 500,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'success': False,
+                                            'error': 'internal_error',
+                                            'message': 'Failed to check email validation'
+                                        })
+                                    }
+                            
+                            # Handle combined check or send validation
+                            elif action == 'checkOrSendValidation':
+                                email = request_data.get('email', '').strip()
+                                if not email:
+                                    return {
+                                        'statusCode': 400,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'success': False,
+                                            'error': 'missing_email',
+                                            'message': 'Email address is required'
+                                        })
+                                    }
+                                
+                                try:
+                                    from dynamodb_schemas import check_or_send_validation
+                                    result = check_or_send_validation(email)
+                                    
+                                    return {
+                                        'statusCode': 200,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps(result)
+                                    }
+                                except Exception as e:
+                                    logger.error(f"Error in check or send validation: {e}")
+                                    return {
+                                        'statusCode': 500,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'success': False,
+                                            'error': 'internal_error',
+                                            'message': 'Failed to process email validation'
+                                        })
+                                    }
+                            
+                            # Handle user stats lookup
+                            elif action == 'getUserStats':
+                                email = request_data.get('email', '').strip()
+                                if not email:
+                                    return {
+                                        'statusCode': 400,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'success': False,
+                                            'error': 'missing_email',
+                                            'message': 'Email address is required'
+                                        })
+                                    }
+                                
+                                try:
+                                    from dynamodb_schemas import get_user_stats
+                                    stats = get_user_stats(email)
+                                    
+                                    return {
+                                        'statusCode': 200,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'success': True,
+                                            'stats': stats
+                                        })
+                                    }
+                                except Exception as e:
+                                    logger.error(f"Error getting user stats: {e}")
+                                    return {
+                                        'statusCode': 500,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'success': False,
+                                            'error': 'internal_error',
+                                            'message': 'Failed to get user stats'
+                                        })
+                                    }
+                            
+                            # Handle validateConfig action
+                            elif action == 'validateConfig':
+                                config_content = request_data.get('config', '')
+                                if not config_content:
+                                    return {
+                                        'statusCode': 400,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'error': 'Missing config content',
+                                            'valid': False
+                                        })
+                                    }
+                                
+                                # Parse and validate the config
+                                try:
+                                    if isinstance(config_content, str):
+                                        config_data = json.loads(config_content)
+                                    else:
+                                        config_data = config_content
+                                    
+                                    # Basic validation - check for required fields
+                                    if 'validation_targets' in config_data and isinstance(config_data['validation_targets'], list):
+                                        return {
+                                            'statusCode': 200,
+                                            'headers': {
+                                                'Content-Type': 'application/json',
+                                                'Access-Control-Allow-Origin': '*'
+                                            },
+                                            'body': json.dumps({
+                                                'valid': True,
+                                                'message': 'Configuration is valid'
+                                            })
+                                        }
+                                    else:
+                                        return {
+                                            'statusCode': 200,
+                                            'headers': {
+                                                'Content-Type': 'application/json',
+                                                'Access-Control-Allow-Origin': '*'
+                                            },
+                                            'body': json.dumps({
+                                                'valid': False,
+                                                'message': 'Configuration must contain validation_targets array'
+                                            })
+                                        }
+                                except json.JSONDecodeError as e:
                                     return {
                                         'statusCode': 200,
                                         'headers': {
@@ -2872,167 +2884,277 @@ def lambda_handler(event, context):
                                         },
                                         'body': json.dumps({
                                             'valid': False,
-                                            'message': 'Configuration must contain validation_targets array'
+                                            'message': f'Invalid JSON: {str(e)}'
                                         })
                                     }
-                            except json.JSONDecodeError as e:
-                                return {
-                                    'statusCode': 200,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'valid': False,
-                                        'message': f'Invalid JSON: {str(e)}'
-                                    })
-                                }
-                        
-                        # Handle processExcel action
-                        elif action == 'processExcel':
-                            excel_base64 = request_data.get('excel_file', '')
-                            config_base64 = request_data.get('config_file', '')
-                            email_address = request_data.get('email', 'test@example.com')
-                            preview = request_data.get('preview', False)
-                            async_mode = request_data.get('async', False)
-                            preview_max_rows = request_data.get('preview_max_rows', 5)
-                            max_rows = request_data.get('max_rows', 1000)
-                            batch_size = request_data.get('batch_size', 10)
                             
-                            # Validate email is authenticated
-                            try:
-                                from dynamodb_schemas import is_email_validated
-                                if not is_email_validated(email_address):
+                            # Handle processExcel action
+                            elif action == 'processExcel':
+                                excel_base64 = request_data.get('excel_file', '')
+                                config_base64 = request_data.get('config_file', '')
+                                email_address = request_data.get('email', 'test@example.com')
+                                preview = request_data.get('preview', False)
+                                async_mode = request_data.get('async', False)
+                                preview_max_rows = request_data.get('preview_max_rows', 5)
+                                max_rows = request_data.get('max_rows', 1000)
+                                batch_size = request_data.get('batch_size', 10)
+                                
+                                # Validate email is authenticated
+                                try:
+                                    from dynamodb_schemas import is_email_validated
+                                    if not is_email_validated(email_address):
+                                        return {
+                                            'statusCode': 403,
+                                            'headers': {
+                                                'Content-Type': 'application/json',
+                                                'Access-Control-Allow-Origin': '*'
+                                            },
+                                            'body': json.dumps({
+                                                'success': False,
+                                                'error': 'email_not_validated',
+                                                'message': 'Email address must be validated before processing. Please request and enter a validation code first.'
+                                            })
+                                        }
+                                except Exception as e:
+                                    logger.error(f"Error checking email validation: {e}")
                                     return {
-                                        'statusCode': 403,
+                                        'statusCode': 500,
                                         'headers': {
                                             'Content-Type': 'application/json',
                                             'Access-Control-Allow-Origin': '*'
                                         },
                                         'body': json.dumps({
                                             'success': False,
-                                            'error': 'email_not_validated',
-                                            'message': 'Email address must be validated before processing. Please request and enter a validation code first.'
+                                            'error': 'validation_check_failed',
+                                            'message': 'Unable to verify email validation status'
                                         })
                                     }
-                            except Exception as e:
-                                logger.error(f"Error checking email validation: {e}")
-                                return {
-                                    'statusCode': 500,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'success': False,
-                                        'error': 'validation_check_failed',
-                                        'message': 'Unable to verify email validation status'
-                                    })
-                                }
-                            
-                            if not excel_base64 or not config_base64:
-                                return {
-                                    'statusCode': 400,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'error': 'Missing excel_file or config_file'
-                                    })
-                                }
-                            
-                            # Decode base64 files
-                            try:
-                                excel_content = base64.b64decode(excel_base64)
-                                config_content = base64.b64decode(config_base64)
-                            except Exception as e:
-                                return {
-                                    'statusCode': 400,
-                                    'headers': {
-                                        'Content-Type': 'application/json',
-                                        'Access-Control-Allow-Origin': '*'
-                                    },
-                                    'body': json.dumps({
-                                        'error': f'Invalid base64 encoding: {str(e)}'
-                                    })
-                                }
-                            
-                            # Generate session ID and reference PIN
-                            session_id = str(uuid.uuid4())
-                            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-                            reference_pin = generate_reference_pin()
-                            email_folder = create_email_folder_path(email_address)
-                            
-                            # Upload files to S3
-                            excel_s3_key = f"uploads/{email_folder}/{timestamp}_{reference_pin}_excel_test.xlsx"
-                            config_s3_key = f"uploads/{email_folder}/{timestamp}_{reference_pin}_config_test.json"
-                            
-                            try:
-                                # Upload Excel file
-                                if not upload_file_to_s3(
-                                    excel_content, 
-                                    S3_CACHE_BUCKET, 
-                                    excel_s3_key,
-                                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                                ):
-                                    raise Exception("Failed to upload Excel file to S3")
                                 
-                                # Upload config file
-                                if not upload_file_to_s3(
-                                    config_content, 
-                                    S3_CACHE_BUCKET, 
-                                    config_s3_key,
-                                    'application/json'
-                                ):
-                                    raise Exception("Failed to upload config file to S3")
+                                if not excel_base64 or not config_base64:
+                                    return {
+                                        'statusCode': 400,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'error': 'Missing excel_file or config_file'
+                                        })
+                                    }
                                 
-                                logger.info(f"JSON action files uploaded - Excel: {excel_s3_key}, Config: {config_s3_key}")
+                                # Decode base64 files
+                                try:
+                                    excel_content = base64.b64decode(excel_base64)
+                                    config_content = base64.b64decode(config_base64)
+                                except Exception as e:
+                                    return {
+                                        'statusCode': 400,
+                                        'headers': {
+                                            'Content-Type': 'application/json',
+                                            'Access-Control-Allow-Origin': '*'
+                                        },
+                                        'body': json.dumps({
+                                            'error': f'Invalid base64 encoding: {str(e)}'
+                                        })
+                                    }
                                 
-                                # Track in DynamoDB if available
-                                if SQS_INTEGRATION_AVAILABLE:
-                                    track_validation_call(
-                                        session_id=session_id,
-                                        email=email_address,
-                                        reference_pin=reference_pin,
-                                        request_type='preview' if preview else 'full',
-                                        excel_s3_key=excel_s3_key,
-                                        config_s3_key=config_s3_key
-                                    )
+                                # Generate session ID and reference PIN
+                                session_id = str(uuid.uuid4())
+                                timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                                reference_pin = generate_reference_pin()
+                                email_folder = create_email_folder_path(email_address)
                                 
-                                # Handle preview mode
-                                if preview:
-                                    if async_mode:
-                                        # Async preview - send to SQS
-                                        preview_session_id = f"{timestamp}_{reference_pin}_preview"
+                                # Upload files to S3
+                                excel_s3_key = f"uploads/{email_folder}/{timestamp}_{reference_pin}_excel_test.xlsx"
+                                config_s3_key = f"uploads/{email_folder}/{timestamp}_{reference_pin}_config_test.json"
+                                
+                                try:
+                                    # Upload Excel file
+                                    if not upload_file_to_s3(
+                                        excel_content, 
+                                        S3_CACHE_BUCKET, 
+                                        excel_s3_key,
+                                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                                    ):
+                                        raise Exception("Failed to upload Excel file to S3")
+                                    
+                                    # Upload config file
+                                    if not upload_file_to_s3(
+                                        config_content, 
+                                        S3_CACHE_BUCKET, 
+                                        config_s3_key,
+                                        'application/json'
+                                    ):
+                                        raise Exception("Failed to upload config file to S3")
+                                    
+                                    logger.info(f"JSON action files uploaded - Excel: {excel_s3_key}, Config: {config_s3_key}")
+                                    
+                                    # Track in DynamoDB if available
+                                    if SQS_INTEGRATION_AVAILABLE:
+                                        track_validation_call(
+                                            session_id=session_id,
+                                            email=email_address,
+                                            reference_pin=reference_pin,
+                                            request_type='preview' if preview else 'full',
+                                            excel_s3_key=excel_s3_key,
+                                            config_s3_key=config_s3_key
+                                        )
+                                    
+                                    # Handle preview mode
+                                    if preview:
+                                        if async_mode:
+                                            # Async preview - send to SQS
+                                            preview_session_id = f"{timestamp}_{reference_pin}_preview"
+                                            
+                                            if SQS_INTEGRATION_AVAILABLE:
+                                                message_id = send_preview_request(
+                                                    session_id=preview_session_id,
+                                                    excel_s3_key=excel_s3_key,
+                                                    config_s3_key=config_s3_key,
+                                                    email=email_address,
+                                                    reference_pin=reference_pin,
+                                                    preview_max_rows=preview_max_rows,
+                                                    email_folder=email_folder,
+                                                    max_rows=max_rows,
+                                                    batch_size=batch_size,
+                                                    sequential_call=None,
+                                                    async_mode=True
+                                                )
+                                                
+                                                if message_id:
+                                                    logger.info(f"Preview request sent to SQS: {message_id}")
+                                                    
+                                                    # Track async preview request
+                                                    try:
+                                                        from dynamodb_schemas import track_user_request
+                                                        track_user_request(
+                                                            email=email_address,
+                                                            request_type='preview'
+                                                        )
+                                                    except Exception as e:
+                                                        logger.warning(f"Failed to track async preview request: {e}")
+                                                    
+                                                    return {
+                                                        'statusCode': 200,
+                                                        'headers': {
+                                                            'Content-Type': 'application/json',
+                                                            'Access-Control-Allow-Origin': '*'
+                                                        },
+                                                        'body': json.dumps({
+                                                            'status': 'processing',
+                                                            'session_id': preview_session_id,
+                                                            'reference_pin': reference_pin,
+                                                            'message': 'Preview processing started',
+                                                            'async_mode': True
+                                                        })
+                                                    }
+                                            
+                                            # Fallback if SQS not available
+                                            return {
+                                                'statusCode': 500,
+                                                'headers': {
+                                                    'Content-Type': 'application/json',
+                                                    'Access-Control-Allow-Origin': '*'
+                                                },
+                                                'body': json.dumps({
+                                                    'error': 'SQS integration not available'
+                                                })
+                                            }
+                                        else:
+                                            # Sync preview - process immediately
+                                            start_time = time.time()
+                                            validation_results = invoke_validator_lambda(
+                                                excel_s3_key, config_s3_key, preview_max_rows, 
+                                                batch_size, True, preview_max_rows, None
+                                            )
+                                            processing_time = time.time() - start_time
+                                            
+                                            # Return preview results
+                                            if validation_results and 'validation_results' in validation_results:
+                                                # Track user request in USER_TRACKING_TABLE
+                                                try:
+                                                    from dynamodb_schemas import track_user_request
+                                                    # Extract token usage from validation results if available
+                                                    metadata = validation_results.get('metadata', {})
+                                                    token_usage = metadata.get('token_usage', {})
+                                                    
+                                                    track_user_request(
+                                                        email=email_address,
+                                                        request_type='preview',
+                                                        tokens_used=token_usage.get('total_tokens', 0),
+                                                        cost_usd=token_usage.get('total_cost', 0.0),
+                                                        perplexity_tokens=token_usage.get('perplexity_tokens', 0),
+                                                        perplexity_cost=token_usage.get('perplexity_cost', 0.0),
+                                                        anthropic_tokens=token_usage.get('anthropic_tokens', 0),
+                                                        anthropic_cost=token_usage.get('anthropic_cost', 0.0)
+                                                    )
+                                                except Exception as e:
+                                                    logger.warning(f"Failed to track user request: {e}")
+                                                
+                                                markdown_table = create_markdown_table_from_results(
+                                                    validation_results['validation_results'], 3, config_s3_key
+                                                )
+                                                return {
+                                                    'statusCode': 200,
+                                                    'headers': {
+                                                        'Content-Type': 'application/json',
+                                                        'Access-Control-Allow-Origin': '*'
+                                                    },
+                                                    'body': json.dumps({
+                                                        'status': 'preview_completed',
+                                                        'reference_pin': reference_pin,
+                                                        'markdown_table': markdown_table,
+                                                        'total_rows': validation_results.get('total_rows', 1),
+                                                        'total_processed_rows': validation_results.get('total_processed_rows', 1),
+                                                        'processing_time': processing_time
+                                                    })
+                                                }
+                                            else:
+                                                return {
+                                                    'statusCode': 200,
+                                                    'headers': {
+                                                        'Content-Type': 'application/json',
+                                                        'Access-Control-Allow-Origin': '*'
+                                                    },
+                                                    'body': json.dumps({
+                                                        'status': 'preview_completed',
+                                                        'reference_pin': reference_pin,
+                                                        'total_rows': 0,
+                                                        'total_processed_rows': 0,
+                                                        'processing_time': processing_time,
+                                                        'message': 'No validation results'
+                                                    })
+                                                }
+                                    
+                                    # Handle full processing
+                                    else:
+                                        results_key = f"results/{email_folder}/{timestamp}_{reference_pin}.zip"
                                         
                                         if SQS_INTEGRATION_AVAILABLE:
-                                            message_id = send_preview_request(
-                                                session_id=preview_session_id,
+                                            message_id = send_full_request(
+                                                session_id=session_id,
                                                 excel_s3_key=excel_s3_key,
                                                 config_s3_key=config_s3_key,
                                                 email=email_address,
                                                 reference_pin=reference_pin,
-                                                preview_max_rows=preview_max_rows,
-                                                email_folder=email_folder,
+                                                results_key=results_key,
                                                 max_rows=max_rows,
                                                 batch_size=batch_size,
-                                                sequential_call=None,
-                                                async_mode=True
+                                                email_folder=email_folder
                                             )
                                             
                                             if message_id:
-                                                logger.info(f"Preview request sent to SQS: {message_id}")
+                                                logger.info(f"Full processing request sent to SQS: {message_id}")
                                                 
-                                                # Track async preview request
+                                                # Track full processing request
                                                 try:
                                                     from dynamodb_schemas import track_user_request
                                                     track_user_request(
                                                         email=email_address,
-                                                        request_type='preview'
+                                                        request_type='full'
                                                     )
                                                 except Exception as e:
-                                                    logger.warning(f"Failed to track async preview request: {e}")
+                                                    logger.warning(f"Failed to track full processing request: {e}")
                                                 
                                                 return {
                                                     'statusCode': 200,
@@ -3041,209 +3163,87 @@ def lambda_handler(event, context):
                                                         'Access-Control-Allow-Origin': '*'
                                                     },
                                                     'body': json.dumps({
-                                                        'status': 'processing',
-                                                        'session_id': preview_session_id,
+                                                        'status': 'processing_started',
                                                         'reference_pin': reference_pin,
-                                                        'message': 'Preview processing started',
-                                                        'async_mode': True
+                                                        'message': 'Processing started. Results will be sent to your email.'
                                                     })
                                                 }
                                         
-                                        # Fallback if SQS not available
+                                        # Fallback response
                                         return {
-                                            'statusCode': 500,
+                                            'statusCode': 200,
                                             'headers': {
                                                 'Content-Type': 'application/json',
                                                 'Access-Control-Allow-Origin': '*'
                                             },
                                             'body': json.dumps({
-                                                'error': 'SQS integration not available'
+                                                'status': 'processing_started',
+                                                'reference_pin': reference_pin,
+                                                'message': 'Processing started (fallback mode)'
                                             })
                                         }
-                                    else:
-                                        # Sync preview - process immediately
-                                        start_time = time.time()
-                                        validation_results = invoke_validator_lambda(
-                                            excel_s3_key, config_s3_key, preview_max_rows, 
-                                            batch_size, True, preview_max_rows, None
-                                        )
-                                        processing_time = time.time() - start_time
                                         
-                                        # Return preview results
-                                        if validation_results and 'validation_results' in validation_results:
-                                            # Track user request in USER_TRACKING_TABLE
-                                            try:
-                                                from dynamodb_schemas import track_user_request
-                                                # Extract token usage from validation results if available
-                                                metadata = validation_results.get('metadata', {})
-                                                token_usage = metadata.get('token_usage', {})
-                                                
-                                                track_user_request(
-                                                    email=email_address,
-                                                    request_type='preview',
-                                                    tokens_used=token_usage.get('total_tokens', 0),
-                                                    cost_usd=token_usage.get('total_cost', 0.0),
-                                                    perplexity_tokens=token_usage.get('perplexity_tokens', 0),
-                                                    perplexity_cost=token_usage.get('perplexity_cost', 0.0),
-                                                    anthropic_tokens=token_usage.get('anthropic_tokens', 0),
-                                                    anthropic_cost=token_usage.get('anthropic_cost', 0.0)
-                                                )
-                                            except Exception as e:
-                                                logger.warning(f"Failed to track user request: {e}")
-                                            
-                                            markdown_table = create_markdown_table_from_results(
-                                                validation_results['validation_results'], 3, config_s3_key
-                                            )
-                                            return {
-                                                'statusCode': 200,
-                                                'headers': {
-                                                    'Content-Type': 'application/json',
-                                                    'Access-Control-Allow-Origin': '*'
-                                                },
-                                                'body': json.dumps({
-                                                    'status': 'preview_completed',
-                                                    'reference_pin': reference_pin,
-                                                    'markdown_table': markdown_table,
-                                                    'total_rows': validation_results.get('total_rows', 1),
-                                                    'total_processed_rows': validation_results.get('total_processed_rows', 1),
-                                                    'processing_time': processing_time
-                                                })
-                                            }
-                                        else:
-                                            return {
-                                                'statusCode': 200,
-                                                'headers': {
-                                                    'Content-Type': 'application/json',
-                                                    'Access-Control-Allow-Origin': '*'
-                                                },
-                                                'body': json.dumps({
-                                                    'status': 'preview_completed',
-                                                    'reference_pin': reference_pin,
-                                                    'total_rows': 0,
-                                                    'total_processed_rows': 0,
-                                                    'processing_time': processing_time,
-                                                    'message': 'No validation results'
-                                                })
-                                            }
-                                
-                                # Handle full processing
-                                else:
-                                    results_key = f"results/{email_folder}/{timestamp}_{reference_pin}.zip"
-                                    
-                                    if SQS_INTEGRATION_AVAILABLE:
-                                        message_id = send_full_request(
-                                            session_id=session_id,
-                                            excel_s3_key=excel_s3_key,
-                                            config_s3_key=config_s3_key,
-                                            email=email_address,
-                                            reference_pin=reference_pin,
-                                            results_key=results_key,
-                                            max_rows=max_rows,
-                                            batch_size=batch_size,
-                                            email_folder=email_folder
-                                        )
-                                        
-                                        if message_id:
-                                            logger.info(f"Full processing request sent to SQS: {message_id}")
-                                            
-                                            # Track full processing request
-                                            try:
-                                                from dynamodb_schemas import track_user_request
-                                                track_user_request(
-                                                    email=email_address,
-                                                    request_type='full'
-                                                )
-                                            except Exception as e:
-                                                logger.warning(f"Failed to track full processing request: {e}")
-                                            
-                                            return {
-                                                'statusCode': 200,
-                                                'headers': {
-                                                    'Content-Type': 'application/json',
-                                                    'Access-Control-Allow-Origin': '*'
-                                                },
-                                                'body': json.dumps({
-                                                    'status': 'processing_started',
-                                                    'reference_pin': reference_pin,
-                                                    'message': 'Processing started. Results will be sent to your email.'
-                                                })
-                                            }
-                                    
-                                    # Fallback response
+                                except Exception as e:
+                                    logger.error(f"Error processing JSON action: {str(e)}")
                                     return {
-                                        'statusCode': 200,
+                                        'statusCode': 500,
                                         'headers': {
                                             'Content-Type': 'application/json',
                                             'Access-Control-Allow-Origin': '*'
                                         },
                                         'body': json.dumps({
-                                            'status': 'processing_started',
-                                            'reference_pin': reference_pin,
-                                            'message': 'Processing started (fallback mode)'
+                                            'error': f'Processing failed: {str(e)}'
                                         })
                                     }
-                                    
-                            except Exception as e:
-                                logger.error(f"Error processing JSON action: {str(e)}")
+                            
+                            # Handle checkStatus action
+                            elif action == 'checkStatus':
+                                # Delegate to existing status check handler
+                                return handle_status_check_request(request_data, context)
+                            
+                            # Handle diagnostics action
+                            elif action == 'diagnostics':
+                                # Return diagnostic information
+                                diagnostics = {
+                                    'sqs_integration_available': SQS_INTEGRATION_AVAILABLE,
+                                    'sqs_import_error': SQS_IMPORT_ERROR,
+                                    'environment': {
+                                        'S3_CACHE_BUCKET': S3_CACHE_BUCKET,
+                                        'S3_RESULTS_BUCKET': S3_RESULTS_BUCKET,
+                                        'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME
+                                    },
+                                    'boto3_version': boto3.__version__,
+                                    'python_version': os.sys.version,
+                                    'lambda_function_version': context.function_version if hasattr(context, 'function_version') else 'N/A',
+                                    'memory_limit': context.memory_limit_in_mb if hasattr(context, 'memory_limit_in_mb') else 'N/A'
+                                }
+                                
                                 return {
-                                    'statusCode': 500,
+                                    'statusCode': 200,
+                                    'headers': {
+                                        'Content-Type': 'application/json',
+                                        'Access-Control-Allow-Origin': '*'
+                                    },
+                                    'body': json.dumps(diagnostics, indent=2)
+                                }
+                            
+                            else:
+                                return {
+                                    'statusCode': 400,
                                     'headers': {
                                         'Content-Type': 'application/json',
                                         'Access-Control-Allow-Origin': '*'
                                     },
                                     'body': json.dumps({
-                                        'error': f'Processing failed: {str(e)}'
+                                        'error': f'Unknown action: {action}'
                                     })
                                 }
-                        
-                        # Handle checkStatus action
-                        elif action == 'checkStatus':
-                            # Delegate to existing status check handler
-                            return handle_status_check_request(request_data, context)
-                        
-                        # Handle diagnostics action
-                        elif action == 'diagnostics':
-                            # Return diagnostic information
-                            diagnostics = {
-                                'sqs_integration_available': SQS_INTEGRATION_AVAILABLE,
-                                'sqs_import_error': SQS_IMPORT_ERROR,
-                                'environment': {
-                                    'S3_CACHE_BUCKET': S3_CACHE_BUCKET,
-                                    'S3_RESULTS_BUCKET': S3_RESULTS_BUCKET,
-                                    'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME
-                                },
-                                'boto3_version': boto3.__version__,
-                                'python_version': os.sys.version,
-                                'lambda_function_version': context.function_version if hasattr(context, 'function_version') else 'N/A',
-                                'memory_limit': context.memory_limit_in_mb if hasattr(context, 'memory_limit_in_mb') else 'N/A'
-                            }
                             
-                            return {
-                                'statusCode': 200,
-                                'headers': {
-                                    'Content-Type': 'application/json',
-                                    'Access-Control-Allow-Origin': '*'
-                                },
-                                'body': json.dumps(diagnostics, indent=2)
-                            }
-                        
-                        else:
-                            return {
-                                'statusCode': 400,
-                                'headers': {
-                                    'Content-Type': 'application/json',
-                                    'Access-Control-Allow-Origin': '*'
-                                },
-                                'body': json.dumps({
-                                    'error': f'Unknown action: {action}'
-                                })
-                            }
-                        
-            except json.JSONDecodeError:
-                pass  # Not JSON, continue with other handlers
-            except Exception as e:
-                logger.error(f"Error processing JSON request: {str(e)}")
-                pass  # Continue with other handlers
+                except json.JSONDecodeError:
+                    pass  # Not JSON, continue with other handlers
+                except Exception as e:
+                    logger.error(f"Error processing JSON request: {str(e)}")
+                    pass  # Continue with other handlers
         
         # Add print statements for debugging
         print(f"[INTERFACE] Lambda handler started")
@@ -4682,16 +4682,34 @@ def handle_background_processing(event, context):
                         print(f"[BACKGROUND] Summary prepared: {len(all_fields)} fields, {total_rows} rows")
                         
                         # Calculate processing time (you might want to track this more accurately)
-                        processing_time = None  # Could be calculated from start time if tracked
+                        processing_time_seconds = metadata.get('processing_time', 0.0)
                         
-                        # Send email with results
-                        print(f"[BACKGROUND] Calling send_validation_results_email...")
+                        # Create enhanced Excel filename with timestamp
+                        timestamp_str = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                        base_name = input_filename.rsplit('.', 1)[0] if '.' in input_filename else input_filename
+                        enhanced_excel_filename = f"{base_name}_Validated_{timestamp_str}.xlsx"
+                        
+                        print(f"[BACKGROUND] Enhanced Excel filename: {enhanced_excel_filename}")
+                        
+                        # Create enhanced Excel content
+                        enhanced_excel_buffer = create_enhanced_excel_with_validation(
+                            excel_content, real_results, config_data, session_id
+                        )
+                        enhanced_excel_content = enhanced_excel_buffer.getvalue() if enhanced_excel_buffer else excel_content
+                        
+                        # Send email with individual files
+                        print(f"[BACKGROUND] Calling send_validation_results_email with individual files...")
                         email_result = send_validation_results_email(
                             email_address=email_address,
-                            zip_content=enhanced_zip,
+                            excel_content=excel_content,  # Original Excel file
+                            config_content=json.dumps(config_data, indent=2).encode('utf-8'),
+                            enhanced_excel_content=enhanced_excel_content,  # Enhanced Excel file
+                            input_filename=input_filename,
+                            config_filename=config_filename,
+                            enhanced_excel_filename=enhanced_excel_filename,
                             session_id=session_id,
                             summary_data=summary_data,
-                            processing_time=processing_time,
+                            processing_time=processing_time_seconds,
                             reference_pin=reference_pin,
                             metadata=metadata
                         )

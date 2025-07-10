@@ -1714,3 +1714,40 @@ Error processing JSON request: 'utf-8' codec can't decode byte 0xc7 in position 
 - **Email Expectations**: Clear messaging about email delivery timing reduces user confusion
 - **Button Visibility**: "New Validation" appears only when appropriate (after full processing)
 - **Clean Transitions**: Smooth state transitions between preview, processing, and completion phases
+
+## File Restoration (Latest Session)
+
+### User Request: Restore interface_lambda_function.py to Original State
+
+**Request**: User asked to restore the `/check-or-send` endpoint change and then requested a list of all changes made to interface_lambda_function.py, followed by restoring the file to its original state when the branch was checked out.
+
+### Changes Made to interface_lambda_function.py (Summary)
+
+**1. Added `simplified` parameter to `create_enhanced_result_zip()` function**:
+- Line 1042: Added `simplified=False` parameter to function signature
+- Lines 1082-1134: Added conditional logic for simplified mode
+- When `simplified=True`: Only includes enhanced Excel file and configuration file
+- When `simplified=False`: Includes all files (original behavior)
+
+**2. Modified ZIP creation logic**:
+- Lines 1082-1134: Added `if simplified:` block that creates enhanced Excel file with appropriate naming (`_validated.xlsx`)
+- Includes only the configuration file, skips JSON reports, CSV files, original files, and summary reports
+
+**3. Updated function call to use simplified mode**:
+- Line 4566: Changed the call to `create_enhanced_result_zip()` to include `simplified=True`
+
+**4. Email template changes (src/email_sender.py)**:
+- Updated all email templates to use "Hyperplexity Table Validator" instead of "Perplexity Validator"
+- Applied Eliyahu.AI brand styling (black headers, green accents, modern fonts)
+- Updated email subjects and content to reflect the new branding
+
+### Files Restored to Original State ✅
+
+**Successfully restored the following files to their master branch state**:
+1. `src/interface_lambda_function.py` - Removed simplified ZIP logic and restored original function
+2. `src/email_sender.py` - Restored original email templates and "Perplexity Validator" branding
+3. `perplexity_validator_interface.html` - Restored original HTML interface (including `/check-or-send` endpoint)
+
+**Note**: Deployment files (`deployment/interface_package/`) are generated files and not tracked in git, so they will need to be regenerated when the deployment script is run.
+
+**Current Status**: All files are back to their original state from the master branch. The system should now work with the original `/check-or-send` endpoint as requested by the user.

@@ -143,16 +143,23 @@ def create_email_body(session_id, total_rows, fields_validated, confidence_distr
     
     return body_html
 
-def send_validation_results_email(email_address, zip_content, session_id, summary_data, processing_time=None, reference_pin=None, metadata=None):
+def send_validation_results_email(email_address, excel_content, config_content, enhanced_excel_content, input_filename, config_filename, enhanced_excel_filename, session_id, summary_data, processing_time=None, reference_pin=None, metadata=None):
     """
-    Send validation results via email with ZIP attachment
+    Send validation results via email with individual file attachments
     
-    Args:
-        email_address: Recipient email
-        zip_content: Bytes content of the ZIP file
-        session_id: Unique session identifier
-        summary_data: Dictionary with validation summary info
-        processing_time: Optional processing time in seconds
+          Args:
+          email_address: Recipient email
+          excel_content: Bytes content of the original Excel file
+          config_content: Bytes content of the config JSON file
+          enhanced_excel_content: Bytes content of the enhanced Excel file
+          input_filename: Original input filename
+          config_filename: Config filename
+          enhanced_excel_filename: Enhanced Excel filename with timestamp
+          session_id: Unique session identifier
+          summary_data: Dictionary with validation summary info
+          processing_time: Optional processing time in seconds
+          reference_pin: Reference PIN for the validation
+          metadata: Optional metadata including token usage
         
     Returns:
         dict: Response with status and message ID
@@ -165,9 +172,9 @@ def send_validation_results_email(email_address, zip_content, session_id, summar
         
         # Include reference pin in subject if available
         if reference_pin:
-            message["Subject"] = f"Perplexity Validation Results - Reference #{reference_pin}"
+            message["Subject"] = f"📊 Validation Complete - Hyperplexity Table Validation Results #{reference_pin}"
         else:
-            message["Subject"] = f"Perplexity Validation Results - Session {session_id[:8]}"
+            message["Subject"] = f"📊 Validation Complete - Hyperplexity Table Validation Results"
         
         # Extract summary data
         total_rows = summary_data.get('total_rows', 0)
@@ -179,30 +186,37 @@ def send_validation_results_email(email_address, zip_content, session_id, summar
         if metadata and 'token_usage' in metadata:
             token_usage = metadata['token_usage']
         
-        # Create email body
-        body_html = create_email_body(
+        # Create clean email body following style guide
+        body_html = create_validation_results_email_body(
             session_id, 
             total_rows, 
             fields_validated, 
             confidence_distribution,
             processing_time,
             reference_pin,
-            token_usage
+            token_usage,
+            enhanced_excel_filename,
+            input_filename,
+            config_filename
         )
         
         # Attach HTML body
         part = MIMEText(body_html, 'html', CHARSET)
         message.attach(part)
         
-        # Attach ZIP file with reference pin in filename
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        if reference_pin:
-            filename = f"validation_results_{timestamp}_{reference_pin}.zip"
-        else:
-            filename = f"validation_results_{timestamp}.zip"
+        # Attach original input file
+        part = MIMEApplication(excel_content)
+        part.add_header("Content-Disposition", f"attachment; filename={input_filename}")
+        message.attach(part)
         
-        part = MIMEApplication(zip_content)
-        part.add_header("Content-Disposition", f"attachment; filename={filename}")
+        # Attach config file
+        part = MIMEApplication(config_content)
+        part.add_header("Content-Disposition", f"attachment; filename={config_filename}")
+        message.attach(part)
+        
+        # Attach enhanced Excel file (this is the main result)
+        part = MIMEApplication(enhanced_excel_content)
+        part.add_header("Content-Disposition", f"attachment; filename={enhanced_excel_filename}")
         message.attach(part)
         
         # Send email via SES
@@ -235,7 +249,7 @@ def send_validation_results_email(email_address, zip_content, session_id, summar
                 'TotalRows': total_rows,
                 'FieldsValidated': fields_validated,
                 'ConfidenceDistribution': confidence_distribution,
-                'AttachmentSize': len(zip_content)
+                'Attachments': [input_filename, config_filename, enhanced_excel_filename]
             }
             
             s3_client = boto3.client('s3')
@@ -289,6 +303,256 @@ def send_validation_results_email(email_address, zip_content, session_id, summar
             'error': str(e),
             'message': f"Unexpected error: {str(e)}"
         }
+
+
+def create_validation_results_email_body(session_id, total_rows, fields_validated, confidence_distribution, processing_time=None, reference_pin=None, token_usage=None, enhanced_excel_filename=None, input_filename=None, config_filename=None):
+    """Create clean validation results email body following Eliyahu.AI style guide"""
+    
+    # Format fields list
+    if fields_validated:
+        if len(fields_validated) <= 5:
+            fields_html = ", ".join(fields_validated)
+        else:
+            fields_html = ", ".join(fields_validated[:5]) + f" and {len(fields_validated) - 5} more"
+    else:
+        fields_html = "No fields processed"
+    
+    # Format confidence distribution
+    confidence_html = ""
+    total_validations = sum(confidence_distribution.values())
+    for level, count in confidence_distribution.items():
+        if count > 0:
+            percentage = (count / total_validations * 100) if total_validations > 0 else 0
+            emoji = "🟢" if level == "HIGH" else "🟡" if level == "MEDIUM" else "🔴"
+            confidence_html += f"<li>{emoji} <b>{level}:</b> {count} fields ({percentage:.1f}%)</li>"
+    
+    if not confidence_html:
+        confidence_html = "<li>No confidence data available</li>"
+    
+    # Format processing time
+    time_info = ""
+    if processing_time:
+        if processing_time < 60:
+            time_info = f"<p><b>Processing time:</b> {processing_time:.1f} seconds</p>"
+        else:
+            minutes = processing_time / 60
+            time_info = f"<p><b>Processing time:</b> {minutes:.1f} minutes</p>"
+    
+    # Format token usage info
+    token_info = ""
+    if token_usage:
+        total_cost = token_usage.get('total_cost', 0.0)
+        total_tokens = token_usage.get('total_tokens', 0)
+        api_calls = token_usage.get('api_calls', 0)
+        cached_calls = token_usage.get('cached_calls', 0)
+        
+        if total_cost > 0 or total_tokens > 0:
+            token_info = f"""
+            <div class="token-info">
+                <h3>Processing Summary</h3>
+                <ul>
+                    <li><b>Total tokens used:</b> {total_tokens:,}</li>
+                    <li><b>Processing cost:</b> ${total_cost:.6f}</li>
+                    <li><b>API calls:</b> {api_calls} new, {cached_calls} cached</li>
+                </ul>
+            </div>
+            """
+    
+    # Format reference pin
+    pin_info = ""
+    if reference_pin:
+        pin_info = f"<p><b>Reference #:</b> {reference_pin}</p>"
+    
+    # Create email body following Eliyahu.AI style guide
+    body_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Validation Complete - Hyperplexity Table Validation</title>
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                line-height: 1.6;
+                color: #000000;
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #ffffff;
+            }}
+            .header {{
+                background: #000000;
+                color: white;
+                padding: 30px;
+                text-align: center;
+                border-radius: 8px 8px 0 0;
+            }}
+            .content {{
+                background: #ffffff;
+                padding: 30px;
+                border: 1px solid #E5E5E5;
+                border-radius: 0 0 8px 8px;
+            }}
+            .summary {{
+                background: #ffffff;
+                border: 1px solid #E5E5E5;
+                border-left: 4px solid #00FF00;
+                padding: 20px;
+                border-radius: 8px;
+                margin: 20px 0;
+            }}
+            .confidence {{
+                background: #F8F9FA;
+                border: 1px solid #E5E5E5;
+                padding: 15px;
+                border-radius: 8px;
+                margin: 15px 0;
+            }}
+            .confidence ul {{
+                margin: 10px 0;
+                padding-left: 20px;
+            }}
+            .confidence li {{
+                margin: 5px 0;
+            }}
+            .token-info {{
+                background: #F8F9FA;
+                border: 1px solid #E5E5E5;
+                border-left: 4px solid #00FF00;
+                padding: 15px;
+                border-radius: 8px;
+                margin: 20px 0;
+            }}
+            .token-info ul {{
+                margin: 10px 0;
+                padding-left: 20px;
+            }}
+            .attachments {{
+                background: #ffffff;
+                border: 2px solid #00FF00;
+                padding: 20px;
+                border-radius: 8px;
+                margin: 25px 0;
+                text-align: center;
+            }}
+            .attachments h3 {{
+                color: #000000;
+                margin-top: 0;
+            }}
+            .attachment-list {{
+                list-style: none;
+                padding: 0;
+                margin: 15px 0;
+            }}
+            .attachment-list li {{
+                background: #F8F9FA;
+                border: 1px solid #E5E5E5;
+                padding: 12px;
+                margin: 8px 0;
+                border-radius: 6px;
+                border-left: 4px solid #00FF00;
+            }}
+            .primary-file {{
+                background: #000000;
+                color: white;
+                font-weight: bold;
+            }}
+            .footer {{
+                text-align: center;
+                color: #666666;
+                font-size: 14px;
+                margin-top: 32px;
+                padding-top: 20px;
+                border-top: 1px solid #E5E5E5;
+            }}
+            .logo {{
+                color: #00FF00;
+                font-weight: bold;
+            }}
+            a {{
+                color: #000000;
+                text-decoration: none;
+                border-bottom: 2px solid #00FF00;
+            }}
+            a:hover {{
+                background-color: #00FF00;
+                color: #000000;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>📊 Validation Complete</h1>
+            <p>Hyperplexity Table Validation Results</p>
+        </div>
+        
+        <div class="content">
+            <div class="summary">
+                <h2>Your Results Are Ready</h2>
+                <p><b>Total rows processed:</b> {total_rows:,}</p>
+                {pin_info}
+                <p><b>Fields validated:</b> {len(fields_validated)}</p>
+                <p><small>({fields_html})</small></p>
+                {time_info}
+                
+                <div class="confidence">
+                    <p><b>Confidence Distribution:</b></p>
+                    <ul>
+                        {confidence_html}
+                    </ul>
+                </div>
+            </div>
+            
+            {token_info}
+            
+            <div class="attachments">
+                <h3>📎 Attached Files</h3>
+                <ul class="attachment-list">
+                    <li class="primary-file">
+                        📊 <b>{enhanced_excel_filename or 'Validated_Results.xlsx'}</b><br>
+                        <small>Enhanced Excel file with color-coded validation results</small>
+                    </li>
+                    <li>
+                        📄 <b>{input_filename or 'Original_Input.xlsx'}</b><br>
+                        <small>Your original input file</small>
+                    </li>
+                    <li>
+                        ⚙️ <b>{config_filename or 'config.json'}</b><br>
+                        <small>Configuration file used for validation</small>
+                    </li>
+                </ul>
+            </div>
+            
+            <h3>About Your Enhanced Results</h3>
+            <p>The <b>enhanced Excel file</b> contains:</p>
+            <ul>
+                <li><b>Color-coded cells</b> based on confidence levels:
+                    <ul>
+                        <li>🟢 <b>Green:</b> HIGH confidence</li>
+                        <li>🟡 <b>Yellow:</b> MEDIUM confidence</li>
+                        <li>🔴 <b>Red:</b> LOW confidence</li>
+                    </ul>
+                </li>
+                <li><b>Cell comments</b> with validation details, quotes, and sources</li>
+                <li><b>Multiple worksheets</b> for comprehensive analysis</li>
+                <li><b>Validation tracking</b> showing which fields were updated</li>
+            </ul>
+            
+            <p><b>Questions or need help?</b> Simply reply to this email and our team will assist you.</p>
+        </div>
+        
+        <div class="footer">
+            <p>Best regards,<br>
+            The <a href="https://www.eliyahu.ai">Eliyahu.AI</a> Team</p>
+            
+            <p><small>This email was sent because you requested validation results. 
+            Your data is processed securely and is not stored beyond the validation session.</small></p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    return body_html
 
 
 def send_validation_code_email(email_address: str, validation_code: str):
