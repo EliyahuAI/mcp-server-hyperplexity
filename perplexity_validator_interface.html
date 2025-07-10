@@ -845,9 +845,6 @@
                     <p id="resultsInfo"></p>
                 </div>
                 <div class="results-actions">
-                    <button class="btn btn-secondary" onclick="downloadResults()" id="downloadBtn" style="display: none;">
-                        Download Results
-                    </button>
                     <button class="btn btn-primary" onclick="resetValidator()" id="newValidationBtn" style="display: none;">
                         New Validation
                     </button>
@@ -1217,7 +1214,6 @@
         document.getElementById('resultsCard').style.display = 'none';
         document.getElementById('fullProcessingCard').style.display = 'none';
         document.getElementById('newValidationBtn').style.display = 'none';
-        document.getElementById('downloadBtn').style.display = 'none';
         document.getElementById('progressContainer').style.display = 'none';
         
         // Reset processing animation
@@ -1469,20 +1465,13 @@
                         document.querySelector('.processing-text').textContent = 'Processing Complete!';
                         document.querySelector('.processing-dots').style.display = 'none';
                         
-                        // Show download button if available
-                        if (data.result_url) {
-                            document.getElementById('downloadBtn').style.display = 'inline-block';
-                            document.getElementById('downloadBtn').onclick = () => window.open(data.result_url, '_blank');
-                        }
-                        
                         // Show New Validation button after full processing
                         document.getElementById('newValidationBtn').style.display = 'inline-block';
                         
-                        // Update status message for email delivery
+                        // Update status message for email delivery (email only)
                         document.getElementById('statusMessage').innerHTML = 
                             '✅ <strong>Processing Complete!</strong><br>' +
-                            'Your results are being prepared and will be emailed to you within the next few minutes.<br>' +
-                            (data.result_url ? 'You can also download them directly using the button above.' : 'The download link will be available once the results are ready.');
+                            'Your results will be emailed to you within the next few minutes.';
                         document.getElementById('statusMessage').style.display = 'block';
                     } else {
                         // Fallback - hide processing animation
@@ -1821,7 +1810,6 @@
         document.getElementById('fullProcessingCard').style.display = 'none';
         document.getElementById('progressContainer').style.display = 'none';
         document.getElementById('newValidationBtn').style.display = 'none';
-        document.getElementById('downloadBtn').style.display = 'none';
         document.getElementById('previewCard').classList.add('disabled');
         document.getElementById('processBtn').disabled = true;
         
