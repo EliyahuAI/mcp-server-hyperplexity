@@ -1273,7 +1273,8 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
             # Try to detect if this is a CSV file by attempting to decode as text
             text_content = excel_content.decode('utf-8')
             # Simple heuristic: if it contains commas and no Excel-specific markers, treat as CSV
-            if ',' in text_content and not text_content.startswith(b'PK'.decode('utf-8')):
+            # Excel files start with 'PK' (ZIP signature) in binary, not in decoded text
+            if ',' in text_content and not excel_content.startswith(b'PK'):
                 original_file_type = "CSV"
                 logger.info("Detected CSV file format - converting to Excel")
                 
