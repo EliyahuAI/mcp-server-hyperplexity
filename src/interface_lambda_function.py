@@ -32,17 +32,13 @@ logger.setLevel(logging.INFO)
 try:
     from row_key_utils import generate_row_key
     ROW_KEY_UTILS_AVAILABLE = True
-    logger.info("Row key utilities imported successfully")
 except ImportError as e:
     ROW_KEY_UTILS_AVAILABLE = False
     logger.warning(f"Row key utilities not available: {e}")
-    
-    # Row key generation is now handled by the imported function
 
 try:
     from lambda_test_json_clean import load_validation_history_from_excel
     VALIDATION_HISTORY_AVAILABLE = True
-    logger.info("Validation history loader imported successfully")
 except ImportError as e:
     VALIDATION_HISTORY_AVAILABLE = False
     logger.warning(f"Validation history loader not available: {e}")
@@ -217,7 +213,6 @@ except ImportError:
 try:
     import xlsxwriter
     EXCEL_ENHANCEMENT_AVAILABLE = True
-    logger.info("Enhanced Excel functionality available")
 except ImportError:
     EXCEL_ENHANCEMENT_AVAILABLE = False
     logger.warning("Enhanced Excel functionality not available")
@@ -226,7 +221,6 @@ except ImportError:
 try:
     from email_sender import send_validation_results_email, create_preview_email_body
     EMAIL_SENDER_AVAILABLE = True
-    logger.info("Email sender functionality available")
 except ImportError:
     EMAIL_SENDER_AVAILABLE = False
     logger.warning("Email sender functionality not available - will use download URLs")
@@ -241,21 +235,18 @@ try:
     
     try:
         from sqs_service import send_preview_request, send_full_request, create_all_queues
-        logger.info("sqs_service imported successfully")
     except Exception as e:
         import_errors.append(f"sqs_service: {str(e)}")
         logger.error(f"Failed to import sqs_service: {e}")
         
     try:
         from dynamodb_schemas import track_validation_call, create_call_tracking_table, create_token_usage_table, update_processing_metrics
-        logger.info("dynamodb_schemas imported successfully")
     except Exception as e:
         import_errors.append(f"dynamodb_schemas: {str(e)}")
         logger.error(f"Failed to import dynamodb_schemas: {e}")
         
     try:
         from api_gateway_validation import validate_api_request, create_validation_error_response
-        logger.info("api_gateway_validation imported successfully")
     except Exception as e:
         import_errors.append(f"api_gateway_validation: {str(e)}")
         logger.error(f"Failed to import api_gateway_validation: {e}")
@@ -263,7 +254,6 @@ try:
     # If all imports succeeded, enable SQS integration
     if not import_errors:
         SQS_INTEGRATION_AVAILABLE = True
-        logger.info("SQS and DynamoDB integration available - all imports successful")
     else:
         SQS_IMPORT_ERROR = "; ".join(import_errors)
         logger.error(f"SQS integration not available due to import errors: {SQS_IMPORT_ERROR}")
@@ -2251,7 +2241,6 @@ def handle_status_request(event, context):
             }
         
         session_id = path_parts[2]
-        logger.info(f"Status check for session: {session_id}")
         
         # Check if this is a preview status request
         query_params = event.get('queryStringParameters') or {}
@@ -2274,7 +2263,6 @@ def handle_status_request(event, context):
                 if email_param:
                     email_folder = create_email_folder_path(email_param)
                     possible_keys.append(f"preview_results/{email_folder}/{session_id}.json")
-                    logger.info(f"Using email parameter for preview path: preview_results/{email_folder}/{session_id}.json")
                 
                 # Fallback patterns
                 possible_keys.extend([
@@ -2285,8 +2273,7 @@ def handle_status_request(event, context):
                     f"preview_results/{timestamp}_{reference_pin}_preview.json",  # Direct path
                 ])
                 
-                # Also try to list all keys to see what's actually there
-                logger.info(f"GET Status: Searching for preview results with timestamp: {timestamp}, reference_pin: {reference_pin}")
+                # Search for preview results without verbose logging
                 try:
                     list_response = s3_client.list_objects_v2(
                         Bucket=S3_RESULTS_BUCKET,
@@ -2294,14 +2281,10 @@ def handle_status_request(event, context):
                         MaxKeys=50
                     )
                     if 'Contents' in list_response:
-                        logger.info(f"Found {len(list_response['Contents'])} preview result files:")
                         for obj in list_response['Contents']:
-                            logger.info(f"  - {obj['Key']}")
                             if f"{timestamp}_{reference_pin}" in obj['Key']:
-                                logger.info(f"  ⭐ MATCH: {obj['Key']}")
                                 possible_keys.insert(0, obj['Key'])  # Try this first
-                    else:
-                        logger.info("No preview result files found in S3")
+                                break
                 except Exception as e:
                     logger.warning(f"Failed to list S3 objects: {e}")
                 
@@ -2312,7 +2295,6 @@ def handle_status_request(event, context):
                     try:
                         results_response = s3_client.get_object(Bucket=S3_RESULTS_BUCKET, Key=key)
                         preview_results = json.loads(results_response['Body'].read().decode('utf-8'))
-                        logger.info(f"Found preview results at: {key}")
                         break
                     except s3_client.exceptions.NoSuchKey:
                         continue
@@ -2378,7 +2360,6 @@ def handle_status_request(event, context):
                         email_folder = create_email_folder_path(email_param)
                         # This should be the exact path
                         possible_results_keys.append(f"results/{email_folder}/{timestamp}_{reference_pin}.zip")
-                        logger.info(f"Using email parameter to construct path: results/{email_folder}/{timestamp}_{reference_pin}.zip")
                     
                     # Fallback patterns if email not provided
                     possible_results_keys.extend([
@@ -2387,8 +2368,7 @@ def handle_status_request(event, context):
                         f"results/status-check/{timestamp}_{reference_pin}.zip",  # Status check default
                     ])
                     
-                    # Also try to list all results to find the right one
-                    # Search with a more specific prefix to avoid hitting limits
+                    # Search for results files without verbose logging
                     search_prefixes = [
                         f"results/{timestamp[:8]}",  # Search by date prefix (YYYYMMDD)
                         f"results/",  # Fallback to general search
@@ -2396,17 +2376,14 @@ def handle_status_request(event, context):
                     
                     for search_prefix in search_prefixes:
                         try:
-                            logger.info(f"Searching for results with prefix: {search_prefix}")
                             list_response = s3_client.list_objects_v2(
                                 Bucket=S3_RESULTS_BUCKET,
                                 Prefix=search_prefix,
                                 MaxKeys=1000  # Increase limit
                             )
                             if 'Contents' in list_response:
-                                logger.info(f"Found {len(list_response['Contents'])} objects with prefix {search_prefix}")
                                 for obj in list_response['Contents']:
                                     if f"{timestamp}_{reference_pin}.zip" in obj['Key']:
-                                        logger.info(f"Found matching results file: {obj['Key']}")
                                         possible_results_keys.insert(0, obj['Key'])  # Try this first
                                         break  # Found it, no need to continue
                                 
@@ -2426,7 +2403,6 @@ def handle_status_request(event, context):
                             # File exists - processing complete
                             download_url = generate_presigned_url(S3_RESULTS_BUCKET, results_key, 86400)
                             results_found = True
-                            logger.info(f"Found results at: {results_key}")
                             break
                         except s3_client.exceptions.NoSuchKey:
                             continue
@@ -2496,13 +2472,38 @@ def handle_status_request(event, context):
 
 def lambda_handler(event, context):
     """Handle HTTP requests to the interface Lambda."""
-    logger.info("=== Interface Lambda Handler Start ===")
-    logger.info(f"Event: {json.dumps(event, default=str)}")
+    
+    # Determine mode/type from the event
+    if 'Records' in event:
+        mode = "SQS_PROCESSING"
+    elif event.get('httpMethod') == 'OPTIONS':
+        mode = "CORS_PREFLIGHT"
+    elif event.get('httpMethod') == 'GET' and event.get('path', '').startswith('/status/'):
+        mode = "STATUS_CHECK"
+        # Extract session_id and preview flag for context
+        path_parts = event.get('path', '').split('/')
+        session_id = path_parts[2] if len(path_parts) > 2 else 'unknown'
+        query_params = event.get('queryStringParameters') or {}
+        is_preview = query_params.get('preview', 'false').lower() == 'true'
+        preview_suffix = "_PREVIEW" if is_preview else "_FULL"
+        mode = f"STATUS_CHECK{preview_suffix}"
+    elif event.get('background_processing'):
+        mode = "BACKGROUND_PROCESSING"
+    elif event.get('httpMethod') == 'POST':
+        headers = event.get('headers', {})
+        content_type = headers.get('Content-Type') or headers.get('content-type', '')
+        if 'application/json' in content_type:
+            mode = "JSON_API"
+        else:
+            mode = "FILE_UPLOAD"
+    else:
+        mode = "UNKNOWN"
+    
+    logger.info(f"=== Interface Lambda [{mode}] ===")
     
     try:
         # Handle CORS preflight OPTIONS requests immediately
         if event.get('httpMethod') == 'OPTIONS':
-            logger.info("Handling OPTIONS request for CORS")
             return {
                 'statusCode': 200,
                 'headers': {
@@ -2515,13 +2516,11 @@ def lambda_handler(event, context):
         
         # Check if this is an SQS event
         if 'Records' in event:
-            logger.info("Detected SQS event")
             for record in event['Records']:
                 if record.get('eventSource') == 'aws:sqs':
                     # Parse SQS message
                     try:
                         message_body = json.loads(record['body'])
-                        logger.info(f"Processing SQS message: {json.dumps(message_body, default=str)}")
                         
                         # Transform SQS message to background processing format
                         # Handle both old format (preview_mode) and new format (request_type)
@@ -2548,7 +2547,6 @@ def lambda_handler(event, context):
                         
                         # Process using existing background handler
                         result = handle_background_processing(background_event, context)
-                        logger.info(f"SQS message processed successfully: {result}")
                         
                     except Exception as e:
                         logger.error(f"Error processing SQS message: {str(e)}")
@@ -2581,12 +2579,6 @@ def lambda_handler(event, context):
             if 'application/json' in content_type:
                 try:
                     body = event.get('body', '{}')
-                        
-                    # Log the raw body for debugging
-                    logger.info(f"Raw body type: {type(body)}, isBase64Encoded: {event.get('isBase64Encoded')}")
-                    if body:
-                        logger.info(f"Raw body length: {len(body)}")
-                        logger.info(f"Raw body preview (first 100 chars): {repr(body[:100])}")
                 
                     if event.get('isBase64Encoded'):
                         try:
@@ -2637,7 +2629,6 @@ def lambda_handler(event, context):
                         # Handle JSON action requests
                         action = request_data.get('action')
                         if action:
-                            logger.info(f"Processing JSON action: {action}")
                             
                             # Handle email validation actions
                             if action == 'requestEmailValidation':
