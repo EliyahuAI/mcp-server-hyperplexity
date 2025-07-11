@@ -1277,74 +1277,79 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                     # Keep 'column' for backward compatibility
         
         # Detect file type and load data accordingly
-        is_csv_file = False
+        # Check if this is a CSV file and convert to Excel format if needed
+        original_file_type = "Excel"
         try:
             # Try to detect if this is a CSV file by attempting to decode as text
             text_content = excel_content.decode('utf-8')
             # Simple heuristic: if it contains commas and no Excel-specific markers, treat as CSV
             if ',' in text_content and not text_content.startswith(b'PK'.decode('utf-8')):
-                is_csv_file = True
-                logger.info("Detected CSV file format")
+                original_file_type = "CSV"
+                logger.info("Detected CSV file format - converting to Excel")
+                
+                # Parse CSV content
+                csv_reader = csv.reader(io.StringIO(text_content))
+                csv_rows = list(csv_reader)
+                
+                if not csv_rows:
+                    raise ValueError("CSV file is empty")
+                
+                # Convert CSV to Excel format in memory
+                workbook = openpyxl.Workbook()
+                worksheet = workbook.active
+                worksheet.title = "Data"
+                
+                # Write CSV data to Excel worksheet
+                for row_idx, csv_row in enumerate(csv_rows, 1):
+                    for col_idx, cell_value in enumerate(csv_row, 1):
+                        worksheet.cell(row=row_idx, column=col_idx, value=cell_value)
+                
+                # Save Excel workbook to bytes
+                excel_buffer = io.BytesIO()
+                workbook.save(excel_buffer)
+                excel_content = excel_buffer.getvalue()
+                excel_buffer.close()
+                
+                logger.info(f"Converted CSV with {len(csv_rows)} rows to Excel format")
+            else:
+                logger.info("Detected Excel file format")
         except UnicodeDecodeError:
             # If it can't be decoded as UTF-8, it's likely a binary Excel file
-            is_csv_file = False
             logger.info("Detected binary Excel file format")
         
-        if is_csv_file:
-            # Handle CSV file
-            logger.info("Processing CSV file")
-            csv_reader = csv.reader(io.StringIO(text_content))
-            csv_rows = list(csv_reader)
-            
-            if not csv_rows:
-                raise ValueError("CSV file is empty")
-            
-            # Read headers from first row
-            headers = [str(header).strip() for header in csv_rows[0] if header]
-            logger.info(f"CSV headers found: {headers}")
-            logger.info(f"Total columns: {len(headers)}")
-            
-            # Process data rows
-            rows = []
-            total_rows = len(csv_rows) - 1  # Exclude header
-            
-            # Convert CSV rows to row dictionaries
-            csv_data_rows = csv_rows[1:]  # Skip header
-            
+        # Now process as Excel file (whether original or converted from CSV)
+        logger.info(f"Processing {original_file_type} file as Excel format")
+        workbook = openpyxl.load_workbook(io.BytesIO(excel_content))
+        
+        # Log available sheet names
+        logger.info(f"Available sheets in Excel: {workbook.sheetnames}")
+        
+        # Select the appropriate sheet
+        if 'Results' in workbook.sheetnames:
+            worksheet = workbook['Results']
+            logger.info(f"Using 'Results' sheet as data source")
+        elif len(workbook.sheetnames) > 0:
+            worksheet = workbook[workbook.sheetnames[0]]
+            logger.info(f"Using first sheet '{worksheet.title}' as data source")
         else:
-            # Handle Excel file
-            logger.info("Processing Excel file")
-            workbook = openpyxl.load_workbook(io.BytesIO(excel_content))
-            
-            # Log available sheet names
-            logger.info(f"Available sheets in Excel: {workbook.sheetnames}")
-            
-            # Select the appropriate sheet
-            if 'Results' in workbook.sheetnames:
-                worksheet = workbook['Results']
-                logger.info(f"Using 'Results' sheet as data source")
-            elif len(workbook.sheetnames) > 0:
-                worksheet = workbook[workbook.sheetnames[0]]
-                logger.info(f"Using first sheet '{worksheet.title}' as data source")
+            worksheet = workbook.active
+            logger.info(f"Using active sheet: {worksheet.title}")
+        
+        # Read headers from first row
+        headers = []
+        for cell in worksheet[1]:
+            header = cell.value
+            if header:
+                headers.append(str(header).strip())
             else:
-                worksheet = workbook.active
-                logger.info(f"Using active sheet: {worksheet.title}")
-            
-            # Read headers from first row
-            headers = []
-            for cell in worksheet[1]:
-                header = cell.value
-                if header:
-                    headers.append(str(header).strip())
-                else:
-                    headers.append('')
-            
-            logger.info(f"Excel headers found: {headers}")
-            logger.info(f"Total columns: {len(headers)}")
-            
-            # Process data rows
-            rows = []
-            total_rows = worksheet.max_row - 1  # Exclude header
+                headers.append('')
+        
+        logger.info(f"Headers found: {headers}")
+        logger.info(f"Total columns: {len(headers)}")
+        
+        # Process data rows
+        rows = []
+        total_rows = worksheet.max_row - 1  # Exclude header
         
         # Limit rows for preview mode or max_rows
         if preview_first_row:
@@ -1354,8 +1359,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
         else:
             max_process_rows = min(max_rows, total_rows) if max_rows else total_rows
         
-        file_type = "CSV" if is_csv_file else "Excel"
-        logger.info(f"Processing {max_process_rows} rows from {file_type} (total available: {total_rows})")
+        logger.info(f"Processing {max_process_rows} rows from {original_file_type} (total available: {total_rows})")
         
         # Get ID fields from config for row key generation
         id_fields = []
@@ -1380,66 +1384,35 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
         
         logger.info(f"ID fields for row key generation: {id_fields}")
         
-        # Process data rows based on file type
-        if is_csv_file:
-            # Process CSV data rows
-            for row_idx, csv_row in enumerate(csv_data_rows[:max_process_rows]):
-                row_data = {}
-                
-                # Extract values from CSV row
-                for col_idx, header in enumerate(headers):
-                    if header and col_idx < len(csv_row):  # Skip empty headers and handle short rows
-                        row_data[header] = str(csv_row[col_idx]).strip() if csv_row[col_idx] else ""
-                
-                # Debug: Log first row's data to see what we're getting
-                if row_idx == 0:  # First data row
-                    logger.info(f"First CSV row data extracted: {json.dumps(row_data)}")
-                    logger.info(f"Looking for ID fields: {id_fields}")
-                    for id_field in id_fields:
-                        logger.info(f"  {id_field}: '{row_data.get(id_field, 'NOT FOUND')}'")
-                
-                # Generate row key using row_key_utils if available
-                if ROW_KEY_UTILS_AVAILABLE and id_fields:
-                    row_key = generate_row_key(row_data, id_fields)
-                    logger.debug(f"Generated row key using row_key_utils: {row_key}")
-                else:
-                    # Fallback to simple join if row_key_utils not available
-                    key_columns = id_fields if id_fields else headers[:3]
-                    row_key = "||".join([row_data.get(col, "") for col in key_columns])
-                    logger.debug(f"Generated row key using fallback method: {row_key}")
-                
-                row_data['_row_key'] = row_key
-                rows.append(row_data)
-        else:
-            # Process Excel data rows
-            for row_idx in range(2, min(2 + max_process_rows, worksheet.max_row + 1)):
-                row_data = {}
-                
-                # Extract cell values
-                for col_idx, header in enumerate(headers):
-                    if header:  # Skip empty headers
-                        cell_value = worksheet.cell(row=row_idx, column=col_idx + 1).value
-                        row_data[header] = str(cell_value) if cell_value is not None else ""
-                
-                # Debug: Log first row's data to see what we're getting
-                if row_idx == 2:  # First data row
-                    logger.info(f"First Excel row data extracted: {json.dumps(row_data)}")
-                    logger.info(f"Looking for ID fields: {id_fields}")
-                    for id_field in id_fields:
-                        logger.info(f"  {id_field}: '{row_data.get(id_field, 'NOT FOUND')}'")
-                
-                # Generate row key using row_key_utils if available
-                if ROW_KEY_UTILS_AVAILABLE and id_fields:
-                    row_key = generate_row_key(row_data, id_fields)
-                    logger.debug(f"Generated row key using row_key_utils: {row_key}")
-                else:
-                    # Fallback to simple join if row_key_utils not available
-                    key_columns = id_fields if id_fields else headers[:3]
-                    row_key = "||".join([row_data.get(col, "") for col in key_columns])
-                    logger.debug(f"Generated row key using fallback method: {row_key}")
-                
-                row_data['_row_key'] = row_key
-                rows.append(row_data)
+        # Process data rows using Excel format (works for both original Excel and converted CSV)
+        for row_idx in range(2, min(2 + max_process_rows, worksheet.max_row + 1)):
+            row_data = {}
+            
+            # Extract cell values
+            for col_idx, header in enumerate(headers):
+                if header:  # Skip empty headers
+                    cell_value = worksheet.cell(row=row_idx, column=col_idx + 1).value
+                    row_data[header] = str(cell_value) if cell_value is not None else ""
+            
+            # Debug: Log first row's data to see what we're getting
+            if row_idx == 2:  # First data row
+                logger.info(f"First row data extracted: {json.dumps(row_data)}")
+                logger.info(f"Looking for ID fields: {id_fields}")
+                for id_field in id_fields:
+                    logger.info(f"  {id_field}: '{row_data.get(id_field, 'NOT FOUND')}'")
+            
+            # Generate row key using row_key_utils if available
+            if ROW_KEY_UTILS_AVAILABLE and id_fields:
+                row_key = generate_row_key(row_data, id_fields)
+                logger.debug(f"Generated row key using row_key_utils: {row_key}")
+            else:
+                # Fallback to simple join if row_key_utils not available
+                key_columns = id_fields if id_fields else headers[:3]
+                row_key = "||".join([row_data.get(col, "") for col in key_columns])
+                logger.debug(f"Generated row key using fallback method: {row_key}")
+            
+            row_data['_row_key'] = row_key
+            rows.append(row_data)
         
         # Show sample row data to understand what keys will be generated
         if rows and len(rows) > 0:
@@ -1449,9 +1422,9 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
                 value = sample_row.get(id_field, 'NOT FOUND')
                 logger.info(f"  {id_field}: {value}")
         
-        # Load validation history if available and we have Excel content (skip for CSV)
+        # Load validation history if available and we have Excel content
         validation_history = {}
-        if not preview_first_row and not is_csv_file:  # Skip validation history for CSV files
+        if not preview_first_row:  # Load validation history for all files (now all are Excel format)
             try:
                 # Save Excel content to a temporary file for history extraction
                 with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_file:
