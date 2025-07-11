@@ -1175,30 +1175,75 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Parse the cached API response
                 parsed_results = validator.parse_multiplex_result(cached_api_response, row)
                 
-                # Process results as if we had just called the API
-                for target in validation_targets:
-                    if target.column in parsed_results:
-                        parsed_result = parsed_results[target.column]
-                        row_results[target.column] = {
-                            'value': parsed_result[0],
-                            'confidence': parsed_result[1],
-                            'sources': parsed_result[2],
-                            'confidence_level': parsed_result[3],
-                            'quote': parsed_result[4],
-                            'main_source': parsed_result[5],
-                            'update_required': parsed_result[6],
-                            'substantially_different': parsed_result[7],
-                            'response_id': response_id,  # Reference which API response this came from
-                            'model': model  # Add model information from our context
-                        }
-                        
-                        # Add consistent_with_model_knowledge if available
-                        if len(parsed_result) > 8:
-                            row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
+                # ENHANCED LOGGING: Track expected vs actual cached results
+                expected_columns = [t.column for t in validation_targets]
+                actual_columns = list(parsed_results.keys())
                 
-                logger.info(f"Applied cached results for {len(parsed_results)} fields")
+                logger.info(f"🔍 CACHED SEARCH GROUP RESPONSE ANALYSIS:")
+                logger.info(f"  Expected columns: {expected_columns}")
+                logger.info(f"  Cached parsed columns: {actual_columns}")
+                logger.info(f"  Expected count: {len(expected_columns)}, Actual count: {len(actual_columns)}")
                 
-                return
+                # Check for missing columns in cached results
+                missing_columns = set(expected_columns) - set(actual_columns)
+                if missing_columns:
+                    logger.error(f"❌ MISSING COLUMNS IN CACHED RESULTS: {list(missing_columns)}")
+                    logger.error(f"  These columns were expected but not found in cached response")
+                    logger.error(f"🔄 CACHE REJECTED: Making fresh API call due to incomplete cached response")
+                    
+                    # CRITICAL FIX: Don't use incomplete cached response - make fresh API call instead
+                    total_cache_misses += 1  # Count this as a cache miss
+                    total_cache_hits -= 1    # Decrement the cache hit we counted earlier
+                    
+                    # Fall through to make fresh API call below
+                    
+                else:
+                    # Check for unexpected columns in cached results
+                    unexpected_columns = set(actual_columns) - set(expected_columns)
+                    if unexpected_columns:
+                        logger.warning(f"⚠️ UNEXPECTED COLUMNS IN CACHED RESULTS: {list(unexpected_columns)}")
+                        logger.warning(f"  These columns were found but not expected")
+                    
+                    # Process results as if we had just called the API
+                    cached_processed_count = 0
+                    for target in validation_targets:
+                        if target.column in parsed_results:
+                            parsed_result = parsed_results[target.column]
+                            row_results[target.column] = {
+                                'value': parsed_result[0],
+                                'confidence': parsed_result[1],
+                                'sources': parsed_result[2],
+                                'confidence_level': parsed_result[3],
+                                'quote': parsed_result[4],
+                                'main_source': parsed_result[5],
+                                'update_required': parsed_result[6],
+                                'substantially_different': parsed_result[7],
+                                'response_id': response_id,  # Reference which API response this came from
+                                'model': model  # Add model information from our context
+                            }
+                            
+                            # Add consistent_with_model_knowledge if available
+                            if len(parsed_result) > 8:
+                                row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
+                            
+                            cached_processed_count += 1
+                            logger.info(f"✅ Processed cached result for column: {target.column}")
+                        else:
+                            logger.error(f"❌ CACHED COLUMN RESULT MISSING: {target.column} was expected but not found in cached parsed results")
+                    
+                    logger.info(f"📊 CACHED PROCESSING SUMMARY: {cached_processed_count}/{len(validation_targets)} columns successfully processed from cache")
+                    
+                    # Cache was complete and used successfully
+                    return
+                
+                # If we reach here, cache was incomplete - log the raw cached response for debugging
+                logger.error(f"🔍 RAW CACHED API RESPONSE DEBUG (due to missing columns):")
+                if 'choices' in cached_api_response and len(cached_api_response['choices']) > 0:
+                    content = cached_api_response['choices'][0].get('message', {}).get('content', '')
+                    logger.error(f"  Cached raw content length: {len(content)}")
+                    logger.error(f"  Cached raw content preview: {content[:500]}...")
+                else:
+                    logger.error(f"  Unexpected cached API response structure: {json.dumps(cached_api_response, indent=2)[:1000]}...")
                 
             except Exception as e:
                 # Cache miss - need to call the API
@@ -1267,6 +1312,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Parse multiplex results
             parsed_results = validator.parse_multiplex_result(result, row)
             
+            # ENHANCED LOGGING: Track expected vs actual results
+            expected_columns = [t.column for t in validation_targets]
+            actual_columns = list(parsed_results.keys())
+            
+            logger.info(f"🔍 SEARCH GROUP RESPONSE ANALYSIS:")
+            logger.info(f"  Expected columns: {expected_columns}")
+            logger.info(f"  Parsed columns: {actual_columns}")
+            logger.info(f"  Expected count: {len(expected_columns)}, Actual count: {len(actual_columns)}")
+            
+            # Check for missing columns
+            missing_columns = set(expected_columns) - set(actual_columns)
+            if missing_columns:
+                logger.error(f"❌ MISSING COLUMNS DETECTED: {list(missing_columns)}")
+                logger.error(f"  These columns were expected but not found in API response")
+                
+            # Check for unexpected columns
+            unexpected_columns = set(actual_columns) - set(expected_columns)
+            if unexpected_columns:
+                logger.warning(f"⚠️ UNEXPECTED COLUMNS FOUND: {list(unexpected_columns)}")
+                logger.warning(f"  These columns were found but not expected")
+            
             # Log the parsed results for debugging
             logger.info(f"Parsed {len(parsed_results)} results from API response")
             for col, parsed_result in parsed_results.items():
@@ -1274,6 +1340,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info(f"  {col}: quote='{quote_text[:50]}{'...' if len(quote_text) > 50 else ''}'")
             
             # Process the API response results
+            processed_count = 0
             for target in validation_targets:
                 if target.column in parsed_results:
                     parsed_result = parsed_results[target.column]
@@ -1293,6 +1360,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Add consistent_with_model_knowledge if available
                     if len(parsed_result) > 8:
                         row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
+                    
+                    processed_count += 1
+                    logger.info(f"✅ Processed result for column: {target.column}")
+                else:
+                    logger.error(f"❌ COLUMN RESULT MISSING: {target.column} was expected but not found in parsed results")
+            
+            logger.info(f"📊 PROCESSING SUMMARY: {processed_count}/{len(validation_targets)} columns successfully processed")
+            
+            # If we have missing results, log the raw API response for debugging
+            if missing_columns:
+                logger.error(f"🔍 RAW API RESPONSE DEBUG (due to missing columns):")
+                if 'choices' in result and len(result['choices']) > 0:
+                    content = result['choices'][0].get('message', {}).get('content', '')
+                    logger.error(f"  Raw content length: {len(content)}")
+                    logger.error(f"  Raw content preview: {content[:500]}...")
+                else:
+                    logger.error(f"  Unexpected API response structure: {json.dumps(result, indent=2)[:1000]}...")
         
         # Run the async function
         loop = asyncio.new_event_loop()
@@ -1310,7 +1394,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Collect all raw responses from all rows and aggregate token usage and processing time
             all_raw_responses = {}
-            total_processing_time = 0.0  # Aggregate processing time
+            total_processing_time = 0.0  # This will be the sum of all batch times (parallel processing)
             total_token_usage = {
                 'total_tokens': 0,
                 'api_calls': 0,
@@ -1341,8 +1425,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'by_model': {}
             }
             
+            # First pass: collect all responses and calculate token usage
+            # For timing, we need to calculate the maximum processing time per batch (parallel processing)
+            batch_processing_times = {}  # batch_number -> max_processing_time_in_that_batch
+            
             for row_idx, row_result in validation_results.items():
                 if '_raw_responses' in row_result:
+                    # Calculate which batch this row was in (batch_size = 5)
+                    batch_number = row_idx // 5
+                    if batch_number not in batch_processing_times:
+                        batch_processing_times[batch_number] = 0.0
+                    
+                    # Track the total processing time for this row
+                    row_processing_time = 0.0
+                    
                     # Add a row prefix to each response ID to avoid collisions
                     for response_id, response_data in row_result['_raw_responses'].items():
                         new_response_id = f"row{row_idx}_{response_id}"
@@ -1369,21 +1465,31 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 costs = calculate_token_costs(usage, pricing_data)
                                 total_token_usage['total_cost'] += costs['total_cost']
                         
-                        # Aggregate processing time for all calls (both cached and non-cached)
+                        # Aggregate processing time for this row
                         if 'processing_time' in response_data:
                             proc_time = response_data.get('processing_time', 0.0)
                             if proc_time and isinstance(proc_time, (int, float)):
-                                # For cached calls, this is the original processing time when it was first computed
-                                # For non-cached calls, this is the actual processing time just measured
-                                total_processing_time += proc_time
-                                is_cached = response_data.get('is_cached', False)
-                                logger.info(f"Added {'cached' if is_cached else 'new'} processing time: {proc_time:.3f}s to total: {total_processing_time:.3f}s")
-                        
+                                row_processing_time += proc_time
+                    
+                    # For parallel processing, the batch time is the maximum time of any row in that batch
+                    # (since all rows in a batch are processed in parallel)
+                    batch_processing_times[batch_number] = max(batch_processing_times[batch_number], row_processing_time)
+                    logger.info(f"Row {row_idx} (batch {batch_number}) total time: {row_processing_time:.3f}s, batch max now: {batch_processing_times[batch_number]:.3f}s")
+            
+            # Calculate total processing time as sum of all batch times (since batches are processed sequentially)
+            total_processing_time = sum(batch_processing_times.values())
+            logger.info(f"Calculated parallel processing time: {total_processing_time:.3f}s across {len(batch_processing_times)} batches")
+            
+            # Second pass: aggregate provider-specific token usage
+            for row_idx, row_result in validation_results.items():
+                if '_raw_responses' in row_result:
+                    for response_id, response_data in row_result['_raw_responses'].items():
                         # Continue with provider-specific token usage aggregation
                         if 'token_usage' in response_data:
                             usage = response_data['token_usage']
                             if usage:  # Only process if token_usage is not empty
                                 api_provider = usage.get('api_provider', 'unknown')
+                                total_tokens = usage.get('total_tokens', 0)
                                 costs = calculate_token_costs(usage, pricing_data)
                                 # Aggregate by provider
                                 if api_provider == 'perplexity':
@@ -1499,13 +1605,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info(f"Raw responses size: approximately {raw_size_kb:.2f} KB")
             logger.info(f"Total estimated response size: {response_size_kb + raw_size_kb:.2f} KB")
             
-            # Calculate batch timing statistics using ORIGINAL processing time (not wall-clock batch time)
-            # For timing estimates, we want to use what it would take without caching
-            num_batches = len(batch_timing_data)
+            # Calculate batch timing statistics using parallel processing time calculation
+            num_batches = len(batch_processing_times)
             if num_batches > 0:
-                avg_batch_time = total_processing_time / num_batches  # Original time per batch
+                avg_batch_time = total_processing_time / num_batches  # Parallel time per batch
                 avg_time_per_row_across_batches = total_processing_time / len(validation_results) if validation_results else 0
-                total_batch_time = total_processing_time  # Use original time, not wall-clock time
+                total_batch_time = total_processing_time  # Use parallel processing time
             else:
                 avg_batch_time = 0
                 avg_time_per_row_across_batches = 0
@@ -1513,7 +1618,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Log batch timing summary
             logger.info(f"📊 BATCH TIMING SUMMARY:")
-            logger.info(f"  🚀 Total batches processed: {len(batch_timing_data)}")
+            logger.info(f"  🚀 Total batches processed: {len(batch_processing_times)}")
             logger.info(f"  ⏱️ Average time per batch: {avg_batch_time:.2f}s")
             logger.info(f"  → Average time per row across all batches: {avg_time_per_row_across_batches:.2f}s")
             logger.info(f"  ✅ Total batch processing time: {total_batch_time:.2f}s")
@@ -1570,12 +1675,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         "processing_time": total_processing_time,  # Keep for backward compatibility
                         # NEW: Batch timing data
                         "batch_timing": {
-                            "total_batches": len(batch_timing_data),
+                            "total_batches": len(batch_processing_times),
                             "batch_size": 5,  # Fixed batch size
                             "total_batch_time_seconds": total_batch_time,
                             "average_batch_time_seconds": avg_batch_time,
                             "average_time_per_row_seconds": avg_time_per_row_across_batches,
-                            "batch_details": batch_timing_data
+                            "batch_details": list(batch_processing_times.items())  # Convert dict to list of (batch_num, time) pairs
                         },
                         # NEW: Validation structure metrics
                         "validation_metrics": {

@@ -170,11 +170,12 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         message["From"] = SENDER
         message["To"] = email_address
         
-        # Include reference pin in subject if available
+        # Include Excel filename and reference pin in subject if available
+        base_filename = input_filename.rsplit('.', 1)[0] if input_filename and '.' in input_filename else (input_filename or "Table")
         if reference_pin:
-            message["Subject"] = f"📊 Validation Complete - Hyperplexity Table Validation Results #{reference_pin}"
+            message["Subject"] = f"📊 Validation Complete - {base_filename} #{reference_pin}"
         else:
-            message["Subject"] = f"📊 Validation Complete - Hyperplexity Table Validation Results"
+            message["Subject"] = f"📊 Validation Complete - {base_filename}"
         
         # Extract summary data
         total_rows = summary_data.get('total_rows', 0)
@@ -338,22 +339,17 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             minutes = processing_time / 60
             time_info = f"<p><b>Processing time:</b> {minutes:.1f} minutes</p>"
     
-    # Format token usage info
+    # Format token usage info (simplified - removed cost and cached calls)
     token_info = ""
     if token_usage:
-        total_cost = token_usage.get('total_cost', 0.0)
         total_tokens = token_usage.get('total_tokens', 0)
-        api_calls = token_usage.get('api_calls', 0)
-        cached_calls = token_usage.get('cached_calls', 0)
         
-        if total_cost > 0 or total_tokens > 0:
+        if total_tokens > 0:
             token_info = f"""
             <div class="token-info">
                 <h3>Processing Summary</h3>
                 <ul>
                     <li><b>Total tokens used:</b> {total_tokens:,}</li>
-                    <li><b>Processing cost:</b> ${total_cost:.6f}</li>
-                    <li><b>API calls:</b> {api_calls} new, {cached_calls} cached</li>
                 </ul>
             </div>
             """

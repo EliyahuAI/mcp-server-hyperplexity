@@ -1269,44 +1269,55 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, p
         # Detect file type and load data accordingly
         # Check if this is a CSV file and convert to Excel format if needed
         original_file_type = "Excel"
-        try:
-            # Try to detect if this is a CSV file by attempting to decode as text
-            text_content = excel_content.decode('utf-8')
-            # Simple heuristic: if it contains commas and no Excel-specific markers, treat as CSV
-            # Excel files start with 'PK' (ZIP signature) in binary, not in decoded text
-            if ',' in text_content and not excel_content.startswith(b'PK'):
-                original_file_type = "CSV"
-                logger.info("Detected CSV file format - converting to Excel")
-                
-                # Parse CSV content
-                csv_reader = csv.reader(io.StringIO(text_content))
-                csv_rows = list(csv_reader)
-                
-                if not csv_rows:
-                    raise ValueError("CSV file is empty")
-                
-                # Convert CSV to Excel format in memory
-                workbook = openpyxl.Workbook()
-                worksheet = workbook.active
-                worksheet.title = "Data"
-                
-                # Write CSV data to Excel worksheet
-                for row_idx, csv_row in enumerate(csv_rows, 1):
-                    for col_idx, cell_value in enumerate(csv_row, 1):
-                        worksheet.cell(row=row_idx, column=col_idx, value=cell_value)
-                
-                # Save Excel workbook to bytes
-                excel_buffer = io.BytesIO()
-                workbook.save(excel_buffer)
-                excel_content = excel_buffer.getvalue()
-                excel_buffer.close()
-                
-                logger.info(f"Converted CSV with {len(csv_rows)} rows to Excel format")
-            else:
-                logger.info("Detected Excel file format")
-        except UnicodeDecodeError:
-            # If it can't be decoded as UTF-8, it's likely a binary Excel file
-            logger.info("Detected binary Excel file format")
+        
+        # First check if it's a valid Excel file by checking ZIP signature
+        if excel_content.startswith(b'PK'):
+            # This is likely a ZIP-based file (Excel .xlsx)
+            logger.info("Detected Excel file format (ZIP signature)")
+            original_file_type = "Excel"
+        else:
+            # Not a ZIP file, try to process as CSV
+            try:
+                # Try to decode as UTF-8 text
+                text_content = excel_content.decode('utf-8')
+                # Simple heuristic: if it contains commas, treat as CSV
+                if ',' in text_content:
+                    original_file_type = "CSV"
+                    logger.info("Detected CSV file format - converting to Excel")
+                    
+                    # Parse CSV content
+                    csv_reader = csv.reader(io.StringIO(text_content))
+                    csv_rows = list(csv_reader)
+                    
+                    if not csv_rows:
+                        raise ValueError("CSV file is empty")
+                    
+                    # Convert CSV to Excel format in memory
+                    workbook = openpyxl.Workbook()
+                    worksheet = workbook.active
+                    worksheet.title = "Data"
+                    
+                    # Write CSV data to Excel worksheet
+                    for row_idx, csv_row in enumerate(csv_rows, 1):
+                        for col_idx, cell_value in enumerate(csv_row, 1):
+                            worksheet.cell(row=row_idx, column=col_idx, value=cell_value)
+                    
+                    # Save Excel workbook to bytes
+                    excel_buffer = io.BytesIO()
+                    workbook.save(excel_buffer)
+                    excel_content = excel_buffer.getvalue()
+                    excel_buffer.close()
+                    
+                    logger.info(f"Converted CSV with {len(csv_rows)} rows to Excel format")
+                else:
+                    # Can decode as UTF-8 but no commas - might be old Excel format or other file
+                    logger.error(f"File doesn't appear to be CSV or Excel format. Content starts with: {text_content[:100]}...")
+                    raise ValueError("File format not supported - must be Excel (.xlsx) or CSV")
+            except UnicodeDecodeError:
+                # Can't decode as UTF-8 and not a ZIP file - unsupported format
+                logger.error("File is binary but not a valid Excel file (no ZIP signature)")
+                logger.error(f"File starts with bytes: {excel_content[:20]}")
+                raise ValueError("File format not supported - file appears to be binary but not a valid Excel file")
         
         # Now process as Excel file (whether original or converted from CSV)
         logger.info(f"Processing {original_file_type} file as Excel format")
@@ -3574,13 +3585,15 @@ def lambda_handler(event, context):
                 # Process based on workflow type
                 if preview_first_row:
                     # Preview workflow - process first row synchronously
+                    # Generate preview-specific session ID for consistency with async mode
+                    preview_session_id = f"{timestamp}_{reference_pin}_preview"
                     start_time = time.time()
                     
                     # Track initial DynamoDB call for sync preview
                     if SQS_INTEGRATION_AVAILABLE:
                         try:
                             track_validation_call(
-                                session_id=session_id,
+                                session_id=preview_session_id,
                                 email=email_address,
                                 reference_pin=reference_pin,
                                 request_type='preview',
@@ -3590,7 +3603,7 @@ def lambda_handler(event, context):
                                 trigger_source='api_gateway',
                                 trigger_method='sync'
                             )
-                            logger.info(f"Tracked sync preview call in DynamoDB: {session_id}")
+                            logger.info(f"Tracked sync preview call in DynamoDB: {preview_session_id}")
                         except Exception as e:
                             logger.warning(f"Failed to track initial preview call: {e}")
                     
@@ -3635,7 +3648,7 @@ def lambda_handler(event, context):
                                     
                                     # First update status using update_call_status
                                     from dynamodb_schemas import update_call_status
-                                    update_call_status(session_id, 'completed')
+                                    update_call_status(preview_session_id, 'completed')
                                     
                                     # Then update metrics
                                     metrics_update = {
@@ -3687,8 +3700,8 @@ def lambda_handler(event, context):
                                             'claude_search_groups_count': validation_metrics.get('claude_search_groups_count', 0)
                                         })
                                     
-                                    update_processing_metrics(session_id, metrics_update)
-                                    logger.info(f"Updated DynamoDB metrics for sync preview: {session_id}")
+                                    update_processing_metrics(preview_session_id, metrics_update)
+                                    logger.info(f"Updated DynamoDB metrics for sync preview: {preview_session_id}")
                                     
                                 except Exception as e:
                                     logger.error(f"Failed to update DynamoDB metrics: {e}")
@@ -3725,7 +3738,7 @@ def lambda_handler(event, context):
                             
                             response_body = {
                                 "status": "preview_completed",
-                                "session_id": session_id,
+                                "session_id": preview_session_id,
                                 "reference_pin": reference_pin,
                                 "markdown_table": markdown_table,
                                 "total_rows": total_rows,
@@ -3759,7 +3772,7 @@ def lambda_handler(event, context):
                             
                             response_body = {
                                 "status": "preview_completed",
-                                "session_id": session_id,
+                                "session_id": preview_session_id,
                                 "reference_pin": reference_pin,
                                 "markdown_table": markdown_table,
                                 "total_rows": total_rows,
@@ -3790,7 +3803,7 @@ def lambda_handler(event, context):
                             
                             response_body = {
                                 "status": "preview_completed",
-                                "session_id": session_id,
+                                "session_id": preview_session_id,
                                 "reference_pin": reference_pin,
                                 "markdown_table": markdown_table,
                                 "total_rows": total_rows,
@@ -3817,7 +3830,7 @@ def lambda_handler(event, context):
                             
                             response_body = {
                                 "status": "preview_completed",
-                                "session_id": session_id,
+                                "session_id": preview_session_id,
                                 "reference_pin": reference_pin,
                                 "markdown_table": markdown_table,
                                 "total_rows": total_rows,
@@ -3839,15 +3852,15 @@ def lambda_handler(event, context):
                             try:
                                 from dynamodb_schemas import update_call_status, update_processing_metrics
                                 # First update status
-                                update_call_status(session_id, 'error', error_message=str(e))
+                                update_call_status(preview_session_id, 'error', error_message=str(e))
                                 
                                 # Then update metrics
                                 metrics_update = {
                                     'processing_time_seconds': processing_time,
                                     'completed_processing_at': datetime.utcnow().isoformat() + 'Z'
                                 }
-                                update_processing_metrics(session_id, metrics_update)
-                                logger.info(f"Updated DynamoDB with error status for: {session_id}")
+                                update_processing_metrics(preview_session_id, metrics_update)
+                                logger.info(f"Updated DynamoDB with error status for: {preview_session_id}")
                             except Exception as db_error:
                                 logger.warning(f"Failed to update DynamoDB with error: {db_error}")
                         
@@ -3859,7 +3872,7 @@ def lambda_handler(event, context):
                         
                         response_body = {
                             "status": "preview_completed",
-                            "session_id": session_id,
+                            "session_id": preview_session_id,
                             "reference_pin": reference_pin,
                             "markdown_table": markdown_table,
                             "total_rows": 1,
@@ -4208,6 +4221,46 @@ def handle_background_processing(event, context):
             print(f"[BACKGROUND] ✅ Got validation results with {result_count} rows")
             print(f"[BACKGROUND] Real results type: {type(real_results)}")
             print(f"[BACKGROUND] Real results content: {real_results}")
+            
+            # ENHANCED LOGGING: Track expected vs actual fields in interface lambda
+            if result_count > 0:
+                print(f"[BACKGROUND] 🔍 INTERFACE LAMBDA VALIDATION ANALYSIS:")
+                
+                # Get expected fields from config if available
+                expected_fields = []
+                try:
+                    # Try to get config from S3 to compare expected vs actual fields
+                    config_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=config_s3_key)
+                    config_data = json.loads(config_response['Body'].read().decode('utf-8'))
+                    
+                    if 'validation_targets' in config_data:
+                        expected_fields = [target.get('column') for target in config_data['validation_targets'] if target.get('column')]
+                except Exception as config_error:
+                    print(f"[BACKGROUND] ⚠️ Could not load config for field comparison: {config_error}")
+                    logger.warning(f"Could not load config for field comparison: {config_error}")
+                
+                print(f"[BACKGROUND]   Expected fields from config: {expected_fields}")
+                
+                # Analyze each row's results
+                for row_idx, row_data in real_results.items():
+                    if isinstance(row_data, dict):
+                        actual_fields = [field for field in row_data.keys() if field not in ['next_check', 'reasons']]
+                        print(f"[BACKGROUND]   Row {row_idx} actual fields: {actual_fields}")
+                        
+                        # Check for missing fields
+                        if expected_fields:
+                            missing_fields = set(expected_fields) - set(actual_fields)
+                            if missing_fields:
+                                print(f"[BACKGROUND] ❌ MISSING FIELDS IN ROW {row_idx}: {list(missing_fields)}")
+                                logger.error(f"❌ MISSING FIELDS IN ROW {row_idx}: {list(missing_fields)}")
+                            
+                            unexpected_fields = set(actual_fields) - set(expected_fields)
+                            if unexpected_fields:
+                                print(f"[BACKGROUND] ⚠️ UNEXPECTED FIELDS IN ROW {row_idx}: {list(unexpected_fields)}")
+                                logger.warning(f"⚠️ UNEXPECTED FIELDS IN ROW {row_idx}: {list(unexpected_fields)}")
+                            
+                            if not missing_fields and not unexpected_fields:
+                                print(f"[BACKGROUND] ✅ All expected fields present in row {row_idx}")
             
             if result_count == 0:
                 print(f"[BACKGROUND] ⚠️ Validation results dict is empty, using fallback")
@@ -4707,13 +4760,16 @@ def handle_background_processing(event, context):
                                     if conf_level in confidence_counts:
                                         confidence_counts[conf_level] += 1
                         
+                        # Calculate the number of rows that were actually processed
+                        processed_rows = len(real_results)
+                        
                         summary_data = {
-                            'total_rows': total_rows,
+                            'total_rows': processed_rows,  # Use actual processed rows, not original total
                             'fields_validated': list(all_fields),
                             'confidence_distribution': confidence_counts
                         }
                         
-                        print(f"[BACKGROUND] Summary prepared: {len(all_fields)} fields, {total_rows} rows")
+                        print(f"[BACKGROUND] Summary prepared: {len(all_fields)} fields, {processed_rows} rows")
                         
                         # Calculate processing time (you might want to track this more accurately)
                         processing_time_seconds = metadata.get('processing_time', 0.0)

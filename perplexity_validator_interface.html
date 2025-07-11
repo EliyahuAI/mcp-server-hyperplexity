@@ -876,7 +876,7 @@
                 <div class="card-header">
                     <div class="card-icon">✨</div>
                     <div>
-                        <h2 class="card-title">Process Full Table</h2>
+                        <h2 class="card-title">Process Table</h2>
                         <p class="card-subtitle">Ready to process the entire table</p>
                     </div>
                 </div>
@@ -893,7 +893,7 @@
 
                 <div style="margin-top: 2rem;">
                     <button class="btn btn-primary btn-block" onclick="processFullTable()" id="processFullBtn">
-                        <span id="processFullBtnText">Process Full Table</span>
+                        <span id="processFullBtnText">Process Table</span>
                         <span class="spinner" id="processFullSpinner" style="display: none;"></span>
                     </button>
                 </div>
@@ -912,7 +912,7 @@
             </div>
         </div>
 
-        <!-- New Validation Card - Only shown after full processing -->
+        <!-- Validation Complete Card - Only shown after full processing -->
         <div class="card" id="newValidationCard" style="display: none;">
             <div class="card-header">
                 <div class="card-icon">🎉</div>
@@ -929,6 +929,43 @@
                 <button class="btn btn-primary btn-block" onclick="window.location.reload()" style="max-width: 300px; margin: 0 auto;">
                     New Validation
                 </button>
+            </div>
+        </div>
+
+        <!-- Partial Validation Card - Shown when validation is incomplete -->
+        <div class="card" id="partialValidationCard" style="display: none;">
+            <div class="card-header">
+                <div class="card-icon">📈</div>
+                <div>
+                    <h2 class="card-title">Validation Incomplete</h2>
+                    <p class="card-subtitle">Process more rows to complete validation</p>
+                </div>
+            </div>
+
+            <div style="padding: 2rem;">
+                <p style="margin-bottom: 1.5rem; color: var(--text-secondary);">
+                    You have processed a subset of your data. To complete the full validation, you can process more rows.
+                </p>
+                
+                <div class="option-group">
+                    <div class="form-group">
+                        <label class="form-label" for="maxRowsMore">Process Additional Rows</label>
+                        <input type="number" id="maxRowsMore" class="form-input" placeholder="Enter number of additional rows" min="1">
+                        <p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">
+                            Leave empty to process all remaining rows
+                        </p>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                    <button class="btn btn-primary" onclick="processMoreRows()" id="processMoreBtn" style="flex: 1;">
+                        <span id="processMoreBtnText">Process More Rows</span>
+                        <span class="spinner" id="processMoreSpinner" style="display: none;"></span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="window.location.reload()" style="flex: 1;">
+                        New Validation
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -1239,6 +1276,7 @@
         document.getElementById('fullProcessingCard').style.display = 'none';
         document.getElementById('tryAgainBtn').style.display = 'none';
         document.getElementById('newValidationCard').style.display = 'none';
+        document.getElementById('partialValidationCard').style.display = 'none';
         document.getElementById('progressContainer').style.display = 'none';
         
         // Clear cost estimates and markdown preview
@@ -1309,7 +1347,79 @@
         }
     }
 
-    // Process Full Table Function
+                // Process More Rows Function
+    async function processMoreRows() {
+        if (!state.excelFile || !state.configFile || !state.emailValidated) return;
+
+        const processMoreBtn = document.getElementById('processMoreBtn');
+        processMoreBtn.disabled = true;
+        document.getElementById('processMoreSpinner').style.display = 'inline-block';
+
+        try {
+            // Read config file as text before creating FormData
+            const configContent = await readFileAsText(state.configFile);
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('excel_file', state.excelFile, state.excelFile.name);
+            formData.append('config_file', configContent);
+            formData.append('email', state.email);
+
+            // Build URL for processing more rows
+            let url = `${API_BASE}/validate?`;
+            const maxRows = document.getElementById('maxRowsMore').value;
+            if (maxRows) {
+                url += `max_rows=${maxRows}&`;
+            }
+            url += 'batch_size=5&async=true';
+
+            // Make request
+            const response = await fetch(url, {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                // Start new session for processing more rows
+                state.sessionId = data.session_id;
+                state.mode = 'full';
+                
+                // Hide the partial validation card
+                document.getElementById('partialValidationCard').style.display = 'none';
+                
+                // Update results display for processing more rows
+                document.getElementById('resultsSubtitle').textContent = 'Processing additional rows...';
+                document.getElementById('progressContainer').style.display = 'block';
+                document.getElementById('resultsInfo').textContent = `Session ID: ${data.session_id}`;
+                
+                if (data.reference_pin) {
+                    document.getElementById('resultsInfo').innerHTML += `<br>Reference PIN: <strong>${data.reference_pin}</strong>`;
+                }
+                
+                // Reset processing animation
+                const processingAnimation = document.querySelector('.processing-animation');
+                if (processingAnimation) {
+                    processingAnimation.classList.remove('completed');
+                    document.querySelector('.processing-text').textContent = 'Processing Additional Rows';
+                    document.querySelector('.processing-dots').style.display = 'flex';
+                }
+                
+                startPolling();
+            } else {
+                showMessage('emailMessage', `Error: ${data.error}`, 'error');
+            }
+        } catch (error) {
+            showMessage('emailMessage', 'Failed to process additional rows. Please try again.', 'error');
+            console.error('Error:', error);
+        } finally {
+            processMoreBtn.disabled = false;
+            document.getElementById('processMoreSpinner').style.display = 'none';
+        }
+    }
+
+    // Process Table Function
     async function processFullTable() {
         if (!state.excelFile || !state.configFile || !state.emailValidated) return;
 
@@ -1349,7 +1459,7 @@
                 state.mode = 'full';
                 
                 // Update results display for full processing
-                document.getElementById('resultsSubtitle').textContent = 'Processing full table...';
+                document.getElementById('resultsSubtitle').textContent = 'Processing table...';
                 document.getElementById('progressContainer').style.display = 'block';
                 document.getElementById('resultsInfo').textContent = `Session ID: ${data.session_id}`;
                 
@@ -1508,24 +1618,51 @@
                         document.querySelector('.processing-text').textContent = 'Processing Complete!';
                         document.querySelector('.processing-dots').style.display = 'none';
                         
-                        // Show New Validation card at bottom after full processing completion
-                        console.log('🔍 Showing New Validation card for full processing completion');
-                        const newValidationCard = document.getElementById('newValidationCard');
-                        if (newValidationCard) {
-                            newValidationCard.style.display = 'block';
-                            console.log('🔍 New Validation card should now be visible');
-                            // Scroll to the new validation card
-                            setTimeout(() => {
-                                newValidationCard.scrollIntoView({ behavior: 'smooth' });
-                            }, 500);
+                        // Determine if validation is complete or incomplete based on max_rows setting
+                        const maxRows = document.getElementById('maxRowsFull').value;
+                        const isIncompleteValidation = maxRows && parseInt(maxRows) > 0;
+                        
+                        if (isIncompleteValidation) {
+                            // Show partial validation card for incomplete validation
+                            console.log('🔍 Showing Partial Validation card for incomplete validation');
+                            const partialValidationCard = document.getElementById('partialValidationCard');
+                            if (partialValidationCard) {
+                                partialValidationCard.style.display = 'block';
+                                console.log('🔍 Partial Validation card should now be visible');
+                                // Scroll to the partial validation card
+                                setTimeout(() => {
+                                    partialValidationCard.scrollIntoView({ behavior: 'smooth' });
+                                }, 500);
+                            } else {
+                                console.error('🔍 Partial Validation card element not found!');
+                            }
+                            
+                            // Update status message for partial validation
+                            document.getElementById('statusMessage').innerHTML = 
+                                '✅ <strong>Partial Processing Complete!</strong><br>' +
+                                'Your results will be emailed to you within the next few minutes.<br>' +
+                                'You can process more rows to complete the full validation.';
                         } else {
-                            console.error('🔍 New Validation card element not found!');
+                            // Show New Validation card at bottom after full processing completion
+                            console.log('🔍 Showing New Validation card for full processing completion');
+                            const newValidationCard = document.getElementById('newValidationCard');
+                            if (newValidationCard) {
+                                newValidationCard.style.display = 'block';
+                                console.log('🔍 New Validation card should now be visible');
+                                // Scroll to the new validation card
+                                setTimeout(() => {
+                                    newValidationCard.scrollIntoView({ behavior: 'smooth' });
+                                }, 500);
+                            } else {
+                                console.error('🔍 New Validation card element not found!');
+                            }
+                            
+                            // Update status message for email delivery (email only)
+                            document.getElementById('statusMessage').innerHTML = 
+                                '✅ <strong>Processing Complete!</strong><br>' +
+                                'Your results will be emailed to you within the next few minutes.';
                         }
                         
-                        // Update status message for email delivery (email only)
-                        document.getElementById('statusMessage').innerHTML = 
-                            '✅ <strong>Processing Complete!</strong><br>' +
-                            'Your results will be emailed to you within the next few minutes.';
                         document.getElementById('statusMessage').style.display = 'block';
                     }
                 } else if (data.status === 'processing') {
@@ -1863,6 +2000,7 @@
         document.getElementById('progressContainer').style.display = 'none';
         document.getElementById('tryAgainBtn').style.display = 'none';
         document.getElementById('newValidationCard').style.display = 'none';
+        document.getElementById('partialValidationCard').style.display = 'none';
         document.getElementById('previewCard').classList.add('disabled');
         document.getElementById('processBtn').disabled = true;
         
