@@ -1226,9 +1226,13 @@
 
     function resetValidationState() {
         // Reset validation state when new files are uploaded
+        const previousMode = state.mode;
         state.sessionId = null;
         state.results = null;
         state.mode = 'preview';
+        
+        // Log the reset for debugging
+        console.log('🔄 resetValidationState called - mode changed from', previousMode, 'to', state.mode);
         
         // Hide results and full processing cards
         document.getElementById('resultsCard').style.display = 'none';
@@ -1236,6 +1240,11 @@
         document.getElementById('tryAgainBtn').style.display = 'none';
         document.getElementById('newValidationCard').style.display = 'none';
         document.getElementById('progressContainer').style.display = 'none';
+        
+        // Clear cost estimates and markdown preview
+        document.getElementById('costEstimate').style.display = 'none';
+        document.getElementById('markdownPreview').style.display = 'none';
+        document.getElementById('markdownPreview').innerHTML = '';
         
         // Reset processing animation
         const processingAnimation = document.querySelector('.processing-animation');
@@ -1368,6 +1377,9 @@
     async function processTable() {
         if (!state.excelFile || !state.configFile || !state.emailValidated) return;
 
+        // Log the current state before processing
+        console.log('🚀 processTable called - current state.mode:', state.mode);
+
         const processBtn = document.getElementById('processBtn');
         processBtn.disabled = true;
         document.getElementById('processSpinner').style.display = 'inline-block';
@@ -1474,13 +1486,23 @@
                 if (data.status === 'completed' || data.status === 'preview_completed') {
                     clearInterval(pollInterval);
                     
+                    // Enhanced logging to debug the issue
+                    console.log('🔍 Processing completed - analyzing result:', {
+                        status: data.status,
+                        has_markdown_table: !!data.markdown_table,
+                        current_mode: state.mode,
+                        session_id: state.sessionId
+                    });
+                    
                     // Check if this is a preview result
                     if (data.markdown_table && state.mode === 'preview') {
                         // This is a preview result - display it and hide processing
+                        console.log('🔍 Detected PREVIEW result - showing preview UI');
                         document.getElementById('progressContainer').style.display = 'none';
                         showResults(data, false);
                     } else {
                         // This is a full processing result OR any other completion - show completion status
+                        console.log('🔍 Detected FULL PROCESSING completion - showing completion UI');
                         // Keep the processing container visible but update it to show completion
                         document.querySelector('.processing-animation').classList.add('completed');
                         document.querySelector('.processing-text').textContent = 'Processing Complete!';
@@ -1823,7 +1845,7 @@
     }
 
     function resetValidator() {
-        // Reset state (keep email)
+        // Reset state completely (keep email)
         state.excelFile = null;
         state.configFile = null;
         state.configValidated = false;
@@ -1846,6 +1868,7 @@
         
         // Clear any messages
         document.getElementById('configMessage').innerHTML = '';
+        document.getElementById('emailMessage').innerHTML = '';
         
         // Reset processing animation
         const processingAnimation = document.querySelector('.processing-animation');
@@ -1854,6 +1877,14 @@
             document.querySelector('.processing-text').textContent = 'Processing Table';
             document.querySelector('.processing-dots').style.display = 'flex';
         }
+        
+        // Clear cost estimates and markdown preview
+        document.getElementById('costEstimate').style.display = 'none';
+        document.getElementById('markdownPreview').style.display = 'none';
+        document.getElementById('markdownPreview').innerHTML = '';
+        
+        // Log reset for debugging
+        console.log('🔄 resetValidator called - state.mode set to:', state.mode);
         
         // Re-evaluate readiness after reset
         checkReadyToProcess();
