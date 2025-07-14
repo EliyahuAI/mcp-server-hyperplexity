@@ -18,6 +18,7 @@ import random
 import re
 import logging
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -63,6 +64,15 @@ API_GATEWAY_CONFIG = {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "application/vnd.ms-excel"
     ]
+}
+
+WEBSOCKET_LAMBDA_CONFIG = {
+    "FunctionName": "perplexity-validator-ws-handler",
+    "Runtime": "python3.9",
+    "Handler": "websocket_handler.handle",
+    "Timeout": 60,
+    "MemorySize": 128,
+    "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
 }
 
 def clean_directory(dir_path):
@@ -121,47 +131,32 @@ def copy_source_files():
     """Copy necessary source files for the interface Lambda."""
     logger.info("Copying interface Lambda source files...")
     
-    # Files needed for the interface Lambda
-    interface_files = [
-        "interface_lambda_function.py",  # Main Lambda handler
-        "excel_processor.py",  # For Excel file handling
-        "perplexity_schema.py",  # Schema definitions
-        "prompt_loader.py",  # Prompt loading utilities
-        "row_key_utils.py",  # Row key generation utilities
-        "lambda_test_json_clean.py",  # Validation history loader
-        "email_sender.py",  # Email sending functionality
-        "schema_validator_simplified.py",  # Schema validator for primary key determination
-        "sqs_service.py",  # SQS integration for priority processing
-        "dynamodb_schemas.py",  # DynamoDB tracking and schemas
-        "api_gateway_validation.py",  # API Gateway validation functions
+    # 1. Copy the main Lambda handler file
+    shutil.copy(SRC_DIR / "interface_lambda_function.py", PACKAGE_DIR)
+    logger.info("Copied interface_lambda_function.py")
+
+    # 2. Copy the entire 'interface_lambda' package
+    shutil.copytree(SRC_DIR / "interface_lambda", PACKAGE_DIR / "interface_lambda")
+    logger.info("Copied the 'interface_lambda' package directory.")
+
+    # 3. Copy shared top-level modules
+    shared_modules = [
+        "email_sender.py",
+        "dynamodb_schemas.py",
+        "row_key_utils.py",
+        "lambda_test_json_clean.py",
+        "schema_validator_simplified.py",
+        "api_gateway_validation.py",
+        "prompts.yml",
     ]
     
-    for file_name in interface_files:
+    for file_name in shared_modules:
         source_file = SRC_DIR / file_name
         if source_file.exists():
             shutil.copy(source_file, PACKAGE_DIR)
-            logger.info(f"Copied {file_name}")
+            logger.info(f"Copied shared module: {file_name}")
         else:
-            logger.warning(f"{file_name} not found at {source_file}")
-            # Create placeholder only if the main handler is missing
-            if file_name == "interface_lambda_function.py":
-                logger.info("Creating placeholder interface_lambda_function.py")
-                create_placeholder_lambda_handler()
-    
-    # Copy prompts.yml file
-    prompts_yml = SRC_DIR / "prompts.yml"
-    if prompts_yml.exists():
-        shutil.copy(prompts_yml, PACKAGE_DIR)
-        logger.info("Copied prompts.yml")
-    else:
-        logger.warning(f"prompts.yml not found at {prompts_yml}")
-        # Try looking in project root as fallback
-        fallback_prompts_yml = PROJECT_DIR / "prompts.yml"
-        if fallback_prompts_yml.exists():
-            shutil.copy(fallback_prompts_yml, PACKAGE_DIR)
-            logger.info("Copied prompts.yml from project root (fallback)")
-        else:
-            logger.error("prompts.yml not found in either src or project root!")
+            logger.warning(f"Shared module not found, skipping: {file_name}")
 
 def create_placeholder_lambda_handler():
     """Create a placeholder Lambda handler for the interface function."""
@@ -307,6 +302,23 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
     function_name = function_name or LAMBDA_CONFIG["FunctionName"]
     region = region or "us-east-1"
     
+    # Get SQS Queue URLs and add them to the Lambda environment variables
+    try:
+        sqs_client = boto3.client('sqs', region_name=region)
+        preview_queue_url = sqs_client.get_queue_url(QueueName="perplexity-validator-preview-queue.fifo")['QueueUrl']
+        standard_queue_url = sqs_client.get_queue_url(QueueName="perplexity-validator-standard-queue")['QueueUrl']
+        
+        LAMBDA_CONFIG['Environment']['Variables']['PREVIEW_QUEUE_URL'] = preview_queue_url
+        LAMBDA_CONFIG['Environment']['Variables']['STANDARD_QUEUE_URL'] = standard_queue_url
+        
+        logger.info(f"Found SQS Preview Queue URL: {preview_queue_url}")
+        logger.info(f"Found SQS Standard Queue URL: {standard_queue_url}")
+    except Exception as e:
+        logger.error(f"Could not retrieve SQS queue URLs. Please ensure queues are created. Error: {e}")
+        # Decide if you want to fail deployment or continue without SQS integration
+        # For now, we will continue but log a prominent warning.
+        logger.warning("Continuing deployment without SQS queue URLs set in environment.")
+
     logger.info(f"Deploying Lambda function: {function_name}")
     
     try:
@@ -525,30 +537,24 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
         traceback.print_exc()
         return False, None
 
+
 def setup_api_gateway(lambda_client, function_name, region):
-    """Set up API Gateway for the Lambda function with /validate and email endpoints."""
-    logger.info("Setting up API Gateway with Lambda integration...")
+    """Set up API Gateway for the Lambda function with simplified /validate and /status endpoints."""
+    logger.info("Setting up simplified API Gateway with Lambda proxy integration...")
     
     try:
         apigateway_client = boto3.client('apigateway', region_name=region)
         account_id = boto3.client('sts').get_caller_identity()['Account']
-        
-        # Create or find REST API
         api_name = API_GATEWAY_CONFIG["ApiName"]
-        
-        # Check if API already exists
+
+        # Find or create the REST API
         apis = apigateway_client.get_rest_apis()
-        existing_api = None
-        for api in apis['items']:
-            if api['name'] == api_name:
-                existing_api = api
-                break
+        existing_api = next((api for api in apis['items'] if api['name'] == api_name), None)
         
         if existing_api:
             api_id = existing_api['id']
             logger.info(f"Using existing API: {api_id}")
         else:
-            # Create new API
             api_response = apigateway_client.create_rest_api(
                 name=api_name,
                 description=API_GATEWAY_CONFIG["Description"],
@@ -557,515 +563,95 @@ def setup_api_gateway(lambda_client, function_name, region):
             )
             api_id = api_response['id']
             logger.info(f"Created new API: {api_id}")
-        
-        # Get root resource
-        resources = apigateway_client.get_resources(restApiId=api_id)
-        root_resource_id = None
-        for resource in resources['items']:
-            if resource['path'] == '/':
-                root_resource_id = resource['id']
-                break
-        
-        # Create /validate resource
-        validate_resource = None
-        for resource in resources['items']:
-            if resource['path'] == '/validate':
-                validate_resource = resource
-                break
-        
+
+        # Get root resource ID
+        resources = apigateway_client.get_resources(restApiId=api_id)['items']
+        root_resource_id = next(res['id'] for res in resources if res['path'] == '/')
+
+        # --- Create /validate Resource and POST Method ---
+        validate_resource = next((res for res in resources if res.get('pathPart') == 'validate'), None)
         if not validate_resource:
-            validate_response = apigateway_client.create_resource(
-                restApiId=api_id,
-                parentId=root_resource_id,
-                pathPart='validate'
-            )
-            validate_resource_id = validate_response['id']
-            logger.info("Created /validate resource")
-        else:
-            validate_resource_id = validate_resource['id']
-            logger.info("Using existing /validate resource")
+            validate_resource = apigateway_client.create_resource(restApiId=api_id, parentId=root_resource_id, pathPart='validate')
+        validate_resource_id = validate_resource['id']
         
-        # Create /status resource for status checking
-        status_resource = None
-        for resource in resources['items']:
-            if resource['path'] == '/status':
-                status_resource = resource
-                break
-        
+        # --- Create /status and /status/{sessionId} Resources ---
+        status_resource = next((res for res in resources if res.get('pathPart') == 'status'), None)
         if not status_resource:
-            status_response = apigateway_client.create_resource(
-                restApiId=api_id,
-                parentId=root_resource_id,
-                pathPart='status'
-            )
-            status_resource_id = status_response['id']
-            logger.info("Created /status resource")
-        else:
-            status_resource_id = status_resource['id']
-            logger.info("Using existing /status resource")
-        
-        # Create /status/{sessionId} resource
-        status_session_resource = None
-        for resource in resources['items']:
-            if resource.get('pathPart') == '{sessionId}' and resource.get('parentId') == status_resource_id:
-                status_session_resource = resource
-                break
-        
+            status_resource = apigateway_client.create_resource(restApiId=api_id, parentId=root_resource_id, pathPart='status')
+        status_resource_id = status_resource['id']
+
+        status_session_resource = next((res for res in resources if res.get('pathPart') == '{sessionId}' and res.get('parentId') == status_resource_id), None)
         if not status_session_resource:
-            status_session_response = apigateway_client.create_resource(
-                restApiId=api_id,
-                parentId=status_resource_id,
-                pathPart='{sessionId}'
-            )
-            status_session_resource_id = status_session_response['id']
-            logger.info("Created /status/{sessionId} resource")
-        else:
-            status_session_resource_id = status_session_resource['id']
-            logger.info("Using existing /status/{sessionId} resource")
+            status_session_resource = apigateway_client.create_resource(restApiId=api_id, parentId=status_resource_id, pathPart='{sessionId}')
+        status_session_resource_id = status_session_resource['id']
         
-        # Refresh resources list to see newly created resources
-        resources = apigateway_client.get_resources(restApiId=api_id)
-        
-        # Create /validate-email resource
-        validate_email_resource = None
-        for resource in resources['items']:
-            if resource['path'] == '/validate-email':
-                validate_email_resource = resource
-                break
-        
-        if not validate_email_resource:
-            validate_email_response = apigateway_client.create_resource(
-                restApiId=api_id,
-                parentId=root_resource_id,
-                pathPart='validate-email'
-            )
-            validate_email_resource_id = validate_email_response['id']
-            logger.info("Created /validate-email resource")
-        else:
-            validate_email_resource_id = validate_email_resource['id']
-            logger.info("Using existing /validate-email resource")
-        
-        # Create /verify-email resource
-        verify_email_resource = None
-        for resource in resources['items']:
-            if resource['path'] == '/verify-email':
-                verify_email_resource = resource
-                break
-        
-        if not verify_email_resource:
-            verify_email_response = apigateway_client.create_resource(
-                restApiId=api_id,
-                parentId=root_resource_id,
-                pathPart='verify-email'
-            )
-            verify_email_resource_id = verify_email_response['id']
-            logger.info("Created /verify-email resource")
-        else:
-            verify_email_resource_id = verify_email_resource['id']
-            logger.info("Using existing /verify-email resource")
-        
-        # Create /check-email resource
-        check_email_resource = None
-        for resource in resources['items']:
-            if resource['path'] == '/check-email':
-                check_email_resource = resource
-                break
-        
-        if not check_email_resource:
-            check_email_response = apigateway_client.create_resource(
-                restApiId=api_id,
-                parentId=root_resource_id,
-                pathPart='check-email'
-            )
-            check_email_resource_id = check_email_response['id']
-            logger.info("Created /check-email resource")
-        else:
-            check_email_resource_id = check_email_resource['id']
-            logger.info("Using existing /check-email resource")
-        
-        # Create /check-or-send resource
-        check_or_send_resource = None
-        for resource in resources['items']:
-            if resource['path'] == '/check-or-send':
-                check_or_send_resource = resource
-                break
-        
-        if not check_or_send_resource:
-            check_or_send_response = apigateway_client.create_resource(
-                restApiId=api_id,
-                parentId=root_resource_id,
-                pathPart='check-or-send'
-            )
-            check_or_send_resource_id = check_or_send_response['id']
-            logger.info("Created /check-or-send resource")
-        else:
-            check_or_send_resource_id = check_or_send_resource['id']
-            logger.info("Using existing /check-or-send resource")
-        
-        # Create POST method for main /validate endpoint
-        try:
-            apigateway_client.put_method(
-                restApiId=api_id,
-                resourceId=validate_resource_id,
-                httpMethod='POST',
-                authorizationType='NONE',
-                requestParameters={
-                    'method.request.querystring.async': False,
-                    'method.request.querystring.preview_first_row': False,
-                    'method.request.querystring.max_rows': False,
-                    'method.request.querystring.batch_size': False
-                }
-            )
-            logger.info("Created POST method for /validate")
-        except apigateway_client.exceptions.ConflictException:
-            logger.info("POST method already exists for /validate")
-        
-        # Create GET method for /status/{sessionId}
-        try:
-            apigateway_client.put_method(
-                restApiId=api_id,
-                resourceId=status_session_resource_id,
-                httpMethod='GET',
-                authorizationType='NONE',
-                requestParameters={
-                    'method.request.path.sessionId': True,
-                    'method.request.querystring.preview': False
-                }
-            )
-            logger.info("Created GET method for /status/{sessionId}")
-        except apigateway_client.exceptions.ConflictException:
-            logger.info("GET method already exists for /status/{sessionId}")
-        
-        # Create POST method for /validate-email
-        try:
-            apigateway_client.put_method(
-                restApiId=api_id,
-                resourceId=validate_email_resource_id,
-                httpMethod='POST',
-                authorizationType='NONE'
-            )
-            logger.info("Created POST method for /validate-email")
-        except apigateway_client.exceptions.ConflictException:
-            logger.info("POST method already exists for /validate-email")
-        
-        # Create POST method for /verify-email
-        try:
-            apigateway_client.put_method(
-                restApiId=api_id,
-                resourceId=verify_email_resource_id,
-                httpMethod='POST',
-                authorizationType='NONE'
-            )
-            logger.info("Created POST method for /verify-email")
-        except apigateway_client.exceptions.ConflictException:
-            logger.info("POST method already exists for /verify-email")
-        
-        # Create POST method for /check-email
-        try:
-            apigateway_client.put_method(
-                restApiId=api_id,
-                resourceId=check_email_resource_id,
-                httpMethod='POST',
-                authorizationType='NONE'
-            )
-            logger.info("Created POST method for /check-email")
-        except apigateway_client.exceptions.ConflictException:
-            logger.info("POST method already exists for /check-email")
-        
-        # Create POST method for /check-or-send
-        try:
-            apigateway_client.put_method(
-                restApiId=api_id,
-                resourceId=check_or_send_resource_id,
-                httpMethod='POST',
-                authorizationType='NONE'
-            )
-            logger.info("Created POST method for /check-or-send")
-        except apigateway_client.exceptions.ConflictException:
-            logger.info("POST method already exists for /check-or-send")
-        
-        # Create OPTIONS method for CORS on all endpoints
-        for resource_id in [validate_resource_id, status_resource_id, status_session_resource_id, validate_email_resource_id, verify_email_resource_id, check_email_resource_id, check_or_send_resource_id]:
+        # --- Define Methods and Integrations ---
+        lambda_arn = f"arn:aws:lambda:{region}:{account_id}:function:{function_name}"
+        lambda_integration_uri = f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
+
+        # List of resources and their methods
+        resource_setups = [
+            (validate_resource_id, 'POST'),
+            (validate_resource_id, 'OPTIONS'),
+            (status_session_resource_id, 'GET'),
+            (status_session_resource_id, 'OPTIONS'),
+        ]
+
+        for resource_id, http_method in resource_setups:
             try:
                 apigateway_client.put_method(
                     restApiId=api_id,
                     resourceId=resource_id,
-                    httpMethod='OPTIONS',
+                    httpMethod=http_method,
                     authorizationType='NONE'
                 )
-                logger.info(f"Created OPTIONS method for CORS on resource {resource_id}")
-            except apigateway_client.exceptions.ConflictException:
-                logger.info(f"OPTIONS method already exists for resource {resource_id}")
-        
-        # Set up Lambda proxy integration for all endpoints
-        lambda_arn = f"arn:aws:lambda:{region}:{account_id}:function:{function_name}"
-        lambda_integration_uri = f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
-        
-        # 1. Lambda integration for /validate
-        try:
-            apigateway_client.put_integration(
-                restApiId=api_id,
-                resourceId=validate_resource_id,
-                httpMethod='POST',
-                type='AWS_PROXY',
-                integrationHttpMethod='POST',
-                uri=lambda_integration_uri
-            )
-            logger.info("Set up Lambda proxy integration for /validate")
-        except apigateway_client.exceptions.ConflictException:
-            logger.info("Lambda integration already exists for /validate")
-        
-        # 2. Lambda integration for /status/{sessionId}
-        try:
-            apigateway_client.put_integration(
-                restApiId=api_id,
-                resourceId=status_session_resource_id,
-                httpMethod='GET',
-                type='AWS_PROXY',
-                integrationHttpMethod='POST',
-                uri=lambda_integration_uri
-            )
-            logger.info("Set up Lambda proxy integration for /status/{sessionId}")
-        except apigateway_client.exceptions.ConflictException:
-            logger.info("Lambda integration already exists for /status/{sessionId}")
-        
-        # 3. Lambda integration for /validate-email (non-proxy with mapping template)
-        try:
-            apigateway_client.put_integration(
-                restApiId=api_id,
-                resourceId=validate_email_resource_id,
-                httpMethod='POST',
-                type='AWS',
-                integrationHttpMethod='POST',
-                uri=lambda_integration_uri,
-                requestTemplates={
-                    'application/json': '''#set($inputRoot = $input.path('$'))
-{
-  "httpMethod": "POST",
-  "path": "/validate",
-  "headers": {
-    "Content-Type": "application/json"
-  },
-  "body": "{\\"action\\": \\"requestEmailValidation\\", \\"email\\": \\"$inputRoot.email\\"}"
-}'''
-                }
-            )
-            logger.info("Set up Lambda integration for /validate-email with request mapping")
-        except apigateway_client.exceptions.ConflictException:
-            logger.info("Lambda integration already exists for /validate-email")
-        
-        # 4. Lambda integration for /verify-email (non-proxy with mapping template)
-        try:
-            apigateway_client.put_integration(
-                restApiId=api_id,
-                resourceId=verify_email_resource_id,
-                httpMethod='POST',
-                type='AWS',
-                integrationHttpMethod='POST',
-                uri=lambda_integration_uri,
-                requestTemplates={
-                    'application/json': '''#set($inputRoot = $input.path('$'))
-{
-  "httpMethod": "POST",
-  "path": "/validate",
-  "headers": {
-    "Content-Type": "application/json"
-  },
-  "body": "{\\"action\\": \\"validateEmailCode\\", \\"email\\": \\"$inputRoot.email\\", \\"code\\": \\"$inputRoot.code\\"}"
-}'''
-                }
-            )
-            logger.info("Set up Lambda integration for /verify-email with request mapping")
-        except apigateway_client.exceptions.ConflictException:
-            logger.info("Lambda integration already exists for /verify-email")
-        
-        # 5. Lambda integration for /check-email (non-proxy with mapping template)
-        try:
-            apigateway_client.put_integration(
-                restApiId=api_id,
-                resourceId=check_email_resource_id,
-                httpMethod='POST',
-                type='AWS',
-                integrationHttpMethod='POST',
-                uri=lambda_integration_uri,
-                requestTemplates={
-                    'application/json': '''#set($inputRoot = $input.path('$'))
-{
-  "httpMethod": "POST",
-  "path": "/validate",
-  "headers": {
-    "Content-Type": "application/json"
-  },
-  "body": "{\\"action\\": \\"checkEmailValidation\\", \\"email\\": \\"$inputRoot.email\\"}"
-}'''
-                }
-            )
-            logger.info("Set up Lambda integration for /check-email with request mapping")
-        except apigateway_client.exceptions.ConflictException:
-            logger.info("Lambda integration already exists for /check-email")
-        
-        # 6. Lambda integration for /check-or-send (non-proxy with mapping template)
-        try:
-            apigateway_client.put_integration(
-                restApiId=api_id,
-                resourceId=check_or_send_resource_id,
-                httpMethod='POST',
-                type='AWS',
-                integrationHttpMethod='POST',
-                uri=lambda_integration_uri,
-                requestTemplates={
-                    'application/json': '''#set($inputRoot = $input.path('$'))
-{
-  "httpMethod": "POST",
-  "path": "/validate",
-  "headers": {
-    "Content-Type": "application/json"
-  },
-  "body": "{\\"action\\": \\"checkOrSendValidation\\", \\"email\\": \\"$inputRoot.email\\"}"
-}'''
-                }
-            )
-            logger.info("Set up Lambda integration for /check-or-send with request mapping")
-        except apigateway_client.exceptions.ConflictException:
-            logger.info("Lambda integration already exists for /check-or-send")
-        
-        # Set up integration responses for email endpoints (required for non-proxy integration)
-        for resource_id, method in [(validate_email_resource_id, 'POST'), (verify_email_resource_id, 'POST'), (check_email_resource_id, 'POST'), (check_or_send_resource_id, 'POST')]:
-            try:
-                # Create method response first
-                apigateway_client.put_method_response(
-                    restApiId=api_id,
-                    resourceId=resource_id,
-                    httpMethod=method,
-                    statusCode='200',
-                    responseModels={
-                        'application/json': 'Empty'
-                    }
-                )
-                
-                # Create integration response
-                apigateway_client.put_integration_response(
-                    restApiId=api_id,
-                    resourceId=resource_id,
-                    httpMethod=method,
-                    statusCode='200',
-                    responseTemplates={
-                        'application/json': '$input.json("$")'
-                    }
-                )
-                logger.info(f"Set up integration response for resource {resource_id}")
-            except apigateway_client.exceptions.ConflictException:
-                logger.info(f"Integration response already exists for resource {resource_id}")
-        
-        # Set up CORS integration for OPTIONS on all endpoints
-        for resource_id, resource_name in [(validate_resource_id, '/validate'), 
-                                           (status_resource_id, '/status'),
-                                           (status_session_resource_id, '/status/{sessionId}'),
-                                           (validate_email_resource_id, '/validate-email'),
-                                           (verify_email_resource_id, '/verify-email'),
-                                           (check_email_resource_id, '/check-email'),
-                                           (check_or_send_resource_id, '/check-or-send')]:
-            try:
                 apigateway_client.put_integration(
                     restApiId=api_id,
                     resourceId=resource_id,
-                    httpMethod='OPTIONS',
+                    httpMethod=http_method,
                     type='AWS_PROXY',
                     integrationHttpMethod='POST',
                     uri=lambda_integration_uri
                 )
-                
-                # First create method response, then integration response
-                apigateway_client.put_method_response(
-                    restApiId=api_id,
-                    resourceId=resource_id,
-                    httpMethod='OPTIONS',
-                    statusCode='200',
-                    responseParameters={
-                        'method.response.header.Access-Control-Allow-Headers': False,
-                        'method.response.header.Access-Control-Allow-Methods': False,
-                        'method.response.header.Access-Control-Allow-Origin': False
-                    }
-                )
-                
-                apigateway_client.put_integration_response(
-                    restApiId=api_id,
-                    resourceId=resource_id,
-                    httpMethod='OPTIONS',
-                    statusCode='200',
-                    responseParameters={
-                        'method.response.header.Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
-                        'method.response.header.Access-Control-Allow-Methods': "'OPTIONS,POST,GET'",
-                        'method.response.header.Access-Control-Allow-Origin': "'*'"
-                    }
-                )
-                logger.info(f"Set up CORS integration for OPTIONS on {resource_name}")
+                logger.info(f"Set up {http_method} method and integration for resource {resource_id}")
             except apigateway_client.exceptions.ConflictException:
-                logger.info(f"CORS integration already exists for {resource_name}")
+                logger.info(f"{http_method} method and integration already exist for resource {resource_id}")
         
-        # Add Lambda permission for API Gateway
+        # Add Lambda permission for the API Gateway
         try:
-            # First, check if any API Gateway permission already exists
-            try:
-                policy_response = lambda_client.get_policy(FunctionName=function_name)
-                policy = json.loads(policy_response['Policy'])
-                
-                # Check if we already have a permission for this API
-                permission_exists = False
-                for statement in policy['Statement']:
-                    if (statement.get('Principal', {}).get('Service') == 'apigateway.amazonaws.com' and
-                        f":{api_id}/" in statement.get('Condition', {}).get('ArnLike', {}).get('AWS:SourceArn', '')):
-                        permission_exists = True
-                        logger.info("Lambda permission for API Gateway already exists")
-                        break
-                
-                if not permission_exists:
-                    raise lambda_client.exceptions.ResourceNotFoundException()
-                    
-            except lambda_client.exceptions.ResourceNotFoundException:
-                # No policy exists or permission not found, add it
-                lambda_client.add_permission(
-                    FunctionName=function_name,
-                    StatementId=f'apigateway-invoke-{api_id}',
-                    Action='lambda:InvokeFunction',
-                    Principal='apigateway.amazonaws.com',
-                    SourceArn=f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*/*"
-                )
-                logger.info("Added Lambda permission for API Gateway")
+            lambda_client.add_permission(
+                FunctionName=function_name,
+                StatementId=f'apigateway-invoke-{api_id}',
+                Action='lambda:InvokeFunction',
+                Principal='apigateway.amazonaws.com',
+                SourceArn=f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*/*/*" # Allow any method on any resource
+            )
+            logger.info("Added Lambda permission for API Gateway")
         except lambda_client.exceptions.ResourceConflictException:
-            logger.info("Lambda permission already exists")
-        
+            logger.info("Lambda permission for API Gateway already exists.")
+
+        # Also ensure the Lambda role has S3 delete permissions
+        lambda_role_name = LAMBDA_CONFIG['Role'].split('/')[-1]
+        iam_client = boto3.client('iam')
+        try:
+            iam_client.attach_role_policy(
+                RoleName=lambda_role_name,
+                PolicyArn='arn:aws:iam::aws:policy/AmazonS3FullAccess' # Using a managed policy for simplicity
+            )
+            logger.info(f"Attached AmazonS3FullAccess policy to role {lambda_role_name} to ensure delete permissions.")
+        except iam_client.exceptions.NoSuchEntityException:
+            logger.error(f"Lambda execution role not found: {lambda_role_name}")
+        except Exception as e:
+            logger.warning(f"Could not attach S3 delete policy (may already be attached or permissions issue): {e}")
+
         # Deploy API
-        deployment_response = apigateway_client.create_deployment(
-            restApiId=api_id,
-            stageName='prod',
-            description='Production deployment - Lambda handles all routing'
-        )
+        apigateway_client.create_deployment(restApiId=api_id, stageName='prod', description='Simplified deployment')
         logger.info("Deployed API to 'prod' stage")
         
-        # Log all endpoints
-        base_url = f"https://{api_id}.execute-api.{region}.amazonaws.com/prod"
-        logger.info("\n=== API Gateway Endpoints ===")
-        logger.info(f"Main endpoint: {base_url}/validate")
-        logger.info(f"  - Lambda decides sync/async based on ?async parameter")
-        logger.info(f"  - Sync: Process immediately and return results")
-        logger.info(f"  - Async: Lambda sends to SQS for background processing")
-        logger.info(f"Email validation: {base_url}/validate-email")
-        logger.info(f"  - Request validation code for email")
-        logger.info(f"Email verification: {base_url}/verify-email")
-        logger.info(f"  - Submit validation code to verify email")
-        logger.info(f"Email check: {base_url}/check-email")
-        logger.info(f"  - Check if email is already validated")
-        logger.info(f"Email check or send: {base_url}/check-or-send")
-        logger.info(f"  - Combined: check if validated, send code if not")
-        logger.info(f"Status endpoint: {base_url}/status/{{sessionId}}")
-        logger.info(f"  - Check async processing status")
-        logger.info("=============================\n")
-        
-        # Return main API URL
-        api_url = f"{base_url}/validate"
+        api_url = f"https://{api_id}.execute-api.{region}.amazonaws.com/prod/validate"
+        logger.info(f"API Endpoint: {api_url}")
         return api_url
-        
+
     except Exception as e:
         logger.error(f"Error setting up API Gateway: {str(e)}")
         import traceback
@@ -1113,11 +699,26 @@ def setup_dynamodb_tables(region="us-east-1"):
     logger.info("Setting up DynamoDB tables for email validation and user tracking...")
     
     try:
-        dynamodb_client = boto3.client('dynamodb', region_name=region)
+        from dynamodb_schemas import (
+            create_validation_runs_table, 
+            create_websocket_connections_table,
+            DynamoDBSchemas
+        )
         
-        # Table schemas
-        user_validation_table = "perplexity-validator-user-validation"
-        user_tracking_table = "perplexity-validator-user-tracking"
+        # Create the validation runs table
+        create_validation_runs_table()
+        logger.info("✅ Validation runs table created/verified")
+        
+        # Create the WebSocket connections table
+        create_websocket_connections_table()
+        logger.info("✅ WebSocket connections table created/verified")
+        
+        # Define table names using the same pattern as the original code
+        user_validation_table = DynamoDBSchemas.USER_VALIDATION_TABLE
+        user_tracking_table = DynamoDBSchemas.USER_TRACKING_TABLE
+        
+        # Get DynamoDB client
+        dynamodb_client = boto3.client('dynamodb', region_name=region)
         
         # Check and create user validation table
         logger.info(f"Checking {user_validation_table} table...")
@@ -1266,6 +867,157 @@ def setup_dynamodb_tables(region="us-east-1"):
         logger.error(f"Error setting up DynamoDB tables: {e}")
         return False
 
+def setup_sqs_triggers(lambda_client, function_name, region):
+    """Create event source mappings to trigger the Lambda from SQS queues."""
+    logger.info("Setting up SQS triggers for Lambda function...")
+    try:
+        sqs_client = boto3.client('sqs', region_name=region)
+        account_id = boto3.client('sts').get_caller_identity()['Account']
+
+        # Get function ARN
+        function_arn = lambda_client.get_function(FunctionName=function_name)['Configuration']['FunctionArn']
+
+        # Get queue ARNs
+        preview_queue_arn = f"arn:aws:sqs:{region}:{account_id}:perplexity-validator-preview-queue.fifo"
+        standard_queue_arn = f"arn:aws:sqs:{region}:{account_id}:perplexity-validator-standard-queue"
+        
+        # Check existing mappings
+        existing_mappings = lambda_client.list_event_source_mappings(FunctionName=function_name).get('EventSourceMappings', [])
+        
+        # Trigger for Standard Queue
+        if not any(m['EventSourceArn'] == standard_queue_arn for m in existing_mappings):
+            lambda_client.create_event_source_mapping(
+                EventSourceArn=standard_queue_arn,
+                FunctionName=function_name,
+                Enabled=True,
+                BatchSize=5
+            )
+            logger.info("Created SQS trigger for the standard queue.")
+        else:
+            logger.info("SQS trigger for the standard queue already exists.")
+            
+        # Trigger for Preview Queue
+        if not any(m['EventSourceArn'] == preview_queue_arn for m in existing_mappings):
+            lambda_client.create_event_source_mapping(
+                EventSourceArn=preview_queue_arn,
+                FunctionName=function_name,
+                Enabled=True,
+                BatchSize=1
+            )
+            logger.info("Created SQS trigger for the preview queue.")
+        else:
+            logger.info("SQS trigger for the preview queue already exists.")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to set up SQS triggers: {e}")
+        return False
+
+def create_websocket_lambda_package(output_zip_path):
+    """Creates a deployment package for the WebSocket handler Lambda."""
+    logger.info("Creating WebSocket handler deployment package...")
+    package_dir = SCRIPT_DIR / "websocket_package"
+    clean_directory(package_dir)
+    
+    # Copy required source files
+    shutil.copy(SRC_DIR / "websocket_handler.py", package_dir)
+    shutil.copy(SRC_DIR / "dynamodb_schemas.py", package_dir)
+    
+    # Create the ZIP file
+    with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for root, _, files in os.walk(package_dir):
+            for file in files:
+                file_path = Path(root) / file
+                arc_name = file_path.relative_to(package_dir)
+                zip_file.write(file_path, arc_name)
+    logger.info(f"WebSocket package created at {output_zip_path}")
+
+def deploy_websocket_lambda(zip_path, region):
+    """Deploys the WebSocket handler Lambda function."""
+    config = WEBSOCKET_LAMBDA_CONFIG
+    logger.info(f"Deploying WebSocket Lambda: {config['FunctionName']}")
+    lambda_client = boto3.client('lambda', region_name=region)
+    
+    with open(zip_path, 'rb') as zip_file:
+        zip_content = zip_file.read()
+
+    try:
+        lambda_client.get_function(FunctionName=config['FunctionName'])
+        logger.info("WebSocket Lambda exists, updating code...")
+        return lambda_client.update_function_code(
+            FunctionName=config['FunctionName'],
+            ZipFile=zip_content,
+            Publish=True
+        )
+    except lambda_client.exceptions.ResourceNotFoundException:
+        logger.info("WebSocket Lambda does not exist, creating...")
+        return lambda_client.create_function(
+            FunctionName=config['FunctionName'],
+            Runtime=config['Runtime'],
+            Role=config['Role'],
+            Handler=config['Handler'],
+            Code={'ZipFile': zip_content},
+            Timeout=config['Timeout'],
+            MemorySize=config['MemorySize'],
+            Publish=True
+        )
+
+def setup_websocket_api(lambda_function_name, region):
+    """Creates and configures the WebSocket API in API Gateway."""
+    logger.info("Setting up WebSocket API...")
+    apigw_client = boto3.client('apigatewayv2', region_name=region)
+    lambda_client = boto3.client('lambda', region_name=region)
+    account_id = boto3.client('sts').get_caller_identity()['Account']
+    api_name = "perplexity-validator-websocket-api"
+    
+    # Create or get WebSocket API
+    apis = apigw_client.get_apis().get('Items', [])
+    api = next((a for a in apis if a['Name'] == api_name), None)
+    if not api:
+        api = apigw_client.create_api(Name=api_name, ProtocolType='WEBSOCKET', RouteSelectionExpression='$request.body.action')
+    api_id = api['ApiId']
+    api_endpoint = api['ApiEndpoint']
+
+    # Create Lambda integration
+    lambda_uri = f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/arn:aws:lambda:{region}:{account_id}:function:{lambda_function_name}/invocations"
+    integrations = apigw_client.get_integrations(ApiId=api_id).get('Items', [])
+    integration = next((i for i in integrations if i.get('IntegrationUri') == lambda_uri), None)
+    if not integration:
+        integration = apigw_client.create_integration(ApiId=api_id, IntegrationType='AWS_PROXY', IntegrationUri=lambda_uri, PayloadFormatVersion='1.0')
+    integration_id = integration['IntegrationId']
+
+    # Create routes and attach integration
+    routes = apigw_client.get_routes(ApiId=api_id).get('Items', [])
+    route_keys = ['$connect', '$disconnect', 'subscribe']
+    for route_key in route_keys:
+        if not any(r['RouteKey'] == route_key for r in routes):
+            apigw_client.create_route(ApiId=api_id, RouteKey=route_key, Target=f'integrations/{integration_id}')
+
+    # Create the 'prod' stage before deploying to it
+    try:
+        apigw_client.get_stage(ApiId=api_id, StageName='prod')
+        logger.info("Stage 'prod' already exists.")
+    except apigw_client.exceptions.NotFoundException:
+        apigw_client.create_stage(ApiId=api_id, StageName='prod')
+        logger.info("Created stage 'prod'.")
+
+    # Deploy the API
+    apigw_client.create_deployment(ApiId=api_id, StageName='prod')
+
+    # Grant API Gateway permission to invoke the Lambda
+    try:
+        lambda_client.add_permission(
+            FunctionName=lambda_function_name,
+            StatementId=f"apigw-ws-invoke-{api_id}",
+            Action='lambda:InvokeFunction',
+            Principal='apigateway.amazonaws.com',
+            SourceArn=f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*"
+        )
+    except ClientError as e:
+        if e.response['Error']['Code'] != 'ResourceConflictException':
+            raise
+            
+    return f"{api_endpoint}/prod", api_id
 
 def main():
     """Main function."""
@@ -1336,6 +1088,7 @@ def main():
     # Set up DynamoDB tables if requested or if deploying
     if args.setup_db or (args.deploy and not args.skip_db_setup):
         logger.info("Setting up DynamoDB tables...")
+        # This function was already updated to call create_validation_runs_table
         db_success = setup_dynamodb_tables(args.region)
         if not db_success:
             logger.error("Failed to set up DynamoDB tables")
@@ -1355,10 +1108,80 @@ def main():
             if not success:
                 return 1
             
+            # After successful deployment, set up the SQS triggers
+            lambda_client = boto3.client('lambda', region_name=args.region)
+            setup_sqs_triggers(lambda_client, function_name, args.region)
+
             if api_url and args.test_api:
                 logger.info("Testing API endpoint...")
                 test_api_endpoint(api_url)
             
+            # Deploy WebSocket handler
+            logger.info("\n--- Deploying WebSocket Infrastructure ---")
+            ws_package_zip = SCRIPT_DIR / "websocket_lambda_package.zip"
+            create_websocket_lambda_package(ws_package_zip)
+            deploy_websocket_lambda(ws_package_zip, args.region)
+            ws_api_url, ws_api_id = setup_websocket_api(WEBSOCKET_LAMBDA_CONFIG["FunctionName"], args.region)
+            
+            if ws_api_url:
+                logger.info(f"WebSocket API deployed successfully. Endpoint: {ws_api_url}")
+                
+                # Get account ID for IAM policy
+                account_id = boto3.client('sts').get_caller_identity()['Account']
+
+                # Grant the main interface lambda permission to post to the WebSocket
+                main_lambda_role_name = LAMBDA_CONFIG['Role'].split('/')[-1]
+                iam_client = boto3.client('iam')
+                policy_name = "WebSocketAPIPostMessagePolicy"
+                policy_document = {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Action": "execute-api:ManageConnections",
+                        "Resource": f"arn:aws:execute-api:{args.region}:{account_id}:{ws_api_id}/*"
+                    }]
+                }
+                try:
+                    iam_client.put_role_policy(
+                        RoleName=main_lambda_role_name,
+                        PolicyName=policy_name,
+                        PolicyDocument=json.dumps(policy_document)
+                    )
+                    logger.info(f"Attached WebSocket post policy to role {main_lambda_role_name}.")
+                except Exception as e:
+                     logger.warning(f"Could not attach WebSocket policy to role {main_lambda_role_name}: {e}")
+
+                # Update the main interface lambda's environment
+                lambda_client = boto3.client('lambda', region_name=args.region)
+                lambda_client.update_function_configuration(
+                    FunctionName=LAMBDA_CONFIG["FunctionName"],
+                    Environment={
+                        'Variables': {
+                            **LAMBDA_CONFIG['Environment']['Variables'],
+                            'WEBSOCKET_API_URL': ws_api_url
+                        }
+                    }
+                )
+                logger.info("Updated interface lambda with WebSocket API URL.")
+                
+                # Inject the WebSocket URL into the HTML file
+                try:
+                    html_path = PROJECT_DIR / "perplexity_validator_interface.html"
+                    with open(html_path, 'r', encoding='utf-8') as f:
+                        html_content = f.read()
+                    
+                    # Replace the placeholder
+                    new_html_content = html_content.replace(
+                        'wss://<REPLACE_WITH_YOUR_WEBSOCKET_ID>.execute-api.us-east-1.amazonaws.com/prod',
+                        ws_api_url
+                    )
+                    
+                    with open(html_path, 'w', encoding='utf-8') as f:
+                        f.write(new_html_content)
+                    logger.info(f"Updated WebSocket URL in {html_path}")
+                except Exception as e:
+                    logger.error(f"Failed to inject WebSocket URL into HTML file: {e}")
+
         except Exception as e:
             logger.error(f"Error during deployment: {str(e)}")
             import traceback

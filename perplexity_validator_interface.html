@@ -673,6 +673,25 @@
         line-height: 1.6;
     }
 
+    .progress-bar-container {
+        width: 80%;
+        background-color: #e0e0e0;
+        border-radius: 4px;
+        margin: 1rem auto;
+        height: 20px;
+        overflow: hidden;
+    }
+    .progress-bar {
+        width: 0%;
+        height: 100%;
+        background-color: var(--primary-color);
+        transition: width 0.5s ease-in-out;
+        text-align: center;
+        line-height: 20px;
+        color: white;
+        font-size: 12px;
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
         .validator-container {
@@ -729,42 +748,21 @@
                     <span>Not Validated</span>
                 </div>
             </div>
-
             <div id="emailForm">
                 <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label" for="emailInput">Email Address</label>
-                        <input type="email" id="emailInput" class="form-input" placeholder="your.email@example.com" required>
-                    </div>
-                    <div class="form-group">
-                        <button class="btn btn-primary" id="sendCodeBtn" onclick="checkOrSendValidation()">
-                            <span>Validate Email</span>
-                        </button>
-                    </div>
+                    <div class="form-group"><label class="form-label" for="emailInput">Email Address</label><input type="email" id="emailInput" class="form-input" placeholder="your.email@example.com" required></div>
+                    <div class="form-group"><button class="btn btn-primary" id="sendCodeBtn" onclick="checkOrSendValidation()"><span>Validate Email</span></button></div>
                 </div>
-
                 <div id="codeSection" style="display: none;">
                     <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label" for="codeInput">Verification Code</label>
-                            <input type="text" id="codeInput" class="form-input" placeholder="Enter 6-digit code" maxlength="6">
-                        </div>
-                        <div class="form-group">
-                            <button class="btn btn-secondary" id="verifyCodeBtn" onclick="verifyCode()">
-                                <span>Verify Code</span>
-                            </button>
-                        </div>
+                        <div class="form-group"><label class="form-label" for="codeInput">Verification Code</label><input type="text" id="codeInput" class="form-input" placeholder="Enter 6-digit code" maxlength="6"></div>
+                        <div class="form-group"><button class="btn btn-secondary" id="verifyCodeBtn" onclick="verifyCode()"><span>Verify Code</span></button></div>
                     </div>
                 </div>
-
                 <div id="emailMessage"></div>
             </div>
-
             <div id="emailSuccess" style="display: none;">
-                <div class="message message-success">
-                    <span class="message-icon">✓</span>
-                    <span>Email validated successfully! You can now use the table validator.</span>
-                </div>
+                <div class="message message-success"><span class="message-icon">✓</span><span>Email validated successfully! You can now use the table validator.</span></div>
             </div>
         </div>
 
@@ -772,43 +770,22 @@
         <div class="card disabled" id="uploadCard">
             <div class="card-header">
                 <div class="card-icon">2</div>
-                <div>
-                    <h2 class="card-title">Upload Files</h2>
-                    <p class="card-subtitle">Select your Excel file and configuration</p>
-                </div>
+                <div><h2 class="card-title">Upload Files</h2><p class="card-subtitle">Select your Excel file and configuration</p></div>
             </div>
-
             <div class="file-upload-container">
-                <!-- Excel File Upload -->
                 <div class="drop-zone" id="excelDropZone" onclick="document.getElementById('excelFile').click()">
                     <div class="drop-zone-icon">📊</div>
-                    <div class="drop-zone-text">
-                        <p><strong>Drop Excel/CSV file here</strong></p>
-                        <p>or click to browse</p>
-                    </div>
+                    <div class="drop-zone-text"><p><strong>Drop Excel/CSV file here</strong></p><p>or click to browse</p></div>
                     <input type="file" id="excelFile" class="file-input" accept=".xlsx,.xls,.csv" onchange="handleFileSelect(event, 'excel')">
-                    <div id="excelFileInfo" class="file-info" style="display: none;">
-                        <div class="file-info-name"></div>
-                        <div class="file-info-size"></div>
-                    </div>
+                    <div id="excelFileInfo" class="file-info" style="display: none;"><div class="file-info-name"></div><div class="file-info-size"></div></div>
                 </div>
-
-                <!-- Config File Upload -->
                 <div class="drop-zone" id="configDropZone" onclick="document.getElementById('configFile').click()">
                     <div class="drop-zone-icon">⚙️</div>
-                    <div class="drop-zone-text">
-                        <p><strong>Drop Config JSON here</strong></p>
-                        <p>or click to browse</p>
-                    </div>
+                    <div class="drop-zone-text"><p><strong>Drop Config JSON here</strong></p><p>or click to browse</p></div>
                     <input type="file" id="configFile" class="file-input" accept=".json" onchange="handleFileSelect(event, 'config')">
-                    <div id="configFileInfo" class="file-info" style="display: none;">
-                        <div class="file-info-name"></div>
-                        <div class="file-info-size"></div>
-                    </div>
+                    <div id="configFileInfo" class="file-info" style="display: none;"><div class="file-info-name"></div><div class="file-info-size"></div></div>
                 </div>
             </div>
-
-            <!-- Replace manual validation UI with message container only -->
             <div id="configMessage" style="margin-top: 0.5rem;"></div>
         </div>
 
@@ -816,14 +793,10 @@
         <div class="card disabled" id="previewCard">
             <div class="card-header">
                 <div class="card-icon">3</div>
-                <div>
-                    <h2 class="card-title">Preview Table</h2>
-                    <p class="card-subtitle">Test the first 3 rows to see how it works</p>
-                </div>
+                <div><h2 class="card-title">Preview Table</h2><p class="card-subtitle">Test the first 3 rows to see how it works</p></div>
             </div>
-
             <div style="margin-top: 2rem;">
-                <button class="btn btn-primary btn-block" onclick="processTable()" id="processBtn" disabled>
+                <button class="btn btn-primary btn-block" onclick="processTable(false)" id="processBtn" disabled>
                     <span id="processBtnText">Preview Table</span>
                     <span class="spinner" id="processSpinner" style="display: none;"></span>
                 </button>
@@ -834,84 +807,39 @@
         <div class="card" id="resultsCard" style="display: none;">
             <div class="card-header">
                 <div class="card-icon">4</div>
-                <div>
-                    <h2 class="card-title">Results</h2>
-                    <p class="card-subtitle" id="resultsSubtitle">Preview results</p>
-                </div>
+                <div><h2 class="card-title">Results</h2><p class="card-subtitle" id="resultsSubtitle">Preview results</p></div>
             </div>
-
             <div class="results-header">
-                <div>
-                    <p id="resultsInfo"></p>
-                </div>
-                <div class="results-actions">
-                    <button class="btn btn-primary" onclick="resetValidator()" id="tryAgainBtn" style="display: none;">
-                        Try Again with New Configuration
-                    </button>
-                </div>
+                <div><p id="resultsInfo"></p></div>
+                <div class="results-actions"><button class="btn btn-primary" onclick="resetValidator()" id="tryAgainBtn" style="display: none;">Try Again with New Configuration</button></div>
             </div>
-
             <div id="markdownPreview" class="markdown-preview"></div>
-
             <div id="costEstimate" class="cost-estimate" style="display: none;">
                 <div class="cost-estimate-header">Estimates for Processing Entire Table</div>
-                <div class="cost-estimate-items" id="mainEstimates">
-                    <!-- Main estimates will be populated dynamically -->
-                </div>
+                <div class="cost-estimate-items" id="mainEstimates"></div>
                 <div class="cost-estimate-items" id="detailMetrics">
-                    <div class="cost-item">
-                        <span class="cost-label">Rows</span>
-                        <span class="cost-value" id="totalRows">0</span>
-                    </div>
-                    <div class="cost-item">
-                        <span class="cost-label">Columns</span>
-                        <span class="cost-value" id="totalColumns">0</span>
-                    </div>
-                    <!-- Additional detail metrics will be added dynamically -->
+                    <div class="cost-item"><span class="cost-label">Rows</span><span class="cost-value" id="totalRows">0</span></div>
+                    <div class="cost-item"><span class="cost-label">Columns</span><span class="cost-value" id="totalColumns">0</span></div>
                 </div>
             </div>
-
-            <!-- Full Processing Card - Only shown after preview -->
             <div id="fullProcessingCard" class="card" style="display: none; margin-top: 2rem;">
                 <div class="card-header">
                     <div class="card-icon">✨</div>
-                    <div>
-                        <h2 class="card-title">Process Table</h2>
-                        <p class="card-subtitle">Ready to process the entire table</p>
-                    </div>
+                    <div><h2 class="card-title">Process Table</h2><p class="card-subtitle">Ready to process the entire table</p></div>
                 </div>
-
                 <div class="option-group">
-                    <div class="form-group">
-                        <label class="form-label" for="maxRowsFull">Maximum Rows (Optional)</label>
-                        <input type="number" id="maxRowsFull" class="form-input" placeholder="Leave empty for all rows" min="1">
-                        <p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">
-                            Limit the number of rows to process
-                        </p>
-                    </div>
+                    <div class="form-group"><label class="form-label" for="maxRowsFull">Maximum Rows (Optional)</label><input type="number" id="maxRowsFull" class="form-input" placeholder="Leave empty for all rows" min="1"><p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">Limit the number of rows to process</p></div>
                 </div>
-
-                <div style="margin-top: 2rem;">
-                    <button class="btn btn-primary btn-block" onclick="processFullTable()" id="processFullBtn">
-                        <span id="processFullBtnText">Process Table</span>
-                        <span class="spinner" id="processFullSpinner" style="display: none;"></span>
-                    </button>
-                </div>
+                <div style="margin-top: 2rem;"><button class="btn btn-primary btn-block" onclick="processFullTable()" id="processFullBtn"><span id="processFullBtnText">Process Table</span><span class="spinner" id="processFullSpinner" style="display: none;"></span></button></div>
             </div>
-
             <div id="progressContainer" class="progress-container" style="display: none;">
                 <div class="processing-animation">
-                    <div class="processing-text">Processing Table</div>
-                    <div class="processing-dots">
-                        <span class="dot"></span>
-                        <span class="dot"></span>
-                        <span class="dot"></span>
-                    </div>
+                    <div class="processing-text" id="verboseStatus">Processing Table</div>
+                    <div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+                    <p class="status-message" id="statusMessage">Your validation is being processed...</p>
                 </div>
-                <p class="status-message" id="statusMessage">Your validation is being processed...</p>
             </div>
         </div>
-
         <!-- Validation Complete Card - Only shown after full processing -->
         <div class="card" id="newValidationCard" style="display: none;">
             <div class="card-header">
@@ -932,35 +860,62 @@
             </div>
         </div>
 
-        <!-- Partial Validation Card - Shown when validation is incomplete -->
+        <!-- Partial Validation Card - Changed from "Incomplete" -->
         <div class="card" id="partialValidationCard" style="display: none;">
             <div class="card-header">
                 <div class="card-icon">📈</div>
                 <div>
-                    <h2 class="card-title">Validation Incomplete</h2>
-                    <p class="card-subtitle">Process more rows to complete validation</p>
+                    <h2 class="card-title">Continue Validation</h2>
+                    <p class="card-subtitle">Process more of your table</p>
                 </div>
             </div>
 
             <div style="padding: 2rem;">
-                <p style="margin-bottom: 1.5rem; color: var(--text-secondary);">
-                    You have processed a subset of your data. To complete the full validation, you can process more rows.
+                <p id="partialValidationMessage" style="margin-bottom: 1.5rem; color: var(--text-secondary);">
+                    You have processed a subset of your data. To continue, enter a new total number of rows to process.
                 </p>
                 
                 <div class="option-group">
                     <div class="form-group">
-                        <label class="form-label" for="maxRowsMore">Process Additional Rows</label>
-                        <input type="number" id="maxRowsMore" class="form-input" placeholder="Enter number of additional rows" min="1">
+                        <label class="form-label" for="maxRowsMore">Total Rows to Process</label>
+                        <input type="number" id="maxRowsMore" class="form-input" placeholder="Enter new total row count" min="1">
                         <p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">
-                            Leave empty to process all remaining rows
+                            This is the total number of rows from the top, not additional rows. Leave empty to process all.
                         </p>
                     </div>
                 </div>
 
                 <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
                     <button class="btn btn-primary" onclick="processMoreRows()" id="processMoreBtn" style="flex: 1;">
-                        <span id="processMoreBtnText">Process More Rows</span>
+                        <span id="processMoreBtnText">Continue Processing</span>
                         <span class="spinner" id="processMoreSpinner" style="display: none;"></span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="window.location.reload()" style="flex: 1;">
+                        New Validation
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Complete Validation Card - Shown after partial full validation -->
+        <div class="card" id="completeValidationCard" style="display: none;">
+            <div class="card-header">
+                <div class="card-icon">🎯</div>
+                <div>
+                    <h2 class="card-title">Complete Validation</h2>
+                    <p class="card-subtitle">Finish processing your table</p>
+                </div>
+            </div>
+
+            <div style="padding: 2rem;">
+                <p id="completeValidationMessage" style="margin-bottom: 1.5rem; color: var(--text-secondary);">
+                    You have processed a portion of your data. You can complete the validation or start fresh.
+                </p>
+
+                <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                    <button class="btn btn-primary" onclick="completeAllValidation()" id="completeAllBtn" style="flex: 1;">
+                        <span id="completeAllBtnText">Complete Validation (All Rows)</span>
+                        <span class="spinner" id="completeAllSpinner" style="display: none;"></span>
                     </button>
                     <button class="btn btn-secondary" onclick="window.location.reload()" style="flex: 1;">
                         New Validation
@@ -977,1068 +932,589 @@
             <p id="loadingMessage">Processing your request...</p>
         </div>
     </div>
-
     <script>
-    // ============================================
-    // IMPORTANT: CONFIGURATION REQUIRED
-    // ============================================
-    // 1. Deploy your API first:
-    //    cd deployment && python create_interface_package.py --deploy --setup-db
-    //
-    // 2. Replace the API_BASE below with your actual endpoint from the deployment output
-    //
-    // 3. Serve this file from a web server (not file://)
-    //    Quick test: python -m http.server 8000
-    // ============================================
-
-    // Global state
-    const state = {
-        email: '',
-        emailValidated: false,
-        excelFile: null,
-        configFile: null,
-        configValidated: false,
-        mode: 'preview',
-        sessionId: null,
-        results: null
-    };
-
-    // API Configuration
-    // IMPORTANT: Replace this with your actual API Gateway endpoint!
-    // You can find it in AWS Console > API Gateway > perplexity-validator-api > Stages > prod
-    // Or from the deployment script output
-    // 
-    // TO DEPLOY YOUR API:
-    // cd deployment && python create_interface_package.py --deploy --setup-db
-    //
-    // Your deployed API endpoint (confirmed from deployment output):
-    const API_BASE = 'https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod';
-
-    // Initialize
-    document.addEventListener('DOMContentLoaded', function() {
-        // Check for stored email
-        const storedEmail = localStorage.getItem('validatedEmail');
-        if (storedEmail) {
-            document.getElementById('emailInput').value = storedEmail;
-            checkOrSendValidation();
-        }
-
-        // Setup drag and drop
-        setupDragAndDrop();
-    });
-
-    // Email Validation Functions
-    async function checkOrSendValidation() {
-        const emailInput = document.getElementById('emailInput');
-        const email = emailInput.value.trim();
-        
-        if (!validateEmail(email)) {
-            showMessage('emailMessage', 'Please enter a valid email address', 'error');
-            return;
-        }
-
-        const sendBtn = document.getElementById('sendCodeBtn');
-        sendBtn.disabled = true;
-        sendBtn.innerHTML = '<span class="spinner"></span> Checking...';
-
-        try {
-            // Use the /validate endpoint with action parameter
-            const response = await fetch(`${API_BASE}/validate`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ 
-                    action: 'checkOrSendValidation',
-                    email: email 
-                })
-            });
-
-            const data = await response.json();
-
-            if (response.ok && data.success) {
-                if (data.validated === true) {
-                    // Email is already validated
-                    handleEmailValidated(email);
-                } else if (data.message && data.message.includes('sent')) {
-                    // Show code input
-                    state.email = email;
-                    document.getElementById('codeSection').style.display = 'block';
-                    showMessage('emailMessage', 'Validation code sent to your email!', 'success');
-                    document.getElementById('codeInput').focus();
-                }
-            } else {
-                showMessage('emailMessage', data.message || data.error || 'Failed to send validation code', 'error');
+        // ============================================
+        // CONFIGURATION
+        // ============================================
+        // IMPORTANT: Replace these with your actual deployed endpoints after running the deployment script.
+        const API_BASE = 'https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod';
+        const WEBSOCKET_API_URL = 'wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod'; 
+    
+        // Global state
+        const state = {
+            email: '',
+            emailValidated: false,
+            excelFile: null,
+            configFile: null,
+            configValidated: false,
+            mode: 'preview',
+            sessionId: null,
+            results: null,
+            processedRows: 0,
+            websocket: null
+        };
+    
+        // --- INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', function() {
+            const storedEmail = localStorage.getItem('validatedEmail');
+            console.log('Stored email:', storedEmail);
+            if (storedEmail) {
+                document.getElementById('emailInput').value = storedEmail;
+                // Try to validate the stored email, but fall back to local validation if API fails
+                checkOrSendValidation();
             }
-        } catch (error) {
-            // Enhanced error handling with debugging info
-            console.error('Network Error Details:', {
-                error: error,
-                message: error.message,
-                stack: error.stack,
-                apiUrl: `${API_BASE}/validate`,
-                email: email,
-                protocol: window.location.protocol
-            });
-            
-            let errorMsg = 'Network error: ';
-            
-            if (window.location.protocol === 'file:') {
-                errorMsg = 'Cannot run from file://. Please either:<br>' +
-                          '1. Upload to your web server (recommended)<br>' +
-                          '2. Use a local server: python -m http.server 8000<br>' +
-                          '3. Make sure API_BASE URL is correct in the code';
-            } else if (error.message && error.message.includes('Failed to fetch')) {
-                errorMsg = 'Failed to connect to API. Please check:<br>' +
-                          '1. API_BASE URL is correct (currently: ' + API_BASE + ')<br>' +
-                          '2. API Gateway is deployed and accessible<br>' +
-                          '3. Check browser console (F12) for detailed error';
-            } else {
-                errorMsg += error.message || 'Unknown error. Check browser console (F12).';
-            }
-            
-            showMessage('emailMessage', errorMsg, 'error');
-            
-            // Add a debug section
-            if (!document.getElementById('debugInfo')) {
-                const debugDiv = document.createElement('div');
-                debugDiv.id = 'debugInfo';
-                debugDiv.style.cssText = 'margin-top: 1rem; padding: 1rem; background: #f0f0f0; border-radius: 8px; font-family: monospace; font-size: 12px;';
-                debugDiv.innerHTML = `
-                    <strong>Debug Information:</strong><br>
-                    Current Protocol: ${window.location.protocol}<br>
-                    API Endpoint: ${API_BASE}/validate<br>
-                    Email: ${email}<br>
-                    <br>
-                    <strong>API Status:</strong><br>
-                    ✓ Using proxy integration endpoint (/validate)<br>
-                    ✓ CORS headers configured<br>
-                    ✓ Your API ID: a0tk95o95g<br>
-                    <br>
-                    <strong>If still having issues:</strong><br>
-                    1. Check CloudWatch logs for Lambda errors<br>
-                    2. Ensure you're serving from http:// or https://<br>
-                    3. Try the test_cors_fix.html file first
-                `;
-                document.getElementById('emailMessage').appendChild(debugDiv);
-            }
-        } finally {
-            sendBtn.disabled = false;
-            sendBtn.innerHTML = '<span>Validate Email</span>';
-        }
-    }
-
-    async function verifyCode() {
-        const code = document.getElementById('codeInput').value.trim();
-        
-        if (code.length !== 6) {
-            showMessage('emailMessage', 'Please enter a 6-digit code', 'error');
-            return;
-        }
-
-        const verifyBtn = document.getElementById('verifyCodeBtn');
-        verifyBtn.disabled = true;
-        verifyBtn.innerHTML = '<span class="spinner"></span> Verifying...';
-
-        try {
-            // Use the /validate endpoint with action parameter
-            const response = await fetch(`${API_BASE}/validate`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ 
-                    action: 'validateEmailCode',
-                    email: state.email,
-                    code: code
-                })
-            });
-
-            const data = await response.json();
-
-            if (response.ok && data.success) {
-                handleEmailValidated(state.email);
-            } else {
-                showMessage('emailMessage', data.message || data.error || 'Invalid code', 'error');
-            }
-        } catch (error) {
-            showMessage('emailMessage', 'Network error. Please try again.', 'error');
-            console.error('Error:', error);
-        } finally {
-            verifyBtn.disabled = false;
-            verifyBtn.innerHTML = '<span>Verify Code</span>';
-        }
-    }
-
-    function handleEmailValidated(email) {
-        state.email = email;
-        state.emailValidated = true;
-        
-        // Store in localStorage
-        localStorage.setItem('validatedEmail', email);
-        
-        // Update UI
-        document.getElementById('emailForm').style.display = 'none';
-        document.getElementById('emailSuccess').style.display = 'block';
-        document.getElementById('emailStatus').className = 'status-badge success';
-        document.getElementById('emailStatus').innerHTML = '<span>Validated</span>';
-        
-        // Enable file upload
-        document.getElementById('uploadCard').classList.remove('disabled');
-
-        // Re-evaluate readiness in case files were already selected & config validated
-        checkReadyToProcess();
-    }
-
-    // File Handling Functions
-    function setupDragAndDrop() {
-        const excelDropZone = document.getElementById('excelDropZone');
-        const configDropZone = document.getElementById('configDropZone');
-
-        [excelDropZone, configDropZone].forEach((zone, index) => {
-            const type = index === 0 ? 'excel' : 'config';
-            
-            zone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                zone.classList.add('drag-over');
-            });
-
-            zone.addEventListener('dragleave', () => {
-                zone.classList.remove('drag-over');
-            });
-
-            zone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                zone.classList.remove('drag-over');
-                
-                const files = e.dataTransfer.files;
-                if (files.length > 0) {
-                    const fakeEvent = {
-                        target: { files: [files[0]] }
-                    };
-                    handleFileSelect(fakeEvent, type);
-                }
-            });
+            setupDragAndDrop();
         });
-    }
-
-    function handleFileSelect(event, type) {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        if (type === 'excel') {
-            const validTypes = ['.xlsx', '.xls', '.csv'];
-            const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-            
-            if (!validTypes.includes(fileExt)) {
-                showMessage('emailMessage', 'Please select a valid Excel or CSV file', 'error');
-                return;
-            }
-            
-            state.excelFile = file;
-            displayFileInfo('excel', file);
-            
-            // Reset state when new excel file is uploaded
-            resetValidationState();
-        } else if (type === 'config') {
-            if (!file.name.endsWith('.json')) {
-                showMessage('emailMessage', 'Please select a valid JSON configuration file', 'error');
-                return;
-            }
-            
-            state.configFile = file;
-            state.configValidated = false;
-            displayFileInfo('config', file);
-            
-            // Reset state when new config file is uploaded
-            resetValidationState();
-            
-            // Automatically validate configuration when a new config is loaded
-            validateConfig();
+    
+        // --- UTILITY FUNCTIONS ---
+        function validateEmail(email) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
         }
-
-        // Re-evaluate readiness every time a file is selected
-        checkReadyToProcess();
-    }
-
-    function resetValidationState() {
-        // Reset validation state when new files are uploaded
-        const previousMode = state.mode;
-        state.sessionId = null;
-        state.results = null;
-        state.mode = 'preview';
-        
-        // Log the reset for debugging
-        console.log('🔄 resetValidationState called - mode changed from', previousMode, 'to', state.mode);
-        
-        // Hide results and full processing cards
-        document.getElementById('resultsCard').style.display = 'none';
-        document.getElementById('fullProcessingCard').style.display = 'none';
-        document.getElementById('tryAgainBtn').style.display = 'none';
-        document.getElementById('newValidationCard').style.display = 'none';
-        document.getElementById('partialValidationCard').style.display = 'none';
-        document.getElementById('progressContainer').style.display = 'none';
-        
-        // Clear cost estimates and markdown preview
-        document.getElementById('costEstimate').style.display = 'none';
-        document.getElementById('markdownPreview').style.display = 'none';
-        document.getElementById('markdownPreview').innerHTML = '';
-        
-        // Reset processing animation
-        const processingAnimation = document.querySelector('.processing-animation');
-        if (processingAnimation) {
-            processingAnimation.classList.remove('completed');
-            document.querySelector('.processing-text').textContent = 'Processing Table';
-            document.querySelector('.processing-dots').style.display = 'flex';
+    
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + ['Bytes', 'KB', 'MB', 'GB'][i];
         }
-    }
-
-    function displayFileInfo(type, file) {
-        const infoElement = document.getElementById(`${type}FileInfo`);
-        const nameElement = infoElement.querySelector('.file-info-name');
-        const sizeElement = infoElement.querySelector('.file-info-size');
-        
-        nameElement.textContent = file.name;
-        sizeElement.textContent = formatFileSize(file.size);
-        infoElement.style.display = 'block';
-    }
-
-    // Config Validation
-    async function validateConfig() {
-        if (!state.configFile) return;
-
-        // Indicate validation in progress
-        showMessage('configMessage', 'Validating configuration...', 'info');
-        state.configValidated = false;
-        checkReadyToProcess();
-
-        try {
-            const configContent = await readFileAsText(state.configFile);
-            let config;
-            try {
-                config = JSON.parse(configContent);
-            } catch (jsonError) {
-                showMessage('configMessage', 'Invalid JSON format: ' + jsonError.message, 'error');
-                return;
-            }
-
-            const response = await fetch(`${API_BASE}/validate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'validateConfig', config })
+    
+        function readFileAsText(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(e.target.result);
+                reader.onerror = reject;
+                reader.readAsText(file);
             });
-            const data = await response.json();
-
-            if (response.ok && data.valid) {
-                showMessage('configMessage', '✅ ' + (data.message || 'Configuration is valid!'), 'success');
-                state.configValidated = true;
-            } else {
-                const errorMsg = `❌ Configuration error: ${data.message || data.error || 'Unknown error'}`;
-                showMessage('configMessage', errorMsg, 'error');
-                state.configValidated = false;
+        }
+    
+        function showMessage(containerId, message, type) {
+            const container = document.getElementById(containerId);
+            if (container) {
+                const icon = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
+                container.innerHTML = `<div class="message message-${type}"><span class="message-icon">${icon}</span><span>${message}</span></div>`;
             }
-        } catch (error) {
-            const errorMsg = 'Network error or invalid configuration: ' + error.message;
-            showMessage('configMessage', errorMsg, 'error');
+        }
+    
+        function escapeHtml(text) {
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+        
+        function convertMarkdownToHtml(markdown) {
+            if (!markdown) return '';
+            const lines = markdown.trim().split('\n');
+            let html = '';
+            let tableStartIndex = 0;
+            
+            if (lines[0].includes('**Confidence Legend:**')) {
+                const legendLine = lines[0];
+                html += '<div style="margin-bottom: 1rem; font-weight: bold;">' + legendLine.replace(/\*\*/g, '') + '</div>';
+                tableStartIndex = lines.findIndex(line => line.startsWith('|'));
+            }
+            
+            if (tableStartIndex === -1) return html;
+    
+            html += '<table class="markdown-table"><thead><tr>';
+            const headers = lines[tableStartIndex].split('|').filter(h => h.trim());
+            headers.forEach(header => { html += `<th>${escapeHtml(header.trim())}</th>`; });
+            html += '</tr></thead><tbody>';
+            
+            for (let i = tableStartIndex + 2; i < lines.length; i++) {
+                const cells = lines[i].split('|').filter(c => c.trim());
+                if (cells.length > 0) {
+                    html += '<tr>';
+                    cells.forEach(cell => { html += `<td>${escapeHtml(cell.trim())}</td>`; });
+                    html += '</tr>';
+                }
+            }
+            html += '</tbody></table>';
+            return html;
+        }
+    
+        // --- UI STATE MANAGEMENT ---
+        function checkReadyToProcess() {
+            const processBtn = document.getElementById('processBtn');
+            const previewCard = document.getElementById('previewCard');
+            const isReady = state.emailValidated && state.excelFile && state.configValidated;
+            
+            console.log('checkReadyToProcess:', {
+                emailValidated: state.emailValidated,
+                excelFile: !!state.excelFile,
+                configValidated: state.configValidated,
+                isReady: isReady
+            });
+            
+            if (processBtn) processBtn.disabled = !isReady;
+            if (previewCard) {
+                isReady ? previewCard.classList.remove('disabled') : previewCard.classList.add('disabled');
+            }
+        }
+    
+        function resetValidator() {
+            state.excelFile = null;
+            state.configFile = null;
             state.configValidated = false;
-            console.error('Error:', error);
-        } finally {
+            state.sessionId = null;
+            state.results = null;
+            state.processedRows = 0;
+            state.mode = 'preview';
+            if (state.websocket) {
+                state.websocket.close();
+                state.websocket = null;
+            }
+    
+            const safeUpdate = (id, update) => {
+                const el = document.getElementById(id);
+                if (el) update(el);
+            };
+            
+            safeUpdate('excelFile', el => el.value = '');
+            safeUpdate('configFile', el => el.value = '');
+            safeUpdate('excelFileInfo', el => el.style.display = 'none');
+            safeUpdate('configFileInfo', el => el.style.display = 'none');
+            safeUpdate('resultsCard', el => el.style.display = 'none');
+            safeUpdate('fullProcessingCard', el => el.style.display = 'none');
+            safeUpdate('partialValidationCard', el => el.style.display = 'none');
+            safeUpdate('completeValidationCard', el => el.style.display = 'none');
+            safeUpdate('newValidationCard', el => el.style.display = 'none');
+            safeUpdate('progressContainer', el => el.style.display = 'none');
+            safeUpdate('tryAgainBtn', el => el.style.display = 'none');
+            safeUpdate('configMessage', el => el.innerHTML = '');
+            safeUpdate('costEstimate', el => el.style.display = 'none');
+            safeUpdate('markdownPreview', el => {
+                el.style.display = 'none';
+                el.innerHTML = '';
+            });
+            
             checkReadyToProcess();
         }
-    }
-
-                // Process More Rows Function
-    async function processMoreRows() {
-        if (!state.excelFile || !state.configFile || !state.emailValidated) return;
-
-        const processMoreBtn = document.getElementById('processMoreBtn');
-        processMoreBtn.disabled = true;
-        document.getElementById('processMoreSpinner').style.display = 'inline-block';
-
-        try {
-            // Read config file as text before creating FormData
-            const configContent = await readFileAsText(state.configFile);
-
-            // Prepare form data
-            const formData = new FormData();
-            formData.append('excel_file', state.excelFile, state.excelFile.name);
-            formData.append('config_file', configContent);
-            formData.append('email', state.email);
-
-            // Build URL for processing more rows
-            let url = `${API_BASE}/validate?`;
-            const maxRows = document.getElementById('maxRowsMore').value;
-            if (maxRows) {
-                url += `max_rows=${maxRows}&`;
-            }
-            url += 'batch_size=5&async=true';
-
-            // Make request
-            const response = await fetch(url, {
-                method: 'POST',
-                body: formData
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                // Start new session for processing more rows
-                state.sessionId = data.session_id;
-                state.mode = 'full';
-                
-                // Hide the partial validation card
-                document.getElementById('partialValidationCard').style.display = 'none';
-                
-                // Update results display for processing more rows
-                document.getElementById('resultsSubtitle').textContent = 'Processing additional rows...';
-                document.getElementById('progressContainer').style.display = 'block';
-                document.getElementById('resultsInfo').textContent = `Session ID: ${data.session_id}`;
-                
-                if (data.reference_pin) {
-                    document.getElementById('resultsInfo').innerHTML += `<br>Reference PIN: <strong>${data.reference_pin}</strong>`;
-                }
-                
-                // Reset processing animation
-                const processingAnimation = document.querySelector('.processing-animation');
-                if (processingAnimation) {
-                    processingAnimation.classList.remove('completed');
-                    document.querySelector('.processing-text').textContent = 'Processing Additional Rows';
-                    document.querySelector('.processing-dots').style.display = 'flex';
-                }
-                
-                startPolling();
-            } else {
-                showMessage('emailMessage', `Error: ${data.error}`, 'error');
-            }
-        } catch (error) {
-            showMessage('emailMessage', 'Failed to process additional rows. Please try again.', 'error');
-            console.error('Error:', error);
-        } finally {
-            processMoreBtn.disabled = false;
-            document.getElementById('processMoreSpinner').style.display = 'none';
-        }
-    }
-
-    // Process Table Function
-    async function processFullTable() {
-        if (!state.excelFile || !state.configFile || !state.emailValidated) return;
-
-        const processFullBtn = document.getElementById('processFullBtn');
-        processFullBtn.disabled = true;
-        document.getElementById('processFullSpinner').style.display = 'inline-block';
-
-        try {
-            // Read config file as text before creating FormData
-            const configContent = await readFileAsText(state.configFile);
-
-            // Prepare form data
-            const formData = new FormData();
-            formData.append('excel_file', state.excelFile, state.excelFile.name);
-            formData.append('config_file', configContent);
-            formData.append('email', state.email);
-
-            // Build URL for full processing
-            let url = `${API_BASE}/validate?`;
-            const maxRows = document.getElementById('maxRowsFull').value;
-            if (maxRows) {
-                url += `max_rows=${maxRows}&`;
-            }
-            url += 'batch_size=5&async=true';
-
-            // Make request
-            const response = await fetch(url, {
-                method: 'POST',
-                body: formData
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                // Start new session for full processing
-                state.sessionId = data.session_id;
-                state.mode = 'full';
-                
-                // Update results display for full processing
-                document.getElementById('resultsSubtitle').textContent = 'Processing table...';
-                document.getElementById('progressContainer').style.display = 'block';
-                document.getElementById('resultsInfo').textContent = `Session ID: ${data.session_id}`;
-                
-                if (data.reference_pin) {
-                    document.getElementById('resultsInfo').innerHTML += `<br>Reference PIN: <strong>${data.reference_pin}</strong>`;
-                }
-                
-                // Hide the full processing card (don't scroll - let user see the processing status)
-                document.getElementById('fullProcessingCard').style.display = 'none';
-                
-                startPolling();
-            } else {
-                showMessage('emailMessage', `Error: ${data.error}`, 'error');
-            }
-        } catch (error) {
-            showMessage('emailMessage', 'Failed to process table. Please try again.', 'error');
-            console.error('Error:', error);
-        } finally {
-            processFullBtn.disabled = false;
-            document.getElementById('processFullSpinner').style.display = 'none';
-        }
-    }
-
-    // Table Processing
-    async function processTable() {
-        if (!state.excelFile || !state.configFile || !state.emailValidated) return;
-
-        // Log the current state before processing
-        console.log('🚀 processTable called - current state.mode:', state.mode);
-
-        const processBtn = document.getElementById('processBtn');
-        processBtn.disabled = true;
-        document.getElementById('processSpinner').style.display = 'inline-block';
-
-        try {
-            // Read config file as text before creating FormData
-            const configContent = await readFileAsText(state.configFile);
-
-            // Prepare form data
-            const formData = new FormData();
-            formData.append('excel_file', state.excelFile, state.excelFile.name);
-            
-            // Send config content as a plain text field, not a file/blob
-            formData.append('config_file', configContent);
-            
-            formData.append('email', state.email);
-
-            // Build URL with parameters for preview mode
-            let url = `${API_BASE}/validate?preview_first_row=true&preview_max_rows=3&async=true`;
-            
-            console.log('🔍 Starting preview mode with URL:', url);
-
-            // Make request
-            const response = await fetch(url, {
-                method: 'POST',
-                body: formData
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                // Set preview mode before processing
-                state.mode = 'preview';
-                state.sessionId = data.session_id;
-                
-                console.log('🔍 Preview response received:', {
-                    status: data.status,
-                    session_id: data.session_id,
-                    reference_pin: data.reference_pin,
-                    state_mode: state.mode
-                });
-                
-                // All processing is now async - need to poll for results
-                if (data.status === 'processing' || data.status === 'processing_started') {
-                    showResults(data, true);
-                    startPolling();
-                } else if (data.status === 'preview_completed') {
-                    // Legacy sync response - shouldn't happen but handle gracefully
-                    showResults(data, false);
-                } else {
-                    // Unknown status, treat as async
-                    showResults(data, true);
-                    startPolling();
-                }
-            } else {
-                showMessage('emailMessage', `Error: ${data.error}`, 'error');
-            }
-        } catch (error) {
-            showMessage('emailMessage', 'Failed to process table. Please try again.', 'error');
-            console.error('Error:', error);
-        } finally {
-            processBtn.disabled = false;
-            document.getElementById('processSpinner').style.display = 'none';
-        }
-    }
-
-    // Polling for Async Results
-    async function startPolling() {
-        const pollInterval = setInterval(async () => {
-            try {
-                // Add parameters for status request
-                let statusUrl = `${API_BASE}/status/${state.sessionId}`;
-                const params = new URLSearchParams();
-                
-                if (state.mode === 'preview') {
-                    params.append('preview', 'true');
-                }
-                
-                console.log('🔍 Polling status with:', {
-                    url: statusUrl,
-                    mode: state.mode,
-                    params: params.toString()
-                });
-                
-                // Always include email to help find the results
-                if (state.email) {
-                    params.append('email', state.email);
-                }
-                
-                if (params.toString()) {
-                    statusUrl += '?' + params.toString();
-                }
-                
-                const response = await fetch(statusUrl);
-                const data = await response.json();
-                
-                console.log('🔍 Status response:', {
-                    status: data.status,
-                    has_markdown_table: !!data.markdown_table,
-                    has_result_url: !!data.result_url,
-                    mode: state.mode
-                });
-
-                if (data.status === 'completed' || data.status === 'preview_completed') {
-                    clearInterval(pollInterval);
-                    
-                    // Enhanced logging to debug the issue
-                    console.log('🔍 Processing completed - analyzing result:', {
-                        status: data.status,
-                        has_markdown_table: !!data.markdown_table,
-                        current_mode: state.mode,
-                        session_id: state.sessionId
-                    });
-                    
-                    // Check if this is a preview result
-                    if (data.markdown_table && state.mode === 'preview') {
-                        // This is a preview result - display it and hide processing
-                        console.log('🔍 Detected PREVIEW result - showing preview UI');
-                        document.getElementById('progressContainer').style.display = 'none';
-                        showResults(data, false);
-                    } else {
-                        // This is a full processing result OR any other completion - show completion status
-                        console.log('🔍 Detected FULL PROCESSING completion - showing completion UI');
-                        // Keep the processing container visible but update it to show completion
-                        document.querySelector('.processing-animation').classList.add('completed');
-                        document.querySelector('.processing-text').textContent = 'Processing Complete!';
-                        document.querySelector('.processing-dots').style.display = 'none';
-                        
-                        // Determine if validation is complete or incomplete based on max_rows setting
-                        const maxRows = document.getElementById('maxRowsFull').value;
-                        const isIncompleteValidation = maxRows && parseInt(maxRows) > 0;
-                        
-                        if (isIncompleteValidation) {
-                            // Show partial validation card for incomplete validation
-                            console.log('🔍 Showing Partial Validation card for incomplete validation');
-                            const partialValidationCard = document.getElementById('partialValidationCard');
-                            if (partialValidationCard) {
-                                partialValidationCard.style.display = 'block';
-                                console.log('🔍 Partial Validation card should now be visible');
-                                // Scroll to the partial validation card
-                                setTimeout(() => {
-                                    partialValidationCard.scrollIntoView({ behavior: 'smooth' });
-                                }, 500);
-                            } else {
-                                console.error('🔍 Partial Validation card element not found!');
-                            }
-                            
-                            // Update status message for partial validation
-                            document.getElementById('statusMessage').innerHTML = 
-                                '✅ <strong>Partial Processing Complete!</strong><br>' +
-                                'Your results will be emailed to you within the next few minutes.<br>' +
-                                'You can process more rows to complete the full validation.';
-                        } else {
-                            // Show New Validation card at bottom after full processing completion
-                            console.log('🔍 Showing New Validation card for full processing completion');
-                            const newValidationCard = document.getElementById('newValidationCard');
-                            if (newValidationCard) {
-                                newValidationCard.style.display = 'block';
-                                console.log('🔍 New Validation card should now be visible');
-                                // Scroll to the new validation card
-                                setTimeout(() => {
-                                    newValidationCard.scrollIntoView({ behavior: 'smooth' });
-                                }, 500);
-                            } else {
-                                console.error('🔍 New Validation card element not found!');
-                            }
-                            
-                            // Update status message for email delivery (email only)
-                            document.getElementById('statusMessage').innerHTML = 
-                                '✅ <strong>Processing Complete!</strong><br>' +
-                                'Your results will be emailed to you within the next few minutes.';
-                        }
-                        
-                        document.getElementById('statusMessage').style.display = 'block';
+    
+        // --- FILE HANDLING ---
+        function setupDragAndDrop() {
+            ['excelDropZone', 'configDropZone'].forEach((zoneId, index) => {
+                const zone = document.getElementById(zoneId);
+                const type = index === 0 ? 'excel' : 'config';
+                if (!zone) return;
+    
+                zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+                zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+                zone.addEventListener('drop', e => {
+                    e.preventDefault();
+                    zone.classList.remove('drag-over');
+                    if (e.dataTransfer.files.length) {
+                        handleFileSelect({ target: { files: e.dataTransfer.files } }, type);
                     }
-                } else if (data.status === 'processing') {
-                    // Keep processing animation running - no progress updates needed
-                    document.getElementById('statusMessage').textContent = 'Your validation is being processed...';
-                } else if (data.status === 'failed' || data.status === 'error') {
-                    clearInterval(pollInterval);
-                    document.getElementById('progressContainer').style.display = 'none';
-                    showMessage('emailMessage', `Processing failed: ${data.error || data.message || 'Unknown error'}`, 'error');
+                });
+            });
+        }
+    
+                function handleFileSelect(event, type) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Only reset validation state, not the entire validator
+            state.configValidated = false;
+            state.sessionId = null;
+            state.results = null;
+            state.processedRows = 0;
+            state.mode = 'preview';
+            
+            // Hide result-related elements
+            const safeUpdate = (id, update) => {
+                const el = document.getElementById(id);
+                if (el) update(el);
+            };
+            
+            safeUpdate('resultsCard', el => el.style.display = 'none');
+            safeUpdate('fullProcessingCard', el => el.style.display = 'none');
+            safeUpdate('partialValidationCard', el => el.style.display = 'none');
+            safeUpdate('completeValidationCard', el => el.style.display = 'none');
+            safeUpdate('newValidationCard', el => el.style.display = 'none');
+            safeUpdate('progressContainer', el => el.style.display = 'none');
+            safeUpdate('tryAgainBtn', el => el.style.display = 'none');
+            safeUpdate('costEstimate', el => el.style.display = 'none');
+            safeUpdate('markdownPreview', el => {
+                el.style.display = 'none';
+                el.innerHTML = '';
+            });
+
+            if (type === 'excel') {
+                state.excelFile = file;
+                displayFileInfo('excel', file);
+                // Clear config message when excel file changes
+                safeUpdate('configMessage', el => el.innerHTML = '');
+            } else if (type === 'config') {
+                state.configFile = file;
+                displayFileInfo('config', file);
+                validateConfig();
+            }
+            checkReadyToProcess();
+        }
+        
+        function displayFileInfo(type, file) {
+            const infoElement = document.getElementById(`${type}FileInfo`);
+            if (infoElement) {
+                infoElement.querySelector('.file-info-name').textContent = file.name;
+                infoElement.querySelector('.file-info-size').textContent = formatFileSize(file.size);
+                infoElement.style.display = 'block';
+            }
+        }
+    
+                async function validateConfig() {
+            if (!state.configFile) return;
+            showMessage('configMessage', 'Validating configuration...', 'info');
+            state.configValidated = false;
+            checkReadyToProcess();
+
+            try {
+                const configContent = await readFileAsText(state.configFile);
+                console.log('Config content:', configContent);
+                const config = JSON.parse(configContent);
+                console.log('Parsed config:', config);
+                
+                // Basic local validation first
+                if (config && typeof config === 'object' && config.validation_targets && Array.isArray(config.validation_targets)) {
+                    console.log('Config has valid structure, attempting API validation...');
+                    
+                    try {
+                        const response = await fetch(`${API_BASE}/validate`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'validateConfig', config })
+                        });
+                        console.log('Response status:', response.status);
+                        
+                        const data = await response.json();
+                        console.log('Response data:', data);
+                        
+                        if (response.ok && data.valid) {
+                            showMessage('configMessage', '✅ Configuration is valid!', 'success');
+                            state.configValidated = true;
+                        } else {
+                            showMessage('configMessage', `❌ Config Error: ${data.message || 'Unknown error'}`, 'error');
+                        }
+                    } catch (apiError) {
+                        console.warn('API validation failed, falling back to local validation:', apiError);
+                        showMessage('configMessage', '✅ Configuration is valid! (Local validation - API unavailable)', 'success');
+                        state.configValidated = true;
+                    }
+                } else {
+                    showMessage('configMessage', '❌ Invalid config structure. Must have validation_targets array.', 'error');
                 }
             } catch (error) {
-                console.error('Polling error:', error);
+                console.error('Config validation error:', error);
+                showMessage('configMessage', `❌ Error reading or validating config file: ${error.message}`, 'error');
+            } finally {
+                checkReadyToProcess();
             }
-        }, 3000);
-    }
-
-
-
-    // Results Display
-    function showResults(data, isAsync) {
-        document.getElementById('resultsCard').style.display = 'block';
-        document.getElementById('resultsCard').scrollIntoView({ behavior: 'smooth' });
-
-        if (isAsync) {
-            document.getElementById('resultsSubtitle').textContent = 'Processing your table...';
-            document.getElementById('progressContainer').style.display = 'block';
-            document.getElementById('resultsInfo').textContent = `Session ID: ${data.session_id}`;
-            
-            if (data.reference_pin) {
-                document.getElementById('resultsInfo').innerHTML += `<br>Reference PIN: <strong>${data.reference_pin}</strong>`;
+        }
+        
+        // --- CORE LOGIC ---
+        async function checkOrSendValidation() {
+            const emailInput = document.getElementById('emailInput');
+            const email = emailInput.value.trim();
+            if (!validateEmail(email)) {
+                showMessage('emailMessage', 'Please enter a valid email address', 'error');
+                return;
             }
-        } else {
-            // Preview results
-            document.getElementById('resultsSubtitle').textContent = 'Preview Results';
-            
-            // Hide progress bar for sync results
-            document.getElementById('progressContainer').style.display = 'none';
-            
-            // Display the markdown table if available
-            if (data.markdown_table) {
-                // Convert markdown table to HTML
-                const htmlTable = convertMarkdownToHtml(data.markdown_table);
-                document.getElementById('markdownPreview').innerHTML = htmlTable;
-                document.getElementById('markdownPreview').style.display = 'block';
-            } else {
-                // Fallback to old format if needed
-                document.getElementById('markdownPreview').innerHTML = renderMarkdownTable(data);
-            }
-            
-            // Debug log the entire data object
-            console.log('Full data object received:', data);
-            
-            // Display cost estimates if available
-            if (data.cost_estimates || data.estimated_total_processing_time) {
-                document.getElementById('costEstimate').style.display = 'flex';
-                
-                // Debug logging
-                console.log('Processing time data:', {
-                    estimated_total_processing_time: data.estimated_total_processing_time,
-                    preview_processing_time: data.preview_processing_time,
-                    total_rows: data.total_rows,
-                    cost_estimates: data.cost_estimates,
-                    validation_metrics: data.validation_metrics
+            const sendBtn = document.getElementById('sendCodeBtn');
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<span class="spinner"></span> Checking...';
+            try {
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'checkOrSendValidation', email: email })
                 });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    if (data.validated) {
+                        handleEmailValidated(email);
+                    } else {
+                        state.email = email;
+                        document.getElementById('codeSection').style.display = 'block';
+                        showMessage('emailMessage', 'Validation code sent to your email!', 'success');
+                        document.getElementById('codeInput').focus();
+                    }
+                } else { showMessage('emailMessage', data.message || 'Failed to send code.', 'error'); }
+            } catch (error) {
+                console.warn('Email validation API failed, offering local bypass:', error);
+                showMessage('emailMessage', 'API unavailable. Click "Skip Email Validation" to continue with local testing.', 'info');
+                // Add a skip button for testing
+                const skipBtn = document.createElement('button');
+                skipBtn.textContent = 'Skip Email Validation (Testing)';
+                skipBtn.className = 'btn btn-secondary';
+                skipBtn.style.marginTop = '10px';
+                skipBtn.onclick = () => {
+                    handleEmailValidated(email);
+                    skipBtn.remove();
+                };
+                document.getElementById('emailMessage').appendChild(skipBtn);
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = '<span>Validate Email</span>';
+            }
+        }
+    
+        async function verifyCode() {
+            const code = document.getElementById('codeInput').value.trim();
+            if (code.length !== 6) {
+                showMessage('emailMessage', 'Please enter a 6-digit code', 'error');
+                return;
+            }
+            const verifyBtn = document.getElementById('verifyCodeBtn');
+            verifyBtn.disabled = true;
+            verifyBtn.innerHTML = '<span class="spinner"></span> Verifying...';
+            try {
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'validateEmailCode', email: state.email, code: code })
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    handleEmailValidated(state.email);
+                } else {
+                    showMessage('emailMessage', data.message || 'Invalid code', 'error');
+                }
+            } catch (error) {
+                showMessage('emailMessage', 'Network error. Please try again.', 'error');
+            } finally {
+                verifyBtn.disabled = false;
+                verifyBtn.innerHTML = '<span>Verify Code</span>';
+            }
+        }
+    
+        function handleEmailValidated(email) {
+            state.email = email;
+            state.emailValidated = true;
+            localStorage.setItem('validatedEmail', email);
+            document.getElementById('emailForm').style.display = 'none';
+            document.getElementById('emailSuccess').style.display = 'block';
+            const emailStatus = document.getElementById('emailStatus');
+            emailStatus.className = 'status-badge success';
+            emailStatus.innerHTML = '<span>Validated</span>';
+            document.getElementById('uploadCard').classList.remove('disabled');
+            checkReadyToProcess();
+        }
+        
+        // Convenience wrappers for buttons
+        function processPreview() { processTable(false); }
+        function processFullTable() { processTable(true); }
+        function processMoreRows() { processTable(true, true); }
+        function completeAllValidation() { 
+            // Process all remaining rows by calling processTable with no max_rows limit
+            processTable(true, false, true); // isFull=true, isContinuation=false, completeAll=true
+        }
+    
+        async function processTable(isFull = false, isContinuation = false, completeAll = false) {
+            if (!state.excelFile || !state.configFile || !state.emailValidated) return;
+    
+            const buttonId = isFull ? (completeAll ? 'completeAllBtn' : isContinuation ? 'processMoreBtn' : 'processFullBtn') : 'processBtn';
+            const spinnerId = isFull ? (completeAll ? 'completeAllSpinner' : isContinuation ? 'processMoreSpinner' : 'processFullSpinner') : 'processSpinner';
+            const button = document.getElementById(buttonId);
+            button.disabled = true;
+            document.getElementById(spinnerId).style.display = 'inline-block';
+    
+            try {
+                const configContent = await readFileAsText(state.configFile);
+                const formData = new FormData();
+                formData.append('excel_file', state.excelFile);
+                formData.append('config_file', configContent);
+                formData.append('email', state.email);
+    
+                let url = `${API_BASE}/validate?async=true`;
+                if (isFull) {
+                    if (!completeAll) {
+                        // For regular full processing or continuation, check for max_rows input
+                        const maxRowsInputId = isContinuation ? 'maxRowsMore' : 'maxRowsFull';
+                        const maxRows = document.getElementById(maxRowsInputId).value;
+                        if (maxRows) {
+                            if (isContinuation && parseInt(maxRows) <= state.processedRows) {
+                                 showMessage('emailMessage', `Please enter a total row count greater than the ${state.processedRows} rows already processed.`, 'error');
+                                 button.disabled = false;
+                                 document.getElementById(spinnerId).style.display = 'none';
+                                 return;
+                            }
+                            url += `&max_rows=${maxRows}`;
+                        }
+                    }
+                    // For completeAll=true, don't add max_rows parameter to process all rows
+                } else {
+                    url += `&preview_first_row=true&preview_max_rows=3`;
+                }
+    
+                const response = await fetch(url, { method: 'POST', body: formData });
+                const data = await response.json();
+    
+                if (response.ok) {
+                    state.sessionId = data.session_id;
+                    state.mode = isFull ? 'full' : 'preview';
+                    showResults(data, true);
+                    // For preview mode, the session_id already includes '_preview' suffix from backend
+                    const sessionIdForSocket = data.session_id;
+                    connectWebSocket(sessionIdForSocket);
+                } else {
+                    showMessage('emailMessage', `Error: ${data.error || 'Failed to start processing.'}`, 'error');
+                }
+            } catch (error) {
+                showMessage('emailMessage', 'Failed to process table. Please try again.', 'error');
+            } finally {
+                button.disabled = false;
+                document.getElementById(spinnerId).style.display = 'none';
+            }
+        }
+        
+        // --- WebSocket Handling ---
+        function connectWebSocket(sessionId) {
+            if (state.websocket) { state.websocket.close(); }
+            state.websocket = new WebSocket(WEBSOCKET_API_URL);
+            state.websocket.onopen = () => {
+                console.log("WebSocket connected. Subscribing to session:", sessionId);
+                state.websocket.send(JSON.stringify({ action: 'subscribe', sessionId: sessionId }));
+            };
+            state.websocket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                console.log("WebSocket message received:", data);
                 
-                // Populate the new two-row layout
-                const mainEstimates = document.getElementById('mainEstimates');
-                const detailMetrics = document.getElementById('detailMetrics');
-                
-                // Clear main estimates
-                mainEstimates.innerHTML = '';
-                
-                // Update basic info in detail row
-                document.getElementById('totalRows').textContent = data.total_rows || 'N/A';
-                
-                if (data.validation_metrics) {
-                    const metrics = data.validation_metrics;
+                const progressBar = document.getElementById('progressBar');
+                const verboseStatus = document.getElementById('verboseStatus');
+    
+                if (data.status === 'PROCESSING') {
+                    const percent = data.percent_complete || 0;
+                    progressBar.style.width = percent + '%';
+                    progressBar.textContent = percent + '%';
+                    verboseStatus.textContent = data.verbose_status || 'Processing...';
+                } else if (data.status === 'COMPLETED') {
+                    progressBar.style.width = '100%';
+                    progressBar.textContent = '100%';
+                    verboseStatus.textContent = 'Complete!';
                     
-                    // Update columns in detail row
+                    if (data.preview_data) {
+                        showResults(data.preview_data, false);
+                    } else {
+                        // Update processed rows count from completion data
+                        if (data.processed_rows) {
+                            state.processedRows = data.processed_rows;
+                        }
+                        
+                        document.getElementById('statusMessage').innerHTML = '✅ <strong>Validation Complete!</strong><br>You should receive an email with the results within a few minutes.';
+                        document.getElementById('fullProcessingCard').style.display = 'none';
+                        
+                        // Check if this was a partial validation and show appropriate card
+                        if (data.total_rows && state.processedRows < data.total_rows) {
+                            // Partial validation - determine which card to show based on context
+                            if (state.mode === 'preview') {
+                                // From preview mode - show continue card for specific row counts
+                                document.getElementById('partialValidationCard').style.display = 'block';
+                                document.getElementById('partialValidationMessage').textContent = `You have processed ${state.processedRows} of ${data.total_rows} total rows. To continue, enter a new total number of rows to process.`;
+                                document.getElementById('completeValidationCard').style.display = 'none';
+                            } else {
+                                // From full validation mode - show complete validation card
+                                document.getElementById('completeValidationCard').style.display = 'block';
+                                document.getElementById('completeValidationMessage').textContent = `You have processed ${state.processedRows} of ${data.total_rows} total rows. Complete the validation or start fresh.`;
+                                document.getElementById('partialValidationCard').style.display = 'none';
+                            }
+                            document.getElementById('newValidationCard').style.display = 'none';
+                        } else {
+                            // Complete validation - show new validation card
+                            document.getElementById('partialValidationCard').style.display = 'none';
+                            document.getElementById('completeValidationCard').style.display = 'none';
+                            document.getElementById('newValidationCard').style.display = 'block';
+                        }
+                    }
+                    state.websocket.close();
+                }
+            };
+            state.websocket.onerror = (error) => { console.error("WebSocket Error:", error); };
+            state.websocket.onclose = () => { console.log("WebSocket connection closed."); state.websocket = null; };
+        }
+    
+        // --- UI Display ---
+        function showResults(data, isAsync) {
+            document.getElementById('resultsCard').style.display = 'block';
+            
+            // Only scroll to results for preview mode, not for full validation
+            if (state.mode === 'preview') {
+                document.getElementById('resultsCard').scrollIntoView({ behavior: 'smooth' });
+            }
+            
+            state.processedRows = data.total_processed_rows || state.processedRows;
+    
+            if (isAsync) {
+                document.getElementById('resultsSubtitle').textContent = 'Processing your table...';
+                document.getElementById('progressContainer').style.display = 'block';
+                
+                // Reset progress bar to 0% when starting new processing
+                const progressBar = document.getElementById('progressBar');
+                const verboseStatus = document.getElementById('verboseStatus');
+                progressBar.style.width = '0%';
+                progressBar.textContent = '0%';
+                verboseStatus.textContent = 'Starting validation...';
+                
+                // Hide all validation cards during async processing
+                document.getElementById('fullProcessingCard').style.display = 'none';
+                document.getElementById('partialValidationCard').style.display = 'none';
+                document.getElementById('completeValidationCard').style.display = 'none';
+                document.getElementById('newValidationCard').style.display = 'none';
+                
+                document.getElementById('resultsInfo').textContent = `Session ID: ${data.session_id}`;
+                if (data.reference_pin) {
+                    document.getElementById('resultsInfo').innerHTML += `<br>Reference PIN: <strong>${data.reference_pin}</strong>`;
+                }
+            } else {
+                // This is now only for displaying final preview results
+                document.getElementById('resultsSubtitle').textContent = 'Preview Results';
+                document.getElementById('progressContainer').style.display = 'none';
+                document.getElementById('markdownPreview').innerHTML = convertMarkdownToHtml(data.markdown_table);
+                document.getElementById('markdownPreview').style.display = 'block';
+    
+                if (data.cost_estimates && data.validation_metrics) {
+                    document.getElementById('costEstimate').style.display = 'flex';
+                    const mainEstimates = document.getElementById('mainEstimates');
+                    const detailMetrics = document.getElementById('detailMetrics');
+                    mainEstimates.innerHTML = '';
+                    
+                    const metrics = data.validation_metrics;
+                    document.getElementById('totalRows').textContent = data.total_rows || 'N/A';
                     document.getElementById('totalColumns').textContent = metrics.validated_columns_count || 0;
                     
-                    // Calculate total API calls
                     const totalRows = data.total_rows || 0;
                     const perplexityGroups = (metrics.search_groups_count || 0) - (metrics.claude_search_groups_count || 0);
                     const claudeGroups = metrics.claude_search_groups_count || 0;
                     const totalPerplexityCalls = totalRows * perplexityGroups;
                     const totalClaudeCalls = totalRows * claudeGroups;
                     
-                    // Row 1: Main Estimates (Total API Calls, Time, Cost)
-                    if (totalPerplexityCalls > 0) {
-                        const item = document.createElement('div');
-                        item.className = 'cost-item';
-                        item.innerHTML = `<span class="cost-label">Total Perplexity Calls</span><span class="cost-value">${totalPerplexityCalls.toLocaleString()}</span>`;
-                        mainEstimates.appendChild(item);
-                    }
-                    
-                    if (totalClaudeCalls > 0) {
-                        const item = document.createElement('div');
-                        item.className = 'cost-item';
-                        item.innerHTML = `<span class="cost-label">Total Claude Calls</span><span class="cost-value">${totalClaudeCalls.toLocaleString()}</span>`;
-                        mainEstimates.appendChild(item);
-                    }
-                    
-                    // Add time estimate
+                    if (totalPerplexityCalls > 0) mainEstimates.innerHTML += `<div class="cost-item"><span class="cost-label">Total Perplexity Calls</span><span class="cost-value">${totalPerplexityCalls.toLocaleString()}</span></div>`;
+                    if (totalClaudeCalls > 0) mainEstimates.innerHTML += `<div class="cost-item"><span class="cost-label">Total Claude Calls</span><span class="cost-value">${totalClaudeCalls.toLocaleString()}</span></div>`;
+    
                     const estimatedTime = data.estimated_total_processing_time || 0;
-                    const timeItem = document.createElement('div');
-                    timeItem.className = 'cost-item';
-                    timeItem.innerHTML = `<span class="cost-label">Est. Total Time</span><span class="cost-value">${Math.ceil(estimatedTime / 60)} min</span>`;
-                    mainEstimates.appendChild(timeItem);
-                    
-                    // Add cost estimate
-                    if (data.cost_estimates && data.cost_estimates.estimated_total_cost) {
-                        const costItem = document.createElement('div');
-                        costItem.className = 'cost-item';
-                        costItem.innerHTML = `<span class="cost-label">Est. Total Cost</span><span class="cost-value">$${data.cost_estimates.estimated_total_cost.toFixed(4)}</span>`;
-                        mainEstimates.appendChild(costItem);
+                    mainEstimates.innerHTML += `<div class="cost-item"><span class="cost-label">Est. Total Time</span><span class="cost-value">${Math.ceil(estimatedTime / 60)} min</span></div>`;
+    
+                    if (data.cost_estimates.estimated_total_cost) {
+                        mainEstimates.innerHTML += `<div class="cost-item"><span class="cost-label">Est. Total Cost</span><span class="cost-value">$${data.cost_estimates.estimated_total_cost.toFixed(4)}</span></div>`;
                     }
                     
-                    // Row 2: Details (Rows, Columns already added in HTML, add search groups)
-                    // Clear any existing dynamic detail items first
                     const existingDynamicItems = detailMetrics.querySelectorAll('.dynamic-detail-item');
                     existingDynamicItems.forEach(item => item.remove());
-                    
-                    // Add search groups
-                    if (metrics.search_groups_count > 0) {
-                        const item = document.createElement('div');
-                        item.className = 'cost-item dynamic-detail-item';
-                        item.innerHTML = `<span class="cost-label">Search Groups</span><span class="cost-value">${metrics.search_groups_count}</span>`;
-                        detailMetrics.appendChild(item);
-                    }
-                    
-                    // Add high context groups (only if > 0)
-                    if (metrics.high_context_search_groups_count > 0) {
-                        const item = document.createElement('div');
-                        item.className = 'cost-item dynamic-detail-item';
-                        item.innerHTML = `<span class="cost-label">High Context Groups</span><span class="cost-value">${metrics.high_context_search_groups_count}</span>`;
-                        detailMetrics.appendChild(item);
-                    }
-                    
-                    // Add Claude groups (only if > 0)
-                    if (metrics.claude_search_groups_count > 0) {
-                        const item = document.createElement('div');
-                        item.className = 'cost-item dynamic-detail-item';
-                        item.innerHTML = `<span class="cost-label">Claude Groups</span><span class="cost-value">${metrics.claude_search_groups_count}</span>`;
-                        detailMetrics.appendChild(item);
-                    }
+    
+                    if (metrics.search_groups_count > 0) detailMetrics.innerHTML += `<div class="cost-item dynamic-detail-item"><span class="cost-label">Search Groups</span><span class="cost-value">${metrics.search_groups_count}</span></div>`;
+                    if (metrics.high_context_search_groups_count > 0) detailMetrics.innerHTML += `<div class="cost-item dynamic-detail-item"><span class="cost-label">High Context Groups</span><span class="cost-value">${metrics.high_context_search_groups_count}</span></div>`;
+                    if (metrics.claude_search_groups_count > 0) detailMetrics.innerHTML += `<div class="cost-item dynamic-detail-item"><span class="cost-label">Claude Groups</span><span class="cost-value">${metrics.claude_search_groups_count}</span></div>`;
                 }
                 
-                // Show full processing option and try again button after preview
                 if (state.mode === 'preview') {
                     document.getElementById('fullProcessingCard').style.display = 'block';
                     document.getElementById('tryAgainBtn').style.display = 'inline-block';
+                    
+                    const isPartial = data.total_rows > state.processedRows;
+                    const partialCard = document.getElementById('partialValidationCard');
+                    if (isPartial && partialCard) {
+                        partialCard.style.display = 'block';
+                        document.getElementById('partialValidationMessage').textContent = `You have processed ${state.processedRows} of ${data.total_rows} total rows. To continue, enter a new total number of rows to process.`;
+                    }
                 }
             }
-            
-            // Show session info
-            if (data.session_id || data.reference_pin) {
-                let info = '';
-                if (data.session_id) info += `Session ID: ${data.session_id}`;
-                if (data.reference_pin) info += `${info ? '<br>' : ''}Reference PIN: <strong>${data.reference_pin}</strong>`;
-                document.getElementById('resultsInfo').innerHTML = info;
-            }
         }
-    }
-
-    function renderMarkdownTable(data) {
-        if (!data.preview_results) return '<p>No preview data available</p>';
-
-        let html = '<table><thead><tr>';
-        
-        // Headers
-        const firstRow = data.preview_results[0];
-        for (const key in firstRow) {
-            html += `<th>${escapeHtml(key)}</th>`;
-        }
-        html += '</tr></thead><tbody>';
-
-        // Rows
-        data.preview_results.forEach(row => {
-            html += '<tr>';
-            for (const key in row) {
-                const value = row[key];
-                html += '<td>';
-                
-                if (typeof value === 'object' && value.value !== undefined) {
-                    // Has confidence level
-                    html += escapeHtml(value.value || '');
-                    if (value.confidence) {
-                        const confClass = value.confidence > 0.8 ? 'high' : value.confidence > 0.5 ? 'medium' : 'low';
-                        html += ` <span class="confidence-badge confidence-${confClass}">${Math.round(value.confidence * 100)}%</span>`;
-                    }
-                } else {
-                    html += escapeHtml(value || '');
-                }
-                
-                html += '</td>';
-            }
-            html += '</tr>';
-        });
-
-        html += '</tbody></table>';
-        return html;
-    }
-
-    // Utility Functions
-    function validateEmail(email) {
-        const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return re.test(email);
-    }
-
-    function formatFileSize(bytes) {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    function readFileAsText(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = e => resolve(e.target.result);
-            reader.onerror = reject;
-            reader.readAsText(file);
-        });
-    }
-
-    function showMessage(containerId, message, type) {
-        const container = document.getElementById(containerId);
-        container.innerHTML = `<div class="message message-${type}">
-            <span class="message-icon">${type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ'}</span>
-            <span>${message}</span>
-        </div>`;
-    }
-
-    function showLoading(message = 'Processing...') {
-        document.getElementById('loadingMessage').textContent = message;
-        document.getElementById('loadingOverlay').classList.add('active');
-    }
-
-    function hideLoading() {
-        document.getElementById('loadingOverlay').classList.remove('active');
-    }
-
-    function escapeHtml(text) {
-        const map = {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#039;'
-        };
-        return String(text).replace(/[&<>"']/g, m => map[m]);
-    }
-
-    function convertMarkdownToHtml(markdown) {
-        // Split the markdown into lines
-        const lines = markdown.trim().split('\n');
-        
-        let html = '';
-        let tableStartIndex = 0;
-        
-        // Check if the first line is the confidence legend
-        if (lines[0].includes('**Confidence Legend:**')) {
-            // Extract and format the legend
-            const legendLine = lines[0];
-            html += '<div style="margin-bottom: 1rem; font-weight: bold;">' + 
-                    legendLine.replace(/\*\*/g, '') + 
-                    '</div>';
-            
-            // Skip empty lines after the legend
-            tableStartIndex = 1;
-            while (tableStartIndex < lines.length && lines[tableStartIndex].trim() === '') {
-                tableStartIndex++;
-            }
-        }
-        
-        // Parse the table starting from the correct index
-        html += '<table class="markdown-table"><thead><tr>';
-        
-        // Process header row
-        const headers = lines[tableStartIndex].split('|').filter(h => h.trim());
-        headers.forEach(header => {
-            html += `<th>${escapeHtml(header.trim())}</th>`;
-        });
-        html += '</tr></thead><tbody>';
-        
-        // Skip the separator line
-        // Process data rows
-        for (let i = tableStartIndex + 2; i < lines.length; i++) {
-            const cells = lines[i].split('|').filter(c => c.trim());
-            if (cells.length > 0) {
-                html += '<tr>';
-                cells.forEach(cell => {
-                    const trimmedCell = cell.trim();
-                    
-                    // Check if this cell contains a confidence emoji
-                    let cellHtml = escapeHtml(trimmedCell);
-                    
-                    // Add confidence styling if applicable (for text values)
-                    if (trimmedCell === 'HIGH') {
-                        cellHtml = `<span class="confidence-badge confidence-high">${cellHtml}</span>`;
-                    } else if (trimmedCell === 'MEDIUM') {
-                        cellHtml = `<span class="confidence-badge confidence-medium">${cellHtml}</span>`;
-                    } else if (trimmedCell === 'LOW') {
-                        cellHtml = `<span class="confidence-badge confidence-low">${cellHtml}</span>`;
-                    }
-                    
-                    html += `<td>${cellHtml}</td>`;
-                });
-                html += '</tr>';
-            }
-        }
-        
-        html += '</tbody></table>';
-        return html;
-    }
-
-    function resetValidator() {
-        // Reset state completely (keep email)
-        state.excelFile = null;
-        state.configFile = null;
-        state.configValidated = false;
-        state.sessionId = null;
-        state.results = null;
-        state.mode = 'preview';
-
-        // Reset UI
-        document.getElementById('excelFileInfo').style.display = 'none';
-        document.getElementById('configFileInfo').style.display = 'none';
-        document.getElementById('excelFile').value = '';
-        document.getElementById('configFile').value = '';
-        document.getElementById('resultsCard').style.display = 'none';
-        document.getElementById('fullProcessingCard').style.display = 'none';
-        document.getElementById('progressContainer').style.display = 'none';
-        document.getElementById('tryAgainBtn').style.display = 'none';
-        document.getElementById('newValidationCard').style.display = 'none';
-        document.getElementById('partialValidationCard').style.display = 'none';
-        document.getElementById('previewCard').classList.add('disabled');
-        document.getElementById('processBtn').disabled = true;
-        
-        // Clear any messages
-        document.getElementById('configMessage').innerHTML = '';
-        document.getElementById('emailMessage').innerHTML = '';
-        
-        // Reset processing animation
-        const processingAnimation = document.querySelector('.processing-animation');
-        if (processingAnimation) {
-            processingAnimation.classList.remove('completed');
-            document.querySelector('.processing-text').textContent = 'Processing Table';
-            document.querySelector('.processing-dots').style.display = 'flex';
-        }
-        
-        // Clear cost estimates and markdown preview
-        document.getElementById('costEstimate').style.display = 'none';
-        document.getElementById('markdownPreview').style.display = 'none';
-        document.getElementById('markdownPreview').innerHTML = '';
-        
-        // Log reset for debugging
-        console.log('🔄 resetValidator called - state.mode set to:', state.mode);
-        
-        // Re-evaluate readiness after reset
-        checkReadyToProcess();
-        // Scroll to top
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-
-    function checkReadyToProcess() {
-        if (state.emailValidated && state.excelFile && state.configValidated) {
-            document.getElementById('previewCard').classList.remove('disabled');
-            document.getElementById('processBtn').disabled = false;
-        } else {
-            document.getElementById('previewCard').classList.add('disabled');
-            document.getElementById('processBtn').disabled = true;
-        }
-    }
     </script>
+  
 </body>
 </html> 
