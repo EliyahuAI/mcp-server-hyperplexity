@@ -1446,9 +1446,11 @@
                 // Reset progress bar to 0% when starting new processing
                 const progressBar = document.getElementById('progressBar');
                 const verboseStatus = document.getElementById('verboseStatus');
+                const statusMessage = document.getElementById('statusMessage');
                 progressBar.style.width = '0%';
                 progressBar.textContent = '0%';
                 verboseStatus.textContent = 'Starting validation...';
+                statusMessage.textContent = 'Your validation is being processed...';
                 
                 // Hide all validation cards during async processing
                 document.getElementById('fullProcessingCard').style.display = 'none';
@@ -1504,13 +1506,6 @@
                 if (state.mode === 'preview') {
                     document.getElementById('fullProcessingCard').style.display = 'block';
                     document.getElementById('tryAgainBtn').style.display = 'inline-block';
-                    
-                    const isPartial = data.total_rows > state.processedRows;
-                    const partialCard = document.getElementById('partialValidationCard');
-                    if (isPartial && partialCard) {
-                        partialCard.style.display = 'block';
-                        document.getElementById('partialValidationMessage').textContent = `You have processed ${state.processedRows} of ${data.total_rows} total rows. To continue, enter a new total number of rows to process.`;
-                    }
                 }
             }
         }
