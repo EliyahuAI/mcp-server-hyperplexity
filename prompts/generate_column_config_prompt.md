@@ -61,6 +61,22 @@ Create the simplified `column_config.json` based on analysis and any clarificati
   "general_notes": "Inferred purpose, validation guidelines, and suggested preferred sources",
   "default_model": "sonar-pro",
   "default_search_context_size": "low",
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Identification",
+      "description": "ID and identifier fields used for context",
+      "model": "sonar-pro",
+      "search_context": "low"
+    },
+    {
+      "group_id": 1,
+      "group_name": "Core Information",
+      "description": "Main content fields that appear together in sources",
+      "model": "sonar-pro",
+      "search_context": "low"
+    }
+  ],
   "validation_targets": [
     {
       "column": "Column Name",
@@ -113,6 +129,7 @@ Create the simplified `column_config.json` based on analysis and any clarificati
 - **Group 1+**: Columns whose information appears together in typical sources
 - **No upper limit** on group numbers
 - **Ungrouped**: Fields validated individually (more expensive, less stable)
+- **Optional Search Group Definitions**: You can now define search groups explicitly at the root level with `search_groups` array for better organization and control
 
 ### Format Detection
 Auto-detect from sample data:

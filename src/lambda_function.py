@@ -585,34 +585,60 @@ def calculate_token_costs(token_usage: Dict[str, Any], pricing_data: Dict[str, D
         'pricing_model': pricing.get('model_name', model)
     }
 
-def get_cache_key(prompt: str, model: str = "sonar-pro", search_context_size: str = "low") -> str:
+def get_cache_key(prompt: str, model: str = "sonar-pro", search_context_size: str = "low", search_groups: list = None) -> str:
     """
-    Generate a unique cache key for validation request based on prompt, model, and search context size.
+    Generate a unique cache key for validation request based on prompt, model, search context size, and search groups.
     
     Args:
         prompt: The prompt text sent to the API
         model: The model name used for the request
         search_context_size: The search context size for Perplexity API
+        search_groups: Search group definitions that affect cache validity
         
     Returns:
         A hash string to use as the cache key
     """
-    # Create a hash of prompt + model + search_context_size for a deterministic cache key
-    return hashlib.md5(f"{prompt}:{model}:{search_context_size}".encode()).hexdigest()
+    # Create a hash of prompt + model + search_context_size + search_groups for a deterministic cache key
+    search_groups_str = json.dumps(search_groups, sort_keys=True) if search_groups else ""
+    cache_input = f"{prompt}:{model}:{search_context_size}:{search_groups_str}"
+    return hashlib.md5(cache_input.encode()).hexdigest()
 
 def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List[str]]:
     """
     Resolve model conflicts within a search group.
     
-    Rules:
-    1. If all targets use default model -> use default
-    2. If any target has preferred_model -> prefer that over default
-    3. If multiple different preferred_models -> pick first one and warn
+    Rules (in priority order):
+    1. If search group definition exists, use its model setting (highest priority)
+    2. If all targets use default model -> use default
+    3. If any target has preferred_model -> prefer that over default
+    4. If multiple different preferred_models -> pick first one and warn
     
     Returns:
         Tuple of (selected_model, list_of_warnings)
     """
+    print(f"RESOLVE_MODEL: Called with {len(targets)} targets")
+    logger.error(f"RESOLVE_MODEL: Called with {len(targets)} targets")
     warnings = []
+    
+    # Check if we have search group definitions and this group has a defined model
+    if targets and hasattr(targets[0], 'search_group'):
+        group_id = targets[0].search_group
+        logger.info(f"Checking search group {group_id} for model override")
+        
+        # Check if validator has search_groups defined
+        if hasattr(validator, 'search_groups') and validator.search_groups:
+            logger.info(f"Validator has {len(validator.search_groups)} search group definitions")
+            for group_def in validator.search_groups:
+                logger.info(f"Checking group definition: {group_def}")
+                if isinstance(group_def, dict) and group_def.get('group_id') == group_id:
+                    if 'model' in group_def:
+                        logger.info(f"Using search group {group_id} defined model: {group_def['model']}")
+                        return group_def['model'], warnings
+                    else:
+                        logger.warning(f"Search group {group_id} found but no model defined")
+        else:
+            logger.info(f"Validator has no search_groups or empty search_groups")
+    
     models_in_group = set()
     preferred_models = []
     
@@ -663,14 +689,36 @@ def resolve_search_group_context_size(targets: List[Any], validator) -> str:
     """
     Resolve search context size within a search group.
     
-    Rules:
-    1. Use the largest context size among all columns in the search group
-    2. Priority order: high > medium > low
-    3. If no column-specific context size is set, use default
+    Rules (in priority order):
+    1. If search group definition exists, use its search_context setting (highest priority)
+    2. Otherwise, use the largest context size among all columns in the search group
+    3. Priority order: high > medium > low
+    4. If no column-specific context size is set, use default
     
     Returns:
         Selected search context size ("low", "medium", or "high")
     """
+    print(f"RESOLVE_CONTEXT: Called with {len(targets)} targets")
+    logger.error(f"RESOLVE_CONTEXT: Called with {len(targets)} targets")
+    # Check if we have search group definitions and this group has a defined context
+    if targets and hasattr(targets[0], 'search_group'):
+        group_id = targets[0].search_group
+        logger.info(f"Checking search group {group_id} for context override")
+        
+        # Check if validator has search_groups defined
+        if hasattr(validator, 'search_groups') and validator.search_groups:
+            logger.info(f"Validator has {len(validator.search_groups)} search group definitions")
+            for group_def in validator.search_groups:
+                logger.info(f"Checking group definition: {group_def}")
+                if isinstance(group_def, dict) and group_def.get('group_id') == group_id:
+                    if 'search_context' in group_def:
+                        logger.info(f"Using search group {group_id} defined context: {group_def['search_context']}")
+                        return group_def['search_context']
+                    else:
+                        logger.warning(f"Search group {group_id} found but no search_context defined")
+        else:
+            logger.info(f"Validator has no search_groups or empty search_groups")
+    
     context_sizes = []
     
     # Define priority order (higher number = higher priority)
@@ -868,7 +916,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.error(f"Found examples for {target.get('column')}: {target['examples']}")
             logger.error(f"Found {targets_with_examples} validation targets with examples")
             
+        print(f"LAMBDA_HANDLER: Creating SimplifiedSchemaValidator with config keys: {list(config.keys())}")
+        print(f"LAMBDA_HANDLER: Config has search_groups: {'search_groups' in config}")
+        if 'search_groups' in config:
+            print(f"LAMBDA_HANDLER: Number of search groups: {len(config['search_groups'])}")
+        
         validator = SimplifiedSchemaValidator(config)
+        
+        print(f"LAMBDA_HANDLER: Validator created with {len(validator.search_groups)} search groups")
+        logger.error(f"LAMBDA_HANDLER: Validator created with {len(validator.search_groups)} search groups")
         
         # Get API keys and S3 bucket - get both keys if we might need mixed models
         perplexity_api_key = None
@@ -1128,8 +1184,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info(f"Passing validation_history to generate_multiplex_prompt: {filtered_validation_history is not None}")
             prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history)
             
-            # Generate cache key based on the prompt, model, and search context size
-            cache_key = get_cache_key(prompt, model, search_context_size)
+            # Generate cache key based on the prompt, model, search context size, and search groups
+            cache_key = get_cache_key(prompt, model, search_context_size, validator.search_groups)
             logger.info(f"Using cache key based on prompt hash: {cache_key[:8]}...")
             
             # Check if this exact prompt has been cached before

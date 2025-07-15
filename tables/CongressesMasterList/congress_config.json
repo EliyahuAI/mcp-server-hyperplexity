@@ -2,6 +2,50 @@
   "general_notes": "CRITICALLY IMPORTANT: Find information about the NEXT UPCOMING conference that has NOT YET OCCURRED. You must know today's date to do this. If you cannot find a specific date you must look at past years and estimate based on typical timing - i.e last year's abstract submission deadline was 6 months before the conference, so we estimate that this year's abstract will also be 6 months before the conference whose date we know. Use these guidelines: 1. Only provide information about future conferences that will happen AFTER the current date. 2. If exact dates are not available for upcoming conferences (but it is clear that they are being held), you must look at past years and estimate based on typical timing. 3. If no upcoming conference is detected you can return information about the last conference. This database tracks medical/scientific conferences for abstract submission planning by healthcare professionals and medical writers.",
   "default_model": "sonar-pro",
   "default_search_context_size": "high",
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Conference Identification",
+      "description": "Basic conference identification including index and full conference name",
+      "model": "sonar-pro",
+      "search_context": "low"
+    },
+    {
+      "group_id": 1,
+      "group_name": "Next Conference Details",
+      "description": "Comprehensive information about the next upcoming conference",
+      "model": "sonar-pro",
+      "search_context": "high"
+    },
+    {
+      "group_id": 2,
+      "group_name": "Conference Metrics",
+      "description": "Publication details and attendance information",
+      "model": "sonar-pro",
+      "search_context": "low"
+    },
+    {
+      "group_id": 3,
+      "group_name": "Abstract Submission",
+      "description": "Abstract submission deadlines, notifications, and regulatory information",
+      "model": "sonar-pro",
+      "search_context": "high"
+    },
+    {
+      "group_id": 4,
+      "group_name": "Presentation Requirements",
+      "description": "Poster and presentation guidelines and eligibility",
+      "model": "sonar-pro",
+      "search_context": "low"
+    },
+    {
+      "group_id": 5,
+      "group_name": "Planning Timeline",
+      "description": "Conference notes and internal planning milestones",
+      "model": "sonar-pro",
+      "search_context": "low"
+    }
+  ],
   "validation_targets": [
     {
       "column": "Index",

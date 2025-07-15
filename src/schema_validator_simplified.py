@@ -46,6 +46,16 @@ class SimplifiedSchemaValidator:
         # Search context size configuration
         self.default_search_context_size = config.get('default_search_context_size', 'low')
         
+        # Search groups configuration (optional)
+        self.search_groups = config.get('search_groups', [])
+        print(f"VALIDATOR_INIT: Loaded {len(self.search_groups)} search group definitions: {self.search_groups}")
+        logger.error(f"VALIDATOR_INIT: Loaded {len(self.search_groups)} search group definitions: {self.search_groups}")
+        
+        # Debug each search group
+        for i, group in enumerate(self.search_groups):
+            print(f"VALIDATOR_INIT: Group {i}: {group}")
+            logger.error(f"VALIDATOR_INIT: Group {i}: {group}")
+        
         # Build column_config from validation_targets
         self.column_config = self._build_column_config()
         

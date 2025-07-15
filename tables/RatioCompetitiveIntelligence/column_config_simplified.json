@@ -1,6 +1,43 @@
 {
   "general_notes": "This table tracks radiopharmaceutical products (diagnostic, therapeutic and theranostic) in development that could compete with Ratio Therapeutics over the next 1–5 years. The list focuses on agents in pre-registration through Phase 1 and likely to reach market in 2024-2030. Your key goal is to monitor this competitive landscape. Please use the most recent information available from public sources, including clinicaltrials.gov, company press releases, and news articles.",
   "default_model": "sonar-pro",
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Product Identification",
+      "description": "Product and developer identification fields used for context",
+      "model": "sonar-pro",
+      "search_context": "low"
+    },
+    {
+      "group_id": 1,
+      "group_name": "Product Characteristics",
+      "description": "Core product characteristics including target, indication, and radionuclides",
+      "model": "sonar-pro",
+      "search_context": "low"
+    },
+    {
+      "group_id": 2,
+      "group_name": "Development Status",
+      "description": "Clinical development stage and trial information",
+      "model": "sonar-pro",
+      "search_context": "high"
+    },
+    {
+      "group_id": 3,
+      "group_name": "Commercial Information",
+      "description": "Regulatory designations, partnerships, and launch projections",
+      "model": "sonar-pro",
+      "search_context": "low"
+    },
+    {
+      "group_id": 4,
+      "group_name": "Recent Developments",
+      "description": "Latest news and developments tracking",
+      "model": "sonar-pro",
+      "search_context": "high"
+    }
+  ],
   "validation_targets": [
     {
       "column": "Product Name",
