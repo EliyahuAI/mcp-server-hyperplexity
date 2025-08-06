@@ -1,0 +1,37 @@
+{
+  "summary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "success_rate": 100.0
+  },
+  "test_results": [
+    {
+      "test": "API Connectivity",
+      "success": true,
+      "message": "CORS preflight successful (status: 200)",
+      "duration": 0.12510132789611816,
+      "timestamp": "2025-07-15T17:38:10.105219"
+    },
+    {
+      "test": "Email Validation",
+      "success": true,
+      "message": "Email validation response: Email is already validated",
+      "duration": 0.09275126457214355,
+      "timestamp": "2025-07-15T17:38:10.198028"
+    },
+    {
+      "test": "WebSocket Connectivity",
+      "success": true,
+      "message": "WebSocket connection established (no immediate response expected)",
+      "duration": 6.182123422622681,
+      "timestamp": "2025-07-15T17:38:16.380212"
+    }
+  ],
+  "metadata": {
+    "api_base": "https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod",
+    "test_email": "eliyahu@eliyahu.ai",
+    "websocket_url": "wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod",
+    "timestamp": "2025-07-15T17:38:16.381624"
+  }
+}

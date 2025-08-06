@@ -151,13 +151,15 @@ def _process_files(excel_file, config_file, email_address, params, context):
         total_rows = -1 # Indicate that we couldn't determine the row count
     
     # Create the initial run record in DynamoDB
+    # Make each preview session unique to avoid conflicts
     if preview:
-        create_run_record(session_id=f"{session_id}_preview", email=email_address, total_rows=total_rows)
+        timestamp = datetime.utcnow().strftime('%H%M%S')
+        preview_session_id = f"{session_id}_preview_{timestamp}"
+        create_run_record(session_id=preview_session_id, email=email_address, total_rows=total_rows)
     else:
         create_run_record(session_id=session_id, email=email_address, total_rows=total_rows)
 
     if preview:
-        preview_session_id = f"{session_id}_preview"
         track_validation_call(session_id=preview_session_id, email=email_address, reference_pin=reference_pin, request_type='preview', excel_s3_key=excel_s3_key, config_s3_key=config_s3_key)
         
         if async_mode and SQS_AVAILABLE:

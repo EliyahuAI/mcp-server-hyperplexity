@@ -6,7 +6,10 @@ import zipfile
 from datetime import datetime
 import json
 import csv
+import logging
 from io import StringIO
+
+logger = logging.getLogger(__name__)
 
 def create_placeholder_zip():
     """Create a placeholder ZIP file indicating processing is in progress."""
@@ -124,9 +127,9 @@ Processing Details:
     zip_buffer.seek(0)
     return zip_buffer.getvalue() 
 
-def create_enhanced_result_zip(validation_results, session_id, total_rows, excel_file_content, config_data, reference_pin=None, input_filename='input.xlsx', config_filename='config.json', metadata=None):
+def create_enhanced_result_zip(validation_results, session_id, total_rows, excel_file_content, config_data, reference_pin=None, input_filename='input.xlsx', config_filename='config.json', metadata=None, structured_excel_data=None):
     """Create enhanced ZIP file with color-coded Excel and comprehensive reports."""
-    from .excel_report import create_enhanced_excel_with_validation
+    from .excel_report_new import create_enhanced_excel_with_validation
 
     zip_buffer = io.BytesIO()
     timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
@@ -169,21 +172,27 @@ def create_enhanced_result_zip(validation_results, session_id, total_rows, excel
         # Add JSON file
         zip_file.writestr('validation_results.json', json.dumps(results_data, indent=2))
         
-        # Create enhanced Excel file
-        if excel_file_content and validation_results:
+        # Create enhanced Excel file using structured data
+        if validation_results and structured_excel_data:
             try:
+                # Use the structured data passed as parameter
+                validated_sheet_name = structured_excel_data.get('metadata', {}).get('sheet_name')
+                
                 excel_buffer = create_enhanced_excel_with_validation(
-                    excel_file_content, validation_results, config_data, session_id
+                    structured_excel_data, validation_results, config_data, session_id,
+                    validated_sheet_name=validated_sheet_name
                 )
                 if excel_buffer:
                     zip_file.writestr('validation_results_enhanced.xlsx', excel_buffer.getvalue())
+                    logger.info("Successfully created enhanced Excel in ZIP")
                 else:
-                    # In case of error in excel creation, we can log it.
-                    # The function create_enhanced_excel_with_validation should have its own logging.
-                    pass
+                    logger.warning("Enhanced Excel creation returned None")
             except Exception as e:
-                # Log this error
-                pass
+                logger.error(f"Error creating enhanced Excel for ZIP: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        elif validation_results:
+            logger.warning("No structured Excel data provided for enhanced Excel creation")
         
         # Create CSV report for easy viewing
         if validation_results:
@@ -293,7 +302,7 @@ Enhanced Excel Features:
    - YELLOW: MEDIUM confidence  
    - RED: LOW confidence
 ✅ Cell comments with quotes and sources
-✅ Multiple worksheets: Results, Details, Reasons
+✅ Multiple worksheets: Original, Updated, Details
 ✅ Comprehensive validation tracking
 ✅ Professional formatting with xlsxwriter
 

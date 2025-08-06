@@ -17,16 +17,32 @@ import uuid
 import yaml
 
 # Import previous components
-from config_generator_step1 import PromptLoader, TableAnalyzer
-from config_generator_step2_enhanced import EnhancedClaudeConfigGenerator, ConfigValidator
+try:
+    # Try relative imports first (for Lambda deployment)
+    from .config_generator_step1 import PromptLoader, TableAnalyzer
+    from .config_generator_step2_enhanced import EnhancedClaudeConfigGenerator, ConfigValidator
+except ImportError:
+    # Fallback to direct imports (for local development)
+    from config_generator_step1 import PromptLoader, TableAnalyzer
+    from config_generator_step2_enhanced import EnhancedClaudeConfigGenerator, ConfigValidator
+
+# Import shared AI API client
+try:
+    from ai_api_client import AIAPIClient
+except ImportError:
+    # Fallback if running locally
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+    from ai_api_client import AIAPIClient
 
 class ConversationalConfigSystem:
     """Advanced conversational system for config optimization"""
     
     def __init__(self, api_key=None):
-        self.api_key = api_key or self._get_api_key()
-        self.model = "claude-sonnet-4-0"  # Claude 4
-        self.api_url = "https://api.anthropic.com/v1/messages"
+        # Initialize shared AI API client
+        self.ai_client = AIAPIClient()
+        self.model = "claude-sonnet-4-0"  # Latest Claude 4
         self.max_tokens = 8000
         self.temperature = 0.1
         
@@ -39,37 +55,6 @@ class ConversationalConfigSystem:
         self.conversation_storage_dir = Path("conversations")
         self.conversation_storage_dir.mkdir(exist_ok=True)
     
-    def _get_api_key(self):
-        """Get Claude API key from environment or file"""
-        # Try environment variable first
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
-        if api_key:
-            return api_key
-        
-        # Try looking for key file
-        possible_paths = [
-            'claude_api_key.txt',
-            '.anthropic_key',
-            '../claude_api_key.txt'
-        ]
-        
-        for path in possible_paths:
-            if os.path.exists(path):
-                try:
-                    with open(path, 'r') as f:
-                        key = f.read().strip()
-                        # Handle case where key might have extra text
-                        if 'sk-ant-api' in key:
-                            start = key.find('sk-ant-api')
-                            if start != -1:
-                                end = key.find('AA', start) + 2
-                                if end > start:
-                                    return key[start:end]
-                        return key
-                except Exception:
-                    continue
-        
-        return None
     
     def _load_conversation_prompt(self):
         """Load conversation prompt template with variables"""
@@ -276,10 +261,7 @@ class ConversationalConfigSystem:
         return response
     
     async def _generate_ai_response(self, conversation):
-        """Generate AI response using Claude"""
-        if not self.api_key:
-            raise ValueError("Claude API key not found")
-        
+        """Generate AI response using Claude via shared AI API client"""
         # Build conversation context
         context = self._build_conversation_context(conversation)
         
@@ -295,49 +277,22 @@ class ConversationalConfigSystem:
         # Define tool schema
         tool_schema = self._get_conversation_tool_schema()
         
-        headers = {
-            'Content-Type': 'application/json',
-            'X-API-Key': self.api_key,
-            'anthropic-version': '2023-06-01'
-        }
+        # Use shared AI API client
+        prompt = f"{system_prompt}\n\nConversation Context:\n{context}"
         
-        data = {
-            "model": self.model,
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
-            "system": system_prompt,
-            "messages": [{"role": "user", "content": context}],
-            "tools": [
-                {
-                    "name": "config_conversation_response",
-                    "description": "Respond to user in conversation about configuration optimization",
-                    "input_schema": tool_schema
-                }
-            ],
-            "tool_choice": {
-                "type": "tool",
-                "name": "config_conversation_response"
-            }
-        }
-        
-        start_time = time.time()
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.api_url, json=data, headers=headers) as response:
-                response_time = time.time() - start_time
-                
-                if response.status == 200:
-                    result = await response.json()
-                    
-                    # Extract response from tool
-                    response_data = self._extract_response_from_tool(result)
-                    response_data['response_time'] = response_time
-                    response_data['token_usage'] = result.get('usage', {})
-                    
-                    return response_data
-                else:
-                    error_text = await response.text()
-                    raise Exception(f"Claude API error: {response.status} - {error_text}")
+        try:
+            response = await self.ai_client.call_structured_api(
+                prompt=prompt,
+                schema=tool_schema,
+                model=self.model,
+                tool_name="optimize_config"
+            )
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"AI API call failed: {e}")
+            raise
     
     def _build_conversation_context(self, conversation):
         """Build conversation context for AI"""

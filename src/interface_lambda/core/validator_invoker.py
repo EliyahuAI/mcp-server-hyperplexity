@@ -18,7 +18,7 @@ logger.setLevel(logging.INFO)
 s3_client = boto3.client('s3')
 lambda_client = boto3.client('lambda')
 
-def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S3_CACHE_BUCKET, VALIDATOR_LAMBDA_NAME, preview_first_row=False, preview_max_rows=5, sequential_call=None, session_id=None, update_callback=None):
+def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S3_CACHE_BUCKET, VALIDATOR_LAMBDA_NAME, preview_first_row=False, preview_max_rows=5, sequential_call=None, session_id=None, update_callback=None, special_request=None):
     """Invoke the core validator Lambda with Excel data."""
     # Since this is a new module, we need to import lazily or pass dependencies.
     # For now, we will perform local imports to keep changes minimal.
@@ -49,7 +49,12 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
 
 
     logger.info(">>> ENTER invoke_validator_lambda <<<")
-    logger.info(f">>> Parameters: excel_s3_key={excel_s3_key}, preview={preview_first_row}, sequential_call={sequential_call} <<<")
+    logger.info(f">>> Parameters: excel_s3_key={excel_s3_key}, preview={preview_first_row}, sequential_call={sequential_call}, special_request={special_request} <<<")
+    
+    # Handle special requests (like config generation)
+    if special_request:
+        logger.info(f"Processing special request: {special_request.get('action', 'unknown')}")
+        return _handle_special_request(special_request, excel_s3_key, S3_CACHE_BUCKET, VALIDATOR_LAMBDA_NAME)
     
     try:
         logger.info(f"Starting invoke_validator_lambda - preview_first_row: {preview_first_row}")
@@ -67,9 +72,12 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         # Preprocess config to support both 'column' and 'name' fields
         if 'validation_targets' in config_data and isinstance(config_data['validation_targets'], list):
             for target in config_data['validation_targets']:
+                # Ensure both 'column' and 'name' fields exist for compatibility
                 if 'column' in target and 'name' not in target:
                     target['name'] = target['column']
-                    # Keep 'column' for backward compatibility
+                elif 'name' in target and 'column' not in target:
+                    target['column'] = target['name']
+                # Keep both fields for backward compatibility
         
         # Detect file type and load data accordingly
         # Check if this is a CSV file and convert to Excel format if needed
@@ -83,8 +91,23 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         else:
             # Not a ZIP file, try to process as CSV
             try:
-                # Try to decode as UTF-8 text
-                text_content = excel_content.decode('utf-8')
+                # Try multiple encodings to handle different CSV file encodings
+                encodings_to_try = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1', 'utf-16']
+                text_content = None
+                used_encoding = None
+                
+                for encoding in encodings_to_try:
+                    try:
+                        text_content = excel_content.decode(encoding)
+                        used_encoding = encoding
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                
+                if text_content is None:
+                    raise ValueError(f"Could not decode file with any of the tried encodings: {encodings_to_try}")
+                    
+                logger.info(f"Successfully decoded file using {used_encoding} encoding")
                 # Simple heuristic: if it contains commas, treat as CSV
                 if ',' in text_content:
                     original_file_type = "CSV"
@@ -170,12 +193,20 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         
         # Get ID fields from config for row key generation
         id_fields = []
-        for target in config_data.get('validation_targets', []):
-            if target.get('importance', '').upper() == 'ID':
+        logger.info("Searching for ID fields in validation targets...")
+        for i, target in enumerate(config_data.get('validation_targets', [])):
+            importance = target.get('importance', '')
+            logger.info(f"Target {i}: importance='{importance}', column='{target.get('column')}', name='{target.get('name')}'")
+            if importance.upper() == 'ID':
                 # Support both 'name' and 'column' fields
                 field_name = target.get('name') or target.get('column')
                 if field_name:
                     id_fields.append(field_name)
+                    logger.info(f"Found ID field: {field_name}")
+                else:
+                    logger.warning(f"ID target found but no field name: {target}")
+            else:
+                logger.debug(f"Target '{target.get('column')}' has importance '{importance}' (not ID)")
         
         # If no ID fields found, try to use SimplifiedSchemaValidator to determine primary keys
         if not id_fields:
@@ -340,14 +371,15 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             logger.info(f"Processing {len(rows)} rows in {total_batches} batches of size {effective_batch_size}")
             
             if update_callback:
-                update_callback(session_id, "PROCESSING", 0, f"Starting processing of {len(rows)} rows in {total_batches} batches.", 0)
+                update_callback(session_id, "PROCESSING", 0, f"Starting processing of {len(rows)} rows in {total_batches} batches.", 0, None, 0, total_batches)
 
             for batch_num in range(total_batches):
                 start_idx = batch_num * effective_batch_size
                 end_idx = min(start_idx + effective_batch_size, len(rows))
                 batch_rows = rows[start_idx:end_idx]
+                current_batch = batch_num + 1
                 
-                logger.info(f"Processing batch {batch_num+1}/{total_batches}, rows {start_idx+1}-{end_idx}")
+                logger.info(f"Processing batch {current_batch}/{total_batches}, rows {start_idx+1}-{end_idx}")
                 
                 batch_payload = {"test_mode": False, "config": config_data, "validation_data": {"rows": batch_rows}, "validation_history": validation_history}
                 
@@ -404,8 +436,9 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 if update_callback:
                     processed_rows_count = end_idx
                     percent_complete = int((processed_rows_count / len(rows)) * 100)
-                    verbose_status = f"Processed batch {batch_num + 1} of {total_batches}..."
-                    update_callback(session_id, "PROCESSING", processed_rows_count, verbose_status, percent_complete)
+                    verbose_status = f"Processing batch {current_batch} of {total_batches}..."
+                    # Pass batch information as additional parameters
+                    update_callback(session_id, "PROCESSING", processed_rows_count, verbose_status, percent_complete, None, current_batch, total_batches)
 
             logger.info(f"Completed processing all batches. Total results: {len(all_validation_results)}")
             return {'total_rows': total_rows, 'validation_results': all_validation_results, 'metadata': aggregated_metadata, 'status': 'completed'}
@@ -415,3 +448,64 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         import traceback
         traceback.print_exc()
         raise 
+
+
+def _handle_special_request(special_request, excel_s3_key, S3_CACHE_BUCKET, VALIDATOR_LAMBDA_NAME):
+    """Handle special requests like config generation that use the validation lambda's Claude integration"""
+    
+    action = special_request.get('action')
+    
+    if action == 'generate_config':
+        logger.info("Handling config generation request")
+        
+        try:
+            # Build config generation payload for validation lambda
+            payload = {
+                "config_generation_request": True,
+                "table_analysis": special_request.get('table_analysis'),
+                "generation_mode": special_request.get('generation_mode', 'automatic'),
+                "conversation_id": special_request.get('conversation_id'),
+                "user_message": special_request.get('user_message', ''),
+                "session_id": special_request.get('session_id'),
+                "excel_s3_key": excel_s3_key,
+                "s3_cache_bucket": S3_CACHE_BUCKET
+            }
+            
+            logger.info(f"Calling validation lambda for config generation with session_id: {special_request.get('session_id')}")
+            
+            # Call validation lambda
+            response = lambda_client.invoke(
+                FunctionName=VALIDATOR_LAMBDA_NAME,
+                InvocationType='RequestResponse',
+                Payload=json.dumps(payload)
+            )
+            
+            response_payload = json.loads(response['Payload'].read().decode('utf-8'))
+            logger.info(f"Config generation response received from validation lambda")
+            
+            # Extract the result from validation lambda response
+            if isinstance(response_payload, dict):
+                body = response_payload.get('body', {})
+                if isinstance(body, dict):
+                    return body
+                else:
+                    # Direct response format
+                    return response_payload
+            
+            return response_payload
+            
+        except Exception as e:
+            logger.error(f"Error in config generation request: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'error': f'Config generation failed: {str(e)}'
+            }
+    
+    else:
+        logger.error(f"Unknown special request action: {action}")
+        return {
+            'success': False,
+            'error': f'Unknown special request action: {action}'
+        }

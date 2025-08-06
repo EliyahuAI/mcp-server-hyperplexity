@@ -31,11 +31,27 @@ def handle(event, context):
     if event.get('httpMethod') == 'POST':
         headers = event.get('headers', {})
         content_type = headers.get('Content-Type') or headers.get('content-type', '')
+        logger.info(f"POST request with Content-Type: {content_type}")
 
         # Multipart form data for file uploads (heavyweight)
         if 'multipart/form-data' in content_type:
-            from ..actions import process_excel
-            return process_excel.handle_multipart_form(event, context)
+            # Check if this is a config generation request based on form fields
+            try:
+                from ..utils.parsing import parse_multipart_form_data
+                files, form_data = parse_multipart_form_data(
+                    event.get('body', ''), content_type, event.get('isBase64Encoded', False)
+                )
+                
+                # If generation_mode is present, route to config generation
+                if 'generation_mode' in form_data:
+                    from ..actions import generate_config_unified
+                    return generate_config_unified.handle_generate_config_sync(form_data, context)
+            except Exception:
+                pass  # Fall through to default Excel processing
+            
+            # Default to Excel processing with unified storage
+            from ..actions import process_excel_unified
+            return process_excel_unified.handle_multipart_form(event, context)
 
         # JSON body for API-style actions
         elif 'application/json' in content_type:
@@ -60,8 +76,42 @@ def handle(event, context):
             ]
 
             if action == 'processExcel':
-                 from ..actions import process_excel
-                 return process_excel.handle_json_request(event, context)
+                 from ..actions import process_excel_unified
+                 return process_excel_unified.handle_json_request(event, context)
+            elif action == 'generateConfig':
+                from ..actions import generate_config_unified
+                # Check for async parameter in query string
+                query_params = event.get('queryStringParameters') or {}
+                is_async = query_params.get('async', 'false').lower() == 'true'
+                
+                logger.info(f"generateConfig: query_params={query_params}, is_async={is_async}")
+                
+                if is_async:
+                    logger.info("Using ASYNC config generation path")
+                    return generate_config_unified.handle_generate_config_async(request_data, context)
+                else:
+                    logger.info("Using SYNC config generation path")
+                    return generate_config_unified.handle_generate_config_sync(request_data, context)
+            elif action == 'submitInterviewResponses':
+                from ..actions import generate_config_unified
+                return generate_config_unified.handle_generate_config_sync(request_data, context)
+            elif action == 'modifyConfig':
+                from ..actions import generate_config_unified
+                # Check for async parameter in query string
+                query_params = event.get('queryStringParameters') or {}
+                is_async = query_params.get('async', 'false').lower() == 'true'
+                
+                logger.info(f"=== MODIFY CONFIG REQUEST ===")
+                logger.info(f"Query params: {query_params}")
+                logger.info(f"Is async: {is_async}")
+                logger.info(f"Request data keys: {list(request_data.keys())}")
+                
+                if is_async:
+                    logger.info("✅ USING ASYNC CONFIG MODIFICATION - WebSocket only response")
+                    return generate_config_unified.handle_generate_config_async(request_data, context)
+                else:
+                    logger.info("✅ USING SYNC CONFIG MODIFICATION - HTTP response with full data")
+                    return generate_config_unified.handle_modify_config(request_data, context)
             elif action in email_actions:
                 from ..actions import email_validation
                 return email_validation.handle(request_data, context)
@@ -77,9 +127,39 @@ def handle(event, context):
             elif action == 'diagnostics':
                 from ..actions import diagnostics
                 return diagnostics.handle(request_data, context)
+            elif action == 'findMatchingConfig':
+                from ..actions import find_matching_config
+                return find_matching_config.handle_find_matching_config(request_data, context)
+            elif action == 'copyConfig':
+                from ..actions import copy_config
+                return copy_config.handle_copy_config(request_data, context)
             else:
                 logger.warning(f"Unknown action in JSON body: {action}")
                 return create_response(400, {'error': f'Unknown or unsupported action: {action}'})
+        
+        # Fallback for POST requests without proper Content-Type
+        else:
+            logger.warning(f"POST request without recognized Content-Type: {content_type}")
+            # Try to parse as JSON anyway
+            try:
+                body = event.get('body', '{}')
+                if event.get('isBase64Encoded'):
+                    body = base64.b64decode(body).decode('utf-8')
+                request_data = json.loads(body)
+                action = request_data.get('action')
+                
+                if action == 'submitInterviewResponses':
+                    from ..actions import generate_config_unified
+                    return generate_config_unified.handle_generate_config_sync(request_data, context)
+                elif action == 'modifyConfig':
+                    from ..actions import generate_config_unified
+                    return generate_config_unified.handle_modify_config(request_data, context)
+                else:
+                    logger.warning(f"Unknown action in fallback: {action}")
+                    return create_response(400, {'error': f'Unknown or unsupported action: {action}'})
+            except Exception as e:
+                logger.error(f"Failed to parse POST body as JSON: {e}")
+                return create_response(400, {'error': 'Invalid request format'})
     
     # Fallback for unsupported methods
     logger.warning(f"Unsupported HTTP method: {event.get('httpMethod')}")

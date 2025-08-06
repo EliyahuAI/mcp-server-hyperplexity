@@ -19,7 +19,7 @@ sqs = boto3.client('sqs', region_name=os.environ.get("AWS_REGION", "us-east-1"))
 PREVIEW_QUEUE_URL = os.environ.get('PREVIEW_QUEUE_URL')
 STANDARD_QUEUE_URL = os.environ.get('STANDARD_QUEUE_URL')
 
-def send_preview_request(session_id, excel_s3_key, config_s3_key, email, reference_pin, **kwargs):
+def send_preview_request(session_id, excel_s3_key, config_s3_key, email, reference_pin, preview_email=False, **kwargs):
     """Send a preview validation request to the priority SQS queue."""
     if not PREVIEW_QUEUE_URL:
         logger.error("Preview SQS queue URL is not configured.")
@@ -31,16 +31,27 @@ def send_preview_request(session_id, excel_s3_key, config_s3_key, email, referen
         'config_s3_key': config_s3_key,
         'email': email,
         'reference_pin': reference_pin,
+        'preview_email': preview_email,
         'created_at': datetime.now(timezone.utc).isoformat(),
         **kwargs
     }
     return _send_sqs_message(PREVIEW_QUEUE_URL, message_body, is_fifo=True)
 
-def send_full_request(session_id, excel_s3_key, config_s3_key, email, reference_pin, results_key, max_rows=None, batch_size=None, email_folder=None):
+def send_full_request(session_id, excel_s3_key, config_s3_key, email, reference_pin, results_key=None, max_rows=None, batch_size=None, email_folder=None, preview_email=False):
     """Send a full validation request to the standard SQS queue."""
     if not STANDARD_QUEUE_URL:
         logger.error("Standard SQS queue URL is not configured.")
         return None
+    
+    # Generate results_key if not provided, using unified storage format
+    if not results_key:
+        # Use unified storage format: results/{domain}/{email_prefix}/{session_id}/
+        from ..core.unified_s3_manager import UnifiedS3Manager
+        storage_manager = UnifiedS3Manager()
+        session_path = storage_manager.get_session_path(email, session_id)
+        results_key = f"{session_path.rstrip('/')}.zip"
+        logger.info(f"Generated results_key using unified format: {results_key}")
+    
     message_body = {
         'request_type': 'full',
         'session_id': session_id,
@@ -51,9 +62,26 @@ def send_full_request(session_id, excel_s3_key, config_s3_key, email, reference_
         'results_key': results_key,
         'max_rows': max_rows,
         'batch_size': batch_size,
-        'email_folder': email_folder,
+        'email_folder': email_folder,  # Keep for backward compatibility
+        'preview_email': preview_email,
         'created_at': datetime.now(timezone.utc).isoformat(),
     }
+    # Clean out None values so they don't get serialized
+    message_body_cleaned = {k: v for k, v in message_body.items() if v is not None}
+    return _send_sqs_message(STANDARD_QUEUE_URL, message_body_cleaned)
+
+def send_config_generation_request(message_data):
+    """Send a config generation request to the standard SQS queue."""
+    if not STANDARD_QUEUE_URL:
+        logger.error("Standard SQS queue URL is not configured.")
+        return None
+    
+    message_body = {
+        'request_type': 'config_generation',
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        **message_data
+    }
+    
     # Clean out None values so they don't get serialized
     message_body_cleaned = {k: v for k, v in message_body.items() if v is not None}
     return _send_sqs_message(STANDARD_QUEUE_URL, message_body_cleaned)

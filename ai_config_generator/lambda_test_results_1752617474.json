@@ -1,0 +1,65 @@
+{
+  "summary": {
+    "total": 7,
+    "passed": 6,
+    "failed": 1,
+    "success_rate": 85.71428571428571
+  },
+  "test_results": [
+    {
+      "test": "API Connectivity",
+      "success": true,
+      "message": "CORS preflight successful (status: 200)",
+      "duration": 0.1340937614440918,
+      "timestamp": "2025-07-15T18:11:07.155794"
+    },
+    {
+      "test": "Email Validation",
+      "success": true,
+      "message": "Email validation response: Email is already validated",
+      "duration": 0.08953714370727539,
+      "timestamp": "2025-07-15T18:11:07.245407"
+    },
+    {
+      "test": "WebSocket Connectivity",
+      "success": true,
+      "message": "WebSocket connection established (no immediate response expected)",
+      "duration": 6.021130561828613,
+      "timestamp": "2025-07-15T18:11:13.266578"
+    },
+    {
+      "test": "Automatic Config Generation",
+      "success": true,
+      "message": "Config generation queued successfully!\n      Session ID: config_gen_20250715_221114_0881601d\n      Message ID: c31f62da-f6ab-48ad-9b10-cb7e448a8ab1\n      Status: queued\n      AI response: Configuration generation has been queued. You will receive updates via WebSocket....",
+      "duration": 0.47882962226867676,
+      "timestamp": "2025-07-15T18:11:13.745777"
+    },
+    {
+      "test": "JSON API Config Generation",
+      "success": false,
+      "message": "Generation failed: Unknown error",
+      "duration": 0.3543565273284912,
+      "timestamp": "2025-07-15T18:11:14.100238"
+    },
+    {
+      "test": "Interview Mode Start",
+      "success": true,
+      "message": "Interview started successfully!\n      Conversation ID: None\n      AI response length: 81 chars\n      Response preview: Configuration generation has been queued. You will receive updates via WebSocket....",
+      "duration": 0.24849247932434082,
+      "timestamp": "2025-07-15T18:11:14.348848"
+    },
+    {
+      "test": "Interview Mode Continue",
+      "success": true,
+      "message": "Interview continued successfully!\n      AI response length: 81 chars\n      Config generated: NO\n      Response preview: Configuration generation has been queued. You will receive updates via WebSocket....",
+      "duration": 0.2275242805480957,
+      "timestamp": "2025-07-15T18:11:14.576476"
+    }
+  ],
+  "metadata": {
+    "api_base": "https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod",
+    "test_email": "eliyahu@eliyahu.ai",
+    "websocket_url": "wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod",
+    "timestamp": "2025-07-15T18:11:14.577012"
+  }
+}

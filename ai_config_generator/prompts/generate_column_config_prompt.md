@@ -54,12 +54,14 @@ Only ask when genuinely unclear or need confirmation:
 - ❌ Model preferences (default to sonar-pro unless complex reasoning needed)
 
 ### Step 4: Generate Configuration
-Create the simplified `column_config.json` based on analysis and any clarifications:
+Create the simplified `column_config.json` based on analysis and any clarifications.
+
+**CRITICAL**: The configuration MUST include search groups - this is not optional.
 
 ```json
 {
   "general_notes": "Inferred purpose, validation guidelines, and suggested preferred sources",
-  "default_model": "sonar-pro",
+  "default_model": "sonar-pro", 
   "default_search_context_size": "low",
   "search_groups": [
     {
@@ -98,7 +100,7 @@ Create the simplified `column_config.json` based on analysis and any clarificati
 - **Default Model**: `sonar-pro` is the default for most use cases
 - **Alternative Models**: You can specify alternative models including:
   - Perplexity models: `sonar`, `sonar-pro` (recommended for most validation tasks)
-  - Anthropic models: `claude-sonnet-4-0`, `claude-3-opus`, `claude-3-haiku`
+  - Anthropic models: `claude-sonnet-4-0` (latest Claude 4), `claude-3-opus`, `claude-3-haiku`
 - **Per-Column Model**: Use `preferred_model` field to override default for specific columns
 - **Best Practices**:
   - Use Perplexity models (`sonar-pro`) for standard web search and validation tasks
@@ -124,12 +126,35 @@ Create the simplified `column_config.json` based on analysis and any clarificati
 - **LOW**: Optional or supplementary data
 - **IGNORED**: Metadata, internal fields, timestamps
 
-### Search Group Logic
-- **Group 0**: ID/identifier fields (not validated, used for context)
+### Search Group Logic (MANDATORY)
+Search groups are **REQUIRED** for every configuration - they are essential for building an effective search strategy and cannot be omitted.
+
+**MANDATORY REQUIREMENTS:**
+- **You MUST define at least one search group** in the `search_groups` array
+- **Every validation target MUST be assigned to a search group** via the `search_group` field
+- **Group 0**: Typically ID/identifier fields (not validated, used for context) 
 - **Group 1+**: Columns whose information appears together in typical sources
 - **No upper limit** on group numbers
-- **Ungrouped**: Fields validated individually (more expensive, less stable)
-- **Optional Search Group Definitions**: You can now define search groups explicitly at the root level with `search_groups` array for better organization and control
+- **No ungrouped fields allowed**: Every column must belong to a search group for optimal performance
+
+**Search Group Structure (REQUIRED):**
+```json
+"search_groups": [
+  {
+    "group_id": 0,
+    "group_name": "Identification", 
+    "description": "ID and identifier fields used for context",
+    "model": "sonar-pro",
+    "search_context": "low"
+  }
+]
+```
+
+**Why Search Groups are Mandatory:**
+- **Performance**: Grouped validation is faster and more efficient than individual column validation
+- **Consistency**: Related fields get validated together using the same sources
+- **Cost Optimization**: Reduces API calls by batching related columns
+- **Source Strategy**: Ensures fields that appear together in sources are searched together
 
 ### Format Detection
 Auto-detect from sample data:

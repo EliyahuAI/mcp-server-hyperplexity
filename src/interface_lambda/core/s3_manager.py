@@ -9,7 +9,14 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 s3_client = boto3.client('s3')
-S3_RESULTS_BUCKET = os.environ.get('S3_RESULTS_BUCKET', 'perplexity-results')
+
+# Use unified bucket if available, otherwise fallback to legacy
+if os.environ.get('S3_UNIFIED_BUCKET'):
+    S3_RESULTS_BUCKET = os.environ.get('S3_UNIFIED_BUCKET')
+    logger.info(f"S3_MANAGER: Using unified bucket: {S3_RESULTS_BUCKET}")
+else:
+    S3_RESULTS_BUCKET = os.environ.get('S3_RESULTS_BUCKET', 'perplexity-results')
+    logger.info(f"S3_MANAGER: Using legacy bucket: {S3_RESULTS_BUCKET}")
 
 def upload_file_to_s3(file_content, bucket, key, content_type='application/octet-stream'):
     """Upload file content to S3."""
@@ -25,6 +32,17 @@ def upload_file_to_s3(file_content, bucket, key, content_type='application/octet
     except Exception as e:
         logger.error(f"Error uploading to S3: {str(e)}")
         return False
+
+def download_file_from_s3(bucket, key):
+    """Download file content from S3."""
+    try:
+        response = s3_client.get_object(Bucket=bucket, Key=key)
+        content = response['Body'].read()
+        logger.info(f"Downloaded file from s3://{bucket}/{key}")
+        return content
+    except Exception as e:
+        logger.error(f"Error downloading from S3: {str(e)}")
+        return None
 
 def generate_presigned_url(bucket, key, expiration=3600):
     """Generate a presigned URL for downloading a file from S3."""

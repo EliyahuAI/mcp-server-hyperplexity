@@ -10,6 +10,9 @@ multiplex_validation: |
   === GENERAL VALIDATION GUIDELINES ===
   {general_notes}
   
+  === VALIDATION NOTES ===
+  For each field, use the provided examples as guidance for expected formats and values. Do not use quotation marks around your responses.
+  
   === CONTEXT INFORMATION ===
   Makes sure your response is within this context:
   {context}
@@ -18,15 +21,31 @@ multiplex_validation: |
   Additional context come from validated entries for other columns:
   {previous_results}
 
+  === VALIDATION GROUP INFORMATION ===
+  {group_name}
+  {group_description}
+
   === FIELDS TO VALIDATE ===
   {fields_to_validate}
 
-  === EXAMPLES USAGE ===
-  For each field, use the provided examples as guidance for expected formats and values. Do not use quotation marks around your responses.
-
-  === CONFIDENCE RUBRIC ===
-  Use the confidence rubric defined to assign confidence levels to your responses.
-  Assign HIGH confidence when the claim is a widely accepted fact, can be directly verified by an authoritative source (such as a government document, peer‑reviewed study, or major news outlet), or is a straightforward calculation derived from such a fact. Use MEDIUM confidence for good estimates or confident projections, or for claims supported only by sources that an expert would judge respectable but not definitive. Everything else—situations with weak or conflicting sources or where the system remains uncertain—receives LOW confidence. When no information is available, assign UNDEFINED confidence.
+  === CONFIDENCE RUBRICS ===
+  
+  UPDATED VALUE CONFIDENCE (confidence field):
+  Assign confidence levels to your VALIDATED answers:
+  - HIGH: Claim is a widely accepted fact, directly verified by authoritative source, or straightforward calculation
+  - MEDIUM: Good estimates, confident projections, or respectable but not definitive sources
+  - LOW: Weak/conflicting sources, uncertainty, or no information available
+  
+  ORIGINAL VALUE CONFIDENCE (original_confidence field):
+  Assess the quality of the ORIGINAL value provided:
+  - HIGH: Original value is correct (matches your validated answer or only minor formatting differences)
+  - MEDIUM: Original value has minor issues or moderate uncertainty about needed changes
+  - LOW: Original value is substantially wrong or blank that should be filled
+  - null: For blank values that should remain blank (no confidence assignment needed)
+  
+  IMPORTANT VALIDATION RULE:
+  Only provide a different validated value if you can achieve HIGHER confidence than the original value.
+  If your validated answer would have the same or lower confidence than the original, keep the original value unchanged.
 
   === RESPONSE FORMAT ===
   Please respond with a JSON array containing an object for each field. {single_field_note} 
@@ -38,21 +57,12 @@ multiplex_validation: |
   - Each field must have its own object in the array
   - Include the exact column name in each object
   - Place actual URLs in the sources arrays, not reference numbers
-  - CRITICAL: Include direct quotes from authoritative sources in the quote field
-  - Extract specific text snippets that support your answer
-  - If no direct quote is available, provide a relevant excerpt or summary
-  - The quote field should NEVER be empty - always provide supporting text
+  - CRITICAL: Include direct quotes from provided sources in the reasoning field (preferred), or use general knowledge/other supporting evidence
+  - Extract specific text snippets that support your answer when available
   - If you cannot find information for a field, indicate LOW confidence
   - Use provided examples to guide your validation of format and expected values
-  - Consider the validation history when determining if the value should be updated
-  - Always include all required fields: column, answer, confidence, sources, update_required
-
-  LOGIC FOR update_required AND substantially_different:
-  - update_required: true if the current value is empty/blank/missing OR if your validated answer differs from the current value
-  - substantially_different: true if the meaning/content changes significantly (empty→filled always counts as substantial)
-  - For empty/blank current values: ALWAYS set both update_required=true and substantially_different=true
-  - For minor formatting changes (like punctuation): update_required=false, substantially_different=false
-  - For completely different information: both should be true
+  - Always include all required fields: column, answer, confidence, original_confidence, reasoning, sources
+  - Assess both the quality of your validated answer (confidence) and the quality of the original value (original_confidence)
 
 holistic_validation: |
   === HOLISTIC VALIDATION ===

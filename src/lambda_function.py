@@ -835,9 +835,477 @@ async def retry_api_call_with_backoff(
     # Should never reach here, but just in case
     raise last_exception
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Lambda handler for validation requests."""
+def handle_config_generation_request(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """Handle AI configuration generation requests using existing Claude integration."""
     try:
+        logger.info("=== CONFIG GENERATION REQUEST ===")
+        
+        # Extract request parameters
+        table_analysis = event.get('table_analysis')
+        generation_mode = event.get('generation_mode', 'automatic')
+        conversation_id = event.get('conversation_id')
+        user_message = event.get('user_message', '')
+        session_id = event.get('session_id', 'unknown')
+        
+        if not table_analysis:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({
+                    'success': False,
+                    'error': 'Missing table_analysis in request'
+                })
+            }
+        
+        logger.info(f"Config generation for session: {session_id}, mode: {generation_mode}")
+        
+        # Get Anthropic API key (reuse existing logic)
+        anthropic_api_key = get_anthropic_api_key()
+        if not anthropic_api_key:
+            return {
+                'statusCode': 500,
+                'body': json.dumps({
+                    'success': False,
+                    'error': 'Anthropic API key not available'
+                })
+            }
+        
+        # Process the config generation request
+        if generation_mode == 'automatic':
+            result = asyncio.run(generate_config_automatic(
+                table_analysis, anthropic_api_key, session_id
+            ))
+        else:  # interview mode
+            result = asyncio.run(generate_config_interview(
+                table_analysis, anthropic_api_key, session_id, 
+                conversation_id, user_message
+            ))
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps(result)
+        }
+        
+    except Exception as e:
+        logger.error(f"Config generation error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'success': False,
+                'error': str(e)
+            })
+        }
+
+async def generate_config_automatic(table_analysis: Dict, api_key: str, session_id: str) -> Dict:
+    """Generate configuration automatically using Claude."""
+    try:
+        # Build the config generation prompt
+        prompt = build_config_generation_prompt(table_analysis, mode='automatic')
+        
+        # Call Claude using existing infrastructure
+        async with aiohttp.ClientSession() as session:
+            config_response = await call_anthropic_api_structured(
+                session, prompt, api_key, 
+                schema=get_config_generation_schema(),
+                model="claude-sonnet-4-0"
+            )
+        
+        # Extract generated config from response
+        generated_config = extract_config_from_claude_response(config_response)
+        ai_response = 'Configuration generated automatically using AI analysis'
+        
+        # Save config to S3 and return the key
+        try:
+            config_s3_key = save_config_to_s3(generated_config, session_id)
+            
+            return {
+                'success': True,
+                'generated_config': generated_config,
+                'generated_config_s3_key': config_s3_key,
+                'ai_response': ai_response,
+                'session_id': session_id,
+                'generation_mode': 'automatic'
+            }
+            
+        except Exception as s3_error:
+            logger.error(f"Failed to save config to S3: {str(s3_error)}")
+            # Still return the config even if S3 save fails
+            return {
+                'success': True,
+                'generated_config': generated_config,
+                'ai_response': ai_response,
+                'session_id': session_id,
+                'generation_mode': 'automatic'
+            }
+        
+    except Exception as e:
+        logger.error(f"Automatic config generation failed: {str(e)}")
+        
+        return {
+            'success': False,
+            'error': f'Automatic generation failed: {str(e)}',
+            'session_id': session_id
+        }
+
+async def generate_config_interview(table_analysis: Dict, api_key: str, session_id: str,
+                                  conversation_id: str = None, user_message: str = '') -> Dict:
+    """Generate configuration through interview mode."""
+    try:
+        if not conversation_id:
+            # Start new conversation
+            prompt = build_config_generation_prompt(table_analysis, mode='interview_start')
+        else:
+            # Continue conversation
+            prompt = build_config_generation_prompt(
+                table_analysis, mode='interview_continue', 
+                conversation_id=conversation_id, user_message=user_message
+            )
+        
+        # Call Claude using existing infrastructure
+        async with aiohttp.ClientSession() as session:
+            response = await call_anthropic_api_text(
+                session, prompt, api_key, model="claude-sonnet-4-0"
+            )
+        
+        ai_response = response.get('content', 'Interview response generated')
+        current_conversation_id = conversation_id or f"conv_{session_id}"
+        
+        # Check if this response contains a complete config
+        generated_config = None
+        try:
+            # Try to extract config from the response if it's complete
+            if "final_config" in ai_response.lower() or "configuration:" in ai_response.lower():
+                # Attempt to parse a complete config from the response
+                generated_config = extract_config_from_text_response(ai_response)
+        except:
+            pass  # No complete config yet
+        
+        # Save config to S3 if complete
+        config_s3_key = None
+        if generated_config:
+            try:
+                config_s3_key = save_config_to_s3(generated_config, session_id)
+            except Exception as s3_error:
+                logger.error(f"Failed to save config to S3: {str(s3_error)}")
+        
+        # For interview mode, we might not have a complete config yet
+        return {
+            'success': True,
+            'ai_response': ai_response,
+            'conversation_id': current_conversation_id,
+            'session_id': session_id,
+            'generation_mode': 'interview',
+            'generated_config': generated_config,  # May be None if not complete
+            'generated_config_s3_key': config_s3_key  # May be None if not complete
+        }
+        
+    except Exception as e:
+        logger.error(f"Interview config generation failed: {str(e)}")
+        
+        return {
+            'success': False,
+            'error': f'Interview generation failed: {str(e)}',
+            'session_id': session_id
+        }
+
+def build_config_generation_prompt(table_analysis: Dict, mode: str = 'automatic',
+                                 conversation_id: str = None, user_message: str = '') -> str:
+    """Build config generation prompt based on table analysis."""
+    
+    basic_info = table_analysis.get('basic_info', {})
+    column_analysis = table_analysis.get('column_analysis', {})
+    domain_info = table_analysis.get('domain_info', {})
+    
+    base_prompt = f"""
+You are an expert in data validation and configuration generation for the pharmaceutical industry.
+
+TABLE ANALYSIS:
+- File: {basic_info.get('filename', 'Unknown')}
+- Size: {basic_info.get('total_rows', 0)} rows × {basic_info.get('total_columns', 0)} columns
+- Domain: {domain_info.get('inferred_domain', 'general')} (confidence: {domain_info.get('domain_confidence', 0)})
+- Purpose: {domain_info.get('inferred_purpose', 'data analysis')}
+
+COLUMN DETAILS:
+"""
+    
+    for col_name, col_info in column_analysis.items():
+        sample_values = col_info.get('sample_values', [])[:3]
+        base_prompt += f"""
+{col_name}:
+  - Type: {col_info.get('data_type', 'Unknown')}
+  - Importance: {col_info.get('inferred_importance', 'MEDIUM')}
+  - Completeness: {100 - col_info.get('null_percentage', 0):.1f}%
+  - Sample Values: {sample_values}
+"""
+    
+    if mode == 'automatic':
+        base_prompt += """
+TASK: Generate a complete validation configuration for this table that optimizes for pharmaceutical competitive intelligence workflows.
+
+Focus on:
+1. Appropriate importance levels (ID, CRITICAL, HIGH, MEDIUM, LOW)
+2. Logical search groups for batch processing
+3. Model selection (Claude 4 for complex analysis, Perplexity for factual updates)
+4. Validation criteria and examples
+
+Generate a complete configuration following the established schema.
+"""
+    
+    elif mode == 'interview_start':
+        base_prompt += """
+TASK: Start an interactive interview to generate a customized validation configuration.
+
+Begin by asking 3-5 strategic questions about:
+1. Specific validation priorities for this dataset
+2. Business use cases and critical fields
+3. Performance vs accuracy trade-offs
+4. Domain-specific requirements
+
+Keep questions focused and practical. Tailor questions to the pharmaceutical domain based on the table analysis.
+"""
+    
+    elif mode == 'interview_continue':
+        base_prompt += f"""
+CONVERSATION CONTEXT:
+Conversation ID: {conversation_id}
+User Message: "{user_message}"
+
+TASK: Continue the configuration interview based on the user's response.
+
+Analyze their input and either:
+1. Ask follow-up questions to clarify requirements
+2. Generate the final configuration if you have enough information
+
+Maintain context from the previous conversation and build toward a complete configuration.
+"""
+    
+    return base_prompt
+
+def get_config_generation_schema() -> Dict:
+    """Get JSON schema for config generation tool."""
+    return {
+        "type": "object",
+        "properties": {
+            "general_notes": {
+                "type": "string",
+                "description": "Comprehensive notes about the configuration and validation guidelines"
+            },
+            "default_model": {
+                "type": "string",
+                "description": "Default model to use for validation",
+                "default": "sonar-pro"
+            },
+            "search_groups": {
+                "type": "array",
+                "description": "Logical search group definitions",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "group_id": {"type": "integer"},
+                        "group_name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "model": {"type": "string"},
+                        "search_context": {"type": "string", "enum": ["low", "high"]}
+                    },
+                    "required": ["group_id", "group_name", "description", "model", "search_context"]
+                }
+            },
+            "validation_targets": {
+                "type": "array",
+                "description": "Validation target configurations",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "column": {"type": "string"},
+                        "description": {"type": "string"},
+                        "importance": {"type": "string", "enum": ["ID", "CRITICAL", "HIGH", "MEDIUM", "LOW"]},
+                        "format": {"type": "string"},
+                        "notes": {"type": "string"},
+                        "examples": {"type": "array", "items": {"type": "string"}},
+                        "search_group": {"type": "integer"},
+                        "preferred_model": {"type": "string"},
+                        "search_context_size": {"type": "string", "enum": ["low", "high"]}
+                    },
+                    "required": ["column", "description", "importance", "format", "examples", "search_group"]
+                }
+            }
+        },
+        "required": ["general_notes", "validation_targets"]
+    }
+
+def save_config_to_s3(generated_config: Dict, session_id: str) -> str:
+    """Save generated configuration to S3 and return the key."""
+    try:
+        import boto3
+        from botocore.exceptions import ClientError
+        
+        # Upload config to S3
+        s3_client = boto3.client('s3')
+        bucket_name = os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
+        
+        # Create unique filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        key = f"generated_configs/{session_id}_{timestamp}.json"
+        
+        # Upload config as JSON
+        config_json = json.dumps(generated_config, indent=2)
+        
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=key,
+            Body=config_json,
+            ContentType='application/json',
+            Metadata={'session_id': session_id}
+        )
+        
+        logger.info(f"Config uploaded to S3: {key}")
+        return key
+        
+    except Exception as e:
+        logger.error(f"Failed to save config to S3: {str(e)}")
+        raise
+
+def create_config_download_url(s3_key: str) -> str:
+    """Create S3 download URL for the generated configuration."""
+    try:
+        import boto3
+        from botocore.exceptions import ClientError
+        
+        s3_client = boto3.client('s3')
+        bucket_name = os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
+        
+        # Generate presigned URL (valid for 1 hour)
+        download_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket_name, 'Key': s3_key},
+            ExpiresIn=3600
+        )
+        
+        logger.info(f"Created download URL for S3 key: {s3_key}")
+        return download_url
+        
+    except Exception as e:
+        logger.error(f"Failed to create config download URL: {str(e)}")
+        return ""
+
+def extract_config_from_text_response(text_response: str) -> Dict:
+    """Extract configuration from text response (for interview mode)."""
+    try:
+        # Look for JSON-like structures in the text
+        import re
+        
+        # Try to find JSON blocks
+        json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+        matches = re.findall(json_pattern, text_response, re.DOTALL)
+        
+        for match in matches:
+            try:
+                config = json.loads(match)
+                # Validate that it looks like a config
+                if 'columns' in config or 'validation_rules' in config:
+                    return config
+            except json.JSONDecodeError:
+                continue
+        
+        # If no valid JSON found, return None
+        return None
+        
+    except Exception as e:
+        logger.error(f"Failed to extract config from text: {str(e)}")
+        return None
+
+def extract_config_from_claude_response(response: Dict) -> Dict:
+    """Extract configuration from Claude's structured response."""
+    try:
+        # Similar to existing extraction logic in the validation code
+        for content_item in response.get('content', []):
+            if content_item.get('type') == 'tool_use':
+                return content_item.get('input', {})
+        
+        # Fallback: extract from text
+        for content_item in response.get('content', []):
+            if content_item.get('type') == 'text':
+                text = content_item.get('text', '')
+                if '{' in text and '}' in text:
+                    start = text.find('{')
+                    end = text.rfind('}') + 1
+                    return json.loads(text[start:end])
+        
+        raise ValueError("Could not extract config from Claude response")
+        
+    except Exception as e:
+        logger.error(f"Config extraction failed: {str(e)}")
+        raise
+
+async def call_anthropic_api_structured(session: aiohttp.ClientSession, prompt: str, 
+                                       api_key: str, schema: Dict, model: str = "claude-sonnet-4-0") -> Dict:
+    """Call Anthropic API with structured output (tool use)."""
+    headers = {
+        'Content-Type': 'application/json',
+        'X-API-Key': api_key,
+        'anthropic-version': '2023-06-01'
+    }
+    
+    data = {
+        "model": model,
+        "max_tokens": 8000,
+        "temperature": 0.1,
+        "messages": [{"role": "user", "content": prompt}],
+        "tools": [{
+            "name": "generate_config",
+            "description": "Generate a validation configuration",
+            "input_schema": schema
+        }],
+        "tool_choice": {"type": "tool", "name": "generate_config"}
+    }
+    
+    async with session.post("https://api.anthropic.com/v1/messages", 
+                           headers=headers, json=data) as response:
+        if response.status == 200:
+            return await response.json()
+        else:
+            error_text = await response.text()
+            raise Exception(f"Anthropic API error: {response.status} - {error_text}")
+
+async def call_anthropic_api_text(session: aiohttp.ClientSession, prompt: str, 
+                                 api_key: str, model: str = "claude-sonnet-4-0") -> Dict:
+    """Call Anthropic API for text response (interview mode)."""
+    headers = {
+        'Content-Type': 'application/json',
+        'X-API-Key': api_key,
+        'anthropic-version': '2023-06-01'
+    }
+    
+    data = {
+        "model": model,
+        "max_tokens": 4000,
+        "temperature": 0.3,
+        "messages": [{"role": "user", "content": prompt}]
+    }
+    
+    async with session.post("https://api.anthropic.com/v1/messages", 
+                           headers=headers, json=data) as response:
+        if response.status == 200:
+            result = await response.json()
+            # Extract text content
+            for content_item in result.get('content', []):
+                if content_item.get('type') == 'text':
+                    return {'content': content_item.get('text', '')}
+            return {'content': 'No text response received'}
+        else:
+            error_text = await response.text()
+            raise Exception(f"Anthropic API error: {response.status} - {error_text}")
+
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """Lambda handler for validation requests and config generation."""
+    try:
+        # Check for config generation request first
+        if event.get('config_generation_request'):
+            logger.info("Processing config generation request")
+            return handle_config_generation_request(event, context)
+        
+        # Continue with normal validation logic
         # Test CloudWatch logging - with extreme verbosity for debugging
         print("==== LAMBDA FUNCTION STARTED - CONSOLE.LOG PRINT ====")
         logger.error("==== LAMBDA FUNCTION STARTED - ERROR LEVEL LOG ====")  # Use ERROR level for visibility
@@ -921,6 +1389,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if 'search_groups' in config:
             print(f"LAMBDA_HANDLER: Number of search groups: {len(config['search_groups'])}")
         
+        print(f"LAMBDA_HANDLER: Config has validation_targets: {'validation_targets' in config}")
+        if 'validation_targets' in config:
+            print(f"LAMBDA_HANDLER: Number of validation_targets: {len(config['validation_targets'])}")
+            # Print first validation target for debugging
+            if config['validation_targets']:
+                first_target = config['validation_targets'][0]
+                print(f"LAMBDA_HANDLER: First validation target: {first_target}")
+        
         validator = SimplifiedSchemaValidator(config)
         
         print(f"LAMBDA_HANDLER: Validator created with {len(validator.search_groups)} search groups")
@@ -999,25 +1475,45 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         row_tasks.append(task)
                     
                     # Wait for all rows in the batch to complete
-                    batch_results = await asyncio.gather(*row_tasks)
-                    
-                    batch_end_time = time.time()
-                    batch_processing_time = batch_end_time - batch_start_time
-                    
-                    # Store batch timing data
-                    batch_timing_info = {
-                        'batch_number': batch_index,
-                        'batch_size': actual_batch_size,
-                        'processing_time_seconds': batch_processing_time,
-                        'time_per_row_in_batch': batch_processing_time / actual_batch_size if actual_batch_size > 0 else 0
-                    }
-                    batch_timing_data.append(batch_timing_info)
-                    
-                    logger.info(f"✅ Completed batch {batch_index}/{total_batches} in {batch_processing_time:.2f}s (avg {batch_processing_time/actual_batch_size:.2f}s per row in batch)")
-                    
-                    # Store results
-                    for idx, result in batch_results:
-                        validation_results[idx] = result
+                    try:
+                        batch_results = await asyncio.gather(*row_tasks)
+                        
+                        batch_end_time = time.time()
+                        batch_processing_time = batch_end_time - batch_start_time
+                        
+                        # Store batch timing data
+                        batch_timing_info = {
+                            'batch_number': batch_index,
+                            'batch_size': actual_batch_size,
+                            'processing_time_seconds': batch_processing_time,
+                            'time_per_row_in_batch': batch_processing_time / actual_batch_size if actual_batch_size > 0 else 0
+                        }
+                        batch_timing_data.append(batch_timing_info)
+                        
+                        logger.info(f"✅ Completed batch {batch_index}/{total_batches} in {batch_processing_time:.2f}s (avg {batch_processing_time/actual_batch_size:.2f}s per row in batch)")
+                        
+                        # Store results
+                        logger.info(f"Storing results for batch {batch_index}: {len(batch_results)} results")
+                        for idx, result in batch_results:
+                            validation_results[idx] = result
+                            
+                    except Exception as batch_error:
+                        batch_end_time = time.time()
+                        batch_processing_time = batch_end_time - batch_start_time
+                        logger.error(f"❌ Batch {batch_index}/{total_batches} failed after {batch_processing_time:.2f}s: {str(batch_error)}")
+                        
+                        # Store partial results if any tasks completed successfully
+                        completed_results = []
+                        for task in row_tasks:
+                            if task.done() and not task.exception():
+                                try:
+                                    completed_results.append(task.result())
+                                except Exception as e:
+                                    logger.warning(f"Failed to get result from completed task: {e}")
+                        
+                        logger.info(f"Storing {len(completed_results)} partial results from failed batch {batch_index}")
+                        for idx, result in completed_results:
+                            validation_results[idx] = result
         
         async def process_row(session, row, row_idx):
             """Process a single row with progressive multiplexing."""
@@ -1265,15 +1761,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     for target in validation_targets:
                         if target.column in parsed_results:
                             parsed_result = parsed_results[target.column]
+                            # New tuple structure: (value, confidence_level, sources, confidence_level, reasoning, main_source, original_confidence, explanation, consistent_with_model_knowledge)
                             row_results[target.column] = {
                                 'value': parsed_result[0],
-                                'confidence': parsed_result[1],
+                                'confidence': parsed_result[1],  # String confidence now
                                 'sources': parsed_result[2],
                                 'confidence_level': parsed_result[3],
-                                'quote': parsed_result[4],
+                                'reasoning': parsed_result[4],  # Changed from quote
                                 'main_source': parsed_result[5],
-                                'update_required': parsed_result[6],
-                                'substantially_different': parsed_result[7],
+                                'original_confidence': parsed_result[6] if len(parsed_result) > 6 else None,  # New field
+                                'explanation': parsed_result[7] if len(parsed_result) > 7 else '',  # New field
                                 'response_id': response_id,  # Reference which API response this came from
                                 'model': model  # Add model information from our context
                             }
@@ -1281,6 +1778,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             # Add consistent_with_model_knowledge if available
                             if len(parsed_result) > 8:
                                 row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
+                            
+                            # Keep quote for backward compatibility (map reasoning to quote)
+                            row_results[target.column]['quote'] = parsed_result[4]
                             
                             cached_processed_count += 1
                             logger.info(f"✅ Processed cached result for column: {target.column}")
@@ -1400,15 +1900,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             for target in validation_targets:
                 if target.column in parsed_results:
                     parsed_result = parsed_results[target.column]
+                    # New tuple structure: (value, confidence_level, sources, confidence_level, reasoning, main_source, original_confidence, explanation, consistent_with_model_knowledge)
                     row_results[target.column] = {
                         'value': parsed_result[0],
-                        'confidence': parsed_result[1],
+                        'confidence': parsed_result[1],  # String confidence now
                         'sources': parsed_result[2],
                         'confidence_level': parsed_result[3],
-                        'quote': parsed_result[4],
+                        'reasoning': parsed_result[4],  # Changed from quote
                         'main_source': parsed_result[5],
-                        'update_required': parsed_result[6],
-                        'substantially_different': parsed_result[7],
+                        'original_confidence': parsed_result[6] if len(parsed_result) > 6 else None,  # New field
+                        'explanation': parsed_result[7] if len(parsed_result) > 7 else '',  # New field
                         'response_id': response_id,  # Reference which API response this came from
                         'model': model  # Add model information from our context
                     }
@@ -1416,6 +1917,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Add consistent_with_model_knowledge if available
                     if len(parsed_result) > 8:
                         row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
+                    
+                    # Keep quote for backward compatibility (map reasoning to quote)
+                    row_results[target.column]['quote'] = parsed_result[4]
                     
                     processed_count += 1
                     logger.info(f"✅ Processed result for column: {target.column}")

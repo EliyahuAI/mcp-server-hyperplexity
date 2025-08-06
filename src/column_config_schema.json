@@ -1,9 +1,8 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Column Configuration Schema",
   "description": "Schema for validating column configuration files used by the Perplexity Validator",
   "type": "object",
-  "required": ["validation_targets"],
+  "required": ["search_groups", "validation_targets"],
   "properties": {
     "general_notes": {
       "type": "string",
@@ -11,40 +10,34 @@
     },
     "default_model": {
       "type": "string",
-      "description": "Default model to use for validation (e.g., 'sonar-pro', 'claude-sonnet-4-20250514')",
-      "default": "sonar-pro"
+      "description": "Default model to use for validation (e.g., 'sonar-pro', 'claude-sonnet-4-20250514')"
     },
     "default_search_context_size": {
       "type": "string",
       "enum": ["low", "high"],
-      "description": "Default search context size for Perplexity models",
-      "default": "low"
+      "description": "Default search context size for Perplexity models"
     },
     "search_groups": {
       "type": "array",
-      "description": "Optional search group definitions for organizing columns",
+      "description": "Required search group definitions for organizing columns - essential for building effective search strategy",
       "items": {
         "type": "object",
         "required": ["group_id", "group_name", "description", "model", "search_context"],
         "properties": {
           "group_id": {
             "type": "integer",
-            "minimum": 0,
             "description": "Unique identifier for the search group"
           },
           "group_name": {
             "type": "string",
-            "minLength": 1,
             "description": "Descriptive name for the search group"
           },
           "description": {
             "type": "string",
-            "minLength": 1,
             "description": "Description of what this search group represents"
           },
           "model": {
             "type": "string",
-            "minLength": 1,
             "description": "Model to use for this search group"
           },
           "search_context": {
@@ -58,7 +51,6 @@
     },
     "validation_targets": {
       "type": "array",
-      "minItems": 1,
       "description": "Array of validation target configurations",
       "items": {
         "type": "object",
@@ -66,12 +58,10 @@
         "properties": {
           "column": {
             "type": "string",
-            "minLength": 1,
             "description": "Column name to validate"
           },
           "description": {
             "type": "string",
-            "minLength": 1,
             "description": "Description of what this column represents"
           },
           "importance": {
@@ -81,7 +71,6 @@
           },
           "format": {
             "type": "string",
-            "minLength": 1,
             "description": "Expected format of the column data (e.g., 'String', 'Date', 'Number', 'URL')"
           },
           "notes": {
@@ -90,15 +79,13 @@
           },
           "examples": {
             "type": "array",
-            "minItems": 1,
-            "items": {
+                  "items": {
               "type": "string"
             },
             "description": "Example values for this column"
           },
           "search_group": {
             "type": "integer",
-            "minimum": 0,
             "description": "Search group ID this column belongs to"
           },
           "preferred_model": {

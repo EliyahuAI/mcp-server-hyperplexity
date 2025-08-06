@@ -1,0 +1,30 @@
+{
+  "summary": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "success_rate": 50.0
+  },
+  "test_results": [
+    {
+      "test": "Automatic Config Generation",
+      "success": true,
+      "message": "Config generation queued successfully!\n      Session ID: config_gen_20250715_220707_04a3f37c\n      Message ID: b822ef1d-3400-4def-a245-9d1ca5e0b96f\n      Status: queued\n      AI response: Configuration generation has been queued. You will receive updates via WebSocket....",
+      "duration": 2.1180243492126465,
+      "timestamp": "2025-07-15T18:07:07.649898"
+    },
+    {
+      "test": "JSON API Config Generation",
+      "success": false,
+      "message": "Generation failed: Unknown error",
+      "duration": 1.9245991706848145,
+      "timestamp": "2025-07-15T18:07:09.574627"
+    }
+  ],
+  "metadata": {
+    "api_base": "https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod",
+    "test_email": "eliyahu@eliyahu.ai",
+    "websocket_url": "wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod",
+    "timestamp": "2025-07-15T18:07:09.575144"
+  }
+}

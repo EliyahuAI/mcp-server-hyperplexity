@@ -65,8 +65,8 @@ def _check_status(session_id, is_preview, email_param):
     from ..utils.helpers import create_response
     from dynamodb_schemas import get_run_status
     
-    # In preview mode, the session ID has a suffix that needs to be used for the lookup
-    lookup_session_id = f"{session_id}_preview" if is_preview else session_id
+    # Use the same session ID for both preview and full validation
+    lookup_session_id = session_id
     
     status_record = get_run_status(lookup_session_id)
     

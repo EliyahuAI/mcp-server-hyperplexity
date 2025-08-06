@@ -39,7 +39,13 @@ LAMBDA_CONFIG = {
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
     "Environment": {
         "Variables": {
-            "S3_CACHE_BUCKET": "perplexity-cache"
+            "S3_UNIFIED_BUCKET": "hyperplexity-storage",  # Unified bucket for all storage
+            "S3_DOWNLOAD_BUCKET": "hyperplexity-storage", # Same bucket but hyperplexity/downloads/ has public access
+            # Legacy variables for compatibility during transition
+            "S3_CACHE_BUCKET": "hyperplexity-storage", 
+            "S3_RESULTS_BUCKET": "hyperplexity-storage",
+            "S3_CONFIG_BUCKET": "hyperplexity-storage",
+            "WEBSOCKET_API_URL": "wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod"
         }
     },
     "TracingConfig": {
@@ -253,6 +259,38 @@ def copy_source_files():
         logger.info("Copied pricing_data.csv - critical for sonar-pro and other model pricing")
     else:
         logger.error("pricing_data.csv not found! This is critical for cost calculations!")
+    
+    # Copy websocket_client.py - CRITICAL for WebSocket delivery of config generation results!
+    websocket_client = SRC_DIR / "websocket_client.py"
+    if websocket_client.exists():
+        shutil.copy(websocket_client, PACKAGE_DIR)
+        logger.info("Copied websocket_client.py - critical for WebSocket delivery")
+    else:
+        logger.error("websocket_client.py not found! This is critical for config generation WebSocket delivery!")
+    
+    # Copy dynamodb_schemas.py - NEEDED for WebSocket connection management!
+    dynamodb_schemas = SRC_DIR / "dynamodb_schemas.py"
+    if dynamodb_schemas.exists():
+        shutil.copy(dynamodb_schemas, PACKAGE_DIR)
+        logger.info("Copied dynamodb_schemas.py - needed for WebSocket connection management")
+    else:
+        logger.warning("dynamodb_schemas.py not found! WebSocket connection management may not work properly.")
+    
+    # Copy shared_table_parser.py - NEEDED for consolidated table parsing!
+    shared_table_parser = SRC_DIR / "shared_table_parser.py"
+    if shared_table_parser.exists():
+        shutil.copy(shared_table_parser, PACKAGE_DIR)
+        logger.info("Copied shared_table_parser.py - needed for consolidated table parsing")
+    else:
+        logger.warning("shared_table_parser.py not found! Table parsing may not work properly.")
+    
+    # Copy ai_api_client.py - CRITICAL for integrated caching with unified storage!
+    ai_api_client = SRC_DIR / "ai_api_client.py"
+    if ai_api_client.exists():
+        shutil.copy(ai_api_client, PACKAGE_DIR)
+        logger.info("Copied ai_api_client.py - critical for integrated caching with unified storage")
+    else:
+        logger.warning("ai_api_client.py not found! Integrated caching may not work properly.")
 
 def create_zip():
     """Create deployment zip file."""

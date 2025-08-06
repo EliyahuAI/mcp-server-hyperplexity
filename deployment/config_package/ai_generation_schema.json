@@ -1,0 +1,74 @@
+{
+  "title": "AI Config Generation Response Schema",
+  "description": "Schema for AI responses when generating or refining column configurations",
+  "type": "object",
+  "required": ["updated_config", "clarifying_questions", "clarification_urgency", "ai_summary"],
+  "properties": {
+    "updated_config": {
+      "type": "object",
+      "description": "The complete updated configuration",
+      "properties": {
+        "general_notes": {
+          "type": "string",
+          "description": "General notes about the validation configuration"
+        },
+        "default_model": {
+          "type": "string",
+          "description": "Default model for validation"
+        },
+        "default_search_context_size": {
+          "type": "string",
+          "enum": ["low", "high"],
+          "description": "Default search context size"
+        },
+        "search_groups": {
+          "type": "array",
+          "description": "Required search group definitions",
+          "items": {
+            "type": "object",
+            "properties": {
+              "group_id": {"type": "integer"},
+              "group_name": {"type": "string"},
+              "description": {"type": "string"},
+              "model": {"type": "string"},
+              "search_context": {"type": "string", "enum": ["low", "high"]}
+            },
+            "required": ["group_id", "group_name", "description", "model", "search_context"]
+          }
+        },
+        "validation_targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "column": {"type": "string"},
+              "description": {"type": "string"},
+              "importance": {"type": "string", "enum": ["ID", "CRITICAL", "HIGH", "MEDIUM", "LOW"]},
+              "format": {"type": "string"},
+              "notes": {"type": "string"},
+              "examples": {"type": "array", "items": {"type": "string"}},
+              "search_group": {"type": "integer"},
+              "preferred_model": {"type": "string"},
+              "search_context_size": {"type": "string", "enum": ["low", "high"]}
+            },
+            "required": ["column", "description", "importance", "format", "examples", "search_group"]
+          }
+        }
+      },
+      "required": ["general_notes", "search_groups", "validation_targets"]
+    },
+    "clarifying_questions": {
+      "type": "string",
+      "description": "2-4 specific questions to help improve the configuration further"
+    },
+    "clarification_urgency": {
+      "type": "number",
+      "description": "Urgency score from 0-1: 0 = no clarification needed, 1 = critical columns will likely be wrong without clarification"
+    },
+    "ai_summary": {
+      "type": "string",
+      "description": "Clear AI summary in simple language explaining what was configured:\n\nFOR NEW CONFIGURATIONS:\n- Identify the table's general purpose and domain\n- List critical columns and why they're important\n- Specify ID/key columns used for row identification (not validated)\n- For each search group, provide:\n  • Group name and purpose\n  • Columns included (use clear formatting)\n  • Context level (high/low) and model used\n- Highlight any special settings (high context, Claude model usage)\n- Assessment: Are table structure and column importance well understood, or is refinement recommended?\n\nFOR REFINEMENTS:\n- Summarize key changes made\n- List affected columns and search groups\n- Explain reasoning behind major modifications\n- Assessment: Is the configuration now well-tuned, or are further refinements needed?"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1608,12 +1608,21 @@ def create_websocket_connections_table():
                 'KeySchema': [{'AttributeName': 'sessionId', 'KeyType': 'HASH'}],
                 'Projection': {'ProjectionType': 'ALL'}
             }],
-            BillingMode='PAY_PER_REQUEST',
-            TimeToLiveSpecification={'AttributeName': 'ttl', 'Enabled': True}
+            BillingMode='PAY_PER_REQUEST'
         )
         waiter = boto3.client('dynamodb').get_waiter('table_exists')
         waiter.wait(TableName=WEBSOCKET_CONNECTIONS_TABLE_NAME)
         logger.info(f"Table {WEBSOCKET_CONNECTIONS_TABLE_NAME} created successfully with GSI.")
+        
+        # Enable TTL after table creation
+        try:
+            dynamodb_client.update_time_to_live(
+                TableName=WEBSOCKET_CONNECTIONS_TABLE_NAME,
+                TimeToLiveSpecification={'AttributeName': 'ttl', 'Enabled': True}
+            )
+            logger.info(f"TTL enabled for {WEBSOCKET_CONNECTIONS_TABLE_NAME}")
+        except Exception as ttl_error:
+            logger.warning(f"Failed to enable TTL for {WEBSOCKET_CONNECTIONS_TABLE_NAME}: {ttl_error}")
     except ClientError as e:
         if e.response['Error']['Code'] == 'ResourceInUseException':
             logger.info(f"Table {WEBSOCKET_CONNECTIONS_TABLE_NAME} already exists.")
@@ -1654,4 +1663,18 @@ def get_connection_by_session(session_id: str) -> Optional[str]:
         return None
     except ClientError as e:
         logger.error(f"Error querying for connection by session {session_id}: {e}")
-        return None 
+        return None
+
+def get_connections_for_session(session_id: str) -> List[str]:
+    """Finds all connectionIds associated with a session_id using the GSI."""
+    table = dynamodb.Table(WEBSOCKET_CONNECTIONS_TABLE_NAME)
+    try:
+        response = table.query(
+            IndexName='SessionIdIndex',
+            KeyConditionExpression=boto3.dynamodb.conditions.Key('sessionId').eq(session_id)
+        )
+        items = response.get('Items', [])
+        return [item['connectionId'] for item in items]
+    except ClientError as e:
+        logger.error(f"Error querying for connections by session {session_id}: {e}")
+        return [] 

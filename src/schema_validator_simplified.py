@@ -68,7 +68,14 @@ class SimplifiedSchemaValidator:
     def _parse_validation_targets(self) -> List[ValidationTarget]:
         """Parse validation targets from simplified config."""
         targets = []
-        for target_config in self.config.get('validation_targets', []):
+        validation_targets = self.config.get('validation_targets', [])
+        print(f"VALIDATOR_PARSE: Found {len(validation_targets)} validation targets in config")
+        logger.info(f"VALIDATOR_PARSE: Found {len(validation_targets)} validation targets in config")
+        
+        for i, target_config in enumerate(validation_targets):
+            print(f"VALIDATOR_PARSE: Processing target {i}: {target_config.get('column', 'NO_COLUMN')} with importance {target_config.get('importance', 'NO_IMPORTANCE')}")
+            logger.info(f"VALIDATOR_PARSE: Processing target {i}: {target_config.get('column', 'NO_COLUMN')} with importance {target_config.get('importance', 'NO_IMPORTANCE')}")
+            
             target = ValidationTarget(
                 column=target_config['column'],
                 description=target_config.get('description', ''),
@@ -81,6 +88,9 @@ class SimplifiedSchemaValidator:
                 search_context_size=target_config.get('search_context_size')
             )
             targets.append(target)
+        
+        print(f"VALIDATOR_PARSE: Created {len(targets)} ValidationTarget objects")
+        logger.info(f"VALIDATOR_PARSE: Created {len(targets)} ValidationTarget objects")
         return targets
     
     def _generate_primary_key(self) -> List[str]:
@@ -389,8 +399,9 @@ class SimplifiedSchemaValidator:
                 elif field_name == 'answer':
                     example_obj[field_name] = "validated value"
                 elif field_name == 'confidence':
-                    enum_values = field_def.get('enum', ['HIGH', 'MEDIUM', 'LOW'])
-                    example_obj[field_name] = '|'.join(enum_values)
+                    example_obj[field_name] = "HIGH|MEDIUM|LOW"
+                elif field_name == 'original_confidence':
+                    example_obj[field_name] = "HIGH|MEDIUM|LOW|null"
                 elif field_name == 'quote':
                     example_obj[field_name] = "direct quote from source if available"
                 elif field_name == 'sources':
@@ -413,8 +424,41 @@ class SimplifiedSchemaValidator:
             json_example = json.dumps([example_obj], indent=2)
             json_schema_example = f"Each object must have the following structure:\n\n{json_example}"
             
+            # Get group information from search_groups for the fields being validated
+            group_name = ""
+            group_description = ""
+            
+            # Find the most relevant search group for the fields being validated
+            if self.search_groups and validation_targets:
+                # Get the search group ID from the first validation target
+                search_group_id = validation_targets[0].search_group
+                
+                # Find the corresponding search group
+                for group in self.search_groups:
+                    if group.get('group_id') == search_group_id:
+                        group_name = group.get('group_name', '')
+                        group_description = group.get('description', '')
+                        break
+                
+                # If no match found, use the first search group as fallback
+                if not group_name and self.search_groups:
+                    first_group = self.search_groups[0]
+                    group_name = first_group.get('group_name', '')
+                    group_description = first_group.get('description', '')
+            
+            # Format group information (only include if values exist)
+            group_name_text = f"Group: {group_name}" if group_name else ""
+            group_description_text = f"Description: {group_description}" if group_description else ""
+            
+            # Log for debugging
+            logger.info(f"Search groups available: {len(self.search_groups)}")
+            logger.info(f"Group name from search_groups: '{group_name}'")
+            logger.info(f"Group description from search_groups: '{group_description}'")
+            
             prompt = prompts['multiplex_validation'].format(
                 validation_intro=validation_intro,
+                group_name=group_name_text,
+                group_description=group_description_text,
                 general_notes=general_notes,
                 context=context,
                 previous_results=previous_results_text,
@@ -489,34 +533,28 @@ class SimplifiedSchemaValidator:
                 
                 answer = item.get('answer', '')
                 confidence_level = item.get('confidence', 'LOW')
-                quote = item.get('quote', '')
+                original_confidence = item.get('original_confidence')  # New field
+                reasoning = item.get('reasoning', item.get('quote', ''))  # Support both old and new field names
                 sources = item.get('sources', [])
-                update_required = item.get('update_required', False)
-                substantially_different = item.get('substantially_different', False)
+                explanation = item.get('explanation', '')
                 consistent_with_model_knowledge = item.get('consistent_with_model_knowledge', '')
                 
-                # Convert confidence to numeric
-                confidence_numeric = 0.5  # Default
-                if confidence_level.upper() == 'HIGH':
-                    confidence_numeric = 0.9
-                elif confidence_level.upper() == 'MEDIUM':
-                    confidence_numeric = 0.7
-                elif confidence_level.upper() == 'LOW':
-                    confidence_numeric = 0.3
+                # Keep confidence as string for display (no numeric conversion)
+                confidence_str = confidence_level
                 
                 # Determine main source
                 main_source = sources[0] if sources else ""
                 
-                # Store as tuple: (value, numeric_confidence, sources, confidence_level, quote, main_source, update_required, substantially_different, consistent_with_model_knowledge)
+                # Store as tuple: (value, confidence_level, sources, confidence_level, reasoning, main_source, original_confidence, explanation, consistent_with_model_knowledge)
                 parsed_results[column] = (
                     answer,
-                    confidence_numeric,
+                    confidence_str,  # String confidence, not numeric
                     sources,
-                    confidence_level,
-                    quote,
+                    confidence_str,  # Keep as string
+                    reasoning,  # Changed from quote
                     main_source,
-                    update_required,
-                    substantially_different,
+                    original_confidence,  # New field
+                    explanation,  # New field
                     consistent_with_model_knowledge
                 )
             

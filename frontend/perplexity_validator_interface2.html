@@ -1,0 +1,4219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hyperplexity Table Validator - Powered by Eliyahu.AI</title>
+    
+    <!-- Markdown renderer -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+    
+    <style type="text/css">
+    /* Base Variables */
+    :root {
+        --primary-color: #4CAF50;
+        --primary-hover: #00ff26;
+        --secondary-color: #b01bc1;
+        --secondary-hover: #e600ff;
+        --danger-color: #f44336;
+        --warning-color: #ff9800;
+        --background-color: #f7f7f7;
+        --card-background: #ffffff;
+        --text-color: #333333;
+        --text-secondary: #666666;
+        --border-radius: 8px;
+        --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        --transition: all 0.3s ease;
+        
+        /* Typography - Standardized to 3 sizes */
+        --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        --font-size-small: 14px;
+        --font-size-base: 16px;
+        --font-size-large: 20px;
+        --line-height: 1.5;
+    }
+
+    /* Base Styles */
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: var(--font-family);
+        font-size: var(--font-size-base);
+        line-height: var(--line-height);
+        color: var(--text-color);
+        margin: 0;
+        padding: 0;
+        background-color: var(--background-color);
+    }
+
+    /* Container */
+    .validator-container {
+        max-width: 1200px;
+        margin: 2rem auto;
+        padding: 0 2rem;
+    }
+
+    /* Header */
+    .validator-header {
+        text-align: center;
+        margin-bottom: 3rem;
+    }
+
+    .validator-header h1 {
+        font-size: var(--font-size-large);
+        color: var(--text-color);
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+    }
+
+    .validator-header p {
+        color: var(--text-secondary);
+        font-size: var(--font-size-base);
+        margin-bottom: 0.5rem;
+    }
+
+    .powered-by {
+        color: var(--primary-color);
+        font-size: var(--font-size-small);
+        text-decoration: none;
+    }
+
+    .powered-by:hover {
+        text-decoration: underline;
+    }
+
+    /* Card Template */
+    .card {
+        background-color: var(--card-background);
+        border-radius: var(--border-radius);
+        box-shadow: var(--box-shadow);
+        padding: 2rem;
+        margin-bottom: 2rem;
+        transition: var(--transition);
+        opacity: 0;
+        animation: fadeInUp 0.5s ease-out forwards;
+    }
+
+    @keyframes fadeInUp {
+        from { 
+            opacity: 0; 
+            transform: translateY(20px); 
+        }
+        to { 
+            opacity: 1; 
+            transform: translateY(0); 
+        }
+    }
+
+    .card-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .card-icon {
+        width: 40px;
+        height: 40px;
+        background-color: var(--primary-color);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 1rem;
+        color: white;
+        font-weight: bold;
+        font-size: var(--font-size-base);
+    }
+
+    .card-title {
+        font-size: var(--font-size-large);
+        font-weight: 600;
+        margin: 0;
+    }
+
+    .card-subtitle {
+        color: var(--text-secondary);
+        font-size: var(--font-size-small);
+        margin-top: 0.25rem;
+    }
+
+    /* Status Badge */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: var(--font-size-small);
+        font-weight: 500;
+        margin-left: auto;
+    }
+
+    .status-badge.success {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .status-badge.pending {
+        background-color: #fff3e0;
+        color: #f57c00;
+    }
+
+    .status-badge.completed {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    /* Standardized Button Component */
+    .button-row {
+        display: flex;
+        gap: 1rem;
+        margin: 1rem 0;
+        justify-content: center;
+    }
+
+    .std-button {
+        padding: 1rem 2rem;
+        border: 3px solid var(--primary-color);
+        border-radius: var(--border-radius);
+        background-color: white;
+        color: var(--primary-color);
+        cursor: pointer;
+        transition: var(--transition);
+        font-size: var(--font-size-base);
+        font-family: var(--font-family);
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .std-button:hover:not(:disabled):not(.primary):not(.secondary) {
+        background-color: #f0f9f0;
+        border-color: var(--primary-hover);
+        color: var(--primary-hover);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .std-button.primary {
+        background-color: white;
+        color: var(--primary-color);
+        border-color: var(--primary-color);
+        border-width: 3px;
+    }
+
+    .std-button.primary:hover:not(:disabled) {
+        background-color: #f0f9f0;
+        border-color: var(--primary-hover);
+        color: var(--primary-hover);
+        transform: translateY(-2px);
+    }
+
+    .std-button.secondary {
+        background-color: white;
+        color: var(--secondary-color);
+        border-color: var(--secondary-color);
+        border-width: 3px;
+    }
+
+    .std-button.secondary:hover:not(:disabled) {
+        background-color: #f0f0f9;
+        border-color: var(--secondary-hover);
+        color: var(--secondary-hover);
+        transform: translateY(-2px);
+    }
+
+    .std-button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .std-button.selected {
+        background-color: var(--text-color) !important;
+        color: white !important;
+        border-color: var(--text-color) !important;
+        cursor: default;
+        transform: none;
+    }
+
+    .std-button .spinner {
+        display: none;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 0.8s ease-in-out infinite;
+    }
+
+    .std-button.loading .spinner {
+        display: inline-block;
+    }
+
+    .std-button.loading .button-text {
+        margin-right: 0.5rem;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Standardized Progress Component */
+    .progress-container {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: var(--border-radius);
+        margin: 1rem 0;
+        border: 1px solid #e9ecef;
+    }
+
+    .progress-title {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        color: var(--text-color);
+        margin-bottom: 0.5rem;
+    }
+
+    .progress-message {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+        min-height: 1.5em;
+    }
+
+    .progress-bar-wrapper {
+        background-color: #e9ecef;
+        height: 8px;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 0.5rem;
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        background-color: var(--primary-color);
+        transition: width 0.3s ease;
+        border-radius: 4px;
+        width: 0%;
+    }
+
+    .progress-percentage {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+        text-align: right;
+    }
+
+    /* Forms */
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: var(--text-color);
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border: 1px solid #ddd;
+        border-radius: var(--border-radius);
+        font-size: var(--font-size-base);
+        font-family: var(--font-family);
+        transition: var(--transition);
+    }
+
+    .form-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+    }
+
+    .form-row {
+        display: flex;
+        gap: 1rem;
+        align-items: flex-end;
+    }
+
+    .form-row .form-group {
+        flex: 1;
+    }
+
+    /* Privacy Checkbox */
+    .privacy-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 1rem 0;
+        font-size: var(--font-size-small);
+    }
+
+    .privacy-checkbox input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+    }
+
+    .privacy-checkbox a {
+        color: var(--primary-color);
+        text-decoration: none;
+    }
+
+    .privacy-checkbox a:hover {
+        text-decoration: underline;
+    }
+
+    /* File Upload */
+    .drop-zone {
+        border: 2px dashed #ddd;
+        border-radius: var(--border-radius);
+        padding: 3rem 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: var(--transition);
+        position: relative;
+        background-color: #fafafa;
+    }
+
+    .drop-zone:hover {
+        border-color: var(--primary-color);
+        background-color: #f0f8f0;
+    }
+
+    .drop-zone.drag-over {
+        border-color: var(--primary-color);
+        background-color: #e8f5e9;
+        transform: scale(1.02);
+    }
+
+    .drop-zone-icon {
+        font-size: 2rem;
+        color: #bbb;
+        margin-bottom: 1rem;
+    }
+
+    .drop-zone-text {
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+        font-size: var(--font-size-base);
+    }
+
+    .file-input {
+        display: none;
+    }
+
+    .file-info {
+        margin-top: 1rem;
+        padding: 0.75rem;
+        background-color: #f5f5f5;
+        border-radius: var(--border-radius);
+        font-size: var(--font-size-small);
+    }
+
+    /* Chat Interface */
+    .chat-container {
+        max-width: 100%;
+        margin: 1rem 0;
+        padding: 0;
+    }
+
+    .chat-message {
+        max-width: 85%;
+        padding: 1rem 1.5rem;
+        margin: 0.5rem 0;
+        border-radius: 18px;
+        font-size: var(--font-size-base);
+        line-height: 1.4;
+        word-wrap: break-word;
+        position: relative;
+        animation: fadeInUp 0.3s ease-out;
+        opacity: 1;
+        transition: opacity 0.3s ease-in-out;
+    }
+
+    .chat-message.urgent {
+        border-left: 4px solid #ff5722;
+        background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+    }
+
+    /* Thinking Indicator - Simplified Eliyahu Logo */
+    .thinking-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 1rem 0;
+        opacity: 0;
+        transition: opacity 0.3s ease-in-out;
+    }
+
+    .thinking-indicator.active {
+        opacity: 1;
+    }
+
+    .thinking-square-wrapper {
+        width: 30px;
+        height: 30px;
+        border: 3px solid #333;
+        position: relative;
+        box-sizing: border-box;
+        margin-right: 10px;
+    }
+
+    .thinking-square {
+        width: 18px;
+        height: 18px;
+        background-color: #2DFF45;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        animation: thinkingPulse 1.2s infinite;
+    }
+
+    .thinking-text {
+        font-size: 14px;
+        color: #666;
+        font-weight: 500;
+    }
+
+    @keyframes thinkingPulse {
+        0% {
+            background-color: #2DFF45;
+            transform: translate(-50%, -50%) scale(1);
+            box-shadow: 0 0 0px rgba(45, 255, 69, 0);
+        }
+        15% {
+            background-color: #00FF1D;
+            transform: translate(-50%, -50%) scale(1.05);
+            box-shadow: 0 0 4px rgba(45, 255, 69, 0.5);
+        }
+        45% {
+            background-color: #00FF1D;
+            transform: translate(-50%, -50%) scale(1.02);
+            box-shadow: 0 0 2px rgba(45, 255, 69, 0.3);
+        }
+        100% {
+            background-color: #2DFF45;
+            transform: translate(-50%, -50%) scale(1);
+            box-shadow: 0 0 0px rgba(45, 255, 69, 0);
+        }
+    }
+
+    @keyframes thinkingComplete {
+        0% {
+            background-color: #2DFF45;
+            transform: translate(-50%, -50%) scale(1);
+            box-shadow: 0 0 0px rgba(45, 255, 69, 0);
+        }
+        20% {
+            background-color: #4AFF65;
+            transform: translate(-50%, -50%) scale(1.08);
+            box-shadow: 0 0 8px rgba(45, 255, 69, 0.6);
+        }
+        40% {
+            background-color: #25FF45;
+            transform: translate(-50%, -50%) scale(1.12);
+            box-shadow: 0 0 12px rgba(102, 45, 255, 0.3), 0 0 8px rgba(45, 255, 69, 0.5);
+        }
+        50% {
+            background-color: #1EE83F;
+            transform: translate(-50%, -50%) scale(1.15);
+            box-shadow: 0 0 15px rgba(138, 43, 226, 0.5), 0 0 8px rgba(45, 255, 69, 0.5);
+            border-radius: 10%;
+        }
+        100% {
+            background-color: #1EE83F;
+            transform: translate(-50%, -50%) scale(1.15);
+            box-shadow: 0 0 15px rgba(138, 43, 226, 0.5), 0 0 8px rgba(45, 255, 69, 0.5);
+            border-radius: 10%;
+        }
+    }
+
+    @keyframes thinkingError {
+        0% {
+            background-color: #2DFF45;
+            transform: translate(-50%, -50%) scale(1);
+            box-shadow: 0 0 0px rgba(45, 255, 69, 0);
+        }
+        20% {
+            background-color: #FF6B6B;
+            transform: translate(-50%, -50%) scale(1.08);
+            box-shadow: 0 0 8px rgba(255, 107, 107, 0.6);
+        }
+        40% {
+            background-color: #FF4444;
+            transform: translate(-50%, -50%) scale(1.12);
+            box-shadow: 0 0 12px rgba(255, 68, 68, 0.5);
+        }
+        50% {
+            background-color: #E63946;
+            transform: translate(-50%, -50%) scale(1.15);
+            box-shadow: 0 0 15px rgba(230, 57, 70, 0.6);
+            border-radius: 10%;
+        }
+        100% {
+            background-color: #E63946;
+            transform: translate(-50%, -50%) scale(1.15);
+            box-shadow: 0 0 15px rgba(230, 57, 70, 0.6);
+            border-radius: 10%;
+        }
+    }
+
+    .thinking-square.error {
+        background-color: #E63946 !important;
+    }
+
+    /* Progress Track for WebSocket Progress */
+    .progress-track {
+        width: 120px; /* Shorter line */
+        height: 4px;
+        background: linear-gradient(90deg, #e0e0e0 0%, #d0d0d0 100%);
+        border-radius: 2px;
+        position: relative;
+        margin: 0 auto 5px auto; /* Less margin since text is below */
+        box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+    }
+
+    .progress-track::before,
+    .progress-track::after {
+        content: '';
+        position: absolute;
+        top: -3px;
+        width: 10px;
+        height: 10px;
+        background: #333; /* Black endcaps */
+        border-radius: 0; /* Straight endcaps */
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    .progress-track::before {
+        left: -5px;
+    }
+
+    .progress-track::after {
+        right: -5px;
+    }
+
+    .progress-square-wrapper {
+        position: absolute;
+        top: -13px;
+        left: -15px;
+        width: 30px;
+        height: 30px;
+        border: 3px solid #333;
+        box-sizing: border-box;
+        transition: left 0.3s ease-out;
+        z-index: 1;
+        /* Animate the entire wrapper as one unit */
+    }
+
+    .progress-square {
+        width: 18px;
+        height: 18px;
+        background-color: #2DFF45;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        animation: thinkingPulse 1.2s infinite;
+        /* No separate positioning - moves with wrapper */
+    }
+
+    .progress-square.error {
+        background-color: #E63946 !important;
+    }
+
+    .progress-square-wrapper.error .progress-square {
+        background-color: #E63946 !important;
+    }
+
+    .progress-text {
+        text-align: center;
+        font-size: var(--font-size-small); /* 14px - matches standardized small text */
+        color: #666;
+        margin-top: 8px; /* Below the line */
+        font-weight: 500;
+    }
+
+    .thinking-indicator.with-progress {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 15px;
+    }
+
+    .thinking-indicator.with-progress .thinking-text {
+        display: none; /* Hide text above progress track */
+    }
+
+    /* Global progress removed - using card-level progress only */
+
+    .chat-message.ai {
+        background-color: #f0f0f0;
+        color: #333;
+        margin-left: 0;
+        margin-right: auto;
+        border-bottom-left-radius: 4px;
+    }
+
+    .chat-message.user {
+        background-color: var(--primary-color);
+        color: white;
+        margin-left: auto;
+        margin-right: 0;
+        border-bottom-right-radius: 4px;
+    }
+
+    .chat-message.system {
+        background-color: #e3f2fd;
+        color: #1565c0;
+        margin: 1rem auto;
+        text-align: center;
+        max-width: 70%;
+    }
+
+    /* Markdown content styling */
+    .markdown-content {
+        font-size: var(--font-size-base);
+        line-height: 1.6;
+    }
+
+    .markdown-content h1, .markdown-content h2, .markdown-content h3 {
+        margin: 1em 0 0.5em 0;
+        font-weight: 600;
+    }
+
+    .markdown-content p {
+        margin: 0.5em 0;
+    }
+
+    .markdown-content ul, .markdown-content ol {
+        margin: 0.5em 0;
+        padding-left: 1.5em;
+    }
+
+    .markdown-content code {
+        background-color: rgba(0,0,0,0.1);
+        padding: 0.1em 0.3em;
+        border-radius: 3px;
+        font-family: 'Courier New', monospace;
+        font-size: var(--font-size-small);
+    }
+
+    .markdown-content pre {
+        background-color: rgba(0,0,0,0.05);
+        padding: 0.8em;
+        border-radius: 6px;
+        overflow-x: auto;
+        margin: 0.5em 0;
+    }
+
+    .markdown-content table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 1em 0;
+    }
+
+    .markdown-content th, .markdown-content td {
+        border: 1px solid #ddd;
+        padding: 0.5em;
+        text-align: left;
+    }
+
+    .markdown-content th {
+        background-color: #f0f0f0;
+        font-weight: 600;
+    }
+
+    .markdown-content a {
+        color: var(--secondary-color);
+        text-decoration: underline;
+    }
+
+    /* Refinement Input */
+    .refinement-input {
+        width: 100%;
+        min-height: 80px;
+        padding: 1rem;
+        border: 2px solid #e9ecef;
+        border-radius: var(--border-radius);
+        font-size: var(--font-size-base);
+        font-family: var(--font-family);
+        resize: vertical;
+        transition: border-color 0.3s ease;
+    }
+
+    .refinement-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+    }
+
+    /* Cost Estimate */
+    .cost-estimate {
+        margin-top: 1rem;
+        padding: 1rem;
+        background-color: #e8f5e9;
+        border-radius: var(--border-radius);
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .cost-estimate-header {
+        font-weight: 600;
+        color: #2e7d32;
+        text-align: center;
+        font-size: var(--font-size-base);
+    }
+
+    .cost-estimate-items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .cost-item {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .cost-label {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+    }
+
+    .cost-value {
+        font-weight: 600;
+        color: #2e7d32;
+    }
+
+    /* Message Component */
+    .message {
+        padding: 1rem;
+        border-radius: var(--border-radius);
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        font-size: var(--font-size-base);
+    }
+
+    .message-icon {
+        font-size: var(--font-size-large);
+    }
+
+    .message-success {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+        border: 1px solid #c8e6c9;
+    }
+
+    .message-error {
+        background-color: #ffebee;
+        color: #c62828;
+        border: 1px solid #ffcdd2;
+    }
+
+    .message-info {
+        background-color: #e3f2fd;
+        color: #1565c0;
+        border: 1px solid #bbdefb;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .validator-container {
+            padding: 0 1rem;
+        }
+
+        .button-row {
+            flex-direction: column;
+        }
+
+        .std-button {
+            width: 100%;
+        }
+
+        .form-row {
+            flex-direction: column;
+        }
+
+        .chat-message {
+            max-width: 95%;
+            font-size: var(--font-size-small);
+        }
+
+        .card {
+            padding: 1.5rem;
+        }
+    }
+    </style>
+</head>
+<body>
+    <div class="validator-container">
+        <!-- Header -->
+        <div class="validator-header">
+            <h1>Hyperplexity Table Validator</h1>
+            <p>AI-powered Excel table validation and enrichment</p>
+            <a href="https://eliyahu.ai" target="_blank" class="powered-by">Powered by Eliyahu.AI</a>
+        </div>
+
+        <!-- Dynamic card container -->
+        <div id="cardContainer"></div>
+    </div>
+
+    <script>
+        (function() {
+            // ============================================
+            // CONFIGURATION
+            // ============================================
+            const API_BASE = 'https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod';
+            const WEBSOCKET_API_URL = 'wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod';
+
+            // ============================================
+            // GLOBAL STATE (Minimal)
+            // ============================================
+            const globalState = {
+                email: '',
+                sessionId: null,
+                websockets: new Map(), // Track WebSocket connections by card ID
+                cardCounter: 0,
+                cardProgress: {}, // Track progress by card ID
+                excelFileUploaded: false, // Track if Excel file has been uploaded to unified storage
+                configStored: false // Track if config has been stored
+            };
+
+            // ============================================
+            // GLOBAL PROGRESS SYSTEM REMOVED
+            // ============================================
+            // All progress now handled at card level via showThinkingInCard()
+            
+            // Stub object to prevent errors - all calls are no-ops
+            const globalProgress = {
+                show: () => {},
+                update: () => {},
+                complete: () => {},
+                hide: () => {},
+                showIdle: () => {},
+                test: () => {}
+            };
+
+            function createThinkingIndicator(cardId, message = 'Processing...', withProgress = false) {
+                const indicator = document.createElement('div');
+                indicator.className = withProgress ? 'thinking-indicator with-progress' : 'thinking-indicator';
+                indicator.id = `${cardId}-thinking`;
+                
+                if (withProgress) {
+                    indicator.innerHTML = `
+                        <div class="thinking-text">${message}</div>
+                        <div class="progress-track">
+                            <div class="progress-square-wrapper">
+                                <div class="progress-square"></div>
+                            </div>
+                        </div>
+                        <div class="progress-text">${message}</div>
+                    `;
+                } else {
+                    indicator.innerHTML = `
+                        <div class="thinking-square-wrapper">
+                            <div class="thinking-square"></div>
+                        </div>
+                        <div class="thinking-text">${message}</div>
+                    `;
+                }
+                return indicator;
+            }
+
+            function showThinkingInCard(cardId, message = 'Processing...', withProgress = false) {
+                const card = document.getElementById(cardId);
+                if (!card) return;
+                
+                // Remove existing thinking indicator
+                const existing = document.getElementById(`${cardId}-thinking`);
+                if (existing) existing.remove();
+                
+                // Add new thinking indicator
+                const indicator = createThinkingIndicator(cardId, message, withProgress);
+                card.appendChild(indicator);
+                
+                // Reset any error state on the square and wrapper
+                const square = indicator.querySelector('.thinking-square, .progress-square');
+                const wrapper = indicator.querySelector('.progress-square-wrapper');
+                if (square) {
+                    square.classList.remove('error');
+                }
+                if (wrapper) {
+                    wrapper.classList.remove('error');
+                }
+                
+                // Animate in
+                setTimeout(() => {
+                    indicator.classList.add('active');
+                }, 50);
+                
+                return indicator;
+            }
+
+            function updateThinkingInCard(cardId, message) {
+                const indicator = document.getElementById(`${cardId}-thinking`);
+                if (indicator) {
+                    const textEl = indicator.querySelector('.thinking-text');
+                    if (textEl) textEl.textContent = message;
+                }
+            }
+            
+            // Dummy progress messages for when WebSocket is quiet
+            const dummyProgressMessages = [
+                { at: 5, message: "Initializing validation engine..." },
+                { at: 10, message: "Loading configuration..." },
+                { at: 15, message: "Analyzing table structure..." },
+                { at: 20, message: "Preparing validation rules..." },
+                { at: 25, message: "Starting row validation..." },
+                { at: 30, message: "Validating data integrity..." },
+                { at: 35, message: "Checking column constraints..." },
+                { at: 40, message: "Processing validation targets..." },
+                { at: 45, message: "Analyzing relationships..." },
+                { at: 50, message: "Validating business rules..." },
+                { at: 55, message: "Cross-referencing data..." },
+                { at: 60, message: "Applying AI validation..." },
+                { at: 65, message: "Checking data quality..." },
+                { at: 70, message: "Finalizing validation results..." },
+                { at: 75, message: "Generating validation report..." },
+                { at: 80, message: "Preparing email summary..." },
+                { at: 85, message: "Packaging results..." },
+                { at: 90, message: "Sending notification email..." },
+                { at: 95, message: "Cleaning up temporary files..." }
+            ];
+
+            // Dummy progress messages for AI configuration generation
+            const dummyConfigMessages = [
+                { at: 5, message: "Starting AI configuration generation..." },
+                { at: 15, message: "Analyzing table structure and data patterns..." },
+                { at: 30, message: "Developing configuration with AI..." },
+                { at: 40, message: "Negotiating validation details..." },
+                { at: 50, message: "Optimizing search strategy..." },
+                { at: 60, message: "Validating configuration structure..." },
+                { at: 65, message: "Fine-tuning validation parameters..." },
+                { at: 70, message: "AI configuration generated successfully!" },
+                { at: 80, message: "Storing configuration..." },
+                { at: 90, message: "Preparing download..." },
+                { at: 95, message: "Finalizing configuration..." }
+            ];
+
+            // Track dummy progress for each card
+            const cardDummyProgress = new Map();
+            // Track current progress for each card to prevent going backward
+            const cardCurrentProgress = new Map();
+
+            function startDummyProgress(cardId, estimatedTime = 60000, messageType = 'processing') {
+                // Clear any existing dummy progress and reset progress tracking
+                stopDummyProgress(cardId);
+                cardCurrentProgress.set(cardId, 0);
+                
+                // Choose message set based on type
+                const messages = messageType === 'config' ? dummyConfigMessages : dummyProgressMessages;
+                
+                const startTime = Date.now();
+                const progressData = {
+                    startTime,
+                    estimatedTime,
+                    lastMessageIndex: -1,
+                    lastRealUpdate: Date.now(),
+                    interval: null,
+                    messageType,
+                    messages
+                };
+                
+                progressData.interval = setInterval(() => {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(95, (elapsed / estimatedTime) * 100);
+                    
+                    // Only show dummy messages if we haven't had a real update in 3 seconds
+                    if (Date.now() - progressData.lastRealUpdate > 3000) {
+                        // Find appropriate dummy message
+                        const messageIndex = messages.findIndex(m => m.at > progress) - 1;
+                        if (messageIndex >= 0 && messageIndex !== progressData.lastMessageIndex) {
+                            progressData.lastMessageIndex = messageIndex;
+                            updateThinkingProgress(cardId, progress, messages[messageIndex].message);
+                        }
+                    }
+                    
+                    // Stop at 95% to wait for real completion
+                    if (progress >= 95) {
+                        clearInterval(progressData.interval);
+                    }
+                }, 500);
+                
+                cardDummyProgress.set(cardId, progressData);
+            }
+
+            function stopDummyProgress(cardId) {
+                const progressData = cardDummyProgress.get(cardId);
+                if (progressData && progressData.interval) {
+                    clearInterval(progressData.interval);
+                    cardDummyProgress.delete(cardId);
+                }
+            }
+
+            function markRealProgressUpdate(cardId) {
+                const progressData = cardDummyProgress.get(cardId);
+                if (progressData) {
+                    progressData.lastRealUpdate = Date.now();
+                }
+            }
+
+            function updateThinkingProgress(cardId, progress, message = null) {
+                const indicator = document.getElementById(`${cardId}-thinking`);
+                if (!indicator || !indicator.classList.contains('with-progress')) return;
+                
+                // Mark that we got a real update
+                markRealProgressUpdate(cardId);
+                
+                // Clamp progress between 0 and 100
+                progress = Math.max(0, Math.min(100, progress));
+                
+                // Never go backward - use the maximum of current and new progress
+                const currentProgress = cardCurrentProgress.get(cardId) || 0;
+                const finalProgress = Math.max(currentProgress, progress);
+                cardCurrentProgress.set(cardId, finalProgress);
+                
+                // Update progress square position (0% = left edge, 100% = right edge)
+                const progressWrapper = indicator.querySelector('.progress-square-wrapper');
+                const progressSquare = indicator.querySelector('.progress-square');
+                const progressText = indicator.querySelector('.progress-text');
+                const track = indicator.querySelector('.progress-track');
+                
+                if (progressWrapper && progressSquare && progressText && track) {
+                    // Calculate position: 0% = left edge, 100% = right edge
+                    const trackWidth = 120; // matches shorter CSS width
+                    const wrapperOffset = 15; // half of wrapper width to center it
+                    const leftPosition = (finalProgress / 100) * trackWidth - wrapperOffset;
+                    
+                    // Move the entire wrapper (black square + green center together)
+                    progressWrapper.style.left = `${leftPosition}px`;
+                    
+                    // Update message if provided (show WebSocket message, not percentage)
+                    if (message) {
+                        progressText.textContent = message;
+                    }
+                    
+                    // Keep consistent green color throughout progress
+                    progressSquare.style.backgroundColor = '#2DFF45'; // Always green
+                }
+            }
+
+            function completeThinkingInCard(cardId, finalMessage = 'Complete!', hideDelay = 600) {
+                // Stop any dummy progress and clean up progress tracking
+                stopDummyProgress(cardId);
+                cardCurrentProgress.delete(cardId);
+                
+                const indicator = document.getElementById(`${cardId}-thinking`);
+                if (indicator) {
+                    // Update message
+                    updateThinkingInCard(cardId, finalMessage);
+                    
+                    // Detect if this is an error message
+                    const isError = finalMessage.toLowerCase().includes('failed') || 
+                                   finalMessage.toLowerCase().includes('error') || 
+                                   finalMessage.toLowerCase().includes('upload failed') ||
+                                   finalMessage.toLowerCase().includes('generation failed') ||
+                                   finalMessage.toLowerCase().includes('validation failed') ||
+                                   finalMessage.toLowerCase().includes('refinement failed') ||
+                                   finalMessage.toLowerCase().includes('preview failed') ||
+                                   finalMessage.toLowerCase().includes('processing failed');
+                    
+                    // Play appropriate animation
+                    const square = indicator.querySelector('.thinking-square, .progress-square');
+                    const wrapper = indicator.querySelector('.progress-square-wrapper');
+                    
+                    if (square) {
+                        if (isError) {
+                            square.classList.add('error');
+                            if (wrapper) wrapper.classList.add('error');
+                            square.style.animation = 'thinkingError 0.6s 1';
+                        } else {
+                            // For progress indicators, move to 100% first
+                            if (indicator.classList.contains('with-progress')) {
+                                updateThinkingProgress(cardId, 100);
+                                setTimeout(() => {
+                                    square.style.animation = 'thinkingComplete 0.6s 1';
+                                }, 300);
+                            } else {
+                                square.style.animation = 'thinkingComplete 0.6s 1';
+                            }
+                        }
+                    }
+                    
+                    // Hide after delay
+                    setTimeout(() => {
+                        indicator.classList.remove('active');
+                        setTimeout(() => {
+                            indicator.remove();
+                        }, 300);
+                    }, hideDelay);
+                }
+            }
+
+            function hideThinkingInCard(cardId) {
+                const indicator = document.getElementById(`${cardId}-thinking`);
+                if (indicator) {
+                    indicator.classList.remove('active');
+                    setTimeout(() => {
+                        indicator.remove();
+                    }, 300);
+                }
+            }
+
+            // ============================================
+            // STANDARDIZED COMPONENTS
+            // ============================================
+
+            // Fix the card ID generation to avoid double incrementing
+            function generateCardId() {
+                return `card-${++globalState.cardCounter}`;
+            }
+
+            // Update createCard to handle explicit ID
+            function createCard(options) {
+                const {
+                    icon,
+                    title,
+                    subtitle,
+                    content = '',
+                    statusBadge = null,
+                    buttons = [],
+                    id = null  // Allow explicit ID
+                } = options;
+
+                // Use provided ID or generate new one
+                const cardId = id || generateCardId();
+                
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.id = cardId;
+                
+                // Build card HTML - ALWAYS include buttons container
+                let cardHtml = `
+                    <div class="card-header">
+                        <div class="card-icon">${icon || globalState.cardCounter}</div>
+                        <div>
+                            <h2 class="card-title">${title}</h2>
+                            ${subtitle ? `<p class="card-subtitle">${subtitle}</p>` : ''}
+                        </div>
+                        ${statusBadge ? `
+                            <div class="status-badge ${statusBadge.type}">
+                                <span>${statusBadge.text}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div class="card-content">${content}</div>
+                    <div id="${cardId}-buttons" class="card-buttons"></div>
+                `;
+
+                card.innerHTML = cardHtml;
+
+                // Add to container
+                document.getElementById('cardContainer').appendChild(card);
+
+                // Verify buttons container exists
+                const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                console.log(`Created card ${cardId}, buttons container exists:`, !!buttonsContainer);
+
+                // Add buttons if any provided
+                if (buttons.length > 0) {
+                    // Small delay to ensure DOM is ready
+                    setTimeout(() => {
+                        createButtonRow(`${cardId}-buttons`, buttons);
+                    }, 0);
+                }
+
+                // Scroll to view
+                setTimeout(() => {
+                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 100);
+
+                return card;
+            }
+
+            // Create standardized button row
+            function createButtonRow(containerId, buttons) {
+                console.log(`Creating buttons in container: ${containerId}`);
+                const container = document.getElementById(containerId);
+                if (!container) {
+                    console.error(`Button container ${containerId} not found`);
+                    // Try to find the card and create the container
+                    const cardId = containerId.replace('-buttons', '');
+                    const card = document.getElementById(cardId);
+                    if (card) {
+                        console.log(`Found card ${cardId}, creating buttons container`);
+                        const buttonsDiv = document.createElement('div');
+                        buttonsDiv.id = containerId;
+                        buttonsDiv.className = 'card-buttons';
+                        card.appendChild(buttonsDiv);
+                        // Try again
+                        return createButtonRow(containerId, buttons);
+                    }
+                    return;
+                }
+
+                // Clear any existing content
+                container.innerHTML = '';
+
+                const buttonRow = document.createElement('div');
+                buttonRow.className = 'button-row';
+
+                buttons.forEach(btnConfig => {
+                    const button = document.createElement('button');
+                    button.className = `std-button ${btnConfig.variant || 'primary'}`;
+                    button.style.flex = btnConfig.width || 1;
+                    button.innerHTML = `
+                        <span class="button-text">${btnConfig.icon || ''} ${btnConfig.text}</span>
+                        <span class="spinner"></span>
+                    `;
+                    
+                    button.onclick = async (e) => {
+                        if (button.disabled) return;
+                        
+                        // Show loading state
+                        button.classList.add('loading');
+                        button.disabled = true;
+                        
+                        try {
+                            await btnConfig.callback(e);
+                        } catch (error) {
+                            console.error('Button callback error:', error);
+                        } finally {
+                            // Always remove loading state unless button was marked as selected
+                            if (!button.classList.contains('selected')) {
+                                button.classList.remove('loading');
+                                button.disabled = false;
+                            }
+                        }
+                    };
+
+                    if (btnConfig.disabled) {
+                        button.disabled = true;
+                    }
+
+                    buttonRow.appendChild(button);
+                });
+
+                container.appendChild(buttonRow);
+            }
+
+            // Mark button as selected (past choice) - Fixed to not interfere with loading state
+            function markButtonSelected(buttonElement, newText) {
+                // Remove loading state first
+                buttonElement.classList.remove('loading');
+                // Add selected state
+                buttonElement.classList.add('selected');
+                buttonElement.disabled = true;
+                if (newText) {
+                    buttonElement.querySelector('.button-text').textContent = newText;
+                }
+                // Disable all sibling buttons
+                const siblings = buttonElement.parentElement.querySelectorAll('.std-button');
+                siblings.forEach(btn => {
+                    if (btn !== buttonElement) {
+                        btn.disabled = true;
+                        btn.style.opacity = '0.5';
+                    }
+                });
+            }
+
+            function markButtonUnselected(buttonElement) {
+                // Remove selected state
+                buttonElement.classList.remove('selected', 'loading');
+                buttonElement.disabled = false;
+                buttonElement.style.opacity = '';
+                
+                // Re-enable all sibling buttons
+                const siblings = buttonElement.parentElement.querySelectorAll('.std-button');
+                siblings.forEach(btn => {
+                    btn.disabled = false;
+                    btn.style.opacity = '';
+                });
+            }
+
+            // Show preview results - with debugging
+            function showPreviewResults(cardId, previewData) {
+                console.log(`Showing preview results for card ${cardId}`);
+                
+                // Hide progress, show results
+                const resultsEl = document.getElementById(`${cardId}-results`);
+                if (!resultsEl) {
+                    console.error(`Results element ${cardId}-results not found`);
+                    return;
+                }
+                resultsEl.style.display = 'block';
+
+                // Render markdown table
+                const previewContent = document.getElementById(`${cardId}-preview-content`);
+                if (previewContent && previewData.markdown_table) {
+                    previewContent.innerHTML = renderMarkdown(previewData.markdown_table);
+                }
+
+                // Show cost estimates
+                if (previewData.cost_estimates && previewData.validation_metrics) {
+                    const costEl = document.getElementById(`${cardId}-cost-estimate`);
+                    const estimatesEl = document.getElementById(`${cardId}-estimates`);
+                    
+                    if (costEl && estimatesEl) {
+                        costEl.style.display = 'block';
+                        
+                        const metrics = previewData.validation_metrics;
+                        const totalRows = previewData.total_rows || 0;
+                        const estimatedCost = previewData.cost_estimates.estimated_total_cost || 0;
+                        const estimatedTime = previewData.estimated_total_processing_time || 0;
+                        
+                        let estimatesHtml = '';
+                        
+                        if (totalRows > 0) {
+                            estimatesHtml += `<div class="cost-item"><span class="cost-label">Total Rows</span><span class="cost-value">${totalRows.toLocaleString()}</span></div>`;
+                        }
+                        
+                        if (metrics.validated_columns_count) {
+                            estimatesHtml += `<div class="cost-item"><span class="cost-label">Columns to Validate</span><span class="cost-value">${metrics.validated_columns_count}</span></div>`;
+                        }
+                        
+                        const perplexityGroups = (metrics.search_groups_count || 0) - (metrics.claude_search_groups_count || 0);
+                        const claudeGroups = metrics.claude_search_groups_count || 0;
+                        
+                        if (perplexityGroups > 0) {
+                            const totalPerplexityCalls = totalRows * perplexityGroups;
+                            estimatesHtml += `<div class="cost-item"><span class="cost-label">Perplexity Calls</span><span class="cost-value">${totalPerplexityCalls.toLocaleString()}</span></div>`;
+                        }
+                        
+                        if (claudeGroups > 0) {
+                            const totalClaudeCalls = totalRows * claudeGroups;
+                            estimatesHtml += `<div class="cost-item"><span class="cost-label">Claude Calls</span><span class="cost-value">${totalClaudeCalls.toLocaleString()}</span></div>`;
+                        }
+                        
+                        estimatesHtml += `<div class="cost-item"><span class="cost-label">Est. Time</span><span class="cost-value">${Math.ceil(estimatedTime / 60)} min</span></div>`;
+                        estimatesHtml += `<div class="cost-item"><span class="cost-label">Est. Cost</span><span class="cost-value">$${estimatedCost.toFixed(2)}</span></div>`;
+                        
+                        estimatesEl.innerHTML = estimatesHtml;
+                        
+                        // Store cost for button
+                        globalState.estimatedCost = estimatedCost;
+                    }
+                }
+
+                // Debug: Check if card exists
+                const card = document.getElementById(cardId);
+                console.log(`Card ${cardId} exists:`, !!card);
+                console.log(`Looking for buttons container: ${cardId}-buttons`);
+
+                // Show action buttons
+                createButtonRow(`${cardId}-buttons`, [
+                    {
+                        text: 'Refine Configuration',
+                        icon: '🔧',
+                        variant: 'secondary',
+                        width: 1,
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            markButtonSelected(button, '🔧 Refining...');
+                            await createRefinementCard();
+                        }
+                    },
+                    {
+                        text: `Process Table${globalState.estimatedCost ? ` ($${globalState.estimatedCost.toFixed(2)})` : ''}`,
+                        icon: '✨',
+                        variant: 'primary',
+                        width: 3,
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            markButtonSelected(button, '✨ Processing...');
+                            createProcessingCard();
+                        }
+                    }
+                ]);
+            }
+            // Create standardized progress component
+            function createProgress(options) {
+                const {
+                    title = 'Processing...',
+                    messages = ['Starting...', 'Working...', 'Almost done...'],
+                    estimatedTime = 30000,
+                    containerId,
+                    useWebSocket = false
+                } = options;
+
+                const progressId = `progress-${Date.now()}`;
+                const progressHtml = `
+                    <div class="progress-container" id="${progressId}">
+                        <div class="progress-title">${title}</div>
+                        <div class="progress-message">${messages[0]}</div>
+                        <div class="progress-bar-wrapper">
+                            <div class="progress-bar-fill"></div>
+                        </div>
+                        <div class="progress-percentage">0%</div>
+                    </div>
+                `;
+
+                if (containerId) {
+                    const container = document.getElementById(containerId);
+                    if (container) {
+                        container.insertAdjacentHTML('beforeend', progressHtml);
+                    }
+                }
+
+                const progressEl = document.getElementById(progressId);
+                const messageEl = progressEl.querySelector('.progress-message');
+                const barEl = progressEl.querySelector('.progress-bar-fill');
+                const percentEl = progressEl.querySelector('.progress-percentage');
+
+                let progress = 0;
+                let messageIndex = 0;
+                let interval = null;
+                let isCompleted = false;
+
+                const updateProgress = (percent, message) => {
+                    if (isCompleted) return;
+                    
+                    progress = Math.min(percent, 100);
+                    barEl.style.width = `${progress}%`;
+                    percentEl.textContent = `${Math.round(progress)}%`;
+                    if (message) messageEl.textContent = message;
+                };
+
+                const startAutoProgress = () => {
+                    if (useWebSocket) return;
+                    
+                    const increment = 100 / (estimatedTime / 100);
+                    interval = setInterval(() => {
+                        if (progress < 75) {
+                            progress += increment;
+                            updateProgress(progress);
+                            
+                            const newMessageIndex = Math.floor((progress / 75) * messages.length);
+                            if (newMessageIndex > messageIndex && newMessageIndex < messages.length) {
+                                messageIndex = newMessageIndex;
+                                messageEl.textContent = messages[messageIndex];
+                            }
+                        }
+                    }, 100);
+                };
+
+                const stopAutoProgress = () => {
+                    if (interval) {
+                        clearInterval(interval);
+                        interval = null;
+                    }
+                };
+
+                const complete = (finalMessage) => {
+                    isCompleted = true;
+                    stopAutoProgress();
+                    updateProgress(100, finalMessage || 'Complete!');
+                    
+                    // Add error styling if message indicates failure
+                    if (finalMessage && finalMessage.includes('❌')) {
+                        barEl.style.backgroundColor = '#f44336'; // Red color for errors
+                        messageEl.style.color = '#f44336';
+                        percentEl.style.color = '#f44336';
+                    }
+                    
+                    setTimeout(() => {
+                        if (progressEl && progressEl.parentElement) {
+                            progressEl.style.opacity = '0';
+                            setTimeout(() => progressEl.remove(), 300);
+                        }
+                    }, 1000);
+                };
+
+                if (!useWebSocket) {
+                    startAutoProgress();
+                }
+
+                return {
+                    element: progressEl,
+                    updateProgress,
+                    complete,
+                    setMessage: (msg) => { messageEl.textContent = msg; },
+                    stopAutoProgress,
+                    isWebSocketMode: useWebSocket
+                };
+            }
+
+            // Run operation with progress
+            async function runWithProgress(operation, progressOptions) {
+                const progress = createProgress(progressOptions);
+                
+                try {
+                    const result = await operation(progress);
+                    progress.complete();
+                    return result;
+                } catch (error) {
+                    progress.complete('Error occurred');
+                    throw error;
+                }
+            }
+
+            // ============================================
+            // WEBSOCKET MANAGEMENT
+            // ============================================
+
+            // Unified WebSocket system - one connection per session
+            const sessionWebSockets = new Map(); // sessionId -> WebSocket
+            const cardHandlers = new Map(); // cardId -> {handler: function, messageTypes: [], registrationOrder: number}
+            let registrationCounter = 0;
+            // Deduplication handled on backend
+
+            function connectToSession(sessionId, reconnectAttempt = 0) {
+                // Return existing connection if available and healthy
+                if (sessionWebSockets.has(sessionId)) {
+                    const existingWs = sessionWebSockets.get(sessionId);
+                    if (isWebSocketHealthy(existingWs)) {
+                        console.log(`Reusing existing WebSocket connection for session ${sessionId}`);
+                        return existingWs;
+                    } else {
+                        console.log(`Existing WebSocket for session ${sessionId} is unhealthy, creating new connection`);
+                        // Send unsubscribe message before closing old connection
+                        if (existingWs.readyState === WebSocket.OPEN) {
+                            try {
+                                existingWs.send(JSON.stringify({
+                                    action: 'unsubscribe',
+                                    sessionId: sessionId
+                                }));
+                                console.log(`Sent unsubscribe for session ${sessionId}`);
+                            } catch (error) {
+                                console.error(`Error sending unsubscribe:`, error);
+                            }
+                        }
+                        existingWs.close();
+                        sessionWebSockets.delete(sessionId);
+                    }
+                }
+
+                console.log(`Connecting to session ${sessionId} (attempt ${reconnectAttempt + 1})`);
+                
+                const ws = new WebSocket(WEBSOCKET_API_URL);
+                sessionWebSockets.set(sessionId, ws);
+
+                ws.onopen = () => {
+                    console.log(`WebSocket connected to session ${sessionId}`);
+                    if (ws.readyState === WebSocket.OPEN) {
+                        try {
+                            ws.send(JSON.stringify({
+                                action: 'subscribe',
+                                sessionId: sessionId
+                            }));
+                            console.log(`Successfully subscribed to session ${sessionId}`);
+                            
+                            // Removed fallback polling - focusing on main WebSocket path
+                            
+                            // Start periodic health checks
+                            ws._healthCheckInterval = setInterval(() => {
+                                if (!isWebSocketHealthy(ws)) {
+                                    console.log(`WebSocket health check failed for session ${sessionId}, reconnecting`);
+                                    clearInterval(ws._healthCheckInterval);
+                                    sessionWebSockets.delete(sessionId);
+                                    connectToSession(sessionId);
+                                }
+                            }, 30000); // Check every 30 seconds
+                        } catch (error) {
+                            console.error(`Error subscribing to session ${sessionId}:`, error);
+                        }
+                    }
+                };
+
+                ws.onmessage = (event) => {
+                    // Track last message time for health checks
+                    ws._lastMessageTime = Date.now();
+                    
+                    const data = JSON.parse(event.data);
+                    
+                    // No frontend deduplication - handled on backend
+                    
+                    console.log(`WebSocket message for session ${sessionId}:`, data);
+                    // Special logging for COMPLETED messages
+                    if (data.status === 'COMPLETED') {
+                        console.log(`[COMPLETED] Full message details:`, {
+                            status: data.status,
+                            processed_rows: data.processed_rows,
+                            total_rows: data.total_rows,
+                            percent_complete: data.percent_complete,
+                            verbose_status: data.verbose_status
+                        });
+                    }
+                    routeMessage(data, sessionId);
+                };
+
+                ws.onerror = (error) => {
+                    console.error(`WebSocket error for session ${sessionId}:`, error);
+                };
+
+                ws.onclose = (event) => {
+                    console.log(`WebSocket closed for session ${sessionId}. Code:`, event.code, "Reason:", event.reason);
+                    sessionWebSockets.delete(sessionId);
+                    
+                    // Clean up health check interval
+                    if (ws._healthCheckInterval) {
+                        clearInterval(ws._healthCheckInterval);
+                    }
+                    
+                    const isUnexpectedClose = event.code !== 1000 && event.code !== 1001;
+                    const maxReconnectAttempts = 5;
+                    const wasIntentionallyClosed = ws._intentionallyClosed;
+                    
+                    if (isUnexpectedClose && reconnectAttempt < maxReconnectAttempts && !wasIntentionallyClosed) {
+                        const reconnectDelay = Math.min(1000 * Math.pow(2, reconnectAttempt), 10000);
+                        console.log(`Reconnecting to session ${sessionId} in ${reconnectDelay}ms`);
+                        
+                        setTimeout(() => {
+                            connectToSession(sessionId, reconnectAttempt + 1);
+                        }, reconnectDelay);
+                    }
+                };
+
+                return ws;
+            }
+
+            function routeMessage(data, sessionId) {
+                // Handle progress updates for any card with progress indicator
+                if ((data.type === 'progress' || data.type === 'config_generation_progress') && data.progress !== undefined) {
+                    // Find the card with progress indicator and update it
+                    for (const [cardId, handlerInfo] of cardHandlers) {
+                        const message = data.status || data.message || null;
+                        updateThinkingProgress(cardId, data.progress, message);
+                    }
+                    return; // Progress messages don't need further routing to completion handlers
+                }
+                
+                // Handle completion messages - these need to go to the normal handlers
+                if (data.type === 'config_generation_complete' || data.type === 'config_generation_failed') {
+                    console.log('Routing completion message:', data.type);
+                    // Continue to normal routing below for completion messages
+                }
+                
+                // Route ALL messages to the last registered card
+                if (cardHandlers.size === 0) {
+                    console.warn('No card handlers registered for WebSocket message:', data);
+                    return;
+                }
+                
+                // Find the card with the highest registration order (last registered)
+                let latestHandler = null;
+                let latestCardId = null;
+                let latestOrder = -1;
+                
+                for (const [cardId, handlerInfo] of cardHandlers) {
+                    if (handlerInfo.registrationOrder > latestOrder) {
+                        latestHandler = handlerInfo;
+                        latestCardId = cardId;
+                        latestOrder = handlerInfo.registrationOrder;
+                    }
+                }
+                
+                if (latestHandler && latestCardId) {
+                    console.log(`Routing message to card ${latestCardId}, handler types:`, latestHandler.messageTypes);
+                    latestHandler.handler(data, latestCardId);
+                } else {
+                    console.warn('No handler found for WebSocket message:', data);
+                }
+            }
+
+            // Removed shouldHandleMessage - routing to last registered card regardless of message type
+            
+            function isWebSocketHealthy(ws) {
+                // Check if WebSocket is in a healthy state
+                if (!ws) return false;
+                
+                // Allow CONNECTING state for new connections
+                if (ws.readyState === WebSocket.CONNECTING) {
+                    console.log('WebSocket is still connecting, considering healthy');
+                    return true;
+                }
+                
+                if (ws.readyState !== WebSocket.OPEN) return false;
+                
+                // Only check message time if we expect to have received messages
+                // Don't fail brand new connections that haven't received messages yet
+                if (ws._lastMessageTime) {
+                    const timeSinceLastMessage = Date.now() - ws._lastMessageTime;
+                    const maxIdleTime = 60000; // 1 minute without messages = unhealthy
+                    
+                    if (timeSinceLastMessage > maxIdleTime) {
+                        console.warn(`WebSocket hasn't received messages in ${timeSinceLastMessage}ms, considering unhealthy`);
+                        return false;
+                    }
+                }
+                
+                return true;
+            }
+            
+            function ensureWebSocketHealth(sessionId) {
+                // Ensure WebSocket is healthy before critical operations
+                if (!sessionWebSockets.has(sessionId)) {
+                    console.log(`No WebSocket exists for session ${sessionId}, creating new connection`);
+                    return connectToSession(sessionId);
+                }
+                
+                const ws = sessionWebSockets.get(sessionId);
+                if (!isWebSocketHealthy(ws)) {
+                    console.log(`WebSocket for session ${sessionId} is unhealthy, reconnecting`);
+                    sessionWebSockets.delete(sessionId);
+                    return connectToSession(sessionId);
+                }
+                
+                return ws;
+            }
+            
+            function setupWebSocketFallback(sessionId) {
+                // Poll for completion if WebSocket messages aren't coming through
+                const fallbackInterval = setInterval(async () => {
+                    if (!sessionWebSockets.has(sessionId)) {
+                        clearInterval(fallbackInterval);
+                        return;
+                    }
+                    
+                    try {
+                        console.log(`Checking completion status for session ${sessionId}`);
+                        const response = await fetch(`${API_BASE}/validate`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'checkStatus',
+                                session_id: sessionId
+                            })
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.status === 'completed' || data.preview_data) {
+                                console.log(`Fallback detected completion for session ${sessionId}:`, data);
+                                // Route the completion message
+                                routeMessage({
+                                    status: 'COMPLETED',
+                                    preview_data: data.preview_data,
+                                    ...data
+                                }, sessionId);
+                                clearInterval(fallbackInterval);
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`Fallback check failed for session ${sessionId}:`, error);
+                    }
+                }, 5000); // Check every 5 seconds
+                
+                // Stop checking after 2 minutes
+                setTimeout(() => {
+                    clearInterval(fallbackInterval);
+                }, 120000);
+            }
+
+            function registerCardHandler(cardId, messageTypes, handler) {
+                cardHandlers.set(cardId, {
+                    handler: handler,
+                    messageTypes: messageTypes,
+                    registrationOrder: ++registrationCounter
+                });
+                
+                // Check WebSocket health when registering a new handler
+                if (globalState.sessionId) {
+                    ensureWebSocketHealth(globalState.sessionId);
+                }
+            }
+
+            function unregisterCardHandler(cardId) {
+                cardHandlers.delete(cardId);
+            }
+
+            // Legacy function for compatibility - will be replaced
+            function connectWebSocket(sessionId, cardId, onMessage, reconnectAttempt = 0) {
+                console.warn('Using legacy connectWebSocket - should be replaced with unified system');
+                
+                // For preview operations, force a fresh WebSocket connection to avoid stale connection issues
+                if (onMessage.toString().includes('handlePreviewWebSocketMessage')) {
+                    console.log('Preview detected - forcing fresh WebSocket connection');
+                    const existingWs = sessionWebSockets.get(sessionId);
+                    if (existingWs) {
+                        // Send unsubscribe and close old connection
+                        if (existingWs.readyState === WebSocket.OPEN) {
+                            try {
+                                existingWs.send(JSON.stringify({
+                                    action: 'unsubscribe',
+                                    sessionId: sessionId
+                                }));
+                            } catch (error) {
+                                console.error('Error sending unsubscribe:', error);
+                            }
+                        }
+                        existingWs.close();
+                        sessionWebSockets.delete(sessionId);
+                    }
+                }
+                
+                connectToSession(sessionId);
+                // Note: Handler registration is done elsewhere via registerCardHandler
+            }
+
+            // WebSocket message handlers
+            // This is the old handler - will be removed since we have the updated one below
+
+            function handleProcessingWebSocketMessage(data, cardId) {
+                console.log(`Handling processing WebSocket message for card ${cardId}:`, data);
+                console.log(`Status: ${data.status}, Percent: ${data.percent_complete}, Verbose: ${data.verbose_status}`);
+
+                if (data.status === 'PROCESSING') {
+                    let message = data.verbose_status || 'Processing...';
+                    
+                    // If we have batch information, format it nicely
+                    if (data.current_batch !== undefined && data.total_batches !== undefined) {
+                        message = `Processing batch ${data.current_batch} of ${data.total_batches}`;
+                        if (data.processed_rows !== undefined) {
+                            message += ` (${data.processed_rows} rows processed)`;
+                        }
+                    }
+                    
+                    // Update both text and progress if we have percent_complete
+                    if (data.percent_complete !== undefined) {
+                        updateThinkingProgress(cardId, data.percent_complete, message);
+                    } else {
+                        updateThinkingInCard(cardId, message);
+                    }
+                    // Progress routed to card level;
+                    
+                } else if (data.status === 'COMPLETED') {
+                    console.log(`[HANDLER] Processing COMPLETED message for card ${cardId}`);
+                    // First update to 100% if we have a progress bar
+                    const indicator = document.getElementById(`${cardId}-thinking`);
+                    if (indicator && indicator.classList.contains('with-progress')) {
+                        console.log(`[HANDLER] Found progress indicator, updating to 100%`);
+                        updateThinkingProgress(cardId, 100, 'Validation complete!');
+                        setTimeout(() => {
+                            completeThinkingInCard(cardId, 'Validation complete!');
+                        }, 500);
+                    } else {
+                        console.log(`[HANDLER] No progress indicator, completing directly`);
+                        completeThinkingInCard(cardId, 'Validation complete!');
+                    }
+                    // Progress routed to card level;
+
+                    globalState.processedRows = data.processed_rows || 0;
+                    globalState.totalRows = data.total_rows || 0;
+
+                    // Show success message in the same card instead of creating new one
+                    const messagesContainer = document.getElementById(`${cardId}-messages`);
+                    if (messagesContainer) {
+                        messagesContainer.innerHTML = `
+                            <div class="message message-success" style="margin-bottom: 1rem;">
+                                <span class="message-icon">🎉</span>
+                                <span>Your validation has been completed successfully. Results have been sent to your email.</span>
+                            </div>
+                            <button class="std-button primary" onclick="window.location.reload()" style="margin-top: 1rem;">
+                                <span class="button-text">🔄 New Validation</span>
+                            </button>
+                        `;
+                    }
+                }
+            }
+
+            async function handleConfigWebSocketMessage(data, cardId) {
+                if (data.type === 'config_generation_complete') {
+                    // Prevent duplicate processing
+                    const messageKey = `${cardId}_${data.session_id}_complete`;
+                    if (!globalState.processedMessages) globalState.processedMessages = new Set();
+                    if (globalState.processedMessages.has(messageKey)) {
+                        console.log('Ignoring duplicate config_generation_complete message for', cardId);
+                        return;
+                    }
+                    globalState.processedMessages.add(messageKey);
+                    
+                    // Cleanup old messages to prevent memory leak
+                    if (globalState.processedMessages.size > 100) {
+                        const oldestMessage = globalState.processedMessages.values().next().value;
+                        globalState.processedMessages.delete(oldestMessage);
+                    }
+                    
+                    completeThinkingInCard(cardId, 'Configuration generated!');
+                    // Progress routed to card level;
+
+                    globalState.currentConfig = data;
+                    // Mark Excel file as uploaded since backend saves it during AI config generation
+                    globalState.excelFileUploaded = true;
+
+                    let aiMessage = data.ai_summary || data.ai_response || 'Configuration generated successfully!';
+                    
+                    await addChatMessage(cardId, 'ai', aiMessage);
+                    
+                    // Add download button if URL available
+                    if (data.download_url) {
+                        const chatContainer = document.getElementById(`${cardId}-chat`);
+                        if (chatContainer) {
+                            const downloadDiv = document.createElement('div');
+                            downloadDiv.className = 'chat-message ai';
+                            downloadDiv.innerHTML = `
+                                <button class="std-button secondary" style="margin-top: 8px;" 
+                                        onclick="window.viewConfigInNewTab('${data.download_url}', '${data.session_id || 'generated'}')">
+                                    📥 Download Configuration
+                                </button>
+                            `;
+                            chatContainer.appendChild(downloadDiv);
+                        }
+                    }
+                    showConfigActions(cardId);
+
+                } else if (data.type === 'config_generation_failed' || data.error || data.type === 'error') {
+                    completeThinkingInCard(cardId, 'Generation failed');
+                    // Progress routed to card level;
+                    
+                    const errorMessage = data.error || data.message || 'Configuration generation failed';
+                    showMessage(`${cardId}-messages`, `Error: ${errorMessage}`, 'error');
+                    
+                    // Create a new configuration card for retry
+                    setTimeout(() => {
+                        createConfigCard();
+                    }, 1500); // Wait a bit for error message to be seen
+                }
+            }
+        
+            // ============================================
+            // UTILITY FUNCTIONS
+            // ============================================
+
+            function validateEmail(email) {
+                return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+            }
+
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + ['Bytes', 'KB', 'MB', 'GB'][i];
+            }
+
+            function showMessage(containerId, message, type = 'info') {
+                const container = document.getElementById(containerId);
+                if (!container) return;
+                
+                const icon = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
+                const messageEl = document.createElement('div');
+                messageEl.className = `message message-${type}`;
+                messageEl.innerHTML = `<span class="message-icon">${icon}</span><span>${message}</span>`;
+                container.appendChild(messageEl);
+            }
+            
+            // Helper to show final card state consistently
+            function showFinalCardState(cardId, message, type = 'success') {
+                const messagesContainer = document.getElementById(`${cardId}-messages`);
+                if (messagesContainer) {
+                    messagesContainer.innerHTML = '';
+                    showMessage(`${cardId}-messages`, message, type);
+                }
+            }
+
+            // Markdown rendering wrapper
+            function renderMarkdown(text) {
+                if (!text) return '';
+                
+                marked.setOptions({
+                    breaks: true,
+                    gfm: true,
+                    sanitize: false,
+                    smartLists: true,
+                    smartypants: false
+                });
+
+                let html = marked.parse(text);
+                
+                // Handle Unicode escapes
+                html = html.replace(/\\u([0-9a-fA-F]{4})/g, (match, hexCode) => {
+                    return String.fromCharCode(parseInt(hexCode, 16));
+                });
+
+                return `<div class="markdown-content">${html}</div>`;
+            }
+
+            // ============================================
+            // CARD CREATION FUNCTIONS
+            // ============================================
+
+            // Update all card creation functions to generate ID once
+            // 1. Email Validation Card
+            function createEmailCard() {
+                const cardId = generateCardId();
+                const content = `
+                    <div id="${cardId}-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="${cardId}-email">Email Address</label>
+                                <input type="email" id="${cardId}-email" class="form-input" 
+                                    placeholder="your.email@example.com" required>
+                            </div>
+                        </div>
+                        <div id="${cardId}-code-section" style="display: none;">
+                            <div class="privacy-checkbox">
+                                <input type="checkbox" id="${cardId}-privacy">
+                                <label for="${cardId}-privacy">
+                                    I accept the <a href="https://eliyahu.ai/privacy-notice" target="_blank">Privacy Notice</a>
+                                </label>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label" for="${cardId}-code">Verification Code</label>
+                                    <input type="text" id="${cardId}-code" class="form-input" 
+                                        placeholder="Enter 6-digit code" maxlength="6">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="${cardId}-messages"></div>
+                    </div>
+                    <div id="${cardId}-success" style="display: none;">
+                        <div class="message message-success">
+                            <span class="message-icon">✓</span>
+                            <span>Email validated successfully!</span>
+                        </div>
+                    </div>
+                `;
+
+                const card = createCard({
+                    id: cardId,  // Pass explicit ID
+                    icon: '✉️',
+                    title: 'Email Validation',
+                    subtitle: 'Verify your email to access the validator',
+                    content,
+                    statusBadge: { type: 'pending', text: 'Not Validated' },
+                    buttons: [
+                        {
+                            text: 'Validate Email',
+                            icon: '📤',
+                            callback: async (e) => {
+                                const button = e.target.closest('button');
+                                await sendValidationCode(cardId, button);
+                            }
+                        }
+                    ]
+                });
+
+                // Check for stored email
+                const storedEmail = localStorage.getItem('validatedEmail');
+                if (storedEmail) {
+                    document.getElementById(`${cardId}-email`).value = storedEmail;
+                }
+
+                return card;
+            }
+            // Email validation functions
+            async function sendValidationCode(cardId, button) {
+                const emailInput = document.getElementById(`${cardId}-email`);
+                const email = emailInput.value.trim();
+
+                // Validate inputs
+                if (!validateEmail(email)) {
+                    showMessage(`${cardId}-messages`, 'Please enter a valid email address', 'error');
+                    throw new Error('Invalid email');
+                }
+
+                globalState.email = email;
+                
+                try {
+                    const response = await fetch(`${API_BASE}/validate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            action: 'checkOrSendValidation', 
+                            email: email 
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok && data.success) {
+                        if (data.validated) {
+                            // Already validated
+                            handleEmailValidated(cardId);
+                        } else {
+                            // Show code input
+                            document.getElementById(`${cardId}-code-section`).style.display = 'block';
+                            showMessage(`${cardId}-messages`, 'Validation code sent to your email!', 'success');
+                            document.getElementById(`${cardId}-code`).focus();
+                            
+                            // Update button to verify code
+                            markButtonSelected(button, '✓ Code Sent');
+                            
+                            // Add verify button
+                            createButtonRow(`${cardId}-buttons`, [
+                                {
+                                    text: 'Verify Code',
+                                    icon: '🔐',
+                                    variant: 'primary',
+                                    callback: async (e) => {
+                                        const verifyButton = e.target.closest('button');
+                                        await verifyCode(cardId, verifyButton);
+                                    }
+                                }
+                            ]);
+                        }
+                    } else {
+                        showMessage(`${cardId}-messages`, data.message || 'Failed to send code.', 'error');
+                        throw new Error('Failed to send code');
+                    }
+                } catch (error) {
+                    console.error('Email validation error:', error);
+                    // Allow testing mode
+                    createTestingBypass(cardId);
+                    throw error;
+                }
+            }
+
+            async function verifyCode(cardId, button) {
+                const code = document.getElementById(`${cardId}-code`).value.trim();
+                const privacyCheckbox = document.getElementById(`${cardId}-privacy`);
+                
+                if (!privacyCheckbox.checked) {
+                    showMessage(`${cardId}-messages`, 'Please accept the Privacy Notice to continue', 'error');
+                    throw new Error('Privacy not accepted');
+                }
+                
+                if (code.length !== 6) {
+                    showMessage(`${cardId}-messages`, 'Please enter a 6-digit code', 'error');
+                    throw new Error('Invalid code');
+                }
+
+                try {
+                    const response = await fetch(`${API_BASE}/validate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            action: 'validateEmailCode', 
+                            email: globalState.email, 
+                            code: code 
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok && data.success) {
+                        markButtonSelected(button, '✓ Verified');
+                        handleEmailValidated(cardId);
+                    } else {
+                        showMessage(`${cardId}-messages`, data.message || 'Invalid code', 'error');
+                        throw new Error('Invalid code');
+                    }
+                } catch (error) {
+                    console.error('Code verification error:', error);
+                    throw error;
+                }
+            }
+
+            function createTestingBypass(cardId) {
+                const messagesEl = document.getElementById(`${cardId}-messages`);
+                const skipBtn = document.createElement('button');
+                skipBtn.textContent = 'Skip Email Validation (Testing)';
+                skipBtn.className = 'std-button secondary';
+                skipBtn.style.marginTop = '10px';
+                skipBtn.onclick = () => {
+                    handleEmailValidated(cardId);
+                    skipBtn.remove();
+                };
+                messagesEl.appendChild(skipBtn);
+            }
+
+            function handleEmailValidated(cardId) {
+                localStorage.setItem('validatedEmail', globalState.email);
+                
+                // Update card UI with error checking
+                const formEl = document.getElementById(`${cardId}-form`);
+                const successEl = document.getElementById(`${cardId}-success`);
+                
+                if (formEl) {
+                    formEl.style.display = 'none';
+                } else {
+                    console.error(`Form element ${cardId}-form not found`);
+                }
+                
+                if (successEl) {
+                    successEl.style.display = 'block';
+                } else {
+                    console.error(`Success element ${cardId}-success not found`);
+                }
+                
+                // Update status badge
+                const card = document.getElementById(cardId);
+                if (card) {
+                    const statusBadge = card.querySelector('.status-badge');
+                    if (statusBadge) {
+                        statusBadge.className = 'status-badge completed';
+                        statusBadge.innerHTML = '<span>Validated</span>';
+                    }
+                } else {
+                    console.error(`Card element ${cardId} not found`);
+                }
+                
+                // Hide the validate email button
+                const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                if (buttonsContainer) {
+                    buttonsContainer.style.display = 'none';
+                }
+
+                // Create next card
+                setTimeout(() => createUploadCard(), 500);
+            }
+
+            // 2. File Upload Card
+            function createUploadCard() {
+                const cardId = generateCardId();
+                const content = `
+                    <div class="drop-zone" id="${cardId}-dropzone">
+                        <div class="drop-zone-icon">📊</div>
+                        <div class="drop-zone-text">
+                            <p><strong>Drop Excel/CSV file here</strong></p>
+                            <p>or click to browse</p>
+                        </div>
+                        <input type="file" id="${cardId}-file" class="file-input" 
+                            accept=".xlsx,.xls,.csv">
+                        <div id="${cardId}-file-info" class="file-info" style="display: none;">
+                            <div class="file-info-name"></div>
+                            <div class="file-info-size"></div>
+                        </div>
+                    </div>
+                    <div id="${cardId}-messages"></div>
+                `;
+
+                const card = createCard({
+                    id: cardId,  // Pass explicit ID
+                    icon: '📁',
+                    title: 'Upload Excel File',
+                    subtitle: 'Select your Excel or CSV file',
+                    content
+                });
+
+                // Setup file handling
+                setupFileUpload(cardId);
+                
+                return card;
+            }
+
+            function setupFileUpload(cardId) {
+                const dropZone = document.getElementById(`${cardId}-dropzone`);
+                const fileInput = document.getElementById(`${cardId}-file`);
+
+                // Click to browse
+                dropZone.onclick = () => fileInput.click();
+
+                // File selection
+                fileInput.onchange = (e) => handleFileSelect(e, cardId);
+
+                // Drag and drop
+                dropZone.ondragover = (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('drag-over');
+                };
+
+                dropZone.ondragleave = () => {
+                    dropZone.classList.remove('drag-over');
+                };
+
+                dropZone.ondrop = (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('drag-over');
+                    if (e.dataTransfer.files.length) {
+                        fileInput.files = e.dataTransfer.files;
+                        handleFileSelect({ target: fileInput }, cardId);
+                    }
+                };
+            }
+
+            async function handleFileSelect(event, cardId) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                // Clear old session data when new file is selected
+                globalState.sessionId = null;
+                globalState.excelFileUploaded = false;
+                globalState.configStored = false;
+                localStorage.removeItem('sessionId');
+                console.log('New file selected, cleared old session data');
+
+                // Store file reference
+                globalState.excelFile = file;
+
+                // Hide the entire drop zone
+                const dropZone = document.getElementById(`${cardId}-dropzone`);
+                if (dropZone) {
+                    dropZone.style.display = 'none';
+                }
+                
+                // Show processing message while uploading
+                showMessage(`${cardId}-messages`, 
+                    `Uploading ${file.name}...`, 
+                    'info'
+                );
+
+                // Immediately upload Excel file to establish session
+                try {
+                    await uploadExcelFile(cardId, file);
+                    // Create config card after successful upload
+                    setTimeout(() => createConfigCard(), 500);
+                } catch (error) {
+                    console.error('Excel file upload failed:', error);
+                    // Reset UI on failure
+                    dropZone.style.pointerEvents = 'auto';
+                    dropZone.style.opacity = '1';
+                    fileInfoEl.style.display = 'none';
+                }
+            }
+
+            async function uploadExcelFile(cardId, file) {
+                console.log('Uploading Excel file to establish session...');
+                
+                const formData = new FormData();
+                formData.append('excel_file', file);
+                formData.append('email', globalState.email);
+                formData.append('action', 'processExcel');
+
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                console.log('Excel upload response:', data);
+
+                if (response.ok && data.success && data.session_id) {
+                    globalState.sessionId = data.session_id;
+                    globalState.excelFileUploaded = true;
+                    globalState.storagePath = data.storage_path;
+                    localStorage.setItem('sessionId', globalState.sessionId);
+                    
+                    // Store matching configs if found
+                    if (data.matching_configs && data.matching_configs.success && data.matching_configs.matches) {
+                        globalState.matchingConfigs = data.matching_configs;
+                        console.log(`Found ${data.matching_configs.matches.length} matching configs automatically`);
+                    } else {
+                        globalState.matchingConfigs = null;
+                        console.log('No matching configs found');
+                    }
+                    
+                    console.log('Excel file uploaded successfully, session established:', globalState.sessionId);
+                    
+                    // Show clean success state - Excel verification = table structure validation
+                    showFinalCardState(cardId, 
+                        `${file.name} uploaded and analyzed`, 
+                        'success'
+                    );
+                } else {
+                    throw new Error(data.error || 'Failed to upload Excel file');
+                }
+            }
+
+            function createUploadCard() {
+                const cardId = generateCardId();
+                const content = `
+                    <div class="drop-zone" id="${cardId}-dropzone">
+                        <div class="drop-zone-icon">📊</div>
+                        <div class="drop-zone-text">
+                            <p><strong>Drop Excel/CSV file here</strong></p>
+                            <p>or click to browse</p>
+                        </div>
+                        <input type="file" id="${cardId}-file" class="file-input" 
+                            accept=".xlsx,.xls,.csv">
+                        <div id="${cardId}-file-info" class="file-info" style="display: none;">
+                            <div class="file-info-name"></div>
+                            <div class="file-info-size"></div>
+                        </div>
+                    </div>
+                    <div id="${cardId}-messages"></div>
+                `;
+
+                const card = createCard({
+                    id: cardId,  // Pass explicit ID
+                    icon: '📁',
+                    title: 'Upload Excel File',
+                    subtitle: 'Select your Excel or CSV file',
+                    content
+                });
+
+                // Setup file handling
+                setupFileUpload(cardId);
+                
+                return card;
+            }
+
+            // selectUploadConfig function removed - now handled inline in button callback
+
+            async function selectRecentConfig(cardId, button) {
+                markButtonSelected(button, '🔄 Searching for Recent Configs...');
+                
+                try {
+                    // Search for matching configs
+                    const response = await fetch('/api', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'findMatchingConfig',
+                            email: globalState.email,
+                            session_id: globalState.sessionId || '',
+                            limit: 5
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (!result.success) {
+                        throw new Error(result.error || 'Failed to search for matching configs');
+                    }
+                    
+                    if (result.matches && result.matches.length > 0) {
+                        await showRecentConfigOptions(cardId, result.matches, result.table_columns);
+                    } else {
+                        showMessage(`${cardId}-messages`, 
+                            'No matching configurations found from your previous sessions. You can upload a config file or create one with AI.', 
+                            'info'
+                        );
+                        // Reset button
+                        markButtonUnselected(button);
+                    }
+                    
+                } catch (error) {
+                    console.error('Error finding recent configs:', error);
+                    showMessage(`${cardId}-messages`, `Error searching for recent configs: ${error.message}`, 'error');
+                    markButtonUnselected(button);
+                }
+            }
+
+            async function selectRecentConfigFromStored(cardId, button) {
+                markButtonSelected(button, '🔄 Loading Recent Configs...');
+                
+                try {
+                    // Use already-found matching configs from upload
+                    if (globalState.matchingConfigs && globalState.matchingConfigs.matches && globalState.matchingConfigs.matches.length > 0) {
+                        await showRecentConfigOptions(cardId, globalState.matchingConfigs.matches, globalState.matchingConfigs.table_columns);
+                    } else {
+                        showMessage(`${cardId}-messages`, 
+                            'No matching configurations available. You can upload a config file or create one with AI.', 
+                            'info'
+                        );
+                        // Reset button
+                        markButtonUnselected(button);
+                    }
+                    
+                } catch (error) {
+                    console.error('Error displaying stored recent configs:', error);
+                    showMessage(`${cardId}-messages`, `Error displaying recent configs: ${error.message}`, 'error');
+                    markButtonUnselected(button);
+                }
+            }
+
+            async function showRecentConfigOptions(cardId, matches, tableColumns) {
+                const optionsContainer = document.getElementById(`${cardId}-options`);
+                if (!optionsContainer) return;
+                
+                // Clear existing content
+                optionsContainer.innerHTML = '';
+                
+                // Create header
+                const header = document.createElement('div');
+                header.className = 'recent-config-header';
+                header.innerHTML = `
+                    <h4 style="margin: 0 0 10px 0; color: #2d5a27;">Recent Matching Configurations</h4>
+                    <p style="margin: 0 0 15px 0; color: #666; font-size: 14px;">
+                        Found ${matches.length} configurations with columns matching your table.
+                    </p>
+                `;
+                optionsContainer.appendChild(header);
+                
+                // Create config options
+                matches.forEach((match, index) => {
+                    const matchElement = document.createElement('div');
+                    matchElement.className = 'recent-config-option';
+                    matchElement.style.cssText = `
+                        border: 1px solid #ddd;
+                        border-radius: 8px;
+                        padding: 15px;
+                        margin-bottom: 10px;
+                        cursor: pointer;
+                        transition: all 0.2s ease;
+                        background: #f9f9f9;
+                    `;
+                    
+                    const matchScore = Math.round(match.match_score * 100);
+                    const matchColor = matchScore >= 80 ? '#2d5a27' : matchScore >= 50 ? '#b8860b' : '#666';
+                    
+                    matchElement.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <div style="font-weight: bold; color: ${matchColor};">
+                                ${matchScore}% Match • ${match.matching_columns.length} columns
+                            </div>
+                            <div style="font-size: 12px; color: #666;">
+                                ${new Date(match.last_modified).toLocaleDateString()}
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 8px; font-size: 14px;">
+                            <strong>Matching columns:</strong> ${match.matching_columns.join(', ')}
+                        </div>
+                        <div style="font-size: 12px; color: #666;">
+                            From session: ${match.source_session} • ${match.total_columns} total columns
+                        </div>
+                        <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button class="std-button primary" style="flex: 1; min-width: 120px;" onclick="useRecentConfig('${cardId}', '${match.config_key}', '${match.source_session}')">
+                                <span class="button-text">✅ Use Config</span>
+                            </button>
+                            <button class="std-button secondary" style="flex: 0 0 auto;" onclick="viewConfigInNewTab('${match.download_url}', '${match.source_session}')">
+                                <span class="button-text">👁️ View</span>
+                            </button>
+                            <a href="${match.download_url}" download class="std-button secondary" style="text-decoration: none; flex: 0 0 auto;">
+                                <span class="button-text">📥 Save</span>
+                            </a>
+                        </div>
+                    `;
+                    
+                    // Add hover effect
+                    matchElement.addEventListener('mouseenter', () => {
+                        matchElement.style.borderColor = '#2d5a27';
+                        matchElement.style.background = '#f0f8f0';
+                    });
+                    matchElement.addEventListener('mouseleave', () => {
+                        matchElement.style.borderColor = '#ddd';
+                        matchElement.style.background = '#f9f9f9';
+                    });
+                    
+                    optionsContainer.appendChild(matchElement);
+                });
+            }
+
+            async function useRecentConfig(cardId, configKey, sourceSession) {
+                try {
+                    showMessage(`${cardId}-messages`, 'Copying configuration from previous session...', 'info');
+                    
+                    const response = await fetch(`${API_BASE}/validate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'copyConfig',
+                            email: globalState.email,
+                            session_id: globalState.sessionId || '',
+                            source_config_key: configKey,
+                            source_session: sourceSession
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (!result.success) {
+                        throw new Error(result.error || 'Failed to copy configuration');
+                    }
+                    
+                    // Store the config in global state
+                    globalState.currentConfig = result.config_data;
+                    globalState.configStored = true;
+                    
+                    // Show clean success state (no checkmark - green bar has one)
+                    showFinalCardState(cardId, 
+                        `Configuration ready from session: ${sourceSession}`, 
+                        'success'
+                    );
+                    
+                } catch (error) {
+                    console.error('Error copying config:', error);
+                    showMessage(`${cardId}-messages`, `Error copying configuration: ${error.message}`, 'error');
+                }
+            }
+
+            function viewConfigInNewTab(downloadUrl, sourceSession) {
+                // Fetch and download the JSON properly
+                fetch(downloadUrl)
+                    .then(response => response.json())
+                    .then(config => {
+                        // Create blob and download
+                        const jsonString = JSON.stringify(config, null, 2);
+                        const blob = new Blob([jsonString], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `config_${sourceSession}.json`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    })
+                    .catch(error => {
+                        console.error('Error downloading config:', error);
+                        // Fallback to opening URL directly
+                        window.open(downloadUrl, '_blank');
+                    });
+            }
+            
+            // Make function globally accessible
+            window.viewConfigInNewTab = viewConfigInNewTab;
+
+            async function validateRecentConfig(cardId) {
+                // Create progress indicator like in config upload
+                const progress = createProgress({
+                    title: 'Validating Configuration',
+                    messages: [
+                        'Checking configuration compatibility...',
+                        'Validating column targets...',
+                        'Verifying structure...'
+                    ],
+                    estimatedTime: 3000,
+                    containerId: `${cardId}-messages`
+                });
+                
+                try {
+                    // Config validation using current session and stored config
+                    const response = await fetch(`${API_BASE}/validate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'validateConfig',
+                            email: globalState.email,
+                            session_id: globalState.sessionId || ''
+                        })
+                    });
+
+                    const result = await response.json();
+                    completeThinkingInCard(cardId, 'Configuration validated!');
+                    // Progress routed to card level;
+
+                    if (!result.success) {
+                        throw new Error(result.error || 'Configuration validation failed');
+                    }
+
+                    // Store the validated config and show results like upload pathway
+                    globalState.currentConfig = result.validated_config || globalState.currentConfig;
+                    globalState.configStored = true;
+
+                    // Show validation results in single green box
+                    showFinalCardState(cardId, 
+                        `Configuration validated successfully • ${result.valid_targets || 0} targets validated`, 
+                        'success'
+                    );
+
+                    // Automatically proceed to preview after validation
+                    setTimeout(() => {
+                        createPreviewCard();
+                    }, 1000);
+
+                } catch (error) {
+                    console.error('Config validation error:', error);
+                    completeThinkingInCard(cardId, 'Validation failed');
+                    // Progress routed to card level;
+                    showMessage(`${cardId}-messages`, 
+                        `Configuration validation failed: ${error.message}`, 
+                        'error'
+                    );
+                    
+                    // Automatically pass to refine configuration for repair
+                    setTimeout(() => {
+                        createAIConfigCard(true); // true = isRepair mode
+                        showMessage('ai-messages', 
+                            'Configuration needs repair due to validation issues. Please describe how to fix the configuration.', 
+                            'info'
+                        );
+                    }, 2000);
+                }
+            }
+
+            async function handleConfigUpload(event, cardId) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                globalState.configFile = file;
+
+                // Hide all card content and show processing
+                const messagesContainer = document.getElementById(`${cardId}-messages`);
+                const optionsContainer = document.getElementById(`${cardId}-options`);
+                const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                const matchingInfoContainer = document.getElementById(`${cardId}-matching-info`);
+                
+                if (optionsContainer) optionsContainer.style.display = 'none';
+                if (buttonsContainer) buttonsContainer.style.display = 'none';
+                if (matchingInfoContainer) matchingInfoContainer.style.display = 'none';
+                
+                // Show thinking indicators
+                showThinkingInCard(cardId, 'Validating configuration file...');
+                // Progress routed to card level;
+                
+                try {
+                    // Read and parse file locally first
+                    const configText = await file.text();
+                    const config = JSON.parse(configText);
+
+                    // Validate config structure locally first
+                    if (!config || !config.validation_targets || !Array.isArray(config.validation_targets)) {
+                        throw new Error('Invalid config structure. Must have validation_targets array.');
+                    }
+
+                    // Config validation only - Excel file already uploaded and session established
+                    const response = await fetch(`${API_BASE}/validate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'validateConfig',
+                            config: config,
+                            is_upload: true,
+                            email: globalState.email,
+                            session_id: globalState.sessionId
+                        })
+                    });
+
+                    const data = await response.json();
+                    console.log('Config validation response:', response.status, data);
+
+                    if (response.ok && data.valid) {
+                        completeThinkingInCard(cardId, 'Configuration validated!');
+                        // Progress routed to card level;
+                        
+                        globalState.configValidated = true;
+                        globalState.configStored = true;
+                        
+                        // Show success with filename and validation status
+                        showFinalCardState(cardId, 
+                            `${file.name} uploaded and validated successfully`, 
+                            'success'
+                        );
+                        
+                        // Auto-proceed to preview
+                        setTimeout(() => createPreviewCard(), 1000);
+                    } else {
+                        completeThinkingInCard(cardId, 'Validation failed');
+                        // Progress routed to card level;
+                        
+                        // Show error message
+                        if (messagesContainer) {
+                            messagesContainer.innerHTML = `
+                                <div class="message message-error" style="margin-bottom: 1rem;">
+                                    <span class="message-icon"></span>
+                                    <span>Configuration validation failed: ${data.message || 'Unknown error'}</span>
+                                </div>
+                            `;
+                        }
+                        
+                        // Offer repair options
+                        offerConfigRepair(cardId, data.message || 'Unknown error', config);
+                    }
+                } catch (error) {
+                    completeThinkingInCard(cardId, 'Upload failed');
+                    // Progress routed to card level;
+                    
+                    console.error('Config validation error:', error);
+                    
+                    // Show error message
+                    if (messagesContainer) {
+                        messagesContainer.innerHTML = `
+                            <div class="message message-error" style="margin-bottom: 1rem;">
+                                <span class="message-icon"></span>
+                                <span>Error reading config: ${error.message}</span>
+                            </div>
+                        `;
+                    }
+                }
+            }
+
+            function offerConfigRepair(cardId, errorMessage, config) {
+                const messagesEl = document.getElementById(`${cardId}-messages`);
+                messagesEl.innerHTML += `
+                    <div class="message message-error">
+                        <span class="message-icon">❌</span>
+                        <span>Config Error: ${errorMessage}</span>
+                    </div>
+                `;
+
+                createButtonRow(`${cardId}-repair-buttons`, [
+                    {
+                        text: 'Repair Config',
+                        icon: '🔧',
+                        variant: 'primary',
+                        callback: async () => {
+                            globalState.configToRepair = config;
+                            globalState.configError = errorMessage;
+                            createAIConfigCard(true);
+                        }
+                    },
+                    {
+                        text: 'Generate New',
+                        icon: '✨',
+                        variant: 'secondary', 
+                        callback: async () => createAIConfigCard(false)
+                    }
+                ]);
+
+                messagesEl.appendChild(document.getElementById(`${cardId}-repair-buttons`));
+            }
+
+            // selectCreateWithAI function removed - now handled inline in button callback
+            // 3. Configuration Card
+            function createConfigCard() {
+                const cardId = generateCardId();
+                
+                // Create content with matching config info if available
+                let matchingConfigInfo = '';
+                if (globalState.matchingConfigs && globalState.matchingConfigs.matches && globalState.matchingConfigs.matches.length > 0) {
+                    const bestMatch = globalState.matchingConfigs.matches[0]; // Best match is first
+                    const matchScore = Math.round(bestMatch.match_score * 100);
+                    const matchColor = matchScore >= 80 ? '#2d5a27' : matchScore >= 50 ? '#b8860b' : '#666';
+                    const matchDate = new Date(bestMatch.last_modified).toLocaleDateString();
+                    
+                    // Calculate columns not in config
+                    const tableColumns = globalState.matchingConfigs.table_columns || [];
+                    const configColumns = bestMatch.matching_columns || [];
+                    const columnsNotInConfig = tableColumns.filter(col => 
+                        !configColumns.some(configCol => configCol.toLowerCase() === col.toLowerCase())
+                    );
+                    
+                    matchingConfigInfo = `
+                        <div style="background: #f0f8f0; border: 1px solid #d4edda; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <div style="font-weight: bold; color: ${matchColor}; font-size: 16px;">
+                                    📊 Recent Config Found: ${matchScore}% Match • ${matchDate}
+                                </div>
+                                <button class="std-button" style="background: white; border: 1px solid #ddd; padding: 6px 12px; font-size: var(--font-size-small);" 
+                                        onclick="window.viewConfigInNewTab('${bestMatch.download_url}', '${bestMatch.source_session}')">
+                                    📥 Download Config
+                                </button>
+                            </div>
+                            ${columnsNotInConfig.length > 0 ? `
+                                <div style="font-size: 14px; margin-bottom: 5px;">
+                                    <strong>Columns not in config:</strong> ${columnsNotInConfig.join(', ')}
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }
+                
+                const content = `
+                    <div id="${cardId}-matching-info">${matchingConfigInfo}</div>
+                    <div id="${cardId}-options"></div>
+                    <div id="${cardId}-messages"></div>
+                `;
+
+                // Always show the three main buttons
+                const buttons = [
+                    {
+                        text: globalState.matchingConfigs && globalState.matchingConfigs.matches && globalState.matchingConfigs.matches.length > 0 ? 
+                              'Use Recent Config' : 'Use Config',
+                        icon: '✅',
+                        variant: 'success',
+                        width: 'auto',
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            
+                            // Show single green completion box immediately
+                            const messagesContainer = document.getElementById(`${cardId}-messages`);
+                            const optionsContainer = document.getElementById(`${cardId}-options`);
+                            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                            
+                            // Hide all content including matching info
+                            const matchingInfoContainer = document.getElementById(`${cardId}-matching-info`);
+                            if (optionsContainer) optionsContainer.style.display = 'none';
+                            if (buttonsContainer) buttonsContainer.style.display = 'none';
+                            if (matchingInfoContainer) matchingInfoContainer.style.display = 'none';
+                            
+                            // Show completion message
+                            if (messagesContainer) {
+                                messagesContainer.innerHTML = `
+                                    <div class="message message-success" style="margin-bottom: 1rem;">
+                                        <span class="message-icon"></span>
+                                        <span>Using recent configuration and setting up validation...</span>
+                                    </div>
+                                `;
+                            }
+                            
+                            if (globalState.matchingConfigs && globalState.matchingConfigs.matches && globalState.matchingConfigs.matches.length > 0) {
+                                const bestMatch = globalState.matchingConfigs.matches[0];
+                                
+                                try {
+                                    // Copy the config first (this shows its own messages)
+                                    await useRecentConfig(cardId, bestMatch.config_key, bestMatch.source_session);
+                                    
+                                    // Check if config is 100% match
+                                    const matchScore = Math.round(bestMatch.match_score * 100);
+                                    
+                                    if (matchScore === 100) {
+                                        // Perfect match - proceed directly to preview
+                                        setTimeout(() => {
+                                            createPreviewCard();
+                                        }, 1000);
+                                    } else {
+                                        // Not perfect match - run config validation first (same as upload pathway)
+                                        setTimeout(() => {
+                                            validateRecentConfig(cardId);
+                                        }, 1000);
+                                    }
+                                    
+                                } catch (error) {
+                                    console.error('Error using recent config:', error);
+                                    if (messagesContainer) {
+                                        messagesContainer.innerHTML = `
+                                            <div class="message message-error" style="margin-bottom: 1rem;">
+                                                <span class="message-icon"></span>
+                                                <span>Error using recent config: ${error.message}</span>
+                                            </div>
+                                        `;
+                                    }
+                                }
+                            } else {
+                                if (messagesContainer) {
+                                    messagesContainer.innerHTML = `
+                                        <div class="message message-info" style="margin-bottom: 1rem;">
+                                            <span class="message-icon"></span>
+                                            <span>No recent config available. Please upload a config or create one with AI.</span>
+                                        </div>
+                                    `;
+                                }
+                            }
+                        }
+                    },
+                    {
+                        text: 'Upload Config',
+                        icon: '📤',
+                        variant: 'secondary',
+                        width: 'auto',
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            
+                            // Show single green completion box immediately
+                            const messagesContainer = document.getElementById(`${cardId}-messages`);
+                            const optionsContainer = document.getElementById(`${cardId}-options`);
+                            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                            
+                            // Hide all content including matching info
+                            const matchingInfoContainer = document.getElementById(`${cardId}-matching-info`);
+                            if (optionsContainer) optionsContainer.style.display = 'none';
+                            if (buttonsContainer) buttonsContainer.style.display = 'none';
+                            if (matchingInfoContainer) matchingInfoContainer.style.display = 'none';
+                            
+                            // Hide recent config notice and show completion message
+                            if (messagesContainer) {
+                                messagesContainer.innerHTML = `
+                                    <div class="message message-success" style="margin-bottom: 1rem;">
+                                        <span class="message-icon"></span>
+                                        <span>Opening file picker for configuration upload...</span>
+                                    </div>
+                                `;
+                            }
+                            
+                            // Trigger file picker after brief delay
+                            setTimeout(() => {
+                                document.getElementById(`${cardId}-config-file`).click();
+                            }, 500);
+                        }
+                    },
+                    {
+                        text: 'Create with AI',
+                        icon: '🤖',
+                        variant: 'primary',
+                        width: 'auto',
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            
+                            // Show single green completion box immediately
+                            const messagesContainer = document.getElementById(`${cardId}-messages`);
+                            const optionsContainer = document.getElementById(`${cardId}-options`);
+                            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                            
+                            // Hide all content including matching info
+                            const matchingInfoContainer = document.getElementById(`${cardId}-matching-info`);
+                            if (optionsContainer) optionsContainer.style.display = 'none';
+                            if (buttonsContainer) buttonsContainer.style.display = 'none';
+                            if (matchingInfoContainer) matchingInfoContainer.style.display = 'none';
+                            
+                            // Hide recent config notice and show completion message
+                            if (messagesContainer) {
+                                messagesContainer.innerHTML = `
+                                    <div class="message message-success" style="margin-bottom: 1rem;">
+                                        <span class="message-icon"></span>
+                                        <span>Creating new AI configuration...</span>
+                                    </div>
+                                `;
+                            }
+                            
+                            // Create AI config card after brief delay
+                            setTimeout(() => {
+                                createAIConfigCard(false);
+                            }, 500);
+                        }
+                    }
+                ];
+
+                const card = createCard({
+                    id: cardId,  // Pass explicit ID
+                    icon: '⚙️',
+                    title: 'Configuration',
+                    subtitle: globalState.matchingConfigs && globalState.matchingConfigs.matches && globalState.matchingConfigs.matches.length > 0 ? 
+                        `Recent matching config found - choose an option below` :
+                        'Choose how to configure validation',
+                    content,
+                    buttons: buttons
+                });
+
+                // Hidden file input for config upload
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.accept = '.json';
+                fileInput.style.display = 'none';
+                fileInput.id = `${cardId}-config-file`;
+                fileInput.onchange = (e) => handleConfigUpload(e, cardId);
+                card.appendChild(fileInput);
+
+                return card;
+            }
+            // 4. AI Configuration Card
+            function createAIConfigCard(isRepair = false) {
+                const cardId = generateCardId();
+                const content = `
+                    <div id="${cardId}-progress"></div>
+                    <div id="${cardId}-chat" class="chat-container"></div>
+                    <div id="${cardId}-refinement" style="display: none;">
+                        <textarea 
+                            id="${cardId}-refinement-input" 
+                            class="refinement-input" 
+                            placeholder="Describe how you'd like to refine the configuration..."
+                        ></textarea>
+                    </div>
+                    <div id="${cardId}-messages"></div>
+                `;
+
+                const card = createCard({
+                    id: cardId,  // Pass explicit ID
+                    icon: '🤖',
+                    title: isRepair ? 'Repair Configuration' : 'AI Configuration',
+                    subtitle: isRepair ? 'Fixing configuration issues' : 'Creating optimal configuration',
+                    content
+                });
+
+                // Start config generation
+                if (isRepair) {
+                    startConfigRepair(cardId);
+                } else {
+                    startConfigGeneration(cardId);
+                }
+
+                return card;
+            }
+
+            // Create refinement card specifically for post-preview refinement
+            async function createRefinementCard() {
+                const cardId = generateCardId();
+                const content = `
+                    <div id="${cardId}-chat" class="chat-container"></div>
+                    <div id="${cardId}-refinement" style="display: block;">
+                        <textarea 
+                            id="${cardId}-refinement-input" 
+                            class="refinement-input" 
+                            placeholder="Describe how you'd like to refine the configuration based on the preview results..."
+                        ></textarea>
+                    </div>
+                    <div id="${cardId}-progress"></div>
+                    <div id="${cardId}-messages"></div>
+                `;
+
+                const card = createCard({
+                    id: cardId,
+                    icon: '🔧',
+                    title: 'Refine Configuration',
+                    subtitle: 'Improve configuration based on preview results',
+                    content,
+                    buttons: [
+                        {
+                            text: 'Submit Refinement',
+                            icon: '📤',
+                            variant: 'primary',
+                            callback: async (e) => {
+                                const button = e.target.closest('button');
+                                const input = document.getElementById(`${cardId}-refinement-input`).value.trim();
+                                if (!input) {
+                                    showMessage(`${cardId}-messages`, 'Please enter refinement instructions', 'error');
+                                    return;
+                                }
+                                markButtonSelected(button, '📤 Submitting...');
+                                await submitConfigRefinementFromPreview(cardId, input);
+                            }
+                        }
+                    ]
+                });
+
+                // Always unregister first to prevent duplicates
+                unregisterCardHandler(cardId);
+                
+                registerCardHandler(cardId, ['config'], (wsData, handlerCardId) => {
+                    handleConfigWebSocketMessage(wsData, handlerCardId);
+                });
+
+                // Add initial AI message
+                await addChatMessage(cardId, 'ai', 
+                    'Based on the preview results, how would you like me to refine the configuration? ' +
+                    'You can ask me to adjust validation targets, modify search strategies, or change any other aspect of the configuration.'
+                );
+
+                return card;
+            }
+
+            async function startConfigGeneration(cardId) {
+                // Show thinking indicators
+                showThinkingInCard(cardId, 'Starting configuration generation...', true);
+                // Start config-specific dummy progress animation
+                startDummyProgress(cardId, 70000, 'config'); // 70 seconds estimated for config generation
+                // Progress routed to card level;
+                
+                try {
+                    // First, upload Excel file if not already uploaded to unified storage
+                    if (!globalState.excelFileUploaded) {
+                        console.log('Uploading Excel file to unified storage...');
+                        const formData = new FormData();
+                        formData.append('excel_file', globalState.excelFile);
+                        formData.append('email', globalState.email);
+                        // Only append session_id if we have one (for new uploads, backend will generate)
+                        if (globalState.sessionId) {
+                            formData.append('session_id', globalState.sessionId);
+                        }
+
+                        const uploadResponse = await fetch(`${API_BASE}/validate`, {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        if (!uploadResponse.ok) {
+                            const errorText = await uploadResponse.text();
+                            console.error('Config generation upload failed with status:', uploadResponse.status, 'Response:', errorText);
+                            throw new Error(`Failed to upload Excel file to unified storage: ${uploadResponse.status} - ${errorText}`);
+                        }
+
+                        const uploadData = await uploadResponse.json();
+                        console.log('Excel file uploaded successfully:', uploadData);
+                        
+                        // Validate the response
+                        if (!uploadData.success) {
+                            throw new Error(`Upload failed: ${uploadData.error || 'Unknown error'}`);
+                        }
+                        globalState.excelFileUploaded = true;
+                        
+                        // Update session ID from backend response
+                        if (uploadData.session_id) {
+                            globalState.sessionId = uploadData.session_id;
+                            localStorage.setItem('sessionId', globalState.sessionId);
+                            console.log('Updated session ID from backend:', globalState.sessionId);
+                        }
+                        
+                        // Store the storage path for reference
+                        if (uploadData.storage_path) {
+                            globalState.storagePath = uploadData.storage_path;
+                        }
+                    }
+
+                    // Now request config generation (no need to re-upload Excel)
+                    console.log('Requesting AI config generation using unified storage...');
+                    const response = await fetch(`${API_BASE}/validate?async=true`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'generateConfig',
+                            email: globalState.email,
+                            session_id: globalState.sessionId || '',
+                            instructions: 'Generate an optimal configuration for this data validation scenario'
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok && data.success) {
+                        // Continue showing thinking indicators
+                        updateThinkingInCard(cardId, 'AI analyzing table structure...');
+                        // Progress routed to card level;
+
+                        const sessionIdForSocket = data.session_id || globalState.sessionId;
+                        
+                        // Register WebSocket handler for this card
+                        unregisterCardHandler(cardId);
+                        registerCardHandler(cardId, ['config'], (wsData, handlerCardId) => {
+                            handleConfigWebSocketMessage(wsData, handlerCardId);
+                        });
+                        
+                        ensureWebSocketHealth(sessionIdForSocket);
+                    } else {
+                        throw new Error(data.error || 'Failed to start generation');
+                    }
+                } catch (error) {
+                    completeThinkingInCard(cardId, 'Generation failed');
+                    // Progress routed to card level;
+                    showMessage(`${cardId}-messages`, `Error: ${error.message}`, 'error');
+                }
+            }
+            async function startConfigRepair(cardId) {
+                // Show error context
+                await addChatMessage(cardId, 'ai', 
+                    `I found some issues with your configuration:\n\n${globalState.configError}\n\n` +
+                    `Please describe how you'd like me to fix these issues.`
+                );
+
+                // Show refinement input and clear previous text
+                document.getElementById(`${cardId}-refinement`).style.display = 'block';
+                const refinementInput = document.getElementById(`${cardId}-refinement-input`);
+                if (refinementInput) {
+                    refinementInput.value = ''; // Clear previous text
+                }
+                
+                // Add submit button
+                createButtonRow(`${cardId}-buttons`, [
+                    {
+                        text: 'Submit',
+                        icon: '📤',
+                        callback: async () => {
+                            const input = document.getElementById(`${cardId}-refinement-input`).value.trim();
+                            if (!input) {
+                                showMessage(`${cardId}-messages`, 'Please enter repair instructions', 'error');
+                                return;
+                            }
+                            await submitConfigRefinement(cardId, input);
+                        }
+                    }
+                ]);
+            }
+
+            // This duplicate handleConfigWebSocketMessage removed - using the first definition
+
+            async function addChatMessage(cardId, type, content, isUrgent = false, streamingType = 'normal') {
+                const chatContainer = document.getElementById(`${cardId}-chat`);
+                if (!chatContainer) return;
+
+                const messageDiv = document.createElement('div');
+                let className = `chat-message ${type}`;
+                if (isUrgent) className += ' urgent';
+                
+                messageDiv.className = className;
+                messageDiv.style.opacity = '0';
+                chatContainer.appendChild(messageDiv);
+
+                // Animate message appearance
+                setTimeout(() => {
+                    messageDiv.style.opacity = '1';
+                }, 100);
+
+                // Stream text if it's an AI message
+                if (type === 'ai') {
+                    if (streamingType === 'paragraphs') {
+                        await streamParagraphs(messageDiv, content);
+                    } else {
+                        await streamText(messageDiv, content);
+                    }
+                } else {
+                    messageDiv.innerHTML = renderMarkdown(content);
+                }
+
+                // Scroll to bottom
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+
+            // Stream text with pauses at punctuation
+            async function streamText(element, text) {
+                // Convert markdown to HTML
+                const htmlText = renderMarkdown(text);
+                
+                // Check if the content has markdown formatting (HTML tags)
+                if (htmlText !== text.replace(/\n/g, '<br>') || text.includes('**') || text.includes('*') || text.includes('#') || text.includes('`') || text.includes('[')) {
+                    // For markdown content, set it directly without streaming to preserve formatting
+                    element.innerHTML = htmlText;
+                    return;
+                }
+                
+                // For plain text, use fast streaming
+                const words = text.split(' ');
+                let currentText = '';
+                
+                for (let i = 0; i < words.length; i++) {
+                    currentText += (i > 0 ? ' ' : '') + words[i];
+                    element.textContent = currentText;
+                    
+                    // 5x faster than original - good balance
+                    const lastChar = words[i].slice(-1);
+                    if (['.', '!', '?'].includes(lastChar) || words[i].includes('\n')) {
+                        await sleep(40); // 0.04s pause for sentences
+                    } else if ([',', ';', ':'].includes(lastChar)) {
+                        await sleep(20); // 0.02s pause for punctuation
+                    } else {
+                        await sleep(20); // ~50 words per second (5x faster than original 10 wps)
+                    }
+                }
+            }
+
+            // Utility function for delays
+            function sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+
+            // Fast paragraph-by-paragraph streaming for AI summaries
+            async function streamParagraphs(element, text) {
+                // Convert markdown to HTML first
+                const htmlText = renderMarkdown(text);
+                
+                // Check if content has markdown formatting
+                if (htmlText !== text.replace(/\n/g, '<br>') || text.includes('**') || text.includes('*') || text.includes('#') || text.includes('`') || text.includes('[')) {
+                    // For markdown content, split by paragraphs but render as HTML
+                    const paragraphs = text.split(/\n\s*\n/); // Split on double line breaks
+                    let currentContent = '';
+                    
+                    for (let i = 0; i < paragraphs.length; i++) {
+                        if (paragraphs[i].trim()) {
+                            currentContent += paragraphs[i].trim() + '\n\n';
+                            element.innerHTML = renderMarkdown(currentContent);
+                            await sleep(500); // 0.5s between paragraphs
+                        }
+                    }
+                    return;
+                }
+                
+                // For plain text, use paragraph streaming
+                const paragraphs = text.split(/\n\s*\n/);
+                let currentContent = '';
+                
+                for (let i = 0; i < paragraphs.length; i++) {
+                    if (paragraphs[i].trim()) {
+                        currentContent += paragraphs[i].trim() + '\n\n';
+                        element.textContent = currentContent;
+                        await sleep(500); // 0.5s between paragraphs
+                    }
+                }
+            }
+
+            function showConfigActions(cardId) {
+                // Clear any existing buttons
+                const existingButtons = document.getElementById(`${cardId}-buttons`);
+                if (existingButtons) existingButtons.remove();
+
+                createButtonRow(`${cardId}-buttons`, [
+                    {
+                        text: 'Refine',
+                        icon: '🔧',
+                        variant: 'secondary',
+                        width: 1,
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            markButtonSelected(button, '🔧 Refining...');
+                            
+                            // Show simple processing message in same card and hide chat initially
+                            const messagesContainer = document.getElementById(`${cardId}-messages`);
+                            const chatContainer = document.getElementById(`${cardId}-chat`);
+                            if (messagesContainer) {
+                                messagesContainer.innerHTML = `
+                                    <div class="message message-info" style="margin-bottom: 1rem;">
+                                        <span class="message-icon">🔧</span>
+                                        <span>Preparing refinement interface...</span>
+                                    </div>
+                                `;
+                            }
+                            
+                            // Hide buttons while showing refinement interface
+                            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                            if (buttonsContainer) buttonsContainer.style.display = 'none';
+                            
+                            await showRefinementInterface(cardId);
+                        }
+                    },
+                    {
+                        text: 'Accept',
+                        icon: '✅',
+                        variant: 'primary',
+                        width: 2,
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            markButtonSelected(button, '✅ Accepted');
+                            globalState.configValidated = true;
+                            globalState.configStored = true;
+                            globalState.configIsAI = true;
+                            
+                            // Show simple success message and clean up entire card
+                            const messagesContainer = document.getElementById(`${cardId}-messages`);
+                            const chatContainer = document.getElementById(`${cardId}-chat`);
+                            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                            const refinementContainer = document.getElementById(`${cardId}-refinement`);
+                            
+                            // Hide all card content
+                            if (chatContainer) chatContainer.style.display = 'none';
+                            if (buttonsContainer) buttonsContainer.style.display = 'none';
+                            if (refinementContainer) refinementContainer.style.display = 'none';
+                            
+                            // Show only success message (no checkmark icon - green bar has one)
+                            if (messagesContainer) {
+                                messagesContainer.innerHTML = `
+                                    <div class="message message-success" style="margin-bottom: 1rem;">
+                                        <span class="message-icon"></span>
+                                        <span>Configuration accepted and ready for processing.</span>
+                                    </div>
+                                `;
+                            }
+                            
+                            setTimeout(() => createPreviewCard(), 1000);
+                        }
+                    }
+                ]);
+            }
+
+            async function showRefinementInterface(cardId) {
+                // Show chat container again for refinement interaction
+                const chatContainer = document.getElementById(`${cardId}-chat`);
+                const messagesContainer = document.getElementById(`${cardId}-messages`);
+                if (chatContainer) chatContainer.style.display = 'block';
+                if (messagesContainer) messagesContainer.innerHTML = ''; // Clear processing message
+                
+                // Always show questions from any available source
+                console.log('Checking for questions - currentConfig:', globalState.currentConfig?.clarifying_questions);
+                console.log('Checking for savedQuestions:', globalState.savedQuestions);
+                
+                let questionsToShow = null;
+                
+                // Priority: current config questions, then saved questions
+                if (globalState.currentConfig && globalState.currentConfig.clarifying_questions) {
+                    questionsToShow = globalState.currentConfig.clarifying_questions;
+                } else if (globalState.savedQuestions) {
+                    questionsToShow = globalState.savedQuestions;
+                }
+                
+                if (questionsToShow) {
+                    await addChatMessage(cardId, 'ai', 
+                        `Here are some questions to help refine the configuration:\n\n` + questionsToShow,
+                        false, 'paragraphs'
+                    );
+                } else {
+                    // If no questions available, show a generic refinement prompt
+                    await addChatMessage(cardId, 'ai', 
+                        `Please describe how you'd like to refine the configuration. You can ask me to:\n\n` +
+                        `• Adjust validation targets or confidence levels\n` +
+                        `• Modify search strategies or groupings\n` +
+                        `• Change field importance or requirements\n` +
+                        `• Update model selections or search contexts`,
+                        false, 'paragraphs'
+                    );
+                    console.log('No saved questions - showing generic refinement prompt');
+                }
+
+                // Show refinement input and clear previous text
+                document.getElementById(`${cardId}-refinement`).style.display = 'block';
+                const refinementInput = document.getElementById(`${cardId}-refinement-input`);
+                refinementInput.value = ''; // Clear previous text
+                refinementInput.focus();
+
+                // Update buttons
+                createButtonRow(`${cardId}-buttons`, [
+                    {
+                        text: 'Submit Refinement',
+                        icon: '📤',
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            const input = document.getElementById(`${cardId}-refinement-input`).value.trim();
+                            if (!input) {
+                                showMessage(`${cardId}-messages`, 'Please enter refinement instructions', 'error');
+                                return;
+                            }
+                            
+                            // Hide the button immediately and show completion
+                            if (button) {
+                                button.style.display = 'none';
+                            }
+                            
+                            // Hide all content and show completion message
+                            const messagesContainer = document.getElementById(`${cardId}-messages`);
+                            const chatContainer = document.getElementById(`${cardId}-chat`);
+                            const refinementContainer = document.getElementById(`${cardId}-refinement`);
+                            
+                            if (chatContainer) chatContainer.style.display = 'none';
+                            if (refinementContainer) refinementContainer.style.display = 'none';
+                            
+                            if (messagesContainer) {
+                                messagesContainer.innerHTML = `
+                                    <div class="message message-success" style="margin-bottom: 1rem;">
+                                        <span class="message-icon"></span>
+                                        <span>Refinement submitted successfully</span>
+                                    </div>
+                                `;
+                            }
+                            
+                            await submitConfigRefinement(cardId, input);
+                        }
+                    }
+                ]);
+            }
+
+            async function submitConfigRefinement(cardId, refinementText) {
+                // Add user message
+                await addChatMessage(cardId, 'user', refinementText);
+                
+                // Hide input
+                document.getElementById(`${cardId}-refinement`).style.display = 'none';
+                
+                // Don't hide buttons - let WebSocket completion handle UI cleanup
+
+                // Show thinking indicators
+                showThinkingInCard(cardId, 'Analyzing refinement request...', true);
+                // Start config-specific dummy progress animation for refinement
+                startDummyProgress(cardId, 70000, 'config'); // 70 seconds estimated for refinement
+                // Progress routed to card level;
+
+                try {
+                    const response = await fetch(`${API_BASE}/validate?async=true`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'modifyConfig',
+                            email: globalState.email,
+                            session_id: globalState.sessionId,
+                            instructions: refinementText
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok && data.success) {
+                        // Check if async or sync
+                        if (data.session_id && data.status === 'processing') {
+                            // Async - wait for WebSocket
+                            connectToSession(data.session_id);
+                            
+                            // Unregister any existing handlers to prevent duplicates
+                            unregisterCardHandler(cardId);
+                            
+                            registerCardHandler(cardId, ['config'], (wsData, handlerCardId) => {
+                                handleConfigWebSocketMessage(wsData, handlerCardId);
+                            });
+                        } else if (data.ai_summary) {
+                            // Sync - show result immediately
+                            completeThinkingInCard(cardId, 'Refinement complete!');
+                            // Progress routed to card level;
+                            globalState.currentConfig = data;
+                            // Mark Excel file as uploaded since backend handles it during config operations
+                            globalState.excelFileUploaded = true;
+                            
+                            // Skip sync response processing - wait for WebSocket only
+                            console.log('Skipping sync response to prevent duplicates, waiting for WebSocket');
+                        }
+                    } else {
+                        completeThinkingInCard(cardId, 'Refinement failed');
+                        // Progress routed to card level;
+                        throw new Error(data.error || 'Failed to refine configuration');
+                    }
+                } catch (error) {
+                    showMessage(`${cardId}-messages`, `Error: ${error.message}`, 'error');
+                }
+            }
+
+            // New function for post-preview refinement
+            async function submitConfigRefinementFromPreview(cardId, refinementText) {
+                // Add user message
+                await addChatMessage(cardId, 'user', refinementText);
+                
+                // Hide input
+                document.getElementById(`${cardId}-refinement`).style.display = 'none';
+                
+                // Don't hide buttons - let WebSocket completion handle UI cleanup
+
+                // Show thinking indicators
+                showThinkingInCard(cardId, 'Analyzing refinement request...', true);
+                // Start config-specific dummy progress animation for refinement
+                startDummyProgress(cardId, 70000, 'config'); // 70 seconds estimated for refinement
+                // Progress routed to card level;
+
+                try {
+                    const response = await fetch(`${API_BASE}/validate?async=true`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'modifyConfig',
+                            email: globalState.email,
+                            session_id: globalState.sessionId,
+                            instructions: refinementText,
+                            refinement_mode: 'post_preview' // Indicate this is post-preview refinement
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok && data.success) {
+                        // Check if async or sync
+                        if (data.session_id && data.status === 'processing') {
+                            // Async - wait for WebSocket
+                            connectToSession(data.session_id);
+                            
+                            // Unregister any existing handlers to prevent duplicates
+                            unregisterCardHandler(cardId);
+                            
+                            registerCardHandler(cardId, ['refinement'], (wsData, handlerCardId) => {
+                                handleRefinementWebSocketMessage(wsData, handlerCardId);
+                            });
+                        } else if (data.ai_summary) {
+                            // Skip sync response processing entirely to prevent duplicates
+                            console.log('Skipping sync refinement response to prevent duplicates, waiting for WebSocket only');
+                            // Do not process any sync data - rely only on WebSocket
+                        }
+                    } else {
+                        completeThinkingInCard(cardId, 'Refinement failed');
+                        // Progress routed to card level;
+                        throw new Error(data.error || 'Failed to refine configuration');
+                    }
+                } catch (error) {
+                    if (globalState.cardProgress[cardId]) {
+                        globalState.cardProgress[cardId].complete('❌ Refinement failed');
+                        delete globalState.cardProgress[cardId];
+                    }
+                    showMessage(`${cardId}-messages`, `Error: ${error.message}`, 'error');
+                }
+            }
+
+            // WebSocket handler for post-preview refinement
+            async function handleRefinementWebSocketMessage(data, cardId) {
+                if (data.type === 'config_generation_complete') {
+                    // Prevent duplicate processing
+                    const messageKey = `${cardId}_${data.session_id}_refinement_complete`;
+                    if (!globalState.processedMessages) globalState.processedMessages = new Set();
+                    if (globalState.processedMessages.has(messageKey)) {
+                        console.log('Ignoring duplicate refinement config_generation_complete message for', cardId);
+                        return;
+                    }
+                    globalState.processedMessages.add(messageKey);
+                    
+                    // Cleanup old messages to prevent memory leak
+                    if (globalState.processedMessages.size > 100) {
+                        const oldestMessage = globalState.processedMessages.values().next().value;
+                        globalState.processedMessages.delete(oldestMessage);
+                    }
+                    
+                    completeThinkingInCard(cardId, 'Refinement complete!');
+                    // Progress routed to card level
+
+                    globalState.currentConfig = data;
+                    // Mark Excel file as uploaded since backend saves it during config operations
+                    globalState.excelFileUploaded = true;
+
+                    let aiMessage = data.ai_summary || data.ai_response || 'Configuration refined successfully!';
+                    
+                    await addChatMessage(cardId, 'ai', aiMessage, false, 'paragraphs');
+                    
+                    // Add download button if URL available
+                    if (data.download_url) {
+                        const chatContainer = document.getElementById(`${cardId}-chat`);
+                        if (chatContainer) {
+                            const downloadDiv = document.createElement('div');
+                            downloadDiv.className = 'chat-message ai';
+                            downloadDiv.innerHTML = `
+                                <button class="std-button secondary" style="margin-top: 8px;" 
+                                        onclick="window.viewConfigInNewTab('${data.download_url}', '${data.session_id || 'refined'}')">
+                                    📥 Download Refined Configuration
+                                </button>
+                            `;
+                            chatContainer.appendChild(downloadDiv);
+                        }
+                    }
+                    showRefinementActions(cardId);
+
+                } else if (data.type === 'config_generation_failed') {
+                    completeThinkingInCard(cardId, 'Refinement failed');
+                    // Progress routed to card level;
+                    
+                    showMessage(`${cardId}-messages`, 
+                        `Error: ${data.error || 'Configuration refinement failed'}`, 
+                        'error'
+                    );
+                }
+            }
+
+            // Show actions after refinement (different from initial config actions)
+            function showRefinementActions(cardId) {
+                createButtonRow(`${cardId}-buttons`, [
+                    {
+                        text: 'Refine Further',
+                        icon: '🔧',
+                        variant: 'secondary',
+                        width: 1,
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            markButtonSelected(button, '🔧 Refining...');
+                            // Show refinement input again
+                            document.getElementById(`${cardId}-refinement`).style.display = 'block';
+                            document.getElementById(`${cardId}-refinement-input`).value = '';
+                            document.getElementById(`${cardId}-refinement-input`).focus();
+                            // Update button to submit
+                            createButtonRow(`${cardId}-buttons`, [
+                                {
+                                    text: 'Submit Refinement',
+                                    icon: '📤',
+                                    variant: 'primary',
+                                    callback: async () => {
+                                        const input = document.getElementById(`${cardId}-refinement-input`).value.trim();
+                                        if (!input) {
+                                            showMessage(`${cardId}-messages`, 'Please enter refinement instructions', 'error');
+                                            return;
+                                        }
+                                        await submitConfigRefinementFromPreview(cardId, input);
+                                    }
+                                }
+                            ]);
+                        }
+                    },
+                    {
+                        text: 'Accept & Preview',
+                        icon: '✅',
+                        variant: 'primary',
+                        width: 2,
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            markButtonSelected(button, '✅ Accepted');
+                            globalState.configValidated = true;
+                            globalState.configStored = true;
+                            setTimeout(() => createPreviewCard(), 500);
+                        }
+                    }
+                ]);
+            }
+
+            // 5. Preview Card - Fixed to ensure consistent card ID
+            function createPreviewCard() {
+                // Generate the card ID FIRST
+                const cardId = generateCardId();
+                console.log(`Creating preview card with ID: ${cardId}`);
+                
+                const content = `
+                    <div id="${cardId}-progress"></div>
+                    <div id="${cardId}-results" style="display: none;">
+                        <div id="${cardId}-preview-content"></div>
+                        <div class="message message-success" style="margin: 1rem 0;">
+                            <span class="message-icon">📧</span>
+                            <span>Check your email for a more comprehensive preview in a verified excel file.</span>
+                        </div>
+                        <div id="${cardId}-cost-estimate" class="cost-estimate" style="display: none;">
+                            <div class="cost-estimate-header">Estimates for Processing Entire Table</div>
+                            <div class="cost-estimate-items" id="${cardId}-estimates"></div>
+                        </div>
+                    </div>
+                    <div id="${cardId}-messages"></div>
+                `;
+
+                const card = createCard({
+                    icon: '👁️',
+                    title: 'Preview',
+                    subtitle: 'Testing validation with first 3 rows...',
+                    content,
+                    id: cardId  // PASS THE ID EXPLICITLY
+                });
+
+                // Auto-start preview with the SAME card ID
+                console.log(`Starting preview for card ID: ${cardId}`);
+                startPreview(cardId);
+
+                return card;
+            }
+
+    
+            async function startPreview(cardId) {
+                console.log(`Starting preview for card ${cardId}`);
+                console.log('Current session ID:', globalState.sessionId);
+                console.log('Excel file uploaded status:', globalState.excelFileUploaded);
+                
+                // Show thinking indicators
+                showThinkingInCard(cardId, 'Preparing preview...', true);
+                // Start dummy progress animation for preview
+                startDummyProgress(cardId, 30000); // 30 seconds estimated for preview
+                // Progress routed to card level;
+
+                try {
+                    // Always use multipart form for preview since backend expects files
+                    console.log('Starting preview with multipart form...');
+                    console.log('Session ID being sent:', globalState.sessionId);
+                    console.log('Excel file uploaded status:', globalState.excelFileUploaded);
+                    
+                    const formData = new FormData();
+                    
+                    // Only append Excel file if not already uploaded
+                    if (!globalState.excelFileUploaded) {
+                        console.log('Adding Excel file to form data');
+                        formData.append('excel_file', globalState.excelFile);
+                    } else {
+                        console.log('Excel file already uploaded, relying on unified storage');
+                        // Send a dummy file to satisfy backend file requirement
+                        const dummyFile = new Blob([JSON.stringify({use_stored_files: true})], {
+                            type: 'application/json'
+                        });
+                        formData.append('dummy_file', dummyFile, 'stored_files_marker.json');
+                    }
+                    
+                    formData.append('email', globalState.email);
+                    if (globalState.sessionId) {
+                        formData.append('session_id', globalState.sessionId);
+                    } else {
+                        throw new Error('No session ID available. Please upload an Excel file first.');
+                    }
+
+                    const url = `${API_BASE}/validate?async=true&preview_first_row=true&preview_max_rows=3&preview_email=true`;
+                    
+                    console.log('Starting preview request...');
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+                    console.log('Preview response:', data);
+
+                    if (response.ok && data.status === 'processing') {
+                        // Use the actual session_id returned by the backend instead of guessing
+                        const actualSessionId = data.session_id || `${globalState.sessionId}_preview`;
+                        console.log('Connecting WebSocket to actual session ID:', actualSessionId);
+                        
+                        // Use unified WebSocket system
+                        connectToSession(actualSessionId);
+                        unregisterCardHandler(cardId);
+                        registerCardHandler(cardId, ['preview'], (wsData, handlerCardId) => {
+                            handlePreviewWebSocketMessage(wsData, handlerCardId);
+                        });
+                        
+                        globalState.excelFileUploaded = true;
+                        if (data.storage_path) {
+                            globalState.storagePath = data.storage_path;
+                            console.log('Files stored at:', data.storage_path);
+                        }
+                    } else if (response.ok && data.success) {
+                        // Handle case where it completed immediately
+                        globalState.excelFileUploaded = true;
+                        if (data.preview_data) {
+                            showPreviewResults(cardId, data.preview_data);
+                        }
+                    } else {
+                        throw new Error(data.error || 'Failed to start preview');
+                    }
+                } catch (error) {
+                    completeThinkingInCard(cardId, 'Preview failed');
+                    // Progress routed to card level;
+                    showMessage(`${cardId}-messages`, `Error: ${error.message}`, 'error');
+                }
+            }
+
+            // Fixed handlePreviewWebSocketMessage to use card-specific progress
+            function handlePreviewWebSocketMessage(data, cardId) {
+                console.log(`Handling preview WebSocket message for card ${cardId}:`, data);
+
+                if (data.status === 'PROCESSING') {
+                    const message = data.verbose_status || 'Processing...';
+                    // Update both text and progress if we have percent_complete
+                    if (data.percent_complete !== undefined) {
+                        updateThinkingProgress(cardId, data.percent_complete, message);
+                    } else {
+                        updateThinkingInCard(cardId, message);
+                    }
+                    // Progress routed to card level;
+                } else if (data.status === 'COMPLETED') {
+                    // First update to 100% if we have a progress bar
+                    const indicator = document.getElementById(`${cardId}-thinking`);
+                    if (indicator && indicator.classList.contains('with-progress')) {
+                        updateThinkingProgress(cardId, 100, 'Preview complete!');
+                        setTimeout(() => {
+                            completeThinkingInCard(cardId, 'Preview complete!');
+                        }, 500);
+                    } else {
+                        completeThinkingInCard(cardId, 'Preview complete!');
+                    }
+                    // Progress routed to card level;
+
+                    if (data.preview_data) {
+                        showPreviewResults(cardId, data.preview_data);
+                    }
+                } else if (data.status === 'FAILED' || data.status === 'ERROR') {
+                    completeThinkingInCard(cardId, 'Preview failed');
+                    // Progress routed to card level;
+                    
+                    const errorMessage = data.error_message || data.verbose_status || 'Preview validation failed';
+                    showMessage(`${cardId}-messages`, `Error: ${errorMessage}`, 'error');
+                    console.error('Preview failed:', data);
+                }
+            }
+
+            // 6. Processing Card
+            function createProcessingCard() {
+                const cardId = generateCardId();
+                const content = `
+                    <div id="${cardId}-messages"></div>
+                `;
+
+                const card = createCard({
+                    id: cardId,  // Pass explicit ID
+                    icon: '⚡',
+                    title: 'Process',
+                    subtitle: 'Validating your entire table...',
+                    content
+                });
+
+                // Start processing
+                startFullProcessing(cardId);
+
+                return card;
+            }
+    
+            async function startFullProcessing(cardId) {
+                // Show thinking indicators with contextual message
+                showThinkingInCard(cardId, 'Initializing validation process...', true);
+                // Start dummy progress animation
+                startDummyProgress(cardId, 90000); // 90 seconds estimated
+                // Progress routed to card level;
+
+                try {
+                    console.log('Starting full processing with session:', globalState.sessionId);
+                    console.log('Storage path:', globalState.storagePath);
+                    console.log('Excel file uploaded status:', globalState.excelFileUploaded);
+                    
+                    // Always use multipart form for full processing
+                    const formData = new FormData();
+                    
+                    // Only append Excel file if not already uploaded
+                    if (!globalState.excelFileUploaded) {
+                        console.log('Adding Excel file to form data for full processing');
+                        formData.append('excel_file', globalState.excelFile);
+                    } else {
+                        console.log('Excel file already uploaded, relying on unified storage for full processing');
+                        // Send a dummy config file to satisfy backend file requirement
+                        const dummyConfig = new Blob([JSON.stringify({use_stored_files: true})], {
+                            type: 'application/json'
+                        });
+                        formData.append('config_file', dummyConfig, 'stored_files_marker.json');
+                    }
+                    
+                    formData.append('email', globalState.email);
+                    if (globalState.sessionId) {
+                        formData.append('session_id', globalState.sessionId);
+                    } else {
+                        throw new Error('No session ID available. Please upload an Excel file first.');
+                    }
+                    
+                    const url = `${API_BASE}/validate?async=true`;
+                    
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+                    console.log('Full processing response:', data);
+
+                    if (response.ok && data.status === 'processing') {
+                        globalState.excelFileUploaded = true;
+                        const wsSessionId = data.session_id || globalState.sessionId;
+                        console.log('Connecting WebSocket for full processing with session:', wsSessionId);
+                        
+                        // Connect to session and register processing handler
+                        connectToSession(wsSessionId);
+                        
+                        // Unregister any preview handlers to prevent conflicts
+                        cardHandlers.forEach((handlerInfo, existingCardId) => {
+                            if (handlerInfo.messageTypes.includes('preview')) {
+                                console.log(`Unregistering preview handler for card ${existingCardId}`);
+                                unregisterCardHandler(existingCardId);
+                            }
+                        });
+                        
+                        unregisterCardHandler(cardId);
+                        console.log(`Registering processing handler for card ${cardId}`);
+                        registerCardHandler(cardId, ['processing'], (wsData, cardId) => {
+                            console.log(`Processing handler called for card ${cardId} with data:`, wsData);
+                            handleProcessingWebSocketMessage(wsData, cardId);
+                        });
+                    } else {
+                        throw new Error(data.error || 'Failed to start processing');
+                    }
+                } catch (error) {
+                    console.error('Full processing error:', error);
+                    completeThinkingInCard(cardId, 'Processing failed');
+                    // Progress routed to card level;
+                    showMessage(`${cardId}-messages`, `Error: ${error.message}`, 'error');
+                }
+            }
+        // 7. Completion Card
+        function createCompletionCard(completionData) {
+            // If status is COMPLETED, trust the backend - don't check row counts
+            const isPartial = completionData.status !== 'COMPLETED' && 
+                             completionData.total_rows && globalState.processedRows < completionData.total_rows;
+            
+            const cardId = generateCardId();
+            let content = '';
+            let buttons = [];
+
+            if (isPartial) {
+                content = `
+                    <p style="margin-bottom: 1.5rem; color: var(--text-secondary);">
+                        You have processed ${globalState.processedRows} of ${completionData.total_rows} total rows.
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label" for="${cardId}-max-rows">Total Rows to Process</label>
+                        <input type="number" id="${cardId}-max-rows" class="form-input" 
+                                placeholder="Enter new total row count" min="${globalState.processedRows + 1}">
+                        <p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">
+                            This is the total number of rows from the top, not additional rows. Leave empty to process all.
+                        </p>
+                    </div>
+                    <div id="${cardId}-messages"></div>
+                `;
+
+                buttons = [
+                    {
+                        text: 'Continue Processing',
+                        icon: '▶️',
+                        variant: 'primary',
+                        width: 1,
+                        callback: async () => {
+                            const maxRows = document.getElementById(`${cardId}-max-rows`).value;
+                            await continueProcessing(cardId, maxRows);
+                        }
+                    },
+                    {
+                        text: 'New Validation',
+                        icon: '🔄',
+                        variant: 'secondary',
+                        width: 1,
+                        callback: () => window.location.reload()
+                    }
+                ];
+            } else {
+                content = `
+                    <div class="message message-success" style="margin-bottom: 1rem;">
+                        <span class="message-icon">🎉</span>
+                        <span>Your validation has been completed successfully. Results have been sent to your email.</span>
+                    </div>
+                `;
+
+                buttons = [
+                    {
+                        text: 'New Validation',
+                        icon: '🔄',
+                        variant: 'primary',
+                        width: 1,
+                        callback: () => window.location.reload()
+                    }
+                ];
+            }
+
+            createCard({
+                icon: isPartial ? '📈' : '🎉',
+                title: isPartial ? 'Continue Validation' : 'Process',
+                subtitle: isPartial ? 'Process more of your table' : 'Ready to start a new validation',
+                content,
+                buttons
+            });
+        }
+
+        async function continueProcessing(cardId, maxRows) {
+            // Validate input
+            if (maxRows && parseInt(maxRows) <= globalState.processedRows) {
+                showMessage(`${cardId}-messages`, 
+                    `Please enter a number greater than ${globalState.processedRows}`, 
+                    'error'
+                );
+                return;
+            }
+
+            // Create new processing card
+            createProcessingCard();
+        }
+
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Create initial email card
+            createEmailCard();
+            
+            // Show idle state with delay to ensure DOM is fully ready
+            setTimeout(() => {
+                console.log('Initializing global progress...');
+                const progressBar = document.getElementById('global-progress-bar');
+                console.log('Progress bar element found on init:', !!progressBar);
+                if (progressBar) {
+                    console.log('Progress bar initial classes:', progressBar.className);
+                    console.log('Progress bar initial style:', progressBar.style.cssText);
+                }
+                // Progress routed to card level;
+                console.log('Global progress initialized');
+            }, 100);
+            
+            // Check for stored session
+            const storedSessionId = localStorage.getItem('sessionId');
+            if (storedSessionId) {
+                globalState.sessionId = storedSessionId;
+                console.log('Restored session ID:', storedSessionId);
+            }
+            
+            // Global progress removed - all progress handled at card level
+            
+            // Test functions for animations
+            window.testErrorAnimation = (cardId = 'card-1') => {
+                showThinkingInCard(cardId, 'Testing error animation...');
+                setTimeout(() => {
+                    completeThinkingInCard(cardId, 'Generation failed');
+                }, 2000);
+            };
+            
+            window.testSuccessAnimation = (cardId = 'card-1') => {
+                showThinkingInCard(cardId, 'Testing success animation...');
+                setTimeout(() => {
+                    completeThinkingInCard(cardId, 'Generation complete!');
+                }, 2000);
+            };
+            
+            window.testProgressAnimation = (cardId = 'card-1') => {
+                showThinkingInCard(cardId, 'Testing progress animation...', true);
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += Math.random() * 15;
+                    if (progress >= 100) {
+                        progress = 100;
+                        clearInterval(interval);
+                        setTimeout(() => {
+                            completeThinkingInCard(cardId, 'Progress complete!');
+                        }, 500);
+                    }
+                    updateThinkingProgress(cardId, progress, `Processing... ${Math.round(progress)}%`);
+                }, 200);
+            };
+            
+            window.testProgressError = (cardId = 'card-1') => {
+                showThinkingInCard(cardId, 'Testing progress error...', true);
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += Math.random() * 10;
+                    if (progress >= 60) {
+                        clearInterval(interval);
+                        setTimeout(() => {
+                            completeThinkingInCard(cardId, 'Processing failed');
+                        }, 500);
+                        return;
+                    }
+                    updateThinkingProgress(cardId, progress, `Processing... ${Math.round(progress)}%`);
+                }, 300);
+            };
+            
+            console.log('Available test functions:');
+            console.log('- testErrorAnimation() - Basic error animation');
+            console.log('- testSuccessAnimation() - Basic success animation');
+            console.log('- testProgressAnimation() - Progress bar with success');
+            console.log('- testProgressError() - Progress bar with error');
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            // Close all session WebSocket connections
+            sessionWebSockets.forEach((ws, sessionId) => {
+                console.log(`Closing WebSocket for session ${sessionId}`);
+                ws._intentionallyClosed = true;
+                ws.close();
+            });
+            sessionWebSockets.clear();
+            cardHandlers.clear();
+            cardDummyProgress.clear();
+            cardCurrentProgress.clear();
+            registrationCounter = 0;
+        });
+    })();
+   </script>
+
+   <!-- Global progress removed - using card-level progress only -->
+</body>
+</html>

@@ -17,11 +17,20 @@ import sys
 from datetime import datetime
 from pathlib import Path
 import asyncio
-import aiohttp
 import time
 
 # Import Step 1 components
 from config_generator_step1 import PromptLoader, TableAnalyzer
+
+# Import shared AI API client
+try:
+    from ai_api_client import AIAPIClient
+except ImportError:
+    # Fallback if running locally
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+    from ai_api_client import AIAPIClient
 
 # Default paths
 DEFAULT_EXCEL = r"tables\RatioCompetitiveIntelligence\RatioCompetitiveIntelligence_Verified1.xlsx"
@@ -31,9 +40,9 @@ class EnhancedClaudeConfigGenerator:
     """Enhanced config generator with multiple prompt strategies"""
     
     def __init__(self, api_key=None):
-        self.api_key = api_key or self._get_api_key()
-        self.model = "claude-sonnet-4-0"  # Claude 4
-        self.api_url = "https://api.anthropic.com/v1/messages"
+        # Initialize shared AI API client
+        self.ai_client = AIAPIClient()
+        self.model = "claude-sonnet-4-0"  # Latest Claude 4
         self.max_tokens = 8000  # Increased for better responses
         self.temperature = 0.1
         
@@ -45,43 +54,8 @@ class EnhancedClaudeConfigGenerator:
             'competitive_intelligence': self._build_competitive_intel_prompt
         }
         
-    def _get_api_key(self):
-        """Get Claude API key from environment or file"""
-        # Try environment variable first
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
-        if api_key:
-            return api_key
-        
-        # Try looking for key file
-        possible_paths = [
-            'claude_api_key.txt',
-            '.anthropic_key',
-            '../claude_api_key.txt'
-        ]
-        
-        for path in possible_paths:
-            if os.path.exists(path):
-                try:
-                    with open(path, 'r') as f:
-                        key = f.read().strip()
-                        # Handle case where key might have extra text
-                        if 'sk-ant-api' in key:
-                            start = key.find('sk-ant-api')
-                            if start != -1:
-                                # Find the end of the key (typically ends with 'AA')
-                                end = key.find('AA', start) + 2
-                                if end > start:
-                                    return key[start:end]
-                        return key
-                except Exception:
-                    continue
-        
-        return None
-        
     async def generate_config_with_strategy(self, table_analysis, instruction_prompt, strategy='competitive_intelligence', existing_config=None):
         """Generate configuration using specified strategy"""
-        if not self.api_key:
-            raise ValueError("Claude API key not found. Set ANTHROPIC_API_KEY environment variable or create claude_api_key.txt file")
         
         if strategy not in self.prompt_strategies:
             raise ValueError(f"Unknown strategy: {strategy}. Available: {list(self.prompt_strategies.keys())}")
@@ -98,12 +72,7 @@ class EnhancedClaudeConfigGenerator:
         return config
     
     async def _call_claude_api(self, prompt, table_analysis, strategy, instruction_prompt=None, existing_config=None):
-        """Make the actual API call to Claude"""
-        headers = {
-            'Content-Type': 'application/json',
-            'X-API-Key': self.api_key,
-            'anthropic-version': '2023-06-01'
-        }
+        """Make the actual API call to Claude using shared AI API client"""
         
         # Enhanced system prompt for better results
         system_prompt = """You are a world-class expert in pharmaceutical competitive intelligence and data validation systems. 
@@ -120,50 +89,37 @@ Generate precise, actionable configurations that reflect deep domain knowledge a
         # Define enhanced tool schema
         tool_schema = self._get_enhanced_config_schema()
         
-        data = {
-            "model": self.model,
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
-            "system": system_prompt,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "tools": [
-                {
-                    "name": "generate_config",
-                    "description": "Generate a comprehensive column configuration for pharmaceutical competitive intelligence",
-                    "input_schema": tool_schema
-                }
-            ],
-            "tool_choice": {
-                "type": "tool",
-                "name": "generate_config"
-            }
-        }
+        # Combine system prompt with user prompt
+        full_prompt = f"{system_prompt}\n\n{prompt}"
         
         print(f"Calling Claude 4 API (strategy: {strategy})...")
         start_time = time.time()
         
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.api_url, json=data, headers=headers) as response:
-                response_time = time.time() - start_time
-                
-                if response.status == 200:
-                    result = await response.json()
-                    
-                    # Extract configuration from tool response
-                    config = self._extract_config_from_response(result)
-                    
-                    # Add metadata
-                    config_with_metadata = self._add_metadata(config, table_analysis, response_time, result, strategy, instruction_prompt, existing_config)
-                    
-                    print(f"SUCCESS: Config generated in {response_time:.2f}s")
-                    return config_with_metadata
-                    
-                else:
-                    error_text = await response.text()
-                    print(f"ERROR: Claude API returned {response.status}: {error_text}")
-                    raise Exception(f"Claude API error: {response.status} - {error_text}")
+        try:
+            # Use shared AI API client with structured response
+            response_data = await self.ai_client.call_structured_api(
+                prompt=full_prompt,
+                schema=tool_schema,
+                model=self.model,
+                tool_name="generate_config"
+            )
+            
+            response_time = time.time() - start_time
+            api_response = response_data['response']
+            token_usage = response_data['token_usage']
+            
+            # Extract configuration from tool response
+            config = self.ai_client.extract_structured_response(api_response, "generate_config")
+            
+            # Add metadata
+            config_with_metadata = self._add_metadata(config, table_analysis, response_time, api_response, strategy, instruction_prompt, existing_config)
+            
+            print(f"SUCCESS: Config generated in {response_time:.2f}s")
+            return config_with_metadata
+            
+        except Exception as e:
+            print(f"ERROR: Claude API call failed: {str(e)}")
+            raise
     
     def _build_standard_prompt(self, table_analysis, instruction_prompt, existing_config=None):
         """Build standard prompt using the base template"""
@@ -400,31 +356,6 @@ Group {group['group_id']} - {group['group_name']}:
             "required": ["general_notes", "validation_targets"]
         }
     
-    def _extract_config_from_response(self, response):
-        """Extract configuration from Claude's tool response"""
-        try:
-            # Look for tool use in the response
-            for content_item in response.get('content', []):
-                if content_item.get('type') == 'tool_use' and content_item.get('name') == 'generate_config':
-                    return content_item.get('input', {})
-            
-            # Fallback: look for JSON in text content
-            for content_item in response.get('content', []):
-                if content_item.get('type') == 'text':
-                    text = content_item.get('text', '')
-                    if '{' in text and '}' in text:
-                        # Try to extract JSON
-                        start = text.find('{')
-                        end = text.rfind('}') + 1
-                        json_str = text[start:end]
-                        return json.loads(json_str)
-            
-            raise ValueError("Could not extract config from Claude response")
-            
-        except Exception as e:
-            print(f"Error extracting config: {e}")
-            print(f"Response content: {response}")
-            raise
     
     def _add_metadata(self, config, table_analysis, response_time, claude_response, strategy, instruction_prompt=None, existing_config=None, interview_changes=None):
         """Add comprehensive metadata to the generated configuration with change tracking"""

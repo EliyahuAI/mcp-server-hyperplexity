@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hyperplexity Table Validator - Powered by Eliyahu.AI</title>
     
+    <!-- Markdown renderer -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+    
     <style type="text/css">
     /* Base Variables */
     :root {
@@ -22,12 +25,11 @@
         --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         --transition: all 0.3s ease;
         
-        /* Typography */
+        /* Typography - Standardized to 3 sizes */
         --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        --font-size-base: 16px;
-        --font-size-small: 14px;
-        --font-size-heading: 24px;
-        --font-size-subheading: 20px;
+        --font-size-small: 14px;    /* Small text, labels, secondary info */
+        --font-size-base: 16px;     /* Body text, buttons, inputs */
+        --font-size-large: 20px;    /* Headings, titles, important text */
         --line-height: 1.5;
     }
 
@@ -60,7 +62,7 @@
     }
 
     .validator-header h1 {
-        font-size: 32px;
+        font-size: var(--font-size-large);
         color: var(--text-color);
         margin-bottom: 0.5rem;
         font-weight: 600;
@@ -68,7 +70,7 @@
 
     .validator-header p {
         color: var(--text-secondary);
-        font-size: 18px;
+        font-size: var(--font-size-base);
         margin-bottom: 0.5rem;
     }
 
@@ -117,7 +119,7 @@
     }
 
     .card-title {
-        font-size: var(--font-size-subheading);
+        font-size: var(--font-size-large);
         font-weight: 600;
         margin: 0;
     }
@@ -188,45 +190,58 @@
     }
 
     /* Buttons */
-    .btn {
-        padding: 0.75rem 1.5rem;
-        border: none;
+    .btn, .config-option-btn {
+        padding: 1rem 2rem;
+        border: 2px solid var(--primary-color);
         border-radius: var(--border-radius);
+        background-color: white;
+        color: var(--primary-color);
+        cursor: pointer;
+        transition: var(--transition);
         font-size: var(--font-size-base);
         font-family: var(--font-family);
         font-weight: 500;
-        cursor: pointer;
-        transition: var(--transition);
         display: inline-flex;
         align-items: center;
         justify-content: center;
         gap: 0.5rem;
     }
-
-    .btn-primary {
+    .btn-primary, .config-option-btn.btn-primary {
         background-color: var(--primary-color);
         color: white;
+        border-color: var(--primary-color);
     }
-
-    .btn-primary:hover:not(:disabled) {
+    .btn-primary:hover:not(:disabled), .config-option-btn.btn-primary:hover:not(:disabled) {
         background-color: var(--primary-hover);
+        border-color: var(--primary-hover);
+        color: white;
         transform: translateY(-2px);
     }
-
-    .btn-secondary {
+    .btn-secondary, .config-option-btn.btn-secondary {
         background-color: var(--secondary-color);
         color: white;
+        border-color: var(--secondary-color);
     }
-
-    .btn-secondary:hover:not(:disabled) {
+    .btn-secondary:hover:not(:disabled), .config-option-btn.btn-secondary:hover:not(:disabled) {
         background-color: var(--secondary-hover);
+        border-color: var(--secondary-hover);
+        color: white;
         transform: translateY(-2px);
     }
-
-    .btn:disabled {
+    .btn:disabled, .config-option-btn:disabled {
         opacity: 0.6;
         cursor: not-allowed;
         transform: none;
+        background-color: #f5f5f5;
+        color: #222;
+        border-color: #222;
+    }
+    .btn-inactive, .config-option-btn.btn-inactive {
+        background-color: #f5f5f5 !important;
+        color: #222 !important;
+        border-color: #222 !important;
+        opacity: 1 !important;
+        cursor: not-allowed !important;
     }
 
     .btn-block {
@@ -235,9 +250,7 @@
 
     /* File Upload */
     .file-upload-container {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 2rem;
+        display: block;
     }
 
     .drop-zone {
@@ -263,7 +276,7 @@
     }
 
     .drop-zone-icon {
-        font-size: 48px;
+        font-size: 2rem; /* Proportional to base size */
         color: #bbb;
         margin-bottom: 1rem;
     }
@@ -271,6 +284,12 @@
     .drop-zone-text {
         color: var(--text-secondary);
         margin-bottom: 1rem;
+        font-size: var(--font-size-base);
+    }
+
+    .drop-zone-text p, .drop-zone-text strong {
+        font-size: var(--font-size-base);
+        margin: 0.25rem 0;
     }
 
     .file-input {
@@ -530,7 +549,7 @@
     }
 
     .processing-text {
-        font-size: 1.25rem;
+        font-size: var(--font-size-large);
         font-weight: 600;
         color: var(--primary-color);
         margin-bottom: 1rem;
@@ -638,15 +657,294 @@
         display: flex;
         align-items: center;
         gap: 1rem;
+        font-size: var(--font-size-base);
     }
 
     .message-icon {
-        font-size: 24px;
+        font-size: var(--font-size-large);
     }
 
     .message-success {
         background-color: #e8f5e9;
         color: #2e7d32;
+    }
+
+    /* Chat Bubbles for Config Interface */
+    .chat-container {
+        max-width: 100%;
+        margin: 1rem 0;
+        padding: 0;
+    }
+
+    .chat-bubble {
+        max-width: 85%;
+        padding: 1rem 1.5rem;
+        margin: 0.5rem 0;
+        border-radius: 18px;
+        font-size: var(--font-size-base);
+        line-height: 1.4;
+        word-wrap: break-word;
+        position: relative;
+        animation: fadeInUp 0.3s ease-out;
+    }
+
+    .chat-bubble.ai {
+        background-color: #f0f0f0;
+        color: #333;
+        margin-left: 0;
+        margin-right: auto;
+        border-bottom-left-radius: 4px;
+    }
+
+    .chat-bubble.user {
+        background-color: var(--primary-color);
+        color: white;
+        margin-left: auto;
+        margin-right: 0;
+        border-bottom-right-radius: 4px;
+    }
+
+    .chat-bubble.questions {
+        background-color: #e3f2fd;
+        color: #1565c0;
+        border-left: 4px solid var(--secondary-color);
+    }
+
+    .chat-bubble.urgent {
+        border-left: 4px solid var(--warning-color);
+        background-color: #fff3e0;
+    }
+
+    /* Markdown styling within chat bubbles */
+    .chat-bubble h1, .chat-bubble h2, .chat-bubble h3, .chat-bubble h4, .chat-bubble h5, .chat-bubble h6 {
+        margin: 0.5em 0 0.3em 0;
+        color: inherit;
+        font-weight: 600;
+    }
+
+    .chat-bubble h1 { font-size: var(--font-size-large); }
+    .chat-bubble h2 { font-size: var(--font-size-large); }
+    .chat-bubble h3 { font-size: var(--font-size-base); }
+    .chat-bubble h4 { font-size: var(--font-size-base); }
+
+    .chat-bubble p {
+        margin: 0.5em 0;
+        line-height: 1.5;
+    }
+
+    .chat-bubble ul, .chat-bubble ol {
+        margin: 0.5em 0;
+        padding-left: 1.5em;
+    }
+
+    .chat-bubble li {
+        margin: 0.2em 0;
+    }
+
+    .chat-bubble code {
+        background-color: rgba(0,0,0,0.1);
+        padding: 0.1em 0.3em;
+        border-radius: 3px;
+        font-family: 'Courier New', monospace;
+        font-size: var(--font-size-small);
+    }
+
+    .chat-bubble pre {
+        background-color: rgba(0,0,0,0.05);
+        padding: 0.8em;
+        border-radius: 6px;
+        overflow-x: auto;
+        margin: 0.5em 0;
+    }
+
+    .chat-bubble pre code {
+        background-color: transparent;
+        padding: 0;
+    }
+
+    .chat-bubble blockquote {
+        border-left: 3px solid rgba(0,0,0,0.2);
+        padding-left: 0.8em;
+        margin: 0.5em 0;
+        font-style: italic;
+        opacity: 0.8;
+    }
+
+    .chat-bubble strong {
+        font-weight: 600;
+    }
+
+    .chat-bubble em {
+        font-style: italic;
+    }
+
+    .chat-bubble hr {
+        border: none;
+        border-top: 1px solid rgba(0,0,0,0.2);
+        margin: 1em 0;
+    }
+
+    .chat-bubble table {
+        border-collapse: collapse;
+        margin: 0.5em 0;
+        font-size: var(--font-size-small);
+    }
+
+    .chat-bubble th, .chat-bubble td {
+        border: 1px solid rgba(0,0,0,0.2);
+        padding: 0.3em 0.6em;
+        text-align: left;
+    }
+
+    .chat-bubble th {
+        background-color: rgba(0,0,0,0.1);
+        font-weight: 600;
+    }
+
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Config Interface Components */
+    .config-options {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        justify-content: center;
+    }
+
+    .config-option-btn {
+        padding: 1rem 2rem;
+        border: 2px solid var(--primary-color);
+        border-radius: var(--border-radius);
+        background-color: white;
+        color: var(--primary-color);
+        cursor: pointer;
+        transition: var(--transition);
+        font-size: var(--font-size-base);
+        font-weight: 500;
+    }
+
+    .config-option-btn:hover {
+        background-color: var(--primary-color);
+        color: white;
+    }
+
+    .config-option-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .config-explanation {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: var(--border-radius);
+        margin-bottom: 1rem;
+        border-left: 4px solid var(--secondary-color);
+    }
+
+    .config-explanation h4 {
+        margin: 0 0 0.5rem 0;
+        color: var(--text-color);
+    }
+
+    .config-explanation p {
+        margin: 0;
+        color: var(--text-secondary);
+    }
+
+    /* Progress System */
+    .progress-container {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: var(--border-radius);
+        margin: 1rem 0;
+        border: 1px solid #e9ecef;
+    }
+
+    .progress-stage {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        color: var(--text-color);
+        margin-bottom: 0.5rem;
+    }
+
+    .progress-feedback {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+    }
+
+    .progress-bar-container {
+        background-color: #e9ecef;
+        height: 8px;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 0.5rem;
+    }
+
+    .progress-bar {
+        height: 100%;
+        background-color: var(--primary-color);
+        transition: width 0.3s ease;
+        border-radius: 4px;
+    }
+
+    .progress-percentage {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+        text-align: right;
+    }
+
+    /* Refinement Interface */
+    .refinement-actions {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1rem;
+        justify-content: center;
+    }
+
+    .refinement-input {
+        width: 100%;
+        min-height: 80px;
+        padding: 1rem;
+        border: 2px solid #e9ecef;
+        border-radius: var(--border-radius);
+        font-size: var(--font-size-small);
+        resize: vertical;
+        transition: border-color 0.3s ease;
+    }
+
+    .refinement-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+    }
+
+    .refinement-input::placeholder {
+        color: #6c757d;
+    }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 768px) {
+        .config-options {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        
+        .config-option-btn {
+            width: 100%;
+        }
+        
+        .chat-bubble {
+            max-width: 95%;
+            font-size: var(--font-size-small);
+        }
+        
+        .refinement-actions {
+            flex-direction: column;
+        }
+    }
         border: 1px solid #c8e6c9;
     }
 
@@ -671,6 +969,7 @@
     .message span:last-child {
         flex: 1;
         line-height: 1.6;
+        font-size: var(--font-size-base);
     }
 
     .progress-bar-container {
@@ -689,7 +988,7 @@
         text-align: center;
         line-height: 20px;
         color: white;
-        font-size: 12px;
+        font-size: var(--font-size-small);
     }
 
     /* Responsive */
@@ -699,8 +998,7 @@
         }
 
         .file-upload-container {
-            grid-template-columns: 1fr;
-            gap: 1rem;
+            /* No changes needed for mobile - it's already block */
         }
 
         .mode-selector {
@@ -770,36 +1068,121 @@
         <div class="card disabled" id="uploadCard">
             <div class="card-header">
                 <div class="card-icon">2</div>
-                <div><h2 class="card-title">Upload Files</h2><p class="card-subtitle">Select your Excel file and configuration</p></div>
+                <div><h2 class="card-title">Upload Excel File</h2><p class="card-subtitle">Select your Excel or CSV file</p></div>
             </div>
-            <div class="file-upload-container">
+            <div style="max-width: 600px; margin: 0 auto;">
                 <div class="drop-zone" id="excelDropZone" onclick="document.getElementById('excelFile').click()">
                     <div class="drop-zone-icon">📊</div>
                     <div class="drop-zone-text"><p><strong>Drop Excel/CSV file here</strong></p><p>or click to browse</p></div>
                     <input type="file" id="excelFile" class="file-input" accept=".xlsx,.xls,.csv" onchange="handleFileSelect(event, 'excel')">
                     <div id="excelFileInfo" class="file-info" style="display: none;"><div class="file-info-name"></div><div class="file-info-size"></div></div>
                 </div>
-                <div class="drop-zone" id="configDropZone" onclick="document.getElementById('configFile').click()">
-                    <div class="drop-zone-icon">⚙️</div>
-                    <div class="drop-zone-text"><p><strong>Drop Config JSON here</strong></p><p>or click to browse</p></div>
-                    <input type="file" id="configFile" class="file-input" accept=".json" onchange="handleFileSelect(event, 'config')">
-                    <div id="configFileInfo" class="file-info" style="display: none;"><div class="file-info-name"></div><div class="file-info-size"></div></div>
+            </div>
+        </div>
+
+        <!-- Config Interface Card -->
+        <div class="card disabled" id="configInterfaceCard">
+            <div class="card-header">
+                <div class="card-icon">⚙️</div>
+                <div><h2 class="card-title">Configuration</h2><p class="card-subtitle">Upload existing config or create new one with AI</p></div>
+            </div>
+            
+            <!-- Config Options -->
+            <div class="config-options">
+                <button class="config-option-btn" id="uploadConfigBtn" onclick="selectUploadConfig()">
+                    📤 Upload Config
+                </button>
+                <button class="config-option-btn" id="createConfigBtn" onclick="selectCreateConfig()">
+                    🤖 Create with AI
+                </button>
+            </div>
+            
+            <!-- Hidden config file input -->
+            <input type="file" id="configFile" class="file-input" accept=".json" onchange="handleFileSelect(event, 'config')" style="display: none;">
+            <div id="configMessage" style="margin-top: 0.5rem;"></div>
+            
+            
+            <!-- Progress Container -->
+            <div id="configProgress" class="progress-container" style="display: none;">
+                <div class="progress-stage" id="progressStage">Analyzing table structure...</div>
+                <div class="progress-feedback" id="progressFeedback">Identifying column types and patterns</div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progressBar" style="width: 0%;"></div>
+                </div>
+                <div class="progress-percentage" id="progressPercentage">0%</div>
+            </div>
+            
+            <!-- Chat Container -->
+            <div id="chatContainer" class="chat-container" style="display: none;">
+                <!-- Chat messages will be dynamically added here -->
+            </div>
+            
+            <!-- Refinement Interface -->
+            <div id="refinementInterface" style="display: none;">
+                <textarea 
+                    id="refinementInput" 
+                    class="refinement-input" 
+                    placeholder="Describe how you'd like to refine the configuration..."
+                ></textarea>
+                <div class="refinement-actions">
+                    <button class="btn btn-primary" onclick="submitRefinement()">
+                        Refine Configuration
+                    </button>
                 </div>
             </div>
-            <div id="configMessage" style="margin-top: 0.5rem;"></div>
+            
+            <!-- Post-Generation Actions -->
+            <div id="postGenerationActions" class="refinement-actions" style="display: none;">
+                <button class="btn btn-secondary" onclick="refineAgain()">
+                    Refine Again
+                </button>
+                <button class="btn btn-primary" onclick="acceptConfigAndPreview()">
+                    Accept and Preview
+                </button>
+            </div>
+            
+            <!-- Config Status -->
+            <div id="configStatus" style="margin-top: 1rem;"></div>
         </div>
 
         <!-- Preview Processing Card -->
         <div class="card disabled" id="previewCard">
             <div class="card-header">
                 <div class="card-icon">3</div>
-                <div><h2 class="card-title">Preview Table</h2><p class="card-subtitle">Test the first 3 rows to see how it works</p></div>
+                <div><h2 class="card-title">Preview</h2><p class="card-subtitle">Testing validation with first 3 rows...</p></div>
             </div>
-            <div style="margin-top: 2rem;">
-                <button class="btn btn-primary btn-block" onclick="processTable(false)" id="processBtn" disabled>
-                    <span id="processBtnText">Preview Table</span>
-                    <span class="spinner" id="processSpinner" style="display: none;"></span>
-                </button>
+            <!-- Preview button removed - auto-triggers when card is shown -->
+            
+            <!-- Preview Results Container -->
+            <div id="previewResults" style="display: none; margin-top: 2rem;">
+                <!-- Preview Results Content -->
+                <div id="previewContent"></div>
+                
+                <!-- Action Buttons - Only visible after results load -->
+                <div id="previewActions" style="display: none;">
+                    <div id="previewEmailNote" style="margin-bottom: 1rem; color: #1565c0; font-size: var(--font-size-base); font-family: var(--font-family); display: block;">
+                        📧 Check your email for a more comprehensive preview in a verified excel file.
+                    </div>
+                    
+                    <!-- Cost Estimate for Preview -->
+                    <div id="previewCostEstimate" class="cost-estimate" style="display: none; margin-bottom: 1.5rem;">
+                        <div class="cost-estimate-header">Estimates for Processing Entire Table</div>
+                        <div class="cost-estimate-items" id="previewMainEstimates"></div>
+                        <div class="cost-estimate-items" id="previewDetailMetrics">
+                            <div class="cost-item"><span class="cost-label">Rows</span><span class="cost-value" id="previewTotalRows">0</span></div>
+                            <div class="cost-item"><span class="cost-label">Columns</span><span class="cost-value" id="previewTotalColumns">0</span></div>
+                        </div>
+                    </div>
+                    
+                    <div style="text-align: center; margin: 1rem 0; display: flex; justify-content: center; align-items: center; gap: 10px;">
+                        <button class="btn btn-secondary" id="refineConfigOptionBtn" onclick="handlePreviewOption('refine')" style="flex: 1; max-width: 200px;">
+                            🔧 Refine Configuration
+                        </button>
+                        <button class="btn btn-primary" id="processTableOptionBtn" onclick="handlePreviewOption('process')" style="flex: 3; max-width: 600px;">
+                            ✨ Process Table
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -822,22 +1205,30 @@
                     <div class="cost-item"><span class="cost-label">Columns</span><span class="cost-value" id="totalColumns">0</span></div>
                 </div>
             </div>
-            <div id="fullProcessingCard" class="card" style="display: none; margin-top: 2rem;">
+            <!-- Processing Table Card - shown after Process Table is clicked -->
+            <div id="processingTableCard" class="card" style="display: none; margin-top: 2rem;">
                 <div class="card-header">
                     <div class="card-icon">✨</div>
-                    <div><h2 class="card-title">Process Table</h2><p class="card-subtitle">Ready to process the entire table</p></div>
+                    <div><h2 class="card-title">Processing Table</h2><p class="card-subtitle">Validating your entire table...</p></div>
                 </div>
-                <div class="option-group">
-                    <div class="form-group"><label class="form-label" for="maxRowsFull">Maximum Rows (Optional)</label><input type="number" id="maxRowsFull" class="form-input" placeholder="Leave empty for all rows" min="1"><p style="font-size: var(--font-size-small); color: var(--text-secondary); margin-top: 0.5rem;">Limit the number of rows to process</p></div>
+                <div style="padding: 1rem;">
+                    <div id="processingProgressContainer" class="progress-container">
+                        <div class="progress-stage" id="processingProgressStage">Starting validation...</div>
+                        <div class="progress-feedback" id="processingProgressFeedback">Initializing processing...</div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="processingProgressBar"></div>
+                        </div>
+                        <div class="progress-percentage" id="processingProgressPercentage">0%</div>
+                    </div>
                 </div>
-                <div style="margin-top: 2rem;"><button class="btn btn-primary btn-block" onclick="processFullTable()" id="processFullBtn"><span id="processFullBtnText">Process Table</span><span class="spinner" id="processFullSpinner" style="display: none;"></span></button></div>
             </div>
             <div id="progressContainer" class="progress-container" style="display: none;">
-                <div class="processing-animation">
-                    <div class="processing-text" id="verboseStatus">Processing Table</div>
-                    <div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
-                    <p class="status-message" id="statusMessage">Your validation is being processed...</p>
+                <div class="progress-stage" id="validationProgressStage">Processing Table</div>
+                <div class="progress-feedback" id="validationProgressFeedback">Starting validation process...</div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progressBar" style="width: 0%;"></div>
                 </div>
+                <div class="progress-percentage" id="validationProgressPercentage">0%</div>
             </div>
         </div>
         <!-- Validation Complete Card - Only shown after full processing -->
@@ -949,9 +1340,12 @@
             configValidated: false,
             mode: 'preview',
             sessionId: null,
+            previewStarted: false,
             results: null,
             processedRows: 0,
-            websocket: null
+            websocket: null,
+            workflowStage: 'email_validation', // 'email_validation' -> 'table_upload' -> 'config_setup' -> 'config_accepted' -> 'preview_completed'
+            currentSessionId: null
         };
     
         // --- INITIALIZATION ---
@@ -963,6 +1357,10 @@
                 // Try to validate the stored email, but fall back to local validation if API fails
                 checkOrSendValidation();
             }
+            
+            // Session ID will be generated when table is uploaded
+            // Don't restore from localStorage - let it be generated fresh on table upload
+            
             setupDragAndDrop();
         });
     
@@ -1033,7 +1431,6 @@
     
         // --- UI STATE MANAGEMENT ---
         function checkReadyToProcess() {
-            const processBtn = document.getElementById('processBtn');
             const previewCard = document.getElementById('previewCard');
             const isReady = state.emailValidated && state.excelFile && state.configValidated;
             
@@ -1044,9 +1441,20 @@
                 isReady: isReady
             });
             
-            if (processBtn) processBtn.disabled = !isReady;
             if (previewCard) {
-                isReady ? previewCard.classList.remove('disabled') : previewCard.classList.add('disabled');
+                const wasDisabled = previewCard.classList.contains('disabled');
+                if (isReady) {
+                    previewCard.classList.remove('disabled');
+                    // Auto-trigger preview if this is the first time becoming ready
+                    if (wasDisabled && !state.previewStarted) {
+                        console.log('All conditions met - auto-starting preview');
+                        state.previewStarted = true;
+                        setTimeout(() => processTable(false), 500); // Small delay for UI update
+                    }
+                } else {
+                    previewCard.classList.add('disabled');
+                    state.previewStarted = false;
+                }
             }
         }
     
@@ -1054,14 +1462,19 @@
             state.excelFile = null;
             state.configFile = null;
             state.configValidated = false;
-            state.sessionId = null;
+            // For unified storage, preserve session ID unless explicitly clearing
+            // state.sessionId = null;  // REMOVED: Keep session ID for unified storage
             state.results = null;
             state.processedRows = 0;
             state.mode = 'preview';
+            state.previewStarted = false;
             if (state.websocket) {
                 state.websocket.close();
                 state.websocket = null;
             }
+            
+            // Log session preservation for debugging
+            console.log('Validator reset, preserving session ID:', state.sessionId);
     
             const safeUpdate = (id, update) => {
                 const el = document.getElementById(id);
@@ -1091,33 +1504,51 @@
     
         // --- FILE HANDLING ---
         function setupDragAndDrop() {
-            ['excelDropZone', 'configDropZone'].forEach((zoneId, index) => {
-                const zone = document.getElementById(zoneId);
-                const type = index === 0 ? 'excel' : 'config';
-                if (!zone) return;
-    
-                zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
-                zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-                zone.addEventListener('drop', e => {
+            // Excel drop zone
+            const excelZone = document.getElementById('excelDropZone');
+            if (excelZone) {
+                excelZone.addEventListener('dragover', e => { e.preventDefault(); excelZone.classList.add('drag-over'); });
+                excelZone.addEventListener('dragleave', () => excelZone.classList.remove('drag-over'));
+                excelZone.addEventListener('drop', e => {
                     e.preventDefault();
-                    zone.classList.remove('drag-over');
+                    excelZone.classList.remove('drag-over');
                     if (e.dataTransfer.files.length) {
-                        handleFileSelect({ target: { files: e.dataTransfer.files } }, type);
+                        handleFileSelect({ target: { files: e.dataTransfer.files } }, 'excel');
                     }
                 });
-            });
+            }
+            
         }
     
                 function handleFileSelect(event, type) {
             const file = event.target.files[0];
             if (!file) return;
 
+            // If trying to upload a new Excel file when one already exists, show confirmation
+            if (type === 'excel' && state.excelFile) {
+                const confirmed = confirm('You already have a table uploaded. Uploading a new table will reset your progress and start fresh. Would you like to continue?');
+                if (confirmed) {
+                    // User chose to continue - reload the page for a fresh start
+                    window.location.reload();
+                    return;
+                } else {
+                    // User cancelled - clear the file input
+                    event.target.value = '';
+                    return;
+                }
+            }
+
+            // For unified storage, preserve session ID but reset validation state
             // Only reset validation state, not the entire validator
             state.configValidated = false;
-            state.sessionId = null;
+            // Don't reset sessionId - it's needed for unified storage
+            // state.sessionId = null;  // REMOVED: Keep session ID for unified storage
             state.results = null;
             state.processedRows = 0;
             state.mode = 'preview';
+            
+            // Log session preservation for debugging
+            console.log('File changed, preserving session ID:', state.sessionId);
             
             // Hide result-related elements
             const safeUpdate = (id, update) => {
@@ -1141,8 +1572,25 @@
             if (type === 'excel') {
                 state.excelFile = file;
                 displayFileInfo('excel', file);
+                
+                // Advance workflow stage to table upload
+                if (state.workflowStage === 'email_validation') {
+                    state.workflowStage = 'table_upload';
+                    console.log('Workflow advanced to: table_upload');
+                }
+                
+                // Generate session ID on table upload if not already present
+                if (!state.sessionId) {
+                    const timestamp = new Date().toISOString().replace(/[:.]/g, '_').slice(0, 19);
+                    state.sessionId = `session_${timestamp}_${Math.random().toString(36).substr(2, 8)}`;
+                    localStorage.setItem('sessionId', state.sessionId);
+                    console.log('Generated session ID on table upload:', state.sessionId);
+                }
+                
                 // Clear config message when excel file changes
                 safeUpdate('configMessage', el => el.innerHTML = '');
+                // Initialize config interface if email is validated
+                initializeConfigInterface();
             } else if (type === 'config') {
                 state.configFile = file;
                 displayFileInfo('config', file);
@@ -1180,7 +1628,13 @@
                         const response = await fetch(`${API_BASE}/validate`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ action: 'validateConfig', config })
+                            body: JSON.stringify({ 
+                                action: 'validateConfig', 
+                                config,
+                                is_upload: true,  // This is a user upload, should be stored
+                                email: state.email,
+                                session_id: state.sessionId
+                            })
                         });
                         console.log('Response status:', response.status);
                         
@@ -1191,7 +1645,9 @@
                             showMessage('configMessage', '✅ Configuration is valid!', 'success');
                             state.configValidated = true;
                         } else {
-                            showMessage('configMessage', `❌ Config Error: ${data.message || 'Unknown error'}`, 'error');
+                            // Config validation failed - offer repair options
+                            const errorMessage = data.message || 'Unknown error';
+                            showConfigValidationError(errorMessage, config);
                         }
                     } catch (apiError) {
                         console.warn('API validation failed, falling back to local validation:', apiError);
@@ -1207,6 +1663,75 @@
             } finally {
                 checkReadyToProcess();
             }
+        }
+
+        // Handle config validation errors with repair options
+        function showConfigValidationError(errorMessage, config) {
+            const messageContainer = document.getElementById('configMessage');
+            
+            let message = `❌ Config Validation Error: ${errorMessage}<br><br>`;
+            message += 'What would you like to do?<br><br>';
+            
+            // Create repair and generate new buttons
+            const repairBtn = document.createElement('button');
+            repairBtn.textContent = 'Repair Config';
+            repairBtn.className = 'btn btn-primary';
+            repairBtn.style.marginRight = '10px';
+            repairBtn.onclick = () => repairConfig(errorMessage, config);
+            
+            const generateBtn = document.createElement('button');
+            generateBtn.textContent = 'Generate New Config';
+            generateBtn.className = 'btn btn-secondary';
+            generateBtn.onclick = () => generateNewConfig();
+            
+            messageContainer.innerHTML = message;
+            messageContainer.appendChild(repairBtn);
+            messageContainer.appendChild(generateBtn);
+        }
+
+        // Repair existing config
+        async function repairConfig(errorMessage, config) {
+            // Store the config for repair
+            configState.currentConfig = { updated_config: config };
+            
+            // Show config interface
+            document.getElementById('configInterfaceCard').style.display = 'block';
+            document.getElementById('configInterfaceCard').classList.remove('disabled');
+            
+            // Hide config options, show chat directly
+            document.getElementById('uploadConfigBtn').style.display = 'none';
+            document.getElementById('createConfigBtn').style.display = 'none';
+            document.getElementById('createConfigCard').style.display = 'none';
+            document.getElementById('chatContainer').style.display = 'block';
+            document.getElementById('refinementInterface').style.display = 'block';
+            
+            // Add error message to chat
+            await addChatMessage('ai', `I found some issues with your configuration:\n\n${errorMessage}\n\nPlease describe how you'd like me to fix these issues.`, true);
+            
+            // Clear config message
+            document.getElementById('configMessage').innerHTML = '';
+        }
+
+        // Generate new config (redirect to create flow)
+        function generateNewConfig() {
+            // Clear config file
+            state.configFile = null;
+            document.getElementById('configFile').value = '';
+            document.getElementById('configFileInfo').style.display = 'none';
+            
+            // Show config interface
+            document.getElementById('configInterfaceCard').style.display = 'block';
+            document.getElementById('configInterfaceCard').classList.remove('disabled');
+            
+            // Hide upload button, show create button
+            document.getElementById('uploadConfigBtn').style.display = 'none';
+            document.getElementById('createConfigBtn').style.display = 'block';
+            
+            // Clear config message
+            document.getElementById('configMessage').innerHTML = '';
+            
+            // Auto-select create config
+            selectCreateConfig();
         }
         
         // --- CORE LOGIC ---
@@ -1228,6 +1753,7 @@
                 const data = await response.json();
                 if (response.ok && data.success) {
                     if (data.validated) {
+                        // Don't use session ID from email validation - will be generated on table upload
                         handleEmailValidated(email);
                     } else {
                         state.email = email;
@@ -1245,6 +1771,7 @@
                 skipBtn.className = 'btn btn-secondary';
                 skipBtn.style.marginTop = '10px';
                 skipBtn.onclick = () => {
+                    // Don't generate session ID here - will be generated on table upload
                     handleEmailValidated(email);
                     skipBtn.remove();
                 };
@@ -1271,6 +1798,7 @@
                 });
                 const data = await response.json();
                 if (response.ok && data.success) {
+                    // Don't use session ID from email validation - will be generated on table upload
                     handleEmailValidated(state.email);
                 } else {
                     showMessage('emailMessage', data.message || 'Invalid code', 'error');
@@ -1287,18 +1815,1091 @@
             state.email = email;
             state.emailValidated = true;
             localStorage.setItem('validatedEmail', email);
+            
+            // Session ID will be generated when table is uploaded
+            // No need to generate it here anymore
+            
             document.getElementById('emailForm').style.display = 'none';
             document.getElementById('emailSuccess').style.display = 'block';
             const emailStatus = document.getElementById('emailStatus');
             emailStatus.className = 'status-badge success';
             emailStatus.innerHTML = '<span>Validated</span>';
             document.getElementById('uploadCard').classList.remove('disabled');
+            
+            // Show session info for debugging (session ID will be generated on table upload)
+            console.log('Email validated successfully. Session ID will be generated on table upload.');
+            
+            // Initialize config interface
+            initializeConfigInterface();
+            
             checkReadyToProcess();
         }
         
         // Convenience wrappers for buttons
         function processPreview() { processTable(false); }
-        function processFullTable() { processTable(true); }
+        function processFullTable() { 
+            console.log('processFullTable() called - starting full table processing');
+            
+            // Show progress immediately
+            document.getElementById('progressContainer').style.display = 'block';
+            const progressBar = document.getElementById('progressBar');
+            const validationProgressStage = document.getElementById('validationProgressStage');
+            const validationProgressFeedback = document.getElementById('validationProgressFeedback');
+            const validationProgressPercentage = document.getElementById('validationProgressPercentage');
+            
+            if (progressBar) progressBar.style.width = '0%';
+            if (validationProgressPercentage) validationProgressPercentage.textContent = '0%';
+            if (validationProgressStage) validationProgressStage.textContent = 'Starting validation process...';
+            if (validationProgressFeedback) validationProgressFeedback.textContent = 'Initializing...';
+            
+            processTable(true); 
+        }
+        
+        // AI Config Generation with unified storage
+        async function generateAIConfig(instructions = 'Generate an optimal configuration for this data validation scenario') {
+            if (!state.excelFile || !state.emailValidated || !state.sessionId) {
+                showMessage('emailMessage', 'Please validate your email and upload an Excel file first.', 'error');
+                return;
+            }
+            
+            try {
+                // Show progress indicator
+                const progressCard = document.getElementById('fullProcessingCard');
+                if (progressCard) {
+                    progressCard.style.display = 'block';
+                    document.getElementById('verboseStatus').textContent = 'Starting AI config generation...';
+                }
+                
+                // Call unified config generation API
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'generateConfig',
+                        email: state.email,
+                        session_id: state.sessionId,
+                        instructions: instructions
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    // Success - display the generated config info
+                    let message = '✅ <strong>Configuration Generated Successfully!</strong><br>';
+                    message += data.ai_summary || 'Your configuration has been generated.';
+                    
+                    if (data.download_url) {
+                        message += '<br><br>';
+                        message += `<a href="${data.download_url}" target="_blank" class="btn btn-primary" style="display: inline-block; margin-top: 10px;">📥 Download Configuration File</a>`;
+                    }
+                    
+                    // Show clarifying questions if any
+                    if (data.clarifying_questions && data.clarification_urgency > 0.3) {
+                        message += '<br><br><strong>Clarifying Questions:</strong><br>';
+                        message += data.clarifying_questions.replace(/\n/g, '<br>');
+                    }
+                    
+                    // Show completion message in the card header or results section
+                    document.getElementById('newValidationCard').style.display = 'block';
+                    
+                    // Update state with generated config version
+                    if (data.config_version) {
+                        console.log('Generated config version:', data.config_version);
+                    }
+                    
+                } else {
+                    // Error
+                    const errorMessage = data.error || 'Failed to generate configuration';
+                    showMessage('emailMessage', `❌ Config Generation Failed: ${errorMessage}`, 'error');
+                }
+                
+            } catch (error) {
+                console.error('Config generation error:', error);
+                showMessage('emailMessage', '❌ Network error during config generation. Please try again.', 'error');
+            } finally {
+                // Hide progress indicator
+                const progressCard = document.getElementById('fullProcessingCard');
+                if (progressCard) {
+                    progressCard.style.display = 'none';
+                }
+            }
+        }
+        
+        // Modify existing config with unified storage
+        async function modifyConfig(instructions) {
+            if (!state.sessionId || !state.emailValidated) {
+                showMessage('emailMessage', 'Please validate your email and ensure you have a valid session.', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'modifyConfig',
+                        email: state.email,
+                        session_id: state.sessionId,
+                        instructions: instructions
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    // Success - show the modified config
+                    let message = '✅ <strong>Configuration Modified Successfully!</strong><br>';
+                    message += data.ai_summary || 'Your configuration has been updated.';
+                    
+                    if (data.download_url) {
+                        message += '<br><br>';
+                        message += `<a href="${data.download_url}" target="_blank" class="btn btn-primary" style="display: inline-block; margin-top: 10px;">📥 Download Updated Configuration</a>`;
+                    }
+                    
+                    showMessage('emailMessage', message, 'success');
+                    
+                    // Update state with new config version
+                    if (data.config_version) {
+                        console.log('Updated config version:', data.config_version);
+                    }
+                    
+                } else {
+                    const errorMessage = data.error || 'Failed to modify configuration';
+                    showMessage('emailMessage', `❌ Config Modification Failed: ${errorMessage}`, 'error');
+                }
+                
+            } catch (error) {
+                console.error('Config modification error:', error);
+                showMessage('emailMessage', '❌ Network error during config modification. Please try again.', 'error');
+            }
+        }
+
+        // === NEW CONFIG INTERFACE FUNCTIONS ===
+        
+        // Config Interface State
+        const configState = {
+            currentConfig: null,
+            chatHistory: [],
+            isGenerating: false,
+            progressInterval: null
+        };
+
+        // Initialize config interface when email is validated
+        function initializeConfigInterface() {
+            // Only initialize if we haven't progressed past config setup stage
+            if (state.emailValidated && state.excelFile && state.workflowStage !== 'config_accepted' && state.workflowStage !== 'preview_completed') {
+                document.getElementById('configInterfaceCard').classList.remove('disabled');
+                if (state.workflowStage === 'email_validation' || state.workflowStage === 'table_upload') {
+                    state.workflowStage = 'config_setup';
+                    console.log('Workflow advanced to: config_setup');
+                }
+            }
+        }
+
+        // Handle upload config selection
+        function selectUploadConfig() {
+            // Disable the button and show visual feedback
+            const uploadBtn = document.getElementById('uploadConfigBtn');
+            const createBtn = document.getElementById('createConfigBtn');
+            
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = '📤 Config Upload Selected';
+            uploadBtn.style.backgroundColor = '#2196F3';
+            uploadBtn.style.color = 'white';
+            
+            createBtn.disabled = true;
+            createBtn.style.opacity = '0.5';
+            
+            // Directly open file picker instead of expanding area
+            document.getElementById('configFile').click();
+        }
+
+        // Handle create config selection
+        function selectCreateConfig() {
+            // Disable the button and show visual feedback
+            const createBtn = document.getElementById('createConfigBtn');
+            const uploadBtn = document.getElementById('uploadConfigBtn');
+            
+            createBtn.disabled = true;
+            createBtn.textContent = '🤖 AI Config Generation Started';
+            createBtn.style.backgroundColor = '#4CAF50';
+            createBtn.style.color = 'white';
+            
+            uploadBtn.disabled = true;
+            uploadBtn.style.opacity = '0.5';
+            
+            // Directly start config generation instead of showing confirmation
+            startConfigGeneration();
+        }
+
+        // Start config generation process
+        async function startConfigGeneration() {
+            if (!state.sessionId || !state.emailValidated || !state.excelFile) {
+                showMessage('configStatus', 'Please validate your email and upload an Excel file first.', 'error');
+                return;
+            }
+
+            configState.isGenerating = true;
+            // Hide config options and show progress
+            document.getElementById('uploadConfigBtn').style.display = 'none';
+            document.getElementById('createConfigBtn').style.display = 'none';
+            document.getElementById('configProgress').style.display = 'block';
+            document.getElementById('chatContainer').style.display = 'block';
+
+            // Start progress animation and track request time for cache detection
+            configState.requestStartTime = Date.now();
+            startProgressAnimation('Generating Config');
+
+            try {
+                // First, upload the Excel file to unified storage if needed
+                const formData = new FormData();
+                formData.append('excel_file', state.excelFile);
+                formData.append('email', state.email);
+                formData.append('session_id', state.sessionId);
+                
+                // Upload file to unified storage
+                const uploadResponse = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!uploadResponse.ok) {
+                    const uploadData = await uploadResponse.json();
+                    throw new Error(uploadData.error || 'Failed to upload Excel file');
+                }
+                
+                // Now generate config with async pattern (like Excel processing)
+                const response = await fetch(`${API_BASE}/validate?async=true`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'generateConfig',
+                        email: state.email,
+                        session_id: state.sessionId,
+                        instructions: 'Generate an optimal configuration for this data validation scenario'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // Connect WebSocket to listen for completion
+                    const sessionIdForSocket = data.session_id || state.sessionId;
+                    console.log('Connecting WebSocket for config generation:', sessionIdForSocket);
+                    connectWebSocket(sessionIdForSocket);
+                    
+                    // Keep progress animation running until WebSocket completion
+                    // stopProgressAnimation(); // Remove this - let WebSocket handler stop it
+                    
+                } else {
+                    stopProgressAnimation();
+                    const errorMessage = data.error || 'Failed to generate configuration';
+                    showMessage('configStatus', `❌ Config Generation Failed: ${errorMessage}`, 'error');
+                }
+
+            } catch (error) {
+                stopProgressAnimation();
+                console.error('Config generation error:', error);
+                showMessage('configStatus', '❌ Network error during config generation. Please try again.', 'error');
+            }
+
+            configState.isGenerating = false;
+        }
+
+        // Progress animation system
+        function startProgressAnimation(stage, skipDelay = false) {
+            const stages = {
+                'Generating Config': [
+                    '🔍 Analyzing table structure and understanding data purpose...',
+                    '🏷️ Identifying row identifiers vs validation targets...',
+                    '⚖️ Classifying columns as critical vs derivative data...',
+                    '🎯 Developing intelligent search strategy...',
+                    '📊 Grouping columns by likely source materials...',
+                    '🤖 Assigning optimal models and context to search groups...',
+                    '📋 Reporting on configuration architecture...',
+                    '✅ Checking if refinement recommendations are needed...'
+                ],
+                'Refining Config': [
+                    '🎯 Carefully analyzing your refinement request...',
+                    '💭 Considering recommendation context and implications...',
+                    '🔄 Evaluating current configuration against your needs...',
+                    '⚡ Optimizing validation strategy based on feedback...',
+                    '🔧 Fine-tuning search groups and model assignments...',
+                    '📊 Testing refined configuration logic...',
+                    '✅ Validating improvements and finalizing changes...'
+                ],
+                'Testing Config': [
+                    'Validating configuration structure...',
+                    'Checking compatibility...',
+                    'Testing search strategies...',
+                    'Verifying validation targets...',
+                    'Finalizing configuration...'
+                ]
+            };
+
+            const feedbackTexts = stages[stage] || stages['Generating Config'];
+            
+            document.getElementById('progressStage').textContent = stage;
+            document.getElementById('progressFeedback').textContent = feedbackTexts[0];
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressPercentage').textContent = '0%';
+
+            let progress = 0;
+            let textIndex = 0;
+            const targetProgress = 75; // Fill to 75% then hold
+            const duration = skipDelay ? 3000 : 60000; // 3 seconds for cache hits, 1 minute for fresh requests
+            const textUpdateInterval = skipDelay ? 500 : 10000; // Faster text updates for cache hits
+            const interval = 100; // Update every 100ms
+
+            configState.progressInterval = setInterval(() => {
+                if (progress < targetProgress) {
+                    progress += (targetProgress / (duration / interval));
+                    document.getElementById('progressBar').style.width = Math.min(progress, targetProgress) + '%';
+                    document.getElementById('progressPercentage').textContent = Math.round(Math.min(progress, targetProgress)) + '%';
+                }
+
+                // Update feedback text more frequently for cache hits
+                const progressPerStep = targetProgress / feedbackTexts.length;
+                const expectedTextIndex = Math.floor(progress / progressPerStep);
+                if (expectedTextIndex > textIndex && textIndex < feedbackTexts.length - 1) {
+                    textIndex = Math.min(expectedTextIndex, feedbackTexts.length - 1);
+                    document.getElementById('progressFeedback').textContent = feedbackTexts[textIndex];
+                }
+            }, interval);
+        }
+
+        function stopProgressAnimation() {
+            if (configState.progressInterval) {
+                clearInterval(configState.progressInterval);
+                configState.progressInterval = null;
+            }
+            
+            // Complete the progress bar
+            document.getElementById('progressBar').style.width = '100%';
+            document.getElementById('progressPercentage').textContent = '100%';
+            document.getElementById('progressFeedback').textContent = 'Complete!';
+            
+            // Hide progress after a moment
+            setTimeout(() => {
+                document.getElementById('configProgress').style.display = 'none';
+            }, 1000);
+        }
+
+        // Add chat message with streaming animation
+        async function addChatMessage(type, content, isUrgent = false, streamingType = 'normal', containerId = 'chatContainer') {
+            const chatContainer = document.getElementById(containerId);
+            const messageDiv = document.createElement('div');
+            
+            let className = `chat-bubble ${type}`;
+            if (isUrgent) className += ' urgent';
+            
+            messageDiv.className = className;
+            messageDiv.style.opacity = '0';
+            chatContainer.appendChild(messageDiv);
+
+            // Animate message appearance
+            setTimeout(() => {
+                messageDiv.style.opacity = '1';
+            }, 100);
+
+            // Stream text if it's an AI message
+            if (type === 'ai') {
+                if (streamingType === 'paragraphs') {
+                    await streamParagraphs(messageDiv, content);
+                } else {
+                    await streamText(messageDiv, content);
+                }
+            } else {
+                messageDiv.textContent = content;
+            }
+
+            // Scroll to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Convert markdown to HTML using marked.js
+        function convertMarkdownToHTML(text) {
+            if (!text) return '';
+            
+            try {
+                // Configure marked for better security and styling
+                marked.setOptions({
+                    breaks: true, // Convert line breaks to <br>
+                    gfm: true, // Enable GitHub Flavored Markdown
+                    sanitize: false, // We trust our AI content
+                    smartLists: true,
+                    smartypants: false // Disable smartypants to preserve Unicode characters like \u2011
+                });
+                
+                // Render markdown to HTML
+                let html = marked.parse(text);
+                
+                // Preserve Unicode characters by ensuring they're properly displayed
+                // Replace common Unicode escapes with their actual characters
+                html = html.replace(/\\u([0-9a-fA-F]{4})/g, (match, hexCode) => {
+                    return String.fromCharCode(parseInt(hexCode, 16));
+                });
+                
+                // Add styling to links to match our design
+                return html.replace(/<a /g, '<a style="color: #2196F3; text-decoration: underline;" target="_blank" ');
+                
+            } catch (error) {
+                console.warn('Markdown parsing error:', error);
+                // Fallback to simple text with line breaks, preserving Unicode
+                let fallback = text.replace(/\n/g, '<br>');
+                // Also handle Unicode escapes in fallback
+                fallback = fallback.replace(/\\u([0-9a-fA-F]{4})/g, (match, hexCode) => {
+                    return String.fromCharCode(parseInt(hexCode, 16));
+                });
+                return fallback;
+            }
+        }
+
+        // Stream text with pauses at punctuation
+        async function streamText(element, text) {
+            // Convert markdown to HTML
+            const htmlText = convertMarkdownToHTML(text);
+            
+            // Check if the content has markdown formatting (HTML tags)
+            if (htmlText !== text.replace(/\n/g, '<br>') || text.includes('**') || text.includes('*') || text.includes('#') || text.includes('`') || text.includes('[')) {
+                // For markdown content, set it directly without streaming to preserve formatting
+                element.innerHTML = htmlText;
+                return;
+            }
+            
+            // For plain text, use fast streaming
+            const words = text.split(' ');
+            let currentText = '';
+            
+            for (let i = 0; i < words.length; i++) {
+                currentText += (i > 0 ? ' ' : '') + words[i];
+                element.textContent = currentText;
+                
+                // 5x faster than original - good balance
+                const lastChar = words[i].slice(-1);
+                if (['.', '!', '?'].includes(lastChar) || words[i].includes('\n')) {
+                    await sleep(40); // 0.04s pause for sentences
+                } else if ([',', ';', ':'].includes(lastChar)) {
+                    await sleep(20); // 0.02s pause for punctuation
+                } else {
+                    await sleep(20); // ~50 words per second (5x faster than original 10 wps)
+                }
+            }
+        }
+
+        // Utility function for delays
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // Fast paragraph-by-paragraph streaming for AI summaries
+        async function streamParagraphs(element, text) {
+            // Convert markdown to HTML first
+            const htmlText = convertMarkdownToHTML(text);
+            
+            // Check if content has markdown formatting
+            if (htmlText !== text.replace(/\n/g, '<br>') || text.includes('**') || text.includes('*') || text.includes('#') || text.includes('`') || text.includes('[')) {
+                // For markdown content, split by paragraphs but render as HTML
+                const paragraphs = text.split(/\n\s*\n/); // Split on double line breaks
+                let currentContent = '';
+                
+                for (let i = 0; i < paragraphs.length; i++) {
+                    if (paragraphs[i].trim()) {
+                        currentContent += paragraphs[i].trim() + '\n\n';
+                        element.innerHTML = convertMarkdownToHTML(currentContent);
+                        await sleep(500); // 0.5s between paragraphs
+                    }
+                }
+                return;
+            }
+            
+            // For plain text, use paragraph streaming
+            const paragraphs = text.split(/\n\s*\n/);
+            let currentContent = '';
+            
+            for (let i = 0; i < paragraphs.length; i++) {
+                if (paragraphs[i].trim()) {
+                    currentContent += paragraphs[i].trim() + '\n\n';
+                    element.textContent = currentContent;
+                    await sleep(500); // 0.5s between paragraphs
+                }
+            }
+        }
+
+        // Show refinement interface
+        function showRefinementInterface() {
+            document.getElementById('refinementInterface').style.display = 'block';
+            document.getElementById('postGenerationActions').style.display = 'block';
+        }
+
+        // Submit refinement request
+        async function submitRefinement() {
+            const refinementText = document.getElementById('refinementInput').value.trim();
+            if (!refinementText) {
+                showMessage('configStatus', 'Please enter refinement instructions.', 'error');
+                return;
+            }
+
+            // Add user message to chat
+            await addChatMessage('user', refinementText);
+            
+            // Clear input
+            document.getElementById('refinementInput').value = '';
+            document.getElementById('refinementInterface').style.display = 'none';
+            document.getElementById('postGenerationActions').style.display = 'none';
+
+            // Show progress
+            const progressElement = document.getElementById('configProgress');
+            console.log('Showing refinement progress - element found:', !!progressElement);
+            if (progressElement) {
+                progressElement.style.display = 'block';
+                startProgressAnimation('Refining Config');
+            } else {
+                console.error('configProgress element not found!');
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'modifyConfig',
+                        email: state.email,
+                        session_id: state.sessionId,
+                        instructions: refinementText
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // Detect cache hit based on response time
+                    const responseTime = Date.now() - (configState.requestStartTime || 0);
+                    const isCacheHit = responseTime < 5000; // Less than 5 seconds indicates cache hit
+                    
+                    console.log(`Config refinement completed in ${responseTime}ms (${isCacheHit ? 'CACHE HIT' : 'FRESH REQUEST'}):`, data);
+                    
+                    // If it's a cache hit, show accelerated progress briefly before stopping
+                    if (isCacheHit && configState.progressInterval) {
+                        stopProgressAnimation();
+                        startProgressAnimation('Refining Config', true);
+                        
+                        document.getElementById('progressFeedback').textContent = '⚡ Found cached refinement - accelerating...';
+                        
+                        // Let it run briefly then stop
+                        setTimeout(() => {
+                            stopProgressAnimation();
+                        }, 2000);
+                    } else {
+                        stopProgressAnimation();
+                    }
+                    
+                    // Store updated config
+                    configState.currentConfig = data;
+                    
+                    // Add AI response with download link if available
+                    const isUrgent = data.clarification_urgency > 0.6;
+                    let refinementMessage = data.ai_summary || 'Configuration refined successfully!';
+                    if (data.download_url) {
+                        refinementMessage += `\n\n[📥 Download Updated Configuration](${data.download_url})`;
+                    }
+                    await addChatMessage('ai', refinementMessage, isUrgent, 'paragraphs');
+                    
+                    // Show post-generation actions (Accept/Refine Again buttons)
+                    document.getElementById('postGenerationActions').style.display = 'block';
+                    // Keep refinement input hidden until user chooses to refine again
+                    
+                } else {
+                    stopProgressAnimation();
+                    const errorMessage = data.error || 'Failed to refine configuration';
+                    showMessage('configStatus', `❌ Config Refinement Failed: ${errorMessage}`, 'error');
+                }
+
+            } catch (error) {
+                stopProgressAnimation();
+                console.error('Config refinement error:', error);
+                showMessage('configStatus', '❌ Network error during refinement. Please try again.', 'error');
+            }
+        }
+
+        // Handle "Refine Again" button
+        async function refineAgain() {
+            // Disable all refine buttons and show visual feedback
+            const refineButtons = document.querySelectorAll('button[onclick="refineAgain()"]');
+            refineButtons.forEach(btn => {
+                btn.disabled = true;
+                btn.textContent = '🔧 Refining...';
+                btn.style.backgroundColor = '#ff9800';
+                btn.style.color = 'white';
+                btn.classList.add('btn-inactive');
+            });
+            
+            // Show clarifying questions if available
+            if (configState.currentConfig && configState.currentConfig.clarifying_questions) {
+                await addChatMessage('ai', `Here are some questions to help refine the configuration:\n\n${configState.currentConfig.clarifying_questions}`, true);
+            }
+            
+            // Show refinement interface
+            document.getElementById('refinementInterface').style.display = 'block';
+            setTimeout(() => {
+                document.getElementById('postGenerationActions').style.display = 'none';
+            }, 1500); // Give user time to see the feedback
+        }
+
+        // Add action buttons to chat for Refine/Accept
+        async function addConfigActionButtons() {
+            const chatContainer = document.getElementById('chatContainer');
+            const buttonDiv = document.createElement('div');
+            buttonDiv.className = 'chat-bubble ai';
+            buttonDiv.innerHTML = `
+                <div style="display: flex; gap: 10px; justify-content: center; margin-top: 10px;">
+                    <button class="btn btn-secondary" onclick="startChatRefinement()" style="padding: 8px 16px;">
+                        🔧 Refine Configuration
+                    </button>
+                    <button class="btn btn-primary" onclick="acceptConfigAndPreview()" style="padding: 8px 16px;">
+                        ✅ Accept and Preview
+                    </button>
+                </div>
+            `;
+            buttonDiv.style.opacity = '0';
+            chatContainer.appendChild(buttonDiv);
+            
+            // Animate appearance
+            setTimeout(() => {
+                buttonDiv.style.opacity = '1';
+            }, 100);
+            
+            // Scroll to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Start refinement in chat
+        async function startChatRefinement() {
+            // Disable all chat refinement buttons and show visual feedback
+            const chatRefineButtons = document.querySelectorAll('button[onclick="startChatRefinement()"]');
+            chatRefineButtons.forEach(btn => {
+                btn.disabled = true;
+                btn.textContent = '🔧 Starting Refinement...';
+                btn.style.backgroundColor = '#ff9800';
+                btn.style.color = 'white';
+                btn.classList.add('btn-inactive');
+            });
+            
+            // Show clarifying questions if available
+            if (configState.currentConfig && configState.currentConfig.clarifying_questions) {
+                const isUrgent = configState.currentConfig.clarification_urgency > 0.6;
+                await addChatMessage('ai', `Here are some questions to help refine the configuration:\n\n${configState.currentConfig.clarifying_questions}`, isUrgent);
+            }
+            
+            // Add input field for refinement
+            await addRefinementInput();
+        }
+
+        // Add refinement input to chat
+        async function addRefinementInput(containerId = 'chatContainer') {
+            const chatContainer = document.getElementById(containerId);
+            const inputDiv = document.createElement('div');
+            inputDiv.className = 'chat-bubble ai';
+            inputDiv.innerHTML = `
+                <div style="margin-top: 10px;">
+                    <textarea 
+                        id="chatRefinementInput" 
+                        placeholder="Describe how you'd like to refine the configuration..."
+                        style="width: 100%; min-height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 8px; resize: vertical; font-family: inherit;"
+                    ></textarea>
+                    <div style="margin-top: 10px; text-align: center;">
+                        <button class="btn btn-primary" onclick="submitChatRefinement()" style="padding: 8px 20px;">
+                            Submit Refinement
+                        </button>
+                    </div>
+                </div>
+            `;
+            inputDiv.style.opacity = '0';
+            chatContainer.appendChild(inputDiv);
+            
+            // Animate appearance
+            setTimeout(() => {
+                inputDiv.style.opacity = '1';
+                document.getElementById('chatRefinementInput').focus();
+            }, 100);
+            
+            // Scroll to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Submit refinement from chat
+        async function submitChatRefinement() {
+            const refinementText = document.getElementById('chatRefinementInput').value.trim();
+            if (!refinementText) {
+                alert('Please enter refinement instructions.');
+                return;
+            }
+
+            // Hide the chat refinement input immediately
+            const chatRefinementElement = document.getElementById('chatRefinementInput').closest('.chat-bubble');
+            if (chatRefinementElement) {
+                chatRefinementElement.style.display = 'none';
+            }
+
+            // Add user message to chat
+            await addChatMessage('user', refinementText);
+            
+            // Start progress animation and track request time for cache detection
+            configState.requestStartTime = Date.now();
+            document.getElementById('configProgress').style.display = 'block';
+            startProgressAnimation('Refining Config');
+
+            try {
+                const response = await fetch(`${API_BASE}/validate?async=true`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'modifyConfig',
+                        email: state.email,
+                        session_id: state.sessionId,
+                        instructions: refinementText
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // Check if this is async (has session_id) or sync (has ai_summary directly)
+                    if (data.session_id && data.status === 'processing') {
+                        // Async mode - connect WebSocket, keep progress running
+                        const sessionIdForSocket = data.session_id;
+                        console.log('Connecting WebSocket for config refinement:', sessionIdForSocket);
+                        connectWebSocket(sessionIdForSocket);
+                        // Don't stop progress animation here - let WebSocket handle it
+                    } else if (data.ai_summary) {
+                        // Sync mode - stop progress and show result immediately
+                        stopProgressAnimation();
+                        document.getElementById('configProgress').style.display = 'none';
+                        configState.currentConfig = data;
+                        
+                        let refinementMessage = data.ai_summary || 'Configuration refined successfully!';
+                        if (data.download_url) {
+                            refinementMessage += `\n\n[📥 Download Updated Configuration](${data.download_url})`;
+                        }
+                        await addChatMessage('ai', refinementMessage, false, 'paragraphs');
+                        
+                        // Add new action buttons
+                        await addConfigActionButtons();
+                    } else {
+                        // Unexpected response format - stop progress and show error
+                        stopProgressAnimation();
+                        document.getElementById('configProgress').style.display = 'none';
+                        await addChatMessage('ai', '❌ Unexpected response format from server');
+                    }
+                } else {
+                    stopProgressAnimation();
+                    document.getElementById('configProgress').style.display = 'none';
+                    const errorMessage = data.error || 'Failed to refine configuration';
+                    await addChatMessage('ai', `❌ Config Refinement Failed: ${errorMessage}`);
+                }
+
+            } catch (error) {
+                stopProgressAnimation();
+                document.getElementById('configProgress').style.display = 'none';
+                console.error('Config refinement error:', error);
+                await addChatMessage('ai', '❌ Network error during refinement. Please try again.');
+            }
+        }
+
+        // Accept configuration and automatically trigger preview
+        function acceptConfigAndPreview() {
+            console.log('acceptConfigAndPreview called - current state:', state);
+            
+            // Disable all accept buttons and show visual feedback
+            const acceptButtons = document.querySelectorAll('button[onclick="acceptConfigAndPreview()"]');
+            acceptButtons.forEach(btn => {
+                btn.disabled = true;
+                btn.textContent = '✅ Accepted - Running Preview...';
+                btn.style.backgroundColor = '#4CAF50';
+                btn.style.color = 'white';
+                btn.classList.add('btn-inactive');
+            });
+            
+            // Hide post-generation actions
+            setTimeout(() => {
+                document.getElementById('postGenerationActions').style.display = 'none';
+            }, 1000);
+            
+            // Mark config as validated and advance workflow stage
+            state.configValidated = true;
+            state.workflowStage = 'config_accepted';
+            console.log('Workflow advanced to: config_accepted');
+            
+            // Hide refinement interface
+            document.getElementById('refinementInterface').style.display = 'none';
+            
+            // Enable preview card and automatically trigger preview
+            document.getElementById('previewCard').classList.remove('disabled');
+            checkReadyToProcess();
+            
+            // Show success message in chat
+            addChatMessage('system', '✅ Configuration accepted! Running preview automatically...');
+            
+            // Scroll to preview card and trigger preview
+            document.getElementById('previewCard').scrollIntoView({ behavior: 'smooth' });
+            
+            // Automatically trigger preview after scrolling
+            setTimeout(() => {
+                console.log('Auto-triggering preview after accept');
+                // Auto-trigger preview
+                state.previewStarted = true;
+                processTable(false); // false = preview mode
+            }, 1000);
+        }
+        
+        // Refine configuration from preview results - creates new config card
+        function refineConfigFromPreview() {
+            console.log('refineConfigFromPreview called');
+            
+            // Create new configuration card
+            createNewConfigCard();
+            
+            // Start chat with preview feedback prompt
+            startPreviewRefinementChat();
+        }
+        
+        // Create a new configuration card for refinement
+        function createNewConfigCard() {
+            const configCount = document.querySelectorAll('.card[id^="configInterface"]').length;
+            const newCardId = `configInterfaceCard${configCount + 1}`;
+            
+            // Find the preview card to insert the new config card after it
+            const previewCard = document.getElementById('previewCard');
+            
+            // Create new config card HTML
+            const newConfigCard = document.createElement('div');
+            newConfigCard.className = 'card';
+            newConfigCard.id = newCardId;
+            newConfigCard.innerHTML = `
+                <div class="card-header">
+                    <div class="card-icon">${configCount + 3}</div>
+                    <div>
+                        <h2 class="card-title">Refine Configuration</h2>
+                        <p class="card-subtitle">Improve validation based on preview results</p>
+                    </div>
+                </div>
+                
+                <!-- Progress Container -->
+                <div id="configProgress${configCount + 1}" class="progress-container" style="display: none;">
+                    <div class="progress-stage" id="progressStage${configCount + 1}">Analyzing feedback...</div>
+                    <div class="progress-feedback" id="progressFeedback${configCount + 1}">Processing your refinement request</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progressBar${configCount + 1}" style="width: 0%;"></div>
+                    </div>
+                    <div class="progress-percentage" id="progressPercentage${configCount + 1}">0%</div>
+                </div>
+                
+                <!-- Chat Container -->
+                <div id="chatContainer${configCount + 1}" class="chat-container">
+                    <!-- Chat messages will be dynamically added here -->
+                </div>
+                
+                <!-- Post-Generation Actions -->
+                <div id="postGenerationActions${configCount + 1}" class="refinement-actions" style="display: none;">
+                    <button class="btn btn-secondary" onclick="refineAgain(${configCount + 1})">
+                        Refine Again
+                    </button>
+                    <button class="btn btn-primary" onclick="acceptConfigAndPreview(${configCount + 1})">
+                        Accept and Preview
+                    </button>
+                </div>
+                
+                <!-- Config Status -->
+                <div id="configStatus${configCount + 1}" style="margin-top: 1rem;"></div>
+            `;
+            
+            // Insert after preview card
+            previewCard.parentNode.insertBefore(newConfigCard, previewCard.nextSibling);
+            
+            // Focus on the new card
+            newConfigCard.scrollIntoView({ behavior: 'smooth' });
+            
+            return newCardId;
+        }
+        
+        // Start chat with preview feedback prompt
+        async function startPreviewRefinementChat() {
+            const configCount = document.querySelectorAll('.card[id^="configInterface"]').length;
+            const chatContainerId = `chatContainer${configCount}`;
+            
+            // Initial message with preview feedback focus
+            const initialMessage = `Let us know what you liked or did not like in the preview results. This will help us improve the configuration.`;
+            
+            // Add clarifying questions if available
+            let fullMessage = initialMessage;
+            if (configState.currentConfig && configState.currentConfig.clarifying_questions) {
+                fullMessage += `\n\nAdditionally, here are some questions that may help us improve the analysis:\n\n${configState.currentConfig.clarifying_questions}`;
+            }
+            
+            // Add message to the new chat container
+            await addChatMessage('ai', fullMessage, true, 'paragraphs', chatContainerId);
+            
+            // Add refinement input to the new chat
+            await addRefinementInput(chatContainerId);
+        }
+        
+        // Email preview results (3 rows) with original and validated data
+        async function emailPreviewResults() {
+            console.log('emailPreviewResults called');
+            
+            try {
+                // Disable email buttons and show feedback
+                const emailButtons = document.querySelectorAll('button[onclick="emailPreviewResults()"]');
+                emailButtons.forEach(btn => {
+                    btn.disabled = true;
+                    btn.textContent = '📧 Sending...';
+                    btn.style.backgroundColor = '#ff9800';
+                    btn.classList.add('btn-inactive');
+                });
+                
+                // Send full validation request with max_rows=3 and preview_email=true
+                const response = await fetch(`${API_BASE}/validate?async=true&max_rows=3&preview_email=true`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'processExcel',
+                        email: state.email,
+                        session_id: state.sessionId
+                        // Backend gets excel_file and config from unified storage
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Preview email validation response:', data);
+                    
+                    // Show success message
+                    emailButtons.forEach(btn => {
+                        btn.textContent = '✅ Email Sent!';
+                        btn.style.backgroundColor = '#4CAF50';
+                        btn.classList.remove('btn-inactive');
+                    });
+                    
+                    // Re-enable buttons after delay
+                    setTimeout(() => {
+                        emailButtons.forEach(btn => {
+                            btn.disabled = false;
+                            btn.textContent = '📧 Email Results';
+                            btn.style.backgroundColor = '';
+                            btn.classList.remove('btn-inactive');
+                        });
+                    }, 3000);
+                    
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+            } catch (error) {
+                console.error('Email preview results error:', error);
+                
+                // Show error state
+                const emailButtons = document.querySelectorAll('button[onclick="emailPreviewResults()"]');
+                emailButtons.forEach(btn => {
+                    btn.textContent = '❌ Email Failed';
+                    btn.style.backgroundColor = '#f44336';
+                    btn.classList.remove('btn-inactive');
+                });
+                
+                // Re-enable buttons after delay
+                setTimeout(() => {
+                    emailButtons.forEach(btn => {
+                        btn.disabled = false;
+                        btn.textContent = '📧 Email Results';
+                        btn.style.backgroundColor = '';
+                        btn.classList.remove('btn-inactive');
+                    });
+                }, 3000);
+            }
+        }
+
+        // Add refine config button to preview results
+        function addRefineConfigButton() {
+            // Check if button already exists
+            if (document.getElementById('refineConfigBtn')) return;
+            
+            // Create refine config button
+            const refineBtn = document.createElement('button');
+            refineBtn.id = 'refineConfigBtn';
+            refineBtn.className = 'btn btn-secondary';
+            refineBtn.textContent = 'Refine Configuration';
+            refineBtn.style.marginLeft = '10px';
+            refineBtn.onclick = () => showPostPreviewRefinement();
+            
+            // Add to results actions
+            const resultsActions = document.querySelector('.results-actions');
+            if (resultsActions) {
+                resultsActions.appendChild(refineBtn);
+            }
+        }
+
+        // Show post-preview refinement interface using iterative card system
+        function showPostPreviewRefinement() {
+            console.log('showPostPreviewRefinement called - using iterative system');
+            
+            // Use the existing iterative refinement system
+            if (typeof refineConfigFromPreview === 'function') {
+                refineConfigFromPreview();
+            } else {
+                console.error('refineConfigFromPreview function not found - falling back to old method');
+                // Fallback to old method if the iterative system isn't available
+                _showPostPreviewRefinementFallback();
+            }
+        }
+        
+        // Fallback method (old implementation) in case iterative system fails
+        function _showPostPreviewRefinementFallback() {
+            // Only allow this if we've completed preview (one-way workflow)
+            if (state.workflowStage === 'config_accepted') {
+                state.workflowStage = 'preview_completed';
+                console.log('Workflow advanced to: preview_completed');
+            }
+            
+            // Show config interface card for refinement only
+            const configCard = document.getElementById('configInterfaceCard');
+            if (configCard) {
+                configCard.style.display = 'block';
+                configCard.classList.remove('disabled');
+            } else {
+                console.error('configInterfaceCard element not found');
+                return;
+            }
+            
+            // Hide config options, show chat and refinement directly with null checks
+            const uploadBtn = document.getElementById('uploadConfigBtn');
+            if (uploadBtn) uploadBtn.style.display = 'none';
+            
+            const createBtn = document.getElementById('createConfigBtn');
+            if (createBtn) createBtn.style.display = 'none';
+            
+            const createCard = document.getElementById('createConfigCard');
+            if (createCard) createCard.style.display = 'none';
+            
+            const chatContainer = document.getElementById('chatContainer');
+            if (chatContainer) chatContainer.style.display = 'block';
+            
+            const refinementInterface = document.getElementById('refinementInterface');
+            if (refinementInterface) refinementInterface.style.display = 'block';
+            
+            // Include last preview markdown in context
+            const markdownPreview = document.getElementById('markdownPreview');
+            const previewText = markdownPreview ? markdownPreview.textContent : 'No preview available';
+            
+            // Add context message to chat
+            if (typeof addChatMessage === 'function') {
+                addChatMessage('ai', `Based on the preview results, I can help refine your configuration. Here's what the current validation shows:\n\n${previewText.substring(0, 500)}${previewText.length > 500 ? '...' : ''}\n\nHow would you like to improve the configuration?`);
+            }
+            
+            // Scroll to config interface
+            if (configCard) {
+                configCard.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
         function processMoreRows() { processTable(true, true); }
         function completeAllValidation() { 
             // Process all remaining rows by calling processTable with no max_rows limit
@@ -1306,89 +2907,188 @@
         }
     
         async function processTable(isFull = false, isContinuation = false, completeAll = false) {
-            if (!state.excelFile || !state.configFile || !state.emailValidated) return;
+            console.log(`processTable() called with isFull=${isFull}, isContinuation=${isContinuation}, completeAll=${completeAll}`);
+            
+            // Check if we have the required data - either a config file OR generated config
+            const hasConfig = state.configFile || configState.currentConfig;
+            console.log('processTable requirements check:', {
+                excelFile: !!state.excelFile,
+                configFile: !!state.configFile, 
+                currentConfig: !!configState.currentConfig,
+                hasConfig: hasConfig,
+                emailValidated: state.emailValidated,
+                sessionId: state.sessionId
+            });
+            
+            if (!state.excelFile || !hasConfig || !state.emailValidated) {
+                console.error('processTable requirements not met - ABORTING:', {
+                    excelFile: !!state.excelFile,
+                    configFile: !!state.configFile, 
+                    currentConfig: !!configState.currentConfig,
+                    emailValidated: state.emailValidated
+                });
+                return;
+            }
     
-            const buttonId = isFull ? (completeAll ? 'completeAllBtn' : isContinuation ? 'processMoreBtn' : 'processFullBtn') : 'processBtn';
-            const spinnerId = isFull ? (completeAll ? 'completeAllSpinner' : isContinuation ? 'processMoreSpinner' : 'processFullSpinner') : 'processSpinner';
-            const button = document.getElementById(buttonId);
-            button.disabled = true;
-            document.getElementById(spinnerId).style.display = 'inline-block';
+            // No need for button handling in auto-triggered mode
+            console.log('Processing started automatically:', { isFull, mode: isFull ? 'full' : 'preview' });
     
             try {
-                const configContent = await readFileAsText(state.configFile);
+                // Ensure we have a session ID for unified storage
+                if (!state.sessionId) {
+                    console.error('No session ID available for file processing');
+                    showMessage('emailMessage', 'Session not initialized. Please refresh and validate your email again.', 'error');
+                    return;
+                }
+                
+                // Check that we have a config available (either uploaded file or generated config)
+                const hasConfig = state.configFile || configState.currentConfig;
+                if (!hasConfig) {
+                    throw new Error('No config available - neither file nor generated config found');
+                }
+                
+                console.log('Config available - backend will use existing config from unified storage');
+                
                 const formData = new FormData();
                 formData.append('excel_file', state.excelFile);
-                formData.append('config_file', configContent);
+                // Note: No config_file sent - backend will retrieve from unified storage
                 formData.append('email', state.email);
+                formData.append('session_id', state.sessionId);  // Add session ID for unified storage
     
                 let url = `${API_BASE}/validate?async=true`;
+                let expectedSessionId = state.sessionId;
+                
                 if (isFull) {
-                    if (!completeAll) {
-                        // For regular full processing or continuation, check for max_rows input
-                        const maxRowsInputId = isContinuation ? 'maxRowsMore' : 'maxRowsFull';
-                        const maxRows = document.getElementById(maxRowsInputId).value;
-                        if (maxRows) {
-                            if (isContinuation && parseInt(maxRows) <= state.processedRows) {
-                                 showMessage('emailMessage', `Please enter a total row count greater than the ${state.processedRows} rows already processed.`, 'error');
-                                 button.disabled = false;
-                                 document.getElementById(spinnerId).style.display = 'none';
-                                 return;
-                            }
-                            url += `&max_rows=${maxRows}`;
-                        }
-                    }
-                    // For completeAll=true, don't add max_rows parameter to process all rows
+                    // Always process all rows for full processing
+                    console.log('Full processing mode - processing all rows');
+                    state.mode = 'full';
                 } else {
-                    url += `&preview_first_row=true&preview_max_rows=3`;
+                    console.log('Setting state.mode to preview');
+                    state.mode = 'preview';
+                    url += `&preview_first_row=true&preview_max_rows=3&preview_email=true`;
+                    expectedSessionId = `${state.sessionId}_preview`; // Preview adds _preview suffix
+                    
+                    // Show progress immediately for preview
+                    document.getElementById('progressContainer').style.display = 'block';
+                    const progressBar = document.getElementById('progressBar');
+                    const validationProgressStage = document.getElementById('validationProgressStage');
+                    const validationProgressFeedback = document.getElementById('validationProgressFeedback');
+                    const validationProgressPercentage = document.getElementById('validationProgressPercentage');
+                    
+                    if (progressBar) progressBar.style.width = '0%';
+                    if (validationProgressPercentage) validationProgressPercentage.textContent = '0%';
+                    if (validationProgressStage) validationProgressStage.textContent = 'Starting preview validation...';
+                    if (validationProgressFeedback) validationProgressFeedback.textContent = 'Processing first 3 rows...';
                 }
+                
+                // Connect WebSocket BEFORE making API call to avoid race condition
+                console.log('Connecting WebSocket before API call to avoid race condition');
+                connectWebSocket(expectedSessionId);
+                
+                // Small delay to allow WebSocket to connect
+                await new Promise(resolve => setTimeout(resolve, 100));
     
                 const response = await fetch(url, { method: 'POST', body: formData });
                 const data = await response.json();
+                
+                console.log('API Response:', { status: response.status, data });
     
                 if (response.ok) {
-                    state.sessionId = data.session_id;
-                    state.mode = isFull ? 'full' : 'preview';
-                    showResults(data, true);
-                    // For preview mode, the session_id already includes '_preview' suffix from backend
-                    const sessionIdForSocket = data.session_id;
-                    connectWebSocket(sessionIdForSocket);
+                    console.log('API call successful, data:', data);
+                    
+                    // With unified storage, we use the existing session ID
+                    // The backend may return session_id for tracking, but we keep our original
+                    if (data.session_id && data.session_id !== state.sessionId) {
+                        console.log('Backend returned different session ID:', data.session_id);
+                        // Use the backend session ID for WebSocket if it's different (like with _preview suffix)
+                        state.sessionId = data.session_id;
+                    }
+                    
+                    // Check if this is async processing
+                    if (data.status === 'processing') {
+                        console.log('Async processing started, WebSocket already connected');
+                        state.mode = isFull ? 'full' : 'preview';
+                        showResults(data, true);
+                        
+                        // Check if we have storage path info from unified storage
+                        if (data.storage_path) {
+                            console.log('Unified storage path:', data.storage_path);
+                        }
+                        
+                    } else {
+                        console.log('Synchronous response received (not async processing):', data);
+                        // Handle synchronous response
+                        state.mode = isFull ? 'full' : 'preview';
+                        showResults(data, false);
+                    }
                 } else {
+                    console.error('API call failed:', response.status, data);
                     showMessage('emailMessage', `Error: ${data.error || 'Failed to start processing.'}`, 'error');
                 }
             } catch (error) {
                 showMessage('emailMessage', 'Failed to process table. Please try again.', 'error');
-            } finally {
-                button.disabled = false;
-                document.getElementById(spinnerId).style.display = 'none';
+                // Hide progress container on error
+                if (!isFull) {
+                    document.getElementById('progressContainer').style.display = 'none';
+                }
             }
         }
         
         // --- WebSocket Handling ---
-        function connectWebSocket(sessionId) {
+        function connectWebSocket(sessionId, reconnectAttempt = 0) {
             if (state.websocket) { state.websocket.close(); }
+            
+            console.log(`Connecting WebSocket for session ${sessionId} (attempt ${reconnectAttempt + 1})`);
             state.websocket = new WebSocket(WEBSOCKET_API_URL);
+            state.currentSessionId = sessionId; // Store for reconnection
+            
             state.websocket.onopen = () => {
                 console.log("WebSocket connected. Subscribing to session:", sessionId);
-                state.websocket.send(JSON.stringify({ action: 'subscribe', sessionId: sessionId }));
+                // Check if websocket is still valid before sending
+                if (state.websocket && state.websocket.readyState === WebSocket.OPEN) {
+                    try {
+                        state.websocket.send(JSON.stringify({ action: 'subscribe', sessionId: sessionId }));
+                        reconnectAttempt = 0; // Reset reconnect attempts on successful connection
+                    } catch (error) {
+                        console.error('Error sending WebSocket subscription:', error);
+                    }
+                } else {
+                    console.error('WebSocket is not in OPEN state when trying to send subscription');
+                }
             };
-            state.websocket.onmessage = (event) => {
+            state.websocket.onmessage = async (event) => {
                 const data = JSON.parse(event.data);
                 console.log("WebSocket message received:", data);
                 
                 const progressBar = document.getElementById('progressBar');
-                const verboseStatus = document.getElementById('verboseStatus');
+                const validationProgressStage = document.getElementById('validationProgressStage');
+                const validationProgressFeedback = document.getElementById('validationProgressFeedback');
+                const validationProgressPercentage = document.getElementById('validationProgressPercentage');
     
                 if (data.status === 'PROCESSING') {
                     const percent = data.percent_complete || 0;
                     progressBar.style.width = percent + '%';
-                    progressBar.textContent = percent + '%';
-                    verboseStatus.textContent = data.verbose_status || 'Processing...';
+                    validationProgressPercentage.textContent = percent + '%';
+                    validationProgressStage.textContent = data.verbose_status || 'Processing...';
+                    
+                    // Update feedback based on percentage
+                    if (percent < 25) {
+                        validationProgressFeedback.textContent = 'Initializing validation process...';
+                    } else if (percent < 50) {
+                        validationProgressFeedback.textContent = 'Processing rows and checking data...';
+                    } else if (percent < 75) {
+                        validationProgressFeedback.textContent = 'Validating against sources...';
+                    } else {
+                        validationProgressFeedback.textContent = 'Finalizing results...';
+                    }
                 } else if (data.status === 'COMPLETED') {
                     progressBar.style.width = '100%';
-                    progressBar.textContent = '100%';
-                    verboseStatus.textContent = 'Complete!';
+                    validationProgressPercentage.textContent = '100%';
+                    validationProgressStage.textContent = 'Validation Complete!';
+                    validationProgressFeedback.textContent = 'All rows processed successfully';
                     
                     if (data.preview_data) {
+                        console.log('Preview data received, calling showResults');
                         showResults(data.preview_data, false);
                     } else {
                         // Update processed rows count from completion data
@@ -1396,7 +3096,7 @@
                             state.processedRows = data.processed_rows;
                         }
                         
-                        document.getElementById('statusMessage').innerHTML = '✅ <strong>Validation Complete!</strong><br>You should receive an email with the results within a few minutes.';
+                        // Validation complete - results will be emailed
                         document.getElementById('fullProcessingCard').style.display = 'none';
                         
                         // Check if this was a partial validation and show appropriate card
@@ -1422,19 +3122,127 @@
                         }
                     }
                     state.websocket.close();
+                } else if (data.type === 'config_generation_complete') {
+                    // Detect cache hit based on response time
+                    const responseTime = Date.now() - (configState.requestStartTime || 0);
+                    const isCacheHit = responseTime < 5000; // Less than 5 seconds indicates cache hit
+                    
+                    console.log(`Config generation completed in ${responseTime}ms (${isCacheHit ? 'CACHE HIT' : 'FRESH REQUEST'}):`, data);
+                    console.log('AI Summary:', data.ai_summary);
+                    console.log('AI Response:', data.ai_response);
+                    console.log('Download URL:', data.download_url);
+                    
+                    // If it's a cache hit, speed up the remaining progress animation
+                    if (isCacheHit && configState.progressInterval) {
+                        // Restart with fast mode for cache hit
+                        stopProgressAnimation();
+                        startProgressAnimation(data.type.includes('refine') ? 'Refining Config' : 'Generating Config', true);
+                        
+                        // Add cache hit message
+                        setTimeout(() => {
+                            document.getElementById('progressFeedback').textContent = '⚡ Found cached result - accelerating...';
+                        }, 100);
+                    }
+                    
+                    // Hide progress containers and stop progress animation
+                    document.getElementById('progressContainer').style.display = 'none';
+                    document.getElementById('configProgress').style.display = 'none';
+                    stopProgressAnimation();
+                    
+                    // Store config data
+                    configState.currentConfig = data;
+                    
+                    // Add AI response to chat with download link if available
+                    let aiMessage = data.ai_summary || data.ai_response || 'Configuration generated successfully!';
+                    if (data.download_url) {
+                        aiMessage += `\n\n[📥 Download Configuration](${data.download_url})`;
+                    }
+                    console.log('Final AI Message:', aiMessage);
+                    await addChatMessage('ai', aiMessage, false, 'paragraphs');
+                    
+                    // Add Refine/Accept buttons to chat
+                    await addConfigActionButtons();
+                    
+                    // Config is generated but not yet accepted - don't mark as validated
+                    // Preview will be enabled only when user accepts the config
+                    
+                    state.websocket.close();
+                } else if (data.type === 'config_generation_failed') {
+                    // Handle config generation failure
+                    console.error('Config generation failed:', data);
+                    
+                    // Hide progress containers and stop progress animation
+                    document.getElementById('progressContainer').style.display = 'none';
+                    document.getElementById('configProgress').style.display = 'none';
+                    stopProgressAnimation();
+                    
+                    // Show error message in config status
+                    const errorMessage = data.error || 'An unknown error occurred during configuration generation.';
+                    showMessage('configStatus', `❌ Config Generation Failed: ${errorMessage}`, 'error');
+                    
+                    // Reset config generation state
+                    configState.isGenerating = false;
+                    
+                    state.websocket.close();
                 }
             };
-            state.websocket.onerror = (error) => { console.error("WebSocket Error:", error); };
-            state.websocket.onclose = () => { console.log("WebSocket connection closed."); state.websocket = null; };
+            state.websocket.onerror = (error) => { 
+                console.error("WebSocket Error:", error); 
+                // Don't automatically reconnect on error to avoid infinite loops
+            };
+            state.websocket.onclose = (event) => { 
+                console.log("WebSocket connection closed. Code:", event.code, "Reason:", event.reason);
+                state.websocket = null; 
+                
+                // Only attempt reconnection if this wasn't a normal close (code 1000) 
+                // and we have an active processing session
+                const isUnexpectedClose = event.code !== 1000 && event.code !== 1001;
+                const hasActiveSession = state.currentSessionId && (document.getElementById('progressContainer').style.display === 'block' || document.getElementById('configProgress').style.display === 'block');
+                const maxReconnectAttempts = 5;
+                
+                if (isUnexpectedClose && hasActiveSession && reconnectAttempt < maxReconnectAttempts) {
+                    const reconnectDelay = Math.min(1000 * Math.pow(2, reconnectAttempt), 10000); // Exponential backoff, max 10s
+                    console.log(`Attempting WebSocket reconnection in ${reconnectDelay}ms (attempt ${reconnectAttempt + 1}/${maxReconnectAttempts})`);
+                    
+                    setTimeout(() => {
+                        connectWebSocket(state.currentSessionId, reconnectAttempt + 1);
+                    }, reconnectDelay);
+                } else if (reconnectAttempt >= maxReconnectAttempts) {
+                    console.error("Max WebSocket reconnection attempts reached. Connection lost.");
+                    // Show user notification about connection loss
+                    const validationProgressStage = document.getElementById('validationProgressStage');
+                    if (validationProgressStage) {
+                        validationProgressStage.textContent = "Connection lost. Please refresh the page and try again.";
+                        validationProgressStage.style.color = "red";
+                    }
+                }
+            };
         }
     
         // --- UI Display ---
         function showResults(data, isAsync) {
-            document.getElementById('resultsCard').style.display = 'block';
+            console.log('showResults called with:', { data, isAsync, mode: state.mode });
             
-            // Only scroll to results for preview mode, not for full validation
             if (state.mode === 'preview') {
-                document.getElementById('resultsCard').scrollIntoView({ behavior: 'smooth' });
+                // Show results in preview card, not results card
+                const previewResults = document.getElementById('previewResults');
+                const previewCard = document.getElementById('previewCard');
+                
+                if (previewResults) {
+                    console.log('Showing preview results');
+                    previewResults.style.display = 'block';
+                } else {
+                    console.error('previewResults element not found!');
+                }
+                
+                if (previewCard) {
+                    previewCard.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    console.error('previewCard element not found!');
+                }
+            } else {
+                // For full processing, don't show results card - processing happens in processingTableCard
+                console.log('Full processing mode - results handled in processing card');
             }
             
             state.processedRows = data.total_processed_rows || state.processedRows;
@@ -1445,12 +3253,13 @@
                 
                 // Reset progress bar to 0% when starting new processing
                 const progressBar = document.getElementById('progressBar');
-                const verboseStatus = document.getElementById('verboseStatus');
-                const statusMessage = document.getElementById('statusMessage');
+                const validationProgressStage = document.getElementById('validationProgressStage');
+                const validationProgressFeedback = document.getElementById('validationProgressFeedback');
+                const validationProgressPercentage = document.getElementById('validationProgressPercentage');
                 progressBar.style.width = '0%';
-                progressBar.textContent = '0%';
-                verboseStatus.textContent = 'Starting validation...';
-                statusMessage.textContent = 'Your validation is being processed...';
+                validationProgressPercentage.textContent = '0%';
+                validationProgressStage.textContent = 'Starting validation...';
+                validationProgressFeedback.textContent = 'Preparing to process your data...';
                 
                 // Hide all validation cards during async processing
                 document.getElementById('fullProcessingCard').style.display = 'none';
@@ -1458,16 +3267,88 @@
                 document.getElementById('completeValidationCard').style.display = 'none';
                 document.getElementById('newValidationCard').style.display = 'none';
                 
-                document.getElementById('resultsInfo').textContent = `Session ID: ${data.session_id}`;
-                if (data.reference_pin) {
-                    document.getElementById('resultsInfo').innerHTML += `<br>Reference PIN: <strong>${data.reference_pin}</strong>`;
-                }
+                // Session ID and reference PIN display removed per user request
+                // document.getElementById('resultsInfo').textContent = `Session ID: ${data.session_id}`;
+                // if (data.reference_pin) {
+                //     document.getElementById('resultsInfo').innerHTML += `<br>Reference PIN: <strong>${data.reference_pin}</strong>`;
+                // }
             } else {
-                // This is now only for displaying final preview results
-                document.getElementById('resultsSubtitle').textContent = 'Preview Results';
-                document.getElementById('progressContainer').style.display = 'none';
-                document.getElementById('markdownPreview').innerHTML = convertMarkdownToHtml(data.markdown_table);
-                document.getElementById('markdownPreview').style.display = 'block';
+                if (state.mode === 'preview') {
+                    console.log('Processing preview mode results', data);
+                    
+                    // Display preview results in preview card
+                    const previewContent = document.getElementById('previewContent');
+                    if (previewContent && data.markdown_table) {
+                        console.log('Setting preview content with markdown table');
+                        previewContent.innerHTML = convertMarkdownToHtml(data.markdown_table);
+                    } else {
+                        console.error('previewContent element or markdown_table missing!', { previewContent, markdown_table: data.markdown_table });
+                    }
+                    
+                    // Show cost estimates in preview card (not results card)
+                    if (data.cost_estimates && data.validation_metrics) {
+                        console.log('Showing cost estimates for preview mode');
+                        document.getElementById('previewCostEstimate').style.display = 'flex';
+                        
+                        const mainEstimates = document.getElementById('previewMainEstimates');
+                        const detailMetrics = document.getElementById('previewDetailMetrics');
+                        mainEstimates.innerHTML = '';
+                        
+                        const metrics = data.validation_metrics;
+                        document.getElementById('previewTotalRows').textContent = data.total_rows || 'N/A';
+                        document.getElementById('previewTotalColumns').textContent = metrics.validated_columns_count || 0;
+                        
+                        const totalRows = data.total_rows || 0;
+                        const perplexityGroups = (metrics.search_groups_count || 0) - (metrics.claude_search_groups_count || 0);
+                        const claudeGroups = metrics.claude_search_groups_count || 0;
+                        const totalPerplexityCalls = totalRows * perplexityGroups;
+                        const totalClaudeCalls = totalRows * claudeGroups;
+                        
+                        if (totalPerplexityCalls > 0) mainEstimates.innerHTML += `<div class="cost-item"><span class="cost-label">Total Perplexity Calls</span><span class="cost-value">${totalPerplexityCalls.toLocaleString()}</span></div>`;
+                        if (totalClaudeCalls > 0) mainEstimates.innerHTML += `<div class="cost-item"><span class="cost-label">Total Claude Calls</span><span class="cost-value">${totalClaudeCalls.toLocaleString()}</span></div>`;
+        
+                        const estimatedTime = data.estimated_total_processing_time || 0;
+                        mainEstimates.innerHTML += `<div class="cost-item"><span class="cost-label">Est. Total Time</span><span class="cost-value">${Math.ceil(estimatedTime / 60)} min</span></div>`;
+        
+                        // Store estimated cost for the button
+                        let estimatedCost = 0;
+                        if (data.cost_estimates.estimated_total_cost) {
+                            estimatedCost = data.cost_estimates.estimated_total_cost;
+                            mainEstimates.innerHTML += `<div class="cost-item"><span class="cost-label">Est. Total Cost</span><span class="cost-value">$${estimatedCost.toFixed(2)}</span></div>`;
+                        }
+                        
+                        const existingDynamicItems = detailMetrics.querySelectorAll('.dynamic-detail-item');
+                        existingDynamicItems.forEach(item => item.remove());
+        
+                        if (metrics.search_groups_count > 0) detailMetrics.innerHTML += `<div class="cost-item dynamic-detail-item"><span class="cost-label">Search Groups</span><span class="cost-value">${metrics.search_groups_count}</span></div>`;
+                        if (metrics.high_context_search_groups_count > 0) detailMetrics.innerHTML += `<div class="cost-item dynamic-detail-item"><span class="cost-label">High Context Groups</span><span class="cost-value">${metrics.high_context_search_groups_count}</span></div>`;
+                        if (metrics.claude_search_groups_count > 0) detailMetrics.innerHTML += `<div class="cost-item dynamic-detail-item"><span class="cost-label">Claude Groups</span><span class="cost-value">${metrics.claude_search_groups_count}</span></div>`;
+                        
+                        // Update Process Table button with cost estimate
+                        const processBtn = document.getElementById('processTableOptionBtn');
+                        if (processBtn && estimatedCost > 0) {
+                            processBtn.innerHTML = `✨ Process Table ($${estimatedCost.toFixed(2)})`;
+                        }
+                    }
+                    
+                    // Show preview actions (now two options)
+                    const previewActions = document.getElementById('previewActions');
+                    if (previewActions) {
+                        console.log('Showing preview actions');
+                        previewActions.style.display = 'block';
+                    } else {
+                        console.error('previewActions element not found!');
+                    }
+                    
+                    // Show note that email has been sent during processing
+                    showPreviewEmailNote();
+                } else {
+                    // Full validation results in results card
+                    document.getElementById('resultsSubtitle').textContent = 'Validation Results';
+                    document.getElementById('progressContainer').style.display = 'none';
+                    document.getElementById('markdownPreview').innerHTML = convertMarkdownToHtml(data.markdown_table);
+                    document.getElementById('markdownPreview').style.display = 'block';
+                }
     
                 if (data.cost_estimates && data.validation_metrics) {
                     document.getElementById('costEstimate').style.display = 'flex';
@@ -1504,9 +3385,75 @@
                 }
                 
                 if (state.mode === 'preview') {
-                    document.getElementById('fullProcessingCard').style.display = 'block';
+                    // Don't show fullProcessingCard here - it will be shown when user clicks Process Table
                     document.getElementById('tryAgainBtn').style.display = 'inline-block';
+                    
+                    // Add "Refine Config" button after preview
+                    addRefineConfigButton();
                 }
+            }
+        }
+
+        // --- Show email note after preview processing ---
+        function showPreviewEmailNote() {
+            // Show the note that email has been sent during processing
+            const note = document.getElementById('previewEmailNote');
+            if (note) note.style.display = 'block';
+        }
+
+        // --- Show Processing Table Card ---
+        function showProcessingTableCard() {
+            console.log('Showing Processing Table card and starting processing');
+            
+            // Show the processing table card
+            const processingCard = document.getElementById('processingTableCard');
+            if (processingCard) {
+                processingCard.style.display = 'block';
+                
+                // Scroll to the new card
+                setTimeout(() => {
+                    processingCard.scrollIntoView({ behavior: 'smooth' });
+                }, 100);
+                
+                // Initialize progress bars
+                const progressBar = document.getElementById('processingProgressBar');
+                const progressStage = document.getElementById('processingProgressStage');
+                const progressFeedback = document.getElementById('processingProgressFeedback');
+                const progressPercentage = document.getElementById('processingProgressPercentage');
+                
+                if (progressBar) progressBar.style.width = '0%';
+                if (progressPercentage) progressPercentage.textContent = '0%';
+                if (progressStage) progressStage.textContent = 'Starting validation process...';
+                if (progressFeedback) progressFeedback.textContent = 'Initializing full table processing...';
+                
+                // Start processing
+                processTable(true);
+            } else {
+                console.error('processingTableCard element not found!');
+            }
+        }
+
+        // --- New: Handle preview option selection ---
+        function handlePreviewOption(option) {
+            const refineBtn = document.getElementById('refineConfigOptionBtn');
+            const processBtn = document.getElementById('processTableOptionBtn');
+            // Disable both and visually indicate selection
+            refineBtn.disabled = true;
+            processBtn.disabled = true;
+            if (option === 'refine') {
+                refineBtn.style.backgroundColor = '#2196F3';
+                refineBtn.style.color = 'white';
+                processBtn.style.opacity = '0.5';
+                // Open new refinement config card below preview
+                if (typeof showPostPreviewRefinement === 'function') {
+                    showPostPreviewRefinement();
+                }
+            } else if (option === 'process') {
+                processBtn.style.backgroundColor = '#4CAF50';
+                processBtn.style.color = 'white';
+                refineBtn.style.opacity = '0.5';
+                // Open new Processing Table card below preview and start processing
+                showProcessingTableCard();
             }
         }
     </script>

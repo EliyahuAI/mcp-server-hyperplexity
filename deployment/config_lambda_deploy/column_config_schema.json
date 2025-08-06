@@ -1,0 +1,106 @@
+{
+  "title": "Column Configuration Schema",
+  "description": "Schema for validating column configuration files used by the Perplexity Validator",
+  "type": "object",
+  "required": ["search_groups", "validation_targets"],
+  "properties": {
+    "general_notes": {
+      "type": "string",
+      "description": "General notes about the configuration and validation guidelines"
+    },
+    "default_model": {
+      "type": "string",
+      "description": "Default model to use for validation (e.g., 'sonar-pro', 'claude-sonnet-4-20250514')"
+    },
+    "default_search_context_size": {
+      "type": "string",
+      "enum": ["low", "high"],
+      "description": "Default search context size for Perplexity models"
+    },
+    "search_groups": {
+      "type": "array",
+      "description": "Required search group definitions for organizing columns - essential for building effective search strategy",
+      "items": {
+        "type": "object",
+        "required": ["group_id", "group_name", "description", "model", "search_context"],
+        "properties": {
+          "group_id": {
+            "type": "integer",
+            "description": "Unique identifier for the search group"
+          },
+          "group_name": {
+            "type": "string",
+            "description": "Descriptive name for the search group"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of what this search group represents"
+          },
+          "model": {
+            "type": "string",
+            "description": "Model to use for this search group"
+          },
+          "search_context": {
+            "type": "string",
+            "enum": ["low", "high"],
+            "description": "Search context size for this group"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "validation_targets": {
+      "type": "array",
+      "description": "Array of validation target configurations",
+      "items": {
+        "type": "object",
+        "required": ["column", "description", "importance", "format", "examples", "search_group"],
+        "properties": {
+          "column": {
+            "type": "string",
+            "description": "Column name to validate"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of what this column represents"
+          },
+          "importance": {
+            "type": "string",
+            "enum": ["ID", "CRITICAL", "HIGH", "MEDIUM", "LOW", "IGNORED"],
+            "description": "Importance level of this column"
+          },
+          "format": {
+            "type": "string",
+            "description": "Expected format of the column data (e.g., 'String', 'Date', 'Number', 'URL')"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Additional notes about validation rules and formatting"
+          },
+          "examples": {
+            "type": "array",
+                  "items": {
+              "type": "string"
+            },
+            "description": "Example values for this column"
+          },
+          "search_group": {
+            "type": "integer",
+            "description": "Search group ID this column belongs to"
+          },
+          "preferred_model": {
+            "type": "string",
+            "description": "Override model for this specific column"
+          },
+          "search_context_size": {
+            "type": "string",
+            "enum": ["low", "high"],
+            "description": "Override search context size for this column"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

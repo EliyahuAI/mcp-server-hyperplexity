@@ -10,6 +10,18 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from io import BytesIO
 import json
+
+def get_excel_features_text():
+    """Common language about Excel file features used in all validation emails."""
+    return """
+    <div style="background: #F8F9FA; border: 1px solid #E5E5E5; padding: 15px; border-radius: 6px; margin: 15px 0;">
+        <p><b>📋 About the Excel Files:</b></p>
+        <ul style="margin: 10px 0; padding-left: 20px;">
+            <li>Both original and validated sheets are <b>color-coded by confidence level</b> (High=Green, Medium=Yellow, Low=Red)</li>
+            <li>Hover over cells to see detailed validation information in <b>cell comments</b> (editing must be enabled first)</li>
+        </ul>
+    </div>
+    """
 from datetime import datetime
 import re
 import logging
@@ -114,16 +126,9 @@ def create_email_body(session_id, total_rows, fields_validated, confidence_distr
         {token_info}
         
         <h3>About Your Results</h3>
-        <p>The attached Excel file contains:</p>
+        {get_excel_features_text()}
+        <p>The attached Excel file also contains:</p>
         <ul>
-            <li><b>Color-coded cells</b> based on confidence levels:
-                <ul>
-                    <li>🟢 <b>Green:</b> HIGH confidence</li>
-                    <li>🟡 <b>Yellow:</b> MEDIUM confidence</li>
-                    <li>🔴 <b>Red:</b> LOW confidence</li>
-                </ul>
-            </li>
-            <li><b>Cell comments</b> with validation details, quotes, and sources</li>
             <li><b>Multiple worksheets</b> for comprehensive analysis</li>
             <li><b>Validation tracking</b> showing which fields were updated</li>
         </ul>
@@ -143,7 +148,7 @@ def create_email_body(session_id, total_rows, fields_validated, confidence_distr
     
     return body_html
 
-def send_validation_results_email(email_address, excel_content, config_content, enhanced_excel_content, input_filename, config_filename, enhanced_excel_filename, session_id, summary_data, processing_time=None, reference_pin=None, metadata=None):
+def send_validation_results_email(email_address, excel_content, config_content, enhanced_excel_content, input_filename, config_filename, enhanced_excel_filename, session_id, summary_data, processing_time=None, reference_pin=None, metadata=None, preview_email=False):
     """
     Send validation results via email with individual file attachments
     
@@ -170,12 +175,28 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         message["From"] = SENDER
         message["To"] = email_address
         
-        # Include Excel filename and reference pin in subject if available
-        base_filename = input_filename.rsplit('.', 1)[0] if input_filename and '.' in input_filename else (input_filename or "Table")
+        # Clean filename by removing excel_ prefix and VerifiedX suffix
+        def clean_filename(filename):
+            if not filename:
+                return "Table"
+            # Remove file extension
+            base_name = filename.rsplit('.', 1)[0] if '.' in filename else filename
+            # Remove excel_ prefix
+            if base_name.startswith('excel_'):
+                base_name = base_name[6:]
+            # Remove VerifiedX suffix (where X is a number)
+            import re
+            base_name = re.sub(r'_Verified\d*$', '', base_name)
+            return base_name or "Table"
+        
+        # Create subject line based on email type
+        base_filename = clean_filename(input_filename)
+        subject_type = "Preview Results" if preview_email else "Validation Results"
+        
         if reference_pin:
-            message["Subject"] = f"📊 Validation Complete - {base_filename} #{reference_pin}"
+            message["Subject"] = f"📊 {subject_type} - {base_filename} #{reference_pin}"
         else:
-            message["Subject"] = f"📊 Validation Complete - {base_filename}"
+            message["Subject"] = f"📊 {subject_type} - {base_filename}"
         
         # Extract summary data
         total_rows = summary_data.get('total_rows', 0)
@@ -198,11 +219,17 @@ def send_validation_results_email(email_address, excel_content, config_content, 
             token_usage,
             enhanced_excel_filename,
             input_filename,
-            config_filename
+            config_filename,
+            preview_email
         )
         
         # Attach HTML body
         part = MIMEText(body_html, 'html', CHARSET)
+        message.attach(part)
+        
+        # Attach enhanced Excel file first (this is the main result)
+        part = MIMEApplication(enhanced_excel_content)
+        part.add_header("Content-Disposition", f"attachment; filename={enhanced_excel_filename}")
         message.attach(part)
         
         # Attach original input file
@@ -213,11 +240,6 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         # Attach config file
         part = MIMEApplication(config_content)
         part.add_header("Content-Disposition", f"attachment; filename={config_filename}")
-        message.attach(part)
-        
-        # Attach enhanced Excel file (this is the main result)
-        part = MIMEApplication(enhanced_excel_content)
-        part.add_header("Content-Disposition", f"attachment; filename={enhanced_excel_filename}")
         message.attach(part)
         
         # Send email via SES
@@ -250,7 +272,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
                 'TotalRows': total_rows,
                 'FieldsValidated': fields_validated,
                 'ConfidenceDistribution': confidence_distribution,
-                'Attachments': [input_filename, config_filename, enhanced_excel_filename]
+                'Attachments': [enhanced_excel_filename, input_filename, config_filename]
             }
             
             s3_client = boto3.client('s3')
@@ -306,7 +328,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         }
 
 
-def create_validation_results_email_body(session_id, total_rows, fields_validated, confidence_distribution, processing_time=None, reference_pin=None, token_usage=None, enhanced_excel_filename=None, input_filename=None, config_filename=None):
+def create_validation_results_email_body(session_id, total_rows, fields_validated, confidence_distribution, processing_time=None, reference_pin=None, token_usage=None, enhanced_excel_filename=None, input_filename=None, config_filename=None, preview_email=False):
     """Create clean validation results email body following Eliyahu.AI style guide"""
     
     # Format fields list
@@ -358,6 +380,16 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
     pin_info = ""
     if reference_pin:
         pin_info = f"<p><b>Reference #:</b> {reference_pin}</p>"
+    
+    # Preview email notice
+    preview_notice = ""
+    if preview_email:
+        preview_notice = f"""
+        <div style="background: #FFF3CD; border: 1px solid #FFEAA7; padding: 15px; border-radius: 6px; margin: 15px 0;">
+            <p><b>📋 Preview Results</b></p>
+            <p>This email contains validation results for a preview of your data ({total_rows} rows). To process your full table, please use the Hyperplexity Tool with your original table and the configuration file attached to this email.</p>
+        </div>
+        """
     
     # Create email body following Eliyahu.AI style guide
     body_html = f"""
@@ -485,6 +517,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
         <div class="content">
             <div class="summary">
                 <h2>Your Results Are Ready</h2>
+                {preview_notice}
                 <p><b>Total rows processed:</b> {total_rows:,}</p>
                 {pin_info}
                 <p><b>Fields validated:</b> {len(fields_validated)}</p>
@@ -502,15 +535,16 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             {token_info}
             
             <div class="attachments">
-                <h3>📎 Attached Files</h3>
+                <h3>📎 Attached Files (in order)</h3>
+                {get_excel_features_text()}
                 <ul class="attachment-list">
                     <li class="primary-file">
                         📊 <b>{enhanced_excel_filename or 'Validated_Results.xlsx'}</b><br>
-                        <small>Enhanced Excel file with color-coded validation results</small>
+                        <small>Enhanced Excel file with color-coded validation results - PRIMARY RESULT</small>
                     </li>
                     <li>
                         📄 <b>{input_filename or 'Original_Input.xlsx'}</b><br>
-                        <small>Your original input file</small>
+                        <small>Your original input file for reference</small>
                     </li>
                     <li>
                         ⚙️ <b>{config_filename or 'config.json'}</b><br>
@@ -520,18 +554,32 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             </div>
             
             <h3>About Your Enhanced Results</h3>
-            <p>The <b>enhanced Excel file</b> contains:</p>
+            <p>The <b>enhanced Excel file</b> contains three worksheets:</p>
             <ul>
-                <li><b>Color-coded cells</b> based on confidence levels:
+                <li><b>Sheet 1 - "Original Values":</b> Your original data with confidence-based color coding:
                     <ul>
-                        <li>🟢 <b>Green:</b> HIGH confidence</li>
-                        <li>🟡 <b>Yellow:</b> MEDIUM confidence</li>
-                        <li>🔴 <b>Red:</b> LOW confidence</li>
+                        <li>🟢 <b>Green:</b> HIGH confidence - Original value is correct</li>
+                        <li>🟡 <b>Yellow:</b> MEDIUM confidence - Original value has minor issues</li>
+                        <li>🔴 <b>Red:</b> LOW confidence - Original value needs substantial update</li>
+                        <li><b>Cell comments</b> show updated values and supporting information</li>
                     </ul>
                 </li>
-                <li><b>Cell comments</b> with validation details, quotes, and sources</li>
-                <li><b>Multiple worksheets</b> for comprehensive analysis</li>
-                <li><b>Validation tracking</b> showing which fields were updated</li>
+                <li><b>Sheet 2 - "Updated Values":</b> All rows showing validated values with color coding based on validation confidence:
+                    <ul>
+                        <li>🟢 <b>GREEN:</b> HIGH confidence in validated value</li>
+                        <li>🟡 <b>YELLOW:</b> MEDIUM confidence in validated value</li>
+                        <li>🔴 <b>RED:</b> LOW confidence in validated value</li>
+                        <li>Original values and supporting information included for reference</li>
+                    </ul>
+                </li>
+                <li><b>Sheet 3 - "Details":</b> Comprehensive view with all validation information, confidence scores, reasoning, and sources</li>
+            </ul>
+            
+            <h3>About the Attached Files</h3>
+            <ul>
+                <li><b>Enhanced Excel File (Primary Result):</b> Your main deliverable with validated data, confidence coding, and comprehensive analysis</li>
+                <li><b>Original File:</b> Your unmodified input data for reference and comparison</li>
+                <li><b>Config File:</b> Can be reused for future validations with different data or additional rows</li>
             </ul>
             
             <p><b>Questions or need help?</b> Simply reply to this email and our team will assist you.</p>
