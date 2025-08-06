@@ -10,12 +10,7 @@ import os
 import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional
-import sys
 from pathlib import Path
-
-# Add the project root to the Python path
-ROOT_DIR = Path(__file__).resolve().parents[3]
-sys.path.append(str(ROOT_DIR))
 
 from src.shared.ai_api_client import ai_client
 from src.shared.shared_table_parser import s3_table_parser

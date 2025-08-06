@@ -14,10 +14,6 @@ import asyncio
 import sys
 from pathlib import Path
 
-# Add the project root to the Python path
-ROOT_DIR = Path(__file__).resolve().parents[4]
-sys.path.append(str(ROOT_DIR))
-
 from src.lambdas.interface.utils.helpers import create_response, create_email_folder_path
 from src.lambdas.interface.core.s3_manager import download_file_from_s3, upload_file_to_s3, s3_client, S3_RESULTS_BUCKET
 from src.shared.shared_table_parser import s3_table_parser

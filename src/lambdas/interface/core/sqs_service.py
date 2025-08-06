@@ -12,12 +12,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from botocore.exceptions import ClientError
 import os
-import sys
 from pathlib import Path
-
-# Add the project root to the Python path
-ROOT_DIR = Path(__file__).resolve().parents[4]
-sys.path.append(str(ROOT_DIR))
 
 from src.lambdas.interface.core.unified_s3_manager import UnifiedS3Manager
 

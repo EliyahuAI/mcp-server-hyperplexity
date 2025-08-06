@@ -5,12 +5,7 @@ import logging
 import json
 from datetime import datetime
 from typing import Dict, Any
-import sys
 from pathlib import Path
-
-# Add the project root to the Python path
-ROOT_DIR = Path(__file__).resolve().parents[4]
-sys.path.append(str(ROOT_DIR))
 
 from src.lambdas.interface.core.unified_s3_manager import UnifiedS3Manager
 from src.lambdas.interface.utils.helpers import create_response

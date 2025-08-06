@@ -14,12 +14,7 @@ import random
 import time
 import csv
 from io import StringIO
-import sys
 from pathlib import Path
-
-# Add the project root to the Python path
-ROOT_DIR = Path(__file__).resolve().parents[3]
-sys.path.append(str(ROOT_DIR))
 
 from src.shared.schema_validator_simplified import SimplifiedSchemaValidator
 from src.shared.perplexity_schema import get_response_format_schema

@@ -5,12 +5,7 @@ import json
 import logging
 import boto3
 import os
-import sys
 from pathlib import Path
-
-# Add the project root to the Python path
-ROOT_DIR = Path(__file__).resolve().parents[4]
-sys.path.append(str(ROOT_DIR))
 
 from src.lambdas.interface.utils.helpers import create_email_folder_path, create_response
 from src.shared.dynamodb_schemas import get_run_status

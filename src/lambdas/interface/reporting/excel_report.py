@@ -4,12 +4,7 @@ Functions for creating enhanced Excel reports with validation results.
 import io
 import logging
 from datetime import datetime
-import sys
 from pathlib import Path
-
-# Add the project root to the Python path
-ROOT_DIR = Path(__file__).resolve().parents[4]
-sys.path.append(str(ROOT_DIR))
 
 import openpyxl
 

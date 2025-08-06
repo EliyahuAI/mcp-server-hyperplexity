@@ -7,12 +7,7 @@ import json
 import boto3
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
-import sys
 from pathlib import Path
-
-# Add the project root to the Python path
-ROOT_DIR = Path(__file__).resolve().parents[4]
-sys.path.append(str(ROOT_DIR))
 
 from src.lambdas.interface.core.unified_s3_manager import UnifiedS3Manager
 from src.shared.shared_table_parser import s3_table_parser

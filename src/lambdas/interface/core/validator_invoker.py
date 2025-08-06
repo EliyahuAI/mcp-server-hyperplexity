@@ -11,12 +11,7 @@ import openpyxl
 import csv
 import boto3
 import math
-import sys
 from pathlib import Path
-
-# Add the project root to the Python path
-ROOT_DIR = Path(__file__).resolve().parents[4]
-sys.path.append(str(ROOT_DIR))
 
 from src.shared.row_key_utils import generate_row_key
 from src.lambdas.interface.utils.history_loader import load_validation_history_from_excel

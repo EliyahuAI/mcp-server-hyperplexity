@@ -4,12 +4,7 @@ Functions for creating enhanced Excel reports with validation results (3-sheet s
 import io
 import logging
 from datetime import datetime
-import sys
 from pathlib import Path
-
-# Add the project root to the Python path
-ROOT_DIR = Path(__file__).resolve().parents[4]
-sys.path.append(str(ROOT_DIR))
 
 import openpyxl
 
@@ -172,7 +167,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         row_keys = []
         for row_data in rows_data:
             try:
-                from row_key_utils import generate_row_key
+                from src.shared.row_key_utils import generate_row_key
                 row_key = generate_row_key(row_data, id_fields)
             except ImportError:
                 # Fallback to simple join
