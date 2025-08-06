@@ -589,6 +589,36 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
         return False, None
 
 
+def ensure_lambda_permission(lambda_client, function_name, statement_id, source_arn):
+    """Ensure the correct API Gateway invocation permission exists by removing old ones first."""
+    try:
+        # Attempt to remove the permission first to handle outdated SourceArns.
+        # This will fail if the permission doesn't exist, which is fine.
+        try:
+            lambda_client.remove_permission(
+                FunctionName=function_name,
+                StatementId=statement_id
+            )
+            logger.info(f"Removed existing permission '{statement_id}' to ensure it's updated.")
+        except lambda_client.exceptions.ResourceNotFoundException:
+            logger.info(f"Permission '{statement_id}' does not exist, will create it.")
+            pass # Permission doesn't exist, no need to remove
+
+        # Add the new/correct permission
+        lambda_client.add_permission(
+            FunctionName=function_name,
+            StatementId=statement_id,
+            Action='lambda:InvokeFunction',
+            Principal='apigateway.amazonaws.com',
+            SourceArn=source_arn
+        )
+        logger.info(f"Successfully added/updated Lambda permission: {statement_id}")
+
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while setting Lambda permission '{statement_id}': {e}")
+        # Continue deployment but log the error clearly.
+        pass
+
 def setup_api_gateway(lambda_client, function_name, region):
     """Set up API Gateway for the Lambda function with simplified /validate and /status endpoints."""
     logger.info("Setting up simplified API Gateway with Lambda proxy integration...")
@@ -677,17 +707,9 @@ def setup_api_gateway(lambda_client, function_name, region):
                 logger.info(f"{http_method} method and integration already exist for resource {resource_id}")
         
         # Add Lambda permission for the API Gateway
-        try:
-            lambda_client.add_permission(
-                FunctionName=function_name,
-                StatementId=f'apigateway-invoke-{api_id}',
-                Action='lambda:InvokeFunction',
-                Principal='apigateway.amazonaws.com',
-                SourceArn=f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*/*/*" # Allow any method on any resource
-            )
-            logger.info("Added Lambda permission for API Gateway")
-        except lambda_client.exceptions.ResourceConflictException:
-            logger.info("Lambda permission for API Gateway already exists.")
+        statement_id = f'apigateway-rest-invoke-{function_name}'
+        source_arn = f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*/*/*"
+        ensure_lambda_permission(lambda_client, function_name, statement_id, source_arn)
 
         # Also ensure the Lambda role has S3 delete permissions
         lambda_role_name = LAMBDA_CONFIG['Role'].split('/')[-1]
@@ -973,9 +995,15 @@ def create_websocket_lambda_package(output_zip_path):
     package_dir = SCRIPT_DIR / "websocket_package"
     clean_directory(package_dir)
     
-    # Copy required source files from their new locations
-    shutil.copy(SRC_DIR / "lambdas" / "validation" / "websocket_handler.py", package_dir)
-    shutil.copy(SRC_DIR / "shared" / "dynamodb_schemas.py", package_dir)
+    # Copy required source files from their new, correct locations
+    websocket_lambda_src = SRC_DIR / "lambdas" / "websocket"
+    shared_src = SRC_DIR / "shared"
+    
+    # Copy handler and its direct dependencies
+    shutil.copytree(websocket_lambda_src, package_dir, dirs_exist_ok=True)
+    
+    # Copy necessary shared modules, like dynamodb_schemas
+    shutil.copy(shared_src / "dynamodb_schemas.py", package_dir)
     
     # Create the ZIP file
     with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
@@ -1059,17 +1087,9 @@ def setup_websocket_api(lambda_function_name, region):
     apigw_client.create_deployment(ApiId=api_id, StageName='prod')
 
     # Grant API Gateway permission to invoke the Lambda
-    try:
-        lambda_client.add_permission(
-            FunctionName=lambda_function_name,
-            StatementId=f"apigw-ws-invoke-{api_id}",
-            Action='lambda:InvokeFunction',
-            Principal='apigateway.amazonaws.com',
-            SourceArn=f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*"
-        )
-    except ClientError as e:
-        if e.response['Error']['Code'] != 'ResourceConflictException':
-            raise
+    statement_id = f"apigw-ws-invoke-{lambda_function_name}"
+    source_arn = f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*"
+    ensure_lambda_permission(lambda_client, lambda_function_name, statement_id, source_arn)
             
     return f"{api_endpoint}/prod", api_id
 
