@@ -6,14 +6,6 @@ import json
 import boto3
 import os
 import base64
-import sys
-from pathlib import Path
-
-# Add the project root to the Python path
-ROOT_DIR = Path(__file__).resolve().parents[4]
-sys.path.append(str(ROOT_DIR))
-
-from src.lambdas.interface.utils.helpers import create_response
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

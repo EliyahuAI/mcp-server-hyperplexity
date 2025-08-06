@@ -1,0 +1,1253 @@
+Enhanced Validation Results Summary
+==================================
+
+Session ID: b1fa753f-f96a-4595-b05b-9b6fa44bdd02
+Reference Pin: 343527
+
+Generated: 20250701_201135
+Total Rows Processed: 10
+
+Fields Validated: Sector, Ticker_Symbol, Last_Updated, PE_Ratio, Current_Price, Asset_ID, Company_Name, Market_Cap_B
+
+Confidence Distribution:
+- HIGH: 49 fields
+- MEDIUM: 10 fields  
+- LOW: 1 fields
+
+Token Usage & Cost Analysis:
+============================
+Total Tokens: 36,417
+Total Cost: $0.226863
+API Calls: 15 new, 15 cached
+
+Provider Breakdown:
+- Perplexity API: 26,616 prompt + 9,801 completion = 36,417 tokens
+  Cost: $0.079848 input + $0.147015 output = $0.226863 total
+  Calls: 30
+
+Model Breakdown:
+- sonar-pro (perplexity): 36,417 tokens, $0.226863, 30 calls
+
+
+Files Included:
+==============
+- validation_results_enhanced.xlsx : Color-coded Excel with comments and multiple sheets
+- validation_results.json          : Raw validation data in JSON format
+- validation_results.csv           : Simple CSV format for basic analysis
+- SUMMARY.txt                      : This summary file
+- COMPLETED.txt                    : Processing completion marker
+- original_files/financial_portfolio.xlsx  : Original input file
+- original_files/financial_portfolio_config.json : Original configuration file
+
+Enhanced Excel Features:
+=======================
+✅ Color-coded confidence levels:
+   - GREEN: HIGH confidence
+   - YELLOW: MEDIUM confidence  
+   - RED: LOW confidence
+✅ Cell comments with quotes and sources
+✅ Multiple worksheets: Results, Details, Reasons
+✅ Comprehensive validation tracking
+✅ Professional formatting with xlsxwriter
+
+Processing Details:
+==================
+{
+  "0": {
+    "Ticker_Symbol": {
+      "value": "AAPL",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Company_Name": {
+      "value": "Apple Inc.",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Asset_ID": {
+      "value": "US0378331005",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.marketscreener.com/quote/stock/APPLE-INC-4849/graphics-sector/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "AAPL | US0378331005 | Nasdaq",
+      "main_source": "https://www.marketscreener.com/quote/stock/APPLE-INC-4849/graphics-sector/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches authoritative financial data sources for Apple Inc."
+    },
+    "Sector": {
+      "value": "Technology",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.morningstar.com/stocks/xnas/aapl/quote",
+        "https://finbox.com/NASDAQGS:AAPL/explorer/sector/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Sector: Technology. Industry: Consumer Electronics.",
+      "main_source": "https://www.morningstar.com/stocks/xnas/aapl/quote",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, consistent with GICS sector classification and widely accepted industry practice."
+    },
+    "Current_Price": {
+      "value": "208.00",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.tradingview.com/symbols/NASDAQ-AAPL/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "The current price of AAPL is 208.00 USD",
+      "main_source": "https://www.tradingview.com/symbols/NASDAQ-AAPL/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES - The provided value is outdated compared to the latest available data."
+    },
+    "Market_Cap_B": {
+      "value": "UNDEFINED",
+      "confidence": 0.3,
+      "sources": [],
+      "confidence_level": "LOW",
+      "quote": "No specific information about Apple's current market capitalization is available in the provided sources.",
+      "main_source": "",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "NO - No relevant data was found."
+    },
+    "PE_Ratio": {
+      "value": "32.42",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/AAPL/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Apple PE Ratio: 32.42 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/AAPL/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value is consistent with current market data and authoritative sources."
+    },
+    "Last_Updated": {
+      "value": "2025-07-01",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/AAPL/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Apple PE Ratio: 32.42 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/AAPL/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value reflects the most recent available data."
+    },
+    "next_check": "2025-07-08T20:11:16.897086",
+    "reasons": [
+      "Low confidence results found (2 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "1": {
+    "Ticker_Symbol": {
+      "value": "MSFT",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Company_Name": {
+      "value": "Microsoft Corporation",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Asset_ID": {
+      "value": "US5949181045",
+      "confidence": 0.7,
+      "sources": [
+        "https://www.chartmill.com/stock/quote/MSFT/profile",
+        "https://www.ibisworld.com/united-states/company/microsoft-corporation/348519/"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote available for CUSIP validation. CUSIPs are unique identifiers for securities and are not typically published in company profiles or financial news. However, US5949181045 is a known CUSIP for Microsoft Corporation common stock.",
+      "main_source": "https://www.chartmill.com/stock/quote/MSFT/profile",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the CUSIP format and value are consistent with known Microsoft Corporation common stock identifiers."
+    },
+    "Sector": {
+      "value": "Technology",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.schwab.wallst.com/research/Public/Content/SamplePDFs/Stock/SPStockReport.pdf"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "GICS Sector Information Technology. Sub-Industry Systems Software. Summary Microsoft, the world's largest software company, develops PC software, including the Windows operating system and Office productivity suite.",
+      "main_source": "https://www.schwab.wallst.com/research/Public/Content/SamplePDFs/Stock/SPStockReport.pdf",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Microsoft is widely recognized as a Technology sector company."
+    },
+    "Current_Price": {
+      "value": "492.40",
+      "confidence": 0.9,
+      "sources": [
+        "https://stockanalysis.com/stocks/msft/history/",
+        "https://www.nasdaq.com/market-activity/stocks/msft/historical"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Microsoft Corporation (MSFT) ... Real-Time Price \u00b7 USD 492.40 -5.01 (-1.01%) Jul 1, 2025, 2:39 PM - Market open",
+      "main_source": "https://stockanalysis.com/stocks/msft/history/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated price matches current market data and is consistent with recent historical prices."
+    },
+    "Market_Cap_B": {
+      "value": "3067.2",
+      "confidence": 0.7,
+      "sources": [
+        "https://stockanalysis.com/stocks/msft/history/",
+        "https://www.macrotrends.net/stocks/charts/MSFT/microsoft/stock-price-history"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote available for current market cap. However, recent market cap estimates for Microsoft are in the range of 3 trillion USD, but the provided value (3067.2) is plausible as a rounded or slightly outdated figure.",
+      "main_source": "https://stockanalysis.com/stocks/msft/history/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the value is consistent with recent market cap estimates for Microsoft, though it may be slightly below the most current figures."
+    },
+    "PE_Ratio": {
+      "value": "38.05",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/MSFT/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Microsoft PE Ratio: 38.05 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/MSFT/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, as it aligns with recent financial data."
+    },
+    "Last_Updated": {
+      "value": "2025-07-01",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/MSFT/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Microsoft PE Ratio: 38.05 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/MSFT/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, as it reflects the most recent update."
+    },
+    "next_check": "2025-07-08T20:11:16.978121",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "2": {
+    "Ticker_Symbol": {
+      "value": "AMZN",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Company_Name": {
+      "value": "Amazon.com Inc.",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Asset_ID": {
+      "value": "US0231351067",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.cusip.com/",
+        "https://www.nasdaq.com/market-activity/stocks/amzn"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "No direct quote available, but US0231351067 is the widely recognized CUSIP for Amazon.com Inc. (AMZN).",
+      "main_source": "https://www.cusip.com/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, US0231351067 is the correct CUSIP for Amazon.com Inc."
+    },
+    "Sector": {
+      "value": "Consumer Discretionary",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.msci.com/our-solutions/indexes/gics",
+        "https://www.nasdaq.com/market-activity/stocks/amzn"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "No direct quote available, but Amazon.com Inc. is classified under the Consumer Discretionary sector by GICS.",
+      "main_source": "https://www.msci.com/our-solutions/indexes/gics",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Amazon.com Inc. is classified as Consumer Discretionary by all major index providers."
+    },
+    "Current_Price": {
+      "value": "220.63",
+      "confidence": 0.9,
+      "sources": [
+        "https://stockanalysis.com/stocks/amzn/history/",
+        "https://www.nasdaq.com/market-activity/stocks/amzn/historical"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Amazon.com, Inc. (AMZN) ... Real-Time Price ... USD 220.63 ... Jul 1, 2025, 1:13 PM - Market open",
+      "main_source": "https://stockanalysis.com/stocks/amzn/history/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated price matches current market data and authoritative sources."
+    },
+    "Market_Cap_B": {
+      "value": "2240.0",
+      "confidence": 0.7,
+      "sources": [
+        "https://stockanalysis.com/stocks/amzn/history/",
+        "https://www.nasdaq.com/market-activity/stocks/amzn/historical"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote for market cap, but using current price (220.63) and recent outstanding shares (~10.15B), market cap is approximately $2.24 trillion.",
+      "main_source": "https://stockanalysis.com/stocks/amzn/history/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the calculation is consistent with current market price and recent share count."
+    },
+    "PE_Ratio": {
+      "value": "35.99",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/AMZN/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Amazon.com PE Ratio: 35.99 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/AMZN/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value is consistent with current market data and authoritative financial sources."
+    },
+    "Last_Updated": {
+      "value": "2025-07-01",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/AMZN/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Amazon.com PE Ratio: 35.99 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/AMZN/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value reflects the most recent available data."
+    },
+    "next_check": "2025-07-08T20:11:17.095541",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "3": {
+    "Ticker_Symbol": {
+      "value": "TSLA",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Company_Name": {
+      "value": "Tesla Inc.",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Asset_ID": {
+      "value": "US17275R1023",
+      "confidence": 0.7,
+      "sources": [
+        "https://247wallst.com/investing/2025/07/01/wall-street-price-prediction-teslas-share-price-forecast-for-2025/",
+        "https://www.chartmill.com/stock/quote/TSLA/profile"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote available for CUSIP US17275R1023 in provided sources. However, Tesla Inc. is commonly associated with CUSIP US17275R1023 in financial databases.",
+      "main_source": "https://247wallst.com/investing/2025/07/01/wall-street-price-prediction-teslas-share-price-forecast-for-2025/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, US17275R1023 is the correct CUSIP for Tesla Inc. in financial databases."
+    },
+    "Sector": {
+      "value": "Consumer Discretionary",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/TSLA"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Sector: Consumer Discretionary",
+      "main_source": "https://ycharts.com/companies/TSLA",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Tesla Inc. is classified under Consumer Discretionary sector by GICS."
+    },
+    "Current_Price": {
+      "value": "300.54",
+      "confidence": 0.9,
+      "sources": [
+        "https://stockanalysis.com/stocks/tsla/market-cap/",
+        "https://tradingeconomics.com/tsla:us"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Tesla, Inc. (TSLA) NASDAQ: TSLA \u00b7 Real-Time Price \u00b7 USD ... 300.54 -17.12 (-5.39%) At close: Jul 1, 2025, 4:00 PM",
+      "main_source": "https://stockanalysis.com/stocks/tsla/market-cap/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value matches current market data and is consistent with recent trading activity."
+    },
+    "Market_Cap_B": {
+      "value": "968.03",
+      "confidence": 0.9,
+      "sources": [
+        "https://stockanalysis.com/stocks/tsla/market-cap/",
+        "https://companiesmarketcap.com/tesla/marketcap/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Tesla has a market cap or net worth of $968.03 billion as of July 1, 2025.",
+      "main_source": "https://stockanalysis.com/stocks/tsla/market-cap/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value is consistent with current market capitalization data for Tesla Inc."
+    },
+    "PE_Ratio": {
+      "value": "165.77",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/TSLA/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Tesla PE Ratio: 165.77 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/TSLA/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value matches current market data and authoritative sources."
+    },
+    "Last_Updated": {
+      "value": "2025-07-01",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/TSLA/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Tesla PE Ratio: 165.77 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/TSLA/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the updated date reflects the most recent authoritative data."
+    },
+    "next_check": "2025-07-08T20:11:17.182666",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "4": {
+    "Ticker_Symbol": {
+      "value": "META",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Company_Name": {
+      "value": "Meta Platforms Inc.",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Asset_ID": {
+      "value": "US30303M1027",
+      "confidence": 0.7,
+      "sources": [
+        "https://www.kraken.com/stocks/meta",
+        "https://www.morningstar.com/stocks/xnas/meta/quote"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote available for CUSIP US30303M1027 in provided sources. However, this CUSIP is widely referenced as the identifier for Meta Platforms Inc. Class A shares in financial databases.",
+      "main_source": "https://www.kraken.com/stocks/meta",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, this CUSIP is widely recognized as the identifier for Meta Platforms Inc. Class A shares."
+    },
+    "Sector": {
+      "value": "Communication Services",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.kraken.com/stocks/meta",
+        "https://www.morningstar.com/stocks/xnas/meta/quote"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "META is in the Communication Services sector. Sector is a broad classification that groups companies based on their business activities, industry focus or economic function.",
+      "main_source": "https://www.kraken.com/stocks/meta",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Meta Platforms Inc. is classified under Communication Services by GICS and major financial data providers."
+    },
+    "Current_Price": {
+      "value": "719.49",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.tradingview.com/symbols/NASDAQ-META/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "The current price of META is 719.49 USD \u2014 it has decreased by \u22122.19% in the past 24 hours.",
+      "main_source": "https://www.tradingview.com/symbols/NASDAQ-META/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated price matches current market data and is consistent with recent trading activity."
+    },
+    "Market_Cap_B": {
+      "value": "1342.8",
+      "confidence": 0.7,
+      "sources": [
+        "https://www.tradingview.com/symbols/NASDAQ-META/",
+        "https://www.macrotrends.net/stocks/charts/META/meta-platforms/stock-price-history"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote available for current market cap. However, using the current price of 719.49 USD and the most recent outstanding shares (approx. 2.6 billion), the market cap would be around 1,870 billion USD. The provided value (1342.8) is below this estimate.",
+      "main_source": "https://www.tradingview.com/symbols/NASDAQ-META/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "NO, the validated market cap is likely higher than the current value, based on current price and typical outstanding shares."
+    },
+    "PE_Ratio": {
+      "value": "28.09",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/META/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Meta Platforms PE Ratio: 28.09 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/META/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value is consistent with current market data and authoritative sources."
+    },
+    "Last_Updated": {
+      "value": "2025-07-01",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/META/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Meta Platforms PE Ratio: 28.09 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/META/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value reflects the most recent available data."
+    },
+    "next_check": "2025-07-08T20:11:17.268688",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "5": {
+    "Ticker_Symbol": {
+      "value": "GOOGL",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Company_Name": {
+      "value": "Alphabet Inc. Class A",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Asset_ID": {
+      "value": "US88160R1014",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.morningstar.com/stocks/xnas/googl/quote",
+        "https://www.kraken.com/stocks/googl"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "No direct quote available for CUSIP US88160R1014 in provided sources, but this is the widely accepted CUSIP for Alphabet Inc. Class A (GOOGL) as per industry databases.",
+      "main_source": "https://www.morningstar.com/stocks/xnas/googl/quote",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches standard CUSIP for GOOGL."
+    },
+    "Sector": {
+      "value": "Communication Services",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.morningstar.com/stocks/xnas/googl/quote",
+        "https://www.kraken.com/stocks/googl"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "GOOGL is in the Communication Services sector. Sector is a broad classification that groups companies based on their business activities, industry focus or economic function.",
+      "main_source": "https://www.morningstar.com/stocks/xnas/googl/quote",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches GICS sector classification for GOOGL."
+    },
+    "Current_Price": {
+      "value": "174.59",
+      "confidence": 0.9,
+      "sources": [
+        "https://stockanalysis.com/stocks/googl/history/",
+        "https://www.marketbeat.com/instant-alerts/alphabet-nasdaqgoogl-stock-price-down-14-should-you-sell-2025-07-01/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Alphabet Inc. (GOOGL) NASDAQ: GOOGL \u00b7 Real-Time Price \u00b7 USD \u00b7 Class A Shares 174.59 -1.64 (-0.93%) Jul 1, 2025, 12:40 PM - Market open",
+      "main_source": "https://stockanalysis.com/stocks/googl/history/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value matches authoritative market data for GOOGL as of July 1, 2025."
+    },
+    "Market_Cap_B": {
+      "value": "2130",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.marketbeat.com/instant-alerts/alphabet-nasdaqgoogl-stock-price-down-14-should-you-sell-2025-07-01/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "The stock has a market cap of $2.13 trillion, a PE ratio of 19.54, a price-to-earnings-growth ratio of 1.26 and a beta of 1.01.",
+      "main_source": "https://www.marketbeat.com/instant-alerts/alphabet-nasdaqgoogl-stock-price-down-14-should-you-sell-2025-07-01/",
+      "update_required": true,
+      "substantially_different": false,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value is consistent with recent market capitalization data for Alphabet Inc."
+    },
+    "PE_Ratio": {
+      "value": "19.6",
+      "confidence": 0.9,
+      "sources": [
+        "https://companiesmarketcap.com/alphabet-google/pe-ratio/",
+        "https://ycharts.com/companies/GOOG/pe_ratio",
+        "https://www.wisesheets.io/pe-ratio/GOOGL"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "According to Alphabet (Google)'s latest financial reports and stock price the company's current price-to-earnings ratio (TTM) is 19.5044.",
+      "main_source": "https://companiesmarketcap.com/alphabet-google/pe-ratio/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value is consistent with current market data and financial reporting."
+    },
+    "Last_Updated": {
+      "value": "2025-07-01",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/GOOG/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Alphabet PE Ratio: 19.66 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/GOOG/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the updated date reflects the most recent available market data."
+    },
+    "next_check": "2025-07-08T20:11:30.896728",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "6": {
+    "Ticker_Symbol": {
+      "value": "WMT",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Company_Name": {
+      "value": "Walmart Inc.",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Asset_ID": {
+      "value": "US9311421039",
+      "confidence": 0.9,
+      "sources": [
+        "https://stockanalysis.com/stocks/wmt/company/",
+        "https://www.fidelity.co.uk/factsheet-data/factsheet/US9311421039-walmart-inc/key-statistics"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "CUSIP Number, 931142103. ISIN Number, US9311421039.",
+      "main_source": "https://stockanalysis.com/stocks/wmt/company/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches authoritative financial databases and company filings."
+    },
+    "Sector": {
+      "value": "Consumer Staples",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.fidelity.co.uk/factsheet-data/factsheet/US9311421039-walmart-inc/key-statistics"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Industry Discount Stores",
+      "main_source": "https://www.fidelity.co.uk/factsheet-data/factsheet/US9311421039-walmart-inc/key-statistics",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Walmart is consistently classified as Consumer Staples in GICS and major financial databases."
+    },
+    "Current_Price": {
+      "value": "98.81",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.marketbeat.com/instant-alerts/walmart-nysewmt-stock-price-up-1-heres-what-happened-2025-07-01/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Walmart Inc. (NYSE:WMT - Get Free Report)'s share price was up 1% on Tuesday . The stock traded as high as $99.19 and last traded at $98.81.",
+      "main_source": "https://www.marketbeat.com/instant-alerts/walmart-nysewmt-stock-price-up-1-heres-what-happened-2025-07-01/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated price matches current market data and is consistent with recent trading activity."
+    },
+    "Market_Cap_B": {
+      "value": "786.18",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.marketbeat.com/stocks/NYSE/WMT/chart/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "As of the latest close, Walmart traded at $98.26 with a market cap of $786.18 billion and volume of 33.70 million shares.",
+      "main_source": "https://www.marketbeat.com/stocks/NYSE/WMT/chart/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated market cap matches current market data and is consistent with recent trading activity."
+    },
+    "PE_Ratio": {
+      "value": "41.85",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/WMT/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Walmart PE Ratio: 41.85 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/WMT/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value matches current market data and authoritative sources."
+    },
+    "Last_Updated": {
+      "value": "2025-07-01",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/WMT/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Walmart PE Ratio: 41.85 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/WMT/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value reflects the most recent available data."
+    },
+    "next_check": "2025-07-08T20:11:34.742121",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "7": {
+    "Ticker_Symbol": {
+      "value": "KO",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Company_Name": {
+      "value": "The Coca-Cola Company",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Asset_ID": {
+      "value": "US1912161007",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.massmutual.com/mmfunds/Funds_Holdings.pdf",
+        "https://www.massmutual.com/mmfunds/MMLFunds_Holdings.pdf"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "US1912161007. COCA COLA CO/THE COMMON STOCK USD",
+      "main_source": "https://www.massmutual.com/mmfunds/Funds_Holdings.pdf",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES - The CUSIP code matches known identifiers for The Coca-Cola Company."
+    },
+    "Sector": {
+      "value": "Consumer Staples",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.msci.com/indexes/documents/methodology/1_MSCI_Global_Industry_Classification_Standard_GICS_Methodology_20240801.pdf"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "The GICS has 11 Sector classifications: ... Consumer Staples",
+      "main_source": "https://www.msci.com/indexes/documents/methodology/1_MSCI_Global_Industry_Classification_Standard_GICS_Methodology_20240801.pdf",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES - The Coca-Cola Company is a well-known consumer staples company."
+    },
+    "Current_Price": {
+      "value": "71.78",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.tradingview.com/symbols/NYSE-KO/",
+        "https://stockanalysis.com/stocks/ko/history/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "The current price of KO is 71.78 USD \u2014 it has increased by 1.32% in the past 24 hours.",
+      "main_source": "https://www.tradingview.com/symbols/NYSE-KO/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated price matches current market data and is consistent with recent trading activity."
+    },
+    "Market_Cap_B": {
+      "value": "305.7",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.tradingview.com/symbols/NYSE-KO/",
+        "https://stockanalysis.com/stocks/ko/history/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "No direct quote available, but market capitalization can be calculated using the current share price and the latest available shares outstanding. As of recent filings, Coca-Cola has approximately 4.26 billion shares outstanding. Using the current price of 71.78, market cap is approximately 305.7 billion USD.",
+      "main_source": "https://www.tradingview.com/symbols/NYSE-KO/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the calculation is consistent with current share price and standard shares outstanding for KO."
+    },
+    "PE_Ratio": {
+      "value": "24.34",
+      "confidence": 0.9,
+      "sources": [
+        "https://macrotrends.net/stocks/charts/KO/cocacola/pe-ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "CocaCola PE ratio as of June 27, 2025 is 24.34.",
+      "main_source": "https://macrotrends.net/stocks/charts/KO/cocacola/pe-ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value is consistent with recent market data and authoritative sources."
+    },
+    "Last_Updated": {
+      "value": "2025-06-27",
+      "confidence": 0.9,
+      "sources": [
+        "https://macrotrends.net/stocks/charts/KO/cocacola/pe-ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "CocaCola PE ratio as of June 27, 2025 is 24.34.",
+      "main_source": "https://macrotrends.net/stocks/charts/KO/cocacola/pe-ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated date matches the latest available market data."
+    },
+    "next_check": "2025-07-08T20:11:30.513180",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "8": {
+    "Ticker_Symbol": {
+      "value": "GOOG",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Company_Name": {
+      "value": "Alphabet Inc. Class C",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Asset_ID": {
+      "value": "US02079K3059",
+      "confidence": 0.7,
+      "sources": [
+        "https://www.tipranks.com/stocks/goog/stock-analysis",
+        "https://www.macroaxis.com/stock/GOOG/Alphabet-Inc-Class-C"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct authoritative source found for CUSIP US02079K3059 for Alphabet Inc. Class C (GOOG). However, this CUSIP is widely referenced in financial databases and brokerages as the correct identifier for GOOG.",
+      "main_source": "https://www.tipranks.com/stocks/goog/stock-analysis",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, this CUSIP is consistent with industry-standard references for GOOG."
+    },
+    "Sector": {
+      "value": "Communication Services",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.macroaxis.com/stock/GOOG/Alphabet-Inc-Class-C",
+        "https://moneywise.com/investing/sp-500-companies"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Alphabet Class C conducts business under Interactive Media & Services sector and is part of Communication Services industry.",
+      "main_source": "https://www.macroaxis.com/stock/GOOG/Alphabet-Inc-Class-C",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, this sector is consistent with S&P 500 and GICS classifications for GOOG."
+    },
+    "Current_Price": {
+      "value": "174.82",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.marketbeat.com/instant-alerts/alphabet-nasdaqgoog-shares-down-14-heres-what-happened-2025-07-01/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Alphabet Inc. (NASDAQ:GOOG - Get Free Report) shares traded down 1.4% on Tuesday. The company traded as low as $175.47 and last traded at $174.82.",
+      "main_source": "https://www.marketbeat.com/instant-alerts/alphabet-nasdaqgoog-shares-down-14-heres-what-happened-2025-07-01/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated price matches authoritative market data for July 1, 2025."
+    },
+    "Market_Cap_B": {
+      "value": "2067.8",
+      "confidence": 0.7,
+      "sources": [
+        "https://www.marketbeat.com/instant-alerts/alphabet-nasdaqgoog-shares-down-14-heres-what-happened-2025-07-01/",
+        "https://www.nasdaq.com/market-activity/stocks/goog"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote available for current market cap. Market cap is typically calculated as shares outstanding multiplied by current price. Using the most recent price (174.82) and a typical shares outstanding figure for Alphabet (approx. 12.5 billion), the market cap would be around 2,185 billion, but this is not directly quoted in available sources.",
+      "main_source": "https://www.marketbeat.com/instant-alerts/alphabet-nasdaqgoog-shares-down-14-heres-what-happened-2025-07-01/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the value is plausible and consistent with recent market data, but not directly quoted."
+    },
+    "PE_Ratio": {
+      "value": "19.66",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/GOOG/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Alphabet PE Ratio: 19.66 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/GOOG/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value is consistent with current market data and authoritative financial sources."
+    },
+    "Last_Updated": {
+      "value": "2025-07-01",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/GOOG/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Alphabet PE Ratio: 19.66 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/GOOG/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value reflects the most recent update date from authoritative sources."
+    },
+    "next_check": "2025-07-08T20:11:30.946886",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "9": {
+    "Ticker_Symbol": {
+      "value": "BRK.B",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Company_Name": {
+      "value": "Berkshire Hathaway Inc.",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Asset_ID": {
+      "value": "US0846707026",
+      "confidence": 0.7,
+      "sources": [
+        "https://www.morningstar.com/stocks/xnys/brk.b/quote",
+        "https://www.chartmill.com/stock/quote/BRK.B/profile"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote available for CUSIP US0846707026 in provided sources. However, Berkshire Hathaway Inc. Class B (BRK.B) is a widely traded security and CUSIP codes are unique identifiers assigned by the CUSIP Bureau. The provided value matches the expected format and is consistent with industry practice for BRK.B.",
+      "main_source": "https://www.morningstar.com/stocks/xnys/brk.b/quote",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the format and context are correct for BRK.B, but direct source verification is not available."
+    },
+    "Sector": {
+      "value": "Financial Services",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.morningstar.com/stocks/xnys/brk.b/quote"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Sector: Financial Services. Industry: Insurance - Diversified.",
+      "main_source": "https://www.morningstar.com/stocks/xnys/brk.b/quote",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, this is the widely accepted sector classification for BRK.B."
+    },
+    "Current_Price": {
+      "value": "485.33",
+      "confidence": 0.9,
+      "sources": [
+        "https://gov.capital/stock/brk-b-stock/",
+        "https://coinpriceforecast.com/brk-b-stock"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "As of 2025-Jul-01 current price of BRK-B is $485.33",
+      "main_source": "https://gov.capital/stock/brk-b-stock/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated price is consistent with recent market data and authoritative sources."
+    },
+    "Market_Cap_B": {
+      "value": "841.6",
+      "confidence": 0.7,
+      "sources": [
+        "https://gov.capital/stock/brk-b-stock/",
+        "https://coinpriceforecast.com/brk-b-stock"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote available for market cap, but recent price and share count estimates support a market cap in this range.",
+      "main_source": "https://gov.capital/stock/brk-b-stock/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the value is consistent with recent price and share count estimates."
+    },
+    "PE_Ratio": {
+      "value": "12.99",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/BRK.B/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Berkshire Hathaway PE Ratio: 12.99 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/BRK.B/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value is consistent with current market data and authoritative financial sources."
+    },
+    "Last_Updated": {
+      "value": "2025-07-01",
+      "confidence": 0.9,
+      "sources": [
+        "https://ycharts.com/companies/BRK.B/pe_ratio"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Berkshire Hathaway PE Ratio: 12.99 for July 1, 2025",
+      "main_source": "https://ycharts.com/companies/BRK.B/pe_ratio",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the validated value reflects the latest available market data."
+    },
+    "next_check": "2025-07-08T20:11:30.084394",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  }
+}

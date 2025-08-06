@@ -1,0 +1,19 @@
+{
+  "timestamp": "2025-07-01T16:11:08.398261",
+  "arguments": {
+    "excel": "test_cases/financial_portfolio/financial_portfolio.xlsx",
+    "config": "test_cases/financial_portfolio/financial_portfolio_config.json",
+    "mode": "all",
+    "max_rows": 10,
+    "preview_rows": 3,
+    "name": null,
+    "output_dir": "test_cases/financial_portfolio/",
+    "email": "eliyahu@eliyahu.ai",
+    "verbose": false
+  },
+  "environment": {
+    "api_url": "https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod/validate",
+    "status_url": "https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod/status",
+    "python_version": "3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]"
+  }
+}

@@ -1,0 +1,1172 @@
+Enhanced Validation Results Summary
+==================================
+
+Session ID: 67687618-9b08-471e-a3de-ec1df7bd472f
+Reference Pin: 534806
+
+Generated: 20250701_201316
+Total Rows Processed: 10
+
+Fields Validated: Employee_Count, Annual_Revenue_B, Headquarters, Certification_Level, Primary_Product, Contract_Expiry, Company_Name
+
+Confidence Distribution:
+- HIGH: 48 fields
+- MEDIUM: 5 fields  
+- LOW: 7 fields
+
+Token Usage & Cost Analysis:
+============================
+Total Tokens: 37,165
+Total Cost: $0.248331
+API Calls: 15 new, 15 cached
+
+Provider Breakdown:
+- Perplexity API: 25,762 prompt + 11,403 completion = 37,165 tokens
+  Cost: $0.077286 input + $0.171045 output = $0.248331 total
+  Calls: 30
+
+Model Breakdown:
+- sonar-pro (perplexity): 37,165 tokens, $0.248331, 30 calls
+
+
+Files Included:
+==============
+- validation_results_enhanced.xlsx : Color-coded Excel with comments and multiple sheets
+- validation_results.json          : Raw validation data in JSON format
+- validation_results.csv           : Simple CSV format for basic analysis
+- SUMMARY.txt                      : This summary file
+- COMPLETED.txt                    : Processing completion marker
+- original_files/aerospace_manufacturing.xlsx  : Original input file
+- original_files/aerospace_manufacturing_config.json : Original configuration file
+
+Enhanced Excel Features:
+=======================
+✅ Color-coded confidence levels:
+   - GREEN: HIGH confidence
+   - YELLOW: MEDIUM confidence  
+   - RED: LOW confidence
+✅ Cell comments with quotes and sources
+✅ Multiple worksheets: Results, Details, Reasons
+✅ Comprehensive validation tracking
+✅ Professional formatting with xlsxwriter
+
+Processing Details:
+==================
+{
+  "0": {
+    "Company_Name": {
+      "value": "Boeing Company",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Headquarters": {
+      "value": "Arlington, VA",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.clay.com/dossier/boeing-headquarters-office-locations",
+        "https://northernvirginiamag.com/home/real-estate/2022/05/17/boeing-northern-virginia/",
+        "https://investors.boeing.com/investors/news/press-release-details/2022/Boeing-Names-Northern-Virginia-Office-Its-Global-Headquarters-Establishes-Research--Technology-Hub/default.aspx"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Boeing's headquarters, located at 929 Long Bridge Drive in Arlington, United States, serves as the main office for the aerospace giant.",
+      "main_source": "https://www.clay.com/dossier/boeing-headquarters-office-locations",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Boeing's headquarters is now in Arlington, VA, not Chicago, IL."
+    },
+    "Primary_Product": {
+      "value": "Commercial Aircraft",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.clay.com/dossier/boeing-headquarters-office-locations",
+        "https://northernvirginiamag.com/home/real-estate/2022/05/17/boeing-northern-virginia/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Boeing, a leading aerospace company, designs and manufactures commercial jetliners, defense systems, and space technology.",
+      "main_source": "https://www.clay.com/dossier/boeing-headquarters-office-locations",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Boeing is best known for its commercial aircraft, though it has other major product lines."
+    },
+    "Annual_Revenue_B": {
+      "value": "66.5",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.macrotrends.net/stocks/charts/BA/boeing/revenue",
+        "https://www.laranews.net/boeing-reports-usd-11-8bn-annual-loss/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Boeing annual revenue for 2024 was $66.517B, a 14.5% decline from 2023.",
+      "main_source": "https://www.macrotrends.net/stocks/charts/BA/boeing/revenue",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, consistent with authoritative financial reporting and recent news sources."
+    },
+    "Employee_Count": {
+      "value": "172000",
+      "confidence": 0.9,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Boeing"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "2024, 66.5, (11.8), 172,000.",
+      "main_source": "https://en.wikipedia.org/wiki/Boeing",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, consistent with the latest available data from reputable sources."
+    },
+    "Certification_Level": {
+      "value": "AS9100 Rev D",
+      "confidence": 0.9,
+      "sources": [
+        "https://as9100store.com/aerospace-standards-explained/what-is-as9100/",
+        "https://www.xometry.com/resources/certifications/as9100d/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "AS9100 is the international Quality Management System standard for the Aviation, Space and Defense (AS&D) industry, created by the IAQG, and AS9100 Rev D (2016) is the most recent version.",
+      "main_source": "https://as9100store.com/aerospace-standards-explained/what-is-as9100/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Boeing contractually flows QMS standards (ISO 9001, AS9100, AS9110, AS9120) and expects suppliers to obtain accredited QMS certification."
+    },
+    "Contract_Expiry": {
+      "value": "2026-12-31",
+      "confidence": 0.7,
+      "sources": [
+        "https://www.boeingsuppliers.com/become/quality/faq",
+        "https://as9100store.com/aerospace-standards-explained/what-is-as9100/"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote available for Boeing's specific contract expiry date. However, the format and value are consistent with expected contract documentation practices.",
+      "main_source": "https://www.boeingsuppliers.com/become/quality/faq",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the format and value are consistent with typical aerospace contract documentation and supplier management practices."
+    },
+    "next_check": "2025-07-08T20:12:57.906167",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (2 fields)"
+    ]
+  },
+  "1": {
+    "Company_Name": {
+      "value": "Airbus SE",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Headquarters": {
+      "value": "Toulouse, France",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.airbus.com/en/airbus-contact-us",
+        "https://www.airbus.com/en/careers/life-at-airbus/working-here/working-at-airbus-in-france"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Airbus Headquarters in Toulouse 1, Rond Point Maurice Bellonte 31707 Blagnac Cedex France",
+      "main_source": "https://www.airbus.com/en/airbus-contact-us",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches widely accepted fact and official company information."
+    },
+    "Primary_Product": {
+      "value": "Commercial Aircraft",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.airbus.com/en/products-services/commercial-aircraft",
+        "https://www.airbus.com/en/products-services"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Airbus offers the latest-generation aircraft and services to meet the needs of any airline \u2013 from low-cost and full-service carriers to the air freight and VIP transport segments \u2013 while leading commercial aviation\u2019s transition to the new era of decarbonisation.",
+      "main_source": "https://www.airbus.com/en/products-services/commercial-aircraft",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, aligns with official product portfolio and industry recognition."
+    },
+    "Annual_Revenue_B": {
+      "value": "74.21",
+      "confidence": 0.9,
+      "sources": [
+        "https://companiesmarketcap.com/airbus/revenue/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "In 2024 the company made a revenue of $74.21 Billion USD an increase over the revenue in the year 2023 that were of $71.20 Billion USD.",
+      "main_source": "https://companiesmarketcap.com/airbus/revenue/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches authoritative financial reporting for Airbus SE in 2024."
+    },
+    "Employee_Count": {
+      "value": "156921",
+      "confidence": 0.9,
+      "sources": [
+        "https://stockanalysis.com/quote/etr/AIR/employees/",
+        "https://en.wikipedia.org/wiki/Airbus"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Airbus SE had 156,921 employees as of December 31, 2024. The number of employees increased by 9,028 or 6.10% compared to the previous year.",
+      "main_source": "https://stockanalysis.com/quote/etr/AIR/employees/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches multiple authoritative sources for Airbus SE's 2024 workforce."
+    },
+    "Certification_Level": {
+      "value": "AS9100 Rev D",
+      "confidence": 0.9,
+      "sources": [
+        "https://as9100store.com/aerospace-standards-explained/what-is-as9100/",
+        "https://www.eaglecertificationgroup.com/certification-standards/as-9100-as-9120/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "AS9100 is the international Quality Management System standard for the Aviation, Space and Defense (AS&D) industry, created by the IAQG, and AS9100 Rev D (2016) is the most recent version. The standard provides suppliers with requirements for creating and maintaining a comprehensive quality system for providing safe and reliable products to the ASD industry, as well as civil & military aviation requirements.",
+      "main_source": "https://as9100store.com/aerospace-standards-explained/what-is-as9100/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, AS9100 Rev D is the current standard for aerospace quality management and is required by major aerospace manufacturers."
+    },
+    "Contract_Expiry": {
+      "value": "2025-08-15",
+      "confidence": 0.7,
+      "sources": [
+        "https://www.airbus.com/sites/g/files/jlcbta136/files/2024-01/QMS-09-01-A220-Suppliers-Quality-Requirements.pdf"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote available for Airbus SE contract expiry date. The provided value matches the required format and is plausible for a current contract.",
+      "main_source": "https://www.airbus.com/sites/g/files/jlcbta136/files/2024-01/QMS-09-01-A220-Suppliers-Quality-Requirements.pdf",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the format and value are consistent with typical aerospace supplier contract expiry dates."
+    },
+    "next_check": "2025-07-08T20:12:58.007084",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "2": {
+    "Company_Name": {
+      "value": "Lockheed Martin",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Headquarters": {
+      "value": "Bethesda, MD",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.clay.com/dossier/lockheed-martin-headquarters-office-locations",
+        "https://www.lockheedmartin.com/en-us/who-we-are.html"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Lockheed Martin's headquarters is situated at 6801 Rockledge Dr, Bethesda, United States. This location serves as the main office for the global aerospace and defense company, playing a crucial role in its operations and strategic planning.",
+      "main_source": "https://www.clay.com/dossier/lockheed-martin-headquarters-office-locations",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Lockheed Martin is widely recognized as headquartered in Bethesda, MD."
+    },
+    "Primary_Product": {
+      "value": "Defense Systems",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.lockheedmartin.com/en-us/who-we-are.html",
+        "https://www.lockheedmartin.com/en-us/who-we-are/business-areas/missiles-and-fire-control.html"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "As a global security and aerospace company, the majority of Lockheed Martin's business is with the U.S. Department of Defense and U.S. federal government agencies... Lockheed Martin Missiles and Fire Control (MFC) is a recognized designer, developer and manufacturer of precision engagement aerospace and defense systems for the U.S. and allied militaries.",
+      "main_source": "https://www.lockheedmartin.com/en-us/who-we-are.html",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Lockheed Martin is primarily known for defense systems and related aerospace products."
+    },
+    "Annual_Revenue_B": {
+      "value": "71.04",
+      "confidence": 0.9,
+      "sources": [
+        "https://news.lockheedmartin.com/2025-01-28-Lockheed-Martin-Reports-Fourth-Quarter-and-Full-Year-2024-Financial-Results",
+        "https://taptwicedigital.com/blog/lockheed-martin"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Net sales in 2024 were $71.0 billion, compared to $67.6 billion in 2023.",
+      "main_source": "https://news.lockheedmartin.com/2025-01-28-Lockheed-Martin-Reports-Fourth-Quarter-and-Full-Year-2024-Financial-Results",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, consistent with Lockheed Martin's reported financials for 2024."
+    },
+    "Employee_Count": {
+      "value": "110000",
+      "confidence": 0.9,
+      "sources": [
+        "https://eulerpool.com/en/stock/Lockheed-Martin-Stock-US5398301094/Employees"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "The number of employees of Lockheed Martin 2025 is 110000. In 2025, Lockheed Martin employed 110000 people, a 0% change from the 110000 number of employees in the previous year.",
+      "main_source": "https://eulerpool.com/en/stock/Lockheed-Martin-Stock-US5398301094/Employees",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, consistent with recent workforce reporting for Lockheed Martin."
+    },
+    "Certification_Level": {
+      "value": "AS9100 Rev D",
+      "confidence": 0.9,
+      "sources": [
+        "https://as9100store.com/aerospace-standards-explained/what-is-as9100/",
+        "https://www.xometry.com/resources/certifications/as9100d/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "AS9100 Rev D (2016) includes the ISO 9001:2015 requirements and supplements them with additional quality system requirements. ISO published ISO 9001:2015/AMD1: ... AS9100 is the international Quality Management System standard for the Aviation, Space and Defense (AS&D) industry, created by the IAQG, and AS9100 Rev D (2016) is the most recent version.",
+      "main_source": "https://as9100store.com/aerospace-standards-explained/what-is-as9100/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Lockheed Martin is a major aerospace and defense contractor and would be expected to maintain AS9100 Rev D certification."
+    },
+    "Contract_Expiry": {
+      "value": "2027-03-30",
+      "confidence": 0.7,
+      "sources": [
+        "https://www.xometry.com/resources/certifications/as9100d/",
+        "https://as9100store.com/aerospace-standards-explained/what-is-as9100/"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote available for Lockheed Martin\u2019s specific contract expiry date. The value is in the correct YYYY-MM-DD format and is plausible for a major defense contract.",
+      "main_source": "https://www.xometry.com/resources/certifications/as9100d/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the format and value are consistent with typical contract management practices for large aerospace suppliers."
+    },
+    "next_check": "2025-07-08T20:12:58.114141",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "3": {
+    "Company_Name": {
+      "value": "Northrop Grumman",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Headquarters": {
+      "value": "Falls Church, VA",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.northropgrumman.com/who-we-are/contact-us-northrop-grumman",
+        "https://www.globaldata.com/company-profile/northrop-grumman-corp/locations/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Northrop Grumman Corporation 2980 Fairview Park Drive Falls Church, VA 22042",
+      "main_source": "https://www.northropgrumman.com/who-we-are/contact-us-northrop-grumman",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES - The location matches known information about Northrop Grumman."
+    },
+    "Primary_Product": {
+      "value": "Defense Systems",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.northropgrumman.com/who-we-are/business-sectors/defense-systems"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Northrop Grumman Defense Systems is a full-spectrum provider of innovative mission critical solutions in aircraft sustainment and modernization, training and simulation, integrated battle command systems, advanced weapons, and software development and IT modernization and sustainment",
+      "main_source": "https://www.northropgrumman.com/who-we-are/business-sectors/defense-systems",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES - Defense Systems aligns with Northrop Grumman's known product offerings."
+    },
+    "Annual_Revenue_B": {
+      "value": "41.03",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.marketbeat.com/stocks/NYSE/NOC/earnings/",
+        "https://en.wikipedia.org/wiki/Northrop_Grumman"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Northrop Grumman (NYSE:NOC) has a recorded annual revenue of $41.03 billion.",
+      "main_source": "https://www.marketbeat.com/stocks/NYSE/NOC/earnings/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches authoritative financial reporting for Northrop Grumman."
+    },
+    "Employee_Count": {
+      "value": "97000",
+      "confidence": 0.9,
+      "sources": [
+        "https://bullfincher.io/companies/northrop-grumman-corporation/number-of-employees",
+        "https://en.wikipedia.org/wiki/Northrop_Grumman"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "In fiscal year 2024, the total number of employees at Northrop Grumman Corporation was 97,000.",
+      "main_source": "https://bullfincher.io/companies/northrop-grumman-corporation/number-of-employees",
+      "update_required": true,
+      "substantially_different": false,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches official and widely cited employee counts for Northrop Grumman."
+    },
+    "Certification_Level": {
+      "value": "AS9100 Rev C",
+      "confidence": 0.7,
+      "sources": [
+        "https://as9100store.com/aerospace-standards-explained/what-is-as9100/what-is-as9100-2009-revc/",
+        "https://certification-requirements.com/iso_standards/as9100_rev_c.html"
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "AS9100 Rev C was published in 2009 and is now replaced by AS9100 Rev D (2016). AS9100c is based off, and includes all ISO 9001:2008 requirements, with additions specifically for aviation, space and defense industry requirements, definitions, and notes as shown in bold, italic text in the standard.",
+      "main_source": "https://as9100store.com/aerospace-standards-explained/what-is-as9100/what-is-as9100-2009-revc/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, AS9100 Rev C is a recognized aerospace quality standard, though Rev D is now the current standard."
+    },
+    "Contract_Expiry": {
+      "value": "2025-11-20",
+      "confidence": 0.3,
+      "sources": [
+        ""
+      ],
+      "confidence_level": "LOW",
+      "quote": "No direct quote available for Northrop Grumman contract expiry date.",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the format is correct and the date is plausible, but not directly verifiable."
+    },
+    "next_check": "2025-07-08T20:12:58.211317",
+    "reasons": [
+      "Low confidence results found (2 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "4": {
+    "Company_Name": {
+      "value": "Raytheon Technologies",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Headquarters": {
+      "value": "Arlington, VA",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.rtx.com/news/news-center/2022/06/07/raytheon-technologies-establishes-global-headquarters-office-in-northern-virginia",
+        "https://virginiabusiness.com/raytheon-moving-global-hq-to-arlington-2/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Raytheon Technologies (NYSE: RTX) announced today that it will establish its global headquarters in Arlington, Virginia. The new global headquarters office will be in Arlington\u2019s Rosslyn neighborhood alongside the Raytheon Intelligence & Space business.",
+      "main_source": "https://www.rtx.com/news/news-center/2022/06/07/raytheon-technologies-establishes-global-headquarters-office-in-northern-virginia",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, multiple authoritative sources confirm the headquarters is now in Arlington, VA."
+    },
+    "Primary_Product": {
+      "value": "Aerospace Systems",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.rtx.com/news/news-center/2022/06/07/raytheon-technologies-establishes-global-headquarters-office-in-northern-virginia",
+        "https://www.rtx.com/who-we-are/our-businesses"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Raytheon Technologies Corporation is an aerospace and defense company that provides advanced systems and services for commercial, military and government customers worldwide. With four industry-leading businesses \u2015 Collins Aerospace, Pratt & Whitney, Raytheon Intelligence & Space and Raytheon Missiles & Defense \u2015 the company delivers solutions that push the boundaries in avionics, cybersecurity, directed energy, electric propulsion, hypersonics, and quantum physics.",
+      "main_source": "https://www.rtx.com/news/news-center/2022/06/07/raytheon-technologies-establishes-global-headquarters-office-in-northern-virginia",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Raytheon Technologies is widely recognized for its aerospace and defense systems."
+    },
+    "Annual_Revenue_B": {
+      "value": "80.73",
+      "confidence": 0.9,
+      "sources": [
+        "https://companiesmarketcap.com/raytheon-technologies/revenue/",
+        "https://www.rtx.com/news/news-center/2025/01/28/rtx-reports-2024-results-and-announces-2025-outlook"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "In 2024 the company made a revenue of $80.73 Billion USD an increase over the revenue in the year 2023 that were of $68.92 Billion USD.",
+      "main_source": "https://companiesmarketcap.com/raytheon-technologies/revenue/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches authoritative financial reporting and company disclosures."
+    },
+    "Employee_Count": {
+      "value": "185000",
+      "confidence": 0.9,
+      "sources": [
+        "https://tradingeconomics.com/rtx:us:employees",
+        "https://en.wikipedia.org/wiki/RTX_Corporation"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Raytheon Technologies reported 185K in Employees for its fiscal year ending in December of 2023.",
+      "main_source": "https://tradingeconomics.com/rtx:us:employees",
+      "update_required": true,
+      "substantially_different": false,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, aligns with widely reported workforce figures for Raytheon Technologies (RTX)."
+    },
+    "Certification_Level": {
+      "value": "AS9100 Rev D",
+      "confidence": 0.9,
+      "sources": [
+        "https://appliedaero.space/raytheon-technologies-premier-award/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "The company, is ISO 9001:2015 and AS9100 Rev D certified.",
+      "main_source": "https://appliedaero.space/raytheon-technologies-premier-award/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, AS9100 Rev D is a recognized aerospace quality management certification and is consistent with Raytheon Technologies' supply chain standards."
+    },
+    "Contract_Expiry": {
+      "value": "2026-06-30",
+      "confidence": 0.3,
+      "sources": [
+        "https://www.rtx.com/news/news-center/2025/02/27/rtxs-pratt-whitney-gtf-advantage-engine-achieves-u-s-faa-type-certification",
+        "https://www.rtx.com/news/news-center/2025/02/21/easa-certifies-airbus-a321xlr-aircraft-powered-by-rtxs-pratt-whitney-gtf-engi"
+      ],
+      "confidence_level": "LOW",
+      "quote": "No direct quote available for Raytheon Technologies contract expiry date.",
+      "main_source": "https://www.rtx.com/news/news-center/2025/02/27/rtxs-pratt-whitney-gtf-advantage-engine-achieves-u-s-faa-type-certification",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the format and value are consistent with expected contract expiry date conventions, but there is no direct evidence to confirm this specific date."
+    },
+    "next_check": "2025-07-08T20:12:58.318566",
+    "reasons": [
+      "Low confidence results found (2 fields)",
+      "Critical field updates required (2 fields)"
+    ]
+  },
+  "5": {
+    "Company_Name": {
+      "value": "General Dynamics",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Headquarters": {
+      "value": "Reston, VA",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.clay.com/dossier/general-dynamics-headquarters-office-locations",
+        "https://www.gd.com/about-gd/faqs"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "General Dynamics' headquarters is situated at 11011 Sunset Hills Rd, Reston, United States. This location serves as the main office for the company, overseeing its extensive operations in aerospace and defense.",
+      "main_source": "https://www.clay.com/dossier/general-dynamics-headquarters-office-locations",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches all authoritative sources and industry knowledge."
+    },
+    "Primary_Product": {
+      "value": "Aerospace & Defense",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.halo-technologies.com/insights/company-overview-general-dynamics",
+        "https://www.gd-ots.com"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "General Dynamics is a global aerospace and defence company that specializes in ship construction and repair, land combat vehicles, weapons systems, munitions, and the manufacturing of products and services in business aviation.",
+      "main_source": "https://www.halo-technologies.com/insights/company-overview-general-dynamics",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches all authoritative sources and industry knowledge."
+    },
+    "Annual_Revenue_B": {
+      "value": "47.7",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.gd.com/Articles/2025/01/29/general-dynamics-reports-fourth-quarter-and-full-year-2024-financial-results",
+        "https://www.prnewswire.com/news-releases/general-dynamics-reports-fourth-quarter-and-full-year-2024-financial-results-302362652.html"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "General Dynamics employs more than 110,000 people worldwide and generated $47.7 billion in revenue in 2024.",
+      "main_source": "https://www.gd.com/Articles/2025/01/29/general-dynamics-reports-fourth-quarter-and-full-year-2024-financial-results",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches authoritative financial reports and industry data."
+    },
+    "Employee_Count": {
+      "value": "110000",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.gd.com/Articles/2025/01/29/general-dynamics-reports-fourth-quarter-and-full-year-2024-financial-results",
+        "https://www.prnewswire.com/news-releases/general-dynamics-reports-fourth-quarter-and-full-year-2024-financial-results-302362652.html"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "General Dynamics employs more than 110,000 people worldwide and generated $47.7 billion in revenue in 2024.",
+      "main_source": "https://www.gd.com/Articles/2025/01/29/general-dynamics-reports-fourth-quarter-and-full-year-2024-financial-results",
+      "update_required": true,
+      "substantially_different": false,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches official company statements and recent press releases."
+    },
+    "Certification_Level": {
+      "value": "AS9100 Rev D",
+      "confidence": 0.9,
+      "sources": [
+        "https://investorrelations.gd.com/news/press-release-details/2025/Gulfstream-G800-Earns-FAA-and-EASA-Certifications/default.aspx",
+        "https://www.prnewswire.com/news-releases/gulfstream-g800-earns-faa-and-easa-certifications-302430495.html"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "No direct quote found for General Dynamics specifically holding AS9100 Rev D, but as a major aerospace and defense manufacturer, it is a widely accepted fact that such companies maintain AS9100 or equivalent aerospace quality standards.",
+      "main_source": "https://investorrelations.gd.com/news/press-release-details/2025/Gulfstream-G800-Earns-FAA-and-EASA-Certifications/default.aspx",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, General Dynamics is a major aerospace manufacturer and is expected to maintain AS9100 or equivalent certification."
+    },
+    "Contract_Expiry": {
+      "value": "2025-09-15",
+      "confidence": 0.3,
+      "sources": [
+        "https://investorrelations.gd.com/news/press-release-details/2025/Gulfstream-G800-Earns-FAA-and-EASA-Certifications/default.aspx",
+        "https://www.prnewswire.com/news-releases/gulfstream-g800-earns-faa-and-easa-certifications-302430495.html"
+      ],
+      "confidence_level": "LOW",
+      "quote": "No direct quote or authoritative source found regarding a specific contract expiry date for General Dynamics in the provided context.",
+      "main_source": "https://investorrelations.gd.com/news/press-release-details/2025/Gulfstream-G800-Earns-FAA-and-EASA-Certifications/default.aspx",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the format is correct and the date is plausible, but there is no direct evidence to confirm it."
+    },
+    "next_check": "2025-07-08T20:13:12.855123",
+    "reasons": [
+      "Low confidence results found (2 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "6": {
+    "Company_Name": {
+      "value": "Honeywell Aerospace",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Headquarters": {
+      "value": "Phoenix, AZ",
+      "confidence": 0.9,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Honeywell_Aerospace",
+        "https://www.waze.com/live-map/directions/honeywell-aerospace-global-headquarters-e-sky-harbor-circle-n-1944-phoenix?to=place.w.162529614.1625034000.1402386"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Headquartered in Phoenix, Arizona, it is a division of the Honeywell International conglomerate.",
+      "main_source": "https://en.wikipedia.org/wiki/Honeywell_Aerospace",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Honeywell Aerospace is widely recognized as headquartered in Phoenix, AZ."
+    },
+    "Primary_Product": {
+      "value": "Avionics Systems",
+      "confidence": 0.9,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Honeywell_Aerospace"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Honeywell Aerospace Technologies is a manufacturer of aircraft engines and avionics, as well as a producer of auxiliary power units (APUs) and other aviation products.",
+      "main_source": "https://en.wikipedia.org/wiki/Honeywell_Aerospace",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, avionics systems are a primary product line for Honeywell Aerospace."
+    },
+    "Annual_Revenue_B": {
+      "value": "15.8",
+      "confidence": 0.3,
+      "sources": [
+        "https://www.nasdaq.com/articles/honeywells-q1-earnings-revenues-beat-estimates-increase-y-y",
+        "https://www.honeywell.com/us/en/press/2025/02/honeywell-announces-fourth-quarter-and-full-year-2024-results-issues-2025-guidance"
+      ],
+      "confidence_level": "LOW",
+      "quote": "Honeywell International Inc. expects sales to be in the range of $39.6-$40.5 billion for 2025. Honeywell Aerospace is a major segment, but its specific annual revenue is not directly reported as a standalone figure in available sources.",
+      "main_source": "https://www.nasdaq.com/articles/honeywells-q1-earnings-revenues-beat-estimates-increase-y-y",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "NO, because Honeywell International's total annual revenue is reported as $39.6\u2013$40.5 billion, and the Aerospace segment is only a portion of this total."
+    },
+    "Employee_Count": {
+      "value": "97000",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.honeywell.com/us/en/global"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Honeywell's global presence includes all major regions such as North America, Latin America, Europe, India, Asia and Middle East. ~99,000* Employees *Excludes Sandia National Laboratories (Sandia) and Kansas City National Security Campus (KCNSC) work forces.",
+      "main_source": "https://www.honeywell.com/us/en/global",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, because the value is consistent with Honeywell International's global workforce, though not specific to Aerospace."
+    },
+    "Certification_Level": {
+      "value": "AS9100 Rev D",
+      "confidence": 0.9,
+      "sources": [
+        "https://aerospace.honeywell.com/content/dam/aerobt/en/documents/landing-pages/certificates/AS_9100-ENG-CERT-05885-2006-AQ-HOU-ANAB-16-20240913-valid-until-14-SEP-2027.pdf",
+        "https://automation.honeywell.com/us/en/support/productivity-solutions/quality-program-environmental-compliance"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "This is to certify that the management system of Honeywell Aerospace Technologies (HQ) 111 South 34th Street, Phoenix, AZ, 85034, USA and the sites as mentioned in the appendix accompanying this certificate has been found to conform to the Quality Management System standards: AS9100D and ISO 9001:2015 (technically equivalent to EN9100:2018 and JISQ9100:2016) and has been audited in accordance with the requirements of AS 9104/1:2012.",
+      "main_source": "https://aerospace.honeywell.com/content/dam/aerobt/en/documents/landing-pages/certificates/AS_9100-ENG-CERT-05885-2006-AQ-HOU-ANAB-16-20240913-valid-until-14-SEP-2027.pdf",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Honeywell Aerospace is widely recognized as AS9100D certified."
+    },
+    "Contract_Expiry": {
+      "value": "2026-01-31",
+      "confidence": 0.3,
+      "sources": [
+        "",
+        ""
+      ],
+      "confidence_level": "LOW",
+      "quote": "No direct quote available for Honeywell Aerospace contract expiry date. The value is provided in the expected YYYY-MM-DD format and matches the example format.",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "NO, no external evidence supports this specific contract expiry date."
+    },
+    "next_check": "2025-07-08T20:13:16.617811",
+    "reasons": [
+      "Low confidence results found (3 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "7": {
+    "Company_Name": {
+      "value": "Rolls-Royce Holdings",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Headquarters": {
+      "value": "London, UK",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.globaldata.com/company-profile/rolls-royce-holdings-plc/locations/",
+        "https://www.cbinsights.com/company/rolls-royce"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Rolls-Royce's headquarters is located at 90 York Way, London, England, N1 9FX, United Kingdom.",
+      "main_source": "https://www.globaldata.com/company-profile/rolls-royce-holdings-plc/locations/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches all authoritative sources and industry knowledge."
+    },
+    "Primary_Product": {
+      "value": "Aircraft Engines",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.cbinsights.com/company/rolls-royce",
+        "https://www.britannica.com/money/Rolls-Royce-PLC"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Rolls-Royce specializes in developing complex power and propulsion solutions for various sectors including aerospace, marine, and energy. The company offers a range of products and services that cater to safety-critical applications, ensuring reliable and efficient power delivery for aircraft, ships, and land-based systems. Rolls-Royce's main offerings include aero engines for civil and defense aviation...",
+      "main_source": "https://www.cbinsights.com/company/rolls-royce",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, consistent with Rolls-Royce's core business as a leading manufacturer of aircraft engines."
+    },
+    "Annual_Revenue_B": {
+      "value": "23.72",
+      "confidence": 0.9,
+      "sources": [
+        "https://companiesmarketcap.com/rolls-royce-holdings/revenue/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Revenue in 2024: $23.72 Billion USD According to Rolls-Royce Holdings's latest financial reports the company's current revenue (TTM) is $23.72 Billion USD.",
+      "main_source": "https://companiesmarketcap.com/rolls-royce-holdings/revenue/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the value is consistent with recent financial reporting and industry benchmarks."
+    },
+    "Employee_Count": {
+      "value": "42400",
+      "confidence": 0.9,
+      "sources": [
+        "https://stockanalysis.com/quote/otc/RYCEY/employees/",
+        "https://stockanalysis.com/quote/lon/RR/revenue/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Rolls-Royce Holdings had 42,400 employees as of December 31, 2024. The number of employees increased by 1,000 or 2.42% compared to the previous year.",
+      "main_source": "https://stockanalysis.com/quote/otc/RYCEY/employees/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the value is consistent with recent official reporting and industry data."
+    },
+    "Certification_Level": {
+      "value": "ISO 9001:2015, ISO 14001:2015, ISO 45001:2018 (multi-site, aerospace scope)",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.rolls-royce.com/~/media/Files/R/Rolls-Royce/documents/sustainability/global-external-certification-iso-9001.pdf"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Bureau Veritas Certification Holding SAS - UK Branch certify that the Management System of the above organisation has been audited and found to be in accordance with the requirements of the management system standards detailed below Standards ISO 9001:2015* ISO 14001:2015* ISO 45001:2018* *Note: please see attached appendices for site and standard applicability Scope of Certification For scope statements see: CIVIL AEROSPACE AND DEFENCE AEROSPACE - appendix 90000-HSE (Version 1)",
+      "main_source": "https://www.rolls-royce.com/~/media/Files/R/Rolls-Royce/documents/sustainability/global-external-certification-iso-9001.pdf",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Rolls-Royce is widely recognized for robust quality management systems in aerospace, but the specific certification cited is not confirmed."
+    },
+    "Contract_Expiry": {
+      "value": "2025-07-30",
+      "confidence": 0.3,
+      "sources": [
+        ""
+      ],
+      "confidence_level": "LOW",
+      "quote": "No direct quote available for a specific contract expiry date for Rolls-Royce Holdings as a supplier.",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "NO, there is no evidence in available sources to confirm this specific contract expiry date."
+    },
+    "next_check": "2025-07-08T20:13:14.648231",
+    "reasons": [
+      "Low confidence results found (2 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "8": {
+    "Company_Name": {
+      "value": "Safran SA",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Headquarters": {
+      "value": "Paris, France",
+      "confidence": 0.9,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Safran",
+        "https://www.globaldata.com/company-profile/safran-sa/locations/",
+        "https://www.safran-group.com/locations/france/safran-headquarter-2077137"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Safran S.A. is a French multinational aerospace, defence and security corporation headquartered in Paris.",
+      "main_source": "https://en.wikipedia.org/wiki/Safran",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches all authoritative sources and industry knowledge."
+    },
+    "Primary_Product": {
+      "value": "Aircraft Engines",
+      "confidence": 0.9,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Safran_Aircraft_Engines",
+        "https://www.safran-group.com/group/profile/aircraft-propulsion"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Safran Aircraft Engines... designs, manufactures and maintains engines for commercial and military aircraft as well as rocket engines for launch vehicles and satellites.",
+      "main_source": "https://en.wikipedia.org/wiki/Safran_Aircraft_Engines",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Safran SA is a leading manufacturer of aircraft engines, as confirmed by multiple authoritative sources."
+    },
+    "Annual_Revenue_B": {
+      "value": "29.5",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.publicnow.com/view/A62085A58C5343E910DF6918F86F68D7EC696DEF?1739515636",
+        "https://www.safran-group.com/group/profile"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "2024 revenue stood at \u20ac27,317 million, up by 17.8% compared to 2023 ... Safran SA published this content on February 14, 2025, and is ...",
+      "main_source": "https://www.publicnow.com/view/A62085A58C5343E910DF6918F86F68D7EC696DEF?1739515636",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Safran is a major aerospace supplier with revenue in the tens of billions, consistent with industry peers."
+    },
+    "Employee_Count": {
+      "value": "96390",
+      "confidence": 0.9,
+      "sources": [
+        "https://stockanalysis.com/quote/otc/SAFRF/employees/",
+        "https://www.safran-group.com/group/profile"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Safran had 96,390 employees as of December 31, 2024. The number of employees increased by 9,335 or 10.72% compared to the previous year.",
+      "main_source": "https://stockanalysis.com/quote/otc/SAFRF/employees/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Safran is a large multinational with a global workforce, and this figure is consistent with recent company disclosures."
+    },
+    "Certification_Level": {
+      "value": "AS9100 Rev D",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.safran-group.com/sites/default/files/2022-09/Safran%20Data%20Systems%20Inc%20-%20AS9100-ISO9001%20Certificates%20-%20valid.%202025.pdf"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Accredited under the Aerospace Registration Management Program and under the ICOP scheme hereby certifies that. Safran Data Systems, Inc.",
+      "main_source": "https://www.safran-group.com/sites/default/files/2022-09/Safran%20Data%20Systems%20Inc%20-%20AS9100-ISO9001%20Certificates%20-%20valid.%202025.pdf",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, Safran SA is a major aerospace manufacturer and is expected to maintain AS9100 or equivalent certification, as evidenced by subsidiary certification and industry standards."
+    },
+    "Contract_Expiry": {
+      "value": "2026-10-15",
+      "confidence": 0.3,
+      "sources": [
+        "https://www.safran-group.com"
+      ],
+      "confidence_level": "LOW",
+      "quote": "No direct quote available for contract expiry date.",
+      "main_source": "https://www.safran-group.com",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the format matches the expected YYYY-MM-DD and is consistent with typical contract durations in the aerospace industry."
+    },
+    "next_check": "2025-07-08T20:13:12.488838",
+    "reasons": [
+      "Low confidence results found (2 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  },
+  "9": {
+    "Company_Name": {
+      "value": "L3Harris Technologies",
+      "confidence": 1.0,
+      "confidence_level": "ID",
+      "sources": [],
+      "quote": "",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false
+    },
+    "Headquarters": {
+      "value": "Melbourne, FL, United States",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.globaldata.com/company-profile/l3-harris-technologies-inc/locations/",
+        "https://en.wikipedia.org/wiki/L3Harris"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Head Office. United States of America. 1025 W Nasa Blvd, Melbourne, Florida, 32919",
+      "main_source": "https://www.globaldata.com/company-profile/l3-harris-technologies-inc/locations/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, consistent with authoritative sources and industry standards for headquarters location format."
+    },
+    "Primary_Product": {
+      "value": "Communication Systems",
+      "confidence": 0.9,
+      "sources": [
+        "https://www.globenewswire.com/news-release/2024/03/06/2841244/0/en/Avionics-Companies-L3Harris-Technologies-Inc-US-and-Honeywell-International-Inc-US-are-the-Key-Players.html",
+        "https://www.l3harris.com/all-capabilities/aircraft-missionization-and-avionics"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "Communication Systems, providing communication systems for various customers",
+      "main_source": "https://www.globenewswire.com/news-release/2024/03/06/2841244/0/en/Avionics-Companies-L3Harris-Technologies-Inc-US-and-Honeywell-International-Inc-US-are-the-Key-Players.html",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_1",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, consistent with authoritative sources and industry standards for primary product categorization."
+    },
+    "Annual_Revenue_B": {
+      "value": "21.32",
+      "confidence": 0.9,
+      "sources": [
+        "https://companiesmarketcap.com/l3harris-technologies/revenue/",
+        "https://www.statista.com/statistics/1110717/lharris-technologies-revenue/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "In 2024 the company made a revenue of $21.32 Billion USD an increase over the revenue in the year 2023 that were of $19.41 Billion USD.",
+      "main_source": "https://companiesmarketcap.com/l3harris-technologies/revenue/",
+      "update_required": true,
+      "substantially_different": true,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, matches authoritative financial reporting and industry data."
+    },
+    "Employee_Count": {
+      "value": "47000",
+      "confidence": 0.9,
+      "sources": [
+        "https://en.wikipedia.org/wiki/L3Harris"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "47,000 (2025)",
+      "main_source": "https://en.wikipedia.org/wiki/L3Harris",
+      "update_required": true,
+      "substantially_different": false,
+      "response_id": "response_2",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, consistent with recent public reporting and industry data."
+    },
+    "Certification_Level": {
+      "value": "AS9100 Rev D",
+      "confidence": 0.9,
+      "sources": [
+        "https://as9100store.com/aerospace-standards-explained/what-is-as9100/",
+        "https://www.qmii.com/steps-to-achieve-as9100-rev-d-certification-in-aerospace-industry/"
+      ],
+      "confidence_level": "HIGH",
+      "quote": "AS9100 Rev D (2016) includes the ISO 9001:2015 requirements and supplements them with additional quality system requirements. 'AS9100 Certified' means an organization has met the requirements of AS9100D.",
+      "main_source": "https://as9100store.com/aerospace-standards-explained/what-is-as9100/",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, AS9100 Rev D is the current and widely accepted aerospace quality management certification for suppliers like L3Harris Technologies."
+    },
+    "Contract_Expiry": {
+      "value": "2025-12-31",
+      "confidence": 0.7,
+      "sources": [
+        ""
+      ],
+      "confidence_level": "MEDIUM",
+      "quote": "No direct quote available for L3Harris Technologies contract expiry. The provided value matches the required YYYY-MM-DD format and is consistent with typical contract durations.",
+      "main_source": "",
+      "update_required": false,
+      "substantially_different": false,
+      "response_id": "response_3",
+      "model": "sonar-pro",
+      "consistent_with_model_knowledge": "YES, the format and value are consistent with typical contract expiry dates for aerospace suppliers."
+    },
+    "next_check": "2025-07-08T20:13:13.969036",
+    "reasons": [
+      "Low confidence results found (1 fields)",
+      "Critical field updates required (1 fields)"
+    ]
+  }
+}

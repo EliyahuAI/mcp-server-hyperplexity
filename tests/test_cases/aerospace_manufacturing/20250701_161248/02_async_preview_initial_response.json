@@ -1,0 +1,23 @@
+{
+  "status_code": 200,
+  "headers": {
+    "Date": "Tue, 01 Jul 2025 20:12:51 GMT",
+    "Content-Type": "application/json",
+    "Content-Length": "280",
+    "Connection": "keep-alive",
+    "x-amzn-RequestId": "ece8b400-cb25-4c41-89d9-c0b3ba6c71a2",
+    "Access-Control-Allow-Origin": "*",
+    "x-amz-apigw-id": "NC8ikEDGIAMEXDg=",
+    "X-Amzn-Trace-Id": "Root=1-68644143-60ef76f56f4cc5c837b26fe3;Sampled=1;Lineage=1:46762f32:0"
+  },
+  "body": {
+    "status": "processing",
+    "session_id": "20250701_201251_813708_preview",
+    "reference_pin": "813708",
+    "message": "Preview processing started in background",
+    "preview_mode": true,
+    "async_mode": true,
+    "poll_url": "/status/20250701_201251_813708_preview?preview=true",
+    "total_rows": 0
+  }
+}

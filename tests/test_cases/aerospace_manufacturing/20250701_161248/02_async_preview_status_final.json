@@ -1,0 +1,67 @@
+{
+  "status": "preview_completed",
+  "session_id": "20250701_201251_813708_preview",
+  "reference_pin": "813708",
+  "markdown_table": "**Confidence Legend:** \ud83d\udfe2 High \u2022 \ud83d\udfe1 Medium \u2022 \ud83d\udd34 Low \u2022 \ud83d\udd35 ID/Input\n\n| Field | Row 1 | Row 2 | Row 3 | Search Group |\n|--------------------------|-------------------------------|-------------------------------|-------------------------------|--------------|\n| Company_Name             | \ud83d\udd35 Boeing Company              | \ud83d\udd35 Airbus SE                   | \ud83d\udd35 Lockheed Martin             | 0            |\n| Headquarters             | \ud83d\udfe2 Arlington, VA               | \ud83d\udfe2 Toulouse, France            | \ud83d\udfe2 Bethesda, MD                | 1            |\n| Primary_Product          | \ud83d\udfe2 Commercial Aircraft         | \ud83d\udfe2 Commercial Aircraft         | \ud83d\udfe2 Defense Systems             | 1            |\n| Annual_Revenue_B         | \ud83d\udfe2 66.5                        | \ud83d\udfe2 74.21                       | \ud83d\udfe2 71.04                       | 2            |\n| Employee_Count           | \ud83d\udfe2 172000                      | \ud83d\udfe2 156921                      | \ud83d\udfe2 110000                      | 2            |\n| Certification_Level      | \ud83d\udfe2 AS9100 Rev D                | \ud83d\udfe2 AS9100 Rev D                | \ud83d\udfe2 AS9100 Rev D                | 3            |\n| Contract_Expiry          | \ud83d\udfe1 2026-12-31                  | \ud83d\udfe1 2025-08-15                  | \ud83d\udfe1 2027-03-30                  | 3            |\n| next_check               | N/A                           | N/A                           | N/A                           | -            |\n| reasons                  | N/A                           | N/A                           | N/A                           | -            |",
+  "total_rows": 10,
+  "total_processed_rows": 3,
+  "new_row_number": 3,
+  "preview_complete": true,
+  "preview_processing_time": 43.44040870666504,
+  "per_row_processing_time": 14.480136235555014,
+  "estimated_total_processing_time": 28.960272471110027,
+  "estimated_total_time_minutes": 0.5,
+  "estimated_batches": 2,
+  "cost_estimates": {
+    "preview_cost": 0.07388700000000001,
+    "estimated_total_cost": 0.24629,
+    "preview_tokens": 11085,
+    "estimated_total_tokens": 36950.0,
+    "api_calls": 0,
+    "cached_calls": 9,
+    "per_row_cost": 0.024629,
+    "per_row_tokens": 3695.0,
+    "per_row_time": 14.480136235555014,
+    "rows_processed": 3
+  },
+  "token_usage": {
+    "total_tokens": 11085,
+    "api_calls": 0,
+    "cached_calls": 9,
+    "total_cost": 0.07388700000000001,
+    "by_provider": {
+      "perplexity": {
+        "prompt_tokens": 7699,
+        "completion_tokens": 3386,
+        "total_tokens": 11085,
+        "calls": 9,
+        "input_cost": 0.023097000000000003,
+        "output_cost": 0.05079,
+        "total_cost": 0.07388700000000001
+      },
+      "anthropic": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "total_tokens": 0,
+        "calls": 0,
+        "input_cost": 0.0,
+        "output_cost": 0.0,
+        "total_cost": 0.0
+      }
+    },
+    "by_model": {
+      "sonar-pro": {
+        "api_provider": "perplexity",
+        "total_tokens": 11085,
+        "calls": 9,
+        "input_cost": 0.023097000000000003,
+        "output_cost": 0.05079,
+        "total_cost": 0.07388700000000001,
+        "prompt_tokens": 7699,
+        "completion_tokens": 3386
+      }
+    }
+  }
+}

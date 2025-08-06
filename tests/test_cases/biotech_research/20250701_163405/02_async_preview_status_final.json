@@ -1,0 +1,67 @@
+{
+  "status": "preview_completed",
+  "session_id": "20250701_203421_702215_preview",
+  "reference_pin": "702215",
+  "markdown_table": "**Confidence Legend:** \ud83d\udfe2 High \u2022 \ud83d\udfe1 Medium \u2022 \ud83d\udd34 Low \u2022 \ud83d\udd35 ID/Input\n\n| Field | Row 1 | Row 2 | Row 3 | Search Group |\n|--------------------------|-------------------------------|-------------------------------|-------------------------------|--------------|\n| Company_Name             | \ud83d\udd35 Moderna Inc.                | \ud83d\udd35 BioNTech SE                 | \ud83d\udd35 Novavax Inc.                | 0            |\n| Ticker                   | \ud83d\udd35 MRNA                        | \ud83d\udd35 BNTX                        | \ud83d\udd35 NVAX                        | 0            |\n| Focus_Area               | \ud83d\udfe2 mRNA Therapeutics           | \ud83d\udfe2 Cancer Immunotherapy        | \ud83d\udfe2 Protein-based Vaccines      | 1            |\n| Pipeline_Count           | \ud83d\udfe2 more than 40                | \ud83d\udfe2 over 20 active Phase 2 a... | \ud83d\udd34 UNDEFINED                   | 2            |\n| Market_Cap_B             | \ud83d\udfe2 10.7                        | \ud83d\udfe2 25.65                       | \ud83d\udfe2 1.03                        | 3            |\n| R_D_Spend_M              | \ud83d\udfe2 4543                        | \ud83d\udfe2 2439                        | \ud83d\udfe2 475-525                     | 4            |\n| Last_Earnings            | \ud83d\udfe2 2025-02-14                  | \ud83d\udfe2 2025-03-10                  | \ud83d\udfe2 2025-05-08                  | 5            |\n| next_check               | N/A                           | N/A                           | N/A                           | -            |\n| reasons                  | N/A                           | N/A                           | N/A                           | -            |",
+  "total_rows": 10,
+  "total_processed_rows": 3,
+  "new_row_number": 3,
+  "preview_complete": true,
+  "preview_processing_time": 65.03467655181885,
+  "per_row_processing_time": 21.67822551727295,
+  "estimated_total_processing_time": 43.3564510345459,
+  "estimated_total_time_minutes": 0.7,
+  "estimated_batches": 2,
+  "cost_estimates": {
+    "preview_cost": 0.090609,
+    "estimated_total_cost": 0.30202999999999997,
+    "preview_tokens": 16223,
+    "estimated_total_tokens": 54076.66666666667,
+    "api_calls": 0,
+    "cached_calls": 15,
+    "per_row_cost": 0.030202999999999997,
+    "per_row_tokens": 5407.666666666667,
+    "per_row_time": 21.67822551727295,
+    "rows_processed": 3
+  },
+  "token_usage": {
+    "total_tokens": 16223,
+    "api_calls": 0,
+    "cached_calls": 15,
+    "total_cost": 0.090609,
+    "by_provider": {
+      "perplexity": {
+        "prompt_tokens": 12728,
+        "completion_tokens": 3495,
+        "total_tokens": 16223,
+        "calls": 15,
+        "input_cost": 0.038184,
+        "output_cost": 0.052425,
+        "total_cost": 0.090609
+      },
+      "anthropic": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 0,
+        "total_tokens": 0,
+        "calls": 0,
+        "input_cost": 0.0,
+        "output_cost": 0.0,
+        "total_cost": 0.0
+      }
+    },
+    "by_model": {
+      "sonar-pro": {
+        "api_provider": "perplexity",
+        "total_tokens": 16223,
+        "calls": 15,
+        "input_cost": 0.038184,
+        "output_cost": 0.052425,
+        "total_cost": 0.090609,
+        "prompt_tokens": 12728,
+        "completion_tokens": 3495
+      }
+    }
+  }
+}

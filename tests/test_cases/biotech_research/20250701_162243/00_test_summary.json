@@ -1,0 +1,56 @@
+{
+  "test_timestamp": "2025-07-01T16:28:37.439823",
+  "test_name": null,
+  "configuration": {
+    "email": "eliyahu@eliyahu.ai",
+    "excel_file": "test_cases/biotech_research/biotech_research.xlsx",
+    "config_file": "test_cases/biotech_research/biotech_research_config.json",
+    "mode": "all",
+    "max_rows": 10,
+    "preview_rows": 3,
+    "output_directory": "test_cases\\biotech_research\\20250701_162243"
+  },
+  "results": {
+    "sync_preview": {
+      "status": "PASSED",
+      "details": {
+        "status": "preview_completed",
+        "session_id": "e722c231-f2fd-49ab-acf2-2d34b025ce90",
+        "reference_pin": "476305",
+        "markdown_table": "| Field                  | Confidence | Value                     |\n|------------------------|------------|--------------------------|\n| Product Name           | HIGH       | [Demo] FAP-2286           |\n| Developer              | HIGH       | [Demo] Clovis Oncology    |\n| Target                 | MEDIUM     | [Demo] FAP                |\n| Indication             | LOW        | [Demo] Solid tumors       |",
+        "total_rows": 10,
+        "total_processed_rows": 0,
+        "new_row_number": null,
+        "preview_complete": false,
+        "preview_processing_time": 25.169877529144287,
+        "estimated_total_processing_time": 1258.4938764572144,
+        "note": "Validator completed but returned no results - Showing demo data structure"
+      }
+    },
+    "async_preview": {
+      "status": "PASSED",
+      "details": {
+        "status": "processing",
+        "session_id": "20250701_202320_121844_preview",
+        "reference_pin": "121844",
+        "message": "Preview processing started in background",
+        "preview_mode": true,
+        "async_mode": true,
+        "poll_url": "/status/20250701_202320_121844_preview?preview=true",
+        "total_rows": 0
+      }
+    },
+    "full_validation": {
+      "status": "PASSED",
+      "details": {
+        "status": "processing_started",
+        "session_id": "bc6210a9-cba6-48a3-9abd-d9e9f0f3d2e7",
+        "reference_pin": "663503",
+        "message": "Processing started. Results will be emailed to eliyahu@eliyahu.ai when complete.",
+        "processing_time": 0.08824872970581055,
+        "note": "File will be updated with enhanced Excel results when processing completes"
+      }
+    }
+  },
+  "overall_status": "PASSED"
+}

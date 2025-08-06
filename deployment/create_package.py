@@ -22,10 +22,16 @@ from botocore.config import Config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Add project root to sys.path to allow for absolute imports
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
 # Directory setup
 SCRIPT_DIR = Path(__file__).parent.absolute()
 PROJECT_DIR = SCRIPT_DIR.parent
 SRC_DIR = PROJECT_DIR / "src"
+LAMBDA_SRC_DIR = SRC_DIR / "lambdas" / "validation"
+SHARED_SRC_DIR = SRC_DIR / "shared"
 PACKAGE_DIR = SCRIPT_DIR / "package"
 OUTPUT_ZIP = SCRIPT_DIR / "lambda_package.zip"
 
@@ -33,7 +39,7 @@ OUTPUT_ZIP = SCRIPT_DIR / "lambda_package.zip"
 LAMBDA_CONFIG = {
     "FunctionName": "perplexity-validator",
     "Runtime": "python3.9",
-    "Handler": "lambda_function.lambda_handler",
+    "Handler": "lambda_function.lambda_handler", # This will be created in the package root
     "Timeout": 600,  # 10 minutes in seconds (max allowed for Lambda)
     "MemorySize": 1024,  # Increased from 512 MB to 1024 MB for better performance
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
@@ -177,120 +183,14 @@ def verify_dependencies():
 def copy_source_files():
     """Copy necessary source files."""
     logger.info("Copying source files...")
-    # Copy lambda_function.py
-    lambda_source = SRC_DIR / "lambda_function.py"
-    shutil.copy(lambda_source, PACKAGE_DIR)
-    # Copy schema_validator_simplified.py
-    schema_source = SRC_DIR / "schema_validator_simplified.py"
-    shutil.copy(schema_source, PACKAGE_DIR)
-    # Copy schema_validator_simplified.py
-    schema_simplified_source = SRC_DIR / "schema_validator_simplified.py"
-    if schema_simplified_source.exists():
-        shutil.copy(schema_simplified_source, PACKAGE_DIR)
-        logger.info("Copied schema_validator_simplified.py")
-    else:
-        logger.warning(f"schema_validator_simplified.py not found at {schema_simplified_source}")
-    # Copy perplexity_schema.py
-    perplexity_schema = SRC_DIR / "perplexity_schema.py"
-    if perplexity_schema.exists():
-        shutil.copy(perplexity_schema, PACKAGE_DIR)
-        logger.info("Copied perplexity_schema.py")
-    else:
-        logger.warning(f"perplexity_schema.py not found at {perplexity_schema}")
-    # Copy prompt_loader.py
-    prompt_loader = SRC_DIR / "prompt_loader.py"
-    if prompt_loader.exists():
-        shutil.copy(prompt_loader, PACKAGE_DIR)
-        logger.info("Copied prompt_loader.py")
-    else:
-        logger.warning(f"prompt_loader.py not found at {prompt_loader}")
     
-    # Copy row_key_utils.py - CRITICAL for validation history!
-    row_key_utils = SRC_DIR / "row_key_utils.py"
-    if row_key_utils.exists():
-        shutil.copy(row_key_utils, PACKAGE_DIR)
-        logger.info("Copied row_key_utils.py - critical for validation history")
-    else:
-        logger.error("row_key_utils.py not found! This is critical for validation history functionality!")
-    
-    # Copy test_logging.py
-    test_logging = SRC_DIR / "test_logging.py"
-    if test_logging.exists():
-        shutil.copy(test_logging, PACKAGE_DIR)
-        logger.info("Copied test_logging.py")
-    else:
-        logger.warning(f"test_logging.py not found at {test_logging}")
-    
-    # Copy diagnose_logs.py
-    diagnose_logs = SRC_DIR / "diagnose_logs.py"
-    if diagnose_logs.exists():
-        shutil.copy(diagnose_logs, PACKAGE_DIR)
-        logger.info("Copied diagnose_logs.py")
-    else:
-        logger.warning(f"diagnose_logs.py not found at {diagnose_logs}")
-    
-    # Copy url_extractor.py
-    url_extractor = SRC_DIR / "url_extractor.py"
-    if url_extractor.exists():
-        shutil.copy(url_extractor, PACKAGE_DIR)
-        logger.info("Copied url_extractor.py")
-    else:
-        logger.warning(f"url_extractor.py not found at {url_extractor}")
-    
-    # Copy prompts.yml from src directory
-    prompts_yml = SRC_DIR / "prompts.yml"
-    if prompts_yml.exists():
-        shutil.copy(prompts_yml, PACKAGE_DIR)
-        logger.info("Copied prompts.yml")
-    else:
-        logger.warning(f"prompts.yml not found at {prompts_yml}")
-        # Try looking in project root as fallback
-        fallback_prompts_yml = PROJECT_DIR / "prompts.yml"
-        if fallback_prompts_yml.exists():
-            shutil.copy(fallback_prompts_yml, PACKAGE_DIR)
-            logger.info("Copied prompts.yml from project root (fallback)")
-        else:
-            logger.error("prompts.yml not found in either src or project root!")
+    # 1. Copy all files from the new validation lambda source
+    shutil.copytree(LAMBDA_SRC_DIR, PACKAGE_DIR, dirs_exist_ok=True)
+    logger.info(f"Copied contents of {LAMBDA_SRC_DIR} to {PACKAGE_DIR}")
 
-    # Copy pricing_data.csv - CRITICAL for cost calculations!
-    pricing_data = SRC_DIR / "pricing_data.csv"
-    if pricing_data.exists():
-        shutil.copy(pricing_data, PACKAGE_DIR)
-        logger.info("Copied pricing_data.csv - critical for sonar-pro and other model pricing")
-    else:
-        logger.error("pricing_data.csv not found! This is critical for cost calculations!")
-    
-    # Copy websocket_client.py - CRITICAL for WebSocket delivery of config generation results!
-    websocket_client = SRC_DIR / "websocket_client.py"
-    if websocket_client.exists():
-        shutil.copy(websocket_client, PACKAGE_DIR)
-        logger.info("Copied websocket_client.py - critical for WebSocket delivery")
-    else:
-        logger.error("websocket_client.py not found! This is critical for config generation WebSocket delivery!")
-    
-    # Copy dynamodb_schemas.py - NEEDED for WebSocket connection management!
-    dynamodb_schemas = SRC_DIR / "dynamodb_schemas.py"
-    if dynamodb_schemas.exists():
-        shutil.copy(dynamodb_schemas, PACKAGE_DIR)
-        logger.info("Copied dynamodb_schemas.py - needed for WebSocket connection management")
-    else:
-        logger.warning("dynamodb_schemas.py not found! WebSocket connection management may not work properly.")
-    
-    # Copy shared_table_parser.py - NEEDED for consolidated table parsing!
-    shared_table_parser = SRC_DIR / "shared_table_parser.py"
-    if shared_table_parser.exists():
-        shutil.copy(shared_table_parser, PACKAGE_DIR)
-        logger.info("Copied shared_table_parser.py - needed for consolidated table parsing")
-    else:
-        logger.warning("shared_table_parser.py not found! Table parsing may not work properly.")
-    
-    # Copy ai_api_client.py - CRITICAL for integrated caching with unified storage!
-    ai_api_client = SRC_DIR / "ai_api_client.py"
-    if ai_api_client.exists():
-        shutil.copy(ai_api_client, PACKAGE_DIR)
-        logger.info("Copied ai_api_client.py - critical for integrated caching with unified storage")
-    else:
-        logger.warning("ai_api_client.py not found! Integrated caching may not work properly.")
+    # 2. Copy all shared files into the package root
+    shutil.copytree(SHARED_SRC_DIR, PACKAGE_DIR, dirs_exist_ok=True)
+    logger.info(f"Copied shared modules from {SHARED_SRC_DIR} to {PACKAGE_DIR}")
 
 def create_zip():
     """Create deployment zip file."""

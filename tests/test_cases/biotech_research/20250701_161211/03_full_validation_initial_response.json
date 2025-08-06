@@ -1,0 +1,21 @@
+{
+  "status_code": 200,
+  "headers": {
+    "Date": "Tue, 01 Jul 2025 20:12:21 GMT",
+    "Content-Type": "application/json",
+    "Content-Length": "334",
+    "Connection": "keep-alive",
+    "x-amzn-RequestId": "4088a070-f009-4b5a-8038-f07b4d8c24ec",
+    "Access-Control-Allow-Origin": "*",
+    "x-amz-apigw-id": "NC8d1GVMoAMEFMA=",
+    "X-Amzn-Trace-Id": "Root=1-68644124-66da16d3097d17c74521258b;Sampled=1;Lineage=1:46762f32:0"
+  },
+  "body": {
+    "status": "processing_started",
+    "session_id": "1edd15c8-3b0e-49c2-80ba-774ace25cad5",
+    "reference_pin": "498324",
+    "message": "Processing started. Results will be emailed to eliyahu@eliyahu.ai when complete.",
+    "processing_time": 0.10935282707214355,
+    "note": "File will be updated with enhanced Excel results when processing completes"
+  }
+}

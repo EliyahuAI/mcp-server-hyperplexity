@@ -1,0 +1,71 @@
+Row,Field,Original_Value,Validated_Value,Confidence,Sources,Quote
+0,Company_Name,,Moderna Inc.,ID,,
+0,Ticker,,MRNA,ID,,
+0,Focus_Area,,mRNA Therapeutics,HIGH,"https://www.modernatx.com/en-US/research/therapeutic-areas, https://www.modernatx.com/research/produ...",We are harnessing the power of mRNA to create a new category of medicines and a company that maximiz...
+0,Pipeline_Count,,more than 40,HIGH,https://www.nasdaq.com/articles/moderna-sharpens-pipeline-focus-covid-19-vaccine-demand-ebbs-q1...,Moderna has more than 40 mRNA-based investigational candidates in different stages of clinical studi...
+0,Market_Cap_B,,10.7,HIGH,"https://stockanalysis.com/stocks/mrna/market-cap/, https://ycharts.com/companies/MRNA/market_cap...","Moderna has a market cap or net worth of $10.83 billion as of June 30, 2025. Its market cap has decr..."
+0,R_D_Spend_M,,4543,HIGH,"https://macrotrends.net/stocks/charts/MRNA/moderna/research-development-expenses, https://www.statis...","Moderna annual research and development expenses for 2024 were $4.543B, a 6.23% decline from 2023."
+0,Last_Earnings,,2025-02-14,HIGH,https://investors.modernatx.com/news/news-details/2025/Moderna-Reports-Fourth-Quarter-and-Fiscal-Yea...,"Moderna, Inc. (NASDAQ:MRNA) today reported financial results and provided business updates for the f..."
+1,Company_Name,,BioNTech SE,ID,,
+1,Ticker,,BNTX,ID,,
+1,Focus_Area,,Cancer Immunotherapy,HIGH,"https://www.biontech.com/int/en/home/about/who-we-are/vision-and-mission.html, https://www.biospace....","BioNTech is a fully integrated, global immunotherapy powerhouse... We have been working on automated..."
+1,Pipeline_Count,,over 20 active Phase 2 and Phase 3 clinical trials,HIGH,https://www.nasdaq.com/articles/biontech-reports-2024-financial-results-and-progress-oncology-pipeli...,BioNTech has over 20 active Phase 2 and Phase 3 clinical trials focused on its oncology pipeline.
+1,Market_Cap_B,,25.65,HIGH,"https://ycharts.com/companies/BNTX/market_cap, https://stockanalysis.com/stocks/bntx/market-cap/...","BioNTech Market Cap: 25.61B for June 30, 2025"
+1,R_D_Spend_M,,2439,HIGH,"https://www.macrotrends.net/stocks/charts/BNTX/biontech-se/research-development-expenses, https://ww...","BioNTech SE annual research and development expenses for 2024 were $2.439B, a 26.4% increase from 20..."
+1,Last_Earnings,,2025-03-10,HIGH,https://www.globenewswire.com/news-release/2025/02/24/3030982/0/en/BioNTech-to-Report-Fourth-Quarter...,BioNTech SE will announce its financial results for the fourth quarter and full year of 2024 on Mond...
+2,Company_Name,,Novavax Inc.,ID,,
+2,Ticker,,NVAX,ID,,
+2,Focus_Area,,Protein-based Vaccines,HIGH,https://ir.novavax.com/press-releases/2025-05-05-Novavax-Announces-Significantly-Improved-Terms-for-...,"Novavax, Inc. (Nasdaq: NVAX) tackles some of the world's most significant health challenges by lever..."
+2,Pipeline_Count,,UNDEFINED,LOW,https://www.novavax.com/pipeline...,"At Novavax, we leverage our science, our technology and our people to innovate and collaborate in th..."
+2,Market_Cap_B,,1.03,HIGH,"https://ycharts.com/companies/NVAX/market_cap, https://www.wallstreetzen.com/stocks/us/nasdaq/nvax, ...","Novavax Market Cap: 1.033B for June 27, 2025"
+2,R_D_Spend_M,,475-525,HIGH,https://ir.novavax.com/press-releases/2025-05-08-Novavax-Reports-First-Quarter-2025-Financial-Result...,Novavax is reiterating Full Year 2025 Financial Guidance for combined R&D and SG&A expenses and curr...
+2,Last_Earnings,,2025-05-08,HIGH,"https://ir.novavax.com/events, https://www.marketbeat.com/stocks/NASDAQ/NVAX/earnings/...","Novavax to Report First Quarter 2025 Financial Results on May 8, 2025"
+3,Company_Name,,CureVac N.V.,ID,,
+3,Ticker,,CVAC,ID,,
+3,Focus_Area,,mRNA Therapeutics,HIGH,https://www.curevac.com/en/curevac-receives-u-s-fda-ind-clearance-to-initiate-phase-1-clinical-trial...,"CureVac N.V., a global biotech company developing a new class of transformative medicines based on m..."
+3,Pipeline_Count,,18,MEDIUM,https://synapse.patsnap.com/organization/dfb455bc1de1414357956132f408ab95...,Pipeline Snapshot as of 23 Jun 2025. The statistics for drugs in the Pipeline is the current organiz...
+3,Market_Cap_B,,1.22,HIGH,"https://stockanalysis.com/stocks/cvac/market-cap/, https://ycharts.com/companies/CVAC/market_cap...","CureVac has a market cap or net worth of $1.22 billion as of July 1, 2025."
+3,R_D_Spend_M,,423,MEDIUM,"https://www.curevac.com/wp-content/uploads/2025/05/20250520-PR-CureVac-Q1-2025-Results_EN.pdf, https...",R&D expenses increased primarily due to the costs of CureVac's manufacturing organization being reco...
+3,Last_Earnings,,2025-04-10,HIGH,https://www.curevac.com/en/curevac-announces-financial-results-for-the-fourth-quarter-and-full-year-...,"CureVac N.V. (Nasdaq: CVAC) (“CureVac”), a global biotech company developing a new class of transfor..."
+4,Company_Name,,Genmab A/S,ID,,
+4,Ticker,,GMAB,ID,,
+4,Focus_Area,,Antibody Therapeutics,HIGH,"https://dcfmodeling.com/blogs/history/gmab-history-mission-ownership, https://www.genmab.com...",Genmab A/S is a biotechnology company that specializes in the creation and development of differenti...
+4,Pipeline_Count,,35,MEDIUM,https://www.marketscreener.com/quote/stock/GENMAB-A-S-63733191/news/Genmab-A-S-JP-Morgan-2025-Presen...,Innovative pipeline: >10 Genmab owned ≥50% ... Genmab Proprietary and Partnered Products - Most Adva...
+4,Market_Cap_B,,12.74,HIGH,"https://companiesmarketcap.com/genmab/marketcap/, https://stockanalysis.com/stocks/gmab/...",As of June 2025 Genmab has a market cap of $12.74 Billion USD. This makes Genmab the world's 1498th ...
+4,R_D_Spend_M,,1413,HIGH,https://www.macrotrends.net/stocks/charts/GNMSF/genmab/research-development-expenses...,"Genmab annual research and development expenses for 2024 were $1.413B, a 27.58% increase from 2023."
+4,Last_Earnings,,2025-05-08,HIGH,"https://www.marketbeat.com/stocks/NASDAQ/GMAB/earnings/, https://coincodex.com/stock/GMAB/earnings/,...","Genmab A/S (NASDAQ:GMAB) last announced its quarterly earning data on Thursday, May 8, 2025."
+5,Company_Name,,Seagen Inc.,ID,,
+5,Ticker,,SGEN,ID,,
+5,Focus_Area,,Antibody-Drug Conjugates,HIGH,"https://www.pfizer.com/seagen, https://www.delveinsight.com/blog/antibody-drug-conjugate-pipeline...","Seagen, a world-leader in antibody-drug conjugates (ADCs), we will be at the forefront of cancer car..."
+5,Pipeline_Count,,60,HIGH,https://www.pfizer.com/news/press-release/press-release-detail/pfizer-completes-acquisition-seagen...,"With the addition of Seagen, Pfizer’s Oncology pipeline has doubled in size with 60 programs spannin..."
+5,Market_Cap_B,,42.25,HIGH,https://eulerpool.com/en/stock/Seagen-Stock-US81181C1045/Marketcapitalization...,The market capitalization of Seagen is 42.25 B USD.
+5,R_D_Spend_M,,1425,HIGH,https://www.biospace.com/seagen-reports-fourth-quarter-and-full-year-2022-financial-results...,"R&D expenses: $1,425 million to $1,525 million"
+5,Last_Earnings,,2023-11-01,HIGH,https://www.marketbeat.com/stocks/NASDAQ/SGEN/...,"Seagen Inc. (NASDAQ:SGEN) posted its earnings results on Wednesday, November, 1st."
+6,Company_Name,,Alexion Pharmaceuticals,ID,,
+6,Ticker,,ALXN,ID,,
+6,Focus_Area,,Rare Disease Therapeutics,HIGH,"https://alexion.com/about-us, https://alexion.com/our-approach...","Alexion, part of AstraZeneca, delivers therapies for rare diseases, with a mission to transform live..."
+6,Pipeline_Count,,34,MEDIUM,https://synapse.patsnap.com/organization/0f6b1f5704b311d37dcff81b4b3b4fe3...,Pipeline Snapshot as of 27 Jun 2025. The statistics for drugs in the Pipeline is the current organiz...
+6,Market_Cap_B,,40.33,HIGH,"https://companiesmarketcap.com/alexion-pharmaceuticals/marketcap/, https://valueinvesting.io/ALXN/va...",As of June 2025 Alexion Pharmaceuticals has a market cap of $40.33 Billion USD. This makes Alexion P...
+6,R_D_Spend_M,,3573,HIGH,https://www.astrazeneca.com/content/dam/az/PDF/2024/fy/Full-year-and-Q4-2024-results-announcement.pd...,"Core R&D expense $3,573m (23% Actual, 22% CER) – Increased investment in the pipeline"
+6,Last_Earnings,,2024-11-12,HIGH,"https://www.biospace.com/press-releases/astrazenecas-9m-and-q3-2024-results, https://www.astrazeneca...","AstraZeneca’s 9M and Q3 2024 results · Total Revenue up 19% to $39,182m, driven by a 19% increase in..."
+7,Company_Name,,Biogen Inc.,ID,,
+7,Ticker,,BIIB,ID,,
+7,Focus_Area,,"Neurological Disorders, Immunology, Rare Diseases",HIGH,"https://www.biogen.com/science-and-innovation/pipeline.html, https://www.biogen.com/disease-areas.ht...",Biogen is dedicated to addressing challenging diseases by leveraging cutting-edge science and drivin...
+7,Pipeline_Count,,",",LOW,"https://synapse.patsnap.com/organization/6eff248679b18ba8153422b42b98c49b, https://www.biogen.com/sc...",No direct quote available for total pipeline count as of July 2025. Pipeline snapshot as of 27 Jun 2...
+7,Market_Cap_B,,>18.39,HIGH,"https://tradingeconomics.com/biib:us:market-capitalization, https://companiesmarketcap.com/biogen/ma...",Biogen reported $18.39B in Market Capitalization this June of 2025
+7,R_D_Spend_M,,2042,HIGH,"https://www.macrotrends.net/stocks/charts/BIIB/biogen/research-development-expenses, https://www.mon...","Biogen annual research and development expenses for 2024 were $2.042B, a 17.07% decline from 2023."
+7,Last_Earnings,,2025-05-01,HIGH,"https://www.nasdaq.com/articles/biogen-earnings-results-biib-reports-quarterly-earnings, https://www...","BIOGEN ($BIIB) posted quarterly earnings results on Thursday, May 1st. The company reported earnings..."
+8,Company_Name,,Vertex Pharmaceuticals,ID,,
+8,Ticker,,VRTX,ID,,
+8,Focus_Area,,Cystic Fibrosis,HIGH,"https://www.vrtx.com/our-science/pipeline/cystic-fibrosis/, https://www.vrtx.com/stories/our-future-...","Vertex Pharmaceuticals has spent more than 20 years discovering, researching and developing medicine..."
+8,Pipeline_Count,,15,MEDIUM,"https://www.vrtx.com/our-science/pipeline/, https://www.businesswire.com/news/home/20250407026196/en...","Vertex Pharmaceuticals is focused on discovering, developing and producing innovative medicines so p..."
+8,Market_Cap_B,,116.12,HIGH,https://ycharts.com/companies/VRTX/market_cap...,"Vertex Pharmaceuticals Market Cap: 116.12B for July 1, 2025"
+8,R_D_Spend_M,,3821,HIGH,https://www.macrotrends.net/stocks/charts/VRTX/vertex-pharmaceuticals/research-development-expenses...,"Vertex Pharmaceuticals research and development expenses for the twelve months ending March 31, 2025..."
+8,Last_Earnings,,2025-05-05,HIGH,"https://www.marketbeat.com/stocks/NASDAQ/VRTX/earnings/, https://www.tipranks.com/stocks/vrtx/earnin...","May 05, 2025, Q1 2025, $4.29"
+9,Company_Name,,Regeneron Pharmaceuticals,ID,,
+9,Ticker,,REGN,ID,,
+9,Focus_Area,,"Monoclonal Antibodies, Genetic Medicines, Cell Therapies, Ophthalmology, Cancer, Inflammation, Cardiovascular Disease, Allergic and Inflammatory Diseases, Metabolic Diseases, Neurological Diseases, Hematologic Conditions, Infectious Diseases, Rare Diseases",HIGH,"https://www.regeneron.com/science/research-development, https://www.regeneron.com/about/our-company...","Our scientists are leading the way, developing new technologies to help discover better and novel an..."
+9,Pipeline_Count,,93,MEDIUM,https://synapse.patsnap.com/organization/60a7d56edfaf9f0f66025e000f7370c3...,Pipeline Snapshot as of 21 Jun 2025. The statistics for drugs in the Pipeline is the current organiz...
+9,Market_Cap_B,,56.25,HIGH,"https://ycharts.com/companies/REGN/market_cap, https://www.macrotrends.net/stocks/charts/REGN/regene...","Regeneron Pharmaceuticals Market Cap: 56.25B for June 27, 2025"
+9,R_D_Spend_M,,",",LOW,https://www.macrotrends.net/stocks/charts/REGN/regeneron-pharmaceuticals/research-development-expens...,Regeneron Pharmaceuticals annual research and development expenses for 2024 were $5.132 billion.
+9,Last_Earnings,,2025-04-29,HIGH,https://www.globenewswire.com/news-release/2025/04/29/3069990/0/en/Regeneron-Reports-First-Quarter-2...,"TARRYTOWN, N.Y., April 29, 2025 (GLOBE NEWSWIRE) -- Regeneron Pharmaceuticals, Inc. (NASDAQ: REGN) t..."

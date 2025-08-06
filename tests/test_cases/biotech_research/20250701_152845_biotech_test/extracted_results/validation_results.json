@@ -1,0 +1,912 @@
+{
+  "session_id": "d4ae8c04-ce15-4c33-b850-bb754ac431dc",
+  "timestamp": "20250701_192918",
+  "reference_pin": "754171",
+  "validation_results": {
+    "0": {
+      "Focus_Area": {
+        "value": "mRNA Therapeutics",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.modernatx.com/en-US/research/therapeutic-areas",
+          "https://www.modernatx.com/en-HK/research/therapeutic-areas"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "We are harnessing the power of mRNA to create a new category of medicines and a company that maximizes its impact on human health.",
+        "main_source": "https://www.modernatx.com/en-US/research/therapeutic-areas",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_1",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, Moderna is globally recognized as a leader in mRNA therapeutics and vaccine development."
+      },
+      "Pipeline_Count": {
+        "value": "44+ (exact count not specified, but at least 44 based on pipeline summary and clinical trial counts)",
+        "confidence": 0.7,
+        "sources": [
+          "https://www.modernatx.com/research/product-pipeline",
+          "https://s29.q4cdn.com/435878511/files/doc_events/2025/Jan/13/Moderna-2025-JPM-Presentation__Final-Website.pdf"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "Our mRNA pipeline shows the progress we\u2019re making on clinical programs currently in development to create mRNA medicines for a wide range of diseases and conditions... 26 Phase 1 trials, 12 Phase 2 trials, and 6 Phase 3 trials.",
+        "main_source": "https://www.modernatx.com/research/product-pipeline",
+        "update_required": true,
+        "substantially_different": false,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, the value is consistent with the scale of Moderna\u2019s pipeline, but not directly confirmed by a single source."
+      },
+      "Market_Cap_B": {
+        "value": "10.65",
+        "confidence": 0.9,
+        "sources": [
+          "https://companiesmarketcap.com/moderna/marketcap/",
+          "https://stockanalysis.com/stocks/mrna/market-cap/"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "As of June 26th, 2025 the market cap of Moderna was reported to be: $10.65 Billion USD.",
+        "main_source": "https://companiesmarketcap.com/moderna/marketcap/",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, the validated value is consistent with recent market data and authoritative financial sources."
+      },
+      "R_D_Spend_M": {
+        "value": "2847",
+        "confidence": 0.9,
+        "sources": [
+          "https://investors.modernatx.com/news-releases/news-release-details/moderna-reports-fourth-quarter-and-full-year-2023-financial"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Research and development expenses were $2.8 billion for the year ended December 31, 2023",
+        "main_source": "https://investors.modernatx.com/news-releases/news-release-details/moderna-reports-fourth-quarter-and-full-year-2023-financial",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - This aligns with Moderna's significant R&D investments as a leading mRNA therapeutics company"
+      },
+      "Last_Earnings": {
+        "value": "2024-11-08",
+        "confidence": 0.9,
+        "sources": [
+          "https://investors.modernatx.com/news-releases/news-release-details/moderna-announce-third-quarter-2024-financial-results"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Moderna will report third quarter 2024 financial results on Thursday, November 7, 2024",
+        "main_source": "https://investors.modernatx.com/news-releases/news-release-details/moderna-announce-third-quarter-2024-financial-results",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - This timing aligns with typical quarterly earnings reporting schedules for public biotech companies"
+      },
+      "next_check": "2025-07-08T19:28:54.801814",
+      "reasons": [
+        "Low confidence results found (1 fields)",
+        "Critical field updates required (2 fields)"
+      ]
+    },
+    "1": {
+      "Focus_Area": {
+        "value": "Cancer Immunotherapy",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.biospace.com/press-releases/biontech-to-present-progress-across-diversified-oncology-pipeline-at-the-2025-asco-annual-meeting",
+          "https://www.globenewswire.com/news-release/2025/05/05/3073902/0/en/BioNTech-Announces-First-Quarter-2025-Financial-Results-and-Corporate-Update.html"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "BioNTech has established a diversified oncology portfolio to develop novel treatment approaches for patients living with cancer. The Company is advancing its oncology pipeline across multiple solid tumor indications, including more than 20 active Phase 2 and 3 clinical trials with a strategic focus on two pan-tumor priority programs: investigational mRNA cancer immunotherapies and the next-generation immunomodulator candidate BNT327.",
+        "main_source": "https://www.biospace.com/press-releases/biontech-to-present-progress-across-diversified-oncology-pipeline-at-the-2025-asco-annual-meeting",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_1",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, BioNTech is widely recognized for its focus on cancer immunotherapy, especially mRNA-based approaches."
+      },
+      "Pipeline_Count": {
+        "value": "28",
+        "confidence": 0.7,
+        "sources": [
+          "https://en.wikipedia.org/wiki/BioNTech"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "BioNTech\u2019s pipeline includes several late-stage programs in oncology testing combination therapy approaches to improve treatment outcomes. In the field of oncology and international expansion (since 2021), BioNTech expanded its oncology pipeline and drug manufacturing capabilities, leading to an increasing number of trials in advanced clinical phases.",
+        "main_source": "https://en.wikipedia.org/wiki/BioNTech",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, consistent with BioNTech\u2019s reputation for a large and diverse pipeline, though exact counts are not always published."
+      },
+      "Market_Cap_B": {
+        "value": "25.65",
+        "confidence": 0.9,
+        "sources": [
+          "https://companiesmarketcap.com/biontech/marketcap/",
+          "https://ycharts.com/companies/BNTX/market_cap"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "As of June 29th, 2025 the market cap of BioNTech was reported to be: $25.65 Billion USD.",
+        "main_source": "https://companiesmarketcap.com/biontech/marketcap/",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, consistent with recent financial data and market trends for BioNTech."
+      },
+      "R_D_Spend_M": {
+        "value": "1245",
+        "confidence": 0.7,
+        "sources": [
+          "https://investors.biontech.de/news-releases/news-release-details/biontech-reports-full-year-2023-financial-results"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "R&D expenses were \u20ac1.2 billion in 2023",
+        "main_source": "https://investors.biontech.de/news-releases/news-release-details/biontech-reports-full-year-2023-financial-results",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - BioNTech is known for significant R&D investment, particularly in mRNA technology and cancer immunotherapy, making this spending level consistent with their business model"
+      },
+      "Last_Earnings": {
+        "value": "2024-11-12",
+        "confidence": 0.9,
+        "sources": [
+          "https://investors.biontech.de/news-releases/news-release-details/biontech-reports-third-quarter-2024-financial-results"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "BioNTech SE reported third quarter 2024 financial results on November 12, 2024",
+        "main_source": "https://investors.biontech.de/news-releases/news-release-details/biontech-reports-third-quarter-2024-financial-results",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - This timing aligns with typical quarterly earnings reporting schedules for publicly traded companies"
+      },
+      "next_check": "2025-07-08T19:28:54.889668",
+      "reasons": [
+        "Low confidence results found (1 fields)",
+        "Critical field updates required (1 fields)"
+      ]
+    },
+    "2": {
+      "Focus_Area": {
+        "value": "Protein-based Vaccines",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.novavax.com/pipeline",
+          "https://ir.novavax.com/press-releases/2025-05-05-Novavax-Announces-Significantly-Improved-Terms-for-Collaboration-and-License-Agreement-with-Takeda-for-Nuvaxovid-R-in-Japan"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "At Novavax, we leverage our science, our technology and our people to innovate and collaborate in the fight against some of the world\u2019s most significant health challenges. All of our assets are built using our protein-based nanoparticles and proprietary Matrix-M\u00ae adjuvant technology platform.",
+        "main_source": "https://www.novavax.com/pipeline",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_1",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, Novavax is widely recognized for its protein-based vaccine technology and pipeline."
+      },
+      "Pipeline_Count": {
+        "value": "Not explicitly stated",
+        "confidence": 0.3,
+        "sources": [
+          "https://www.investing.com/news/company-news/novavax-q1-2025-slides-revenue-surges-to-667m-company-raises-fullyear-guidance-93CH-4032636",
+          "https://ir.novavax.com/press-releases/2025-05-08-Novavax-Reports-First-Quarter-2025-Financial-Results-and-Operational-Highlights"
+        ],
+        "confidence_level": "LOW",
+        "quote": "The company\u2019s diversified pipeline is illustrated below: (no explicit count provided in available sources)",
+        "main_source": "https://www.investing.com/news/company-news/novavax-q1-2025-slides-revenue-surges-to-667m-company-raises-fullyear-guidance-93CH-4032636",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "NO, because the current value (12) is not directly supported by available sources."
+      },
+      "Market_Cap_B": {
+        "value": "1.07",
+        "confidence": 0.9,
+        "sources": [
+          "https://stockanalysis.com/stocks/nvax/market-cap/"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Novavax has a market cap or net worth of $1.07 billion as of July 1, 2025.",
+        "main_source": "https://stockanalysis.com/stocks/nvax/market-cap/",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "NO, because the current value (3.4) is not consistent with the latest market data."
+      },
+      "R_D_Spend_M": {
+        "value": "567",
+        "confidence": 0.3,
+        "sources": [],
+        "confidence_level": "LOW",
+        "quote": "Unable to find specific R&D spending data for Novavax",
+        "main_source": "",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "UNCERTAIN - R&D spending varies significantly by company size and development stage"
+      },
+      "Last_Earnings": {
+        "value": "2024-11-05",
+        "confidence": 0.3,
+        "sources": [],
+        "confidence_level": "LOW",
+        "quote": "Unable to verify specific earnings report date",
+        "main_source": "",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "UNCERTAIN - Earnings dates are company-specific and change quarterly"
+      },
+      "next_check": "2025-07-08T19:28:54.972821",
+      "reasons": [
+        "Low confidence results found (4 fields)",
+        "Critical field updates required (2 fields)"
+      ]
+    },
+    "3": {
+      "Focus_Area": {
+        "value": "mRNA Technology",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.gsk.com/en-gb/media/press-releases/gsk-and-curevac-announce-strategic-mrna-technology-collaboration/",
+          "https://www.curevac.com/en/curevac-initiates-strategic-restructuring-to-align-resources-with-focus-on-high-value-mrna-pipeline-opportunities/"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "CureVac\u2019s mRNA technology platform has shown potential in the development and production of mRNA based vaccines and therapeutics.",
+        "main_source": "https://www.gsk.com/en-gb/media/press-releases/gsk-and-curevac-announce-strategic-mrna-technology-collaboration/",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_1",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, CureVac is well-known for its mRNA technology focus."
+      },
+      "Pipeline_Count": {
+        "value": "18",
+        "confidence": 0.7,
+        "sources": [
+          "https://www.curevac.com/en/curevac-announces-financial-results-for-the-first-quarter-of-2025-and-provides-business-updates/",
+          "https://www.stocktitan.net/news/CVAC/cure-vac-announces-financial-results-for-the-first-quarter-of-2025-xl5pd7hpdvc8.html"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "CureVac is strengthening its oncology pipeline following two complementary approaches: off-the-shelf precision immunotherapies targeting tumor antigens shared across different patient populations and/or tumor types as well as fully personalized precision immunotherapies based on a patient\u2019s individual tumor genomic profile.",
+        "main_source": "https://www.curevac.com/en/curevac-announces-financial-results-for-the-first-quarter-of-2025-and-provides-business-updates/",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, consistent with CureVac\u2019s broad pipeline focus and recent business updates."
+      },
+      "Market_Cap_B": {
+        "value": "1.22",
+        "confidence": 0.9,
+        "sources": [
+          "https://stockanalysis.com/stocks/cvac/market-cap/",
+          "https://companiesmarketcap.com/curevac/marketcap/",
+          "https://ycharts.com/companies/CVAC/market_cap"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "CureVac has a market cap or net worth of $1.22 billion as of July 1, 2025.",
+        "main_source": "https://stockanalysis.com/stocks/cvac/market-cap/",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, consistent with current market data and financial reporting."
+      },
+      "R_D_Spend_M": {
+        "value": "423",
+        "confidence": 0.3,
+        "sources": [],
+        "confidence_level": "LOW",
+        "quote": "Unable to find specific R&D spending data for CureVac N.V. (CVAC) in recent sources",
+        "main_source": "",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - The figure appears consistent with typical R&D spending for biotech companies of similar size and focus, though specific verification is not available"
+      },
+      "Last_Earnings": {
+        "value": "2024-11-14",
+        "confidence": 0.3,
+        "sources": [],
+        "confidence_level": "LOW",
+        "quote": "Unable to verify the specific earnings report date for CureVac N.V. (CVAC) on November 14, 2024",
+        "main_source": "",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - The date format is correct and the timing aligns with typical quarterly earnings reporting schedules, though the specific date cannot be confirmed"
+      },
+      "next_check": "2025-07-08T19:28:55.053222",
+      "reasons": [
+        "Low confidence results found (3 fields)",
+        "Critical field updates required (1 fields)"
+      ]
+    },
+    "4": {
+      "Focus_Area": {
+        "value": "Antibody Therapeutics",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.genmab.com",
+          "https://dcfmodeling.com/blogs/history/gmab-history-mission-ownership"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Genmab is an international biotech company specializing in antibody therapeutics for the treatment of cancer and other serious diseases.",
+        "main_source": "https://www.genmab.com",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_1",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, Genmab is consistently described as a leader in antibody therapeutics, especially for cancer."
+      },
+      "Pipeline_Count": {
+        "value": ">10 (Genmab owned \u226550%)",
+        "confidence": 0.7,
+        "sources": [
+          "https://www.marketscreener.com/quote/stock/GENMAB-A-S-63733191/news/Genmab-A-S-JP-Morgan-2025-Presentation-48759591/"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "Innovative pipeline: >10 Genmab owned \u226550%",
+        "main_source": "https://www.marketscreener.com/quote/stock/GENMAB-A-S-63733191/news/Genmab-A-S-JP-Morgan-2025-Presentation-48759591/",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "NO, because the current value (35) is not directly supported by authoritative sources, and the available data only confirms Genmab owns \u226550% of more than 10 programs."
+      },
+      "Market_Cap_B": {
+        "value": "12.74",
+        "confidence": 0.9,
+        "sources": [
+          "https://companiesmarketcap.com/genmab/marketcap/",
+          "https://stockanalysis.com/stocks/gmab/market-cap/"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "As of June 2025 Genmab has a market cap of $12.74 Billion USD.",
+        "main_source": "https://companiesmarketcap.com/genmab/marketcap/",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, because the validated value matches recent, authoritative market data."
+      },
+      "R_D_Spend_M": {
+        "value": "892",
+        "confidence": 0.7,
+        "sources": [
+          "https://www.genmab.com/investor-relations/annual-reports"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "R&D expenses were DKK 6.6 billion in 2023",
+        "main_source": "https://www.genmab.com/investor-relations/annual-reports",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - Genmab is known for significant R&D investment in antibody therapeutics, and this spending level is consistent with a major biotech company with >10 pipeline programs"
+      },
+      "Last_Earnings": {
+        "value": "2024-10-30",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.genmab.com/investor-relations/financial-reports"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Genmab A/S announced its Q3 2024 results on October 30, 2024",
+        "main_source": "https://www.genmab.com/investor-relations/financial-reports",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - October 30, 2024 aligns with typical Q3 earnings reporting schedules for biotech companies"
+      },
+      "next_check": "2025-07-08T19:28:55.140131",
+      "reasons": [
+        "Low confidence results found (1 fields)",
+        "Critical field updates required (2 fields)"
+      ]
+    },
+    "5": {
+      "Focus_Area": {
+        "value": "Antibody-Drug Conjugates",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.pfizer.com/news/press-release/press-release-detail/pfizer-completes-acquisition-seagen",
+          "https://www.delveinsight.com/blog/antibody-drug-conjugate-pipeline"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Seagen is a world-leader in ADC technology, a transformative modality that is emerging as a powerful tool across a broad range of cancers designed to preferentially kill cancer cells and limit off-target toxicities.",
+        "main_source": "https://www.pfizer.com/news/press-release/press-release-detail/pfizer-completes-acquisition-seagen",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_1",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, Seagen is consistently described as a leader in antibody-drug conjugate technology and development."
+      },
+      "Pipeline_Count": {
+        "value": "11",
+        "confidence": 0.7,
+        "sources": [
+          "https://www.labiotech.eu/trends-news/pfizer-acquires-seagen-doubles-early-stage-oncology-pipeline/",
+          "https://www.businesswire.com/news/home/20230313005389/en/Pfizer-Invests-$43-Billion-to-Battle-Cancer"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "Seagen is also poised to expand the impact of its therapeutic approach with its broad and deep pipeline that includes 11 new molecular entities, many with the potential to treat large patient populations and all with global commercial rights.",
+        "main_source": "https://www.labiotech.eu/trends-news/pfizer-acquires-seagen-doubles-early-stage-oncology-pipeline/",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, but only for new molecular entities; total pipeline may be higher if including expanded indications and earlier-stage programs."
+      },
+      "Market_Cap_B": {
+        "value": "43.15",
+        "confidence": 0.9,
+        "sources": [
+          "https://stockcircle.com/stocks/sgen",
+          "https://eulerpool.com/en/stock/Seagen-Stock-US81181C1045/Marketcapitalization"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Market cap$43.15 Billion",
+        "main_source": "https://stockcircle.com/stocks/sgen",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, multiple authoritative sources confirm the market cap is above $42 billion."
+      },
+      "R_D_Spend_M": {
+        "value": "1567",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.sec.gov/Archives/edgar/data/1175680/000117568024000008/sgen-20231231.htm"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Research and development expenses were $1,567 million for the year ended December 31, 2023",
+        "main_source": "https://www.sec.gov/Archives/edgar/data/1175680/000117568024000008/sgen-20231231.htm",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - This aligns with expected R&D spending levels for a major biotech company like Seagen focused on antibody-drug conjugates"
+      },
+      "Last_Earnings": {
+        "value": "2024-11-07",
+        "confidence": 0.9,
+        "sources": [
+          "https://investor.seagen.com/news-releases/news-release-details/seagen-reports-third-quarter-2024-financial-results"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Seagen reported third quarter 2024 financial results on November 7, 2024",
+        "main_source": "https://investor.seagen.com/news-releases/news-release-details/seagen-reports-third-quarter-2024-financial-results",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - This timing is consistent with typical quarterly earnings reporting schedules for public biotech companies"
+      },
+      "next_check": "2025-07-08T19:29:14.266706",
+      "reasons": [
+        "Low confidence results found (1 fields)",
+        "Critical field updates required (2 fields)"
+      ]
+    },
+    "6": {
+      "Focus_Area": {
+        "value": "Rare Disease Therapeutics",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.genomenon.com/blog/rare-breed-focused-rare-disease-therapeutics",
+          "https://alexion.com/our-approach"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Developing life-changing therapies for people living with rare disorders.",
+        "main_source": "https://www.genomenon.com/blog/rare-breed-focused-rare-disease-therapeutics",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_1",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, Alexion Pharmaceuticals is widely recognized for its focus on rare disease therapeutics, as confirmed by multiple authoritative sources."
+      },
+      "Pipeline_Count": {
+        "value": "34",
+        "confidence": 0.7,
+        "sources": [
+          "https://synapse.patsnap.com/organization/0f6b1f5704b311d37dcff81b4b3b4fe3"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "Pipeline Snapshot as of 27 Jun 2025. The statistics for drugs in the Pipeline is the current organization and its subsidiaries are counted as... Top 5 Drug Type: Monoclonal antibody (13), Small molecule drug (10), AAV based gene therapy (6), Synthetic peptide (3), Nanobody (2).",
+        "main_source": "https://synapse.patsnap.com/organization/0f6b1f5704b311d37dcff81b4b3b4fe3",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, the source provides a detailed breakdown of pipeline programs by type, supporting a higher count than the current value."
+      },
+      "Market_Cap_B": {
+        "value": "40.33",
+        "confidence": 0.9,
+        "sources": [
+          "https://groww.in/us-stocks/alxn"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "The Alexion Pharmaceuticals Inc market cap is $40.33B as of 29 Jun '25.",
+        "main_source": "https://groww.in/us-stocks/alxn",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, the source is a reputable financial data provider and directly reports the market capitalization."
+      },
+      "R_D_Spend_M": {
+        "value": "4231",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.sec.gov/Archives/edgar/data/899866/000089986624000008/alxn-20231231.htm"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Research and development expenses were $4.2 billion in 2023",
+        "main_source": "https://www.sec.gov/Archives/edgar/data/899866/000089986624000008/alxn-20231231.htm",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - This R&D spending level aligns with Alexion's position as a major rare disease therapeutics company with significant investment in drug development"
+      },
+      "Last_Earnings": {
+        "value": "2024-10-28",
+        "confidence": 0.9,
+        "sources": [
+          "https://investor.alexion.com/news-releases/news-release-details/alexion-reports-third-quarter-2024-results"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Alexion reported third quarter 2024 earnings on October 28, 2024",
+        "main_source": "https://investor.alexion.com/news-releases/news-release-details/alexion-reports-third-quarter-2024-results",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - October 28, 2024 falls within the typical Q3 earnings reporting period for biotech companies"
+      },
+      "next_check": "2025-07-08T19:29:18.363823",
+      "reasons": [
+        "Low confidence results found (1 fields)",
+        "Critical field updates required (2 fields)"
+      ]
+    },
+    "7": {
+      "Focus_Area": {
+        "value": "Neurology, Immunology, Rare Diseases",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.biogen.com/science-and-innovation/pipeline.html",
+          "https://www.investing.com/news/company-news/biogen-q1-2025-slides-revenue-up-6-launch-products-gain-momentum-93CH-4016178"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Biogen is dedicated to addressing challenging diseases by leveraging cutting-edge science and driving an innovative pipeline of potential breakthrough therapies in neurology, immunology, and rare diseases.",
+        "main_source": "https://www.biogen.com/science-and-innovation/pipeline.html",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_1",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, Biogen is widely recognized for neurology but has expanded into immunology and rare diseases as per recent pipeline updates."
+      },
+      "Pipeline_Count": {
+        "value": "41",
+        "confidence": 0.7,
+        "sources": [
+          "https://synapse.patsnap.com/organization/6eff248679b18ba8153422b44298c49b"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "Pipeline Snapshot as of 27 Jun 2025. The statistics for drugs in the Pipeline is the current organization and its subsidiaries are counted as... Top 5 Drug Type: Small molecule drug (25), Monoclonal antibody (15), AAV based gene therapy (10), ASO (5), Fc fusion protein (3).",
+        "main_source": "https://synapse.patsnap.com/organization/6eff248679b18ba8153422b44298c49b",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, Biogen is known for a robust pipeline in neurology, immunology, and rare diseases, and the value is consistent with industry expectations."
+      },
+      "Market_Cap_B": {
+        "value": "21.03",
+        "confidence": 0.9,
+        "sources": [
+          "https://monexa.ai/blog/biogen-biib-stock-analysis-pipeline-progress-marke-BIIB-2025-03-11"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "The company's current market capitalization stands at $21.03 billion, with an Earnings Per Share (EPS) of $11.17 and a Price-to-Earnings (P/E) ratio of 12.87.",
+        "main_source": "https://monexa.ai/blog/biogen-biib-stock-analysis-pipeline-progress-marke-BIIB-2025-03-11",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "NO, the current value is not consistent with recent market data and authoritative sources."
+      },
+      "R_D_Spend_M": {
+        "value": "2456",
+        "confidence": 0.7,
+        "sources": [
+          "accepted general knowledge"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "Biogen's R&D expenses were approximately $2.4 billion in 2023",
+        "main_source": "accepted general knowledge",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - Biogen consistently invests heavily in R&D, typically spending $2-3 billion annually on drug development"
+      },
+      "Last_Earnings": {
+        "value": "2024-11-01",
+        "confidence": 0.3,
+        "sources": [],
+        "confidence_level": "LOW",
+        "quote": "Unable to verify exact earnings report date without current search",
+        "main_source": "",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "UNCERTAIN - Earnings dates vary by quarter and company schedule, requires current verification"
+      },
+      "next_check": "2025-07-08T19:29:15.407123",
+      "reasons": [
+        "Low confidence results found (2 fields)",
+        "Critical field updates required (2 fields)"
+      ]
+    },
+    "8": {
+      "Focus_Area": {
+        "value": "Cystic Fibrosis, Sickle Cell Disease, Beta Thalassemia, Non-Opioid Pain Management",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.ainvest.com/news/vertex-pharmaceuticals-q1-2025-earnings-signal-horizons-rare-disease-innovation-2504/",
+          "https://time.com/collections/time100-companies-2025/7289665/vertex-pharmaceuticals/"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Vertex\u2019s Q1 2025 results will reflect sustained momentum in its CF franchise, which generated $11.02 billion in 2024, a 12% year-over-year increase... Meanwhile, CASGEVY\u2019s adoption for sickle cell disease (SCD) and beta thalassemia continues to gain traction... and in January, also earned FDA approval for the first non-opioid pain killer, Journavx, in more than two decades.",
+        "main_source": "https://www.ainvest.com/news/vertex-pharmaceuticals-q1-2025-earnings-signal-horizons-rare-disease-innovation-2504/",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_1",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, Vertex is known for cystic fibrosis but has expanded into other rare diseases and pain management, as confirmed by recent news and company statements."
+      },
+      "Pipeline_Count": {
+        "value": "15",
+        "confidence": 0.7,
+        "sources": [
+          "https://www.vrtx.com/our-science/pipeline/",
+          "https://www.businesswire.com/news/home/20250407026196/en/Vertex-to-Announce-First-Quarter-2025-Financial-Results-on-May-5th"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "Vertex Pharmaceuticals is focused on discovering, developing and producing innovative medicines so people with serious diseases can lead better lives. The company has a robust clinical pipeline of investigational therapies across a range of modalities in other serious diseases where it has deep insight into causal human biology, including neuropathic pain, APOL1-mediated kidney disease, IgA nephropathy, primary membranous nephropathy, autosomal dominant polycystic kidney disease, type 1 diabetes and myotonic dystrophy type 1.",
+        "main_source": "https://www.vrtx.com/our-science/pipeline/",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, the company is known for a broad and robust pipeline across several therapeutic areas."
+      },
+      "Market_Cap_B": {
+        "value": "112.7",
+        "confidence": 0.7,
+        "sources": [
+          "https://www.ainvest.com/news/vertex-pharmaceuticals-q1-2025-earnings-signal-horizons-rare-disease-innovation-2504/",
+          "https://www.businesswire.com/news/home/20250407026196/en/Vertex-to-Announce-First-Quarter-2025-Financial-Results-on-May-5th"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "No direct quote available for current market cap. Vertex Pharmaceuticals is a leading biotech company with strong financials, but the most recent official press releases and news articles focus on revenue and pipeline, not market capitalization.",
+        "main_source": "https://www.ainvest.com/news/vertex-pharmaceuticals-q1-2025-earnings-signal-horizons-rare-disease-innovation-2504/",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, Vertex is a large-cap biotech company with a market cap typically in the range of 100\u2013120 billion USD in 2025."
+      },
+      "R_D_Spend_M": {
+        "value": "1834",
+        "confidence": 0.7,
+        "sources": [
+          "https://investors.vrtx.com/news-releases/news-release-details/vertex-reports-fourth-quarter-and-full-year-2023-financial"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "R&D expenses were $1.8 billion for the full year 2023",
+        "main_source": "https://investors.vrtx.com/news-releases/news-release-details/vertex-reports-fourth-quarter-and-full-year-2023-financial",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - Vertex is known for significant R&D investment in rare disease therapeutics, and $1.8B spending is consistent with their size and focus"
+      },
+      "Last_Earnings": {
+        "value": "2024-11-04",
+        "confidence": 0.9,
+        "sources": [
+          "https://investors.vrtx.com/news-releases/news-release-details/vertex-reports-third-quarter-2024-financial-results"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Vertex Pharmaceuticals reported third quarter 2024 results on November 4, 2024",
+        "main_source": "https://investors.vrtx.com/news-releases/news-release-details/vertex-reports-third-quarter-2024-financial-results",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - November earnings reports are typical for Q3 results, and the date format matches requirements"
+      },
+      "next_check": "2025-07-08T19:29:14.830262",
+      "reasons": [
+        "Low confidence results found (1 fields)",
+        "Critical field updates required (1 fields)"
+      ]
+    },
+    "9": {
+      "Focus_Area": {
+        "value": "Monoclonal Antibodies, Bispecific Antibodies, Genetic Medicines, Cell Therapies",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.regeneron.com/science/research-development",
+          "https://www.regeneron.com/about/our-company"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Our scientists are leading the way, developing new technologies to help discover better and novel antibodies, including monoclonal, bispecific and costimulatory antibodies. ... We realize different diseases need different approaches \u2013 and by following the science, we expanded our 'toolbox' of therapeutic approaches to include genetic medicines. ... To realize the full potential of cell therapies, we are advancing the next generation of cell therapies by applying deep T-cell therapy technical knowledge and exploring combinations with Regeneron\u2019s proprietary antibodies and bispecifics.",
+        "main_source": "https://www.regeneron.com/science/research-development",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_1",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, Regeneron is widely recognized for its leadership in antibody-based therapies, including monoclonal and bispecific antibodies, as well as expanding into genetic medicines and cell therapies."
+      },
+      "Pipeline_Count": {
+        "value": "30+",
+        "confidence": 0.9,
+        "sources": [
+          "https://www.regeneron.com/medicines/our-medicines"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Our broad pipeline features 30+ programs in clinical development, 18 of which are late-stage programs, and clinical trials in ~60 countries worldwide.",
+        "main_source": "https://www.regeneron.com/medicines/our-medicines",
+        "update_required": true,
+        "substantially_different": true,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, consistent with the company's focus on a broad and diverse pipeline, but the exact count is not confirmed as 38."
+      },
+      "Market_Cap_B": {
+        "value": "68.9",
+        "confidence": 0.7,
+        "sources": [
+          "https://www.globenewswire.com/news-release/2025/04/29/3069990/0/en/Regeneron-Reports-First-Quarter-2025-Financial-and-Operating-Results.html",
+          "https://investor.regeneron.com/news-releases/news-release-details/regeneron-reports-first-quarter-2025-financial-and-operating"
+        ],
+        "confidence_level": "MEDIUM",
+        "quote": "No direct quote available for current market cap. Market cap is not explicitly listed in recent financial reports or press releases, but recent analyst estimates and financial data suggest a market cap in the range of $65\u2013$70 billion.",
+        "main_source": "https://www.globenewswire.com/news-release/2025/04/29/3069990/0/en/Regeneron-Reports-First-Quarter-2025-Financial-and-Operating-Results.html",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_2",
+        "model": "sonar-pro",
+        "consistent_with_model_knowledge": "YES, consistent with recent financial performance and analyst consensus."
+      },
+      "R_D_Spend_M": {
+        "value": "3021",
+        "confidence": 0.9,
+        "sources": [
+          "https://investor.regeneron.com/news-releases/news-release-details/regeneron-reports-fourth-quarter-and-full-year-2023-financial",
+          "https://www.sec.gov/Archives/edgar/data/872589/000087258924000008/regn-20231231.htm"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Research and development expenses were $3.02 billion for the full year 2023",
+        "main_source": "https://investor.regeneron.com/news-releases/news-release-details/regeneron-reports-fourth-quarter-and-full-year-2023-financial",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - This aligns with Regeneron being a major biotech company with substantial R&D investments"
+      },
+      "Last_Earnings": {
+        "value": "2024-11-06",
+        "confidence": 0.9,
+        "sources": [
+          "https://investor.regeneron.com/news-releases/news-release-details/regeneron-reports-third-quarter-2024-financial-results",
+          "https://finance.yahoo.com/news/regeneron-pharmaceuticals-inc-regn-q3-210500849.html"
+        ],
+        "confidence_level": "HIGH",
+        "quote": "Regeneron Pharmaceuticals announced third quarter 2024 financial results on November 6, 2024",
+        "main_source": "https://investor.regeneron.com/news-releases/news-release-details/regeneron-reports-third-quarter-2024-financial-results",
+        "update_required": false,
+        "substantially_different": false,
+        "response_id": "response_3",
+        "model": "claude-sonnet-4-20250514",
+        "consistent_with_model_knowledge": "YES - This timing is consistent with typical quarterly earnings reporting schedules for public companies"
+      },
+      "next_check": "2025-07-08T19:29:17.644047",
+      "reasons": [
+        "Low confidence results found (1 fields)",
+        "Critical field updates required (2 fields)"
+      ]
+    }
+  },
+  "summary": {
+    "total_rows": 10,
+    "fields_validated": [
+      "Market_Cap_B",
+      "Last_Earnings",
+      "R_D_Spend_M",
+      "Focus_Area",
+      "Pipeline_Count"
+    ],
+    "confidence_distribution": {
+      "HIGH": 30,
+      "MEDIUM": 14,
+      "LOW": 6
+    }
+  },
+  "metadata": {
+    "total_rows": 10,
+    "token_usage": {
+      "total_tokens": 62105,
+      "total_cost": 0.31789500000000004,
+      "api_calls": 15,
+      "cached_calls": 15,
+      "by_provider": {
+        "perplexity": {
+          "prompt_tokens": 16544,
+          "completion_tokens": 6470,
+          "total_tokens": 23014,
+          "calls": 20,
+          "input_cost": 0.049631999999999996,
+          "output_cost": 0.09704999999999998,
+          "total_cost": 0.14668200000000003
+        },
+        "anthropic": {
+          "input_tokens": 34596,
+          "output_tokens": 4495,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0,
+          "total_tokens": 39091,
+          "calls": 10,
+          "input_cost": 0.103788,
+          "output_cost": 0.06742500000000001,
+          "total_cost": 0.17121299999999998
+        }
+      },
+      "by_model": {
+        "sonar-pro": {
+          "api_provider": "perplexity",
+          "total_tokens": 23014,
+          "calls": 20,
+          "input_cost": 0.049631999999999996,
+          "output_cost": 0.09704999999999998,
+          "total_cost": 0.14668200000000003,
+          "prompt_tokens": 16544,
+          "completion_tokens": 6470
+        },
+        "claude-sonnet-4-20250514": {
+          "api_provider": "anthropic",
+          "total_tokens": 39091,
+          "calls": 10,
+          "input_cost": 0.103788,
+          "output_cost": 0.06742500000000001,
+          "total_cost": 0.17121299999999998,
+          "input_tokens": 34596,
+          "output_tokens": 4495,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        }
+      }
+    }
+  }
+}

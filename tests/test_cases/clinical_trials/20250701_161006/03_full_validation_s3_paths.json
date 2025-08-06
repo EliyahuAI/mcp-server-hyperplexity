@@ -1,0 +1,5 @@
+{
+  "excel_s3_key": "uploads/eliyahu.ai/eliyahu/20250701_201045_377115_excel_clinical_trials.xlsx",
+  "config_s3_key": "uploads/eliyahu.ai/eliyahu/20250701_201045_377115_config_clinical_trials_config.json",
+  "results_s3_key": "results/eliyahu.ai/eliyahu/20250701_201045_377115.zip"
+}

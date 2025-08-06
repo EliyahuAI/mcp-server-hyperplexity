@@ -97,7 +97,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Process the config generation request (single unified mode)
         result = asyncio.run(generate_config_unified(
-            table_analysis, existing_config, instructions, session_id
+            table_analysis, existing_config, instructions, session_id, conversation_history
         ))
         
         return {
@@ -118,7 +118,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
 
 async def generate_config_unified(table_analysis: Dict, existing_config: Dict = None, 
-                                 instructions: str = '', session_id: str = 'unknown') -> Dict:
+                                 instructions: str = '', session_id: str = 'unknown',
+                                 conversation_history: list = None) -> Dict:
     """Unified config generation - always returns both updated config and clarifying questions."""
     try:
         # Build the unified generation prompt
@@ -150,6 +151,11 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             logger.info(f"Response keys: {response.keys() if isinstance(response, dict) else 'Not a dict'}")
         else:
             response = result
+        
+        # Additional check after unwrapping - response might be a string
+        if isinstance(response, str):
+            logger.error(f"ERROR: Response is a string instead of dict: {response[:200]}...")
+            raise TypeError("AI API response is a string instead of expected dictionary")
             
         # Extract response data
         try:
@@ -201,13 +207,32 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             'session_id': session_id
         }
         
+    except TypeError as e:
+        error_msg = str(e)
+        logger.error(f"[ERROR] Type error in config generation: {error_msg}")
+        
+        # Provide user-friendly error message for string response issues
+        if "string indices must be integers" in error_msg or "AI API response is a string" in error_msg:
+            return {
+                'success': False,
+                'error': 'The AI returned an unexpected format. This can happen when the request is too complex. Please try simplifying your instructions or breaking them into smaller steps.',
+                'error_type': 'format_error',
+                'error_details': error_msg,
+                'session_id': session_id,
+                'retry_suggestion': 'Try providing more specific instructions or use simpler language.'
+            }
+        
+        return {
+            'success': False,
+            'error': f'Configuration format error: {error_msg}',
+            'error_type': 'type_error',
+            'session_id': session_id
+        }
+        
     except Exception as e:
         error_msg = str(e)
         if "overloaded" in error_msg.lower() and "529" in error_msg:
             logger.error(f"[ERROR] Claude API overloaded - unified config generation failed: {error_msg}")
-        else:
-            logger.error(f"Unified config generation failed: {error_msg}")
-        if "overloaded" in error_msg.lower() and "529" in error_msg:
             return {
                 'success': False,
                 'error': 'Claude API is currently overloaded. Please try again in a few moments.',
@@ -215,9 +240,11 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
                 'session_id': session_id
             }
         else:
+            logger.error(f"Unified config generation failed: {error_msg}")
             return {
                 'success': False,
                 'error': f'Config generation failed: {error_msg}',
+                'error_type': 'general_error',
                 'session_id': session_id
             }
 

@@ -1,0 +1,15 @@
+{
+  "status_code": 200,
+  "headers": {
+    "Date": "Tue, 01 Jul 2025 20:23:09 GMT",
+    "Content-Type": "application/json",
+    "Content-Length": "828",
+    "Connection": "keep-alive",
+    "x-amzn-RequestId": "97b44788-baed-4085-87ba-d736813533ff",
+    "Access-Control-Allow-Origin": "*",
+    "x-amz-apigw-id": "NC9_OGt-oAMEqww=",
+    "X-Amzn-Trace-Id": "Root=1-68644394-60416a204311b1eb140c540e;Sampled=1;Lineage=1:46762f32:0"
+  },
+  "body": "{\"status\": \"preview_completed\", \"session_id\": \"e722c231-f2fd-49ab-acf2-2d34b025ce90\", \"reference_pin\": \"476305\", \"markdown_table\": \"| Field                  | Confidence | Value                     |\\n|------------------------|------------|--------------------------|\\n| Product Name           | HIGH       | [Demo] FAP-2286           |\\n| Developer              | HIGH       | [Demo] Clovis Oncology    |\\n| Target                 | MEDIUM     | [Demo] FAP                |\\n| Indication             | LOW        | [Demo] Solid tumors       |\", \"total_rows\": 10, \"total_processed_rows\": 0, \"new_row_number\": null, \"preview_complete\": false, \"preview_processing_time\": 25.169877529144287, \"estimated_total_processing_time\": 1258.4938764572144, \"note\": \"Validator completed but returned no results - Showing demo data structure\"}",
+  "request_time": 25.610097408294678
+}

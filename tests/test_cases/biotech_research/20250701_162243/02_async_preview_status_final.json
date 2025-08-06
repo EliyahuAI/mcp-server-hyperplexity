@@ -1,0 +1,13 @@
+{
+  "status": "preview_completed",
+  "session_id": "20250701_202320_121844_preview",
+  "reference_pin": "121844",
+  "markdown_table": "| Field | Confidence | Value |\n|-------|------------|-------|\n| No results | N/A | Validation returned no data |",
+  "total_rows": 0,
+  "total_processed_rows": 0,
+  "new_row_number": null,
+  "preview_complete": true,
+  "preview_processing_time": 1.0,
+  "estimated_total_processing_time": 0,
+  "note": "Validation completed but returned no results"
+}

@@ -1,0 +1,112 @@
+{
+  "general_notes": "This table tracks clinical trials for oncology immunotherapy drugs. The focus is on validating current trial status, sponsor information, and key endpoints for investment and research monitoring purposes.",
+  "default_model": "sonar-pro",
+  "default_search_context_size": "low",
+  "validation_targets": [
+    {
+      "column": "Sponsor",
+      "description": "Company or organization sponsoring the trial",
+      "importance": "ID",
+      "format": "String",
+      "notes": "Use official company name - these are real pharma companies",
+      "examples": [
+        "Merck & Co.",
+        "Bristol Myers Squibb",
+        "Roche"
+      ],
+      "search_group": 0
+    },
+    {
+      "column": "Drug_Name",
+      "description": "Name of the investigational drug or therapy",
+      "importance": "ID",
+      "format": "String",
+      "notes": "Use established drug names from known companies",
+      "examples": [
+        "Pembrolizumab",
+        "Nivolumab",
+        "Atezolizumab"
+      ],
+      "search_group": 0
+    },
+    {
+      "column": "Trial_ID",
+      "description": "ClinicalTrials.gov identifier for the current/latest trial",
+      "importance": "CRITICAL",
+      "format": "String",
+      "notes": "Must find real NCT number through search - this will be validated",
+      "examples": [
+        "NCT05234567",
+        "NCT05234568",
+        "NCT05234569"
+      ],
+      "search_group": 1,
+      "search_context_size": "medium"
+    },
+    {
+      "column": "Indication",
+      "description": "Disease or condition being studied",
+      "importance": "CRITICAL",
+      "format": "String",
+      "notes": "Use specific cancer type or medical condition",
+      "examples": [
+        "Non-Small Cell Lung Cancer",
+        "Melanoma",
+        "Triple-Negative Breast Cancer"
+      ],
+      "search_group": 1
+    },
+    {
+      "column": "Phase",
+      "description": "Clinical trial phase",
+      "importance": "CRITICAL",
+      "format": "String",
+      "notes": "Standard phase nomenclature (Phase 1, 2, 3, etc.)",
+      "examples": [
+        "Phase 3",
+        "Phase 2",
+        "Phase 2/3"
+      ],
+      "search_group": 1
+    },
+    {
+      "column": "Primary_Endpoint",
+      "description": "Main outcome measure of the trial",
+      "importance": "HIGH",
+      "format": "String",
+      "notes": "Primary efficacy or safety endpoint",
+      "examples": [
+        "Overall Survival",
+        "Progression-Free Survival",
+        "Overall Response Rate"
+      ],
+      "search_group": 2
+    },
+    {
+      "column": "Enrollment_Target",
+      "description": "Target number of patients to enroll",
+      "importance": "MEDIUM",
+      "format": "Number",
+      "notes": "Integer value representing patient count",
+      "examples": [
+        "450",
+        "280",
+        "520"
+      ],
+      "search_group": 3
+    },
+    {
+      "column": "Start_Date",
+      "description": "Date the trial started or is expected to start",
+      "importance": "HIGH",
+      "format": "Date",
+      "notes": "Must be in YYYY-MM-DD format",
+      "examples": [
+        "2024-03-15",
+        "2024-01-22",
+        "2024-05-08"
+      ],
+      "search_group": 3
+    }
+  ]
+}

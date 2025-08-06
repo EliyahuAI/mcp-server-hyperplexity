@@ -29,6 +29,10 @@ try:
 except ImportError:
     WEBSOCKETS_AVAILABLE = False
 
+# Add project root to sys.path to allow for absolute imports
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,6 +41,8 @@ logger = logging.getLogger(__name__)
 SCRIPT_DIR = Path(__file__).parent.absolute()
 PROJECT_DIR = SCRIPT_DIR.parent
 SRC_DIR = PROJECT_DIR / "src"
+LAMBDA_SRC_DIR = SRC_DIR / "lambdas" / "interface"
+SHARED_SRC_DIR = SRC_DIR / "shared"
 PACKAGE_DIR = SCRIPT_DIR / "interface_package"
 OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package.zip"
 
@@ -44,7 +50,7 @@ OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package.zip"
 LAMBDA_CONFIG = {
     "FunctionName": "perplexity-validator-interface",
     "Runtime": "python3.9",
-    "Handler": "interface_lambda_function.lambda_handler",
+    "Handler": "interface_lambda_function.lambda_handler", # This will be created in the package root
     "Timeout": 900,  # 15 minutes for file uploads and processing
     "MemorySize": 2048,  # Higher memory for file processing
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
@@ -145,64 +151,35 @@ def copy_source_files():
     """Copy necessary source files for the interface Lambda."""
     logger.info("Copying interface Lambda source files...")
     
-    # 1. Copy the main Lambda handler file
-    shutil.copy(SRC_DIR / "interface_lambda_function.py", PACKAGE_DIR)
-    logger.info("Copied interface_lambda_function.py")
+    # 1. Copy all files and subdirectories from the new interface lambda source
+    shutil.copytree(LAMBDA_SRC_DIR, PACKAGE_DIR, dirs_exist_ok=True)
+    logger.info(f"Copied contents of {LAMBDA_SRC_DIR} to {PACKAGE_DIR}")
 
-    # 2. Copy the entire 'interface_lambda' package
-    shutil.copytree(SRC_DIR / "interface_lambda", PACKAGE_DIR / "interface_lambda")
-    logger.info("Copied the 'interface_lambda' package directory.")
+    # 2. Copy all shared files into a 'shared' subdirectory within the package
+    shutil.copytree(SHARED_SRC_DIR, PACKAGE_DIR / "shared")
+    logger.info(f"Copied shared modules from {SHARED_SRC_DIR} to {PACKAGE_DIR / 'shared'}")
 
-    # 3. Copy shared top-level modules
-    shared_modules = [
-        "email_sender.py",
-        "dynamodb_schemas.py",
-        "row_key_utils.py",
-        "lambda_test_json_clean.py",
-        "schema_validator_simplified.py",
-        "api_gateway_validation.py",
-        "prompts.yml",
-        "shared_table_parser.py",
-        "config_validator.py",
-        "ai_api_client.py",
-    ]
-    
-    # 4. Copy AI config generator components to interface_lambda directory
-    ai_config_files = [
-        ("src/interface_lambda/config_generator_step1_lightweight.py", "interface_lambda/config_generator_step1_lightweight.py"),
-        ("ai_config_generator/config_generator_step1.py", "interface_lambda/config_generator_step1.py"),
-        ("ai_config_generator/config_generator_step2_enhanced.py", "interface_lambda/config_generator_step2_enhanced.py"),
-        ("ai_config_generator/config_generator_conversational.py", "interface_lambda/config_generator_conversational.py"),
-        ("ai_config_generator/prompts/conversational_interview_prompt.md", "prompts/conversational_interview_prompt.md"),
-        ("ai_config_generator/prompts/generate_column_config_prompt.md", "prompts/generate_column_config_prompt.md"),
-        ("ai_config_generator/prompts/generate_column_config_prompt.txt", "prompts/generate_column_config_prompt.txt"),
-    ]
-    
-    logger.info("Copying AI config generator files...")
-    
-    # Create prompts subdirectory if it doesn't exist
-    prompts_dir = PACKAGE_DIR / "prompts"
-    prompts_dir.mkdir(exist_ok=True)
-    
-    for src_path, dest_path in ai_config_files:
-        source_file = PROJECT_DIR / src_path
-        dest_file = PACKAGE_DIR / dest_path
-        
-        if source_file.exists():
-            # Ensure destination directory exists
-            dest_file.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(source_file, dest_file)
-            logger.info(f"Copied AI config file: {src_path} -> {dest_path}")
-        else:
-            logger.warning(f"AI config file not found, skipping: {src_path}")
-    
-    for file_name in shared_modules:
-        source_file = SRC_DIR / file_name
-        if source_file.exists():
-            shutil.copy(source_file, PACKAGE_DIR)
-            logger.info(f"Copied shared module: {file_name}")
-        else:
-            logger.warning(f"Shared module not found, skipping: {file_name}")
+    # 3. Create a main lambda handler at the root of the package
+    # This handler will set up the path and delegate to the real handler
+    handler_content = """
+import sys
+import os
+from pathlib import Path
+
+# Add package root to path to allow absolute imports from 'shared' and 'lambdas'
+PACKAGE_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(PACKAGE_ROOT))
+
+# Now we can import the real handler
+from lambdas.interface.handlers import http_handler
+
+def lambda_handler(event, context):
+    return http_handler.handle(event, context)
+"""
+    handler_file = PACKAGE_DIR / "interface_lambda_function.py"
+    with open(handler_file, 'w') as f:
+        f.write(handler_content)
+    logger.info("Created main Lambda handler with path setup.")
 
 def create_placeholder_lambda_handler():
     """Create a placeholder Lambda handler for the interface function."""

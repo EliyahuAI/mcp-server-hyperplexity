@@ -21,11 +21,16 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Add project root to sys.path to allow for absolute imports
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
 # Directory setup
 SCRIPT_DIR = Path(__file__).parent.absolute()
 PROJECT_DIR = SCRIPT_DIR.parent
 SRC_DIR = PROJECT_DIR / "src"
-CONFIG_LAMBDA_DIR = PROJECT_DIR / "config_lambda"
+CONFIG_LAMBDA_DIR = SRC_DIR / "lambdas" / "config"
+SHARED_SRC_DIR = SRC_DIR / "shared"
 PACKAGE_DIR = SCRIPT_DIR / "config_lambda_deploy"
 OUTPUT_ZIP = SCRIPT_DIR / "config_lambda_deploy.zip"
 
@@ -83,48 +88,13 @@ def copy_source_files():
     """Copy config lambda source files and dependencies."""
     logger.info("Copying config lambda source files...")
     
-    # 1. Copy files from config_lambda directory (main source)
-    logger.info(f"Copying from {CONFIG_LAMBDA_DIR}")
-    
-    # Core config lambda files
-    core_files = [
-        "config_lambda_function.py",
-        "ai_generation_schema.json", 
-        "perplexity_schema.py",
-        "requirements.txt"
-    ]
-    
-    for file_name in core_files:
-        source_file = CONFIG_LAMBDA_DIR / file_name
-        if source_file.exists():
-            shutil.copy(source_file, PACKAGE_DIR)
-            logger.info(f"Copied: {file_name}")
-        else:
-            logger.warning(f"Core file not found: {file_name}")
-    
-    # Copy prompts directory
-    prompts_source = CONFIG_LAMBDA_DIR / "prompts"
-    if prompts_source.exists():
-        shutil.copytree(prompts_source, PACKAGE_DIR / "prompts")
-        logger.info("Copied prompts directory")
-    
-    # 2. Copy shared dependencies from src/ (these are the corrected versions)
-    logger.info("Copying shared dependencies from src/...")
-    
-    shared_files = [
-        "ai_api_client.py",           # Corrected with debug logging
-        "column_config_schema.json",  # Corrected schema without constraints
-        "config_validator.py",        # Validation logic
-        "shared_table_parser.py"      # Table parsing utilities
-    ]
-    
-    for file_name in shared_files:
-        source_file = SRC_DIR / file_name
-        if source_file.exists():
-            shutil.copy(source_file, PACKAGE_DIR)
-            logger.info(f"Copied shared file: {file_name}")
-        else:
-            logger.error(f"MISSING shared file: {file_name}")
+    # 1. Copy all files from the new config lambda source
+    shutil.copytree(CONFIG_LAMBDA_DIR, PACKAGE_DIR, dirs_exist_ok=True)
+    logger.info(f"Copied contents of {CONFIG_LAMBDA_DIR} to {PACKAGE_DIR}")
+
+    # 2. Copy all shared files into the package root
+    shutil.copytree(SHARED_SRC_DIR, PACKAGE_DIR, dirs_exist_ok=True)
+    logger.info(f"Copied shared modules from {SHARED_SRC_DIR} to {PACKAGE_DIR}")
 
 def install_dependencies():
     """Install Python dependencies."""

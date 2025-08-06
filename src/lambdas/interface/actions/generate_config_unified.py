@@ -286,7 +286,24 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
             body = json.loads(result['body']) if isinstance(result.get('body'), str) else result.get('body', {})
             
             if not body.get('success'):
-                return {'success': False, 'error': f'Config generation failed: {body.get("error", "Unknown error")}'}
+                error_response = {
+                    'success': False, 
+                    'error': body.get('error', 'Unknown error'),
+                    'error_type': body.get('error_type', 'unknown')
+                }
+                
+                # Add retry suggestions for specific error types
+                if body.get('error_type') == 'format_error':
+                    error_response['retry_suggestion'] = body.get('retry_suggestion', 
+                        'Try simplifying your instructions or breaking them into smaller steps.')
+                elif body.get('error_type') == 'api_overloaded':
+                    error_response['retry_suggestion'] = 'Please wait a moment and try again.'
+                
+                # Include error details for debugging if available
+                if body.get('error_details'):
+                    logger.error(f"Config generation error details: {body.get('error_details')}")
+                
+                return error_response
             
             # Extract generated config
             updated_config = body.get('updated_config')

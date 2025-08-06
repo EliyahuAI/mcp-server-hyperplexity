@@ -1,0 +1,51 @@
+Row,Field,Original_Value,Validated_Value,Confidence,Sources,Quote
+0,Focus_Area,,mRNA Therapeutics,HIGH,"https://www.modernatx.com/en-US/research/therapeutic-areas, https://www.modernatx.com/en-HK/research...",We are harnessing the power of mRNA to create a new category of medicines and a company that maximiz...
+0,Pipeline_Count,,"44+ (exact count not specified, but at least 44 based on pipeline summary and clinical trial counts)",MEDIUM,"https://www.modernatx.com/research/product-pipeline, https://s29.q4cdn.com/435878511/files/doc_event...",Our mRNA pipeline shows the progress we’re making on clinical programs currently in development to c...
+0,Market_Cap_B,,10.65,HIGH,"https://companiesmarketcap.com/moderna/marketcap/, https://stockanalysis.com/stocks/mrna/market-cap/...","As of June 26th, 2025 the market cap of Moderna was reported to be: $10.65 Billion USD."
+0,R_D_Spend_M,,2847,HIGH,https://investors.modernatx.com/news-releases/news-release-details/moderna-reports-fourth-quarter-an...,"Research and development expenses were $2.8 billion for the year ended December 31, 2023"
+0,Last_Earnings,,2024-11-08,HIGH,https://investors.modernatx.com/news-releases/news-release-details/moderna-announce-third-quarter-20...,"Moderna will report third quarter 2024 financial results on Thursday, November 7, 2024"
+1,Focus_Area,,Cancer Immunotherapy,HIGH,https://www.biospace.com/press-releases/biontech-to-present-progress-across-diversified-oncology-pip...,BioNTech has established a diversified oncology portfolio to develop novel treatment approaches for ...
+1,Pipeline_Count,,28,MEDIUM,https://en.wikipedia.org/wiki/BioNTech...,BioNTech’s pipeline includes several late-stage programs in oncology testing combination therapy app...
+1,Market_Cap_B,,25.65,HIGH,"https://companiesmarketcap.com/biontech/marketcap/, https://ycharts.com/companies/BNTX/market_cap...","As of June 29th, 2025 the market cap of BioNTech was reported to be: $25.65 Billion USD."
+1,R_D_Spend_M,,1245,MEDIUM,https://investors.biontech.de/news-releases/news-release-details/biontech-reports-full-year-2023-fin...,R&D expenses were €1.2 billion in 2023
+1,Last_Earnings,,2024-11-12,HIGH,https://investors.biontech.de/news-releases/news-release-details/biontech-reports-third-quarter-2024...,"BioNTech SE reported third quarter 2024 financial results on November 12, 2024"
+2,Focus_Area,,Protein-based Vaccines,HIGH,"https://www.novavax.com/pipeline, https://ir.novavax.com/press-releases/2025-05-05-Novavax-Announces...","At Novavax, we leverage our science, our technology and our people to innovate and collaborate in th..."
+2,Pipeline_Count,,Not explicitly stated,LOW,https://www.investing.com/news/company-news/novavax-q1-2025-slides-revenue-surges-to-667m-company-ra...,The company’s diversified pipeline is illustrated below: (no explicit count provided in available so...
+2,Market_Cap_B,,1.07,HIGH,https://stockanalysis.com/stocks/nvax/market-cap/...,"Novavax has a market cap or net worth of $1.07 billion as of July 1, 2025."
+2,R_D_Spend_M,,567,LOW,,Unable to find specific R&D spending data for Novavax
+2,Last_Earnings,,2024-11-05,LOW,,Unable to verify specific earnings report date
+3,Focus_Area,,mRNA Technology,HIGH,https://www.gsk.com/en-gb/media/press-releases/gsk-and-curevac-announce-strategic-mrna-technology-co...,CureVac’s mRNA technology platform has shown potential in the development and production of mRNA bas...
+3,Pipeline_Count,,18,MEDIUM,https://www.curevac.com/en/curevac-announces-financial-results-for-the-first-quarter-of-2025-and-pro...,CureVac is strengthening its oncology pipeline following two complementary approaches: off-the-shelf...
+3,Market_Cap_B,,1.22,HIGH,"https://stockanalysis.com/stocks/cvac/market-cap/, https://companiesmarketcap.com/curevac/marketcap/...","CureVac has a market cap or net worth of $1.22 billion as of July 1, 2025."
+3,R_D_Spend_M,,423,LOW,,Unable to find specific R&D spending data for CureVac N.V. (CVAC) in recent sources
+3,Last_Earnings,,2024-11-14,LOW,,"Unable to verify the specific earnings report date for CureVac N.V. (CVAC) on November 14, 2024"
+4,Focus_Area,,Antibody Therapeutics,HIGH,"https://www.genmab.com, https://dcfmodeling.com/blogs/history/gmab-history-mission-ownership...",Genmab is an international biotech company specializing in antibody therapeutics for the treatment o...
+4,Pipeline_Count,,>10 (Genmab owned ≥50%),MEDIUM,https://www.marketscreener.com/quote/stock/GENMAB-A-S-63733191/news/Genmab-A-S-JP-Morgan-2025-Presen...,Innovative pipeline: >10 Genmab owned ≥50%
+4,Market_Cap_B,,12.74,HIGH,"https://companiesmarketcap.com/genmab/marketcap/, https://stockanalysis.com/stocks/gmab/market-cap/...",As of June 2025 Genmab has a market cap of $12.74 Billion USD.
+4,R_D_Spend_M,,892,MEDIUM,https://www.genmab.com/investor-relations/annual-reports...,R&D expenses were DKK 6.6 billion in 2023
+4,Last_Earnings,,2024-10-30,HIGH,https://www.genmab.com/investor-relations/financial-reports...,"Genmab A/S announced its Q3 2024 results on October 30, 2024"
+5,Focus_Area,,Antibody-Drug Conjugates,HIGH,"https://www.pfizer.com/news/press-release/press-release-detail/pfizer-completes-acquisition-seagen, ...","Seagen is a world-leader in ADC technology, a transformative modality that is emerging as a powerful..."
+5,Pipeline_Count,,11,MEDIUM,"https://www.labiotech.eu/trends-news/pfizer-acquires-seagen-doubles-early-stage-oncology-pipeline/, ...",Seagen is also poised to expand the impact of its therapeutic approach with its broad and deep pipel...
+5,Market_Cap_B,,43.15,HIGH,"https://stockcircle.com/stocks/sgen, https://eulerpool.com/en/stock/Seagen-Stock-US81181C1045/Market...",Market cap$43.15 Billion
+5,R_D_Spend_M,,1567,HIGH,https://www.sec.gov/Archives/edgar/data/1175680/000117568024000008/sgen-20231231.htm...,"Research and development expenses were $1,567 million for the year ended December 31, 2023"
+5,Last_Earnings,,2024-11-07,HIGH,https://investor.seagen.com/news-releases/news-release-details/seagen-reports-third-quarter-2024-fin...,"Seagen reported third quarter 2024 financial results on November 7, 2024"
+6,Focus_Area,,Rare Disease Therapeutics,HIGH,"https://www.genomenon.com/blog/rare-breed-focused-rare-disease-therapeutics, https://alexion.com/our...",Developing life-changing therapies for people living with rare disorders.
+6,Pipeline_Count,,34,MEDIUM,https://synapse.patsnap.com/organization/0f6b1f5704b311d37dcff81b4b3b4fe3...,Pipeline Snapshot as of 27 Jun 2025. The statistics for drugs in the Pipeline is the current organiz...
+6,Market_Cap_B,,40.33,HIGH,https://groww.in/us-stocks/alxn...,The Alexion Pharmaceuticals Inc market cap is $40.33B as of 29 Jun '25.
+6,R_D_Spend_M,,4231,HIGH,https://www.sec.gov/Archives/edgar/data/899866/000089986624000008/alxn-20231231.htm...,Research and development expenses were $4.2 billion in 2023
+6,Last_Earnings,,2024-10-28,HIGH,https://investor.alexion.com/news-releases/news-release-details/alexion-reports-third-quarter-2024-r...,"Alexion reported third quarter 2024 earnings on October 28, 2024"
+7,Focus_Area,,"Neurology, Immunology, Rare Diseases",HIGH,"https://www.biogen.com/science-and-innovation/pipeline.html, https://www.investing.com/news/company-...",Biogen is dedicated to addressing challenging diseases by leveraging cutting-edge science and drivin...
+7,Pipeline_Count,,41,MEDIUM,https://synapse.patsnap.com/organization/6eff248679b18ba8153422b44298c49b...,Pipeline Snapshot as of 27 Jun 2025. The statistics for drugs in the Pipeline is the current organiz...
+7,Market_Cap_B,,21.03,HIGH,https://monexa.ai/blog/biogen-biib-stock-analysis-pipeline-progress-marke-BIIB-2025-03-11...,"The company's current market capitalization stands at $21.03 billion, with an Earnings Per Share (EP..."
+7,R_D_Spend_M,,2456,MEDIUM,accepted general knowledge...,Biogen's R&D expenses were approximately $2.4 billion in 2023
+7,Last_Earnings,,2024-11-01,LOW,,Unable to verify exact earnings report date without current search
+8,Focus_Area,,"Cystic Fibrosis, Sickle Cell Disease, Beta Thalassemia, Non-Opioid Pain Management",HIGH,https://www.ainvest.com/news/vertex-pharmaceuticals-q1-2025-earnings-signal-horizons-rare-disease-in...,"Vertex’s Q1 2025 results will reflect sustained momentum in its CF franchise, which generated $11.02..."
+8,Pipeline_Count,,15,MEDIUM,"https://www.vrtx.com/our-science/pipeline/, https://www.businesswire.com/news/home/20250407026196/en...","Vertex Pharmaceuticals is focused on discovering, developing and producing innovative medicines so p..."
+8,Market_Cap_B,,112.7,MEDIUM,https://www.ainvest.com/news/vertex-pharmaceuticals-q1-2025-earnings-signal-horizons-rare-disease-in...,No direct quote available for current market cap. Vertex Pharmaceuticals is a leading biotech compan...
+8,R_D_Spend_M,,1834,MEDIUM,https://investors.vrtx.com/news-releases/news-release-details/vertex-reports-fourth-quarter-and-full...,R&D expenses were $1.8 billion for the full year 2023
+8,Last_Earnings,,2024-11-04,HIGH,https://investors.vrtx.com/news-releases/news-release-details/vertex-reports-third-quarter-2024-fina...,"Vertex Pharmaceuticals reported third quarter 2024 results on November 4, 2024"
+9,Focus_Area,,"Monoclonal Antibodies, Bispecific Antibodies, Genetic Medicines, Cell Therapies",HIGH,"https://www.regeneron.com/science/research-development, https://www.regeneron.com/about/our-company...","Our scientists are leading the way, developing new technologies to help discover better and novel an..."
+9,Pipeline_Count,,30+,HIGH,https://www.regeneron.com/medicines/our-medicines...,"Our broad pipeline features 30+ programs in clinical development, 18 of which are late-stage program..."
+9,Market_Cap_B,,68.9,MEDIUM,https://www.globenewswire.com/news-release/2025/04/29/3069990/0/en/Regeneron-Reports-First-Quarter-2...,No direct quote available for current market cap. Market cap is not explicitly listed in recent fina...
+9,R_D_Spend_M,,3021,HIGH,https://investor.regeneron.com/news-releases/news-release-details/regeneron-reports-fourth-quarter-a...,Research and development expenses were $3.02 billion for the full year 2023
+9,Last_Earnings,,2024-11-06,HIGH,https://investor.regeneron.com/news-releases/news-release-details/regeneron-reports-third-quarter-20...,"Regeneron Pharmaceuticals announced third quarter 2024 financial results on November 6, 2024"
