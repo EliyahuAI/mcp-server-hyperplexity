@@ -636,6 +636,12 @@ def setup_api_gateway(lambda_client, function_name, region):
             status_session_resource = apigateway_client.create_resource(restApiId=api_id, parentId=status_resource_id, pathPart='{sessionId}')
         status_session_resource_id = status_session_resource['id']
         
+        # --- Create /health Resource ---
+        health_resource = next((res for res in resources if res.get('pathPart') == 'health'), None)
+        if not health_resource:
+            health_resource = apigateway_client.create_resource(restApiId=api_id, parentId=root_resource_id, pathPart='health')
+        health_resource_id = health_resource['id']
+
         # --- Define Methods and Integrations ---
         lambda_arn = f"arn:aws:lambda:{region}:{account_id}:function:{function_name}"
         lambda_integration_uri = f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
@@ -646,6 +652,8 @@ def setup_api_gateway(lambda_client, function_name, region):
             (validate_resource_id, 'OPTIONS'),
             (status_session_resource_id, 'GET'),
             (status_session_resource_id, 'OPTIONS'),
+            (health_resource_id, 'GET'),
+            (health_resource_id, 'OPTIONS'),
         ]
 
         for resource_id, http_method in resource_setups:
@@ -750,27 +758,18 @@ def setup_dynamodb_tables(region="us-east-1"):
     logger.info("Setting up DynamoDB tables for email validation and user tracking...")
     
     try:
-        # Add src directory to Python path to import dynamodb_schemas
-        import sys
-        sys.path.insert(0, str(SRC_DIR))
-        
-        from dynamodb_schemas import (
-            create_validation_runs_table, 
-            create_websocket_connections_table,
-            DynamoDBSchemas
-        )
-        
         # Create the validation runs table
-        create_validation_runs_table()
+        from src.shared import dynamodb_schemas
+        dynamodb_schemas.create_validation_runs_table()
         logger.info("✅ Validation runs table created/verified")
         
         # Create the WebSocket connections table
-        create_websocket_connections_table()
+        dynamodb_schemas.create_websocket_connections_table()
         logger.info("✅ WebSocket connections table created/verified")
         
         # Define table names using the same pattern as the original code
-        user_validation_table = DynamoDBSchemas.USER_VALIDATION_TABLE
-        user_tracking_table = DynamoDBSchemas.USER_TRACKING_TABLE
+        user_validation_table = dynamodb_schemas.DynamoDBSchemas.USER_VALIDATION_TABLE
+        user_tracking_table = dynamodb_schemas.DynamoDBSchemas.USER_TRACKING_TABLE
         
         # Get DynamoDB client
         dynamodb_client = boto3.client('dynamodb', region_name=region)
@@ -974,9 +973,9 @@ def create_websocket_lambda_package(output_zip_path):
     package_dir = SCRIPT_DIR / "websocket_package"
     clean_directory(package_dir)
     
-    # Copy required source files
-    shutil.copy(SRC_DIR / "websocket_handler.py", package_dir)
-    shutil.copy(SRC_DIR / "dynamodb_schemas.py", package_dir)
+    # Copy required source files from their new locations
+    shutil.copy(SRC_DIR / "lambdas" / "validation" / "websocket_handler.py", package_dir)
+    shutil.copy(SRC_DIR / "shared" / "dynamodb_schemas.py", package_dir)
     
     # Create the ZIP file
     with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
@@ -1138,13 +1137,13 @@ def verify_api_gateway_deployment(api_name, region, timeout=120):
         start_time = time.time()
         while time.time() - start_time < timeout:
             try:
-                # Test with a simple status check
-                response = requests.get(f"{api_url}/status/health", timeout=10)
-                if response.status_code in [200, 404]:  # 404 is OK, means API is responding
-                    logger.info(f"✅ API Gateway {api_name} is responding at {api_url}")
+                # Test with the new /health endpoint
+                response = requests.get(f"{api_url}/health", timeout=10)
+                if response.status_code == 200:
+                    logger.info(f"✅ API Gateway {api_name} is responding at {api_url}/health")
                     return True
                 else:
-                    logger.info(f"⏳ API Gateway still initializing... got {response.status_code}")
+                    logger.info(f"⏳ API Gateway still initializing... got {response.status_code} from /health")
                     time.sleep(10)
                     continue
                     
@@ -1459,7 +1458,7 @@ def main():
                 
                 # Inject the WebSocket URL into the HTML file
                 try:
-                    html_path = PROJECT_DIR / "perplexity_validator_interface.html"
+                    html_path = PROJECT_DIR / "frontend" / "perplexity_validator_interface2.html"
                     with open(html_path, 'r', encoding='utf-8') as f:
                         html_content = f.read()
                     

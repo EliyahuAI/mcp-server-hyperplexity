@@ -32,6 +32,11 @@ def handle(event, context):
         logger.info("Handling OPTIONS preflight request")
         return create_response(200, "")
 
+    # Handle dedicated health check
+    if event.get('path', '') == '/health':
+        logger.info("Handling /health check")
+        return create_response(200, {'status': 'ok'})
+
     # Status check via GET request (lightweight)
     if event.get('httpMethod') == 'GET' and event.get('path', '').startswith('/status/'):
         return status_check.handle_get_status(event, context)

@@ -3238,7 +3238,20 @@
                         
                         ensureWebSocketHealth(sessionIdForSocket);
                     } else {
-                        throw new Error(data.error || 'Failed to start generation');
+                        // Enhanced error handling with retry suggestions
+                        let errorMessage = data.error || 'Failed to start generation';
+                        
+                        if (data.retry_suggestion) {
+                            errorMessage += `\n\n💡 Suggestion: ${data.retry_suggestion}`;
+                        }
+                        
+                        if (data.error_type === 'format_error') {
+                            errorMessage += '\n\n🔄 You can try generating the configuration again with simpler instructions.';
+                        } else if (data.error_type === 'api_overloaded') {
+                            errorMessage += '\n\n⏱️ Please wait a moment and try again.';
+                        }
+                        
+                        throw new Error(errorMessage);
                     }
                 } catch (error) {
                     completeThinkingInCard(cardId, 'Generation failed');
