@@ -866,20 +866,15 @@ def setup_sqs_triggers(lambda_client, function_name, region):
         return False
 
 def create_websocket_lambda_package(output_zip_path):
-    """Creates a deployment package for the WebSocket handler Lambda."""
+    """Creates a deployment package for the WebSocket handler Lambda, restoring the original working structure."""
     logger.info("Creating WebSocket handler deployment package...")
     package_dir = SCRIPT_DIR / "websocket_package"
     clean_directory(package_dir)
     
-    # Copy required source files from their new, correct locations
-    websocket_lambda_src = SRC_DIR / "lambdas" / "websocket"
-    shared_src = SRC_DIR / "shared"
-    
-    # Copy handler and its direct dependencies
-    shutil.copytree(websocket_lambda_src, package_dir, dirs_exist_ok=True)
-    
-    # Copy necessary shared modules, like dynamodb_schemas
-    shutil.copy(shared_src / "dynamodb_schemas.py", package_dir)
+    # Revert to the original, successful packaging strategy
+    # Copy the handler and its dependency directly into the package root
+    shutil.copy(SRC_DIR / "lambdas" / "websocket" / "websocket_handler.py", package_dir)
+    shutil.copy(SRC_DIR / "shared" / "dynamodb_schemas.py", package_dir)
     
     # Create the ZIP file
     with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
