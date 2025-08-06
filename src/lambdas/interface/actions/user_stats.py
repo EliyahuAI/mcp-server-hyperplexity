@@ -3,6 +3,15 @@ Handles the getUserStats action.
 """
 import logging
 import json
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.utils.helpers import create_response
+from src.shared.dynamodb_schemas import get_user_stats
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -11,13 +20,11 @@ def handle(request_data, context):
     """
     Handles the getUserStats action.
     """
-    from ..utils.helpers import create_response
     email = request_data.get('email', '').strip()
     if not email:
         return create_response(400, {'success': False, 'error': 'missing_email'})
 
     try:
-        from dynamodb_schemas import get_user_stats
         stats = get_user_stats(email)
         return create_response(200, {'success': True, 'stats': stats})
     except ImportError:

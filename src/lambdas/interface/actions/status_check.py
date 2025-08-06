@@ -5,31 +5,24 @@ import json
 import logging
 import boto3
 import os
+import sys
+from pathlib import Path
 
-from ..utils.helpers import create_email_folder_path
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.utils.helpers import create_email_folder_path, create_response
+from src.shared.dynamodb_schemas import get_run_status
+from src.lambdas.interface.core.s3_manager import generate_presigned_url, S3_RESULTS_BUCKET
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 s3_client = boto3.client('s3')
-S3_RESULTS_BUCKET = os.environ.get('S3_RESULTS_BUCKET', 'perplexity-results')
-
-def generate_presigned_url(bucket, key, expiration=3600):
-    """Generate a presigned URL for downloading a file from S3."""
-    try:
-        url = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': bucket, 'Key': key},
-            ExpiresIn=expiration
-        )
-        return url
-    except Exception as e:
-        logger.error(f"Error generating presigned URL: {str(e)}")
-        return None
 
 def handle_get_status(event, context):
     """Handle GET requests to check processing status."""
-    from ..utils.helpers import create_response
     try:
         path_parts = event.get('path', '').split('/')
         if len(path_parts) < 3:
@@ -48,7 +41,6 @@ def handle_get_status(event, context):
 
 def handle_post_status(request_data, context):
     """Handle status check requests via JSON POST body"""
-    from ..utils.helpers import create_response
     try:
         session_id = request_data.get('session_id')
         is_preview = request_data.get('preview_mode', False)
@@ -62,9 +54,6 @@ def handle_post_status(request_data, context):
 
 def _check_status(session_id, is_preview, email_param):
     """Shared logic to check the status of a validation job by querying DynamoDB."""
-    from ..utils.helpers import create_response
-    from dynamodb_schemas import get_run_status
-    
     # Use the same session ID for both preview and full validation
     lookup_session_id = session_id
     
@@ -80,7 +69,6 @@ def _check_status(session_id, is_preview, email_param):
         
     # If this is a completed full run, generate a download URL
     if not is_preview and status_record.get('status') == 'COMPLETED' and status_record.get('results_s3_key'):
-        from ..core.s3_manager import generate_presigned_url, S3_RESULTS_BUCKET
         status_record['download_url'] = generate_presigned_url(S3_RESULTS_BUCKET, status_record['results_s3_key'])
     
     # For all other cases (e.g., still processing), return the raw status record

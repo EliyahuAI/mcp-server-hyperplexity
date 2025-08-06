@@ -4,6 +4,12 @@ Functions for creating enhanced Excel reports with validation results.
 import io
 import logging
 from datetime import datetime
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
 
 import openpyxl
 
@@ -13,6 +19,9 @@ try:
     EXCEL_ENHANCEMENT_AVAILABLE = True
 except ImportError:
     EXCEL_ENHANCEMENT_AVAILABLE = False
+
+from src.shared.schema_validator_simplified import SimplifiedSchemaValidator
+from src.shared.row_key_utils import generate_row_key
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -117,7 +126,6 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
         # If no ID fields found, try to use SimplifiedSchemaValidator to determine primary keys
         if not id_fields:
             try:
-                from schema_validator_simplified import SimplifiedSchemaValidator
                 validator = SimplifiedSchemaValidator(config_data)
                 id_fields = validator.primary_key
                 logger.info(f"Using primary keys from SimplifiedSchemaValidator: {id_fields}")
@@ -132,7 +140,6 @@ def create_enhanced_excel_with_validation(excel_file_content, validation_results
             # We need to decide where to get generate_row_key from. For now, let's assume a fallback.
             # A better solution would be to pass it in or have it in a shared util.
             try:
-                from row_key_utils import generate_row_key
                 row_key = generate_row_key(row_data, id_fields)
             except ImportError:
                 # Fallback to simple join

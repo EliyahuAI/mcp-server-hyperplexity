@@ -11,6 +11,21 @@ import boto3
 import time
 import io
 import asyncio
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.utils.helpers import create_response, create_email_folder_path
+from src.lambdas.interface.core.s3_manager import download_file_from_s3, upload_file_to_s3, s3_client, S3_RESULTS_BUCKET
+from src.shared.shared_table_parser import s3_table_parser
+from src.lambdas.interface.core.sqs_service import send_config_generation_request
+from src.lambdas.interface.utils.parsing import parse_multipart_form_data
+from src.shared.dynamodb_schemas import is_email_validated
+from src.lambdas.interface.config_generator_conversational import ConversationalConfigSystem
+from src.lambdas.interface.config_generator_step1 import TableAnalyzer
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -41,9 +56,6 @@ async def handle_generate_config(event_data, websocket_callback=None):
             'metadata': {...}
         }
     """
-    from ..utils.helpers import create_response, create_email_folder_path
-    from ..core.s3_manager import download_file_from_s3, upload_file_to_s3, s3_client, S3_RESULTS_BUCKET
-    
     try:
         # Extract parameters  
         excel_s3_key = event_data.get('excel_s3_key')
@@ -115,7 +127,7 @@ async def handle_generate_config(event_data, websocket_callback=None):
         
         logger.info("Sending config generation request to SQS for async processing...")
         try:
-            from ..core.sqs_service import send_config_generation_request
+            from src.lambdas.interface.core.sqs_service import send_config_generation_request
             
             # Create email folder for organization
             def create_email_folder_path(email):
@@ -188,8 +200,8 @@ async def handle_generate_config(event_data, websocket_callback=None):
 
 def handle_multipart_form(event, context):
     """Handles multipart/form-data requests for config generation."""
-    from ..utils.parsing import parse_multipart_form_data
-    from ..utils.helpers import create_response
+    from src.lambdas.interface.utils.parsing import parse_multipart_form_data
+    from src.lambdas.interface.utils.helpers import create_response
     
     headers = event.get('headers', {})
     content_type = headers.get('Content-Type') or headers.get('content-type', '')
@@ -221,7 +233,7 @@ def handle_multipart_form(event, context):
 
 def handle_json_request(event, context):
     """Handles application/json requests for config generation."""
-    from ..utils.helpers import create_response
+    from src.lambdas.interface.utils.helpers import create_response
     
     body = event.get('body', '{}')
     if event.get('isBase64Encoded'):
@@ -249,11 +261,11 @@ def handle_json_request(event, context):
 def _process_config_generation(excel_file, email_address, existing_config, 
                               instructions, context):
     """Shared logic to process config generation request synchronously."""
-    from ..utils.helpers import create_response, create_email_folder_path
-    from ..core.s3_manager import upload_file_to_s3
+    from src.lambdas.interface.utils.helpers import create_response, create_email_folder_path
+    from src.lambdas.interface.core.s3_manager import upload_file_to_s3
     
     try:
-        from dynamodb_schemas import is_email_validated
+        from src.shared.dynamodb_schemas import is_email_validated
     except ImportError:
         def is_email_validated(email): return True
 
@@ -303,7 +315,7 @@ def _process_config_generation(excel_file, email_address, existing_config,
 
 def handle_interview_responses(request_data, context):
     """Handle interview response submission."""
-    from ..utils.helpers import create_response
+    from src.lambdas.interface.utils.helpers import create_response
     
     try:
         logger.info("Handling interview responses submission")
@@ -320,7 +332,7 @@ def handle_interview_responses(request_data, context):
         
         # Import the conversational system
         try:
-            from ..config_generator_conversational import ConversationalConfigSystem
+            from src.lambdas.interface.config_generator_conversational import ConversationalConfigSystem
         except ImportError:
             # Fallback to ai_config_generator directory
             import sys
@@ -363,7 +375,7 @@ def handle_interview_responses(request_data, context):
 
 def handle_config_modification(request_data, context):
     """Handle configuration modification requests."""
-    from ..utils.helpers import create_response
+    from src.lambdas.interface.utils.helpers import create_response
     
     try:
         logger.info("Handling config modification request")
@@ -385,7 +397,7 @@ def handle_config_modification(request_data, context):
         
         # Import the conversational system
         try:
-            from ..config_generator_conversational import ConversationalConfigSystem
+            from src.lambdas.interface.config_generator_conversational import ConversationalConfigSystem
         except ImportError:
             # Fallback to ai_config_generator directory
             import sys
@@ -393,7 +405,7 @@ def handle_config_modification(request_data, context):
             sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'ai_config_generator'))
             from config_generator_conversational import ConversationalConfigSystem
         try:
-            from ..config_generator_step1 import TableAnalyzer
+            from src.lambdas.interface.config_generator_step1 import TableAnalyzer
         except ImportError:
             from config_generator_step1 import TableAnalyzer
         

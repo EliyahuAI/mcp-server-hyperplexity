@@ -11,6 +11,17 @@ import openpyxl
 import csv
 import boto3
 import math
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.shared.row_key_utils import generate_row_key
+from src.lambdas.interface.utils.history_loader import load_validation_history_from_excel
+from src.shared.schema_validator_simplified import SimplifiedSchemaValidator
+from src.lambdas.interface.reporting.markdown_report import create_markdown_table_from_results
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -20,34 +31,7 @@ lambda_client = boto3.client('lambda')
 
 def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S3_CACHE_BUCKET, VALIDATOR_LAMBDA_NAME, preview_first_row=False, preview_max_rows=5, sequential_call=None, session_id=None, update_callback=None, special_request=None):
     """Invoke the core validator Lambda with Excel data."""
-    # Since this is a new module, we need to import lazily or pass dependencies.
-    # For now, we will perform local imports to keep changes minimal.
-    try:
-        from row_key_utils import generate_row_key
-        ROW_KEY_UTILS_AVAILABLE = True
-    except ImportError:
-        ROW_KEY_UTILS_AVAILABLE = False
-        def generate_row_key(row_data, id_fields): #dummy
-            key_columns = id_fields if id_fields else list(row_data.keys())[:3]
-            return "||".join([str(row_data.get(col, "")) for col in key_columns])
-
-
-    try:
-        # This function might live in a different place now.
-        from ..utils.history_loader import load_validation_history_from_excel
-        VALIDATION_HISTORY_AVAILABLE = True
-    except ImportError:
-        try:
-            from lambda_test_json_clean import load_validation_history_from_excel
-            VALIDATION_HISTORY_AVAILABLE = True
-        except ImportError:
-            VALIDATION_HISTORY_AVAILABLE = False
-            # Define a dummy function if it's not available to avoid runtime errors
-            def load_validation_history_from_excel(excel_path):
-                logger.warning("Validation history loader not available.")
-                return {}
-
-
+    
     logger.info(">>> ENTER invoke_validator_lambda <<<")
     logger.info(f">>> Parameters: excel_s3_key={excel_s3_key}, preview={preview_first_row}, sequential_call={sequential_call}, special_request={special_request} <<<")
     
@@ -211,7 +195,6 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         # If no ID fields found, try to use SimplifiedSchemaValidator to determine primary keys
         if not id_fields:
             try:
-                from schema_validator_simplified import SimplifiedSchemaValidator
                 validator = SimplifiedSchemaValidator(config_data)
                 id_fields = validator.primary_key
                 logger.info(f"Using primary keys from SimplifiedSchemaValidator: {id_fields}")

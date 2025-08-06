@@ -3,6 +3,20 @@ Handles all email validation related actions.
 """
 import logging
 import json
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.utils.helpers import create_response
+from src.shared.dynamodb_schemas import (
+    create_email_validation_request, 
+    validate_email_code,
+    is_email_validated,
+    check_or_send_validation
+)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -11,22 +25,9 @@ def handle(request_data, context):
     """
     Handles email validation actions by routing to the correct sub-handler.
     """
-    from ..utils.helpers import create_response
     action = request_data.get('action')
     email = request_data.get('email', '').strip()
     
-    # Lazily import dependencies
-    try:
-        from dynamodb_schemas import (
-            create_email_validation_request, 
-            validate_email_code,
-            is_email_validated,
-            check_or_send_validation
-        )
-    except ImportError:
-        logger.error("Failed to import dynamodb_schemas. Make sure it's in the deployment package.")
-        return create_response(500, {'success': False, 'error': 'server_configuration_error'})
-
     if not email:
         return create_response(400, {'success': False, 'error': 'missing_email'})
 

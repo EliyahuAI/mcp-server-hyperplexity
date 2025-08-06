@@ -5,6 +5,15 @@ import logging
 import json
 import os
 import boto3
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.utils.helpers import create_response
+from src.lambdas.interface.core.sqs_service import send_preview_request
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -13,7 +22,6 @@ def handle(request_data, context):
     """
     Handles the diagnostics action.
     """
-    from ..utils.helpers import create_response
     # These would be read from the environment in a real Lambda context
     S3_CACHE_BUCKET = os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
     S3_RESULTS_BUCKET = os.environ.get('S3_RESULTS_BUCKET', 'perplexity-results')
@@ -21,7 +29,6 @@ def handle(request_data, context):
 
     # Check for SQS integration availability
     try:
-        from ..core.sqs_service import send_preview_request
         SQS_INTEGRATION_AVAILABLE = True
         SQS_IMPORT_ERROR = None
     except ImportError as e:

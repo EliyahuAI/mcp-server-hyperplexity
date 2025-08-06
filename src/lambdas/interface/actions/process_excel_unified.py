@@ -12,14 +12,29 @@ import boto3
 import time
 import math
 import io
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.utils.parsing import parse_multipart_form_data
+from src.lambdas.interface.utils.helpers import create_response
+from src.lambdas.interface.core.unified_s3_manager import UnifiedS3Manager
+from src.shared.dynamodb_schemas import is_email_validated, track_validation_call, create_run_record
+from src.lambdas.interface.core.sqs_service import send_preview_request, send_full_request
+from src.lambdas.interface.actions.find_matching_config import find_matching_configs
+from src.shared.shared_table_parser import s3_table_parser
+from src.lambdas.interface.core.validator_invoker import invoke_validator_lambda
+from src.lambdas.interface.reporting.markdown_report import create_markdown_table_from_results
+from src.lambdas.interface.core.email_sender import send_results_email
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 def handle_multipart_form(event, context):
     """Handles multipart/form-data requests for Excel processing with unified storage."""
-    from ..utils.parsing import parse_multipart_form_data
-    from ..utils.helpers import create_response
     
     headers = event.get('headers', {})
     content_type = headers.get('Content-Type') or headers.get('content-type', '')
@@ -53,7 +68,6 @@ def handle_multipart_form(event, context):
 
 def handle_json_request(event, context):
     """Handles application/json requests for Excel processing with unified storage."""
-    from ..utils.helpers import create_response
     body = event.get('body', '{}')
     if event.get('isBase64Encoded'):
         body = base64.b64decode(body).decode('utf-8')
@@ -89,8 +103,6 @@ def handle_json_request(event, context):
 
 def _process_files_unified(excel_file, config_file, email_address, session_id, params, context):
     """Process files using unified storage - store once, use throughout session lifecycle."""
-    from ..utils.helpers import create_response
-    from ..core.unified_s3_manager import UnifiedS3Manager
     
     # Always use a clean session ID format: session_YYYY-MM-DDTHH_MM_SS_XXXXXX
     # Remove _preview suffix if present, ensure session_ prefix

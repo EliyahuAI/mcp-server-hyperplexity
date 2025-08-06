@@ -10,7 +10,16 @@ import os
 import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional
-from ai_api_client import ai_client
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[3]
+sys.path.append(str(ROOT_DIR))
+
+from src.shared.ai_api_client import ai_client
+from src.shared.shared_table_parser import s3_table_parser
+from src.shared.config_validator import validate_config_complete
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -44,7 +53,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if not table_analysis:
             logger.info("Generating table analysis from provided data")
             try:
-                from shared_table_parser import s3_table_parser
                 bucket = os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
                 
                 if excel_s3_key:
@@ -127,7 +135,6 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         
         # Validate the AI-generated config before proceeding
         if updated_config:
-            from config_validator import validate_config_complete
             is_valid, errors, warnings = validate_config_complete(updated_config, table_analysis)
             
             if not is_valid:

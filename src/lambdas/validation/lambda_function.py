@@ -8,15 +8,23 @@ import asyncio
 import aiohttp
 import logging
 import os
-from schema_validator_simplified import SimplifiedSchemaValidator
 from botocore.config import Config
 import traceback
-from perplexity_schema import get_response_format_schema
-from row_key_utils import generate_row_key  # Import centralized row key generation
 import random
 import time
 import csv
 from io import StringIO
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[3]
+sys.path.append(str(ROOT_DIR))
+
+from src.shared.schema_validator_simplified import SimplifiedSchemaValidator
+from src.shared.perplexity_schema import get_response_format_schema
+from src.shared.row_key_utils import generate_row_key
+from src.lambdas.interface.utils.history_loader import load_validation_history_from_excel
 
 # Configure logging
 logger = logging.getLogger()

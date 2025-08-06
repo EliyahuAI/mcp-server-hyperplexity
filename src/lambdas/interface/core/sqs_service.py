@@ -12,6 +12,14 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from botocore.exceptions import ClientError
 import os
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.core.unified_s3_manager import UnifiedS3Manager
 
 logger = logging.getLogger(__name__)
 sqs = boto3.client('sqs', region_name=os.environ.get("AWS_REGION", "us-east-1"))
@@ -46,7 +54,6 @@ def send_full_request(session_id, excel_s3_key, config_s3_key, email, reference_
     # Generate results_key if not provided, using unified storage format
     if not results_key:
         # Use unified storage format: results/{domain}/{email_prefix}/{session_id}/
-        from ..core.unified_s3_manager import UnifiedS3Manager
         storage_manager = UnifiedS3Manager()
         session_path = storage_manager.get_session_path(email, session_id)
         results_key = f"{session_path.rstrip('/')}.zip"

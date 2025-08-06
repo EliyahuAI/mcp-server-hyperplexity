@@ -7,7 +7,16 @@ import json
 import boto3
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
-from ..core.unified_s3_manager import UnifiedS3Manager
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.core.unified_s3_manager import UnifiedS3Manager
+from src.shared.shared_table_parser import s3_table_parser
+from src.lambdas.interface.utils.helpers import create_response
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -88,15 +97,6 @@ def analyze_table_columns(email: str, session_id: str, storage_manager: UnifiedS
         
         # Use shared table parser to analyze columns
         try:
-            import sys
-            import os
-            # Add src directory to path to import shared_table_parser
-            src_path = os.path.join(os.path.dirname(__file__), '..', '..', '..')
-            if src_path not in sys.path:
-                sys.path.append(src_path)
-            
-            from shared_table_parser import s3_table_parser
-            
             # Analyze table structure directly from S3
             table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key)
             
@@ -372,7 +372,6 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
 
 def handle_find_matching_config(event_data, context=None):
     """Handler for finding matching configs"""
-    from ..utils.helpers import create_response
     
     try:
         email = event_data.get('email')

@@ -4,6 +4,14 @@ Handles SQS messages for background processing.
 import json
 import logging
 from datetime import datetime
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.handlers import background_handler
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -17,8 +25,6 @@ def handle(event, context):
     """
     logger.info("--- SQS Handler ---")
     
-    from . import background_handler
-
     for record in event['Records']:
         try:
             message_body = json.loads(record['body'])

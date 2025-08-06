@@ -93,17 +93,33 @@
         margin-bottom: 2rem;
         transition: var(--transition);
         opacity: 0;
-        animation: fadeInUp 0.5s ease-out forwards;
+        animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        /* Prevent layout shift by establishing containing block */
+        transform-origin: center top;
+        will-change: transform, opacity;
     }
 
+    /* Smooth slide-in animation with minimal layout impact */
     @keyframes fadeInUp {
         from { 
-            opacity: 0; 
-            transform: translateY(20px); 
+            opacity: 0;
+            transform: translateY(8px) scale(0.98);
         }
         to { 
-            opacity: 1; 
-            transform: translateY(0); 
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+    
+    /* Alternative: Use margin animation for true layout stability */
+    @keyframes fadeInUpStable {
+        from {
+            opacity: 0;
+            margin-top: 20px;
+        }
+        to {
+            opacity: 1;
+            margin-top: 0;
         }
     }
 
@@ -434,9 +450,10 @@
         line-height: 1.4;
         word-wrap: break-word;
         position: relative;
-        animation: fadeInUp 0.3s ease-out;
+        animation: fadeInUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
         opacity: 1;
         transition: opacity 0.3s ease-in-out;
+        transform-origin: center top;
     }
 
     .chat-message.urgent {
@@ -1923,21 +1940,6 @@
 
             async function handleConfigWebSocketMessage(data, cardId) {
                 if (data.type === 'config_generation_complete') {
-                    // Prevent duplicate processing
-                    const messageKey = `${cardId}_${data.session_id}_complete`;
-                    if (!globalState.processedMessages) globalState.processedMessages = new Set();
-                    if (globalState.processedMessages.has(messageKey)) {
-                        console.log('Ignoring duplicate config_generation_complete message for', cardId);
-                        return;
-                    }
-                    globalState.processedMessages.add(messageKey);
-                    
-                    // Cleanup old messages to prevent memory leak
-                    if (globalState.processedMessages.size > 100) {
-                        const oldestMessage = globalState.processedMessages.values().next().value;
-                        globalState.processedMessages.delete(oldestMessage);
-                    }
-                    
                     completeThinkingInCard(cardId, 'Configuration generated!');
                     // Progress routed to card level;
 
@@ -3665,21 +3667,6 @@
             // WebSocket handler for post-preview refinement
             async function handleRefinementWebSocketMessage(data, cardId) {
                 if (data.type === 'config_generation_complete') {
-                    // Prevent duplicate processing
-                    const messageKey = `${cardId}_${data.session_id}_refinement_complete`;
-                    if (!globalState.processedMessages) globalState.processedMessages = new Set();
-                    if (globalState.processedMessages.has(messageKey)) {
-                        console.log('Ignoring duplicate refinement config_generation_complete message for', cardId);
-                        return;
-                    }
-                    globalState.processedMessages.add(messageKey);
-                    
-                    // Cleanup old messages to prevent memory leak
-                    if (globalState.processedMessages.size > 100) {
-                        const oldestMessage = globalState.processedMessages.values().next().value;
-                        globalState.processedMessages.delete(oldestMessage);
-                    }
-                    
                     completeThinkingInCard(cardId, 'Refinement complete!');
                     // Progress routed to card level
 

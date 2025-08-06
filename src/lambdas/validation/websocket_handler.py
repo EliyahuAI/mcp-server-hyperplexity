@@ -3,7 +3,14 @@ Handles WebSocket lifecycle events from API Gateway.
 """
 import json
 import logging
-from dynamodb_schemas import add_websocket_connection, remove_websocket_connection, associate_session_with_connection
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[3]
+sys.path.append(str(ROOT_DIR))
+
+from src.shared.dynamodb_schemas import add_websocket_connection, remove_websocket_connection, associate_session_with_connection
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

@@ -11,6 +11,20 @@ import boto3
 import time
 import math
 import io
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.utils.parsing import parse_multipart_form_data
+from src.lambdas.interface.utils.helpers import create_response, generate_reference_pin, create_email_folder_path
+from src.lambdas.interface.core.s3_manager import s3_client, S3_RESULTS_BUCKET, upload_file_to_s3
+from src.shared.dynamodb_schemas import is_email_validated, track_validation_call, create_run_record
+from src.lambdas.interface.core.sqs_service import send_preview_request, send_full_request
+from src.lambdas.interface.core.validator_invoker import invoke_validator_lambda
+from src.lambdas.interface.reporting.markdown_report import create_markdown_table_from_results
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -19,8 +33,6 @@ S3_CACHE_BUCKET = os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
 
 def handle_multipart_form(event, context):
     """Handles multipart/form-data requests for Excel processing."""
-    from ..utils.parsing import parse_multipart_form_data
-    from ..utils.helpers import create_response
     
     headers = event.get('headers', {})
     content_type = headers.get('Content-Type') or headers.get('content-type', '')
@@ -43,7 +55,6 @@ def handle_multipart_form(event, context):
 
 def handle_json_request(event, context):
     """Handles application/json requests for Excel processing."""
-    from ..utils.helpers import create_response
     body = event.get('body', '{}')
     if event.get('isBase64Encoded'):
         body = base64.b64decode(body).decode('utf-8')
@@ -64,7 +75,6 @@ def handle_json_request(event, context):
 
 def _clear_previous_previews(email_folder):
     """Deletes all previous preview result files for a given user."""
-    from ..core.s3_manager import s3_client, S3_RESULTS_BUCKET
     logger.info(f"Clearing previous preview results in s3://{S3_RESULTS_BUCKET}/preview_results/{email_folder}/")
     try:
         response = s3_client.list_objects_v2(
@@ -84,19 +94,8 @@ def _clear_previous_previews(email_folder):
 
 def _process_files(excel_file, config_file, email_address, params, context):
     """Shared logic to process files, upload to S3, and trigger validation."""
-    from ..utils.helpers import generate_reference_pin, create_email_folder_path, create_response
-    from ..core.s3_manager import upload_file_to_s3
-    import boto3
     
     try:
-        from dynamodb_schemas import is_email_validated, track_validation_call, create_run_record
-    except ImportError:
-        def is_email_validated(email): return True
-        def track_validation_call(**kwargs): pass
-        def create_run_record(**kwargs): pass
-
-    try:
-        from ..core.sqs_service import send_preview_request, send_full_request
         SQS_AVAILABLE = True
     except ImportError:
         SQS_AVAILABLE = False
@@ -174,9 +173,6 @@ def _process_files(excel_file, config_file, email_address, params, context):
             return create_response(200, response_body)
         else:
             # Synchronous preview logic
-            from ..core.validator_invoker import invoke_validator_lambda
-            from ..reporting.markdown_report import create_markdown_table_from_results
-            
             start_time = time.time()
             validation_results = invoke_validator_lambda(
                 excel_s3_key, config_s3_key, 

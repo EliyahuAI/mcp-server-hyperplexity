@@ -8,6 +8,14 @@ import json
 import csv
 import logging
 from io import StringIO
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.reporting.excel_report_new import create_enhanced_excel_with_validation
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +137,7 @@ Processing Details:
 
 def create_enhanced_result_zip(validation_results, session_id, total_rows, excel_file_content, config_data, reference_pin=None, input_filename='input.xlsx', config_filename='config.json', metadata=None, structured_excel_data=None):
     """Create enhanced ZIP file with color-coded Excel and comprehensive reports."""
-    from .excel_report_new import create_enhanced_excel_with_validation
-
+    
     zip_buffer = io.BytesIO()
     timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
     

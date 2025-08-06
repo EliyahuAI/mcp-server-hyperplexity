@@ -5,9 +5,15 @@ import logging
 import json
 import sys
 import os
+from pathlib import Path
 
-# Add parent directory to path for shared imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.utils.helpers import create_response
+from src.shared.config_validator import load_and_validate_config
+from src.lambdas.interface.core.unified_s3_manager import UnifiedS3Manager
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -17,9 +23,6 @@ def handle(request_data, context):
     Handles the validateConfig action using shared validation with optional table matching.
     Also stores valid configs in unified storage for later use.
     """
-    from ..utils.helpers import create_response
-    from config_validator import load_and_validate_config
-    
     config_content = request_data.get('config', '')
     table_analysis = request_data.get('table_analysis')  # Optional table analysis for column matching
     email = request_data.get('email', '')
@@ -37,8 +40,6 @@ def handle(request_data, context):
     # If this is an upload validation and we have email/session_id, store it (even if invalid, for refinement)
     if is_upload_validation and email and session_id:
         try:
-            from ..core.unified_s3_manager import UnifiedS3Manager
-            
             # Clean session ID (remove _preview suffix if present)
             base_session_id = session_id
             if base_session_id.endswith('_preview'):

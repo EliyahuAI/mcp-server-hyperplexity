@@ -4,6 +4,17 @@ Handles HTTP requests from API Gateway.
 import base64
 import json
 import logging
+import sys
+from pathlib import Path
+
+# Add the project root to the Python path
+ROOT_DIR = Path(__file__).resolve().parents[4]
+sys.path.append(str(ROOT_DIR))
+
+from src.lambdas.interface.utils.helpers import create_response
+from src.lambdas.interface.actions import status_check, generate_config_unified, email_validation, user_stats, config_validation, find_matching_config, copy_config, diagnostics
+from src.lambdas.interface.utils.parsing import parse_multipart_form_data
+from src.lambdas.interface.actions import process_excel_unified
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -14,7 +25,6 @@ def handle(event, context):
     This function parses the incoming event and routes it to the appropriate
     action handler, LAZILY loading only the code needed for the specific action.
     """
-    from ..utils.helpers import create_response
     logger.info("--- HTTP Handler: Routing request ---")
     
     # Handle CORS preflight OPTIONS requests immediately
@@ -24,7 +34,6 @@ def handle(event, context):
 
     # Status check via GET request (lightweight)
     if event.get('httpMethod') == 'GET' and event.get('path', '').startswith('/status/'):
-        from ..actions import status_check
         return status_check.handle_get_status(event, context)
 
     # All other actions are POST requests
@@ -37,20 +46,17 @@ def handle(event, context):
         if 'multipart/form-data' in content_type:
             # Check if this is a config generation request based on form fields
             try:
-                from ..utils.parsing import parse_multipart_form_data
                 files, form_data = parse_multipart_form_data(
                     event.get('body', ''), content_type, event.get('isBase64Encoded', False)
                 )
                 
                 # If generation_mode is present, route to config generation
                 if 'generation_mode' in form_data:
-                    from ..actions import generate_config_unified
                     return generate_config_unified.handle_generate_config_sync(form_data, context)
             except Exception:
                 pass  # Fall through to default Excel processing
             
             # Default to Excel processing with unified storage
-            from ..actions import process_excel_unified
             return process_excel_unified.handle_multipart_form(event, context)
 
         # JSON body for API-style actions
@@ -76,10 +82,8 @@ def handle(event, context):
             ]
 
             if action == 'processExcel':
-                 from ..actions import process_excel_unified
                  return process_excel_unified.handle_json_request(event, context)
             elif action == 'generateConfig':
-                from ..actions import generate_config_unified
                 # Check for async parameter in query string
                 query_params = event.get('queryStringParameters') or {}
                 is_async = query_params.get('async', 'false').lower() == 'true'
@@ -93,10 +97,8 @@ def handle(event, context):
                     logger.info("Using SYNC config generation path")
                     return generate_config_unified.handle_generate_config_sync(request_data, context)
             elif action == 'submitInterviewResponses':
-                from ..actions import generate_config_unified
                 return generate_config_unified.handle_generate_config_sync(request_data, context)
             elif action == 'modifyConfig':
-                from ..actions import generate_config_unified
                 # Check for async parameter in query string
                 query_params = event.get('queryStringParameters') or {}
                 is_async = query_params.get('async', 'false').lower() == 'true'
@@ -113,25 +115,18 @@ def handle(event, context):
                     logger.info("✅ USING SYNC CONFIG MODIFICATION - HTTP response with full data")
                     return generate_config_unified.handle_modify_config(request_data, context)
             elif action in email_actions:
-                from ..actions import email_validation
                 return email_validation.handle(request_data, context)
             elif action == 'getUserStats':
-                from ..actions import user_stats
                 return user_stats.handle(request_data, context)
             elif action == 'validateConfig':
-                from ..actions import config_validation
                 return config_validation.handle(request_data, context)
             elif action == 'checkStatus' or request_data.get('status_check'):
-                from ..actions import status_check
                 return status_check.handle_post_status(request_data, context)
             elif action == 'diagnostics':
-                from ..actions import diagnostics
                 return diagnostics.handle(request_data, context)
             elif action == 'findMatchingConfig':
-                from ..actions import find_matching_config
                 return find_matching_config.handle_find_matching_config(request_data, context)
             elif action == 'copyConfig':
-                from ..actions import copy_config
                 return copy_config.handle_copy_config(request_data, context)
             else:
                 logger.warning(f"Unknown action in JSON body: {action}")
@@ -149,10 +144,8 @@ def handle(event, context):
                 action = request_data.get('action')
                 
                 if action == 'submitInterviewResponses':
-                    from ..actions import generate_config_unified
                     return generate_config_unified.handle_generate_config_sync(request_data, context)
                 elif action == 'modifyConfig':
-                    from ..actions import generate_config_unified
                     return generate_config_unified.handle_modify_config(request_data, context)
                 else:
                     logger.warning(f"Unknown action in fallback: {action}")
