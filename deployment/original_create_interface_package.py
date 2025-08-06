@@ -17,21 +17,8 @@ import base64
 import random
 import re
 import logging
-import requests
 from botocore.config import Config
 from botocore.exceptions import ClientError
-import asyncio
-
-# Optional websockets import - will be handled in the test function
-try:
-    import websockets
-    WEBSOCKETS_AVAILABLE = True
-except ImportError:
-    WEBSOCKETS_AVAILABLE = False
-
-# Add project root to sys.path to allow for absolute imports
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -41,8 +28,6 @@ logger = logging.getLogger(__name__)
 SCRIPT_DIR = Path(__file__).parent.absolute()
 PROJECT_DIR = SCRIPT_DIR.parent
 SRC_DIR = PROJECT_DIR / "src"
-LAMBDA_SRC_DIR = SRC_DIR / "lambdas" / "interface"
-SHARED_SRC_DIR = SRC_DIR / "shared"
 PACKAGE_DIR = SCRIPT_DIR / "interface_package"
 OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package.zip"
 
@@ -50,19 +35,15 @@ OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package.zip"
 LAMBDA_CONFIG = {
     "FunctionName": "perplexity-validator-interface",
     "Runtime": "python3.9",
-    "Handler": "interface_lambda_function.lambda_handler", # This will be created in the package root
+    "Handler": "interface_lambda_function.lambda_handler",
     "Timeout": 900,  # 15 minutes for file uploads and processing
     "MemorySize": 2048,  # Higher memory for file processing
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
     "Environment": {
         "Variables": {
-            "S3_UNIFIED_BUCKET": "hyperplexity-storage",  # Unified bucket for all storage
-            "S3_DOWNLOAD_BUCKET": "hyperplexity-storage", # Use downloads/ folder in unified bucket
-            "VALIDATOR_LAMBDA_NAME": "perplexity-validator",
-            # Legacy variables for compatibility during transition
-            "S3_CACHE_BUCKET": "hyperplexity-storage", 
-            "S3_RESULTS_BUCKET": "hyperplexity-storage",
-            "S3_CONFIG_BUCKET": "hyperplexity-storage"
+            "S3_CACHE_BUCKET": "perplexity-cache",
+            "S3_RESULTS_BUCKET": "perplexity-results",  # Now using independent results bucket
+            "VALIDATOR_LAMBDA_NAME": "perplexity-validator"
         }
     },
     "TracingConfig": {
@@ -93,7 +74,6 @@ WEBSOCKET_LAMBDA_CONFIG = {
     "MemorySize": 128,
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
 }
-
 
 def clean_directory(dir_path):
     """Remove all contents of a directory."""
@@ -148,36 +128,157 @@ def install_dependencies():
             time.sleep(2)
 
 def copy_source_files():
-    """Copy necessary source files for the interface Lambda, mimicking the original successful structure."""
+    """Copy necessary source files for the interface Lambda."""
     logger.info("Copying interface Lambda source files...")
+    
+    # 1. Copy the main Lambda handler file
+    shutil.copy(SRC_DIR / "interface_lambda_function.py", PACKAGE_DIR)
+    logger.info("Copied interface_lambda_function.py")
 
-    # 1. Copy the main Lambda handler file, which now acts as a router
-    shutil.copy(LAMBDA_SRC_DIR / "handlers" / "http_handler.py", PACKAGE_DIR / "interface_lambda_function.py")
-    logger.info("Copied http_handler.py as the main interface_lambda_function.py")
-
-    # 2. Copy the entire 'interface_lambda' package contents into a subdirectory within the package
-    shutil.copytree(LAMBDA_SRC_DIR, PACKAGE_DIR / "interface_lambda", dirs_exist_ok=True)
+    # 2. Copy the entire 'interface_lambda' package
+    shutil.copytree(SRC_DIR / "interface_lambda", PACKAGE_DIR / "interface_lambda")
     logger.info("Copied the 'interface_lambda' package directory.")
 
-    # 3. Copy only the necessary shared modules directly into the package root
+    # 3. Copy shared top-level modules
     shared_modules = [
+        "email_sender.py",
         "dynamodb_schemas.py",
         "row_key_utils.py",
+        "lambda_test_json_clean.py",
         "schema_validator_simplified.py",
-        "shared_table_parser.py",
-        "config_validator.py",
-        "ai_api_client.py",
-        "email_sender.py",
-        "perplexity_schema.py"
+        "api_gateway_validation.py",
+        "prompts.yml",
     ]
     
     for file_name in shared_modules:
-        source_file = SHARED_SRC_DIR / file_name
+        source_file = SRC_DIR / file_name
         if source_file.exists():
             shutil.copy(source_file, PACKAGE_DIR)
             logger.info(f"Copied shared module: {file_name}")
         else:
             logger.warning(f"Shared module not found, skipping: {file_name}")
+
+def create_placeholder_lambda_handler():
+    """Create a placeholder Lambda handler for the interface function."""
+    handler_content = '''"""
+AWS Lambda handler for the perplexity-validator-interface function.
+Provides API interface for Excel table validation with preview capabilities.
+"""
+import json
+import boto3
+import base64
+import logging
+from datetime import datetime
+import time
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def lambda_handler(event, context):
+    """
+    Lambda handler for the perplexity-validator-interface function.
+    
+    Supports two main workflows:
+    1. Normal workflow: Upload files to S3, return immediate download link
+    2. Preview workflow: Process first row only, return Markdown table
+    """
+    try:
+        logger.info(f"Received event: {json.dumps(event, default=str)}")
+        
+        # Parse request
+        http_method = event.get('httpMethod', 'POST')
+        headers = event.get('headers', {})
+        body = event.get('body', '')
+        is_base64_encoded = event.get('isBase64Encoded', False)
+        
+        # Handle CORS preflight
+        if http_method == 'OPTIONS':
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                },
+                'body': ''
+            }
+        
+        # Parse query parameters
+        query_params = event.get('queryStringParameters') or {}
+        preview_first_row = query_params.get('preview_first_row', 'false').lower() == 'true'
+        max_rows = int(query_params.get('max_rows', '1000'))
+        batch_size = int(query_params.get('batch_size', '10'))
+        
+        logger.info(f"Parameters - preview_first_row: {preview_first_row}, max_rows: {max_rows}, batch_size: {batch_size}")
+        
+        # Placeholder response for now
+        if preview_first_row:
+            # Preview mode - return Markdown table
+            start_time = time.time()
+            
+            # Simulate processing time
+            time.sleep(0.1)
+            
+            processing_time = time.time() - start_time
+            total_rows = 100  # Placeholder
+            estimated_total_time = total_rows * processing_time
+            
+            markdown_table = """| Field   | Confidence | Value                     |
+|---------|------------|--------------------------|
+| Name    | HIGH       | John Smith               |
+| Email   | MEDIUM     | john.smith@example.com   |
+| Phone   | LOW        | (555) 123-4567           |"""
+            
+            response_body = {
+                "status": "preview_completed",
+                "markdown_table": markdown_table,
+                "total_rows": total_rows,
+                "first_row_processing_time": processing_time,
+                "estimated_total_processing_time": estimated_total_time
+            }
+        else:
+            # Normal mode - return S3 link
+            download_url = "https://example-bucket.s3.amazonaws.com/Still_Processing.zip"
+            password = "temp123"
+            
+            response_body = {
+                "status": "processing_started",
+                "download_url": download_url,
+                "password": password,
+                "message": "Processing started. File will be available at the provided URL once complete."
+            }
+        
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps(response_body)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error processing request: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({
+                'error': 'Internal server error',
+                'message': str(e)
+            })
+        }
+'''
+    
+    handler_file = PACKAGE_DIR / "interface_lambda_function.py"
+    with open(handler_file, 'w') as f:
+        f.write(handler_content)
+    logger.info("Created placeholder interface_lambda_function.py")
 
 def create_zip():
     """Create ZIP file for Lambda deployment."""
@@ -289,18 +390,6 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
                             logger.info(f"Error checking function state (attempt {i+1}), retrying: {e}")
                             time.sleep(wait_interval)
                     
-                    # Get existing environment variables to preserve WEBSOCKET_API_URL
-                    existing_env_vars = {}
-                    try:
-                        existing_config = lambda_client.get_function_configuration(FunctionName=function_name)
-                        existing_env_vars = existing_config.get('Environment', {}).get('Variables', {})
-                        logger.info(f"Existing environment variables: {list(existing_env_vars.keys())}")
-                    except Exception as e:
-                        logger.warning(f"Could not retrieve existing environment variables: {e}")
-                    
-                    # Merge existing and new environment variables, prioritizing new ones
-                    merged_env_vars = {**existing_env_vars, **LAMBDA_CONFIG["Environment"]["Variables"]}
-                    
                     # Update configuration with retry logic
                     max_config_retries = 3
                     for retry in range(max_config_retries):
@@ -311,12 +400,10 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
                                 Handler=LAMBDA_CONFIG["Handler"],
                                 Timeout=LAMBDA_CONFIG["Timeout"],
                                 MemorySize=LAMBDA_CONFIG["MemorySize"],
-                                Environment={'Variables': merged_env_vars},
+                                Environment=LAMBDA_CONFIG["Environment"],
                                 TracingConfig=LAMBDA_CONFIG["TracingConfig"]
                             )
                             logger.info("Function configuration updated")
-                            if 'WEBSOCKET_API_URL' in merged_env_vars:
-                                logger.info(f"Preserved WEBSOCKET_API_URL: {merged_env_vars['WEBSOCKET_API_URL']}")
                             break
                         except lambda_client.exceptions.ResourceConflictException as e:
                             if retry < max_config_retries - 1:
@@ -398,18 +485,6 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
                         logger.info(f"Error checking function state (attempt {i+1}), retrying: {e}")
                         time.sleep(wait_interval)
                 
-                # Get existing environment variables to preserve WEBSOCKET_API_URL
-                existing_env_vars = {}
-                try:
-                    existing_config = lambda_client.get_function_configuration(FunctionName=function_name)
-                    existing_env_vars = existing_config.get('Environment', {}).get('Variables', {})
-                    logger.info(f"Existing environment variables: {list(existing_env_vars.keys())}")
-                except Exception as e:
-                    logger.warning(f"Could not retrieve existing environment variables: {e}")
-                
-                # Merge existing and new environment variables, prioritizing new ones
-                merged_env_vars = {**existing_env_vars, **LAMBDA_CONFIG["Environment"]["Variables"]}
-                
                 # Update configuration with retry logic
                 max_config_retries = 3
                 for retry in range(max_config_retries):
@@ -420,12 +495,10 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
                             Handler=LAMBDA_CONFIG["Handler"],
                             Timeout=LAMBDA_CONFIG["Timeout"],
                             MemorySize=LAMBDA_CONFIG["MemorySize"],
-                            Environment={'Variables': merged_env_vars},
+                            Environment=LAMBDA_CONFIG["Environment"],
                             TracingConfig=LAMBDA_CONFIG["TracingConfig"]
                         )
                         logger.info("Function configuration updated")
-                        if 'WEBSOCKET_API_URL' in merged_env_vars:
-                            logger.info(f"Preserved WEBSOCKET_API_URL: {merged_env_vars['WEBSOCKET_API_URL']}")
                         break
                     except lambda_client.exceptions.ResourceConflictException as e:
                         if retry < max_config_retries - 1:
@@ -464,36 +537,6 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
         traceback.print_exc()
         return False, None
 
-
-def ensure_lambda_permission(lambda_client, function_name, statement_id, source_arn):
-    """Ensure the correct API Gateway invocation permission exists by removing old ones first."""
-    try:
-        # Attempt to remove the permission first to handle outdated SourceArns.
-        # This will fail if the permission doesn't exist, which is fine.
-        try:
-            lambda_client.remove_permission(
-                FunctionName=function_name,
-                StatementId=statement_id
-            )
-            logger.info(f"Removed existing permission '{statement_id}' to ensure it's updated.")
-        except lambda_client.exceptions.ResourceNotFoundException:
-            logger.info(f"Permission '{statement_id}' does not exist, will create it.")
-            pass # Permission doesn't exist, no need to remove
-
-        # Add the new/correct permission
-        lambda_client.add_permission(
-            FunctionName=function_name,
-            StatementId=statement_id,
-            Action='lambda:InvokeFunction',
-            Principal='apigateway.amazonaws.com',
-            SourceArn=source_arn
-        )
-        logger.info(f"Successfully added/updated Lambda permission: {statement_id}")
-
-    except Exception as e:
-        logger.error(f"An unexpected error occurred while setting Lambda permission '{statement_id}': {e}")
-        # Continue deployment but log the error clearly.
-        pass
 
 def setup_api_gateway(lambda_client, function_name, region):
     """Set up API Gateway for the Lambda function with simplified /validate and /status endpoints."""
@@ -542,12 +585,6 @@ def setup_api_gateway(lambda_client, function_name, region):
             status_session_resource = apigateway_client.create_resource(restApiId=api_id, parentId=status_resource_id, pathPart='{sessionId}')
         status_session_resource_id = status_session_resource['id']
         
-        # --- Create /health Resource ---
-        health_resource = next((res for res in resources if res.get('pathPart') == 'health'), None)
-        if not health_resource:
-            health_resource = apigateway_client.create_resource(restApiId=api_id, parentId=root_resource_id, pathPart='health')
-        health_resource_id = health_resource['id']
-
         # --- Define Methods and Integrations ---
         lambda_arn = f"arn:aws:lambda:{region}:{account_id}:function:{function_name}"
         lambda_integration_uri = f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
@@ -558,8 +595,6 @@ def setup_api_gateway(lambda_client, function_name, region):
             (validate_resource_id, 'OPTIONS'),
             (status_session_resource_id, 'GET'),
             (status_session_resource_id, 'OPTIONS'),
-            (health_resource_id, 'GET'),
-            (health_resource_id, 'OPTIONS'),
         ]
 
         for resource_id, http_method in resource_setups:
@@ -583,9 +618,17 @@ def setup_api_gateway(lambda_client, function_name, region):
                 logger.info(f"{http_method} method and integration already exist for resource {resource_id}")
         
         # Add Lambda permission for the API Gateway
-        statement_id = f'apigateway-rest-invoke-{function_name}'
-        source_arn = f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*/*/*"
-        ensure_lambda_permission(lambda_client, function_name, statement_id, source_arn)
+        try:
+            lambda_client.add_permission(
+                FunctionName=function_name,
+                StatementId=f'apigateway-invoke-{api_id}',
+                Action='lambda:InvokeFunction',
+                Principal='apigateway.amazonaws.com',
+                SourceArn=f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*/*/*" # Allow any method on any resource
+            )
+            logger.info("Added Lambda permission for API Gateway")
+        except lambda_client.exceptions.ResourceConflictException:
+            logger.info("Lambda permission for API Gateway already exists.")
 
         # Also ensure the Lambda role has S3 delete permissions
         lambda_role_name = LAMBDA_CONFIG['Role'].split('/')[-1]
@@ -656,18 +699,23 @@ def setup_dynamodb_tables(region="us-east-1"):
     logger.info("Setting up DynamoDB tables for email validation and user tracking...")
     
     try:
+        from dynamodb_schemas import (
+            create_validation_runs_table, 
+            create_websocket_connections_table,
+            DynamoDBSchemas
+        )
+        
         # Create the validation runs table
-        from src.shared import dynamodb_schemas
-        dynamodb_schemas.create_validation_runs_table()
+        create_validation_runs_table()
         logger.info("✅ Validation runs table created/verified")
         
         # Create the WebSocket connections table
-        dynamodb_schemas.create_websocket_connections_table()
+        create_websocket_connections_table()
         logger.info("✅ WebSocket connections table created/verified")
         
         # Define table names using the same pattern as the original code
-        user_validation_table = dynamodb_schemas.DynamoDBSchemas.USER_VALIDATION_TABLE
-        user_tracking_table = dynamodb_schemas.DynamoDBSchemas.USER_TRACKING_TABLE
+        user_validation_table = DynamoDBSchemas.USER_VALIDATION_TABLE
+        user_tracking_table = DynamoDBSchemas.USER_TRACKING_TABLE
         
         # Get DynamoDB client
         dynamodb_client = boto3.client('dynamodb', region_name=region)
@@ -871,15 +919,9 @@ def create_websocket_lambda_package(output_zip_path):
     package_dir = SCRIPT_DIR / "websocket_package"
     clean_directory(package_dir)
     
-    # Copy required source files from their new, correct locations
-    websocket_lambda_src = SRC_DIR / "lambdas" / "websocket"
-    shared_src = SRC_DIR / "shared"
-    
-    # Copy handler and its direct dependencies
-    shutil.copytree(websocket_lambda_src, package_dir, dirs_exist_ok=True)
-    
-    # Copy necessary shared modules, like dynamodb_schemas
-    shutil.copy(shared_src / "dynamodb_schemas.py", package_dir)
+    # Copy required source files
+    shutil.copy(SRC_DIR / "websocket_handler.py", package_dir)
+    shutil.copy(SRC_DIR / "dynamodb_schemas.py", package_dir)
     
     # Create the ZIP file
     with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
@@ -963,223 +1005,19 @@ def setup_websocket_api(lambda_function_name, region):
     apigw_client.create_deployment(ApiId=api_id, StageName='prod')
 
     # Grant API Gateway permission to invoke the Lambda
-    statement_id = f"apigw-ws-invoke-{lambda_function_name}"
-    source_arn = f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*"
-    ensure_lambda_permission(lambda_client, lambda_function_name, statement_id, source_arn)
+    try:
+        lambda_client.add_permission(
+            FunctionName=lambda_function_name,
+            StatementId=f"apigw-ws-invoke-{api_id}",
+            Action='lambda:InvokeFunction',
+            Principal='apigateway.amazonaws.com',
+            SourceArn=f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*"
+        )
+    except ClientError as e:
+        if e.response['Error']['Code'] != 'ResourceConflictException':
+            raise
             
     return f"{api_endpoint}/prod", api_id
-
-
-
-def verify_lambda_deployment(function_name, region, timeout=300):
-    """Verify that a Lambda function is properly deployed and ready."""
-    import time
-    
-    logger.info(f"Verifying deployment of {function_name}...")
-    lambda_client = boto3.client('lambda', region_name=region)
-    
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        try:
-            # Check if function exists and is active
-            response = lambda_client.get_function(FunctionName=function_name)
-            state = response['Configuration']['State']
-            
-            if state == 'Active':
-                logger.info(f"✅ {function_name} is Active and ready")
-                return True
-            elif state == 'Pending':
-                logger.info(f"⏳ {function_name} is still Pending... waiting")
-                time.sleep(5)
-                continue
-            else:
-                logger.warning(f"⚠️  {function_name} is in state: {state}")
-                time.sleep(5)
-                continue
-                
-        except Exception as e:
-            logger.error(f"❌ Error checking {function_name}: {e}")
-            time.sleep(5)
-            continue
-    
-    logger.error(f"❌ Timeout waiting for {function_name} to become ready")
-    return False
-
-def verify_api_gateway_deployment(api_name, region, timeout=120):
-    """Verify that API Gateway is properly deployed and responding."""
-    import time
-    import requests
-    
-    logger.info(f"Verifying API Gateway deployment for {api_name}...")
-    
-    # Get API Gateway URL
-    try:
-        apigateway_client = boto3.client('apigateway', region_name=region)
-        apis = apigateway_client.get_rest_apis()
-        
-        target_api = None
-        for api in apis['items']:
-            if api['name'] == api_name:
-                target_api = api
-                break
-        
-        if not target_api:
-            logger.error(f"❌ API Gateway {api_name} not found")
-            return False
-        
-        api_url = f"https://{target_api['id']}.execute-api.{region}.amazonaws.com/prod"
-        
-        # Test API endpoint
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                # Test with the new /health endpoint
-                response = requests.get(f"{api_url}/health", timeout=10)
-                if response.status_code == 200:
-                    logger.info(f"✅ API Gateway {api_name} is responding at {api_url}/health")
-                    return True
-                else:
-                    logger.info(f"⏳ API Gateway still initializing... got {response.status_code} from /health")
-                    time.sleep(10)
-                    continue
-                    
-            except requests.exceptions.RequestException as e:
-                logger.info(f"⏳ API Gateway not ready yet: {e}")
-                time.sleep(10)
-                continue
-        
-        logger.error(f"❌ Timeout waiting for API Gateway {api_name} to respond")
-        return False
-        
-    except Exception as e:
-        logger.error(f"❌ Error verifying API Gateway: {e}")
-        return False
-
-def wait_for_all_deployments(region):
-    """Wait for all deployments to complete and verify they're working."""
-    logger.info("\n=== DEPLOYMENT VERIFICATION ===")
-    
-    deployments_to_verify = [
-        ("perplexity-validator-interface", "Interface Lambda"),
-        ("perplexity-validator-config", "Config Lambda"),
-        ("perplexity-validator-ws-handler", "WebSocket Lambda")
-    ]
-    
-    all_success = True
-    
-    # Verify Lambda functions
-    for function_name, description in deployments_to_verify:
-        logger.info(f"\n--- Verifying {description} ---")
-        if not verify_lambda_deployment(function_name, region):
-            logger.error(f"❌ {description} deployment failed")
-            all_success = False
-        else:
-            logger.info(f"✅ {description} deployment successful")
-    
-    # Verify API Gateway
-    logger.info(f"\n--- Verifying API Gateway ---")
-    if not verify_api_gateway_deployment("perplexity-validator-api", region):
-        logger.error("❌ API Gateway deployment failed")
-        all_success = False
-    else:
-        logger.info("✅ API Gateway deployment successful")
-    
-    if all_success:
-        logger.info("\n🎉 ALL DEPLOYMENTS VERIFIED SUCCESSFULLY!")
-        return True
-    else:
-        logger.error("\n💥 SOME DEPLOYMENTS FAILED VERIFICATION")
-        return False
-
-async def test_websocket_connection_async(ws_url):
-    """Test WebSocket connection asynchronously"""
-    try:
-        logger.info(f"Testing WebSocket connection to {ws_url}")
-        
-        async with websockets.connect(ws_url) as websocket:
-            logger.info("✅ WebSocket connection established")
-            
-            # Test subscribe message
-            test_message = {
-                "action": "subscribe",
-                "sessionId": "test_session_" + str(int(time.time()))
-            }
-            
-            await websocket.send(json.dumps(test_message))
-            logger.info("✅ Subscribe message sent")
-            
-            # Wait for response with timeout
-            try:
-                response = await asyncio.wait_for(websocket.recv(), timeout=5.0)
-                logger.info(f"✅ Received response: {response}")
-                return True
-            except asyncio.TimeoutError:
-                logger.warning("⚠️ No response received within timeout")
-                return True  # Connection worked, just no response
-                
-    except Exception as e:
-        logger.error(f"❌ WebSocket connection test failed: {str(e)}")
-        return False
-
-def test_websocket_connection(ws_url):
-    """Test WebSocket connection with proper error handling"""
-    if not WEBSOCKETS_AVAILABLE:
-        logger.warning("⚠️ websockets library not available - skipping WebSocket test")
-        logger.info("Install with: pip install websockets")
-        return True  # Don't fail deployment for missing optional dependency
-    
-    try:
-        # Run the async test
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(test_websocket_connection_async(ws_url))
-            return result
-        finally:
-            loop.close()
-            
-    except Exception as e:
-        logger.error(f"❌ WebSocket test failed: {str(e)}")
-        return False
-
-def setup_unified_s3_bucket():
-    """Set up unified S3 bucket and separate downloads bucket for hyperplexity storage"""
-    try:
-        from create_unified_s3_bucket import create_unified_s3_bucket, create_downloads_bucket, test_bucket_structure
-        
-        logger.info("🗄️ Setting up S3 buckets...")
-        
-        # Create downloads bucket first
-        downloads_bucket = create_downloads_bucket()
-        if downloads_bucket:
-            logger.info("✅ Downloads bucket created successfully")
-        else:
-            logger.warning("⚠️ Downloads bucket creation failed")
-        
-        # Create unified bucket
-        unified_bucket = create_unified_s3_bucket()
-        if unified_bucket:
-            logger.info("✅ Unified S3 bucket created successfully")
-            
-            # Test bucket structure
-            if test_bucket_structure(unified_bucket):
-                logger.info("✅ Bucket structure verified")
-                
-                # Note: Downloads bucket created for config lambda use only
-                if downloads_bucket:
-                    logger.info(f"✅ Downloads bucket available for config lambda: {downloads_bucket}")
-                
-                return True
-            else:
-                logger.warning("⚠️ Bucket created but structure test failed")
-                return True  # Still proceed
-        else:
-            logger.error("❌ Failed to create unified S3 bucket")
-            return False
-            
-    except Exception as e:
-        logger.error(f"❌ Error setting up S3 buckets: {e}")
-        return False
 
 def main():
     """Main function."""
@@ -1191,13 +1029,10 @@ def main():
     parser.add_argument('--region', default='us-east-1', help='AWS region (default: us-east-1)')
     parser.add_argument('--no-api-gateway', action='store_true', help='Skip API Gateway setup')
     parser.add_argument('--test-api', action='store_true', help='Test the API endpoint after deployment')
-    parser.add_argument('--test-websocket', action='store_true', help='Test the WebSocket connection')
     parser.add_argument('--force-rebuild', action='store_true', help='Force rebuilding the package even if it exists')
     parser.add_argument('--no-rebuild', action='store_true', help='Skip rebuilding the package')
     parser.add_argument('--setup-db', action='store_true', help='Set up DynamoDB tables for email validation and user tracking')
     parser.add_argument('--skip-db-setup', action='store_true', help='Skip DynamoDB table setup during deployment')
-    parser.add_argument('--setup-s3', action='store_true', help='Set up unified S3 bucket')
-    parser.add_argument('--skip-s3-setup', action='store_true', help='Skip S3 bucket setup during deployment')
     args = parser.parse_args()
     
     # Get Lambda function name
@@ -1260,14 +1095,6 @@ def main():
             if args.deploy:
                 logger.warning("Continuing with deployment despite DB setup failure...")
     
-    # Set up unified S3 bucket if requested
-    if args.setup_s3 or (args.deploy and not args.skip_s3_setup):
-        s3_success = setup_unified_s3_bucket()
-        if not s3_success:
-            logger.error("Failed to set up unified S3 bucket")
-            if args.deploy:
-                logger.warning("Continuing with deployment despite S3 setup failure...")
-    
     # Deploy if requested
     if args.deploy:
         try:
@@ -1326,35 +1153,20 @@ def main():
 
                 # Update the main interface lambda's environment
                 lambda_client = boto3.client('lambda', region_name=args.region)
-                try:
-                    logger.info(f"Updating interface lambda {function_name} with WebSocket API URL: {ws_api_url}")
-                    lambda_client.update_function_configuration(
-                        FunctionName=function_name,
-                        Environment={
-                            'Variables': {
-                                **LAMBDA_CONFIG['Environment']['Variables'],
-                                'WEBSOCKET_API_URL': ws_api_url
-                            }
+                lambda_client.update_function_configuration(
+                    FunctionName=LAMBDA_CONFIG["FunctionName"],
+                    Environment={
+                        'Variables': {
+                            **LAMBDA_CONFIG['Environment']['Variables'],
+                            'WEBSOCKET_API_URL': ws_api_url
                         }
-                    )
-                    logger.info("Successfully updated interface lambda with WebSocket API URL.")
-                    
-                    # Verify the environment variable was set
-                    time.sleep(2)  # Wait for update to propagate
-                    function_config = lambda_client.get_function(FunctionName=function_name)
-                    env_vars = function_config['Configuration']['Environment']['Variables']
-                    if 'WEBSOCKET_API_URL' in env_vars:
-                        logger.info(f"Verified: WEBSOCKET_API_URL = {env_vars['WEBSOCKET_API_URL']}")
-                    else:
-                        logger.warning("WEBSOCKET_API_URL was not found in environment variables after update")
-                        
-                except Exception as e:
-                    logger.error(f"Failed to update interface lambda environment: {e}")
-                    raise
+                    }
+                )
+                logger.info("Updated interface lambda with WebSocket API URL.")
                 
                 # Inject the WebSocket URL into the HTML file
                 try:
-                    html_path = PROJECT_DIR / "frontend" / "perplexity_validator_interface2.html"
+                    html_path = PROJECT_DIR / "perplexity_validator_interface.html"
                     with open(html_path, 'r', encoding='utf-8') as f:
                         html_content = f.read()
                     
@@ -1369,52 +1181,16 @@ def main():
                     logger.info(f"Updated WebSocket URL in {html_path}")
                 except Exception as e:
                     logger.error(f"Failed to inject WebSocket URL into HTML file: {e}")
-            else:
-                logger.error("Failed to deploy WebSocket API")
+
         except Exception as e:
-            logger.error(f"Error deploying WebSocket infrastructure: {str(e)}")
-
-
-        # --- Test WebSocket Connection ---
-        logger.info("\n=== TESTING WEBSOCKET CONNECTION ===")
-        if ws_api_url:
-            if test_websocket_connection(ws_api_url):
-                logger.info("✅ WebSocket connection test passed!")
-            else:
-                logger.warning("⚠️ WebSocket connection test failed - but continuing deployment")
-        
-        # --- Verify All Deployments ---
-        logger.info("\n=== VERIFYING ALL DEPLOYMENTS ===")
-        if not wait_for_all_deployments(args.region):
-            logger.error("❌ Deployment verification failed!")
+            logger.error(f"Error during deployment: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return 1
-        
-
     else:
         logger.info("\nTo deploy to AWS Lambda with API Gateway, use:")
         logger.info(f"python {__file__} --deploy [--test-api]")
-        
-        # Test existing WebSocket setup if requested
-        if args.test_websocket:
-            logger.info("\n=== TESTING EXISTING WEBSOCKET SETUP ===")
-            try:
-                # Get current WebSocket URL from Lambda env
-                lambda_client = boto3.client('lambda')
-                function_config = lambda_client.get_function_configuration(FunctionName='perplexity-validator-interface')
-                ws_url = function_config.get('Environment', {}).get('Variables', {}).get('WEBSOCKET_API_URL')
-                
-                if ws_url:
-                    logger.info(f"Found WebSocket URL: {ws_url}")
-                    if test_websocket_connection(ws_url):
-                        logger.info("✅ WebSocket connection test passed!")
-                    else:
-                        logger.warning("⚠️ WebSocket connection test failed!")
-                else:
-                    logger.warning("⚠️ No WEBSOCKET_API_URL found in Lambda environment")
-                    
-            except Exception as e:
-                logger.warning(f"Could not test WebSocket: {e}")
-
+    
     return 0
 
 if __name__ == "__main__":
