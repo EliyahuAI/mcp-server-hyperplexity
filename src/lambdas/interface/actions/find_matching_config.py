@@ -9,9 +9,9 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 
-from src.lambdas.interface.core.unified_s3_manager import UnifiedS3Manager
-from src.shared.shared_table_parser import s3_table_parser
-from src.lambdas.interface.utils.helpers import create_response
+from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+from shared_table_parser import s3_table_parser
+from interface_lambda.utils.helpers import create_response
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

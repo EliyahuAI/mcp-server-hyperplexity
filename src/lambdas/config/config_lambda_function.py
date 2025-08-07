@@ -12,9 +12,9 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-from src.shared.ai_api_client import ai_client
-from src.shared.shared_table_parser import s3_table_parser
-from src.shared.config_validator import validate_config_complete
+from ai_api_client import ai_client
+from shared_table_parser import s3_table_parser  
+from config_validator import validate_config_complete
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -344,14 +344,36 @@ def load_column_config_schema() -> Dict:
     import os
     current_dir = os.path.dirname(__file__)
     
-    # Try deployed location first (for lambda), then src/ location (for local testing)
-    schema_file = os.path.join(current_dir, 'column_config_schema.json')
-    if not os.path.exists(schema_file):
-        # Local testing - use src/ location
-        schema_file = os.path.join(current_dir, '..', 'src', 'column_config_schema.json')
+    # Try multiple possible locations for the schema file
+    possible_paths = [
+        # 1. Same directory as this file (deployed Lambda)
+        os.path.join(current_dir, 'column_config_schema.json'),
+        # 2. Lambda task root directory 
+        '/var/task/column_config_schema.json',
+        # 3. Relative to current working directory
+        'column_config_schema.json',
+        # 4. Local testing - src/ location
+        os.path.join(current_dir, '..', 'src', 'column_config_schema.json'),
+        # 5. Shared directory for local testing
+        os.path.join(current_dir, '..', '..', 'src', 'column_config_schema.json')
+    ]
     
-    if not os.path.exists(schema_file):
-        raise FileNotFoundError(f"Column config schema file not found: {schema_file}")
+    schema_file = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            schema_file = path
+            break
+    
+    if not schema_file:
+        # Enhanced error message with debugging info
+        tried_paths = '\n'.join([f"  - {path}" for path in possible_paths])
+        current_files = [f for f in os.listdir(current_dir) if f.endswith('.json')] if os.path.exists(current_dir) else []
+        raise FileNotFoundError(
+            f"Column config schema file not found in any of these locations:\n{tried_paths}\n"
+            f"Current directory: {current_dir}\n"
+            f"Files in current directory: {current_files}\n"
+            f"Current working directory: {os.getcwd()}"
+        )
     
     try:
         with open(schema_file, 'r', encoding='utf-8') as f:

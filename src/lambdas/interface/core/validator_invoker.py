@@ -13,10 +13,10 @@ import boto3
 import math
 from pathlib import Path
 
-from src.shared.row_key_utils import generate_row_key
-from src.lambdas.interface.utils.history_loader import load_validation_history_from_excel
-from src.shared.schema_validator_simplified import SimplifiedSchemaValidator
-from src.lambdas.interface.reporting.markdown_report import create_markdown_table_from_results
+from row_key_utils import generate_row_key
+from interface_lambda.utils.history_loader import load_validation_history_from_excel
+from schema_validator_simplified import SimplifiedSchemaValidator
+from interface_lambda.reporting.markdown_report import create_markdown_table_from_results
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

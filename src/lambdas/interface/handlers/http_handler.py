@@ -7,10 +7,10 @@ import logging
 import sys
 from pathlib import Path
 
-from src.lambdas.interface.utils.helpers import create_response
-from src.lambdas.interface.actions import status_check, generate_config_unified, email_validation, user_stats, config_validation, find_matching_config, copy_config, diagnostics
-from src.lambdas.interface.utils.parsing import parse_multipart_form_data
-from src.lambdas.interface.actions import process_excel_unified
+from interface_lambda.utils.helpers import create_response
+from interface_lambda.actions import status_check, generate_config_unified, email_validation, user_stats, config_validation, find_matching_config, copy_config, diagnostics
+from interface_lambda.utils.parsing import parse_multipart_form_data
+from interface_lambda.actions import process_excel_unified
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

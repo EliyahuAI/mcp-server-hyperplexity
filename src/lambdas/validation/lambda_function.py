@@ -16,10 +16,9 @@ import csv
 from io import StringIO
 from pathlib import Path
 
-from src.shared.schema_validator_simplified import SimplifiedSchemaValidator
-from src.shared.perplexity_schema import get_response_format_schema
-from src.shared.row_key_utils import generate_row_key
-from src.lambdas.interface.utils.history_loader import load_validation_history_from_excel
+from schema_validator_simplified import SimplifiedSchemaValidator
+from perplexity_schema import get_response_format_schema
+from row_key_utils import generate_row_key
 
 # Configure logging
 logger = logging.getLogger()

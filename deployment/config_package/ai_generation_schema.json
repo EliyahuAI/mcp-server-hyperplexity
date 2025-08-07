@@ -59,7 +59,7 @@
     },
     "clarifying_questions": {
       "type": "string",
-      "description": "2-4 specific questions to help improve the configuration further"
+      "description": "Specific questions about the table or columns to help improve the configuration further."
     },
     "clarification_urgency": {
       "type": "number",
@@ -67,7 +67,7 @@
     },
     "ai_summary": {
       "type": "string",
-      "description": "Clear AI summary in simple language explaining what was configured:\n\nFOR NEW CONFIGURATIONS:\n- Identify the table's general purpose and domain\n- List critical columns and why they're important\n- Specify ID/key columns used for row identification (not validated)\n- For each search group, provide:\n  • Group name and purpose\n  • Columns included (use clear formatting)\n  • Context level (high/low) and model used\n- Highlight any special settings (high context, Claude model usage)\n- Assessment: Are table structure and column importance well understood, or is refinement recommended?\n\nFOR REFINEMENTS:\n- Summarize key changes made\n- List affected columns and search groups\n- Explain reasoning behind major modifications\n- Assessment: Is the configuration now well-tuned, or are further refinements needed?"
+      "description": "Short but clear summary in simple language explaining what you did, highlighting assumptions that you needed to make. The focus changes depending on whether the configuration is new or a refinement (you are updating an existing configuration):\n\nFOR NEW CONFIGURATIONS: What is your understanding of the context of this table? What were your assumptions? Does this need refinement? \n\n FOR REFINEMENTS: Focus on changes made and the reasons why they were made. Does this need futher refinement?"
     }
   },
   "additionalProperties": false

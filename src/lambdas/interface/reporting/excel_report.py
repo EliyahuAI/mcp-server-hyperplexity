@@ -15,8 +15,8 @@ try:
 except ImportError:
     EXCEL_ENHANCEMENT_AVAILABLE = False
 
-from src.shared.schema_validator_simplified import SimplifiedSchemaValidator
-from src.shared.row_key_utils import generate_row_key
+from schema_validator_simplified import SimplifiedSchemaValidator
+from row_key_utils import generate_row_key
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

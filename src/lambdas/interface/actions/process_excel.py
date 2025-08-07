@@ -13,13 +13,13 @@ import math
 import io
 from pathlib import Path
 
-from src.lambdas.interface.utils.parsing import parse_multipart_form_data
-from src.lambdas.interface.utils.helpers import create_response, generate_reference_pin, create_email_folder_path
-from src.lambdas.interface.core.s3_manager import s3_client, S3_RESULTS_BUCKET, upload_file_to_s3
-from src.shared.dynamodb_schemas import is_email_validated, track_validation_call, create_run_record
-from src.lambdas.interface.core.sqs_service import send_preview_request, send_full_request
-from src.lambdas.interface.core.validator_invoker import invoke_validator_lambda
-from src.lambdas.interface.reporting.markdown_report import create_markdown_table_from_results
+from interface_lambda.utils.parsing import parse_multipart_form_data
+from interface_lambda.utils.helpers import create_response, generate_reference_pin, create_email_folder_path
+from interface_lambda.core.s3_manager import s3_client, S3_RESULTS_BUCKET, upload_file_to_s3
+from dynamodb_schemas import is_email_validated, track_validation_call, create_run_record
+from interface_lambda.core.sqs_service import send_preview_request, send_full_request
+from interface_lambda.core.validator_invoker import invoke_validator_lambda
+from interface_lambda.reporting.markdown_report import create_markdown_table_from_results
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

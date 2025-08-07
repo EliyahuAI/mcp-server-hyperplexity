@@ -6,7 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-from src.shared.dynamodb_schemas import add_websocket_connection, remove_websocket_connection, associate_session_with_connection
+from dynamodb_schemas import add_websocket_connection, remove_websocket_connection, associate_session_with_connection
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

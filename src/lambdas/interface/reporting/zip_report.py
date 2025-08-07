@@ -10,7 +10,7 @@ import logging
 from io import StringIO
 from pathlib import Path
 
-from src.lambdas.interface.reporting.excel_report_new import create_enhanced_excel_with_validation
+from interface_lambda.reporting.excel_report_new import create_enhanced_excel_with_validation
 
 logger = logging.getLogger(__name__)
 

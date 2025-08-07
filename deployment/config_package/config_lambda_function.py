@@ -10,11 +10,22 @@ import os
 import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional
+
+# Configure logging BEFORE importing ai_api_client
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True  # Force reconfiguration
+)
+
+# Import after logging setup
 from ai_api_client import ai_client
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Get logger for this module
 logger = logging.getLogger(__name__)
+
+# Also ensure ai_api_client logger is set to INFO
+logging.getLogger('ai_api_client').setLevel(logging.INFO)
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for configuration generation requests."""
@@ -27,6 +38,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         existing_config = event.get('existing_config')  # Optional
         instructions = event.get('instructions', 'Generate an optimal configuration for this data validation scenario')
         session_id = event.get('session_id', 'unknown')
+        
+        # Conversation history preservation parameters
+        preserve_conversation_history = event.get('preserve_conversation_history', False)
+        conversation_history = event.get('conversation_history', [])
+        
+        logger.info(f"Config lambda parameters:")
+        logger.info(f"- Session ID: {session_id}")
+        logger.info(f"- Has existing_config: {existing_config is not None}")
+        logger.info(f"- Preserve conversation: {preserve_conversation_history}")
+        logger.info(f"- Conversation history entries: {len(conversation_history)}")
         
         # Table can be provided in multiple formats
         excel_s3_key = event.get('excel_s3_key')
@@ -48,7 +69,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info("Generating table analysis from provided data")
             try:
                 from shared_table_parser import s3_table_parser
-                bucket = os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
+                # Use unified bucket if available
+                bucket = os.environ.get('S3_UNIFIED_BUCKET', os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache'))
                 
                 if excel_s3_key:
                     logger.info(f"Analyzing Excel from S3: {excel_s3_key}")
@@ -75,7 +97,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Process the config generation request (single unified mode)
         result = asyncio.run(generate_config_unified(
-            table_analysis, existing_config, instructions, session_id
+            table_analysis, existing_config, instructions, session_id, conversation_history
         ))
         
         return {
@@ -96,27 +118,52 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
 
 async def generate_config_unified(table_analysis: Dict, existing_config: Dict = None, 
-                                 instructions: str = '', session_id: str = 'unknown') -> Dict:
+                                 instructions: str = '', session_id: str = 'unknown',
+                                 conversation_history: list = None) -> Dict:
     """Unified config generation - always returns both updated config and clarifying questions."""
     try:
-        # For refinements, embed user message in conversation log first
-        if existing_config and instructions:
-            existing_config = embed_user_message_in_log(existing_config, instructions, session_id)
-        
         # Build the unified generation prompt
         prompt = build_unified_generation_prompt(table_analysis, existing_config, instructions)
         
         # Call Claude using shared client with unified schema
+        # Note: Empty context allows cache hits across sessions with same table analysis
         result = await ai_client.call_structured_api(
             prompt=prompt,
             schema=get_unified_generation_schema(),
             model="claude-sonnet-4-0",
             tool_name="generate_config_and_questions",
-            context=f"session_{session_id}"
+            context=""
         )
         
+        # Debug logging
+        logger.info(f"AI API result type: {type(result)}")
+        logger.info(f"AI API result keys: {result.keys() if isinstance(result, dict) else 'Not a dict'}")
+        
+        # More detailed debugging
+        if isinstance(result, str):
+            logger.error(f"ERROR: AI API returned string instead of dict: {result[:200]}...")
+            raise TypeError("AI API returned string instead of expected dictionary response")
+        
+        # Check if result is the response directly or wrapped
+        if isinstance(result, dict) and 'response' in result:
+            response = result['response']
+            logger.info(f"Response type: {type(response)}")
+            logger.info(f"Response keys: {response.keys() if isinstance(response, dict) else 'Not a dict'}")
+        else:
+            response = result
+        
+        # Additional check after unwrapping - response might be a string
+        if isinstance(response, str):
+            logger.error(f"ERROR: Response is a string instead of dict: {response[:200]}...")
+            raise TypeError("AI API response is a string instead of expected dictionary")
+            
         # Extract response data
-        response_data = ai_client.extract_structured_response(result['response'], "generate_config_and_questions")
+        try:
+            response_data = ai_client.extract_structured_response(response, "generate_config_and_questions")
+        except Exception as e:
+            logger.error(f"Failed to extract structured response: {str(e)}")
+            logger.error(f"Response was: {json.dumps(response, indent=2) if isinstance(response, dict) else response}")
+            raise
         
         # Get the updated config and add conversation tracking
         updated_config = response_data.get('updated_config')
@@ -124,48 +171,28 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         clarification_urgency = response_data.get('clarification_urgency', 0.0)
         ai_summary = response_data.get('ai_summary', '')
         
-        # Validate the AI-generated config before proceeding
-        if updated_config:
-            from config_validator import validate_config_complete
-            is_valid, errors, warnings = validate_config_complete(updated_config, table_analysis)
-            
-            if not is_valid:
-                logger.warning(f"AI generated invalid config, attempting retry with validation errors")
-                # Retry with validation errors as refinement instructions
-                error_instructions = f"The previous configuration had validation errors. Please fix these issues:\n\nErrors:\n" + "\n".join(f"- {error}" for error in errors)
-                if warnings:
-                    error_instructions += f"\n\nWarnings:\n" + "\n".join(f"- {warning}" for warning in warnings)
-                
-                # Recursive call to fix the config
-                retry_result = await generate_config_unified(
-                    table_analysis=table_analysis,
-                    existing_config=updated_config,  # Use the invalid config as base
-                    instructions=error_instructions,
-                    session_id=f"{session_id}_retry"
-                )
-                
-                if retry_result.get('success') and retry_result.get('updated_config'):
-                    logger.info("Successfully fixed config validation errors on retry")
-                    updated_config = retry_result['updated_config']
-                    # Merge retry information
-                    ai_summary += f"\n\nRetry Summary: {retry_result.get('ai_summary', '')}"
-                else:
-                    logger.error("Failed to fix config validation errors on retry")
-        
         # Add conversation entry to config change log
         if updated_config:
             updated_config = add_conversation_entry(
                 updated_config, existing_config, instructions, 
-                clarifying_questions, clarification_urgency, ai_summary, session_id
+                clarifying_questions, clarification_urgency, ai_summary, session_id,
+                conversation_history
             )
         
-        # Save config to S3 with proper naming and create download link
+        # Save config to both S3 buckets
         config_s3_key = None
-        config_download_url = None
+        download_url = None
         try:
             if updated_config:
-                config_s3_key = save_config_to_s3(updated_config, session_id, table_analysis, existing_config)
-                config_download_url = create_config_download_url(config_s3_key)
+                # Save to cache bucket for internal use
+                config_s3_key = save_config_to_cache(updated_config, session_id)
+                
+                # Save to download bucket for public access
+                download_s3_key = save_config_to_downloads(updated_config, session_id)
+                
+                if download_s3_key:
+                    # Create download URL for the public bucket
+                    download_url = create_config_download_url(download_s3_key)
         except Exception as s3_error:
             logger.error(f"Failed to save config to S3: {str(s3_error)}")
         
@@ -176,17 +203,50 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             'clarification_urgency': clarification_urgency,
             'ai_summary': ai_summary,
             'config_s3_key': config_s3_key,
-            'config_download_url': config_download_url,
+            'download_url': download_url,
+            'session_id': session_id
+        }
+        
+    except TypeError as e:
+        error_msg = str(e)
+        logger.error(f"[ERROR] Type error in config generation: {error_msg}")
+        
+        # Provide user-friendly error message for string response issues
+        if "string indices must be integers" in error_msg or "AI API response is a string" in error_msg:
+            return {
+                'success': False,
+                'error': 'The AI returned an unexpected format. This can happen when the request is too complex. Please try simplifying your instructions or breaking them into smaller steps.',
+                'error_type': 'format_error',
+                'error_details': error_msg,
+                'session_id': session_id,
+                'retry_suggestion': 'Try providing more specific instructions or use simpler language.'
+            }
+        
+        return {
+            'success': False,
+            'error': f'Configuration format error: {error_msg}',
+            'error_type': 'type_error',
             'session_id': session_id
         }
         
     except Exception as e:
-        logger.error(f"Unified config generation failed: {str(e)}")
-        return {
-            'success': False,
-            'error': f'Config generation failed: {str(e)}',
-            'session_id': session_id
-        }
+        error_msg = str(e)
+        if "overloaded" in error_msg.lower() and "529" in error_msg:
+            logger.error(f"[ERROR] Claude API overloaded - unified config generation failed: {error_msg}")
+            return {
+                'success': False,
+                'error': 'Claude API is currently overloaded. Please try again in a few moments.',
+                'error_type': 'api_overloaded',
+                'session_id': session_id
+            }
+        else:
+            logger.error(f"Unified config generation failed: {error_msg}")
+            return {
+                'success': False,
+                'error': f'Config generation failed: {error_msg}',
+                'error_type': 'general_error',
+                'session_id': session_id
+            }
 
 def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict = None, 
                                   instructions: str = '') -> str:
@@ -196,43 +256,19 @@ def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict 
     column_analysis = table_analysis.get('column_analysis', {})
     domain_info = table_analysis.get('domain_info', {})
     
-    # Determine if this is a new config or refinement
-    is_new_config = existing_config is None or not existing_config.get('config_change_log', [])
-    
-    # Load the appropriate prompt template
-    import os
-    current_dir = os.path.dirname(__file__)
-    
-    if is_new_config:
-        prompt_file = os.path.join(current_dir, 'prompts', 'create_new_config_prompt.md')
+    # Safely extract shape information
+    shape = basic_info.get('shape', [0, 0])
+    if isinstance(shape, (list, tuple)) and len(shape) >= 2:
+        rows, cols = shape[0], shape[1]
     else:
-        prompt_file = os.path.join(current_dir, 'prompts', 'refine_existing_config_prompt.md')
+        rows, cols = 0, 0
+        logger.warning(f"Invalid shape format: {shape} (type: {type(shape)})")
     
-    try:
-        with open(prompt_file, 'r', encoding='utf-8') as f:
-            prompt_template = f.read()
-        
-        # Process includes for common guidance
-        if '{{INCLUDE:common_config_guidance.md}}' in prompt_template:
-            common_guidance_file = os.path.join(current_dir, 'prompts', 'common_config_guidance.md')
-            try:
-                with open(common_guidance_file, 'r', encoding='utf-8') as f:
-                    common_guidance = f.read()
-                prompt_template = prompt_template.replace('{{INCLUDE:common_config_guidance.md}}', common_guidance)
-            except Exception as e:
-                logger.warning(f"Could not load common guidance {common_guidance_file}: {e}")
-                prompt_template = prompt_template.replace('{{INCLUDE:common_config_guidance.md}}', "")
-        
-    except Exception as e:
-        logger.warning(f"Could not load prompt template {prompt_file}: {e}")
-        # Fallback to basic prompt
-        prompt_template = "You are an expert in data validation and configuration generation."
-    
-    base_prompt = f"""{prompt_template}
+    base_prompt = f"""You are an expert in data validation and configuration generation for the pharmaceutical industry.
 
 TABLE ANALYSIS:
 - File: {basic_info.get('filename', 'Unknown')}
-- Size: {basic_info.get('shape', [0, 0])[0]} rows × {basic_info.get('shape', [0, 0])[1]} columns
+- Size: {rows} rows × {cols} columns
 - Domain: {domain_info.get('likely_domain', 'general')} (confidence: {domain_info.get('confidence', 0)})
 
 COLUMN DETAILS:"""
@@ -294,132 +330,56 @@ Use the generate_config_and_questions tool to return both the configuration and 
     return base_prompt
 
 def get_unified_generation_schema() -> Dict:
-    """Get the unified JSON schema that combines column config validation with AI feedback requirements."""
-    logger.info("=== SCHEMA COMBINATION DEBUG ===")
-    
-    # Load the base column config schema
-    logger.info("Loading column config schema...")
-    column_config_schema = load_column_config_schema()
-    logger.info(f"Column config schema loaded with {len(column_config_schema.get('properties', {}))} properties")
-    
-    # Load the AI generation feedback schema
-    logger.info("Loading AI generation schema...")
-    ai_feedback_schema = load_ai_generation_schema()
-    logger.info(f"AI feedback schema loaded with {len(ai_feedback_schema.get('properties', {}))} properties")
-    
-    # Combine them - the updated_config must follow column_config_schema
-    # Create a deep copy to avoid modifying the original
-    updated_config_schema = json.loads(json.dumps(column_config_schema))
-    updated_config_schema["description"] = "The complete updated configuration following the column_config_schema.json structure"
-    
-    combined_schema = {
-        "type": "object",
-        "properties": {
-            "updated_config": updated_config_schema
-        },
-        "required": ["updated_config"]
-    }
-    
-    # Add AI feedback properties
-    for prop_name, prop_schema in ai_feedback_schema.get("properties", {}).items():
-        combined_schema["properties"][prop_name] = prop_schema
-    
-    # Add AI feedback required fields
-    combined_schema["required"].extend(ai_feedback_schema.get("required", []))
-    
-    # Check for problematic patterns in the final combined schema
-    combined_schema_str = json.dumps(combined_schema)
-    problematic_patterns = ['minItems', 'minLength', 'minimum', 'maximum', '$schema']
-    found_patterns = [pattern for pattern in problematic_patterns if pattern in combined_schema_str]
-    
-    if found_patterns:
-        logger.error(f"PROBLEMATIC PATTERNS FOUND IN COMBINED SCHEMA: {found_patterns}")
-    else:
-        logger.info("Combined schema appears clean (no problematic patterns)")
-    
-    logger.info(f"Final combined schema has {len(combined_schema.get('properties', {}))} root properties")
-    logger.info(f"Required fields: {combined_schema.get('required', [])}")
-    logger.info("=== END SCHEMA COMBINATION DEBUG ===")
-    
-    return combined_schema
-
-def load_column_config_schema() -> Dict:
-    """Load the base column config schema from the shared JSON file."""
+    """Get the unified JSON schema for AI config generation."""
     import os
-    current_dir = os.path.dirname(__file__)
     
-    # Try deployed location first (for lambda), then src/ location (for local testing)
-    schema_file = os.path.join(current_dir, 'column_config_schema.json')
-    if not os.path.exists(schema_file):
-        # Local testing - use src/ location
-        schema_file = os.path.join(current_dir, '..', 'src', 'column_config_schema.json')
+    # Load the AI generation schema which already includes the full structure
+    ai_schema_file = os.path.join(os.path.dirname(__file__), 'ai_generation_schema.json')
+    logger.info(f"Looking for schema at: {ai_schema_file}")
+    logger.info(f"File exists: {os.path.exists(ai_schema_file)}")
     
-    logger.info(f"Loading column config schema from: {schema_file}")
-    logger.info(f"File exists: {os.path.exists(schema_file)}")
-    
-    if not os.path.exists(schema_file):
-        raise FileNotFoundError(f"Column config schema file not found: {schema_file}")
+    if not os.path.exists(ai_schema_file):
+        raise FileNotFoundError(f"AI generation schema file not found: {ai_schema_file}")
     
     try:
-        with open(schema_file, 'r', encoding='utf-8') as f:
+        with open(ai_schema_file, 'r') as f:
             schema = json.load(f)
-        logger.info("Successfully loaded column config schema")
+        
+        logger.info(f"Successfully loaded AI generation schema with {len(schema.get('properties', {}))} root properties")
+        # Log the schema being used for debugging
+        schema_str = json.dumps(schema)
+        logger.info(f"Schema contains minItems: {'minItems' in schema_str}")
+        logger.info(f"Schema contains minimum: {'minimum' in schema_str}")
+        logger.info(f"Schema contains maximum: {'maximum' in schema_str}")
         return schema
+        
     except Exception as e:
-        logger.error(f"Failed to load column config schema {schema_file}: {e}")
-        raise Exception(f"Could not load column config schema: {str(e)}")
-
-def load_ai_generation_schema() -> Dict:
-    """Load the AI generation feedback schema from the JSON file."""
-    import os
-    current_dir = os.path.dirname(__file__)
-    schema_file = os.path.join(current_dir, 'ai_generation_schema.json')
-    
-    logger.info(f"Loading AI generation schema from: {schema_file}")
-    logger.info(f"File exists: {os.path.exists(schema_file)}")
-    
-    if not os.path.exists(schema_file):
-        raise FileNotFoundError(f"AI generation schema file not found: {schema_file}")
-    
-    try:
-        with open(schema_file, 'r', encoding='utf-8') as f:
-            schema = json.load(f)
-        logger.info("Successfully loaded AI generation schema")
-        return schema
-    except Exception as e:
-        logger.error(f"Failed to load AI generation schema {schema_file}: {e}")
-        raise Exception(f"Could not load AI generation schema: {str(e)}")
-
-def embed_user_message_in_log(existing_config: Dict, instructions: str, session_id: str) -> Dict:
-    """Embed user message in conversation log before processing for refinements."""
-    from datetime import datetime
-    
-    # Initialize conversation log if it doesn't exist
-    if 'config_change_log' not in existing_config:
-        existing_config['config_change_log'] = []
-    
-    # Add user message entry
-    user_message_entry = {
-        'timestamp': datetime.now().isoformat(),
-        'action': 'user_message',
-        'session_id': session_id,
-        'user_instructions': instructions,
-        'entry_type': 'user_input'
-    }
-    
-    existing_config['config_change_log'].append(user_message_entry)
-    return existing_config
+        logger.error(f"Error loading schema file: {str(e)}")
+        raise Exception(f"Failed to load AI generation schema: {str(e)}")
 
 def add_conversation_entry(updated_config: Dict, existing_config: Dict = None, 
                           instructions: str = '', clarifying_questions: str = '',
                           clarification_urgency: float = 0.0, ai_summary: str = '', 
-                          session_id: str = 'unknown') -> Dict:
+                          session_id: str = 'unknown', conversation_history: list = None) -> Dict:
     """Add conversation entry to config change log and update metadata."""
     from datetime import datetime
     
-    # Initialize or get existing change log
+    # Initialize or preserve existing change log with multiple fallbacks
     if 'config_change_log' not in updated_config:
-        updated_config['config_change_log'] = []
+        # Priority 1: Use conversation_history passed from interface lambda
+        if conversation_history and len(conversation_history) > 0:
+            updated_config['config_change_log'] = conversation_history.copy()
+            logger.info(f"✅ Preserved {len(updated_config['config_change_log'])} conversation entries from interface lambda")
+        # Priority 2: Use existing_config if available
+        elif existing_config and 'config_change_log' in existing_config:
+            updated_config['config_change_log'] = existing_config['config_change_log'].copy()
+            logger.info(f"✅ Preserved {len(updated_config['config_change_log'])} conversation entries from existing_config")
+        # Priority 3: Initialize empty log
+        else:
+            updated_config['config_change_log'] = []
+            logger.info("🆕 Initialized new conversation log")
+    else:
+        logger.info(f"ℹ️ Using existing config_change_log with {len(updated_config.get('config_change_log', []))} entries")
     
     # Get version number
     current_version = 1
@@ -454,40 +414,27 @@ def add_conversation_entry(updated_config: Dict, existing_config: Dict = None,
     
     return updated_config
 
-def save_config_to_s3(generated_config: Dict, session_id: str, table_analysis: Dict = None, existing_config: Dict = None) -> str:
-    """Save generated configuration to S3 with proper naming based on input file."""
+def save_config_to_downloads(generated_config: Dict, session_id: str) -> str:
+    """Save generated configuration to S3 and return the key."""
     try:
         import boto3
-        import re
         
-        # Upload config to S3
+        # Upload config to S3 download bucket (public access)
         s3_client = boto3.client('s3')
-        bucket_name = os.environ.get('S3_CONFIG_BUCKET', 'perplexity-config-downloads')
         
-        # Get the current version number
-        current_version = 1
-        if existing_config and 'generation_metadata' in existing_config:
-            current_version = existing_config['generation_metadata'].get('version', 1) + 1
-        
-        # Extract base filename from table analysis
-        base_filename = "unknown_table"
-        if table_analysis and 'basic_info' in table_analysis:
-            original_filename = table_analysis['basic_info'].get('filename', 'unknown_table')
-            # Remove file extension
-            base_filename = re.sub(r'\.(xlsx?|csv)$', '', original_filename, flags=re.IGNORECASE)
-            # Remove any existing _config or _config_VXX suffixes
-            base_filename = re.sub(r'_config(_V\d+)?$', '', base_filename, flags=re.IGNORECASE)
-        
-        # Create config filename with version
-        config_filename = f"{base_filename}_config_V{current_version:02d}.json"
-        key = f"generated_configs/{config_filename}"
-        
-        logger.info(f"=== CONFIG SAVE DEBUG ===")
-        logger.info(f"Original filename: {table_analysis.get('basic_info', {}).get('filename', 'N/A') if table_analysis else 'N/A'}")
-        logger.info(f"Base filename after processing: {base_filename}")
-        logger.info(f"Config filename: {config_filename}")
-        logger.info(f"Full S3 key: {key}")
-        logger.info(f"S3 bucket: {bucket_name}")
+        # Use unified download bucket structure if available
+        if os.environ.get('S3_UNIFIED_BUCKET'):
+            bucket_name = os.environ.get('S3_DOWNLOAD_BUCKET', os.environ.get('S3_UNIFIED_BUCKET'))
+            # Create unique filename with unified structure
+            import uuid
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            download_uuid = str(uuid.uuid4())
+            key = f"downloads/{download_uuid}/config_{session_id}_{timestamp}.json"
+        else:
+            # Legacy structure
+            bucket_name = os.environ.get('S3_CONFIG_BUCKET', 'perplexity-config-downloads')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            key = f"generated_configs/{session_id}_{timestamp}.json"
         
         # Upload config as JSON
         config_json = json.dumps(generated_config, indent=2)
@@ -500,11 +447,43 @@ def save_config_to_s3(generated_config: Dict, session_id: str, table_analysis: D
             Metadata={'session_id': session_id}
         )
         
-        logger.info(f"✅ Config successfully uploaded to S3: {key}")
+        logger.info(f"Config uploaded to downloads bucket: {key}")
         return key
         
     except Exception as e:
-        logger.error(f"Failed to save config to S3: {str(e)}")
+        logger.error(f"Failed to save config to downloads bucket: {str(e)}")
+        raise
+
+def save_config_to_cache(generated_config: Dict, session_id: str) -> str:
+    """Save generated configuration to cache bucket for internal use."""
+    try:
+        import boto3
+        
+        # Upload config to S3 cache bucket (internal use)
+        s3_client = boto3.client('s3')
+        # Use unified bucket if available
+        bucket_name = os.environ.get('S3_UNIFIED_BUCKET', os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache'))
+        
+        # Create unique filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        key = f"generated_configs/{session_id}_{timestamp}.json"
+        
+        # Upload config as JSON
+        config_json = json.dumps(generated_config, indent=2)
+        
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=key,
+            Body=config_json,
+            ContentType='application/json',
+            Metadata={'session_id': session_id}
+        )
+        
+        logger.info(f"Config uploaded to cache bucket: {key}")
+        return key
+        
+    except Exception as e:
+        logger.error(f"Failed to save config to cache bucket: {str(e)}")
         raise
 
 def create_config_download_url(s3_key: str) -> str:
@@ -512,18 +491,18 @@ def create_config_download_url(s3_key: str) -> str:
     try:
         import boto3
         
-        s3_client = boto3.client('s3')
-        bucket_name = os.environ.get('S3_CONFIG_BUCKET', 'perplexity-config-downloads')
+        # Use unified download bucket if available
+        bucket_name = os.environ.get('S3_DOWNLOAD_BUCKET', os.environ.get('S3_CONFIG_BUCKET', 'perplexity-config-downloads'))
         
         # Since the bucket has public access, create direct public URL
-        public_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
+        download_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
         
         logger.info(f"=== DOWNLOAD URL DEBUG ===")
         logger.info(f"Input S3 key: {s3_key}")
-        logger.info(f"S3 bucket: {bucket_name}")
-        logger.info(f"Generated public URL: {public_url}")
+        logger.info(f"S3 cache bucket: {bucket_name}")
+        logger.info(f"Generated presigned URL: {download_url}")
         
-        return public_url
+        return download_url
         
     except Exception as e:
         logger.error(f"Failed to create config download URL: {str(e)}")

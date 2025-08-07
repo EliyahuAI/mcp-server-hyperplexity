@@ -65,19 +65,53 @@ class S3TableParser:
     def _parse_csv_content(self, file_content: bytes, filename: str) -> Dict[str, Any]:
         """Parse CSV content into structured format"""
         try:
-            # Decode content
-            text_content = file_content.decode('utf-8')
+            # Try multiple encodings to handle different CSV file encodings (expanded list)
+            encodings_to_try = [
+                'utf-8', 'utf-8-sig',  # UTF-8 with and without BOM
+                'latin-1', 'cp1252', 'iso-8859-1',  # Windows/Western European
+                'utf-16', 'utf-16le', 'utf-16be',  # UTF-16 variants
+                'cp437', 'cp850',  # DOS/OEM encodings
+                'ascii'  # Basic ASCII as last resort
+            ]
+            text_content = None
+            used_encoding = None
             
-            # Parse CSV
-            reader = csv.reader(text_content.splitlines())
-            rows = list(reader)
+            for encoding in encodings_to_try:
+                try:
+                    text_content = file_content.decode(encoding)
+                    used_encoding = encoding
+                    break
+                except UnicodeDecodeError:
+                    continue
             
-            if not rows:
-                raise ValueError("Empty CSV file")
+            if text_content is None:
+                raise ValueError(f"Could not decode CSV file with any of the tried encodings: {encodings_to_try}")
+                
+            print(f"Successfully decoded CSV using {used_encoding} encoding")
             
-            # Extract headers and data
-            headers = rows[0]
-            data_rows = rows[1:]
+            # Parse CSV with standard method first
+            try:
+                reader = csv.reader(text_content.splitlines())
+                rows = list(reader)
+                
+                if not rows:
+                    raise ValueError("Empty CSV file")
+                    
+                # Quick validation - check if we got reasonable parsing
+                if not self._is_valid_csv_parse(rows):
+                    raise ValueError("Standard CSV parsing produced poor results, trying fallback")
+                    
+            except (csv.Error, ValueError) as e:
+                self.logger.warning(f"Standard CSV parsing failed: {e}, trying robust fallback")
+                # Fallback to robust parsing with delimiter detection
+                rows = self._parse_csv_with_robust_fallback(text_content)
+            
+            # Find actual table start with robust detection
+            table_start_row, headers = self._find_table_start_csv(rows)
+            data_rows = rows[table_start_row + 1:]
+            
+            # Clean data rows
+            data_rows = self._clean_data_rows_csv(data_rows, len(headers))
             
             # Clean headers
             clean_headers = [str(header).strip() if header else f"Column_{i+1}" 
@@ -128,18 +162,29 @@ class S3TableParser:
                         raise ValueError(f"Sheet '{sheet_name}' not found. Available sheets: {workbook.sheetnames}")
                     worksheet = workbook[sheet_name]
                 else:
-                    worksheet = workbook.active
-                    sheet_name = worksheet.title
+                    # Default behavior: try "Results" sheet first, then fall back to first sheet
+                    if "Results" in workbook.sheetnames:
+                        worksheet = workbook["Results"]
+                        sheet_name = "Results"
+                        print(f"Using 'Results' sheet by default")
+                    else:
+                        # Use first sheet (workbook.active might not be the first sheet)
+                        worksheet = workbook[workbook.sheetnames[0]]
+                        sheet_name = workbook.sheetnames[0]
+                        print(f"No 'Results' sheet found, using first sheet: '{sheet_name}'")
                 
-                # Read data
+                # Read data with robust table detection
                 all_rows = list(worksheet.iter_rows(values_only=True))
                 
                 if not all_rows:
                     raise ValueError("Empty Excel worksheet")
                 
-                # Extract headers and data
-                headers = all_rows[0]
-                data_rows = all_rows[1:]
+                # Find actual table start (skip empty rows and detect headers)
+                table_start_row, headers = self._find_table_start(all_rows)
+                data_rows = all_rows[table_start_row + 1:]
+                
+                # Clean data rows (remove empty trailing rows and trim columns)
+                data_rows = self._clean_data_rows(data_rows, len(headers))
                 
                 # Clean headers
                 clean_headers = [str(header).strip() if header is not None else f"Column_{i+1}" 
@@ -301,6 +346,313 @@ class S3TableParser:
             'domain_scores': domain_scores,
             'confidence': confidence
         }
+    
+    def _find_table_start(self, all_rows):
+        """Find the actual start of the table data by detecting headers intelligently."""
+        for row_idx, row in enumerate(all_rows):
+            # Skip completely empty rows
+            if not any(cell is not None and str(cell).strip() for cell in row):
+                continue
+            
+            # Look for a row that seems like headers (has multiple non-empty values)
+            non_empty_count = sum(1 for cell in row if cell is not None and str(cell).strip())
+            
+            # Consider this a header row if it has at least 2 non-empty cells
+            # and the next few rows seem to contain data
+            if non_empty_count >= 2:
+                # Check if this looks like a data table start
+                if self._looks_like_header_row(row, all_rows, row_idx):
+                    # Trim trailing empty columns from headers
+                    headers = self._trim_trailing_empty(row)
+                    return row_idx, headers
+        
+        # Fallback: use first non-empty row as headers
+        for row_idx, row in enumerate(all_rows):
+            if any(cell is not None and str(cell).strip() for cell in row):
+                headers = self._trim_trailing_empty(row)
+                return row_idx, headers
+        
+        # Ultimate fallback
+        return 0, all_rows[0] if all_rows else []
+    
+    def _looks_like_header_row(self, current_row, all_rows, row_idx):
+        """Determine if this row looks like a header by examining following rows."""
+        # If this is the last row, it's probably not a header
+        if row_idx >= len(all_rows) - 1:
+            return False
+        
+        # Check if there are data rows after this potential header
+        data_rows_found = 0
+        for check_idx in range(row_idx + 1, min(row_idx + 4, len(all_rows))):
+            check_row = all_rows[check_idx]
+            if any(cell is not None and str(cell).strip() for cell in check_row):
+                data_rows_found += 1
+        
+        # Consider it a header if there's at least one data row following
+        return data_rows_found > 0
+    
+    def _trim_trailing_empty(self, row):
+        """Remove trailing empty cells from a row."""
+        # Find the last non-empty cell
+        last_content_idx = -1
+        for i, cell in enumerate(row):
+            if cell is not None and str(cell).strip():
+                last_content_idx = i
+        
+        # Return row up to the last content
+        if last_content_idx >= 0:
+            return row[:last_content_idx + 1]
+        else:
+            return row[:1] if row else []  # Keep at least one column
+    
+    def _clean_data_rows(self, data_rows, header_count):
+        """Clean data rows by removing empty trailing rows and trimming to header count."""
+        cleaned_rows = []
+        
+        for row in data_rows:
+            # Skip completely empty rows
+            if not any(cell is not None and str(cell).strip() for cell in row):
+                continue
+            
+            # Trim row to match header count (or pad if shorter)
+            if len(row) < header_count:
+                # Pad with empty strings
+                cleaned_row = list(row) + [''] * (header_count - len(row))
+            else:
+                # Trim to header count
+                cleaned_row = row[:header_count]
+            
+            cleaned_rows.append(cleaned_row)
+        
+        return cleaned_rows
+    
+    def _find_table_start_csv(self, rows):
+        """Find table start for CSV files (similar logic but handles string data)."""
+        for row_idx, row in enumerate(rows):
+            # Skip completely empty rows
+            if not any(str(cell).strip() for cell in row):
+                continue
+            
+            # Look for a row that seems like headers
+            non_empty_count = sum(1 for cell in row if str(cell).strip())
+            
+            # Consider this a header row if it has at least 2 non-empty cells
+            if non_empty_count >= 2:
+                # Check if this looks like a data table start
+                if self._looks_like_header_row_csv(row, rows, row_idx):
+                    # Trim trailing empty columns from headers
+                    headers = self._trim_trailing_empty_csv(row)
+                    return row_idx, headers
+        
+        # Fallback: use first non-empty row as headers
+        for row_idx, row in enumerate(rows):
+            if any(str(cell).strip() for cell in row):
+                headers = self._trim_trailing_empty_csv(row)
+                return row_idx, headers
+        
+        # Ultimate fallback
+        return 0, rows[0] if rows else []
+    
+    def _looks_like_header_row_csv(self, current_row, rows, row_idx):
+        """CSV version of header detection."""
+        if row_idx >= len(rows) - 1:
+            return False
+        
+        # Check if there are data rows after this potential header
+        data_rows_found = 0
+        for check_idx in range(row_idx + 1, min(row_idx + 4, len(rows))):
+            check_row = rows[check_idx]
+            if any(str(cell).strip() for cell in check_row):
+                data_rows_found += 1
+        
+        return data_rows_found > 0
+    
+    def _trim_trailing_empty_csv(self, row):
+        """CSV version of trailing empty cell removal."""
+        last_content_idx = -1
+        for i, cell in enumerate(row):
+            if str(cell).strip():
+                last_content_idx = i
+        
+        if last_content_idx >= 0:
+            return row[:last_content_idx + 1]
+        else:
+            return row[:1] if row else []
+    
+    def _clean_data_rows_csv(self, data_rows, header_count):
+        """CSV version of data row cleaning."""
+        cleaned_rows = []
+        
+        for row in data_rows:
+            # Skip completely empty rows
+            if not any(str(cell).strip() for cell in row):
+                continue
+            
+            # Trim or pad to match header count
+            if len(row) < header_count:
+                cleaned_row = list(row) + [''] * (header_count - len(row))
+            else:
+                cleaned_row = row[:header_count]
+            
+            cleaned_rows.append(cleaned_row)
+        
+        return cleaned_rows
+    
+    def _is_valid_csv_parse(self, rows):
+        """Check if CSV parsing produced reasonable results."""
+        if not rows or len(rows) < 2:
+            return False
+        
+        # Check if first few rows have similar column counts
+        header_count = len(rows[0])
+        if header_count < 2:  # Need at least 2 columns to be useful
+            return False
+        
+        # Check first few data rows
+        consistent_rows = 0
+        for i in range(1, min(4, len(rows))):
+            row_count = len(rows[i])
+            # Allow some flexibility (within 1-2 columns)
+            if abs(row_count - header_count) <= 2:
+                consistent_rows += 1
+        
+        # If most rows have similar column counts, parsing is probably good
+        return consistent_rows >= min(2, len(rows) - 1)
+    
+    def _parse_csv_with_robust_fallback(self, text_content):
+        """Robust CSV parsing with delimiter detection for non-standard files."""
+        lines = text_content.splitlines()
+        if not lines:
+            return []
+        
+        # Try to detect delimiter
+        delimiter = self._detect_delimiter(text_content)
+        self.logger.info(f"Detected delimiter: '{delimiter}'")
+        
+        # Parse with detected delimiter
+        try:
+            if delimiter:
+                reader = csv.reader(lines, delimiter=delimiter)
+                rows = list(reader)
+                
+                # Validate this parsing
+                if self._is_valid_csv_parse(rows):
+                    return rows
+        except csv.Error as e:
+            self.logger.warning(f"Failed with detected delimiter '{delimiter}': {e}")
+        
+        # Fallback to manual splitting if CSV reader fails
+        return self._manual_csv_parse(lines)
+    
+    def _detect_delimiter(self, text_content):
+        """Detect the most likely delimiter in the CSV file."""
+        # Common delimiters to try (in order of preference)
+        delimiters = [',', ';', '\t', '|', ':', ' ']
+        
+        # Sample first few lines for analysis
+        sample_lines = text_content.splitlines()[:10]
+        sample_text = '\n'.join(sample_lines)
+        
+        best_delimiter = None
+        best_score = 0
+        
+        for delimiter in delimiters:
+            try:
+                # Use csv.Sniffer to help detect
+                sniffer = csv.Sniffer()
+                if sniffer.sniff(sample_text, delimiters=delimiter):
+                    # Count occurrences and consistency
+                    score = self._score_delimiter(sample_lines, delimiter)
+                    if score > best_score:
+                        best_score = score
+                        best_delimiter = delimiter
+            except csv.Error:
+                # If sniffer fails, try manual scoring
+                score = self._score_delimiter(sample_lines, delimiter)
+                if score > best_score:
+                    best_score = score
+                    best_delimiter = delimiter
+        
+        return best_delimiter or ','  # Default to comma
+    
+    def _score_delimiter(self, lines, delimiter):
+        """Score how well a delimiter works for parsing."""
+        if not lines:
+            return 0
+        
+        # Count delimiter occurrences per line
+        counts = []
+        for line in lines[:5]:  # Check first 5 lines
+            if line.strip():  # Skip empty lines
+                count = line.count(delimiter)
+                if count > 0:  # Only count lines that have the delimiter
+                    counts.append(count)
+        
+        if len(counts) < 2:
+            return 0
+        
+        # Score based on consistency of delimiter count
+        avg_count = sum(counts) / len(counts)
+        variance = sum((count - avg_count) ** 2 for count in counts) / len(counts)
+        
+        # Good delimiters should have:
+        # 1. At least 1 occurrence per line on average
+        # 2. Low variance (consistent across lines)
+        if avg_count >= 1:
+            consistency_score = max(0, 10 - variance)  # Lower variance = higher score
+            frequency_score = min(avg_count, 10)  # Cap at 10 to prevent over-weighting
+            return consistency_score + frequency_score
+        
+        return 0
+    
+    def _manual_csv_parse(self, lines):
+        """Manual CSV parsing for really problematic files."""
+        rows = []
+        
+        # Try common delimiters in order
+        test_delimiters = [',', ';', '\t', '|', ':', ' ']
+        
+        for delimiter in test_delimiters:
+            test_rows = []
+            for line in lines[:5]:  # Test first 5 lines
+                if line.strip():
+                    parts = [part.strip().strip('"\'') for part in line.split(delimiter)]
+                    if len(parts) > 1:  # Must split into multiple parts
+                        test_rows.append(parts)
+            
+            # If we got reasonable results, use this delimiter for all lines
+            if len(test_rows) >= 2 and self._check_manual_parse_consistency(test_rows):
+                self.logger.info(f"Using manual parsing with delimiter: '{delimiter}'")
+                # Parse all lines with this delimiter
+                for line in lines:
+                    if line.strip():
+                        parts = [part.strip().strip('"\'') for part in line.split(delimiter)]
+                        rows.append(parts)
+                return rows
+        
+        # Ultimate fallback: split by whitespace
+        self.logger.warning("Using whitespace splitting as ultimate fallback")
+        for line in lines:
+            if line.strip():
+                # Split by any whitespace and filter empty parts
+                parts = [part for part in line.split() if part]
+                if parts:
+                    rows.append(parts)
+        
+        return rows
+    
+    def _check_manual_parse_consistency(self, rows):
+        """Check if manually parsed rows have consistent structure."""
+        if len(rows) < 2:
+            return False
+        
+        # Check if column counts are reasonably consistent
+        col_counts = [len(row) for row in rows]
+        avg_cols = sum(col_counts) / len(col_counts)
+        
+        # Allow some variance but not too much
+        consistent_count = sum(1 for count in col_counts if abs(count - avg_cols) <= 1)
+        return consistent_count >= len(rows) * 0.7  # 70% of rows should be consistent
 
 # Global instance for easy imports
 s3_table_parser = S3TableParser()

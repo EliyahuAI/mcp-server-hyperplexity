@@ -14,14 +14,15 @@ import asyncio
 import sys
 from pathlib import Path
 
-from src.lambdas.interface.utils.helpers import create_response, create_email_folder_path
-from src.lambdas.interface.core.s3_manager import download_file_from_s3, upload_file_to_s3, s3_client, S3_RESULTS_BUCKET
-from src.shared.shared_table_parser import s3_table_parser
-from src.lambdas.interface.core.sqs_service import send_config_generation_request
-from src.lambdas.interface.utils.parsing import parse_multipart_form_data
-from src.shared.dynamodb_schemas import is_email_validated
-from src.lambdas.interface.config_generator_conversational import ConversationalConfigSystem
-from src.lambdas.interface.config_generator_step1 import TableAnalyzer
+from interface_lambda.utils.helpers import create_response, create_email_folder_path
+from interface_lambda.core.s3_manager import download_file_from_s3, upload_file_to_s3, s3_client, S3_RESULTS_BUCKET
+from shared_table_parser import s3_table_parser
+from interface_lambda.core.sqs_service import send_config_generation_request
+from interface_lambda.utils.parsing import parse_multipart_form_data
+from dynamodb_schemas import is_email_validated
+# Commented out problematic imports that cause ImportModuleError - fallback logic exists in functions
+# from interface_lambda.config_generator_conversational import ConversationalConfigSystem
+# from interface_lambda.config_generator_step1 import TableAnalyzer
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -123,7 +124,7 @@ async def handle_generate_config(event_data, websocket_callback=None):
         
         logger.info("Sending config generation request to SQS for async processing...")
         try:
-            from src.lambdas.interface.core.sqs_service import send_config_generation_request
+            from interface_lambda.core.sqs_service import send_config_generation_request
             
             # Create email folder for organization
             def create_email_folder_path(email):
@@ -196,8 +197,8 @@ async def handle_generate_config(event_data, websocket_callback=None):
 
 def handle_multipart_form(event, context):
     """Handles multipart/form-data requests for config generation."""
-    from src.lambdas.interface.utils.parsing import parse_multipart_form_data
-    from src.lambdas.interface.utils.helpers import create_response
+    from interface_lambda.utils.parsing import parse_multipart_form_data
+    from interface_lambda.utils.helpers import create_response
     
     headers = event.get('headers', {})
     content_type = headers.get('Content-Type') or headers.get('content-type', '')
@@ -229,7 +230,7 @@ def handle_multipart_form(event, context):
 
 def handle_json_request(event, context):
     """Handles application/json requests for config generation."""
-    from src.lambdas.interface.utils.helpers import create_response
+    from interface_lambda.utils.helpers import create_response
     
     body = event.get('body', '{}')
     if event.get('isBase64Encoded'):
@@ -257,11 +258,11 @@ def handle_json_request(event, context):
 def _process_config_generation(excel_file, email_address, existing_config, 
                               instructions, context):
     """Shared logic to process config generation request synchronously."""
-    from src.lambdas.interface.utils.helpers import create_response, create_email_folder_path
-    from src.lambdas.interface.core.s3_manager import upload_file_to_s3
+    from interface_lambda.utils.helpers import create_response, create_email_folder_path
+    from interface_lambda.core.s3_manager import upload_file_to_s3
     
     try:
-        from src.shared.dynamodb_schemas import is_email_validated
+        from dynamodb_schemas import is_email_validated
     except ImportError:
         def is_email_validated(email): return True
 
@@ -311,7 +312,7 @@ def _process_config_generation(excel_file, email_address, existing_config,
 
 def handle_interview_responses(request_data, context):
     """Handle interview response submission."""
-    from src.lambdas.interface.utils.helpers import create_response
+    from interface_lambda.utils.helpers import create_response
     
     try:
         logger.info("Handling interview responses submission")
@@ -326,15 +327,15 @@ def handle_interview_responses(request_data, context):
         if not responses:
             return create_response(400, {'error': 'Missing responses'})
         
-        # Import the conversational system
+        # Import the pandas-free conversational system from ai_config_generator fallback
         try:
-            from src.lambdas.interface.config_generator_conversational import ConversationalConfigSystem
-        except ImportError:
-            # Fallback to ai_config_generator directory
             import sys
             import os
             sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'ai_config_generator'))
             from config_generator_conversational import ConversationalConfigSystem
+        except ImportError as e:
+            logger.error(f"Cannot import ConversationalConfigSystem: {e}")
+            return create_response(500, {'error': 'Config generation system not available'})
         
         # Process the interview responses
         logger.info(f"Processing interview {interview_id} with {len(responses)} responses")
@@ -371,7 +372,7 @@ def handle_interview_responses(request_data, context):
 
 def handle_config_modification(request_data, context):
     """Handle configuration modification requests."""
-    from src.lambdas.interface.utils.helpers import create_response
+    from interface_lambda.utils.helpers import create_response
     
     try:
         logger.info("Handling config modification request")
@@ -391,19 +392,18 @@ def handle_config_modification(request_data, context):
         if not modification_notes:
             return create_response(400, {'error': 'Missing modification_notes'})
         
-        # Import the conversational system
+        # Import the pandas-free lightweight table analyzer from Interface Lambda
         try:
-            from src.lambdas.interface.config_generator_conversational import ConversationalConfigSystem
-        except ImportError:
-            # Fallback to ai_config_generator directory
+            from interface_lambda.config_generator_step1_lightweight import LightweightTableAnalyzer as TableAnalyzer
+            
+            # For conversational system, try fallback path to ai_config_generator
             import sys
             import os
             sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'ai_config_generator'))
             from config_generator_conversational import ConversationalConfigSystem
-        try:
-            from src.lambdas.interface.config_generator_step1 import TableAnalyzer
-        except ImportError:
-            from config_generator_step1 import TableAnalyzer
+        except ImportError as e:
+            logger.error(f"Cannot import config generation modules: {e}")
+            return create_response(500, {'error': 'Config generation system not available'})
         
         logger.info(f"Processing config modification for session {session_id}")
         logger.info(f"Modification notes: {modification_notes}")

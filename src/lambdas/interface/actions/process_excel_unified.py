@@ -14,16 +14,16 @@ import math
 import io
 from pathlib import Path
 
-from src.lambdas.interface.utils.parsing import parse_multipart_form_data
-from src.lambdas.interface.utils.helpers import create_response
-from src.lambdas.interface.core.unified_s3_manager import UnifiedS3Manager
-from src.shared.dynamodb_schemas import is_email_validated, track_validation_call, create_run_record
-from src.lambdas.interface.core.sqs_service import send_preview_request, send_full_request
-from src.lambdas.interface.actions.find_matching_config import find_matching_configs
-from src.shared.shared_table_parser import s3_table_parser
-from src.lambdas.interface.core.validator_invoker import invoke_validator_lambda
-from src.lambdas.interface.reporting.markdown_report import create_markdown_table_from_results
-from src.lambdas.interface.core.email_sender import send_results_email
+from interface_lambda.utils.parsing import parse_multipart_form_data
+from interface_lambda.utils.helpers import create_response
+from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+from dynamodb_schemas import is_email_validated, track_validation_call, create_run_record
+from interface_lambda.core.sqs_service import send_preview_request, send_full_request
+from interface_lambda.actions.find_matching_config import find_matching_configs
+from shared_table_parser import s3_table_parser
+from interface_lambda.core.validator_invoker import invoke_validator_lambda
+from interface_lambda.reporting.markdown_report import create_markdown_table_from_results
+from email_sender import send_validation_results_email as send_results_email
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -486,7 +486,7 @@ def _process_validation_sync(storage_manager, email_address, session_id, excel_s
             
             # Email the results (since we have unified storage, email final config with results)
             try:
-                from ..core.email_sender import send_results_email
+                from email_sender import send_validation_results_email as send_results_email
                 send_results_email(email_address, session_id, result['s3_key'], validation_results.get('metadata', {}))
             except Exception as e:
                 logger.warning(f"Failed to send results email: {e}")

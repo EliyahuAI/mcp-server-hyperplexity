@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import datetime
 
-from src.lambdas.interface.handlers import background_handler
+from interface_lambda.handlers import background_handler
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

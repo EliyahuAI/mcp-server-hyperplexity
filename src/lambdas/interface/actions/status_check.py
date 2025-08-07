@@ -7,9 +7,9 @@ import boto3
 import os
 from pathlib import Path
 
-from src.lambdas.interface.utils.helpers import create_email_folder_path, create_response
-from src.shared.dynamodb_schemas import get_run_status
-from src.lambdas.interface.core.s3_manager import generate_presigned_url, S3_RESULTS_BUCKET
+from interface_lambda.utils.helpers import create_email_folder_path, create_response
+from dynamodb_schemas import get_run_status
+from interface_lambda.core.s3_manager import generate_presigned_url, S3_RESULTS_BUCKET
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

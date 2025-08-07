@@ -5,8 +5,8 @@ import logging
 import json
 from pathlib import Path
 
-from src.lambdas.interface.utils.helpers import create_response
-from src.shared.dynamodb_schemas import (
+from interface_lambda.utils.helpers import create_response
+from dynamodb_schemas import (
     create_email_validation_request, 
     validate_email_code,
     is_email_validated,

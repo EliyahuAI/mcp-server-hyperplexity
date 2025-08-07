@@ -8,8 +8,8 @@ import boto3
 import sys
 from pathlib import Path
 
-from src.lambdas.interface.utils.helpers import create_response
-from src.lambdas.interface.core.sqs_service import send_preview_request
+from interface_lambda.utils.helpers import create_response
+from interface_lambda.core.sqs_service import send_preview_request
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

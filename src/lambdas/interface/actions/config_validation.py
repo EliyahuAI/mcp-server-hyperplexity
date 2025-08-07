@@ -7,9 +7,9 @@ import sys
 import os
 from pathlib import Path
 
-from src.lambdas.interface.utils.helpers import create_response
-from src.shared.config_validator import load_and_validate_config
-from src.lambdas.interface.core.unified_s3_manager import UnifiedS3Manager
+from interface_lambda.utils.helpers import create_response
+from config_validator import load_and_validate_config
+from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

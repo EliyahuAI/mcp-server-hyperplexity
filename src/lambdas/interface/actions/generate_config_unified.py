@@ -15,17 +15,17 @@ import asyncio
 from botocore.exceptions import ClientError
 from pathlib import Path
 
-from src.lambdas.interface.core.unified_s3_manager import UnifiedS3Manager
-from src.lambdas.interface.utils.helpers import create_response
-from src.shared.shared_table_parser import s3_table_parser
-from src.lambdas.interface.core.sqs_service import send_config_generation_request
-from src.shared.dynamodb_schemas import update_run_status, get_connection_by_session, remove_websocket_connection
-from src.lambdas.interface.core.validator_invoker import invoke_validator_lambda
-from src.lambdas.interface.reporting.zip_report import create_enhanced_result_zip
-from src.lambdas.interface.reporting.markdown_report import create_markdown_table_from_results
-from src.lambdas.interface.reporting.excel_report_new import create_enhanced_excel_with_validation, EXCEL_ENHANCEMENT_AVAILABLE
-from src.shared.email_sender import send_validation_results_email
-from src.shared.dynamodb_schemas import update_processing_metrics, track_email_delivery, track_user_request, update_run_status
+from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+from interface_lambda.utils.helpers import create_response
+from shared_table_parser import s3_table_parser
+from interface_lambda.core.sqs_service import send_config_generation_request
+from dynamodb_schemas import update_run_status, get_connection_by_session, remove_websocket_connection
+from interface_lambda.core.validator_invoker import invoke_validator_lambda
+from interface_lambda.reporting.zip_report import create_enhanced_result_zip
+from interface_lambda.reporting.markdown_report import create_markdown_table_from_results
+from interface_lambda.reporting.excel_report_new import create_enhanced_excel_with_validation, EXCEL_ENHANCEMENT_AVAILABLE
+from email_sender import send_validation_results_email
+from dynamodb_schemas import update_processing_metrics, track_email_delivery, track_user_request, update_run_status
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

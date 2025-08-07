@@ -11,6 +11,7 @@ import hashlib
 import aiohttp
 import boto3
 import asyncio
+import random
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from perplexity_schema import get_response_format_schema
@@ -19,11 +20,25 @@ from perplexity_schema import get_response_format_schema
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Test logging to verify module is loaded
+logger.info("AI_API_CLIENT: Module loaded successfully")
+
 class AIAPIClient:
     """Shared AI API client with caching and schema support."""
     
     def __init__(self, s3_bucket: str = None):
-        self.s3_bucket = s3_bucket or os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
+        # Check if using unified bucket structure
+        self.unified_bucket = os.environ.get('S3_UNIFIED_BUCKET')
+        if self.unified_bucket:
+            self.s3_bucket = self.unified_bucket
+            self.use_unified_structure = True
+            logger.info(f"AI_API_CLIENT: Using unified S3 bucket: {self.unified_bucket}")
+        else:
+            # Legacy fallback
+            self.s3_bucket = s3_bucket or os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
+            self.use_unified_structure = False
+            logger.info(f"AI_API_CLIENT: Using legacy S3 bucket: {self.s3_bucket}")
+        
         self.s3_client = boto3.client('s3')
         self.anthropic_api_key = self._get_anthropic_api_key()
         self.perplexity_api_key = self._get_perplexity_api_key()
@@ -113,6 +128,26 @@ class AIAPIClient:
         cache_input = f"{prompt}:{model}:{schema_str}:{context}"
         return hashlib.md5(cache_input.encode()).hexdigest()
     
+    def _get_validation_cache_key(self, row_data: Dict, targets: List, model: str, search_context_size: str = "low", config_hash: str = "") -> str:
+        """
+        Generate a cache key based on core validation data, ignoring validation history.
+        This allows cache hits between preview and full validation of the same rows.
+        """
+        # Create a normalized representation of the validation request
+        cache_components = {
+            'row_data': {k: str(v) for k, v in row_data.items()},  # Normalize row data
+            'targets': [{'column': t.column if hasattr(t, 'column') else str(t), 
+                        'importance': t.importance if hasattr(t, 'importance') else '',
+                        'format': t.format if hasattr(t, 'format') else ''} for t in targets],
+            'model': model,
+            'search_context_size': search_context_size,
+            'config_hash': config_hash
+        }
+        
+        # Create deterministic JSON string and hash it
+        cache_input = json.dumps(cache_components, sort_keys=True)
+        return hashlib.md5(cache_input.encode()).hexdigest()
+    
     def _extract_token_usage(self, response: Dict, model: str, search_context_size: str = None) -> Dict:
         """Extract token usage information from API response, handling both Perplexity and Anthropic formats."""
         if 'usage' not in response:
@@ -163,19 +198,61 @@ class AIAPIClient:
                 'search_context_size': search_context_size
             }
     
+    def _get_cache_s3_key(self, cache_key: str, api_provider: str) -> str:
+        """Generate S3 key for cache based on structure type."""
+        if self.use_unified_structure:
+            # New unified structure: cache/{service}/{hash}/response.json
+            service = 'claude' if api_provider == 'anthropic' else 'perplexity'
+            return f"cache/{service}/{cache_key}/response.json"
+        else:
+            # Legacy structure: {service}_cache/{hash}.json
+            cache_prefix = 'claude_cache' if api_provider == 'anthropic' else 'validation_cache'
+            return f"{cache_prefix}/{cache_key}.json"
+
     async def _check_cache(self, cache_key: str, api_provider: str = 'claude') -> Optional[Dict]:
         """Check if response is cached."""
+        cache_check_start = datetime.now()
         try:
-            cache_prefix = 'claude_cache' if api_provider == 'anthropic' else 'validation_cache'
+            s3_key = self._get_cache_s3_key(cache_key, api_provider)
+            
+            logger.info(f"CACHE_CHECK: Checking S3 cache for key: {cache_key[:8]}... in bucket: {self.s3_bucket}, path: {s3_key}")
+            
             cache_response = self.s3_client.get_object(
                 Bucket=self.s3_bucket,
-                Key=f"{cache_prefix}/{cache_key}.json"
+                Key=s3_key
             )
+            
             cached_data = json.loads(cache_response['Body'].read())
-            logger.info(f"Cache hit for key: {cache_key[:8]}...")
+            cache_check_time = (datetime.now() - cache_check_start).total_seconds()
+            
+            # Log detailed cache hit information
+            cached_at = cached_data.get('cached_at', 'Unknown')
+            cached_model = cached_data.get('model', 'Unknown')
+            cache_age_hours = "Unknown"
+            
+            try:
+                if cached_at != 'Unknown':
+                    cached_time = datetime.fromisoformat(cached_at.replace('Z', '+00:00'))
+                    cache_age = datetime.now(timezone.utc) - cached_time
+                    cache_age_hours = cache_age.total_seconds() / 3600
+            except:
+                pass
+            
+            logger.info(f"CACHE_HIT: Found cached response for key: {cache_key[:8]}... "
+                       f"(cached {cache_age_hours:.1f}h ago, model: {cached_model}, "
+                       f"check_time: {cache_check_time:.3f}s)")
+            
             return cached_data
+            
+        except self.s3_client.exceptions.NoSuchKey:
+            cache_check_time = (datetime.now() - cache_check_start).total_seconds()
+            logger.info(f"CACHE_MISS: No cached response found for key: {cache_key[:8]}... "
+                       f"(check_time: {cache_check_time:.3f}s)")
+            return None
         except Exception as e:
-            logger.info(f"Cache miss for key: {cache_key[:8]}...")
+            cache_check_time = (datetime.now() - cache_check_start).total_seconds()
+            logger.error(f"CACHE_ERROR: Failed to check cache for key: {cache_key[:8]}... "
+                        f"Error: {str(e)}, check_time: {cache_check_time:.3f}s")
             return None
     
     async def _save_to_cache(self, cache_key: str, response: Dict, token_usage: Dict, processing_time: float, model: str, api_provider: str = 'anthropic'):
@@ -189,10 +266,10 @@ class AIAPIClient:
                 'processing_time': processing_time
             }
             
-            cache_prefix = 'claude_cache' if api_provider == 'anthropic' else 'validation_cache'
+            s3_key = self._get_cache_s3_key(cache_key, api_provider)
             self.s3_client.put_object(
                 Bucket=self.s3_bucket,
-                Key=f"{cache_prefix}/{cache_key}.json",
+                Key=s3_key,
                 Body=json.dumps(cache_entry),
                 ContentType='application/json'
             )
@@ -217,19 +294,38 @@ class AIAPIClient:
         Returns:
             Dict containing the structured response and metadata
         """
+        call_start_time = datetime.now()
         normalized_model = self._normalize_anthropic_model(model)
+        
+        logger.info(f"STRUCTURED_API_CALL: Starting call to {normalized_model}, "
+                   f"use_cache: {use_cache}, context: '{context[:50]}...', "
+                   f"prompt_length: {len(prompt)}, schema_keys: {list(schema.keys()) if schema else 'None'}")
+        
         cache_key = self._get_cache_key(prompt, normalized_model, schema, context) if use_cache else None
+        
+        if cache_key:
+            logger.info(f"STRUCTURED_API_CACHE_KEY: Generated cache key: {cache_key[:16]}... "
+                       f"(full key hash: {cache_key})")
         
         # Check cache first
         if use_cache and cache_key:
+            cache_check_start = datetime.now()
             cached_data = await self._check_cache(cache_key, 'anthropic')
+            cache_check_time = (datetime.now() - cache_check_start).total_seconds()
+            
             if cached_data:
+                total_time = (datetime.now() - call_start_time).total_seconds()
+                logger.info(f"STRUCTURED_API_CACHED: Returning cached response "
+                           f"(cache_check: {cache_check_time:.3f}s, total: {total_time:.3f}s)")
                 return {
                     'response': cached_data['api_response'],
                     'token_usage': cached_data.get('token_usage', {}),
                     'processing_time': cached_data.get('processing_time', 0),
                     'is_cached': True
                 }
+            else:
+                logger.info(f"STRUCTURED_API_NO_CACHE: Cache miss, proceeding with API call "
+                           f"(cache_check: {cache_check_time:.3f}s)")
         
         # Make API call with fallback strategy
         headers = {
@@ -252,76 +348,11 @@ class AIAPIClient:
             "tool_choice": {"type": "tool", "name": tool_name}
         }
         
-        # EXTENSIVE DEBUG LOGGING - LOG THE COMPLETE REQUEST
-        logger.info("=== CLAUDE API REQUEST DEBUG ===")
-        logger.info(f"Model: {normalized_model}")
-        logger.info(f"Tool name: {tool_name}")
-        logger.info(f"Prompt length: {len(prompt)} characters")
-        logger.info(f"Schema keys: {list(schema.keys()) if schema else 'None'}")
-        
-        # Log the complete schema being sent
-        schema_json = json.dumps(schema, indent=2)
-        logger.info(f"Complete input_schema being sent to Claude:")
-        logger.info(f"Schema length: {len(schema_json)} characters")
-        logger.info(schema_json)
-        
-        # Check for problematic patterns in the actual schema being sent
-        problematic_patterns = ['minItems', 'minLength', 'minimum', 'maximum', '$schema']
-        found_patterns = [pattern for pattern in problematic_patterns if pattern in schema_json]
-        if found_patterns:
-            logger.error(f"PROBLEMATIC SCHEMA PATTERNS FOUND: {found_patterns}")
-        else:
-            logger.info("Schema appears clean (no problematic patterns)")
-        
-        # Log the complete request structure (without API key)
-        debug_data = data.copy()
-        debug_headers = headers.copy()
-        debug_headers['X-API-Key'] = '***REDACTED***'
-        logger.info(f"Complete request headers: {json.dumps(debug_headers, indent=2)}")
-        logger.info(f"Complete request data: {json.dumps(debug_data, indent=2)}")
-        logger.info("=== END CLAUDE API REQUEST DEBUG ===")
         
         start_time = datetime.now()
         
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post("https://api.anthropic.com/v1/messages", 
-                                       headers=headers, json=data) as response:
-                    processing_time = (datetime.now() - start_time).total_seconds()
-                    
-                    if response.status == 200:
-                        response_json = await response.json()
-                        token_usage = self._extract_token_usage(response_json, normalized_model)
-                        
-                        # Log token usage
-                        logger.info(f"Claude API Token Usage - Input: {token_usage['input_tokens']}, "
-                                   f"Output: {token_usage['output_tokens']}, "
-                                   f"Cache Creation: {token_usage['cache_creation_tokens']}, "
-                                   f"Cache Read: {token_usage['cache_read_tokens']}, "
-                                   f"Total: {token_usage['total_tokens']}")
-                        
-                        # Cache the response
-                        if use_cache and cache_key:
-                            await self._save_to_cache(cache_key, response_json, token_usage, processing_time, normalized_model, 'anthropic')
-                        
-                        return {
-                            'response': response_json,
-                            'token_usage': token_usage,
-                            'processing_time': processing_time,
-                            'is_cached': False
-                        }
-                    else:
-                        error_text = await response.text()
-                        if response.status == 429:
-                            raise Exception(f"Claude API rate limit exceeded (429): {error_text}")
-                        elif response.status == 499:
-                            raise Exception(f"Claude API client disconnected (499): {error_text}")
-                        else:
-                            raise Exception(f"Claude API returned status {response.status}: {error_text}")
-                        
-        except Exception as e:
-            logger.error(f"Error calling Claude API: {str(e)}")
-            raise
+        return await self._make_claude_api_call_with_retry("https://api.anthropic.com/v1/messages", headers, data, 
+                                                         normalized_model, use_cache, cache_key, start_time)
     
     async def call_text_api(self, prompt: str, model: str = "claude-3-5-sonnet-20241022", 
                            use_cache: bool = True, context: str = "") -> Dict:
@@ -367,45 +398,39 @@ class AIAPIClient:
         
         start_time = datetime.now()
         
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post("https://api.anthropic.com/v1/messages", 
-                                       headers=headers, json=data) as response:
-                    processing_time = (datetime.now() - start_time).total_seconds()
-                    
-                    if response.status == 200:
-                        response_json = await response.json()
-                        token_usage = self._extract_token_usage(response_json, normalized_model)
-                        
-                        # Log token usage
-                        logger.info(f"Claude API Token Usage - Input: {token_usage['input_tokens']}, "
-                                   f"Output: {token_usage['output_tokens']}, "
-                                   f"Cache Creation: {token_usage['cache_creation_tokens']}, "
-                                   f"Cache Read: {token_usage['cache_read_tokens']}, "
-                                   f"Total: {token_usage['total_tokens']}")
-                        
-                        # Cache the response
-                        if use_cache and cache_key:
-                            await self._save_to_cache(cache_key, response_json, token_usage, processing_time, normalized_model, 'anthropic')
-                        
-                        return {
-                            'response': response_json,
-                            'token_usage': token_usage,
-                            'processing_time': processing_time,
-                            'is_cached': False
-                        }
-                    else:
-                        error_text = await response.text()
-                        if response.status == 429:
-                            raise Exception(f"Claude API rate limit exceeded (429): {error_text}")
-                        elif response.status == 499:
-                            raise Exception(f"Claude API client disconnected (499): {error_text}")
-                        else:
-                            raise Exception(f"Claude API returned status {response.status}: {error_text}")
-                        
-        except Exception as e:
-            logger.error(f"Error calling Claude API: {str(e)}")
-            raise
+        return await self._make_claude_api_call_with_retry("https://api.anthropic.com/v1/messages", headers, data, 
+                                                         normalized_model, use_cache, cache_key, start_time)
+    
+    async def validate_with_perplexity_smart_cache(self, prompt: str, row_data: Dict, targets: List,
+                                                 model: str = "sonar-pro", search_context_size: str = "low", 
+                                                 use_cache: bool = True, config_hash: str = "") -> Dict:
+        """
+        Validate with Perplexity using smart caching that ignores validation history.
+        This allows cache hits between preview and full validation runs.
+        """
+        cache_key = self._get_validation_cache_key(row_data, targets, model, search_context_size, config_hash) if use_cache else None
+        
+        # Check cache first
+        if use_cache and cache_key:
+            cached_data = await self._check_cache(cache_key, 'perplexity')
+            if cached_data:
+                logger.info(f"Smart cache hit for validation key: {cache_key[:8]}... (row: {list(row_data.keys())[:2]})")
+                return {
+                    'response': cached_data['api_response'],
+                    'token_usage': cached_data.get('token_usage', {}),
+                    'processing_time': cached_data.get('processing_time', 0),
+                    'is_cached': True
+                }
+        
+        # Make API call using the standard method
+        result = await self.validate_with_perplexity(prompt, model, search_context_size, use_cache=False, context="")
+        
+        # Cache using the smart key instead of prompt-based key
+        if use_cache and cache_key and not result.get('is_cached'):
+            await self._save_to_cache(cache_key, result['response'], result['token_usage'], result['processing_time'], model, 'perplexity')
+            logger.info(f"Smart cached validation key: {cache_key[:8]}... (row: {list(row_data.keys())[:2]})")
+        
+        return result
     
     async def validate_with_perplexity(self, prompt: str, model: str = "sonar-pro", 
                                      search_context_size: str = "low", use_cache: bool = True, 
@@ -541,6 +566,74 @@ class AIAPIClient:
         except Exception as e:
             logger.error(f"Failed to extract text response: {str(e)}")
             raise
+
+    async def _make_claude_api_call_with_retry(self, url: str, headers: Dict, data: Dict, 
+                                             normalized_model: str, use_cache: bool, 
+                                             cache_key: str, start_time: datetime) -> Dict:
+        """Make Claude API call with retry logic for 529 overload errors."""
+        max_retries = 3
+        base_delay = 2.0
+        
+        for attempt in range(max_retries + 1):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, headers=headers, json=data) as response:
+                        processing_time = (datetime.now() - start_time).total_seconds()
+                        
+                        if response.status == 200:
+                            response_json = await response.json()
+                            token_usage = self._extract_token_usage(response_json, normalized_model)
+                            
+                            # Log token usage
+                            logger.info(f"Claude API Token Usage - Input: {token_usage['input_tokens']}, "
+                                       f"Output: {token_usage['output_tokens']}, "
+                                       f"Cache Creation: {token_usage['cache_creation_tokens']}, "
+                                       f"Cache Read: {token_usage['cache_read_tokens']}, "
+                                       f"Total: {token_usage['total_tokens']}")
+                            
+                            # Cache the response
+                            if use_cache and cache_key:
+                                await self._save_to_cache(cache_key, response_json, token_usage, processing_time, normalized_model, 'anthropic')
+                            
+                            if attempt > 0:
+                                logger.info(f"[SUCCESS] Claude API call succeeded on attempt {attempt + 1}")
+                            
+                            return {
+                                'response': response_json,
+                                'token_usage': token_usage,
+                                'processing_time': processing_time,
+                                'is_cached': False
+                            }
+                        elif response.status == 529:
+                            error_text = await response.text()
+                            if attempt < max_retries:
+                                delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                                logger.warning(f"[ERROR] Claude API overloaded (529) on attempt {attempt + 1}/{max_retries + 1}. "
+                                             f"Retrying in {delay:.1f}s. Error: {error_text}")
+                                await asyncio.sleep(delay)
+                                continue
+                            else:
+                                logger.error(f"[ERROR] Claude API overloaded (529) - max retries exceeded. Error: {error_text}")
+                                raise Exception(f"Claude API overloaded after {max_retries} retries (529): {error_text}")
+                        else:
+                            error_text = await response.text()
+                            if response.status == 429:
+                                raise Exception(f"Claude API rate limit exceeded (429): {error_text}")
+                            elif response.status == 499:
+                                raise Exception(f"Claude API client disconnected (499): {error_text}")
+                            else:
+                                raise Exception(f"Claude API returned status {response.status}: {error_text}")
+                        
+            except Exception as e:
+                if "overloaded after" in str(e) or "rate limit" in str(e) or "client disconnected" in str(e):
+                    raise
+                logger.error(f"Error calling Claude API on attempt {attempt + 1}: {str(e)}")
+                if attempt == max_retries:
+                    raise
+                
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                logger.warning(f"Retrying Claude API call in {delay:.1f}s...")
+                await asyncio.sleep(delay)
 
 # Global instance for easy import
 ai_client = AIAPIClient()

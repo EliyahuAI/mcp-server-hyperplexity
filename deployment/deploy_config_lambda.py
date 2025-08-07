@@ -95,6 +95,14 @@ def copy_source_files():
     # 2. Copy all shared files into the package root
     shutil.copytree(SHARED_SRC_DIR, PACKAGE_DIR, dirs_exist_ok=True)
     logger.info(f"Copied shared modules from {SHARED_SRC_DIR} to {PACKAGE_DIR}")
+    
+    # 3. Copy essential schema files from src root
+    schema_file = SRC_DIR / "column_config_schema.json"
+    if schema_file.exists():
+        shutil.copy(schema_file, PACKAGE_DIR / "column_config_schema.json")
+        logger.info(f"Copied {schema_file} to package root")
+    else:
+        logger.warning(f"Schema file not found: {schema_file}")
 
 def install_dependencies():
     """Install Python dependencies."""

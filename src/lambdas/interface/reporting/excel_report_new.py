@@ -15,8 +15,8 @@ try:
 except ImportError:
     EXCEL_ENHANCEMENT_AVAILABLE = False
 
-from src.shared.schema_validator_simplified import SimplifiedSchemaValidator
-from src.shared.row_key_utils import generate_row_key
+from schema_validator_simplified import SimplifiedSchemaValidator
+from row_key_utils import generate_row_key
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -167,7 +167,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         row_keys = []
         for row_data in rows_data:
             try:
-                from src.shared.row_key_utils import generate_row_key
+                from row_key_utils import generate_row_key
                 row_key = generate_row_key(row_data, id_fields)
             except ImportError:
                 # Fallback to simple join

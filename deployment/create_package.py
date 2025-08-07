@@ -191,6 +191,14 @@ def copy_source_files():
     # 2. Copy all shared files into the package root
     shutil.copytree(SHARED_SRC_DIR, PACKAGE_DIR, dirs_exist_ok=True)
     logger.info(f"Copied shared modules from {SHARED_SRC_DIR} to {PACKAGE_DIR}")
+    
+    # 3. Copy prompts.yml for validation lambda (needed by schema_validator_simplified.py)
+    prompts_file = PROJECT_DIR / "src" / "prompts.yml"
+    if prompts_file.exists():
+        shutil.copy(prompts_file, PACKAGE_DIR / "prompts.yml")
+        logger.info("Copied prompts.yml for validation lambda")
+    else:
+        logger.warning(f"prompts.yml not found at {prompts_file}")
 
 def create_zip():
     """Create deployment zip file."""

@@ -151,9 +151,14 @@ def copy_source_files():
     """Copy necessary source files for the interface Lambda, mimicking the original successful structure."""
     logger.info("Copying interface Lambda source files...")
 
-    # 1. Copy the main Lambda handler file, which now acts as a router
-    shutil.copy(LAMBDA_SRC_DIR / "handlers" / "http_handler.py", PACKAGE_DIR / "interface_lambda_function.py")
-    logger.info("Copied http_handler.py as the main interface_lambda_function.py")
+    # 1. Copy the main Lambda handler file from src root
+    main_handler_src = PROJECT_DIR / "src" / "interface_lambda_function.py"
+    if main_handler_src.exists():
+        shutil.copy(main_handler_src, PACKAGE_DIR / "interface_lambda_function.py")
+        logger.info("Copied interface_lambda_function.py as the main handler")
+    else:
+        logger.error(f"Main handler not found at {main_handler_src}")
+        raise FileNotFoundError(f"Main handler not found: {main_handler_src}")
 
     # 2. Copy the entire 'interface_lambda' package contents into a subdirectory within the package
     shutil.copytree(LAMBDA_SRC_DIR, PACKAGE_DIR / "interface_lambda", dirs_exist_ok=True)

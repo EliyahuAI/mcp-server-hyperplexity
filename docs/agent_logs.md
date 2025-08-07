@@ -2235,3 +2235,49 @@ if ',' in text_content and not excel_content.startswith(b'PK'):
 - **State management**: Properly handles transitions between partial and complete validation states
 - **UI consistency**: Maintains the same visual styling and behavior patterns
 - **Error handling**: Includes proper error handling for additional row processing
+
+# Agent Logs - Lambda 502 Error Resolution
+
+## Session Start: 2025-01-27
+
+### Issues to Resolve:
+1. **Primary**: Persistent 502 Bad Gateway on `/health` endpoint (Interface Lambda) ✅ **RESOLVED**
+   - Root cause: Runtime.ImportModuleError during Lambda initialization
+   - WebSocket Lambda was fixed with similar import path corrections
+   - Comprehensive import fixes applied but 502 persists
+
+2. **Secondary**: Missing Config Lambda prompts ✅ **RESOLVED**
+   - Need to move from `config_lambda/prompts/` to `src/lambdas/config/prompts/`
+
+### Resolution Summary:
+
+#### ✅ Interface Lambda 502 Error - FIXED
+- **Root Cause**: Multiple import issues causing Runtime.ImportModuleError during Lambda initialization
+- **Key Fixes Applied**:
+  1. Removed unused pandas imports from Interface Lambda files
+  2. Fixed deployment script to use correct main handler (`src/interface_lambda_function.py` instead of `http_handler.py`)
+  3. Commented out problematic top-level imports in `generate_config.py` and used pandas-free fallbacks
+  4. Fixed import paths in Config and Validation Lambdas from old `src.` structure
+  5. Removed unused `history_loader` import from Validation Lambda
+- **Result**: Health endpoint now returns 200 OK instead of 502
+
+#### ✅ Config Lambda Missing Files - FIXED  
+- **Issues Found**:
+  1. Missing prompts moved from `config_lambda/prompts/` to `src/lambdas/config/prompts/` ✅
+  2. Missing `ai_generation_schema.json` path in deployment script ✅
+  3. Duplicate `config_generator_step1.py` files cleaned up ✅
+- **Result**: All config lambda dependencies correctly deployed
+
+#### ✅ Validation Lambda Missing Files - FIXED
+- **Issues Found**:
+  1. Missing `prompts.yml` file for validation lambda ✅
+  2. Unused `history_loader` import causing ImportModuleError ✅
+- **Result**: Validation lambda properly deployed with all dependencies
+
+### Final Status: 
+**ALL LAMBDA DEPLOYMENT ISSUES RESOLVED** 🎉
+
+- Interface Lambda: ✅ 200 OK 
+- Config Lambda: ✅ Deployed with all files
+- Validation Lambda: ✅ Deployed with all files
+- WebSocket Lambda: ✅ Already working

@@ -14,7 +14,7 @@ from botocore.exceptions import ClientError
 import os
 from pathlib import Path
 
-from src.lambdas.interface.core.unified_s3_manager import UnifiedS3Manager
+from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 
 logger = logging.getLogger(__name__)
 sqs = boto3.client('sqs', region_name=os.environ.get("AWS_REGION", "us-east-1"))
