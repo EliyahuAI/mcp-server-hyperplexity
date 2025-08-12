@@ -5,7 +5,7 @@ Searches user's results folder for configs with validation targets that match up
 import logging
 import json
 import boto3
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 
@@ -54,12 +54,12 @@ def calculate_column_match_score(table_columns: List[str], config_columns: List[
     if not table_cols_lower or not config_cols_lower:
         return 0.0
     
-    logger.info(f"Comparing table columns: {table_cols_lower}")
-    logger.info(f"Against config columns: {config_cols_lower}")
+    logger.debug(f"Comparing table columns: {table_cols_lower}")
+    logger.debug(f"Against config columns: {config_cols_lower}")
     
     # Calculate exact matches
     exact_matches = len(set(table_cols_lower) & set(config_cols_lower))
-    logger.info(f"Exact matches: {exact_matches}")
+    logger.debug(f"Exact matches: {exact_matches}")
     
     # Calculate partial matches (substring matching)
     partial_matches = 0
@@ -71,13 +71,20 @@ def calculate_column_match_score(table_columns: List[str], config_columns: List[
                     logger.debug(f"Partial match: '{table_col}' <-> '{config_col}'")
                     break
     
-    logger.info(f"Partial matches: {partial_matches}")
+    logger.debug(f"Partial matches: {partial_matches}")
     
     total_score = exact_matches + partial_matches
     max_possible = max(len(table_cols_lower), len(config_cols_lower))
     
     final_score = min(total_score / max_possible, 1.0) if max_possible > 0 else 0.0
-    logger.info(f"Final match score: {final_score} (total: {total_score}, max_possible: {max_possible})")
+    
+    # Only log match results for high scores or when debugging
+    if final_score >= 1.0:
+        logger.info(f"PERFECT MATCH: {final_score} ({exact_matches}/{max_possible} columns)")
+    elif final_score >= 0.8:
+        logger.info(f"Strong match: {final_score} ({exact_matches} exact + {partial_matches} partial)")
+    else:
+        logger.debug(f"Low match score: {final_score} (total: {total_score}, max_possible: {max_possible})")
     
     return final_score
 
@@ -168,9 +175,18 @@ def search_user_configs(email: str, storage_manager: UnifiedS3Manager) -> List[D
                 key = obj['Key']
                 filename = key.split('/')[-1]
                 
-                # Look for config files (both versioned and legacy patterns)
-                if (filename.startswith('config_v') and filename.endswith('.json')) or \
-                   (filename.startswith('config_') and filename.endswith('.json')):
+                # Look for config files (multiple patterns)
+                # Patterns: config_v1.json, config_something.json, something_config_V01.json, something_config.json
+                is_config = False
+                if filename.endswith('.json'):
+                    if filename.startswith('config_') or filename.startswith('config_v'):
+                        is_config = True
+                    elif '_config_' in filename or '_config.' in filename:
+                        is_config = True
+                    elif filename.endswith('_config.json'):
+                        is_config = True
+                
+                if is_config:
                     
                     # Skip files in results subfolders (only get main session configs)
                     path_parts = key.split('/')
@@ -179,19 +195,33 @@ def search_user_configs(email: str, storage_manager: UnifiedS3Manager) -> List[D
                         
                         # Extract version number from filename
                         version = 1
-                        if filename.startswith('config_v'):
-                            try:
-                                # Handle formats like config_v1.json, config_v01.json, config_v1_source.json
-                                version_part = filename[8:].split('.')[0].split('_')[0]  # Extract just the version number
-                                # Handle both v1 and v01 formats
-                                version = int(version_part.lstrip('0') or '1')  # Remove leading zeros, default to 1 if all zeros
-                                logger.info(f"Parsed version {version} from filename {filename}")
-                            except (ValueError, IndexError):
-                                logger.warning(f"Could not parse version from {filename}, using version 1")
-                                version = 1
+                        import re
+                        
+                        # Try multiple patterns for version extraction
+                        # Patterns: config_v1.json, config_V01.json, something_config_V04.json
+                        version_patterns = [
+                            r'config_[vV](\d+)',  # config_v1 or config_V1
+                            r'_config_[vV](\d+)',  # something_config_V04
+                            r'_[vV](\d+)\.json$',  # anything_V04.json
+                            r'_v(\d+)_',  # _v1_ in middle
+                        ]
+                        
+                        for pattern in version_patterns:
+                            match = re.search(pattern, filename)
+                            if match:
+                                try:
+                                    version = int(match.group(1).lstrip('0') or '1')
+                                    logger.debug(f"Parsed version {version} from filename {filename}")
+                                    break
+                                except (ValueError, IndexError):
+                                    continue
+                        
+                        if version == 1 and any(pattern in filename.lower() for pattern in ['_v', '_config']):
+                            logger.debug(f"Could not parse version from {filename}, using default version 1")
                         
                         # Only keep the highest version config per session
                         if session_path not in session_configs or version > session_configs[session_path]['version']:
+                            logger.debug(f"Keeping config: {filename} (v{version}) in {session_path}, modified: {obj['LastModified']}")
                             session_configs[session_path] = {
                                 'version': version,
                                 'config_info': {
@@ -202,6 +232,8 @@ def search_user_configs(email: str, storage_manager: UnifiedS3Manager) -> List[D
                                     'session_path': session_path
                                 }
                             }
+                        else:
+                            logger.debug(f"Skipping older version: {filename} (v{version}) in {session_path}")
             
             # Break out of page loop if we hit limits
             if processed_objects > max_objects:
@@ -275,11 +307,16 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
         # Sort config files by modification time (most recent first) for better performance
         config_files.sort(key=lambda x: x['last_modified'], reverse=True)
         
-        # Analyze each config for column matches
+        logger.info(f"Analyzing {len(config_files)} config files, first 3 by date:")
+        for i, cf in enumerate(config_files[:3]):
+            logger.info(f"  {i+1}. {cf['filename']} - {cf['last_modified']} - {cf['key']}")
+        
+        # Check the most recent config first for perfect match optimization
         matches = []
         s3_client = storage_manager.s3_client
+        perfect_match_found = False
         
-        for config_file in config_files:
+        for i, config_file in enumerate(config_files):
             try:
                 # Download and parse config
                 response = s3_client.get_object(Bucket=storage_manager.bucket_name, Key=config_file['key'])
@@ -291,15 +328,18 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
                     logger.debug(f"No validation targets found in {config_file['key']}")
                     continue
                 
-                logger.info(f"Config {config_file['key']}: found {len(config_columns)} columns: {config_columns[:3]}{'...' if len(config_columns) > 3 else ''}")
-                logger.info(f"Table columns ({len(table_columns)}): {table_columns[:3]}{'...' if len(table_columns) > 3 else ''}")
+                logger.debug(f"Checking config {config_file['filename']}: {len(config_columns)} columns")
                 
                 # Calculate match score
                 match_score = calculate_column_match_score(table_columns, config_columns)
-                logger.info(f"Match score for {config_file['key']}: {match_score}")
                 
-                if match_score == 0:
+                # Skip matches that are too poor (below 80% threshold)
+                if match_score < 0.8:
+                    logger.debug(f"Skipping config with low match score: {match_score:.2f} < 0.8")
                     continue
+                
+                # Log significant matches
+                logger.info(f"Config match: {config_file['filename']} - Score: {match_score:.2f} ({len(config_columns)} columns)")
                 
                 # Find matching columns
                 table_cols_lower = [col.lower().strip() for col in table_columns]
@@ -329,32 +369,69 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
                     'config_filename': config_file['filename']
                 })
                 
-                # Break early on perfect match (100% score) since files are sorted by recency
+                # Check for perfect match - if found, prioritize it and stop searching
                 if match_score >= 1.0:
-                    logger.info(f"Found perfect match with score {match_score}, breaking early")
+                    logger.info(f"PERFECT MATCH FOUND with score {match_score} in config {config_file['key']}")
+                    perfect_match_found = True
+                    
+                    # For perfect matches, we can skip the rest of the configs
+                    # since we already sorted by most recent first
+                    logger.info(f"Stopping search after finding perfect match (checked {i+1} of {len(config_files)} configs)")
                     break
-                
-                # Also break if we have enough good matches
-                if len(matches) >= limit:
-                    logger.info(f"Found {limit} matches, stopping search")
+                    
+                # Early termination optimization: if this is the first (most recent) config
+                # and it's not a perfect match, we still need to check others
+                # But if we've found any decent matches and checked enough configs, consider stopping
+                if i >= 10 and matches and all(m['match_score'] < 0.9 for m in matches):
+                    logger.info(f"Stopping search after checking {i+1} configs - no strong matches found")
                     break
                 
             except Exception as e:
                 logger.error(f"Error processing config {config_file['key']}: {e}")
                 continue
         
-        # Since we're processing most recent files first and breaking on perfect matches,
-        # we only need to sort by match score (files are already in recency order)
-        matches.sort(key=lambda x: x['match_score'], reverse=True)
+        # Sort matches by score first, but give bonus to very recent configs
+        # For configs within the last 24 hours, add 0.05 to score for sorting purposes only
+        now = datetime.now(timezone.utc)
+        yesterday = now - timedelta(hours=24)
+        
+        def sort_key(match):
+            base_score = match['match_score']
+            last_modified = datetime.fromisoformat(match['last_modified'].replace('Z', '+00:00'))
+            
+            # Give slight bonus to very recent configs (within 24 hours)
+            if last_modified > yesterday:
+                recency_bonus = 0.05
+            else:
+                recency_bonus = 0.0
+                
+            # Sort primarily by score+bonus, then by date for final tiebreaker
+            return (base_score + recency_bonus, last_modified)
+        
+        matches.sort(key=sort_key, reverse=True)
+        
+        # Apply limit after collecting all valid matches
+        matches = matches[:limit]
         
         logger.info(f"Found {len(matches)} matching configs out of {len(config_files)} total configs")
         
-        return {
+        # Special handling for perfect matches
+        result = {
             'success': True,
             'matches': matches,
             'table_columns': table_columns,
             'total_configs_searched': len(config_files)
         }
+        
+        # If we found a perfect match, mark it for auto-selection
+        if perfect_match_found and matches and matches[0]['match_score'] >= 1.0:
+            result['perfect_match'] = True
+            result['auto_select_config'] = matches[0]
+            logger.info(f"Perfect match found - suggesting auto-selection of config: {matches[0]['config_filename']}")
+        else:
+            result['perfect_match'] = False
+            
+        return result
         
     except Exception as e:
         logger.error(f"Failed to find matching configs: {e}")

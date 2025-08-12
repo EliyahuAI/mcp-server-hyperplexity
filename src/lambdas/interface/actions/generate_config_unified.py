@@ -246,6 +246,19 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
             if existing_config and existing_config.get('config_change_log'):
                 conversation_history = existing_config['config_change_log']
                 logger.info(f"Preserving {len(conversation_history)} existing conversation entries")
+                
+                # Debug: log current version info being passed
+                generation_metadata = existing_config.get('generation_metadata', {})
+                current_version = generation_metadata.get('version', 'unknown')
+                logger.info(f"Passing existing config to lambda - Version: {current_version}")
+                
+                # Log recent entries for debugging
+                if conversation_history:
+                    logger.info("Recent conversation entries being passed:")
+                    for i, entry in enumerate(conversation_history[-2:], 1):
+                        logger.info(f"  Entry {len(conversation_history)-2+i}: v{entry.get('version', 'unknown')} - {entry.get('instructions', 'No instructions')[:30]}...")
+            else:
+                logger.info("No existing conversation history found to preserve")
             
             payload = {
                 'table_analysis': table_analysis,
@@ -313,11 +326,29 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                     'status': '💾 Storing generated configuration...'
                 })
             
-            # Use versioning system for proper incremental storage 
-            storage_result = store_config_with_versioning(
-                email, session_id, updated_config, source='ai_generated'
-            )
-            version = storage_result.get('version', 1)
+            # Use the version already set by config lambda, or calculate if missing
+            config_version = updated_config.get('generation_metadata', {}).get('version')
+            if config_version:
+                logger.info(f"Using version {config_version} set by config lambda")
+                # Store config directly with the version set by config lambda
+                from ..core.unified_s3_manager import UnifiedS3Manager
+                storage_manager = UnifiedS3Manager()
+                storage_result = storage_manager.store_config_file(
+                    email=email,
+                    session_id=session_id,
+                    config_data=updated_config,
+                    version=config_version,
+                    source='ai_generated'
+                )
+                storage_result['version'] = config_version
+                version = config_version
+            else:
+                logger.warning("Config lambda didn't set version, falling back to interface lambda versioning")
+                # Fallback to interface lambda versioning system
+                storage_result = store_config_with_versioning(
+                    email, session_id, updated_config, source='ai_generated'
+                )
+                version = storage_result.get('version', 1)
             
             if not storage_result['success']:
                 return {'success': False, 'error': f'Failed to store generated config: {storage_result["error"]}'}
@@ -348,6 +379,15 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
             
             logger.info(f"Config generation completed successfully for session {session_id}")
             
+            # Get config filename from the config lambda response
+            config_filename = body.get('config_filename')
+            if config_filename:
+                # Store the config lambda filename in the updated config's metadata
+                if 'generation_metadata' not in updated_config:
+                    updated_config['generation_metadata'] = {}
+                updated_config['generation_metadata']['config_lambda_filename'] = config_filename
+                logger.info(f"Config lambda filename: {config_filename}")
+            
             return {
                 'success': True,
                 'updated_config': updated_config,
@@ -357,6 +397,7 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 'ai_summary': body.get('ai_summary', ''),
                 'config_s3_key': storage_result['s3_key'],
                 'config_version': version,
+                'config_filename': config_filename,  # Include config lambda filename
                 'storage_path': storage_result['session_path'],
                 'download_url': download_url,
                 'session_id': session_id

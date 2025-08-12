@@ -291,7 +291,8 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             
             payload = {
                 "test_mode": True, "config": config_data,
-                "validation_data": {"rows": preview_rows}, "validation_history": {}
+                "validation_data": {"rows": preview_rows}, "validation_history": {},
+                "session_id": session_id
             }
             
             try:
@@ -359,7 +360,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 
                 logger.info(f"Processing batch {current_batch}/{total_batches}, rows {start_idx+1}-{end_idx}")
                 
-                batch_payload = {"test_mode": False, "config": config_data, "validation_data": {"rows": batch_rows}, "validation_history": validation_history}
+                batch_payload = {"test_mode": False, "config": config_data, "validation_data": {"rows": batch_rows}, "validation_history": validation_history, "session_id": session_id}
                 
                 try:
                     response = lambda_client.invoke(FunctionName=VALIDATOR_LAMBDA_NAME, InvocationType='RequestResponse', Payload=json.dumps(batch_payload))

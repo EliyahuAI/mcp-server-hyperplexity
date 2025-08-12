@@ -376,6 +376,7 @@ def handle(event, context):
                     logger.warning(f"No WebSocket connection found for session {session_id} - cannot send notification")
                 
                 # Send preview email if requested
+                logger.info(f"Preview email check: preview_email={preview_email}, EMAIL_SENDER_AVAILABLE={EMAIL_SENDER_AVAILABLE}, email_address={email_address}")
                 if preview_email and EMAIL_SENDER_AVAILABLE and email_address:
                     # Send email preparation progress update
                     _send_websocket_message_deduplicated(session_id, {
@@ -395,7 +396,18 @@ def handle(event, context):
                         
                         if excel_content and config_data:
                             input_filename = excel_s3_key.split('/')[-1]
+                            
+                            # Try to get the config lambda filename from metadata, fallback to S3 key
                             config_filename = config_s3_key.split('/')[-1] if config_s3_key else 'config.json'
+                            if 'generation_metadata' in config_data:
+                                # First try config_lambda_filename (set by interface lambda)
+                                if 'config_lambda_filename' in config_data['generation_metadata']:
+                                    config_filename = config_data['generation_metadata']['config_lambda_filename']
+                                    logger.info(f"Using config lambda filename from metadata for preview: {config_filename}")
+                                # Then try saved_filename (set by config lambda)
+                                elif 'saved_filename' in config_data['generation_metadata']:
+                                    config_filename = config_data['generation_metadata']['saved_filename']
+                                    logger.info(f"Using saved filename from metadata for preview: {config_filename}")
                             
                             # Calculate summary data for the email
                             all_fields = set()
@@ -433,6 +445,13 @@ def handle(event, context):
                                     logger.error(f"Error creating enhanced Excel for preview: {str(e)}")
                             
                             # Send the email
+                            logger.info(f"Calling send_validation_results_email with: email_address={email_address}, "
+                                      f"excel_content_len={len(excel_content) if excel_content else 0}, "
+                                      f"config_content_len={len(json.dumps(config_data, indent=2).encode('utf-8'))}, "
+                                      f"enhanced_excel_content_len={len(enhanced_excel_content) if enhanced_excel_content else 0}, "
+                                      f"input_filename={input_filename}, config_filename={config_filename}, "
+                                      f"session_id={session_id}, reference_pin={reference_pin}, preview_email=True")
+                            
                             email_result = send_validation_results_email(
                                 email_address=email_address, 
                                 excel_content=excel_content, 
@@ -448,6 +467,8 @@ def handle(event, context):
                                 metadata=metadata, 
                                 preview_email=True
                             )
+                            
+                            logger.info(f"Email result received: {email_result}")
                             
                             # Send email completion progress update
                             if email_result.get('success', False):
@@ -472,6 +493,9 @@ def handle(event, context):
                         logger.error(f"Error sending preview email: {str(e)}")
                         import traceback
                         logger.error(f"Preview email error traceback: {traceback.format_exc()}")
+                        # Log the email_result if available
+                        if 'email_result' in locals():
+                            logger.error(f"Email result details: {email_result}")
                 
                 # Store preview results in versioned results folder using unified storage
                 config_version = 1
@@ -693,7 +717,18 @@ def handle(event, context):
                 config_data = json.loads(config_response['Body'].read().decode('utf-8'))
                 
                 input_filename = excel_s3_key.split('/')[-1]
+                
+                # Try to get the config lambda filename from metadata, fallback to S3 key
                 config_filename = config_s3_key.split('/')[-1]
+                if 'generation_metadata' in config_data:
+                    # First try config_lambda_filename (set by interface lambda)
+                    if 'config_lambda_filename' in config_data['generation_metadata']:
+                        config_filename = config_data['generation_metadata']['config_lambda_filename']
+                        logger.info(f"Using config lambda filename from metadata: {config_filename}")
+                    # Then try saved_filename (set by config lambda)
+                    elif 'saved_filename' in config_data['generation_metadata']:
+                        config_filename = config_data['generation_metadata']['saved_filename']
+                        logger.info(f"Using saved filename from metadata: {config_filename}")
 
                 # Get structured table data for enhanced Excel creation
                 try:
@@ -892,7 +927,9 @@ def handle(event, context):
 def handle_config_generation(event, context):
     """Handle config generation requests by forwarding to config lambda."""
     try:
-        logger.info(f"Handling config generation request for session {event.get('session_id')}")
+        import time
+        execution_id = f"{context.aws_request_id if context else 'no-context'}_{int(time.time() * 1000)}"
+        logger.info(f"[CONFIG_GEN_START] {execution_id} - Handling config generation request for session {event.get('session_id')}")
         session_id = event.get('session_id')
         
         # Send initial progress update
@@ -964,6 +1001,12 @@ def handle_config_generation(event, context):
                 'session_id': session_id
             }, "config_progress_complete")
             
+            # Extract version from the actual config
+            config_version = 1
+            if response.get('updated_config'):
+                config_version = response['updated_config'].get('generation_metadata', {}).get('version', 1)
+                logger.info(f"Extracted config version {config_version} from generation_metadata")
+            
             # Send success message via WebSocket
             websocket_message = {
                 'type': 'config_generation_complete',
@@ -973,6 +1016,7 @@ def handle_config_generation(event, context):
                 'ai_summary': ai_summary,
                 'ai_response': ai_summary,  # For backward compatibility
                 'config_s3_key': config_s3_key,
+                'config_version': config_version,  # Explicit version from config
                 'clarifying_questions': response.get('clarifying_questions', ''),
                 'clarification_urgency': response.get('clarification_urgency', 0.0)
             }
@@ -1016,7 +1060,9 @@ def handle_config_generation(event, context):
             
             # Send via WebSocket with deduplication
             try:
+                logger.info(f"[CONFIG_COMPLETION] About to send config_generation_complete for {session_id} with download_url: {websocket_message.get('download_url', 'None')}")
                 _send_websocket_message_deduplicated(session_id, websocket_message, "config_generation_complete")
+                logger.info(f"[CONFIG_COMPLETION] Sent config_generation_complete for {session_id}")
             except Exception as ws_error:
                 logger.error(f"Failed to send WebSocket message: {ws_error}")
         else:
@@ -1129,6 +1175,8 @@ def create_config_download_url(s3_key: str) -> str:
 
 # WebSocket message deduplication cache
 _websocket_message_cache = {}
+# Special cache for config generation completion messages
+_config_completion_cache = {}
 
 def _send_websocket_message_deduplicated(session_id: str, message: Dict, message_type: str = None):
     """Send a WebSocket message to a session with deduplication."""
@@ -1136,17 +1184,37 @@ def _send_websocket_message_deduplicated(session_id: str, message: Dict, message
     import time
     
     try:
-        # Create message fingerprint for deduplication
-        message_content = json.dumps(message, sort_keys=True)
-        message_hash = hashlib.md5(f"{session_id}:{message_content}".encode()).hexdigest()
         current_time = time.time()
         
-        # Check if this exact message was sent recently (within 5 seconds)
+        # Special deduplication for config generation completion messages
+        if message_type in ['config_generation_complete', 'config_generation_failed']:
+            completion_key = f"{session_id}:{message_type}"
+            if completion_key in _config_completion_cache:
+                last_completion = _config_completion_cache[completion_key]
+                if current_time - last_completion < 60:  # 60 second window for completion messages
+                    logger.info(f"🚫 DEDUPLICATED config completion message for {session_id} (type: {message_type}) - last sent {current_time - last_completion:.1f}s ago")
+                    return
+            _config_completion_cache[completion_key] = current_time
+            logger.info(f"[DEDUP_CACHE] Cached config completion for {session_id}:{message_type}")
+            
+            # Clean old completion cache entries
+            expired_completion_keys = [k for k, v in _config_completion_cache.items() if current_time - v > 120]
+            for key in expired_completion_keys:
+                del _config_completion_cache[key]
+        
+        # Create message fingerprint for general deduplication
+        message_content = json.dumps(message, sort_keys=True)
+        message_hash = hashlib.md5(f"{session_id}:{message_content}".encode()).hexdigest()
+        
+        # Check if this exact message was sent recently 
+        # Use longer deduplication window for completion messages
+        dedup_window = 30 if message_type in ['config_generation_complete', 'config_generation_failed'] else 5
         cache_key = f"{session_id}:{message_hash}"
+        
         if cache_key in _websocket_message_cache:
             last_sent = _websocket_message_cache[cache_key]
-            if current_time - last_sent < 5:  # 5 second deduplication window
-                logger.info(f"🚫 DEDUPLICATED WebSocket message for {session_id} (type: {message_type})")
+            if current_time - last_sent < dedup_window:
+                logger.info(f"🚫 DEDUPLICATED WebSocket message for {session_id} (type: {message_type}, window: {dedup_window}s)")
                 return
         
         # Clean old cache entries (older than 60 seconds)

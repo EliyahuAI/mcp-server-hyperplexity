@@ -199,6 +199,14 @@ def copy_source_files():
         logger.info("Copied prompts.yml for validation lambda")
     else:
         logger.warning(f"prompts.yml not found at {prompts_file}")
+    
+    # 4. Copy pricing_data.csv for cost calculations
+    pricing_file = PROJECT_DIR / "src" / "pricing_data.csv"
+    if pricing_file.exists():
+        shutil.copy(pricing_file, PACKAGE_DIR / "pricing_data.csv")
+        logger.info("Copied pricing_data.csv for cost calculations")
+    else:
+        logger.warning(f"pricing_data.csv not found at {pricing_file}")
 
 def create_zip():
     """Create deployment zip file."""

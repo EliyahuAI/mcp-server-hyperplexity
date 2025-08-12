@@ -19,6 +19,15 @@ from pathlib import Path
 from schema_validator_simplified import SimplifiedSchemaValidator
 from perplexity_schema import get_response_format_schema
 from row_key_utils import generate_row_key
+from ai_api_client import ai_client
+
+# Import WebSocket client for progress updates
+try:
+    from websocket_client import WebSocketClient
+    websocket_client = WebSocketClient()
+except ImportError:
+    websocket_client = None
+    logger.warning("WebSocket client not available")
 
 # Configure logging
 logger = logging.getLogger()
@@ -245,21 +254,34 @@ async def validate_with_anthropic(
             logger.info(f"Anthropic API Response: {json.dumps(response_json, indent=2)}")
             
             # Convert Anthropic response format to match Perplexity format for compatibility
-            if 'content' in response_json and len(response_json['content']) > 0:
+            logger.debug(f"Processing Anthropic response - content field type: {type(response_json.get('content'))}")
+            logger.debug(f"Response keys: {list(response_json.keys())}")
+            
+            if 'content' in response_json and response_json['content'] is not None and len(response_json['content']) > 0:
                 # Look for tool_use content (our structured validation data)
                 validation_data = None
                 text_content = ""
                 
-                for content_item in response_json['content']:
-                    if content_item['type'] == 'text':
-                        text_content += content_item['text']
-                    elif content_item['type'] == 'tool_use' and content_item['name'] == 'validate_data':
+                logger.info(f"Found {len(response_json['content'])} content items in response")
+                
+                for i, content_item in enumerate(response_json['content']):
+                    if content_item is None:
+                        logger.warning(f"Content item {i} is None, skipping")
+                        continue
+                    
+                    logger.debug(f"Content item {i} type: {content_item.get('type', 'unknown')}")
+                    
+                    if content_item.get('type') == 'text':
+                        text_content += content_item.get('text', '')
+                    elif content_item.get('type') == 'tool_use' and content_item.get('name') == 'validate_data':
                         # Extract the structured validation data from the tool call
-                        tool_input = content_item['input']
+                        tool_input = content_item.get('input', {})
+                        logger.debug(f"Tool input keys: {list(tool_input.keys()) if isinstance(tool_input, dict) else 'Not a dict'}")
+                        
                         # Extract the validation_results array from the wrapper object
                         if 'validation_results' in tool_input:
                             validation_data = tool_input['validation_results']
-                            logger.info(f"Found structured validation data: {validation_data}")
+                            logger.info(f"Found structured validation data with {len(validation_data) if isinstance(validation_data, list) else 'unknown'} results")
                         else:
                             logger.warning("Tool input missing validation_results field")
                             validation_data = tool_input  # Fallback to raw input
@@ -289,7 +311,9 @@ async def validate_with_anthropic(
                 
                 return formatted_response
             else:
-                raise Exception(f"Unexpected Anthropic response format: {response_json}")
+                logger.error(f"No content field or empty content in Anthropic response")
+                logger.error(f"Response structure: {json.dumps(response_json, indent=2)}")
+                raise Exception(f"Unexpected Anthropic response format: missing or empty 'content' field")
             
     except asyncio.TimeoutError as e:
         logger.error(f"Anthropic API timeout error: {str(e)}")
@@ -562,8 +586,8 @@ def calculate_token_costs(token_usage: Dict[str, Any], pricing_data: Dict[str, D
     output_cost = 0.0
     
     if api_provider == 'perplexity':
-        input_tokens = token_usage.get('prompt_tokens', 0)
-        output_tokens = token_usage.get('completion_tokens', 0)
+        input_tokens = token_usage.get('input_tokens', 0)  # ai_api_client normalizes to input_tokens
+        output_tokens = token_usage.get('output_tokens', 0)  # ai_api_client normalizes to output_tokens
     elif api_provider == 'anthropic':
         input_tokens = token_usage.get('input_tokens', 0)
         output_tokens = token_usage.get('output_tokens', 0)
@@ -586,6 +610,48 @@ def calculate_token_costs(token_usage: Dict[str, Any], pricing_data: Dict[str, D
         'output_tokens': output_tokens,
         'pricing_model': pricing.get('model_name', model)
     }
+
+async def call_claude_with_shared_client(prompt: str, model: str, tool_schema: Dict) -> Dict:
+    """
+    Call Claude using the shared AI client.
+    Returns a response in the format expected by the validation lambda.
+    """
+    try:
+        # Call the shared client
+        result = await ai_client.call_structured_api(
+            prompt=prompt,
+            schema=tool_schema,
+            model=model,
+            tool_name="validate_data",
+            use_cache=True  # Enable caching
+        )
+        
+        # Extract the structured response
+        structured_data = ai_client.extract_structured_response(result['response'], "validate_data")
+        
+        # Get validation_results from the structured data
+        validation_results = structured_data.get('validation_results', structured_data)
+        
+        # Convert to the format expected by the validation lambda
+        # The validation lambda expects a response with choices[0].message.content as a JSON string
+        formatted_response = {
+            'choices': [{
+                'message': {
+                    'role': 'assistant',
+                    'content': json.dumps(validation_results)
+                }
+            }]
+        }
+        
+        # Add usage information if available
+        if 'token_usage' in result:
+            formatted_response['usage'] = result['token_usage']
+        
+        return formatted_response
+        
+    except Exception as e:
+        logger.error(f"Error calling Claude through shared client: {str(e)}")
+        raise
 
 def get_cache_key(prompt: str, model: str = "sonar-pro", search_context_size: str = "low", search_groups: list = None) -> str:
     """
@@ -618,8 +684,7 @@ def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List
     Returns:
         Tuple of (selected_model, list_of_warnings)
     """
-    print(f"RESOLVE_MODEL: Called with {len(targets)} targets")
-    logger.error(f"RESOLVE_MODEL: Called with {len(targets)} targets")
+    logger.debug(f"RESOLVE_MODEL: Called with {len(targets)} targets")
     warnings = []
     
     # Check if we have search group definitions and this group has a defined model
@@ -700,8 +765,7 @@ def resolve_search_group_context_size(targets: List[Any], validator) -> str:
     Returns:
         Selected search context size ("low", "medium", or "high")
     """
-    print(f"RESOLVE_CONTEXT: Called with {len(targets)} targets")
-    logger.error(f"RESOLVE_CONTEXT: Called with {len(targets)} targets")
+    logger.debug(f"RESOLVE_CONTEXT: Called with {len(targets)} targets")
     # Check if we have search group definitions and this group has a defined context
     if targets and hasattr(targets[0], 'search_group'):
         group_id = targets[0].search_group
@@ -1299,6 +1363,24 @@ async def call_anthropic_api_text(session: aiohttp.ClientSession, prompt: str,
             error_text = await response.text()
             raise Exception(f"Anthropic API error: {response.status} - {error_text}")
 
+def send_websocket_progress(session_id: str, message: str, progress: int = None):
+    """Send progress update via WebSocket"""
+    if websocket_client and session_id:
+        try:
+            update_data = {
+                'type': 'progress_update',
+                'message': message,
+                'session_id': session_id,
+                'timestamp': datetime.now().isoformat()
+            }
+            if progress is not None:
+                update_data['progress'] = progress
+            
+            websocket_client.send_to_session(session_id, update_data)
+            logger.info(f"Sent WebSocket progress: {message} to session {session_id}")
+        except Exception as e:
+            logger.warning(f"Failed to send WebSocket progress: {e}")
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests and config generation."""
     try:
@@ -1440,6 +1522,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
         s3_bucket = os.environ['S3_CACHE_BUCKET']
         
+        # Extract session_id for progress updates
+        session_id = event.get('session_id')
+        if session_id:
+            logger.info(f"Session ID for progress updates: {session_id}")
+            send_websocket_progress(session_id, "Starting validation process...", 5)
+        
         # Process rows
         rows = event.get('validation_data', {}).get('rows', [])
         validation_results = {}
@@ -1470,6 +1558,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     batch_index = batch_num // batch_size + 1
                     
                     logger.info(f"🎯 Starting batch {batch_index}/{total_batches} with {actual_batch_size} rows")
+                    
+                    # Send progress update via WebSocket
+                    if session_id:
+                        progress = min(90, 10 + (batch_index / total_batches) * 75)  # 10-85% for batch processing
+                        if batch_index == 1:
+                            send_websocket_progress(session_id, "Processing first batch...", int(progress))
+                        elif batch_index == total_batches:
+                            send_websocket_progress(session_id, "Processing final batch...", int(progress))
+                        elif batch_index % 3 == 0:  # Send updates every few batches to avoid spam
+                            send_websocket_progress(session_id, f"Processing batch {batch_index} of {total_batches}...", int(progress))
                     
                     row_tasks = []
                     for row_idx, row in enumerate(batch):
@@ -1811,17 +1909,45 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Route to appropriate API based on model
             api_provider = determine_api_provider(model)
             start_time = time.time()  # Track API call timing
+            
+            # Use shared AI client for all API calls
+            logger.info(f"Using shared AI client for {api_provider} API with model: {model}")
+            
+            # Variables to track the full result from shared client
+            shared_client_result = None
+            
             if api_provider == 'anthropic':
-                logger.info(f"Routing to Anthropic API with model: {model}")
+                # For Claude models, we need to structure the call differently
+                schema = get_response_format_schema(is_multiplex=True)
+                
+                # Wrap the array schema in an object for tool calling
+                tool_schema = {
+                    "type": "object",
+                    "properties": {
+                        "validation_results": schema['json_schema']['schema']
+                    },
+                    "required": ["validation_results"]
+                }
+                
+                # For Claude, we'll handle caching ourselves since we need specific cache key format
                 result = await retry_api_call_with_backoff(
-                    lambda: validate_with_anthropic(session, prompt, anthropic_api_key, model),
+                    lambda: call_claude_with_shared_client(prompt, model, tool_schema),
                     max_retries=5,  # 6 total attempts with specific delays
                     custom_delays=[1, 5, 10, 20, 30, 60]  # 1s, 5s, 10s, 20s, 30s, 60s
                 )
             else:
-                logger.info(f"Routing to Perplexity API with model: {model} and search_context_size: {search_context_size}")
+                # For Perplexity, use the validate_with_perplexity method
+                logger.info(f"Using Perplexity with search_context_size: {search_context_size}")
+                
+                # The shared client returns a wrapper with response, token_usage, etc.
+                async def call_perplexity_wrapper():
+                    nonlocal shared_client_result
+                    shared_client_result = await ai_client.validate_with_perplexity(prompt, model, search_context_size, use_cache=True)
+                    # Return just the API response part for compatibility with existing parsing
+                    return shared_client_result['response']
+                
                 result = await retry_api_call_with_backoff(
-                    lambda: validate_with_perplexity(session, prompt, perplexity_api_key, model, search_context_size),
+                    call_perplexity_wrapper,
                     max_retries=5,  # 6 total attempts with specific delays
                     custom_delays=[1, 5, 10, 20, 30, 60]  # 1s, 5s, 10s, 20s, 30s, 60s
                 )
@@ -1832,8 +1958,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if '_raw_responses' not in row_results:
                 row_results['_raw_responses'] = {}
             
-            # Extract token usage information from the API response
-            token_usage = extract_token_usage(result, model, search_context_size)
+            # Extract token usage information 
+            if shared_client_result and 'token_usage' in shared_client_result:
+                # For Perplexity, use the token usage from shared client
+                token_usage = shared_client_result['token_usage']
+            else:
+                # For Anthropic or legacy responses, extract from the result
+                token_usage = extract_token_usage(result, model, search_context_size)
             
             row_results['_raw_responses'][response_id] = {
                 'prompt': prompt,
@@ -2056,8 +2187,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 # Aggregate by provider
                                 if api_provider == 'perplexity':
                                     provider_usage = total_token_usage['by_provider']['perplexity']
-                                    provider_usage['prompt_tokens'] += usage.get('prompt_tokens', 0)
-                                    provider_usage['completion_tokens'] += usage.get('completion_tokens', 0)
+                                    provider_usage['prompt_tokens'] += usage.get('input_tokens', 0)  # ai_api_client normalizes to input_tokens
+                                    provider_usage['completion_tokens'] += usage.get('output_tokens', 0)  # ai_api_client normalizes to output_tokens
                                     provider_usage['total_tokens'] += total_tokens
                                     provider_usage['calls'] += 1
                                     provider_usage['input_cost'] += costs['input_cost']
@@ -2109,8 +2240,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 model_usage['total_cost'] += costs['total_cost']
                                 
                                 if api_provider == 'perplexity':
-                                    model_usage['prompt_tokens'] += usage.get('prompt_tokens', 0)
-                                    model_usage['completion_tokens'] += usage.get('completion_tokens', 0)
+                                    model_usage['prompt_tokens'] += usage.get('input_tokens', 0)  # ai_api_client normalizes to input_tokens
+                                    model_usage['completion_tokens'] += usage.get('output_tokens', 0)  # ai_api_client normalizes to output_tokens
                                 elif api_provider == 'anthropic':
                                     model_usage['input_tokens'] += usage.get('input_tokens', 0)
                                     model_usage['output_tokens'] += usage.get('output_tokens', 0)
@@ -2272,6 +2403,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 if 'raw_responses' in response['body']:
                     del response['body']['raw_responses']
                 
+            # Send final progress update
+            if session_id:
+                send_websocket_progress(session_id, "Validation completed successfully!", 100)
+            
             # Return the combined results
             return response
         

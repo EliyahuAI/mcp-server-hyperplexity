@@ -1,0 +1,161 @@
+{
+  "general_notes": "This table tracks radiopharmaceutical products (diagnostic, therapeutic and theranostic) in development that could compete with Ratio Therapeutics over the next 1–5 years. The list focuses on agents in pre-registration through Phase 1 and likely to reach market in 2024-2030. Your key goal is to monitor this competitive landscape. Please use the most recent information available from public sources, including clinicaltrials.gov, company press releases, and news articles.",
+  "default_model": "sonar-pro",
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Product Identification",
+      "description": "Product and developer identification fields used for context",
+      "model": "sonar-pro",
+      "search_context": "low"
+    },
+    {
+      "group_id": 1,
+      "group_name": "Product Characteristics",
+      "description": "Core product characteristics including target, indication, and radionuclides",
+      "model": "claude-sonnet-4-0",
+      "search_context": "low"
+    },
+    {
+      "group_id": 2,
+      "group_name": "Development Status",
+      "description": "Clinical development stage and trial information",
+      "model": "sonar-pro",
+      "search_context": "high"
+    },
+    {
+      "group_id": 3,
+      "group_name": "Commercial Information",
+      "description": "Regulatory designations, partnerships, and launch projections",
+      "model": "sonar-pro",
+      "search_context": "low"
+    },
+    {
+      "group_id": 4,
+      "group_name": "Recent Developments",
+      "description": "Latest news and developments tracking",
+      "model": "sonar-pro",
+      "search_context": "high"
+    }
+  ],
+  "validation_targets": [
+    {
+      "column": "Product Name",
+      "description": "Official code or INN of the radiopharmaceutical",
+      "importance": "ID",
+      "format": "String",
+      "notes": "Use sponsor's current nomenclature",
+      "examples": ["FAP-2286", "225Ac-PSMA-617", "TLX250-CDx"],
+      "search_group": 0
+    },
+    {
+      "column": "Developer",
+      "description": "Lead company (add parent in parentheses if acquired)",
+      "importance": "ID",
+      "format": "String",
+      "notes": "Name mergers or major co-developers",
+      "examples": ["Novartis (AAA)", "POINT Biopharma / Eli Lilly"],
+      "search_group": 0
+    },
+    {
+      "column": "Target",
+      "description": "Molecular target or receptor the agent binds",
+      "importance": "ID",
+      "format": "String",
+      "notes": "Use gene/protein symbol or common receptor acronym",
+      "examples": ["FAP", "PSMA", "SSTR2"],
+      "search_group": 1
+    },
+    {
+      "column": "Indication",
+      "description": "Main disease(s) or tumour type(s) the product is being developed for",
+      "importance": "CRITICAL",
+      "format": "String",
+      "notes": "Concise but specific (e.g., include biomarker status)",
+      "examples": ["mCRPC", "GEP-NETs", "Clear-cell RCC"],
+      "search_group": 1
+    },
+    {
+      "column": "Therapeutic Radionuclide",
+      "description": "Radionuclide used for therapy (if applicable) for this product",
+      "importance": "CRITICAL",
+      "format": "String",
+      "notes": "Use IUPAC-style isotope notation",
+      "examples": ["Lu-177", "Ac-225", "Cu-67"],
+      "search_group": 1
+    },
+    {
+      "column": "Diagnostic Radionuclide",
+      "description": "Radionuclide used for imaging (if theranostic or diagnostic-only) for this product",
+      "importance": "CRITICAL",
+      "format": "String",
+      "notes": "Use '-' if no diagnostic label",
+      "examples": ["Ga-68", "Zr-89", "Cu-64", "-"],
+      "search_group": 1
+    },
+    {
+      "column": "Modality Type",
+      "description": "Classification (theranostic, therapeutic, diagnostic)",
+      "importance": "CRITICAL",
+      "format": "String",
+      "notes": "Include molecule class if helpful (peptide, mAb, small molecule)",
+      "examples": ["Theranostic peptide", "Therapeutic radioligand"],
+      "search_group": 1
+    },
+    {
+      "column": "Development Stage",
+      "description": "Highest disclosed stage of development",
+      "importance": "CRITICAL",
+      "format": "String",
+      "notes": "If multiple, list the most advanced",
+      "examples": ["Phase 3", "Phase 1/2", "Pre-clinical", "BLA filed"],
+      "search_group": 2
+    },
+    {
+      "column": "Key Trial ID",
+      "description": "Primary clinical-trials.gov identifier",
+      "importance": "CRITICAL",
+      "format": "String",
+      "notes": "Use '-' if none available",
+      "examples": ["NCT04939610", "NCT04647526", "-"],
+      "search_group": 2
+    },
+    {
+      "column": "Projected Launch",
+      "description": "Estimated first commercial approval year",
+      "importance": "HIGH",
+      "format": "String",
+      "notes": "Infer from typical timelines if not public",
+      "examples": ["2026", "2027-28", "After 2030"],
+      "search_group": 3
+    },
+    {
+      "column": "FDA-EMA Designation",
+      "description": "Notable regulatory designations (BTD, Fast Track, Orphan-Drug)",
+      "importance": "HIGH",
+      "format": "String",
+      "notes": "List agency and year; '-' if none",
+      "examples": ["Fast Track (FDA, 2023)", "Orphan-Drug (EMA)"],
+      "search_group": 3
+    },
+    {
+      "column": "Strategic Partners",
+      "description": "Key collaborators or licensees",
+      "importance": "HIGH",
+      "format": "String",
+      "notes": "Include major CDMO / isotope-supply partners if relevant",
+      "examples": ["Lantheus", "Bristol Myers Squibb", "-"],
+      "search_group": 3
+    },
+    {
+      "column": "Recent News",
+      "description": "Latest important news on the product development (includes date of information release)",
+      "importance": "CRITICAL",
+      "format": "String",
+      "notes": "Bullets with aggregated news on a product. Confidence is only assesed for new news that is to be added - all other data is past forward. Include past news and append new news to the beginning of the list. Starts with a dash, date: news (confidence level). Use \u000A to separate each line.",
+      "examples": ["- 4/10/2025: BLA resubmission in Q1 2025 after OS update requested (High Confidence)\u000A- 3/10/2025: Phase 3 trial results expected in Q2 2025 (High Confidence)\u000A- 2/10/2025: Phase 3 trial initiated (High Confidence)\u000A- 1/10/2025: Phase 2 trial results expected in Q4 2025 (High Confidence)"],
+      "search_group": 4,
+      "preferred_model": "sonar-pro"
+    }
+  ]
+} 

@@ -49,7 +49,8 @@ CONFIG_LAMBDA_CONFIG = {
             # Legacy variables for compatibility during transition
             "S3_CACHE_BUCKET": "hyperplexity-storage",
             "S3_RESULTS_BUCKET": "hyperplexity-storage",
-            "S3_CONFIG_BUCKET": "hyperplexity-downloads"  # Config downloads go to separate bucket
+            "S3_CONFIG_BUCKET": "hyperplexity-downloads",  # Config downloads go to separate bucket
+            "WEBSOCKET_API_URL": "wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod"
         }
     }
 }

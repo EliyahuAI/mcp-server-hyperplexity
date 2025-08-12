@@ -15,6 +15,7 @@ import random
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from perplexity_schema import get_response_format_schema
+import traceback
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -277,6 +278,73 @@ class AIAPIClient:
         except Exception as e:
             logger.error(f"Failed to cache API response: {str(e)}")
     
+    async def _save_debug_data(self, api_provider: str, model: str, request_data: Dict, 
+                              response_data: Any, error: Exception = None, context: str = ""):
+        """Save debug data for API calls to help diagnose issues."""
+        try:
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            status = "ERROR" if error else "SUCCESS"
+            model_clean = model.replace('/', '_').replace(':', '_')
+            
+            # Create filename: YYYYMMDD_HHMMSS_provider_model_status.json
+            debug_filename = f"{timestamp}_{api_provider}_{model_clean}_{status}.json"
+            
+            debug_entry = {
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'api_provider': api_provider,
+                'model': model,
+                'status': status,
+                'context': context,
+                'request': request_data,
+                'response': None,
+                'error': None,
+                'error_details': None,
+                'stack_trace': None
+            }
+            
+            if error:
+                debug_entry['error'] = str(error)
+                debug_entry['error_type'] = type(error).__name__
+                debug_entry['stack_trace'] = traceback.format_exc()
+                
+                # Extract HTTP status if available
+                error_str = str(error)
+                if '(429)' in error_str:
+                    debug_entry['error_details'] = {'http_status': 429, 'error_type': 'rate_limit'}
+                elif '(499)' in error_str:
+                    debug_entry['error_details'] = {'http_status': 499, 'error_type': 'client_disconnect'}
+                elif '(529)' in error_str:
+                    debug_entry['error_details'] = {'http_status': 529, 'error_type': 'overloaded'}
+            else:
+                debug_entry['response'] = response_data
+            
+            # Save to S3 debug folder with clearer structure
+            if self.use_unified_structure:
+                s3_key = f"debug/{api_provider}/{debug_filename}"
+            else:
+                s3_key = f"api_debug/{api_provider}/{debug_filename}"
+            
+            self.s3_client.put_object(
+                Bucket=self.s3_bucket,
+                Key=s3_key,
+                Body=json.dumps(debug_entry, indent=2),
+                ContentType='application/json'
+            )
+            
+            logger.info(f"[DEBUG] Saved debug data to s3://{self.s3_bucket}/{s3_key}")
+            
+            # Also log key information
+            if error:
+                logger.error(f"[DEBUG] API call failed - Provider: {api_provider}, Model: {model}, Error: {str(error)}")
+                logger.error(f"[DEBUG] Request URL: {request_data.get('url', 'N/A')}")
+                logger.error(f"[DEBUG] Request headers keys: {list(request_data.get('headers', {}).keys())}")
+                logger.error(f"[DEBUG] Request data keys: {list(request_data.get('data', {}).keys())}")
+            else:
+                logger.info(f"[DEBUG] API call succeeded - Provider: {api_provider}, Model: {model}")
+                
+        except Exception as e:
+            logger.error(f"[DEBUG] Failed to save debug data: {str(e)}")
+    
     async def call_structured_api(self, prompt: str, schema: Dict, model: str = "claude-3-5-sonnet-20241022", 
                                  tool_name: str = "structured_response", use_cache: bool = True, 
                                  context: str = "") -> Dict:
@@ -481,6 +549,13 @@ class AIAPIClient:
             }
         }
         
+        # Prepare debug request data
+        debug_request = {
+            'url': "https://api.perplexity.ai/chat/completions",
+            'headers': {k: v if k != 'Authorization' else 'Bearer REDACTED' for k, v in headers.items()},
+            'data': data
+        }
+        
         start_time = datetime.now()
         
         try:
@@ -496,6 +571,11 @@ class AIAPIClient:
                     
                     if response.status == 200:
                         response_json = await response.json()
+                        
+                        # Save debug data for successful call
+                        await self._save_debug_data('perplexity', model, debug_request, 
+                                                  response_json, context=f"search_context_{search_context_size}")
+                        
                         token_usage = self._extract_token_usage(response_json, model, search_context_size)
                         
                         # Log token usage
@@ -516,20 +596,33 @@ class AIAPIClient:
                     else:
                         error_text = await response.text()
                         if response.status == 429:
-                            raise Exception(f"Perplexity API rate limit exceeded (429): {error_text}")
+                            error = Exception(f"Perplexity API rate limit exceeded (429): {error_text}")
                         elif response.status == 499:
-                            raise Exception(f"Perplexity API client disconnected (499): {error_text}")
+                            error = Exception(f"Perplexity API client disconnected (499): {error_text}")
                         else:
-                            raise Exception(f"Perplexity API returned status {response.status}: {error_text}")
+                            error = Exception(f"Perplexity API returned status {response.status}: {error_text}")
+                        
+                        # Save debug data for error
+                        await self._save_debug_data('perplexity', model, debug_request, 
+                                                  error_text, error=error, context=f"search_context_{search_context_size}_status_{response.status}")
+                        raise error
                         
         except asyncio.TimeoutError as e:
             logger.error(f"Perplexity API timeout error: {str(e)}")
-            raise Exception(f"Perplexity API timeout: {str(e)}")
+            timeout_error = Exception(f"Perplexity API timeout: {str(e)}")
+            await self._save_debug_data('perplexity', model, debug_request, 
+                                      None, error=timeout_error, context=f"search_context_{search_context_size}_timeout")
+            raise timeout_error
         except aiohttp.ClientError as e:
             logger.error(f"Perplexity API client error: {str(e)}")
-            raise Exception(f"Perplexity API client error: {str(e)}")
+            client_error = Exception(f"Perplexity API client error: {str(e)}")
+            await self._save_debug_data('perplexity', model, debug_request, 
+                                      None, error=client_error, context=f"search_context_{search_context_size}_client_error")
+            raise client_error
         except Exception as e:
             logger.error(f"Error calling Perplexity API: {str(e)}")
+            await self._save_debug_data('perplexity', model, debug_request, 
+                                      None, error=e, context=f"search_context_{search_context_size}_exception")
             raise
     
     def extract_structured_response(self, response: Dict, tool_name: str = "structured_response") -> Dict:
@@ -574,14 +667,27 @@ class AIAPIClient:
         max_retries = 3
         base_delay = 2.0
         
+        # Prepare debug request data
+        debug_request = {
+            'url': url,
+            'headers': {k: v if k != 'X-API-Key' else 'REDACTED' for k, v in headers.items()},
+            'data': data
+        }
+        
         for attempt in range(max_retries + 1):
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(url, headers=headers, json=data) as response:
                         processing_time = (datetime.now() - start_time).total_seconds()
+                        response_text = await response.text()
                         
                         if response.status == 200:
-                            response_json = await response.json()
+                            response_json = json.loads(response_text)
+                            
+                            # Save debug data for successful call
+                            await self._save_debug_data('anthropic', normalized_model, debug_request, 
+                                                      response_json, context=f"attempt_{attempt}")
+                            
                             token_usage = self._extract_token_usage(response_json, normalized_model)
                             
                             # Log token usage
@@ -605,29 +711,39 @@ class AIAPIClient:
                                 'is_cached': False
                             }
                         elif response.status == 529:
-                            error_text = await response.text()
                             if attempt < max_retries:
                                 delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
                                 logger.warning(f"[ERROR] Claude API overloaded (529) on attempt {attempt + 1}/{max_retries + 1}. "
-                                             f"Retrying in {delay:.1f}s. Error: {error_text}")
+                                             f"Retrying in {delay:.1f}s. Error: {response_text}")
                                 await asyncio.sleep(delay)
                                 continue
                             else:
-                                logger.error(f"[ERROR] Claude API overloaded (529) - max retries exceeded. Error: {error_text}")
-                                raise Exception(f"Claude API overloaded after {max_retries} retries (529): {error_text}")
+                                logger.error(f"[ERROR] Claude API overloaded (529) - max retries exceeded. Error: {response_text}")
+                                error = Exception(f"Claude API overloaded after {max_retries} retries (529): {response_text}")
+                                await self._save_debug_data('anthropic', normalized_model, debug_request, 
+                                                          response_text, error=error, context=f"attempt_{attempt}_status_{response.status}")
+                                raise error
                         else:
-                            error_text = await response.text()
                             if response.status == 429:
-                                raise Exception(f"Claude API rate limit exceeded (429): {error_text}")
+                                error = Exception(f"Claude API rate limit exceeded (429): {response_text}")
                             elif response.status == 499:
-                                raise Exception(f"Claude API client disconnected (499): {error_text}")
+                                error = Exception(f"Claude API client disconnected (499): {response_text}")
                             else:
-                                raise Exception(f"Claude API returned status {response.status}: {error_text}")
+                                error = Exception(f"Claude API returned status {response.status}: {response_text}")
+                            
+                            await self._save_debug_data('anthropic', normalized_model, debug_request, 
+                                                      response_text, error=error, context=f"attempt_{attempt}_status_{response.status}")
+                            raise error
                         
             except Exception as e:
                 if "overloaded after" in str(e) or "rate limit" in str(e) or "client disconnected" in str(e):
                     raise
                 logger.error(f"Error calling Claude API on attempt {attempt + 1}: {str(e)}")
+                
+                # Save debug data for unexpected errors
+                await self._save_debug_data('anthropic', normalized_model, debug_request, 
+                                          None, error=e, context=f"attempt_{attempt}_exception")
+                
                 if attempt == max_retries:
                     raise
                 

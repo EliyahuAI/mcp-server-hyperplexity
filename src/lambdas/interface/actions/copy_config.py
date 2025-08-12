@@ -13,6 +13,57 @@ from interface_lambda.utils.helpers import create_response
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+def copy_config_to_session(email: str, session_id: str, config_data: Dict[str, Any], source_info: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Direct function to copy config data to a session (for auto-selection)
+    
+    Args:
+        email: Target user email
+        session_id: Target session ID  
+        config_data: Config data to copy
+        source_info: Source metadata
+    
+    Returns:
+        {'success': bool, 'version': int, 'config_s3_key': str, ...}
+    """
+    try:
+        storage_manager = UnifiedS3Manager()
+        
+        # Remove storage metadata from source config to avoid conflicts
+        clean_config_data = config_data.copy()
+        if 'storage_metadata' in clean_config_data:
+            del clean_config_data['storage_metadata']
+        
+        # Get current config version for the target session
+        existing_config, _ = storage_manager.get_latest_config(email, session_id)
+        version = 1
+        if existing_config and existing_config.get('storage_metadata', {}).get('version'):
+            version = existing_config['storage_metadata']['version'] + 1
+        
+        # Store the copied config in the current session
+        storage_result = storage_manager.store_config_file(
+            email=email, 
+            session_id=session_id, 
+            config_data=clean_config_data, 
+            version=version, 
+            source=f"auto_copied_{source_info.get('source_session', 'unknown')}"
+        )
+        
+        if storage_result['success']:
+            logger.info(f"Auto-copied config to {email}/{session_id} v{version}")
+            return {
+                'success': True,
+                'version': version,
+                'config_s3_key': storage_result.get('s3_key'),
+                'source_info': source_info
+            }
+        else:
+            return {'success': False, 'error': storage_result.get('error', 'Storage failed')}
+            
+    except Exception as e:
+        logger.error(f"Failed to copy config to session: {e}")
+        return {'success': False, 'error': str(e)}
+
 def handle_copy_config(event_data, context=None):
     """
     Copy a config from another session to the current session

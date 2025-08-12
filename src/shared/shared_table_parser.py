@@ -262,7 +262,7 @@ class S3TableParser:
                     'data_type': self._infer_data_type(non_empty_values),
                     'non_null_count': len(non_empty_values),
                     'unique_count': len(set(non_empty_values)),
-                    'sample_values': list(set(non_empty_values))[:5],  # Up to 5 unique samples
+                    'sample_values': sorted(list(set(non_empty_values)))[:5],  # Up to 5 unique samples, deterministically sorted
                     'fill_rate': len(non_empty_values) / len(values) if values else 0.0
                 }
             

@@ -1641,8 +1641,23 @@ def remove_websocket_connection(connection_id: str):
     table.delete_item(Key={'connectionId': connection_id})
 
 def associate_session_with_connection(connection_id: str, session_id: str):
-    """Associates a session_id with a connection_id."""
+    """Associates a session_id with a connection_id, removing old connections for the same session."""
     table = dynamodb.Table(WEBSOCKET_CONNECTIONS_TABLE_NAME)
+    
+    # First, find and remove any existing connections for this session
+    try:
+        existing_connections = get_connections_for_session(session_id)
+        for old_connection_id in existing_connections:
+            if old_connection_id != connection_id:
+                logger.info(f"Removing old connection {old_connection_id} for session {session_id}")
+                try:
+                    table.delete_item(Key={'connectionId': old_connection_id})
+                except Exception as e:
+                    logger.warning(f"Failed to remove old connection {old_connection_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Error checking for existing connections: {e}")
+    
+    # Now associate the new connection
     table.update_item(
         Key={'connectionId': connection_id},
         UpdateExpression="SET sessionId = :sid",
