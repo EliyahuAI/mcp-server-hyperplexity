@@ -2293,3 +2293,4 @@ if ',' in text_content and not excel_content.startswith(b'PK'):
 **Summary:** All persistent 502 errors resolved, file organization completed, and Lambda deployment infrastructure fully working.
 
 - 2025-08-12: Committed updates across config automation, interface, deployment, shared modules, docs, and tables. Excluded `tables/RatioCompetitiveIntelligence/RatioCompetitiveIntelligence_Verified1.xlsx` from this commit due to OS lock; will commit it once unlocked.
+- 2025-08-12: Added `tables/RatioCompetitiveIntelligence/RatioCompetitiveIntelligence_Verified1.xlsx` after unlocking; pushed to remote.
