@@ -38,11 +38,19 @@ package/
 
 # Deployment packages and ZIP files
 deployment/interface_package/
+deployment/config_lambda_deploy/
+deployment/config_package/
+deployment/temp_update/
+deployment/websocket_package/
 deployment/sqs_processor_package/
 deployment/package/
 deployment/*.zip
 *.zip
 *.tar.gz
+
+# AI config generator logs and test results
+ai_config_generator/lambda_test_results_*.json
+ai_config_generator/direct_test_response_*.json
 
 # Lambda deployment packages (all variants)
 lambda_package.zip

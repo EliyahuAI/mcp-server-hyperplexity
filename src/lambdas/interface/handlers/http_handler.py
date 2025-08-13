@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from interface_lambda.utils.helpers import create_response
-from interface_lambda.actions import status_check, generate_config_unified, email_validation, user_stats, config_validation, find_matching_config, copy_config, diagnostics
+from interface_lambda.actions import status_check, generate_config_unified, email_validation, user_stats, config_validation, find_matching_config, copy_config, diagnostics, account_balance, payment_webhook, check_squarespace_orders
 from interface_lambda.utils.parsing import parse_multipart_form_data
 from interface_lambda.actions import process_excel_unified
 
@@ -32,6 +32,11 @@ def handle(event, context):
     if event.get('path', '') == '/health':
         logger.info("Handling /health check")
         return create_response(200, {'status': 'ok'})
+
+    # Handle payment webhooks from SquareSpace
+    if event.get('path', '') == '/webhook/payment' or event.get('path', '') == '/payment/webhook':
+        logger.info("Handling payment webhook")
+        return payment_webhook.handle_webhook_request(event, context)
 
     # Status check via GET request (lightweight)
     if event.get('httpMethod') == 'GET' and event.get('path', '').startswith('/status/'):
@@ -129,6 +134,12 @@ def handle(event, context):
                 return find_matching_config.handle_find_matching_config(request_data, context)
             elif action == 'copyConfig':
                 return copy_config.handle_copy_config(request_data, context)
+            elif action == 'getAccountBalance':
+                return account_balance.handle(request_data, context)
+            elif action == 'addCredits':
+                return account_balance.handle_add_credits(request_data, context)
+            elif action == 'checkSquarespaceOrders':
+                return check_squarespace_orders.handle(request_data, context)
             else:
                 logger.warning(f"Unknown action in JSON body: {action}")
                 return create_response(400, {'error': f'Unknown or unsupported action: {action}'})

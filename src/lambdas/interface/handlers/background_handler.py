@@ -46,6 +46,26 @@ def _get_api_gateway_management_client(context):
         api_gateway_management_client = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
     return api_gateway_management_client
 
+def _send_balance_update(session_id: str, balance_data: dict):
+    """Send balance update via WebSocket."""
+    from dynamodb_schemas import get_connection_by_session, remove_websocket_connection
+    
+    connection_id = get_connection_by_session(session_id)
+    if connection_id:
+        try:
+            client = _get_api_gateway_management_client(None)
+            if client:
+                client.post_to_connection(
+                    ConnectionId=connection_id,
+                    Data=json.dumps(balance_data).encode('utf-8')
+                )
+                logger.info(f"Balance update sent to WebSocket {connection_id}")
+        except client.exceptions.GoneException:
+            logger.warning(f"WebSocket connection {connection_id} is stale. Removing from DB.")
+            remove_websocket_connection(connection_id)
+        except Exception as e:
+            logger.error(f"Failed to send balance update to WebSocket {connection_id}: {e}")
+
 def _update_progress(session_id: str, status: str, processed_rows: int, verbose_status: str, percent_complete: int, total_rows: int = None, current_batch: int = None, total_batches: int = None):
     """Callback function to update DynamoDB and push WebSocket messages."""
     from dynamodb_schemas import update_run_status, get_connection_by_session, remove_websocket_connection
@@ -268,12 +288,74 @@ def handle(event, context):
                 total_rows = validation_results.get('total_rows', 1)
                 metadata = validation_results.get('metadata', {})
                 token_usage = metadata.get('token_usage', {})
-                total_cost = token_usage.get('total_cost', 0.0)
+                total_cost = token_usage.get('total_cost', 0.0)  # Raw cost from validation lambda
                 total_tokens = token_usage.get('total_tokens', 0)
                 total_api_calls = token_usage.get('api_calls', 0)
                 total_cached_calls = token_usage.get('cached_calls', 0)
                 total_rows_processed = validation_results.get('total_processed_rows', 1)
                 validation_metrics = metadata.get('validation_metrics', {})
+                
+                # Initialize balance variables (preview doesn't charge)
+                initial_balance = 0
+                final_balance = 0
+                multiplier = 1.0
+                charged_total_cost = total_cost
+                
+                # Apply domain multiplier to raw costs
+                try:
+                    from shared.dynamodb_schemas import get_domain_multiplier, track_preview_cost, track_api_usage_detailed, check_user_balance
+                    from decimal import Decimal
+                    
+                    email_domain = email.split('@')[-1] if '@' in email else 'unknown'
+                    multiplier = float(get_domain_multiplier(email_domain))
+                    
+                    # Calculate charged costs (raw cost * multiplier)
+                    charged_total_cost = total_cost * multiplier
+                    
+                    logger.info(f"Preview costs - Raw: ${total_cost:.6f}, Multiplier: {multiplier}x, Charged: ${charged_total_cost:.6f}")
+                    
+                    # Get account balance for tracking (no charges for preview)
+                    initial_balance = check_user_balance(email)
+                    final_balance = initial_balance  # No change for preview
+                    balance_error_occurred = False  # Preview doesn't charge
+                    charged_amount = 0  # No charges for preview
+                    
+                    # Track preview cost (raw cost only, no charges for preview)
+                    track_preview_cost(session_id, email, Decimal(str(total_cost)), Decimal(str(multiplier)), total_tokens)
+                    
+                    # Track detailed API usage for each provider
+                    by_provider = token_usage.get('by_provider', {})
+                    for provider, provider_usage in by_provider.items():
+                        if provider_usage and isinstance(provider_usage, dict):
+                            usage_data = {
+                                'api_calls': provider_usage.get('api_calls', 0),
+                                'cached_calls': provider_usage.get('cached_calls', 0),
+                                'total_tokens': provider_usage.get('total_tokens', 0),
+                                'cost': provider_usage.get('total_cost', 0.0) * multiplier,  # Apply multiplier
+                                'raw_cost': provider_usage.get('total_cost', 0.0),  # Store raw cost too
+                                'multiplier_applied': multiplier
+                            }
+                            
+                            # Add provider-specific token fields (AI client standardizes to input_tokens/output_tokens)
+                            if provider == 'perplexity':
+                                usage_data.update({
+                                    'prompt_tokens': provider_usage.get('input_tokens', 0),  # AI client maps prompt_tokens to input_tokens
+                                    'completion_tokens': provider_usage.get('output_tokens', 0)  # AI client maps completion_tokens to output_tokens
+                                })
+                            elif provider == 'anthropic':
+                                usage_data.update({
+                                    'input_tokens': provider_usage.get('input_tokens', 0),
+                                    'output_tokens': provider_usage.get('output_tokens', 0),
+                                    'cache_tokens': provider_usage.get('cache_creation_tokens', 0) + provider_usage.get('cache_read_tokens', 0)
+                                })
+                            
+                            # Track detailed usage for this provider
+                            track_api_usage_detailed(session_id, provider, usage_data)
+                    
+                except Exception as e:
+                    logger.error(f"Error applying domain multiplier in preview: {e}")
+                    multiplier = 1.0
+                    charged_total_cost = total_cost
                 
                 # --- Start of Complex Estimations Logic ---
                 
@@ -294,8 +376,8 @@ def handle(event, context):
                         time_per_row = processing_time / total_rows_processed
                         time_per_batch = time_per_row * 5 # Assuming 5 rows per batch for estimation
                 
-                # Calculate per-row cost and token metrics
-                per_row_cost = total_cost / total_rows_processed if total_rows_processed > 0 else 0.02
+                # Calculate per-row cost and token metrics (using charged costs for user display)
+                per_row_cost = charged_total_cost / total_rows_processed if total_rows_processed > 0 else 0.02 * multiplier
                 per_row_tokens = total_tokens / total_rows_processed if total_rows_processed > 0 else 200
 
                 # Calculate final estimates for the entire file
@@ -326,7 +408,14 @@ def handle(event, context):
                         "per_row_time": time_per_row
                     },
                     "token_usage": token_usage,
-                    "validation_metrics": validation_metrics
+                    "validation_metrics": validation_metrics,
+                    "account_info": {
+                        "current_balance": float(initial_balance) if initial_balance else 0,
+                        "domain_multiplier": multiplier,
+                        "sufficient_balance": float(initial_balance) >= estimated_total_cost if initial_balance else False,
+                        "estimated_full_cost": estimated_total_cost,
+                        "credits_needed": max(0, estimated_total_cost - (float(initial_balance) if initial_balance else 0))
+                    }
                 }
                 
                 # Update DynamoDB with the complete preview payload
@@ -465,7 +554,8 @@ def handle(event, context):
                                 processing_time=processing_time,
                                 reference_pin=reference_pin, 
                                 metadata=metadata, 
-                                preview_email=True
+                                preview_email=True,
+                                billing_info=None  # No charges for previews
                             )
                             
                             logger.info(f"Email result received: {email_result}")
@@ -514,6 +604,19 @@ def handle(event, context):
                     'session_id': session_id
                 }, "preview_progress_storage")
                 
+                # Update session info with account data for preview
+                account_info = {
+                    'initial_balance': float(initial_balance) if initial_balance else 0,
+                    'final_balance': float(final_balance) if final_balance else 0,
+                    'amount_charged': 0,  # Previews are free
+                    'domain_multiplier': float(multiplier),
+                    'raw_cost': float(total_cost),
+                    'preview_abandoned': False,  # Completed successfully
+                    'insufficient_balance_encountered': False,  # Previews don't charge
+                    'processing_type': 'preview'
+                }
+                _update_session_info_with_account_data(email, clean_session_id, account_info)
+                
                 # Store preview results in unified storage
                 result = storage_manager.store_results(
                     email, clean_session_id, config_version, preview_payload, 'preview'
@@ -542,6 +645,27 @@ def handle(event, context):
                     'session_id': session_id,
                     'error': 'No validation results returned'
                 }, "preview_failed_no_results")
+                
+                # Update session info for failed preview
+                try:
+                    from shared.dynamodb_schemas import check_user_balance, get_domain_multiplier
+                    initial_balance = check_user_balance(email)
+                    email_domain = email.split('@')[-1] if '@' in email else 'unknown'
+                    multiplier = float(get_domain_multiplier(email_domain))
+                    
+                    account_info = {
+                        'initial_balance': float(initial_balance) if initial_balance else 0,
+                        'final_balance': float(initial_balance) if initial_balance else 0,
+                        'amount_charged': 0,  # Previews are free
+                        'domain_multiplier': float(multiplier),
+                        'raw_cost': 0,  # No processing happened
+                        'preview_abandoned': True,  # Failed to complete
+                        'insufficient_balance_encountered': False,  # Previews don't charge
+                        'processing_type': 'preview_failed'
+                    }
+                    _update_session_info_with_account_data(email, clean_session_id, account_info)
+                except Exception as e:
+                    logger.error(f"Failed to update session info for failed preview: {e}")
                 
                 update_run_status(
                     session_id=session_id, status='FAILED',
@@ -643,11 +767,98 @@ def handle(event, context):
             token_usage = metadata.get('token_usage', {})
             validation_metrics = metadata.get('validation_metrics', {})
             
+            # Apply domain multiplier to raw costs and handle billing
+            try:
+                from shared.dynamodb_schemas import get_domain_multiplier, track_api_usage_detailed, deduct_from_balance, check_user_balance
+                from decimal import Decimal
+                
+                email_domain = email.split('@')[-1] if '@' in email else 'unknown'
+                multiplier = float(get_domain_multiplier(email_domain))
+                
+                raw_total_cost = token_usage.get('total_cost', 0.0)
+                charged_total_cost = raw_total_cost * multiplier
+                
+                logger.info(f"Full validation costs - Raw: ${raw_total_cost:.6f}, Multiplier: {multiplier}x, Charged: ${charged_total_cost:.6f}")
+                
+                # For full validation, deduct from account balance
+                initial_balance = check_user_balance(email)
+                final_balance = initial_balance
+                balance_error_occurred = False
+                charged_amount = 0
+                
+                if not is_preview and charged_total_cost > 0:
+                    # Check if user has sufficient balance
+                    current_balance = check_user_balance(email)
+                    if current_balance is not None and current_balance >= Decimal(str(charged_total_cost)):
+                        # Deduct from balance
+                        deduct_success = deduct_from_balance(
+                            email=email,
+                            amount=Decimal(str(charged_total_cost)),
+                            session_id=session_id,
+                            description=f"Full validation - {len(real_results)} rows processed",
+                            raw_cost=Decimal(str(raw_total_cost)),
+                            multiplier=Decimal(str(multiplier))
+                        )
+                        if deduct_success:
+                            final_balance = check_user_balance(email)
+                            charged_amount = charged_total_cost
+                            # Send balance update via WebSocket
+                            _send_balance_update(session_id, {
+                                'type': 'balance_update',
+                                'new_balance': float(final_balance) if final_balance else 0,
+                                'transaction': {
+                                    'amount': -float(charged_total_cost),
+                                    'description': f"Full validation - {len(real_results)} rows processed",
+                                    'raw_cost': float(raw_total_cost),
+                                    'multiplier': float(multiplier)
+                                }
+                            })
+                        else:
+                            logger.error(f"Failed to deduct ${charged_total_cost:.6f} from {email} balance")
+                            balance_error_occurred = True
+                    else:
+                        logger.warning(f"Insufficient balance for {email}: {current_balance} < ${charged_total_cost:.6f}")
+                        balance_error_occurred = True
+                
+                # Track detailed API usage for each provider
+                by_provider = token_usage.get('by_provider', {})
+                for provider, provider_usage in by_provider.items():
+                    if provider_usage and isinstance(provider_usage, dict):
+                        usage_data = {
+                            'api_calls': provider_usage.get('api_calls', 0),
+                            'cached_calls': provider_usage.get('cached_calls', 0),
+                            'total_tokens': provider_usage.get('total_tokens', 0),
+                            'cost': provider_usage.get('total_cost', 0.0) * multiplier,  # Apply multiplier
+                            'raw_cost': provider_usage.get('total_cost', 0.0),  # Store raw cost too
+                            'multiplier_applied': multiplier
+                        }
+                        
+                        # Add provider-specific token fields
+                        if provider == 'perplexity':
+                            usage_data.update({
+                                'prompt_tokens': provider_usage.get('prompt_tokens', 0),
+                                'completion_tokens': provider_usage.get('completion_tokens', 0)
+                            })
+                        elif provider == 'anthropic':
+                            usage_data.update({
+                                'input_tokens': provider_usage.get('input_tokens', 0),
+                                'output_tokens': provider_usage.get('output_tokens', 0),
+                                'cache_tokens': provider_usage.get('cache_tokens', 0)
+                            })
+                        
+                        # Track detailed usage for this provider
+                        track_api_usage_detailed(session_id, provider, usage_data)
+                
+            except Exception as e:
+                logger.error(f"Error applying domain multiplier in full validation: {e}")
+                multiplier = 1.0
+                charged_total_cost = raw_total_cost
+            
             if is_preview:
                 logger.info(f"Got preview validation results for {session_id}, storing for polling.")
                 
-                # Extract metrics for this section
-                total_cost = token_usage.get('total_cost', 0.0)
+                # Extract metrics for this section  
+                total_cost = charged_total_cost  # Use charged cost for display
                 total_tokens = token_usage.get('total_tokens', 0)
                 total_rows_processed = validation_results.get('total_processed_rows', len(real_results))
                 
@@ -775,6 +986,19 @@ def handle(event, context):
                     email, clean_session_id, config_version, validation_data, 'validation'
                 )
                 
+                # Update session info with account data for full validation
+                account_info = {
+                    'initial_balance': float(initial_balance) if initial_balance else 0,
+                    'final_balance': float(final_balance) if final_balance else 0,
+                    'amount_charged': float(charged_amount),
+                    'domain_multiplier': float(multiplier),
+                    'raw_cost': float(raw_total_cost),
+                    'preview_abandoned': False,  # This is full validation
+                    'insufficient_balance_encountered': balance_error_occurred,
+                    'processing_type': 'full_validation'
+                }
+                _update_session_info_with_account_data(email, clean_session_id, account_info)
+                
                 if result['success']:
                     logger.info(f"Full validation results stored in versioned folder: {result['s3_key']}")
                 else:
@@ -864,6 +1088,15 @@ def handle(event, context):
                     # Ensure enhanced_excel_content is bytes or None (not other types)
                     safe_enhanced_excel_content = enhanced_excel_content if isinstance(enhanced_excel_content, (bytes, type(None))) else None
                     
+                    # Prepare billing information for receipt
+                    billing_info = {
+                        'amount_charged': charged_amount,
+                        'raw_cost': raw_total_cost,
+                        'multiplier': multiplier,
+                        'initial_balance': float(initial_balance) if initial_balance else 0,
+                        'final_balance': float(final_balance) if final_balance else 0
+                    }
+                    
                     email_result = send_validation_results_email(
                         email_address=email_address, excel_content=excel_content, 
                         config_content=json.dumps(config_data, indent=2).encode('utf-8'),
@@ -872,7 +1105,8 @@ def handle(event, context):
                         enhanced_excel_filename=f"{os.path.splitext(input_filename)[0]}_Validated.xlsx",
                         session_id=session_id, summary_data=summary_data, 
                         processing_time=metadata.get('processing_time',0),
-                        reference_pin=reference_pin, metadata=metadata, preview_email=preview_email
+                        reference_pin=reference_pin, metadata=metadata, preview_email=preview_email,
+                        billing_info=billing_info
                     )
                     if DYNAMODB_AVAILABLE:
                         track_email_delivery(session_id=session_id, email_sent=email_result['success'], delivery_status='delivered' if email_result['success'] else 'failed', message_id=email_result.get('message_id',''))
@@ -1265,3 +1499,45 @@ def _send_websocket_message_deduplicated(session_id: str, message: Dict, message
 def _send_websocket_message(session_id: str, message: Dict):
     """Legacy WebSocket sender - delegates to deduplicated version."""
     _send_websocket_message_deduplicated(session_id, message, "legacy")
+
+def _update_session_info_with_account_data(email: str, session_id: str, account_info: Dict):
+    """Update session_info.json with comprehensive account information."""
+    try:
+        from ..core.unified_s3_manager import UnifiedS3Manager
+        
+        storage_manager = UnifiedS3Manager()
+        session_path = storage_manager.get_session_path(email, session_id)
+        session_info_key = f"{session_path}session_info.json"
+        
+        # Get existing session info
+        try:
+            existing_response = storage_manager.s3_client.get_object(
+                Bucket=storage_manager.bucket_name,
+                Key=session_info_key
+            )
+            session_info = json.loads(existing_response['Body'].read())
+        except:
+            # Create basic session info if doesn't exist
+            session_info = {
+                'session_id': session_id,
+                'created': datetime.now().isoformat(),
+                'email': email,
+                'last_updated': datetime.now().isoformat()
+            }
+        
+        # Update with account information
+        session_info['account_info'] = account_info
+        session_info['last_updated'] = datetime.now().isoformat()
+        
+        # Store updated session info
+        storage_manager.s3_client.put_object(
+            Bucket=storage_manager.bucket_name,
+            Key=session_info_key,
+            Body=json.dumps(session_info, indent=2),
+            ContentType='application/json'
+        )
+        
+        logger.info(f"Updated session_info.json with account data for {session_id}")
+        
+    except Exception as e:
+        logger.error(f"Failed to update session_info with account data: {e}")
