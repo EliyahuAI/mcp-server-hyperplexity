@@ -235,42 +235,8 @@ def create_enhanced_result_zip(validation_results, session_id, total_rows, excel
 Reference Pin: {reference_pin}
 """ if reference_pin else ""
         
-        # Generate token usage section
+        # Token usage section removed from user-facing ZIP reports
         token_usage_section = ""
-        if metadata and 'token_usage' in metadata:
-            token_usage = metadata['token_usage']
-            token_usage_section = f"""
-
-Token Usage & Cost Analysis:
-============================
-Total Tokens: {token_usage.get('total_tokens', 0):,}
-Total Cost: ${token_usage.get('total_cost', 0.0):.6f}
-API Calls: {token_usage.get('api_calls', 0)} new, {token_usage.get('cached_calls', 0)} cached
-
-Provider Breakdown:
-"""
-            # Add provider-specific details
-            if 'by_provider' in token_usage:
-                for provider, provider_data in token_usage['by_provider'].items():
-                    if provider_data.get('calls', 0) > 0:
-                        if provider == 'perplexity':
-                            token_usage_section += f"""- Perplexity API: {provider_data.get('prompt_tokens', 0):,} prompt + {provider_data.get('completion_tokens', 0):,} completion = {provider_data.get('total_tokens', 0):,} tokens
-  Cost: ${provider_data.get('input_cost', 0.0):.6f} input + ${provider_data.get('output_cost', 0.0):.6f} output = ${provider_data.get('total_cost', 0.0):.6f} total
-  Calls: {provider_data.get('calls', 0)}
-"""
-                        elif provider == 'anthropic':
-                            token_usage_section += f"""- Anthropic API: {provider_data.get('input_tokens', 0):,} input + {provider_data.get('output_tokens', 0):,} output
-  Cache: {provider_data.get('cache_creation_tokens', 0):,} creation + {provider_data.get('cache_read_tokens', 0):,} read = {provider_data.get('total_tokens', 0):,} total tokens
-  Cost: ${provider_data.get('input_cost', 0.0):.6f} input + ${provider_data.get('output_cost', 0.0):.6f} output = ${provider_data.get('total_cost', 0.0):.6f} total
-  Calls: {provider_data.get('calls', 0)}
-"""
-            
-            # Add model breakdown
-            if 'by_model' in token_usage and token_usage['by_model']:
-                token_usage_section += f"\nModel Breakdown:\n"
-                for model, model_data in token_usage['by_model'].items():
-                    api_provider = model_data.get('api_provider', 'unknown')
-                    token_usage_section += f"- {model} ({api_provider}): {model_data.get('total_tokens', 0):,} tokens, ${model_data.get('total_cost', 0.0):.6f}, {model_data.get('calls', 0)} calls\n"
         
         summary_report = f"""
 Enhanced Validation Results Summary

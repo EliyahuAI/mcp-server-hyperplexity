@@ -13,10 +13,23 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from botocore.exceptions import ClientError
 
+# Import account management functions
+try:
+    from shared.dynamodb_schemas import (
+        check_user_balance, add_to_balance, get_domain_multiplier, 
+        set_domain_multiplier, DynamoDBSchemas,
+        create_account_transactions_table, create_domain_multipliers_table
+    )
+    ACCOUNT_FUNCTIONS_AVAILABLE = True
+except ImportError:
+    ACCOUNT_FUNCTIONS_AVAILABLE = False
+
 # Table names
 USER_VALIDATION_TABLE = "perplexity-validator-user-validation"
 USER_TRACKING_TABLE = "perplexity-validator-user-tracking"
 CALL_TRACKING_TABLE = "perplexity-validator-call-tracking"
+ACCOUNT_TRANSACTIONS_TABLE = "perplexity-validator-account-transactions"
+DOMAIN_MULTIPLIERS_TABLE = "perplexity-validator-domain-multipliers"
 
 # Logical column ordering for CSV exports
 USER_VALIDATION_COLUMNS = [
@@ -265,7 +278,7 @@ def list_all_tables():
         print("=== All DynamoDB Tables ===")
         for table_name in response['TableNames']:
             if 'perplexity-validator' in table_name:
-                print(f"✅ {table_name}")
+                print(f"[SUCCESS] {table_name}")
             else:
                 print(f"   {table_name}")
         print()
@@ -360,7 +373,7 @@ def get_user_validation_records(email=None):
                     print(json.dumps(response['Item'], indent=2, default=decimal_default))
                     return [response['Item']]
                 else:
-                    print(f"\n❌ No validation record found for {email}")
+                    print(f"\n[ERROR] No validation record found for {email}")
                     return []
             except Exception as e:
                 print(f"Error getting validation record for {email}: {e}")
@@ -388,7 +401,7 @@ def get_user_tracking_records(email=None):
                     print(json.dumps(response['Item'], indent=2, default=decimal_default))
                     return [response['Item']]
                 else:
-                    print(f"\n❌ No tracking record found for {email}")
+                    print(f"\n[ERROR] No tracking record found for {email}")
                     return []
             except Exception as e:
                 print(f"Error getting tracking record for {email}: {e}")
@@ -410,12 +423,12 @@ def delete_user_validation_record(email):
         # Check if record exists first
         response = table.get_item(Key={'email': email})
         if 'Item' not in response:
-            print(f"❌ No validation record found for {email}")
+            print(f"[ERROR] No validation record found for {email}")
             return False
         
         # Delete the record
         table.delete_item(Key={'email': email})
-        print(f"✅ Deleted validation record for {email}")
+        print(f"[SUCCESS] Deleted validation record for {email}")
         return True
         
     except Exception as e:
@@ -431,12 +444,12 @@ def delete_user_tracking_record(email):
         # Check if record exists first
         response = table.get_item(Key={'email': email})
         if 'Item' not in response:
-            print(f"❌ No tracking record found for {email}")
+            print(f"[ERROR] No tracking record found for {email}")
             return False
         
         # Delete the record
         table.delete_item(Key={'email': email})
-        print(f"✅ Deleted tracking record for {email}")
+        print(f"[SUCCESS] Deleted tracking record for {email}")
         return True
         
     except Exception as e:
@@ -469,7 +482,7 @@ def clear_table(table_name):
                 key = {key_name: item[key_name] for key_name in key_names}
                 batch.delete_item(Key=key)
         
-        print(f"✅ Cleared all {len(items)} items from {table_name}")
+        print(f"[SUCCESS] Cleared all {len(items)} items from {table_name}")
         return True
         
     except Exception as e:
@@ -508,7 +521,7 @@ def export_table_to_csv(table_name, output_dir="exports", limit=None):
         items = response.get('Items', [])
         
         if not items:
-            print(f"❌ No items found in table {table_name}")
+            print(f"[ERROR] No items found in table {table_name}")
             return None
         
         print(f"📊 Found {len(items)} items to export")
@@ -535,12 +548,12 @@ def export_table_to_csv(table_name, output_dir="exports", limit=None):
                         csv_row[key] = value
                 writer.writerow(csv_row)
         
-        print(f"✅ Successfully exported {len(items)} items to {filepath}")
+        print(f"[SUCCESS] Successfully exported {len(items)} items to {filepath}")
         print(f"📁 Columns: {', '.join(fieldnames)}")
         return filepath
         
     except Exception as e:
-        print(f"❌ Error exporting table {table_name} to CSV: {e}")
+        print(f"[ERROR] Error exporting table {table_name} to CSV: {e}")
         return None
 
 def export_all_tables_to_csv(output_dir="exports", limit=None):
@@ -597,7 +610,7 @@ def export_user_data_to_csv(email, output_dir="exports"):
                     writer.writerow(csv_row)
                 
                 exported_files.append(filepath)
-                print(f"✅ Exported validation data to {filepath}")
+                print(f"[SUCCESS] Exported validation data to {filepath}")
     
     # Export user tracking record
     tracking_records = get_user_tracking_records(email)
@@ -622,14 +635,171 @@ def export_user_data_to_csv(email, output_dir="exports"):
                     writer.writerow(csv_row)
                 
                 exported_files.append(filepath)
-                print(f"✅ Exported tracking data to {filepath}")
+                print(f"[SUCCESS] Exported tracking data to {filepath}")
     
     if exported_files:
         print(f"🎉 User data export complete! {len(exported_files)} files created in {user_dir}/")
     else:
-        print(f"❌ No data found for user {email}")
+        print(f"[ERROR] No data found for user {email}")
     
     return exported_files
+
+def get_account_transactions(email, limit=50):
+    """Get account transactions for a specific email"""
+    try:
+        if not ACCOUNT_FUNCTIONS_AVAILABLE:
+            print("[ERROR] Account management functions not available")
+            return []
+        
+        from shared.dynamodb_schemas import get_user_transactions
+        items = get_user_transactions(email.lower(), limit)
+        
+        print(f"\n=== Account Transactions for {email} ===")
+        if items:
+            print(f"Found {len(items)} transactions:\n")
+            for i, transaction in enumerate(items, 1):
+                timestamp = transaction.get('timestamp', 'Unknown')
+                amount = transaction.get('amount', 0)
+                balance_after = transaction.get('balance_after', 0)
+                description = transaction.get('description', 'No description')
+                transaction_type = transaction.get('transaction_type', 'unknown')
+                session_id = transaction.get('session_id', 'N/A')
+                
+                # Format amount with + or - prefix
+                amount_str = f"+${float(amount):.4f}" if amount >= 0 else f"-${float(abs(amount)):.4f}"
+                
+                print(f"{i:3d}. {timestamp[:19]}  {amount_str:>12}  Balance: ${float(balance_after):.4f}")
+                print(f"     Type: {transaction_type}, Session: {session_id}")
+                print(f"     {description}")
+                print()
+        else:
+            print("No transactions found.")
+        
+        return items
+        
+    except Exception as e:
+        print(f"Error getting account transactions: {e}")
+        return []
+
+def check_balance_command(email):
+    """Check account balance for a user"""
+    if not ACCOUNT_FUNCTIONS_AVAILABLE:
+        print("[ERROR] Account management functions not available")
+        return
+    
+    try:
+        balance = check_user_balance(email)
+        if balance is not None:
+            print(f"\n=== Account Balance for {email} ===")
+            print(f"Current Balance: ${float(balance):.4f}")
+        else:
+            print(f"[ERROR] User {email} not found in tracking table")
+    except Exception as e:
+        print(f"Error checking balance: {e}")
+
+def add_balance_command(email, amount):
+    """Add balance to user account"""
+    if not ACCOUNT_FUNCTIONS_AVAILABLE:
+        print("[ERROR] Account management functions not available")
+        return
+    
+    try:
+        amount_decimal = Decimal(str(amount))
+        if amount_decimal <= 0:
+            print("[ERROR] Amount must be positive")
+            return
+        
+        success = add_to_balance(
+            email=email,
+            amount=amount_decimal,
+            transaction_type='admin_credit',
+            description=f'Manual credit added by admin via CLI'
+        )
+        
+        if success:
+            # Show new balance
+            new_balance = check_user_balance(email)
+            print(f"[SUCCESS] Added ${float(amount_decimal):.4f} to {email}")
+            print(f"New balance: ${float(new_balance):.4f}")
+        else:
+            print("[ERROR] Failed to add balance")
+            
+    except (ValueError, TypeError):
+        print("[ERROR] Invalid amount format")
+    except Exception as e:
+        print(f"Error adding balance: {e}")
+
+def set_multiplier_command(domain, multiplier):
+    """Set domain-specific cost multiplier"""
+    if not ACCOUNT_FUNCTIONS_AVAILABLE:
+        print("[ERROR] Account management functions not available")
+        return
+    
+    try:
+        multiplier_decimal = Decimal(str(multiplier))
+        if multiplier_decimal <= 0:
+            print("[ERROR] Multiplier must be positive")
+            return
+        
+        success = set_domain_multiplier(
+            domain=domain,
+            multiplier=multiplier_decimal,
+            admin_email='admin@cli',
+            notes=f'Set via CLI on {datetime.now().isoformat()}'
+        )
+        
+        if success:
+            print(f"[SUCCESS] Set cost multiplier for '{domain}' to {float(multiplier_decimal)}x")
+        else:
+            print("[ERROR] Failed to set multiplier")
+            
+    except (ValueError, TypeError):
+        print("[ERROR] Invalid multiplier format")
+    except Exception as e:
+        print(f"Error setting multiplier: {e}")
+
+def get_multiplier_command(domain):
+    """Get cost multiplier for a domain"""
+    if not ACCOUNT_FUNCTIONS_AVAILABLE:
+        print("[ERROR] Account management functions not available")
+        return
+    
+    try:
+        multiplier = get_domain_multiplier(domain)
+        print(f"\n=== Cost Multiplier for '{domain}' ===")
+        print(f"Multiplier: {float(multiplier)}x")
+    except Exception as e:
+        print(f"Error getting multiplier: {e}")
+
+def create_account_tables():
+    """Create account management tables"""
+    if not ACCOUNT_FUNCTIONS_AVAILABLE:
+        print("[ERROR] Account management functions not available")
+        return
+    
+    print("Creating account management tables...")
+    
+    # Create account transactions table
+    try:
+        result = create_account_transactions_table()
+        if result:
+            print("[SUCCESS] Account transactions table created/verified")
+        else:
+            print("[ERROR] Failed to create account transactions table")
+    except Exception as e:
+        print(f"Error creating account transactions table: {e}")
+    
+    # Create domain multipliers table  
+    try:
+        result = create_domain_multipliers_table()
+        if result:
+            print("[SUCCESS] Domain multipliers table created/verified")
+        else:
+            print("[ERROR] Failed to create domain multipliers table")
+    except Exception as e:
+        print(f"Error creating domain multipliers table: {e}")
+    
+    print("\nAccount tables setup complete!")
 
 def main():
     """Main function with command line interface"""
@@ -653,6 +823,15 @@ CSV Export Commands:
     python manage_dynamodb_tables.py export-csv <table_name> [limit]    # Export single table to CSV
     python manage_dynamodb_tables.py export-all-csv [limit]             # Export all tables to CSV
     python manage_dynamodb_tables.py export-user-csv <email>            # Export user data to CSV
+    
+Account Management Commands:
+    python manage_dynamodb_tables.py check-balance <email>              # Check user's current balance
+    python manage_dynamodb_tables.py add-balance <email> <amount>       # Add credits to user account
+    python manage_dynamodb_tables.py list-transactions <email> [limit]  # View transaction history
+    python manage_dynamodb_tables.py set-multiplier <domain> <multiplier> # Set domain cost multiplier
+    python manage_dynamodb_tables.py get-multiplier <domain>            # Get domain cost multiplier
+    python manage_dynamodb_tables.py set-global-multiplier <multiplier> # Set global cost multiplier
+    python manage_dynamodb_tables.py create-account-tables              # Create account management tables
 
 Examples:
     python manage_dynamodb_tables.py validation eliyahu@eliyahu.ai
@@ -661,6 +840,14 @@ Examples:
     python manage_dynamodb_tables.py export-csv perplexity-validator-user-tracking
     python manage_dynamodb_tables.py export-all-csv 100
     python manage_dynamodb_tables.py export-user-csv eliyahu@eliyahu.ai
+    
+    python manage_dynamodb_tables.py check-balance eliyahu@eliyahu.ai
+    python manage_dynamodb_tables.py add-balance eliyahu@eliyahu.ai 25.50
+    python manage_dynamodb_tables.py list-transactions eliyahu@eliyahu.ai
+    python manage_dynamodb_tables.py set-multiplier eliyahu.ai 3.0
+    python manage_dynamodb_tables.py get-multiplier eliyahu.ai
+    python manage_dynamodb_tables.py set-global-multiplier 5.0
+    python manage_dynamodb_tables.py create-account-tables
         """)
         return
     
@@ -745,6 +932,64 @@ Examples:
             return
         email = sys.argv[2]
         export_user_data_to_csv(email)
+    
+    # Account Management Commands
+    elif command == "check-balance":
+        if len(sys.argv) < 3:
+            print("Usage: python manage_dynamodb_tables.py check-balance <email>")
+            return
+        email = sys.argv[2]
+        check_balance_command(email)
+    
+    elif command == "add-balance":
+        if len(sys.argv) < 4:
+            print("Usage: python manage_dynamodb_tables.py add-balance <email> <amount>")
+            return
+        email = sys.argv[2]
+        try:
+            amount = float(sys.argv[3])
+            add_balance_command(email, amount)
+        except ValueError:
+            print("[ERROR] Amount must be a valid number")
+    
+    elif command == "list-transactions":
+        if len(sys.argv) < 3:
+            print("Usage: python manage_dynamodb_tables.py list-transactions <email> [limit]")
+            return
+        email = sys.argv[2]
+        limit = int(sys.argv[3]) if len(sys.argv) > 3 else 50
+        get_account_transactions(email, limit)
+    
+    elif command == "set-multiplier":
+        if len(sys.argv) < 4:
+            print("Usage: python manage_dynamodb_tables.py set-multiplier <domain> <multiplier>")
+            return
+        domain = sys.argv[2]
+        try:
+            multiplier = float(sys.argv[3])
+            set_multiplier_command(domain, multiplier)
+        except ValueError:
+            print("[ERROR] Multiplier must be a valid number")
+    
+    elif command == "get-multiplier":
+        if len(sys.argv) < 3:
+            print("Usage: python manage_dynamodb_tables.py get-multiplier <domain>")
+            return
+        domain = sys.argv[2]
+        get_multiplier_command(domain)
+    
+    elif command == "set-global-multiplier":
+        if len(sys.argv) < 3:
+            print("Usage: python manage_dynamodb_tables.py set-global-multiplier <multiplier>")
+            return
+        try:
+            multiplier = float(sys.argv[2])
+            set_multiplier_command('global', multiplier)
+        except ValueError:
+            print("[ERROR] Multiplier must be a valid number")
+    
+    elif command == "create-account-tables":
+        create_account_tables()
     
     else:
         print(f"Unknown command: {command}")
