@@ -137,3 +137,5 @@ test_cases/simple_*.json
 !src/run_ratio_test.py
 !src/test_logging.py 
 !test_validation.py 
+.claude/
+frontend/hyperplexity-credits-api-key.txt

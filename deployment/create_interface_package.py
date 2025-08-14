@@ -670,6 +670,19 @@ def setup_dynamodb_tables(region="us-east-1"):
         dynamodb_schemas.create_websocket_connections_table()
         logger.info("✅ WebSocket connections table created/verified")
         
+        # Create account management tables
+        try:
+            dynamodb_schemas.create_account_transactions_table()
+            logger.info("✅ Account transactions table created/verified")
+        except Exception as e:
+            logger.error(f"Failed to create account transactions table: {e}")
+        
+        try:
+            dynamodb_schemas.create_domain_multipliers_table()
+            logger.info("✅ Domain multipliers table created/verified")
+        except Exception as e:
+            logger.error(f"Failed to create domain multipliers table: {e}")
+        
         # Define table names using the same pattern as the original code
         user_validation_table = dynamodb_schemas.DynamoDBSchemas.USER_VALIDATION_TABLE
         user_tracking_table = dynamodb_schemas.DynamoDBSchemas.USER_TRACKING_TABLE
