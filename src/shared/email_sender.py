@@ -26,7 +26,223 @@ BCC_ADDRESS = "ppp@eliyahu.ai"  # For tracking/analytics
 CHARSET = "UTF-8"
 
 
-def send_validation_results_email(email_address, excel_content, config_content, enhanced_excel_content, input_filename, config_filename, enhanced_excel_filename, session_id, summary_data, processing_time=None, reference_pin=None, metadata=None, preview_email=False):
+def generate_receipt(session_id: str, email: str, amount: float, raw_cost: float, 
+                    multiplier: float, transaction_details: dict) -> str:
+    """Generate HTML receipt for validation charges"""
+    try:
+        receipt_date = datetime.now().strftime("%B %d, %Y at %I:%M %p UTC")
+        receipt_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }}
+                .receipt {{ max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                .header {{ text-align: center; border-bottom: 2px solid #4a90e2; padding-bottom: 20px; margin-bottom: 30px; }}
+                .logo {{ font-size: 24px; font-weight: bold; color: #4a90e2; margin-bottom: 5px; }}
+                .receipt-title {{ font-size: 18px; color: #666; }}
+                .receipt-info {{ margin-bottom: 30px; }}
+                .info-row {{ display: flex; justify-content: space-between; margin: 8px 0; }}
+                .label {{ font-weight: bold; color: #333; }}
+                .value {{ color: #666; }}
+                .cost-breakdown {{ background: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0; }}
+                .cost-row {{ display: flex; justify-content: space-between; margin: 5px 0; }}
+                .total-row {{ border-top: 2px solid #ddd; padding-top: 10px; font-weight: bold; font-size: 16px; }}
+                .footer {{ text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #888; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="receipt">
+                <div class="header">
+                    <div class="logo">HYPERPLEXITY VALIDATION</div>
+                    <div class="receipt-title">Payment Receipt</div>
+                </div>
+                
+                <div class="receipt-info">
+                    <div class="info-row">
+                        <span class="label">Receipt Date:</span>
+                        <span class="value">{receipt_date}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Session ID:</span>
+                        <span class="value">{session_id}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Customer Email:</span>
+                        <span class="value">{email}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Service:</span>
+                        <span class="value">Table Validation</span>
+                    </div>
+                </div>
+                
+                <div class="cost-breakdown">
+                    <h3 style="margin-top: 0; color: #333;">Cost Breakdown</h3>
+                    <div class="cost-row">
+                        <span>Raw Processing Cost:</span>
+                        <span>${raw_cost:.6f}</span>
+                    </div>
+                    <div class="cost-row">
+                        <span>Domain Multiplier:</span>
+                        <span>{multiplier:.1f}x</span>
+                    </div>
+                    <div class="cost-row">
+                        <span>Rows Processed:</span>
+                        <span>{transaction_details.get('rows_processed', 'N/A')}</span>
+                    </div>
+                    <div class="cost-row total-row">
+                        <span>Total Charged:</span>
+                        <span>${amount:.4f}</span>
+                    </div>
+                </div>
+                
+                <div class="footer">
+                    <p>Thank you for using Hyperplexity!</p>
+                    <p>For support, contact: eliyahu@eliyahu.ai</p>
+                    <p>This receipt is for your records.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return receipt_content.strip()
+        
+    except Exception as e:
+        logger.error(f"Error generating receipt: {e}")
+        # Return simple text receipt as fallback
+        return f"""
+HYPERPLEXITY VALIDATION RECEIPT
+==============================
+Session: {session_id}
+Date: {datetime.now().isoformat()}
+Email: {email}
+
+Service: Table Validation
+Raw Processing Cost: ${raw_cost:.6f}
+Domain Multiplier: {multiplier}x
+Total Charged: ${amount:.4f}
+
+Thank you for using Hyperplexity!
+        """.strip()
+
+
+def send_credit_confirmation_email(email_address: str, amount_purchased: float, new_balance: float, transaction_id: str) -> dict:
+    """Send confirmation email for credit purchase."""
+    try:
+        # Create message
+        message = MIMEMultipart()
+        message["From"] = SENDER
+        message["To"] = email_address
+        message["Subject"] = f"💳 Credits Added - ${amount_purchased:.2f} - Hyperplexity"
+        
+        # Create email body
+        purchase_date = datetime.now().strftime("%B %d, %Y at %I:%M %p UTC")
+        
+        body_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }}
+                .email-container {{ max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                .header {{ background: linear-gradient(135deg, #4a90e2, #357abd); color: white; padding: 30px; text-align: center; }}
+                .header h1 {{ margin: 0; font-size: 24px; }}
+                .content {{ padding: 30px; }}
+                .purchase-info {{ background: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0; }}
+                .info-row {{ display: flex; justify-content: space-between; margin: 10px 0; }}
+                .label {{ font-weight: bold; color: #333; }}
+                .value {{ color: #666; }}
+                .balance-highlight {{ background: #e8f5e8; padding: 15px; border-radius: 5px; text-align: center; margin: 20px 0; }}
+                .balance-amount {{ font-size: 24px; font-weight: bold; color: #27ae60; }}
+                .footer {{ background: #f8f9fa; padding: 20px; text-align: center; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="email-container">
+                <div class="header">
+                    <h1>🎉 Credits Successfully Added!</h1>
+                </div>
+                
+                <div class="content">
+                    <p>Thank you for your purchase! Your credits have been successfully added to your Hyperplexity account.</p>
+                    
+                    <div class="purchase-info">
+                        <h3 style="margin-top: 0; color: #333;">Purchase Details</h3>
+                        <div class="info-row">
+                            <span class="label">Purchase Date:</span>
+                            <span class="value">{purchase_date}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Amount Purchased:</span>
+                            <span class="value">${amount_purchased:.2f}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Transaction ID:</span>
+                            <span class="value">{transaction_id}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="balance-highlight">
+                        <p style="margin: 0; color: #333;">Your Current Balance:</p>
+                        <div class="balance-amount">${new_balance:.4f}</div>
+                    </div>
+                    
+                    <p>Your credits are ready to use! You can now process table validations and the costs will be automatically deducted from your account balance.</p>
+                    
+                    <p><strong>What's Next?</strong></p>
+                    <ul>
+                        <li>Upload your Excel or CSV files for validation</li>
+                        <li>Generate AI-powered configuration files</li>
+                        <li>Monitor your usage and balance in real-time</li>
+                    </ul>
+                </div>
+                
+                <div class="footer">
+                    <p>Thank you for using Hyperplexity!</p>
+                    <p>For support, contact: eliyahu@eliyahu.ai</p>
+                    <p>Keep this email for your records.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Attach HTML body
+        part = MIMEText(body_html, 'html', CHARSET)
+        message.attach(part)
+        
+        # Send email via SES
+        ses_client = boto3.client('ses')
+        
+        response = ses_client.send_raw_email(
+            Source=SENDER,
+            Destinations=[email_address, BCC_ADDRESS],
+            RawMessage={
+                'Data': message.as_string()
+            }
+        )
+        
+        message_id = response['MessageId']
+        logger.info(f"Credit confirmation email sent successfully! Message ID: {message_id}")
+        
+        return {
+            'success': True,
+            'message_id': message_id,
+            'message': f"Credit confirmation sent to {email_address}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to send credit confirmation email: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e),
+            'message': f"Failed to send confirmation to {email_address}"
+        }
+
+
+def send_validation_results_email(email_address, excel_content, config_content, enhanced_excel_content, input_filename, config_filename, enhanced_excel_filename, session_id, summary_data, processing_time=None, reference_pin=None, metadata=None, preview_email=False, billing_info=None):
     """
     Send validation results via email with individual file attachments
     
@@ -43,6 +259,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
           processing_time: Optional processing time in seconds
           reference_pin: Reference PIN for the validation
           metadata: Optional metadata including token usage
+          billing_info: Optional billing information for receipt generation
         
     Returns:
         dict: Response with status and message ID
@@ -128,6 +345,39 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         part.add_header("Content-Disposition", f'attachment; filename="{config_filename}"')
         message.attach(part)
         
+        # Generate and attach receipt if there are charges
+        if billing_info and billing_info.get('amount_charged', 0) > 0 and not preview_email:
+            try:
+                transaction_details = {
+                    'rows_processed': summary_data.get('total_rows', 0),
+                    'description': f"Full validation - {summary_data.get('total_rows', 0)} rows processed",
+                    'session_id': session_id
+                }
+                
+                receipt_html = generate_receipt(
+                    session_id=session_id,
+                    email=email_address,
+                    amount=billing_info.get('amount_charged', 0),
+                    raw_cost=billing_info.get('raw_cost', 0),
+                    multiplier=billing_info.get('multiplier', 1.0),
+                    transaction_details=transaction_details
+                )
+                
+                # Create receipt filename
+                receipt_filename = f"receipt_{session_id}.html"
+                
+                # Attach receipt as HTML file
+                receipt_part = MIMEApplication(receipt_html.encode('utf-8'))
+                receipt_part.add_header("Content-Disposition", f'attachment; filename="{receipt_filename}"')
+                receipt_part.add_header("Content-Type", "text/html; charset=utf-8")
+                message.attach(receipt_part)
+                
+                logger.info(f"Receipt attached to email for session {session_id}: ${billing_info.get('amount_charged', 0):.4f}")
+                
+            except Exception as e:
+                logger.error(f"Failed to generate/attach receipt for session {session_id}: {e}")
+                # Don't fail the email if receipt generation fails
+        
         # Send email via SES
         ses_client = boto3.client('ses')
         
@@ -149,6 +399,13 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         
         # Log email metadata to S3 (optional tracking)
         try:
+            attachments_list = [enhanced_excel_filename, input_filename, config_filename]
+            
+            # Add receipt to attachments list if billing info was provided and charges applied
+            if billing_info and billing_info.get('amount_charged', 0) > 0 and not preview_email:
+                receipt_filename = f"receipt_{session_id}.html"
+                attachments_list.append(receipt_filename)
+            
             email_metadata = {
                 'MessageID': message_id,
                 'SessionID': session_id,
@@ -158,7 +415,9 @@ def send_validation_results_email(email_address, excel_content, config_content, 
                 'TotalRows': total_rows,
                 'FieldsValidated': fields_validated,
                 'ConfidenceDistribution': confidence_distribution,
-                'Attachments': [enhanced_excel_filename, input_filename, config_filename]
+                'Attachments': attachments_list,
+                'BillingInfo': billing_info if billing_info else None,
+                'PreviewEmail': preview_email
             }
             
             s3_client = boto3.client('s3')
@@ -247,20 +506,8 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             minutes = processing_time / 60
             time_info = f"<p><b>Processing time:</b> {minutes:.1f} minutes</p>"
     
-    # Format token usage info (simplified - removed cost and cached calls)
+    # Token usage info removed from user-facing emails
     token_info = ""
-    if token_usage:
-        total_tokens = token_usage.get('total_tokens', 0)
-        
-        if total_tokens > 0:
-            token_info = f"""
-            <div class="token-info">
-                <h3>Processing Summary</h3>
-                <ul>
-                    <li><b>Total tokens used:</b> {total_tokens:,}</li>
-                </ul>
-            </div>
-            """
     
     # Format reference pin
     pin_info = ""
@@ -328,18 +575,6 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             }}
             .confidence li {{
                 margin: 5px 0;
-            }}
-            .token-info {{
-                background: #F8F9FA;
-                border: 1px solid #E5E5E5;
-                border-left: 4px solid #00FF00;
-                padding: 15px;
-                border-radius: 8px;
-                margin: 20px 0;
-            }}
-            .token-info ul {{
-                margin: 10px 0;
-                padding-left: 20px;
             }}
             .attachments {{
                 background: #ffffff;
@@ -418,8 +653,6 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
                     </ul>
                 </div>
             </div>
-            
-            {token_info}
             
             <div class="attachments">
                 <h3>📎 Attached Files</h3>

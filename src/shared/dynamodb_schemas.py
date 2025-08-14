@@ -48,6 +48,8 @@ class DynamoDBSchemas:
     COST_TRACKING_TABLE = "perplexity-validator-cost-tracking"
     USER_VALIDATION_TABLE = "perplexity-validator-user-validation"
     USER_TRACKING_TABLE = "perplexity-validator-user-tracking"
+    ACCOUNT_TRANSACTIONS_TABLE = "perplexity-validator-account-transactions"
+    DOMAIN_MULTIPLIERS_TABLE = "perplexity-validator-domain-multipliers"
     
     @classmethod
     def get_call_tracking_schema(cls) -> Dict[str, Any]:
@@ -264,6 +266,92 @@ class DynamoDBSchemas:
                     'Projection': {
                         'ProjectionType': 'ALL'
                     }
+                }
+            ],
+            'BillingMode': 'PAY_PER_REQUEST'
+        }
+    
+    @classmethod
+    def get_account_transactions_schema(cls) -> Dict[str, Any]:
+        """Schema for account transactions table."""
+        return {
+            'TableName': cls.ACCOUNT_TRANSACTIONS_TABLE,
+            'KeySchema': [
+                {
+                    'AttributeName': 'email',
+                    'KeyType': 'HASH'  # Partition key
+                },
+                {
+                    'AttributeName': 'transaction_id',
+                    'KeyType': 'RANGE'  # Sort key
+                }
+            ],
+            'AttributeDefinitions': [
+                {
+                    'AttributeName': 'email',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'transaction_id',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'timestamp',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'session_id',
+                    'AttributeType': 'S'
+                }
+            ],
+            'GlobalSecondaryIndexes': [
+                {
+                    'IndexName': 'TimestampIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'email',
+                            'KeyType': 'HASH'
+                        },
+                        {
+                            'AttributeName': 'timestamp',
+                            'KeyType': 'RANGE'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                },
+                {
+                    'IndexName': 'SessionIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'session_id',
+                            'KeyType': 'HASH'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                }
+            ],
+            'BillingMode': 'PAY_PER_REQUEST'
+        }
+    
+    @classmethod
+    def get_domain_multipliers_schema(cls) -> Dict[str, Any]:
+        """Schema for domain cost multipliers table."""
+        return {
+            'TableName': cls.DOMAIN_MULTIPLIERS_TABLE,
+            'KeySchema': [
+                {
+                    'AttributeName': 'domain',
+                    'KeyType': 'HASH'  # Partition key
+                }
+            ],
+            'AttributeDefinitions': [
+                {
+                    'AttributeName': 'domain',
+                    'AttributeType': 'S'
                 }
             ],
             'BillingMode': 'PAY_PER_REQUEST'
@@ -1274,7 +1362,11 @@ def initialize_user_tracking(email: str, validated_at: str = None) -> bool:
             'perplexity_tokens': 0,
             'perplexity_cost': Decimal('0.0'),
             'anthropic_tokens': 0,
-            'anthropic_cost': Decimal('0.0')
+            'anthropic_cost': Decimal('0.0'),
+            # Account balance fields
+            'account_balance': Decimal('0.0'),
+            'balance_last_updated': current_time,
+            'account_created_at': current_time
         }
         
         # Add validation dates if this is a validation event
@@ -1475,6 +1567,384 @@ def check_or_send_validation(email: str) -> Dict[str, Any]:
             'error': 'internal_error',
             'message': f'Internal error: {str(e)}'
         } 
+
+
+# --- Account Balance and Transaction Management ---
+
+def create_account_transactions_table():
+    """Create the account transactions table."""
+    schemas = DynamoDBSchemas()
+    try:
+        dynamodb_client.create_table(**schemas.get_account_transactions_schema())
+        logger.info(f"Created {schemas.ACCOUNT_TRANSACTIONS_TABLE} table")
+        return True
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            logger.info(f"Table {schemas.ACCOUNT_TRANSACTIONS_TABLE} already exists")
+            return True
+        else:
+            logger.error(f"Error creating account transactions table: {e}")
+            return False
+
+
+def create_domain_multipliers_table():
+    """Create the domain multipliers table."""
+    schemas = DynamoDBSchemas()
+    try:
+        dynamodb_client.create_table(**schemas.get_domain_multipliers_schema())
+        logger.info(f"Created {schemas.DOMAIN_MULTIPLIERS_TABLE} table")
+        
+        # Initialize with global multiplier
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(schemas.DOMAIN_MULTIPLIERS_TABLE)
+        table.put_item(Item={
+            'domain': 'global',
+            'multiplier': Decimal('5.0'),
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+            'created_by': 'system',
+            'notes': 'Default global multiplier'
+        })
+        logger.info("Initialized global multiplier to 5.0")
+        
+        return True
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            logger.info(f"Table {schemas.DOMAIN_MULTIPLIERS_TABLE} already exists")
+            return True
+        else:
+            logger.error(f"Error creating domain multipliers table: {e}")
+            return False
+
+
+def initialize_user_account(email: str, initial_balance: Decimal = Decimal('0')) -> bool:
+    """Initialize user account with balance fields."""
+    try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
+        
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.USER_TRACKING_TABLE)
+        
+        # Update existing user or create if doesn't exist
+        current_time = datetime.now(timezone.utc).isoformat()
+        
+        # Check if user exists
+        response = table.get_item(Key={'email': email})
+        
+        if 'Item' in response and 'account_balance' in response['Item']:
+            # Account already initialized
+            return True
+        
+        # Add account fields
+        update_expr = "SET account_balance = :balance, balance_last_updated = :updated, account_created_at = :created"
+        expr_values = {
+            ':balance': initial_balance,
+            ':updated': current_time,
+            ':created': current_time
+        }
+        
+        # If user doesn't exist, initialize basic fields too
+        if 'Item' not in response:
+            email_domain = email.split('@')[-1] if '@' in email else 'unknown'
+            update_expr += ", email_domain = :domain, created_at = :created, last_access = :created"
+            update_expr += ", total_preview_requests = :zero, total_full_requests = :zero"
+            update_expr += ", total_tokens_used = :zero, total_cost_usd = :zero_decimal"
+            expr_values.update({
+                ':domain': email_domain,
+                ':zero': 0,
+                ':zero_decimal': Decimal('0')
+            })
+        
+        table.update_item(
+            Key={'email': email},
+            UpdateExpression=update_expr,
+            ExpressionAttributeValues=expr_values
+        )
+        
+        logger.info(f"Initialized account for {email} with balance {initial_balance}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error initializing user account: {e}")
+        return False
+
+
+def check_user_balance(email: str) -> Optional[Decimal]:
+    """Check user's current account balance."""
+    try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
+        
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.USER_TRACKING_TABLE)
+        response = table.get_item(Key={'email': email})
+        
+        if 'Item' not in response:
+            return None
+        
+        # Return balance, defaulting to 0 if not set
+        return response['Item'].get('account_balance', Decimal('0'))
+        
+    except Exception as e:
+        logger.error(f"Error checking user balance: {e}")
+        return None
+
+
+def deduct_from_balance(email: str, amount: Decimal, session_id: str, description: str, 
+                       raw_cost: Decimal = None, multiplier: Decimal = None) -> bool:
+    """Deduct amount from user balance and record transaction."""
+    try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
+        
+        # Get current balance
+        current_balance = check_user_balance(email)
+        if current_balance is None:
+            logger.error(f"User {email} not found")
+            return False
+        
+        if current_balance < amount:
+            logger.error(f"Insufficient balance for {email}: {current_balance} < {amount}")
+            return False
+        
+        # Update balance
+        new_balance = current_balance - amount
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.USER_TRACKING_TABLE)
+        
+        table.update_item(
+            Key={'email': email},
+            UpdateExpression="SET account_balance = :balance, balance_last_updated = :updated",
+            ExpressionAttributeValues={
+                ':balance': new_balance,
+                ':updated': datetime.now(timezone.utc).isoformat()
+            }
+        )
+        
+        # Record transaction
+        import uuid
+        transaction_id = str(uuid.uuid4())
+        record_account_transaction(
+            email=email,
+            transaction_id=transaction_id,
+            transaction_type='validation',
+            amount=-amount,  # Negative for deduction
+            balance_before=current_balance,
+            balance_after=new_balance,
+            session_id=session_id,
+            description=description,
+            raw_cost=raw_cost,
+            multiplier_applied=multiplier
+        )
+        
+        logger.info(f"Deducted {amount} from {email}, new balance: {new_balance}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error deducting from balance: {e}")
+        return False
+
+
+def add_to_balance(email: str, amount: Decimal, transaction_type: str, 
+                   description: str, payment_id: str = None) -> bool:
+    """Add amount to user balance and record transaction."""
+    try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
+        
+        # Initialize account if needed
+        current_balance = check_user_balance(email)
+        if current_balance is None:
+            initialize_user_account(email)
+            current_balance = Decimal('0')
+        
+        # Update balance
+        new_balance = current_balance + amount
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.USER_TRACKING_TABLE)
+        
+        table.update_item(
+            Key={'email': email},
+            UpdateExpression="SET account_balance = :balance, balance_last_updated = :updated",
+            ExpressionAttributeValues={
+                ':balance': new_balance,
+                ':updated': datetime.now(timezone.utc).isoformat()
+            }
+        )
+        
+        # Record transaction
+        import uuid
+        transaction_id = str(uuid.uuid4())
+        record_account_transaction(
+            email=email,
+            transaction_id=transaction_id,
+            transaction_type=transaction_type,
+            amount=amount,  # Positive for addition
+            balance_before=current_balance,
+            balance_after=new_balance,
+            description=description,
+            payment_id=payment_id
+        )
+        
+        logger.info(f"Added {amount} to {email}, new balance: {new_balance}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error adding to balance: {e}")
+        return False
+
+
+def get_domain_multiplier(email_domain: str) -> Decimal:
+    """Get cost multiplier for a domain, falling back to global."""
+    try:
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.DOMAIN_MULTIPLIERS_TABLE)
+        
+        # Try domain-specific multiplier first
+        response = table.get_item(Key={'domain': email_domain})
+        if 'Item' in response:
+            return response['Item']['multiplier']
+        
+        # Fall back to global multiplier
+        response = table.get_item(Key={'domain': 'global'})
+        if 'Item' in response:
+            return response['Item']['multiplier']
+        
+        # Default if nothing found
+        return Decimal('5.0')
+        
+    except Exception as e:
+        logger.error(f"Error getting domain multiplier: {e}")
+        return Decimal('5.0')  # Default multiplier
+
+
+def set_domain_multiplier(domain: str, multiplier: Decimal, admin_email: str, notes: str = '') -> bool:
+    """Set cost multiplier for a domain."""
+    try:
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.DOMAIN_MULTIPLIERS_TABLE)
+        
+        current_time = datetime.now(timezone.utc).isoformat()
+        
+        table.put_item(Item={
+            'domain': domain,
+            'multiplier': multiplier,
+            'created_at': current_time,
+            'updated_at': current_time,
+            'created_by': admin_email,
+            'notes': notes
+        })
+        
+        logger.info(f"Set multiplier for {domain} to {multiplier}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error setting domain multiplier: {e}")
+        return False
+
+
+def record_account_transaction(email: str, transaction_id: str, transaction_type: str,
+                              amount: Decimal, balance_before: Decimal, balance_after: Decimal,
+                              description: str, session_id: str = None, multiplier_applied: Decimal = None,
+                              raw_cost: Decimal = None, payment_method: str = None, 
+                              payment_id: str = None, receipt_url: str = None) -> bool:
+    """Record a transaction in the account transactions table."""
+    try:
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.ACCOUNT_TRANSACTIONS_TABLE)
+        
+        item = {
+            'email': email,
+            'transaction_id': transaction_id,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'transaction_type': transaction_type,
+            'amount': amount,
+            'balance_before': balance_before,
+            'balance_after': balance_after,
+            'description': description
+        }
+        
+        # Add optional fields
+        if session_id:
+            item['session_id'] = session_id
+        if multiplier_applied is not None:
+            item['multiplier_applied'] = multiplier_applied
+        if raw_cost is not None:
+            item['raw_cost'] = raw_cost
+        if payment_method:
+            item['payment_method'] = payment_method
+        if payment_id:
+            item['payment_id'] = payment_id
+        if receipt_url:
+            item['receipt_url'] = receipt_url
+        
+        table.put_item(Item=item)
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error recording account transaction: {e}")
+        return False
+
+
+def get_user_transactions(email: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """Get transaction history for a user."""
+    try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
+        
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.ACCOUNT_TRANSACTIONS_TABLE)
+        
+        # Query using the TimestampIndex to get transactions in chronological order
+        response = table.query(
+            IndexName='TimestampIndex',
+            KeyConditionExpression='email = :email',
+            ExpressionAttributeValues={':email': email},
+            ScanIndexForward=False,  # Most recent first
+            Limit=limit
+        )
+        
+        items = response.get('Items', [])
+        
+        # Convert Decimals to floats for JSON compatibility
+        for item in items:
+            for key, value in item.items():
+                if isinstance(value, Decimal):
+                    item[key] = float(value)
+        
+        return items
+        
+    except Exception as e:
+        logger.error(f"Error getting user transactions: {e}")
+        return []
+
+
+def track_preview_cost(session_id: str, email: str, raw_cost: Decimal, 
+                      multiplier: Decimal, tokens_used: int) -> bool:
+    """Track preview cost without charging (preview is free)."""
+    try:
+        # Record in call tracking with raw cost info
+        updates = {
+            'preview_raw_cost_usd': raw_cost,
+            'preview_cost_multiplier': multiplier,
+            'preview_display_cost_usd': raw_cost * multiplier,  # What would be charged if not free
+            'preview_tokens_used': tokens_used,
+            'preview_completed': True
+        }
+        
+        return update_processing_metrics(session_id, updates)
+        
+    except Exception as e:
+        logger.error(f"Error tracking preview cost: {e}")
+        return False
+
+
+def track_abandoned_session(session_id: str) -> bool:
+    """Mark a session as abandoned (preview without full validation)."""
+    try:
+        updates = {
+            'session_abandoned': True,
+            'abandoned_at': datetime.now(timezone.utc).isoformat()
+        }
+        
+        return update_processing_metrics(session_id, updates)
+        
+    except Exception as e:
+        logger.error(f"Error tracking abandoned session: {e}")
+        return False
+
 
 # --- Validation Run Tracking ---
 

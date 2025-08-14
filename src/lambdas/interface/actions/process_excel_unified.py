@@ -380,6 +380,46 @@ def _handle_full_validation_request(storage_manager, email_address, session_id, 
     """Handle full validation request using unified storage"""
     from ..utils.helpers import create_response
     
+    # Check account balance before processing full validation
+    try:
+        from dynamodb_schemas import check_user_balance, get_domain_multiplier
+        from decimal import Decimal
+        
+        current_balance = check_user_balance(email_address)
+        if current_balance is None:
+            return create_response(400, {
+                'error': 'Account not found. Please contact support to set up your account.',
+                'error_type': 'account_not_found'
+            })
+        
+        # Get domain multiplier to estimate costs
+        email_domain = email_address.split('@')[-1] if '@' in email_address else 'unknown'
+        multiplier = get_domain_multiplier(email_domain)
+        
+        # Estimate minimum cost (very conservative estimate - $0.01 per validation)
+        # In practice, this should be based on preview results if available
+        min_estimated_cost = Decimal('0.01')
+        
+        if current_balance < min_estimated_cost:
+            logger.warning(f"Insufficient balance for {email_address}: ${current_balance} < ${min_estimated_cost}")
+            return create_response(402, {  # Payment Required
+                'error': 'Insufficient account balance for full validation',
+                'error_type': 'insufficient_balance',
+                'current_balance': float(current_balance),
+                'domain_multiplier': float(multiplier),
+                'estimated_minimum_cost': float(min_estimated_cost),
+                'message': f'Your account balance (${float(current_balance):.4f}) is insufficient for validation. Please add credits to continue.'
+            })
+        
+        logger.info(f"Balance check passed for {email_address}: ${current_balance} available, multiplier: {multiplier}x")
+        
+    except Exception as e:
+        logger.error(f"Error checking account balance: {e}")
+        return create_response(500, {
+            'error': 'Failed to verify account balance',
+            'error_type': 'balance_check_failed'
+        })
+    
     if async_mode and SQS_AVAILABLE:
         logger.info(f"Sending full validation request to SQS for session {session_id} (preview_email={preview_email})")
         from ..core.sqs_service import send_full_request
