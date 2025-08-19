@@ -87,6 +87,7 @@
     /* Card Template */
     .card {
         background-color: var(--card-background, #ffffff) !important;
+        background: #ffffff !important;
         border-radius: var(--border-radius);
         box-shadow: var(--box-shadow);
         padding: 2rem;
@@ -98,6 +99,7 @@
         /* Prevent layout shift by establishing containing block */
         transform-origin: center top;
         will-change: transform, opacity;
+        color: #333333 !important;
     }
 
     /* Smooth slide-in animation with minimal layout impact */
@@ -1640,100 +1642,45 @@
             }
             
             function resetProcessButtons() {
-                console.log(`[BUTTONS] Looking for buttons to reset...`);
+                // Use global state values
+                const currentBalance = globalState.accountBalance || 0;
+                const estimatedCost = globalState.estimatedCost || 0;
+                const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
+                const sufficientBalance = currentBalance >= estimatedCost;
                 
-                // Find all buttons that are in "Opening store" state and reset them
+                // Find all buttons that need updating
                 const buttons = document.querySelectorAll('button');
                 buttons.forEach(button => {
                     const buttonText = button.textContent || '';
                     
-                    if (buttonText.includes('Opening store') || buttonText.includes('💳') || buttonText.includes('Add') || buttonText.includes('Credits')) {
-                        console.log(`[BUTTONS] Found button to check: "${buttonText.trim()}"`);
+                    // Check if this is a credits/process button
+                    if (buttonText.includes('💳') || buttonText.includes('Add') && buttonText.includes('Credits') || 
+                        buttonText.includes('Process Table') || buttonText.includes('Opening store')) {
                         
-                        // Check if this is a process button by looking for data-action
-                        const processAction = button.getAttribute('data-action');
-                        const isProcessButton = processAction === 'process';
-                        
-                        // Also check if parent card suggests it's a process button
+                        // Check if it's in a preview card
                         const card = button.closest('.card');
-                        const cardContent = card ? card.textContent : '';
-                        const isPreviewCard = cardContent.includes('Your Balance') || cardContent.includes('Est. Cost') || cardContent.includes('Credits Needed');
-                        
-                        console.log(`[BUTTONS] Button data-action: ${processAction}, isPreviewCard: ${isPreviewCard}`);
-                        
-                        if (isProcessButton || isPreviewCard) {
-                            console.log(`[BUTTONS] This is a button to reset`);
-                            
-                            // Get values from the preview card display instead of global state
-                            const currentBalance = globalState.accountBalance || 0;
-                            
-                            // Find the estimated cost and credits needed from the preview card
-                            let estimatedCost = 0;
-                            let creditsNeeded = 0;
-                            
-                            // Look for the actual credits needed value in the preview card
-                            const previewCard = card.querySelector('.estimates');
-                            if (previewCard) {
-                                console.log(`[BUTTONS] Found preview card, looking for values...`);
-                                const costItems = previewCard.querySelectorAll('.cost-item');
-                                console.log(`[BUTTONS] Found ${costItems.length} cost items`);
-                                
-                                for (const item of costItems) {
-                                    const label = item.querySelector('.cost-label');
-                                    const value = item.querySelector('.cost-value');
-                                    if (label && value) {
-                                        const labelText = label.textContent.trim();
-                                        const valueText = value.textContent.trim();
-                                        console.log(`[BUTTONS] Cost item: "${labelText}" = "${valueText}"`);
-                                        
-                                        if (labelText.includes('Est. Cost')) {
-                                            estimatedCost = parseFloat(valueText.replace('$', '')) || 0;
-                                            console.log(`[BUTTONS] Found Est. Cost: $${estimatedCost}`);
-                                        } else if (labelText.includes('Credits Needed')) {
-                                            creditsNeeded = parseFloat(valueText.replace('$', '')) || 0;
-                                            console.log(`[BUTTONS] Found Credits Needed: $${creditsNeeded}`);
-                                        }
-                                    }
-                                }
-                            } else {
-                                console.log(`[BUTTONS] No preview card found in button's card`);
-                            }
-                            
-                            // If no preview card data, fall back to calculation
-                            if (estimatedCost === 0) {
-                                estimatedCost = globalState.estimatedCost || 0;
-                            }
-                            if (creditsNeeded === 0) {
-                                creditsNeeded = Math.max(0, estimatedCost - currentBalance);
-                            }
-                            
-                            const sufficientBalance = creditsNeeded <= 0;
-                            
-                            console.log(`[BUTTONS] Button logic: Balance=$${currentBalance}, Cost=$${estimatedCost}, Need=$${creditsNeeded}, Sufficient=${sufficientBalance}`);
-                            
-                            // Reset to proper process button state
+                        if (card && (card.textContent.includes('Your Balance') || card.textContent.includes('Est. Cost'))) {
+                            // Reset button state
                             markButtonUnselected(button);
                             
                             if (sufficientBalance) {
                                 // Show process button with cost
                                 button.innerHTML = `<span class="button-text">🔍 Process Table ($${estimatedCost.toFixed(2)})</span>`;
                                 button.className = 'std-button primary';
+                                button.setAttribute('data-action', 'process');
                                 
-                                // Restore the original process functionality
                                 button.onclick = async (e) => {
                                     const btn = e.target.closest('button');
                                     markButtonSelected(btn, '✨ Processing...');
                                     globalState.activePreviewCard = null;
                                     createProcessingCard();
                                 };
-                                
-                                console.log(`[BUTTONS] Reset to process button with cost: $${estimatedCost.toFixed(2)}`);
                             } else {
-                                // Still insufficient balance - show remaining credits needed from preview card
+                                // Show add credits button with remaining amount needed
                                 button.innerHTML = `<span class="button-text">💳 Add $${creditsNeeded.toFixed(2)} Credits</span>`;
                                 button.className = 'std-button secondary';
+                                button.setAttribute('data-action', 'process');
                                 
-                                // Restore add credits functionality with the remaining amount needed
                                 button.onclick = async (e) => {
                                     const btn = e.target.closest('button');
                                     globalState.hasInsufficientBalance = true;
@@ -1742,11 +1689,7 @@
                                     const cardId = card.querySelector('[id*="preview"]')?.id?.replace('-content', '');
                                     openAddCreditsPage(recommendedAmount, `${cardId}-messages`);
                                 };
-                                
-                                console.log(`[BUTTONS] Reset to add credits button: $${creditsNeeded.toFixed(2)} remaining from preview card`);
                             }
-                            
-                            button.setAttribute('data-action', 'process');
                         }
                     }
                 });
@@ -2427,7 +2370,6 @@
                             if (container) {
                                 const infoMessages = container.querySelectorAll('.message-info');
                                 infoMessages.forEach(msg => msg.remove());
-                                console.log(`[MESSAGE] Cleared ${infoMessages.length} info messages`);
                             }
                             
                             // Show success message
@@ -2438,8 +2380,6 @@
                             
                             // Force a longer delay to ensure balance is updated and DOM is ready
                             setTimeout(() => {
-                                console.log(`[BALANCE] Post-purchase update - globalState.accountBalance: ${globalState.accountBalance}`);
-                                
                                 // Update all displays first
                                 updatePreviewBalanceDisplay();
                                 updateAllBalanceDisplays();
@@ -2461,20 +2401,12 @@
             }
 
             function updatePreviewBalanceDisplay() {
-                console.log(`[BALANCE] updatePreviewBalanceDisplay called - globalState.accountBalance: ${globalState.accountBalance}`);
-                
                 // Find the active preview card and update its balance display
                 const previewCard = document.querySelector('.card-content[id*="preview"]');
-                if (!previewCard) {
-                    console.log(`[BALANCE] No preview card found`);
-                    return;
-                }
+                if (!previewCard) return;
                 
                 const estimatesEl = previewCard.querySelector('.estimates');
-                if (!estimatesEl) {
-                    console.log(`[BALANCE] No estimates element found`);
-                    return;
-                }
+                if (!estimatesEl) return;
                 
                 const currentBalance = globalState.accountBalance || 0;
                 
@@ -2497,8 +2429,6 @@
                 
                 const sufficientBalance = currentBalance >= estimatedCost;
                 
-                console.log(`[BALANCE] Current: $${currentBalance}, Cost: $${estimatedCost}, Sufficient: ${sufficientBalance}`);
-                
                 // Find and update the balance line
                 for (const item of costItems) {
                     const label = item.querySelector('.cost-label');
@@ -2506,7 +2436,6 @@
                         const valueEl = item.querySelector('.cost-value');
                         if (valueEl) {
                             valueEl.textContent = `$${currentBalance.toFixed(2)}`;
-                            console.log(`[BALANCE] Updated balance display to $${currentBalance.toFixed(2)}`);
                             // Add a brief highlight to show it updated
                             valueEl.style.background = '#e8f5e8';
                             valueEl.style.transition = 'background 2s';
@@ -2524,14 +2453,12 @@
                     if (label && label.textContent.includes('Credits Needed')) {
                         if (sufficientBalance) {
                             item.style.display = 'none'; // Hide credits needed line
-                            console.log(`[BALANCE] Sufficient balance - hiding credits needed`);
                         } else {
                             item.style.display = ''; // Show credits needed line
                             const valueEl = item.querySelector('.cost-value');
                             if (valueEl) {
                                 const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
                                 valueEl.textContent = `$${creditsNeeded.toFixed(2)}`;
-                                console.log(`[BALANCE] Updated credits needed to $${creditsNeeded.toFixed(2)}`);
                             }
                         }
                         break;
@@ -2558,13 +2485,11 @@
                                     // Update to Process button
                                     buttonText.textContent = `🔍 Process Table ($${estimatedCost.toFixed(2)})`;
                                     mainButton.className = mainButton.className.replace('secondary', 'primary');
-                                    console.log(`[BALANCE] Updated button to Process Table`);
                                 } else {
                                     // Update to Add Credits button
                                     const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
                                     buttonText.textContent = `💳 Add $${creditsNeeded.toFixed(2)} Credits`;
                                     mainButton.className = mainButton.className.replace('primary', 'secondary');
-                                    console.log(`[BALANCE] Updated button to Add $${creditsNeeded.toFixed(2)} Credits`);
                                     
                                     // Update the callback
                                     mainButton.onclick = async (e) => {
@@ -2635,33 +2560,33 @@
                     
                     if (response.ok) {
                         const data = await response.json();
+                        
                         if (data.success) {
                             // Handle different response formats
                             let newBalance = data.balance;
+                            
+                            // Check various possible locations for balance
                             if (newBalance === undefined && data.account_info) {
-                                newBalance = data.account_info.balance;
+                                newBalance = data.account_info.balance || data.account_info.current_balance;
                             }
                             
-                            if (newBalance !== undefined) {
+                            // Also check if balance is a string that needs parsing
+                            if (typeof newBalance === 'string') {
+                                newBalance = parseFloat(newBalance);
+                            }
+                            
+                            if (newBalance !== undefined && !isNaN(newBalance)) {
                                 // Update global balance state
                                 const oldBalance = globalState.accountBalance || 0;
                                 globalState.accountBalance = newBalance;
-                                
-                                console.log(`[BALANCE] refreshCurrentBalance: ${oldBalance} → ${newBalance}`);
                                 
                                 // If there was a pending validation, clear insufficient balance flag
                                 if (globalState.pendingValidationRetry && newBalance > oldBalance) {
                                     // Clear insufficient balance flag when balance increases
                                     globalState.hasInsufficientBalance = false;
                                 }
-                            } else {
-                                console.log(`[BALANCE] refreshCurrentBalance - no balance found in response:`, data);
                             }
-                        } else {
-                            console.log(`[BALANCE] refreshCurrentBalance failed:`, data);
                         }
-                    } else {
-                        console.log(`[BALANCE] refreshCurrentBalance response not ok:`, response.status);
                     }
                 } catch (error) {
                     console.error('Error refreshing balance:', error);
@@ -2983,10 +2908,7 @@
 
             function showMessage(containerId, message, type = 'info', updateExisting = false, messageId = null) {
                 const container = document.getElementById(containerId);
-                if (!container) {
-                    console.warn(`Container ${containerId} not found for message: ${message}`);
-                    return;
-                }
+                if (!container) return;
                 
                 const icon = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
                 
@@ -2998,7 +2920,6 @@
                         // Update existing message
                         existingMessage.className = `message message-${type}`;
                         existingMessage.innerHTML = `<span class="message-icon">${icon}</span><span>${message}</span>`;
-                        console.log(`[MESSAGE] Updated ${messageId}: ${message}`);
                         return existingMessage;
                     }
                 }
@@ -3011,7 +2932,6 @@
                 // Add message ID if provided
                 if (messageId) {
                     messageEl.setAttribute('data-message-id', messageId);
-                    console.log(`[MESSAGE] Created new ${messageId}: ${message}`);
                 }
                 
                 container.appendChild(messageEl);

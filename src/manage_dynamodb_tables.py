@@ -86,6 +86,71 @@ USER_TRACKING_COLUMNS = [
     'anthropic_cost'
 ]
 
+# Enhanced column order for runs table with flattened preview_data
+RUNS_TABLE_COLUMNS = [
+    # Session Identity & Timing (earliest first)
+    'session_id',
+    'email',
+    'start_time',
+    'end_time',
+    'last_update',
+    
+    # Status & Progress
+    'status',
+    'verbose_status',
+    'percent_complete',
+    'processed_rows',
+    'total_rows',
+    
+    # Cost Estimates (from flattened preview_data)
+    'per_row_cost',
+    'estimated_total_cost',
+    'preview_cost',
+    'quoted_full_cost',
+    
+    # Token Usage Summary
+    'per_row_tokens',
+    'estimated_total_tokens',
+    'preview_tokens',
+    
+    # Perplexity API Details (from flattened preview_data)
+    'perplexity_total_tokens',
+    'perplexity_prompt_tokens',
+    'perplexity_completion_tokens',
+    'perplexity_total_cost',
+    'perplexity_calls',
+    
+    # Anthropic API Details (from flattened preview_data)
+    'anthropic_total_tokens',
+    'anthropic_input_tokens',
+    'anthropic_output_tokens',
+    'anthropic_cache_creation_tokens',
+    'anthropic_cache_read_tokens',
+    'anthropic_total_cost',
+    'anthropic_calls',
+    
+    # Validation Metrics (from flattened preview_data)
+    'search_groups_count',
+    'validated_columns_count',
+    'high_context_search_groups_count',
+    'claude_search_groups_count',
+    
+    # Processing Times (from flattened preview_data)
+    'preview_processing_time_seconds',
+    'estimated_total_processing_time_seconds',
+    'estimated_total_time_minutes',
+    
+    # Account Info (from flattened preview_data)
+    'account_current_balance',
+    'account_sufficient_balance',
+    'account_credits_needed',
+    'account_domain_multiplier',
+    
+    # File & Results
+    'results_s3_key',
+    'error_message'
+]
+
 CALL_TRACKING_COLUMNS = [
     # Session Identity
     'session_id',
@@ -245,6 +310,8 @@ def get_ordered_columns(table_name, items):
         column_order = USER_VALIDATION_COLUMNS
     elif table_name == USER_TRACKING_TABLE:
         column_order = USER_TRACKING_COLUMNS
+    elif table_name == RUNS_TABLE:
+        column_order = RUNS_TABLE_COLUMNS
     elif table_name == CALL_TRACKING_TABLE:
         column_order = CALL_TRACKING_COLUMNS
     else:
@@ -785,16 +852,91 @@ def show_dashboard():
     except Exception as e:
         print(f"[ERROR] Dashboard failed to load: {e}")
 
-def export_table_to_csv(table_name, output_dir="exports", limit=None):
-    """Export a DynamoDB table to CSV file"""
+def flatten_preview_data(item):
+    """Extract and flatten rich data from preview_data field"""
+    flattened = {}
+    preview_data = item.get('preview_data', {})
+    
+    if not preview_data:
+        return flattened
+    
+    # Cost estimates
+    cost_estimates = preview_data.get('cost_estimates', {})
+    flattened.update({
+        'per_row_cost': cost_estimates.get('per_row_cost', 0),
+        'estimated_total_cost': cost_estimates.get('estimated_total_cost', 0),
+        'preview_cost': cost_estimates.get('preview_cost', 0),
+        'quoted_full_cost': cost_estimates.get('quoted_full_cost', 0),
+        'per_row_tokens': cost_estimates.get('per_row_tokens', 0),
+        'estimated_total_tokens': cost_estimates.get('estimated_total_tokens', 0),
+        'preview_tokens': cost_estimates.get('preview_tokens', 0)
+    })
+    
+    # Token usage by provider
+    token_usage = preview_data.get('token_usage', {})
+    by_provider = token_usage.get('by_provider', {})
+    
+    # Perplexity metrics
+    perplexity = by_provider.get('perplexity', {})
+    flattened.update({
+        'perplexity_total_tokens': perplexity.get('total_tokens', 0),
+        'perplexity_prompt_tokens': perplexity.get('prompt_tokens', 0),
+        'perplexity_completion_tokens': perplexity.get('completion_tokens', 0),
+        'perplexity_total_cost': perplexity.get('total_cost', 0),
+        'perplexity_calls': perplexity.get('calls', 0)
+    })
+    
+    # Anthropic metrics
+    anthropic = by_provider.get('anthropic', {})
+    flattened.update({
+        'anthropic_total_tokens': anthropic.get('total_tokens', 0),
+        'anthropic_input_tokens': anthropic.get('input_tokens', 0),
+        'anthropic_output_tokens': anthropic.get('output_tokens', 0),
+        'anthropic_cache_creation_tokens': anthropic.get('cache_creation_tokens', 0),
+        'anthropic_cache_read_tokens': anthropic.get('cache_read_tokens', 0),
+        'anthropic_total_cost': anthropic.get('total_cost', 0),
+        'anthropic_calls': anthropic.get('calls', 0)
+    })
+    
+    # Validation metrics
+    validation_metrics = preview_data.get('validation_metrics', {})
+    flattened.update({
+        'search_groups_count': validation_metrics.get('search_groups_count', 0),
+        'validated_columns_count': validation_metrics.get('validated_columns_count', 0),
+        'high_context_search_groups_count': validation_metrics.get('high_context_search_groups_count', 0),
+        'claude_search_groups_count': validation_metrics.get('claude_search_groups_count', 0)
+    })
+    
+    # Processing times
+    flattened.update({
+        'preview_processing_time_seconds': preview_data.get('preview_processing_time', 0),
+        'estimated_total_processing_time_seconds': preview_data.get('estimated_total_processing_time', 0),
+        'estimated_total_time_minutes': preview_data.get('estimated_total_time_minutes', 0)
+    })
+    
+    # Account info (if present)
+    account_info = preview_data.get('account_info', {})
+    if account_info:
+        flattened.update({
+            'account_current_balance': account_info.get('current_balance', 0),
+            'account_sufficient_balance': account_info.get('sufficient_balance', False),
+            'account_credits_needed': account_info.get('credits_needed', 0),
+            'account_domain_multiplier': account_info.get('domain_multiplier', 1)
+        })
+    
+    return flattened
+
+def export_table_to_csv(table_name, output_dir="events", limit=None):
+    """Export a DynamoDB table to CSV file with rich data extraction"""
     try:
-        # Create output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Generate filename with timestamp
+        # Create output directory with timestamp subfolder
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{table_name}_{timestamp}.csv"
-        filepath = os.path.join(output_dir, filename)
+        output_path = os.path.join(output_dir, timestamp)
+        os.makedirs(output_path, exist_ok=True)
+        
+        # Generate filename
+        filename = f"{table_name}.csv"
+        filepath = os.path.join(output_path, filename)
         
         # Get table data
         dynamodb = get_dynamodb_resource()
@@ -813,6 +955,38 @@ def export_table_to_csv(table_name, output_dir="exports", limit=None):
             return None
         
         print(f"[INFO] Found {len(items)} items to export")
+        
+        # Enhanced processing for runs table to extract rich data
+        if table_name == RUNS_TABLE:
+            enhanced_items = []
+            for item in items:
+                enhanced_item = dict(item)
+                # Remove the original preview_data field to avoid duplication
+                enhanced_item.pop('preview_data', None)
+                # Add flattened preview data
+                enhanced_item.update(flatten_preview_data(item))
+                enhanced_items.append(enhanced_item)
+            items = enhanced_items
+        
+        # Sort items by timestamp (earliest first) for proper chronological order
+        if table_name == RUNS_TABLE:
+            def get_sort_time(item):
+                start_time = item.get('start_time', '')
+                if not start_time:
+                    return '1970-01-01T00:00:00+00:00'
+                try:
+                    if start_time.endswith('Z'):
+                        start_time = start_time[:-1] + '+00:00'
+                    elif '+' not in start_time and 'T' in start_time:
+                        start_time += '+00:00'
+                    return start_time
+                except:
+                    return '1970-01-01T00:00:00+00:00'
+            items.sort(key=get_sort_time)
+        elif table_name == USER_TRACKING_TABLE:
+            items.sort(key=lambda x: x.get('created_at', ''))
+        elif table_name == ACCOUNT_TRANSACTIONS_TABLE:
+            items.sort(key=lambda x: x.get('timestamp', ''))
         
         # Get logically ordered columns for this table
         fieldnames = get_ordered_columns(table_name, items)
@@ -837,15 +1011,15 @@ def export_table_to_csv(table_name, output_dir="exports", limit=None):
                 writer.writerow(csv_row)
         
         print(f"[SUCCESS] Successfully exported {len(items)} items to {filepath}")
-        print(f"[INFO] Columns: {', '.join(fieldnames)}")
+        print(f"[INFO] Columns: {', '.join(fieldnames[:10])}{' ...' if len(fieldnames) > 10 else ''}")
         return filepath
         
     except Exception as e:
         print(f"[ERROR] Error exporting table {table_name} to CSV: {e}")
         return None
 
-def export_all_tables_to_csv(output_dir="exports", limit=None):
-    """Export all perplexity-validator tables to CSV files"""
+def export_all_tables_to_csv(output_dir="events", limit=None):
+    """Export all perplexity-validator tables to CSV files with rich data"""
     tables_to_export = [
         USER_VALIDATION_TABLE, USER_TRACKING_TABLE, RUNS_TABLE,
         ACCOUNT_TRANSACTIONS_TABLE, DOMAIN_MULTIPLIERS_TABLE,
@@ -853,21 +1027,122 @@ def export_all_tables_to_csv(output_dir="exports", limit=None):
     ]
     exported_files = []
     
-    print(f"[EXPORTING] Starting export of all DynamoDB tables to {output_dir}/")
-    print("=" * 60)
+    # Create timestamped directory - single timestamp for all exports
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = os.path.join(output_dir, timestamp)
+    os.makedirs(output_path, exist_ok=True)
+    
+    print(f"[EXPORTING] Starting export of all DynamoDB tables to {output_path}/")
+    print("=" * 80)
     
     for table_name in tables_to_export:
         print(f"\n[EXPORTING] Exporting {table_name}...")
-        filepath = export_table_to_csv(table_name, output_dir, limit)
-        if filepath:
+        try:
+            # Get table data
+            dynamodb = get_dynamodb_resource()
+            table = dynamodb.Table(table_name)
+            
+            scan_kwargs = {}
+            if limit:
+                scan_kwargs['Limit'] = limit
+            
+            print(f"[SCANNING] Scanning table {table_name}...")
+            response = table.scan(**scan_kwargs)
+            items = response.get('Items', [])
+            
+            if not items:
+                print(f"[ERROR] No items found in table {table_name}")
+                continue
+            
+            print(f"[INFO] Found {len(items)} items to export")
+            
+            # Enhanced processing for runs table to extract rich data
+            if table_name == RUNS_TABLE:
+                enhanced_items = []
+                for item in items:
+                    enhanced_item = dict(item)
+                    # Remove the original preview_data field to avoid duplication
+                    enhanced_item.pop('preview_data', None)
+                    # Add flattened preview data
+                    enhanced_item.update(flatten_preview_data(item))
+                    enhanced_items.append(enhanced_item)
+                items = enhanced_items
+            
+            # Sort items by timestamp (earliest first) for proper chronological order
+            if table_name == RUNS_TABLE:
+                def get_sort_time(item):
+                    start_time = item.get('start_time', '')
+                    if not start_time:
+                        return '1970-01-01T00:00:00+00:00'
+                    try:
+                        if start_time.endswith('Z'):
+                            start_time = start_time[:-1] + '+00:00'
+                        elif '+' not in start_time and 'T' in start_time:
+                            start_time += '+00:00'
+                        return start_time
+                    except:
+                        return '1970-01-01T00:00:00+00:00'
+                items.sort(key=get_sort_time)
+            elif table_name == USER_TRACKING_TABLE:
+                items.sort(key=lambda x: x.get('created_at', ''))
+            elif table_name == ACCOUNT_TRANSACTIONS_TABLE:
+                items.sort(key=lambda x: x.get('timestamp', ''))
+            
+            # Get logically ordered columns for this table
+            fieldnames = get_ordered_columns(table_name, items)
+            
+            # Generate filename
+            filename = f"{table_name}.csv"
+            filepath = os.path.join(output_path, filename)
+            
+            # Write to CSV
+            with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                for item in items:
+                    # Convert Decimal objects to float for CSV compatibility
+                    csv_row = {}
+                    for key in fieldnames:
+                        value = item.get(key, '')
+                        if isinstance(value, Decimal):
+                            csv_row[key] = float(value)
+                        elif isinstance(value, dict) or isinstance(value, list):
+                            # Convert complex objects to JSON strings
+                            csv_row[key] = json.dumps(value, default=decimal_default)
+                        else:
+                            csv_row[key] = value
+                    writer.writerow(csv_row)
+            
+            print(f"[SUCCESS] Successfully exported {len(items)} items to {filepath}")
+            print(f"[INFO] Columns: {', '.join(fieldnames[:10])}{' ...' if len(fieldnames) > 10 else ''}")
             exported_files.append(filepath)
+            
+        except Exception as e:
+            print(f"[ERROR] Error exporting table {table_name} to CSV: {e}")
     
-    print("\n" + "=" * 60)
-    print(f"[SUCCESS] Export complete! {len(exported_files)} files created:")
+    # Create summary file
+    summary_file = os.path.join(output_path, "export_summary.txt")
+    with open(summary_file, 'w', encoding='utf-8') as f:
+        f.write(f"DynamoDB Export Summary\n")
+        f.write(f"Generated: {datetime.now().isoformat()}\n")
+        f.write(f"Export Directory: {output_path}\n")
+        f.write(f"Tables Exported: {len(exported_files)}\n\n")
+        
+        for filepath in exported_files:
+            if os.path.exists(filepath):
+                file_size = os.path.getsize(filepath) / 1024
+                item_count = sum(1 for line in open(filepath, 'r', encoding='utf-8')) - 1  # Subtract header
+                f.write(f"{os.path.basename(filepath)}: {item_count} items, {file_size:.1f} KB\n")
+    
+    print("\n" + "=" * 80)
+    print(f"[SUCCESS] Export complete! {len(exported_files)} files created in {output_path}/")
     for filepath in exported_files:
-        file_size = os.path.getsize(filepath) / 1024  # KB
-        print(f"   [FILE] {filepath} ({file_size:.1f} KB)")
+        if os.path.exists(filepath):
+            file_size = os.path.getsize(filepath) / 1024
+            print(f"   [FILE] {os.path.basename(filepath)} ({file_size:.1f} KB)")
     
+    print(f"[INFO] Summary written to: {summary_file}")
     return exported_files
 
 def export_user_data_to_csv(email, output_dir="exports"):

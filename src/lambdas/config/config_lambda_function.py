@@ -163,7 +163,7 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             existing_config = embed_user_message_in_log(existing_config, instructions, session_id)
         
         # Build the unified generation prompt
-        prompt = build_unified_generation_prompt(table_analysis, existing_config, instructions)
+        prompt = build_unified_generation_prompt(table_analysis, existing_config, instructions, latest_validation_results)
         
         # Call Claude using shared client with unified schema
         schema = get_unified_generation_schema()
@@ -288,7 +288,7 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         }
 
 def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict = None, 
-                                  instructions: str = '') -> str:
+                                  instructions: str = '', latest_validation_results: Dict = None) -> str:
     """Build unified prompt for config generation that always returns both config and questions."""
     
     basic_info = table_analysis.get('basic_info', {})

@@ -19,6 +19,30 @@ s3_client = boto3.client('s3')
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Import DynamoDB functions at module level
+# Define dummy functions first as fallback
+def update_processing_metrics(*args, **kwargs): 
+    logger.warning("DynamoDB not available - processing metrics not updated")
+def track_email_delivery(*args, **kwargs): 
+    logger.warning("DynamoDB not available - email delivery not tracked")
+def track_user_request(*args, **kwargs): 
+    logger.warning("DynamoDB not available - user request not tracked")
+def update_run_status(**kwargs): 
+    logger.warning("DynamoDB not available - run status not updated")
+
+DYNAMODB_AVAILABLE = False
+
+try:
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
+    from dynamodb_schemas import update_processing_metrics, track_email_delivery, track_user_request, update_run_status
+    DYNAMODB_AVAILABLE = True
+    logger.info("DynamoDB functions imported successfully at module level")
+except ImportError as e:
+    logger.error(f"Failed to import dynamodb_schemas at module level: {e}")
+    # Dummy functions are already defined above
+
 # Global variable for the API Gateway Management client
 api_gateway_management_client = None
 
@@ -133,25 +157,6 @@ def handle(event, context):
             EMAIL_SENDER_AVAILABLE = True
         except ImportError:
             EMAIL_SENDER_AVAILABLE = False
-        
-        try:
-            import sys
-            import os
-            sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
-            from dynamodb_schemas import update_processing_metrics, track_email_delivery, track_user_request, update_run_status
-            DYNAMODB_AVAILABLE = True
-        except ImportError as e:
-            logger.error(f"Failed to import dynamodb_schemas: {e}")
-            DYNAMODB_AVAILABLE = False
-            # Define dummy functions if not available
-            def update_processing_metrics(*args, **kwargs): 
-                logger.warning("DynamoDB not available - processing metrics not updated")
-            def track_email_delivery(*args, **kwargs): 
-                logger.warning("DynamoDB not available - email delivery not tracked")
-            def track_user_request(*args, **kwargs): 
-                logger.warning("DynamoDB not available - user request not tracked")
-            def update_run_status(**kwargs): 
-                logger.warning("DynamoDB not available - run status not updated")
 
         logger.info("--- Background Handler Started ---")
         
