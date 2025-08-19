@@ -54,6 +54,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         existing_config = event.get('existing_config')  # Optional
         instructions = event.get('instructions', 'Generate an optimal configuration for this data validation scenario')
         session_id = event.get('session_id', 'unknown')
+        latest_validation_results = event.get('latest_validation_results')  # Optional - for refinement context
         
         # Send initial progress update
         if session_id:
@@ -111,7 +112,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Process the config generation request (single unified mode)
         result = asyncio.run(generate_config_unified(
-            table_analysis, existing_config, instructions, session_id
+            table_analysis, existing_config, instructions, session_id, latest_validation_results
         ))
         
         # Send completion progress update
@@ -136,7 +137,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
 
 async def generate_config_unified(table_analysis: Dict, existing_config: Dict = None, 
-                                 instructions: str = '', session_id: str = 'unknown') -> Dict:
+                                 instructions: str = '', session_id: str = 'unknown', 
+                                 latest_validation_results: Dict = None) -> Dict:
     """Unified config generation - always returns both updated config and clarifying questions."""
     logger.info(f"Config generation started for session {session_id}")
     send_websocket_progress(session_id, "Processing table data...", 60)
@@ -201,7 +203,8 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
                     table_analysis=table_analysis,
                     existing_config=updated_config,  # Use the invalid config as base
                     instructions=error_instructions,
-                    session_id=f"{session_id}_retry"
+                    session_id=f"{session_id}_retry",
+                    latest_validation_results=latest_validation_results
                 )
                 
                 if retry_result.get('success') and retry_result.get('updated_config'):
@@ -371,6 +374,40 @@ CURRENT CONFIGURATION SUMMARY:
 - Search Groups: {len(existing_config.get('search_groups', []))}
 - Validation Targets: {len(existing_config.get('validation_targets', []))}
 - General Notes: {existing_config.get('general_notes', 'None')[:200]}..."""
+        
+        # Add validation results context if available
+        if latest_validation_results:
+            try:
+                # Extract key validation insights
+                validation_summary = latest_validation_results.get('summary', {})
+                overall_confidence = validation_summary.get('overall_confidence', 'Unknown')
+                error_count = len(latest_validation_results.get('validation_errors', []))
+                warning_count = len(latest_validation_results.get('validation_warnings', []))
+                
+                base_prompt += f"""
+
+LATEST VALIDATION RESULTS CONTEXT:
+This configuration was recently tested with validation. Use these results to inform your refinements:
+- Overall Confidence: {overall_confidence}
+- Validation Errors: {error_count}
+- Validation Warnings: {warning_count}"""
+                
+                # Include specific error/warning patterns if present
+                if error_count > 0:
+                    errors = latest_validation_results.get('validation_errors', [])[:3]  # First 3 errors
+                    base_prompt += f"""
+- Recent Error Examples: {[err.get('message', 'Unknown error')[:100] for err in errors]}"""
+                
+                if warning_count > 0:
+                    warnings = latest_validation_results.get('validation_warnings', [])[:3]  # First 3 warnings
+                    base_prompt += f"""
+- Recent Warning Examples: {[warn.get('message', 'Unknown warning')[:100] for warn in warnings]}"""
+                    
+            except Exception as e:
+                logger.warning(f"Could not parse validation results for context: {e}")
+                base_prompt += f"""
+
+LATEST VALIDATION RESULTS: Available but could not be parsed for context"""
     
     base_prompt += f"""
 

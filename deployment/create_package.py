@@ -625,43 +625,61 @@ def delete_s3_cache(bucket_name, region=None):
         # Initialize S3 client
         s3_client = boto3.client('s3', region_name=region)
         
-        logger.info(f"Listing objects in s3://{bucket_name}/validation_cache/")
-        
-        # List objects with validation_cache/ prefix
-        paginator = s3_client.get_paginator('list_objects_v2')
-        pages = paginator.paginate(Bucket=bucket_name, Prefix='validation_cache/')
+        # Define cache prefixes for both unified and legacy structures
+        cache_prefixes = [
+            'cache/perplexity/',      # New unified structure
+            'cache/claude/',          # New unified structure  
+            'validation_cache/',      # Legacy structure
+            'claude_cache/'           # Legacy structure
+        ]
         
         total_objects = 0
         deleted_objects = 0
         
-        for page in pages:
-            if 'Contents' not in page:
-                logger.info("No cache objects found.")
-                return True  # Return True even when no objects are found (success)
-                
-            objects_to_delete = [{'Key': obj['Key']} for obj in page['Contents']]
-            total_objects += len(objects_to_delete)
+        for prefix in cache_prefixes:
+            logger.info(f"Listing objects in s3://{bucket_name}/{prefix}")
             
-            if not objects_to_delete:
-                continue
-                
-            # Delete objects in batches of 1000 (S3 limit)
-            batch_size = 1000
-            for i in range(0, len(objects_to_delete), batch_size):
-                batch = objects_to_delete[i:i + batch_size]
-                response = s3_client.delete_objects(
-                    Bucket=bucket_name,
-                    Delete={'Objects': batch, 'Quiet': False}
-                )
-                
-                if 'Deleted' in response:
-                    deleted_objects += len(response['Deleted'])
+            # List objects with this prefix
+            paginator = s3_client.get_paginator('list_objects_v2')
+            pages = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
+            
+            prefix_objects = 0
+            
+            for page in pages:
+                if 'Contents' not in page:
+                    continue
                     
-                if 'Errors' in response and response['Errors']:
-                    for error in response['Errors']:
-                        logger.error(f"Error deleting {error['Key']}: {error['Code']} - {error['Message']}")
+                objects_to_delete = [{'Key': obj['Key']} for obj in page['Contents']]
+                prefix_objects += len(objects_to_delete)
+                
+                if not objects_to_delete:
+                    continue
+                    
+                # Delete objects in batches of 1000 (S3 limit)
+                batch_size = 1000
+                for i in range(0, len(objects_to_delete), batch_size):
+                    batch = objects_to_delete[i:i + batch_size]
+                    response = s3_client.delete_objects(
+                        Bucket=bucket_name,
+                        Delete={'Objects': batch, 'Quiet': False}
+                    )
+                    
+                    if 'Deleted' in response:
+                        deleted_objects += len(response['Deleted'])
+                        
+                    if 'Errors' in response and response['Errors']:
+                        for error in response['Errors']:
+                            logger.error(f"Error deleting {error['Key']}: {error['Code']} - {error['Message']}")
+            
+            total_objects += prefix_objects
+            if prefix_objects > 0:
+                logger.info(f"Found {prefix_objects} objects in {prefix}")
         
-        logger.info(f"Successfully deleted {deleted_objects}/{total_objects} cache objects from s3://{bucket_name}/validation_cache/")
+        if total_objects == 0:
+            logger.info("No cache objects found to delete.")
+        else:
+            logger.info(f"Successfully deleted {deleted_objects}/{total_objects} cache objects from s3://{bucket_name}")
+        return True
         
     except Exception as e:
         logger.error(f"Error deleting cache: {str(e)}")
@@ -679,7 +697,7 @@ def main():
     parser.add_argument('--deploy', action='store_true', help='Deploy to AWS Lambda after creating package')
     parser.add_argument('--function-name', help='Lambda function name (default: perplexity-validator)')
     parser.add_argument('--region', default='us-east-1', help='AWS region (default: us-east-1)')
-    parser.add_argument('--s3-bucket', default='perplexity-cache', help='S3 bucket for caching (default: perplexity-cache)')
+    parser.add_argument('--s3-bucket', default='hyperplexity-storage', help='S3 bucket for caching (default: hyperplexity-storage)')
     parser.add_argument('--verify', action='store_true', help='Verify the Lambda function after deployment')
     parser.add_argument('--force-rebuild', action='store_true', help='Force rebuilding the package even if it exists')
     parser.add_argument('--no-rebuild', action='store_true', help='Skip rebuilding the package if it exists')

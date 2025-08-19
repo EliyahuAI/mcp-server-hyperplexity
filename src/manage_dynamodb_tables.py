@@ -2,6 +2,8 @@
 """
 DynamoDB Table Management Utility for Perplexity Validator
 Provides functions to view, clear, and manage validation and tracking tables.
+
+For detailed table structure and schema documentation, see: docs/DYNAMODB_TABLES.md
 """
 
 import boto3
@@ -30,6 +32,9 @@ USER_TRACKING_TABLE = "perplexity-validator-user-tracking"
 CALL_TRACKING_TABLE = "perplexity-validator-call-tracking"
 ACCOUNT_TRANSACTIONS_TABLE = "perplexity-validator-account-transactions"
 DOMAIN_MULTIPLIERS_TABLE = "perplexity-validator-domain-multipliers"
+RUNS_TABLE = "perplexity-validator-runs"
+TOKEN_USAGE_TABLE = "perplexity-validator-token-usage"
+WS_CONNECTIONS_TABLE = "perplexity-validator-ws-connections"
 
 # Logical column ordering for CSV exports
 USER_VALIDATION_COLUMNS = [
@@ -497,6 +502,289 @@ def get_call_tracking_records(limit=10):
         print(f"Error accessing call tracking table: {e}")
         return []
 
+def get_recent_runs_rich_table(limit=20):
+    """Get recent validation runs with rich table display"""
+    try:
+        dynamodb = get_dynamodb_resource()
+        table = dynamodb.Table(RUNS_TABLE)
+        
+        # Scan and get runs (get more than limit to ensure good sorting)
+        scan_limit = max(limit * 3, 100) if limit else 100
+        response = table.scan(Limit=scan_limit)
+        items = response.get('Items', [])
+        
+        # Continue scanning if we need more items
+        while 'LastEvaluatedKey' in response and len(items) < scan_limit:
+            response = table.scan(
+                Limit=scan_limit - len(items),
+                ExclusiveStartKey=response['LastEvaluatedKey']
+            )
+            items.extend(response.get('Items', []))
+        
+        if not items:
+            print(f"[ERROR] No runs found in {RUNS_TABLE}")
+            return []
+        
+        # Sort by start_time (most recent first) with better parsing
+        def parse_timestamp(item):
+            start_time_str = item.get('start_time', '')
+            if not start_time_str:
+                return '1970-01-01T00:00:00+00:00'  # Very old date for sorting
+            # Handle various timestamp formats
+            try:
+                # Clean up the timestamp format
+                if start_time_str.endswith('Z'):
+                    start_time_str = start_time_str[:-1] + '+00:00'
+                elif '+' not in start_time_str and 'T' in start_time_str:
+                    start_time_str += '+00:00'
+                return start_time_str
+            except:
+                return '1970-01-01T00:00:00+00:00'
+        
+        items.sort(key=parse_timestamp, reverse=True)
+        
+        # Take only the requested limit after sorting
+        if limit:
+            items = items[:limit]
+        
+        print(f"\n=== Recent Validation Runs ({len(items)} sessions, sorted by time) ===")
+        print("=" * 140)
+        
+        # Better organized header with meaningful column order
+        header = f"{'Date/Time':<17} {'Email':<22} {'Type':<8} {'Status':<11} {'Cost':<8} {'Tokens':<7} {'Cols':<5} {'Groups':<6} {'Duration':<8} {'Session ID':<25}"
+        print(header)
+        print("-" * 140)
+        
+        for i, item in enumerate(items, 1):
+            # Parse and format timestamp
+            start_time_str = item.get('start_time', '')
+            date_time_display = "N/A"
+            if start_time_str:
+                try:
+                    from datetime import datetime as dt
+                    start_time = dt.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                    date_time_display = start_time.strftime('%m/%d %H:%M:%S')
+                except:
+                    date_time_display = start_time_str[:16]
+            
+            # Email (truncated)
+            email = item.get('email', 'N/A')
+            email_display = email.split('@')[0][:15] + '@' + email.split('@')[1][:6] if '@' in email else email[:21]
+            
+            # Session type
+            session_id = item.get('session_id', 'N/A')
+            session_type = "Preview" if "preview" in session_id.lower() or item.get('total_rows', 0) == -1 else "Full"
+            
+            # Status
+            status = item.get('status', 'N/A')[:10]
+            
+            # Extract metrics from preview_data
+            preview_data = item.get('preview_data', {})
+            cost_estimates = preview_data.get('cost_estimates', {})
+            token_usage = preview_data.get('token_usage', {})
+            validation_metrics = preview_data.get('validation_metrics', {})
+            
+            # Cost and tokens
+            cost = cost_estimates.get('preview_cost', 0.0)
+            tokens = token_usage.get('total_tokens', 0)
+            
+            # Validation metrics
+            cols = int(validation_metrics.get('validated_columns_count', 0))
+            groups = int(validation_metrics.get('search_groups_count', 0))
+            
+            # Processing duration
+            end_time_str = item.get('end_time', '')
+            duration = "N/A"
+            
+            if start_time_str and end_time_str:
+                try:
+                    start_time = dt.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                    end_time = dt.fromisoformat(end_time_str.replace('Z', '+00:00'))
+                    time_diff = (end_time - start_time).total_seconds()
+                    if time_diff < 60:
+                        duration = f"{time_diff:.1f}s"
+                    elif time_diff < 3600:
+                        duration = f"{time_diff/60:.1f}m"
+                    else:
+                        duration = f"{time_diff/3600:.1f}h"
+                except:
+                    duration = "N/A"
+            
+            # Format values for display
+            cost_str = f"${cost:.3f}" if cost > 0 else "$0.000"
+            tokens_str = f"{int(tokens/1000)}k" if tokens > 0 else "0"
+            cols_str = str(cols) if cols > 0 else "-"
+            groups_str = str(groups) if groups > 0 else "-"
+            session_display = session_id[:24]
+            
+            # Print row with organized columns
+            row = f"{date_time_display:<17} {email_display:<22} {session_type:<8} {status:<11} {cost_str:<8} {tokens_str:<7} {cols_str:<5} {groups_str:<6} {duration:<8} {session_display:<25}"
+            print(row)
+            
+            # Add error details for failed sessions
+            if status == "FAILED":
+                error_msg = item.get('error_message', 'No error details')
+                if error_msg and error_msg != 'No error details':
+                    print(f"    [ERROR] {error_msg[:100]}")
+        
+        print("-" * 140)
+        print(f"[SUCCESS] Showing {len(items)} most recent validation sessions (sorted by timestamp)")
+        
+        # Summary stats
+        completed_sessions = sum(1 for item in items if item.get('status') == 'COMPLETED')
+        failed_sessions = sum(1 for item in items if item.get('status') == 'FAILED')
+        total_cost = sum(float(item.get('preview_data', {}).get('cost_estimates', {}).get('preview_cost', 0)) for item in items)
+        
+        print(f"[STATS] Completed: {completed_sessions}, Failed: {failed_sessions}, Total Cost: ${total_cost:.3f}")
+        
+        return items
+        
+    except Exception as e:
+        print(f"Error getting recent runs: {e}")
+        return []
+
+def show_dashboard():
+    """Show comprehensive dashboard with user stats, recent runs, and system health"""
+    try:
+        print("\n" + "=" * 80)
+        print("         PERPLEXITY VALIDATOR DASHBOARD")
+        print("=" * 80)
+        
+        # 1. System Health Check
+        print("\n[SYSTEM HEALTH]")
+        tables_to_check = [
+            (USER_TRACKING_TABLE, "User Tracking"),
+            (RUNS_TABLE, "Validation Runs"),
+            (ACCOUNT_TRANSACTIONS_TABLE, "Account Transactions"),
+            (DOMAIN_MULTIPLIERS_TABLE, "Domain Multipliers"),
+            (USER_VALIDATION_TABLE, "Email Validation"),
+            (WS_CONNECTIONS_TABLE, "WebSocket Connections")
+        ]
+        
+        for table_name, display_name in tables_to_check:
+            try:
+                dynamodb = get_dynamodb_client()
+                response = dynamodb.describe_table(TableName=table_name)
+                status = response['Table']['TableStatus']
+                item_count = response['Table'].get('ItemCount', 0)
+                size_bytes = response['Table'].get('TableSizeBytes', 0)
+                size_kb = size_bytes / 1024 if size_bytes else 0
+                
+                status_icon = "[SUCCESS]" if status == "ACTIVE" else "[ERROR]"
+                print(f"  {status_icon} {display_name:<25} | {item_count:>6} items | {size_kb:>8.1f} KB")
+            except Exception as e:
+                print(f"  [ERROR] {display_name:<25} | Failed to check: {str(e)[:40]}")
+        
+        # 2. User Activity Summary
+        print("\n[USER ACTIVITY SUMMARY]")
+        try:
+            dynamodb = get_dynamodb_resource()
+            user_table = dynamodb.Table(USER_TRACKING_TABLE)
+            response = user_table.scan()
+            users = response.get('Items', [])
+            
+            if users:
+                total_users = len(users)
+                total_preview_requests = sum(float(user.get('total_preview_requests', 0)) for user in users)
+                total_full_requests = sum(float(user.get('total_full_requests', 0)) for user in users)
+                total_cost = sum(float(user.get('total_cost_usd', 0)) for user in users)
+                total_balance = sum(float(user.get('account_balance', 0)) for user in users)
+                
+                print(f"  Total Users:           {total_users}")
+                print(f"  Total Preview Requests: {int(total_preview_requests)}")
+                print(f"  Total Full Requests:   {int(total_full_requests)}")
+                print(f"  Total Costs:           ${total_cost:.2f}")
+                print(f"  Total Account Balance: ${total_balance:.2f}")
+                
+                # Most active users (sorted by total activity)
+                users.sort(key=lambda x: float(x.get('total_preview_requests', 0)) + float(x.get('total_full_requests', 0)), reverse=True)
+                print(f"\n  Most Active Users (by total requests):")
+                for i, user in enumerate(users[:5], 1):
+                    email = user.get('email', 'N/A')[:35]
+                    preview_reqs = int(float(user.get('total_preview_requests', 0)))
+                    full_reqs = int(float(user.get('total_full_requests', 0)))
+                    balance = float(user.get('account_balance', 0))
+                    last_access = user.get('last_access', 'N/A')
+                    if last_access != 'N/A' and len(last_access) > 10:
+                        try:
+                            from datetime import datetime as dt
+                            last_dt = dt.fromisoformat(last_access.replace('Z', '+00:00'))
+                            last_access = last_dt.strftime('%m/%d/%y')
+                        except:
+                            last_access = last_access[:8]
+                    print(f"    {i}. {email:<35} | {preview_reqs:>3}p + {full_reqs:>2}f | ${balance:>6.2f} | {last_access}")
+            else:
+                print("  No user data found")
+        except Exception as e:
+            print(f"  [ERROR] Failed to load user data: {e}")
+        
+        # 3. Recent Activity (last 15 runs, sorted by time)
+        print("\n[RECENT ACTIVITY]")
+        get_recent_runs_rich_table(15)
+        
+        # 4. Cost Analysis
+        print("\n[COST ANALYSIS - Last 15 Sessions]")
+        try:
+            runs_table = dynamodb.Table(RUNS_TABLE)
+            response = runs_table.scan(Limit=50)  # Get more to analyze
+            runs = response.get('Items', [])
+            
+            if runs:
+                # Sort by start_time and take last 15
+                def parse_ts(x):
+                    ts = x.get('start_time', '')
+                    if ts.endswith('Z'):
+                        ts = ts[:-1] + '+00:00'
+                    return ts
+                runs.sort(key=parse_ts, reverse=True)
+                recent_runs = runs[:15]
+                
+                total_cost = 0
+                total_tokens = 0
+                provider_costs = {'perplexity': 0, 'anthropic': 0}
+                
+                for run in recent_runs:
+                    preview_data = run.get('preview_data', {})
+                    token_usage = preview_data.get('token_usage', {})
+                    
+                    cost = token_usage.get('total_cost', 0)
+                    tokens = token_usage.get('total_tokens', 0)
+                    
+                    total_cost += float(cost)
+                    total_tokens += float(tokens)
+                    
+                    # Provider breakdown
+                    by_provider = token_usage.get('by_provider', {})
+                    for provider, data in by_provider.items():
+                        if provider in provider_costs:
+                            provider_costs[provider] += float(data.get('total_cost', 0))
+                
+                print(f"  Total Cost (last 15):    ${total_cost:.3f}")
+                print(f"  Total Tokens (last 15):  {int(total_tokens/1000)}k")
+                print(f"  Average per session:     ${total_cost/15:.3f}")
+                print(f"  Provider breakdown:")
+                for provider, cost in provider_costs.items():
+                    if cost > 0:
+                        print(f"    {provider.capitalize()}: ${cost:.3f} ({cost/total_cost*100:.1f}%)")
+            else:
+                print("  No cost data available")
+                
+        except Exception as e:
+            print(f"  [ERROR] Failed to analyze costs: {e}")
+        
+        print(f"\n[QUICK COMMANDS]")
+        print(f"  python.exe src/manage_dynamodb_tables.py recent 25")
+        print(f"  python.exe src/manage_dynamodb_tables.py check-balance eliyahu@eliyahu.ai")
+        print(f"  python.exe src/manage_dynamodb_tables.py list-transactions eliyahu@eliyahu.ai")
+        print(f"  python.exe src/manage_dynamodb_tables.py export-all-csv")
+        
+        print("\n" + "=" * 80)
+        print("[SUCCESS] Dashboard loaded successfully")
+        print("=" * 80)
+        
+    except Exception as e:
+        print(f"[ERROR] Dashboard failed to load: {e}")
+
 def export_table_to_csv(table_name, output_dir="exports", limit=None):
     """Export a DynamoDB table to CSV file"""
     try:
@@ -516,7 +804,7 @@ def export_table_to_csv(table_name, output_dir="exports", limit=None):
         if limit:
             scan_kwargs['Limit'] = limit
         
-        print(f"🔄 Scanning table {table_name}...")
+        print(f"[SCANNING] Scanning table {table_name}...")
         response = table.scan(**scan_kwargs)
         items = response.get('Items', [])
         
@@ -524,7 +812,7 @@ def export_table_to_csv(table_name, output_dir="exports", limit=None):
             print(f"[ERROR] No items found in table {table_name}")
             return None
         
-        print(f"📊 Found {len(items)} items to export")
+        print(f"[INFO] Found {len(items)} items to export")
         
         # Get logically ordered columns for this table
         fieldnames = get_ordered_columns(table_name, items)
@@ -549,7 +837,7 @@ def export_table_to_csv(table_name, output_dir="exports", limit=None):
                 writer.writerow(csv_row)
         
         print(f"[SUCCESS] Successfully exported {len(items)} items to {filepath}")
-        print(f"📁 Columns: {', '.join(fieldnames)}")
+        print(f"[INFO] Columns: {', '.join(fieldnames)}")
         return filepath
         
     except Exception as e:
@@ -558,29 +846,33 @@ def export_table_to_csv(table_name, output_dir="exports", limit=None):
 
 def export_all_tables_to_csv(output_dir="exports", limit=None):
     """Export all perplexity-validator tables to CSV files"""
-    tables_to_export = [USER_VALIDATION_TABLE, USER_TRACKING_TABLE, CALL_TRACKING_TABLE]
+    tables_to_export = [
+        USER_VALIDATION_TABLE, USER_TRACKING_TABLE, RUNS_TABLE,
+        ACCOUNT_TRANSACTIONS_TABLE, DOMAIN_MULTIPLIERS_TABLE,
+        TOKEN_USAGE_TABLE, WS_CONNECTIONS_TABLE
+    ]
     exported_files = []
     
-    print(f"🚀 Starting export of all DynamoDB tables to {output_dir}/")
+    print(f"[EXPORTING] Starting export of all DynamoDB tables to {output_dir}/")
     print("=" * 60)
     
     for table_name in tables_to_export:
-        print(f"\n📊 Exporting {table_name}...")
+        print(f"\n[EXPORTING] Exporting {table_name}...")
         filepath = export_table_to_csv(table_name, output_dir, limit)
         if filepath:
             exported_files.append(filepath)
     
     print("\n" + "=" * 60)
-    print(f"🎉 Export complete! {len(exported_files)} files created:")
+    print(f"[SUCCESS] Export complete! {len(exported_files)} files created:")
     for filepath in exported_files:
         file_size = os.path.getsize(filepath) / 1024  # KB
-        print(f"   📄 {filepath} ({file_size:.1f} KB)")
+        print(f"   [FILE] {filepath} ({file_size:.1f} KB)")
     
     return exported_files
 
 def export_user_data_to_csv(email, output_dir="exports"):
     """Export all data for a specific user email to CSV files"""
-    print(f"🔍 Exporting all data for user: {email}")
+    print(f"[EXPORTING] Exporting all data for user: {email}")
     exported_files = []
     
     # Create user-specific directory
@@ -638,7 +930,7 @@ def export_user_data_to_csv(email, output_dir="exports"):
                 print(f"[SUCCESS] Exported tracking data to {filepath}")
     
     if exported_files:
-        print(f"🎉 User data export complete! {len(exported_files)} files created in {user_dir}/")
+        print(f"[SUCCESS] User data export complete! {len(exported_files)} files created in {user_dir}/")
     else:
         print(f"[ERROR] No data found for user {email}")
     
@@ -816,7 +1108,10 @@ Usage:
     python manage_dynamodb_tables.py delete-validation <email>  # Delete validation record
     python manage_dynamodb_tables.py delete-tracking <email>    # Delete tracking record
     python manage_dynamodb_tables.py clear <table_name>      # Clear all items from table
-    python manage_dynamodb_tables.py calls                   # Show recent call tracking
+    python manage_dynamodb_tables.py calls                   # Show recent call tracking (legacy)
+    python manage_dynamodb_tables.py recent [limit]          # Show recent validation runs (rich format)
+    python manage_dynamodb_tables.py recent-calls [limit]    # Same as recent
+    python manage_dynamodb_tables.py dashboard              # Show comprehensive dashboard
     python manage_dynamodb_tables.py summary                 # Show summary of all tables
     
 CSV Export Commands:
@@ -906,11 +1201,18 @@ Examples:
     elif command == "calls":
         get_call_tracking_records()
     
+    elif command == "recent" or command == "recent-calls":
+        limit = int(sys.argv[2]) if len(sys.argv) > 2 else 20
+        get_recent_runs_rich_table(limit)
+    
+    elif command == "dashboard":
+        show_dashboard()
+    
     elif command == "summary":
         print("=== DynamoDB Tables Summary ===\n")
         tables = list_all_tables()
         
-        for table_name in [USER_VALIDATION_TABLE, USER_TRACKING_TABLE, CALL_TRACKING_TABLE]:
+        for table_name in [USER_VALIDATION_TABLE, USER_TRACKING_TABLE, RUNS_TABLE]:
             if table_name in tables:
                 describe_table(table_name)
     

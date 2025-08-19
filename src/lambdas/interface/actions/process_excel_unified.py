@@ -17,13 +17,12 @@ from pathlib import Path
 from interface_lambda.utils.parsing import parse_multipart_form_data
 from interface_lambda.utils.helpers import create_response
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
-from dynamodb_schemas import is_email_validated, track_validation_call, create_run_record
-from interface_lambda.core.sqs_service import send_preview_request, send_full_request
-from interface_lambda.actions.find_matching_config import find_matching_configs
-from shared_table_parser import s3_table_parser
-from interface_lambda.core.validator_invoker import invoke_validator_lambda
-from interface_lambda.reporting.markdown_report import create_markdown_table_from_results
-from email_sender import send_validation_results_email as send_results_email
+
+# Optional imports - will be handled conditionally in functions
+try:
+    from shared_table_parser import s3_table_parser
+except ImportError:
+    s3_table_parser = None
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -113,11 +112,17 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
     # Use base_session_id for file operations, keep original session_id for tracking
     
     try:
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
         from dynamodb_schemas import is_email_validated, track_validation_call, create_run_record
-    except ImportError:
+    except ImportError as e:
+        logger.error(f"Failed to import dynamodb_schemas: {e}")
         def is_email_validated(email): return True
-        def track_validation_call(**kwargs): pass
-        def create_run_record(**kwargs): pass
+        def track_validation_call(email, session_id, reference_pin, request_type, excel_s3_key=None, config_s3_key=None): 
+            logger.warning("dynamodb_schemas not available - tracking disabled")
+        def create_run_record(**kwargs): 
+            logger.warning("dynamodb_schemas not available - run record creation disabled")
 
     try:
         from ..core.sqs_service import send_preview_request, send_full_request
@@ -145,18 +150,23 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
     config_s3_key = None
     
     try:
-        # Store Excel file if provided (new upload)
+        # Store Excel file if provided
         if excel_file:
-            logger.info(f"Storing new Excel file: {excel_file['filename']}")
-            # Generate new session ID for new table upload
-            from datetime import datetime
-            import hashlib
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            hash_input = f"{email_address}_{timestamp}".encode()
-            short_hash = hashlib.md5(hash_input).hexdigest()[:8]
-            new_session_id = f"session_{timestamp}_{short_hash}"
-            base_session_id = new_session_id
-            logger.info(f"Generated new session ID for Excel upload: {base_session_id}")
+            logger.info(f"Storing Excel file: {excel_file['filename']}")
+            
+            # Only generate new session ID if none was provided (new upload)
+            if not session_id:
+                logger.info("No session_id provided - generating new session ID for new table upload")
+                from datetime import datetime
+                import hashlib
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                hash_input = f"{email_address}_{timestamp}".encode()
+                short_hash = hashlib.md5(hash_input).hexdigest()[:8]
+                new_session_id = f"session_{timestamp}_{short_hash}"
+                base_session_id = new_session_id
+                logger.info(f"Generated new session ID for Excel upload: {base_session_id}")
+            else:
+                logger.info(f"Using existing session_id for Excel storage: {base_session_id}")
             
             # Get table name from filename for session info
             table_name = excel_file['filename'].rsplit('.', 1)[0] if '.' in excel_file['filename'] else excel_file['filename']
@@ -176,7 +186,7 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
             if session_info_result['success']:
                 logger.info(f"Session info created: {session_info_result['s3_key']}")
             
-            # Update session_id to the new one for response
+            # Update session_id to match base_session_id for consistency
             session_id = base_session_id
         else:
             # Try to get existing Excel file from storage
@@ -306,8 +316,7 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
         # Calculate total rows for tracking using shared table parser
         total_rows = -1
         try:
-            if excel_s3_key:
-                from shared_table_parser import s3_table_parser
+            if excel_s3_key and s3_table_parser:
                 table_data = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key)
                 if table_data and 'basic_info' in table_data:
                     total_rows = table_data['basic_info'].get('total_rows', -1)
@@ -318,9 +327,11 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
 
         # Create tracking records
         create_run_record(session_id=session_id, email=email_address, total_rows=total_rows)
+        reference_pin = session_id.split('_')[-1] if '_' in session_id else session_id[:6]
         track_validation_call(
-            session_id=session_id, email=email_address,
-            reference_pin=session_id.split('_')[-1] if '_' in session_id else session_id[:6],
+            email=email_address,
+            session_id=session_id,
+            reference_pin=reference_pin,
             request_type='preview' if preview else 'full', 
             excel_s3_key=excel_s3_key, 
             config_s3_key=config_s3_key

@@ -45,7 +45,6 @@ class DynamoDBSchemas:
     # Table names
     CALL_TRACKING_TABLE = "perplexity-validator-call-tracking"
     TOKEN_USAGE_TABLE = "perplexity-validator-token-usage"
-    COST_TRACKING_TABLE = "perplexity-validator-cost-tracking"
     USER_VALIDATION_TABLE = "perplexity-validator-user-validation"
     USER_TRACKING_TABLE = "perplexity-validator-user-tracking"
     ACCOUNT_TRANSACTIONS_TABLE = "perplexity-validator-account-transactions"
@@ -650,21 +649,11 @@ class CallTrackingRecord:
             'version': '1.0'
         }
 
-def create_call_tracking_table():
-    """Create the call tracking table."""
-    schemas = DynamoDBSchemas()
-    try:
-        dynamodb_client.create_table(**schemas.get_call_tracking_schema())
-        logger.info(f"Created {schemas.CALL_TRACKING_TABLE} table")
-        return True
-    except ClientError as e:
-        if e.response['Error']['Code'] == 'ResourceInUseException':
-            logger.info(f"Table {schemas.CALL_TRACKING_TABLE} already exists")
-            return True
-        else:
-            logger.error(f"Error creating call tracking table: {e}")
-            return False
-
+# LEGACY FUNCTION - DISABLED
+# This function used the legacy call-tracking table and has been disabled
+# in favor of the modern perplexity-validator-runs table tracking.
+# def create_call_tracking_table(...):
+#     pass
 def create_token_usage_table():
     """Create the token usage table."""
     schemas = DynamoDBSchemas()
@@ -1386,7 +1375,16 @@ def initialize_user_tracking(email: str, validated_at: str = None) -> bool:
 def track_user_request(email: str, request_type: str, tokens_used: int = 0, 
                       cost_usd: float = 0.0, provider: str = '', 
                       perplexity_tokens: int = 0, perplexity_cost: float = 0.0,
-                      anthropic_tokens: int = 0, anthropic_cost: float = 0.0) -> bool:
+                      anthropic_tokens: int = 0, anthropic_cost: float = 0.0,
+                      # NEW: Enhanced tracking metrics
+                      rows_processed: int = 0, total_rows: int = 0,
+                      columns_validated: int = 0, search_groups: int = 0,
+                      high_context_search_groups: int = 0, claude_calls: int = 0,
+                      eliyahu_cost: float = 0.0, estimated_cost: float = 0.0,
+                      quoted_full_cost: float = 0.0, charged_cost: float = 0.0,
+                      config_cost: float = 0.0, batch_size: int = 0,
+                      estimated_time: float = 0.0, total_api_calls: int = 0,
+                      total_cached_calls: int = 0) -> bool:
     """Track user request and update usage statistics."""
     try:
         # Normalize email to lowercase
@@ -1410,7 +1408,7 @@ def track_user_request(email: str, request_type: str, tokens_used: int = 0,
                 return float(val)
             return val
         
-        # Calculate updates
+        # Calculate updates - Legacy fields (keeping for backward compatibility)
         updates = {
             'last_access': datetime.now(timezone.utc).isoformat(),
             'total_tokens_used': to_num(current_data.get('total_tokens_used', 0)) + tokens_used,
@@ -1418,14 +1416,45 @@ def track_user_request(email: str, request_type: str, tokens_used: int = 0,
             'perplexity_tokens': to_num(current_data.get('perplexity_tokens', 0)) + perplexity_tokens,
             'perplexity_cost': to_num(current_data.get('perplexity_cost', 0)) + perplexity_cost,
             'anthropic_tokens': to_num(current_data.get('anthropic_tokens', 0)) + anthropic_tokens,
-            'anthropic_cost': to_num(current_data.get('anthropic_cost', 0)) + anthropic_cost
+            'anthropic_cost': to_num(current_data.get('anthropic_cost', 0)) + anthropic_cost,
+            
+            # NEW: Enhanced tracking metrics
+            'total_rows_processed': to_num(current_data.get('total_rows_processed', 0)) + rows_processed,
+            'total_rows_analyzed': to_num(current_data.get('total_rows_analyzed', 0)) + total_rows,
+            'total_columns_validated': to_num(current_data.get('total_columns_validated', 0)) + columns_validated,
+            'total_search_groups': to_num(current_data.get('total_search_groups', 0)) + search_groups,
+            'total_high_context_search_groups': to_num(current_data.get('total_high_context_search_groups', 0)) + high_context_search_groups,
+            'total_claude_calls': to_num(current_data.get('total_claude_calls', 0)) + claude_calls,
+            
+            # NEW: Cost tracking with proper nomenclature
+            'total_eliyahu_cost': to_num(current_data.get('total_eliyahu_cost', 0)) + eliyahu_cost,
+            'total_estimated_cost': to_num(current_data.get('total_estimated_cost', 0)) + estimated_cost,
+            'total_quoted_full_cost': to_num(current_data.get('total_quoted_full_cost', 0)) + quoted_full_cost,
+            'total_charged_cost': to_num(current_data.get('total_charged_cost', 0)) + charged_cost,
+            'total_config_cost': to_num(current_data.get('total_config_cost', 0)) + config_cost,
+            
+            # NEW: Processing parameters tracking (per-run values, not cumulative)
+            'batch_size': batch_size,
+            'estimated_time': estimated_time,
+            
+            # NEW: API call tracking
+            'total_api_calls_made': to_num(current_data.get('total_api_calls_made', 0)) + total_api_calls,
+            'total_cached_calls_made': to_num(current_data.get('total_cached_calls_made', 0)) + total_cached_calls
         }
         
-        # Update request type count
+        # Update request type count and type-specific metrics
         if request_type == 'preview':
             updates['total_preview_requests'] = to_num(current_data.get('total_preview_requests', 0)) + 1
+            updates['preview_rows_processed'] = to_num(current_data.get('preview_rows_processed', 0)) + rows_processed
+            updates['preview_eliyahu_cost'] = to_num(current_data.get('preview_eliyahu_cost', 0)) + eliyahu_cost
+            updates['preview_estimated_cost'] = to_num(current_data.get('preview_estimated_cost', 0)) + estimated_cost
         elif request_type == 'full':
             updates['total_full_requests'] = to_num(current_data.get('total_full_requests', 0)) + 1
+            updates['full_rows_processed'] = to_num(current_data.get('full_rows_processed', 0)) + rows_processed
+            updates['full_charged_cost'] = to_num(current_data.get('full_charged_cost', 0)) + charged_cost
+        elif request_type == 'config':
+            updates['total_config_requests'] = to_num(current_data.get('total_config_requests', 0)) + 1
+            updates['config_generation_cost'] = to_num(current_data.get('config_generation_cost', 0)) + config_cost
         
         # Build update expression
         update_parts = []

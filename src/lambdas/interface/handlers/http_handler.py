@@ -120,6 +120,13 @@ def handle(event, context):
                 else:
                     logger.info("✅ USING SYNC CONFIG MODIFICATION - HTTP response with full data")
                     return generate_config_unified.handle_modify_config(request_data, context)
+            elif action == 'repairConfig':
+                # Config repair is essentially the same as modify but with repair context
+                # Always use async for repair operations
+                logger.info(f"=== REPAIR CONFIG REQUEST ===")
+                logger.info(f"Request data keys: {list(request_data.keys())}")
+                logger.info("✅ USING ASYNC CONFIG REPAIR - WebSocket only response")
+                return generate_config_unified.handle_generate_config_async(request_data, context)
             elif action in email_actions:
                 return email_validation.handle(request_data, context)
             elif action == 'getUserStats':

@@ -108,7 +108,7 @@ def process_payment_completion(payment_data: Dict[str, Any]) -> Dict[str, Any]:
         
         # Import account management functions
         try:
-            from shared.dynamodb_schemas import add_to_balance, check_user_balance, get_domain_multiplier
+            from dynamodb_schemas import add_to_balance, check_user_balance, get_domain_multiplier
             from shared.websocket_client import send_balance_update_to_user
         except ImportError:
             logger.error("Failed to import account management functions")
@@ -250,7 +250,7 @@ def broadcast_balance_update_to_user(email: str, balance_data: Dict[str, Any]):
         # Note: In a real implementation, you'd need a way to map emails to connection IDs
         # For now, we'll try to find connections by scanning recent sessions
         try:
-            from shared.dynamodb_schemas import get_connections_for_user_email
+            from dynamodb_schemas import get_connections_for_user_email
             connection_ids = get_connections_for_user_email(email)
             
             if not connection_ids:
@@ -270,7 +270,7 @@ def broadcast_balance_update_to_user(email: str, balance_data: Dict[str, Any]):
                 except api_client.exceptions.GoneException:
                     logger.info(f"Stale connection {connection_id}, removing")
                     # Remove stale connection
-                    from shared.dynamodb_schemas import remove_websocket_connection
+                    from dynamodb_schemas import remove_websocket_connection
                     remove_websocket_connection(connection_id)
                 except Exception as e:
                     logger.error(f"Failed to send to connection {connection_id}: {e}")

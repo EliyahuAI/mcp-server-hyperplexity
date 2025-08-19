@@ -2294,3 +2294,86 @@ if ',' in text_content and not excel_content.startswith(b'PK'):
 
 - 2025-08-12: Committed updates across config automation, interface, deployment, shared modules, docs, and tables. Excluded `tables/RatioCompetitiveIntelligence/RatioCompetitiveIntelligence_Verified1.xlsx` from this commit due to OS lock; will commit it once unlocked.
 - 2025-08-12: Added `tables/RatioCompetitiveIntelligence/RatioCompetitiveIntelligence_Verified1.xlsx` after unlocking; pushed to remote.
+- 2025-08-12: Frontend cleanup (non-functional)
+- Created `frontend/perplexity_validator_interface3.html` from `perplexity_validator_interface2.html`
+- Removed duplicate `createUploadCard()` definition to eliminate redundancy without changing behavior
+
+## Session: Balance Check CORS Error Fix
+**Date**: Current
+**Issue**: Balance check API calls failing with CORS errors and 502 Bad Gateway
+
+### Problem Analysis
+1. Frontend making balance check API calls that fail with CORS errors
+2. Lambda function returning 502 errors when trying to check account balance
+3. These errors blocking user flow in the preview card creation
+
+### Solution Implemented
+1. **Backend Fixes**:
+   - Added comprehensive error handling and logging to `account_balance.py` action
+   - Ensured CORS headers are always returned even on errors
+   - Added try-catch blocks around DynamoDB imports to handle import failures gracefully
+
+2. **Frontend Fixes**:
+   - Made balance checks non-blocking and best-effort
+   - Added graceful fallback when balance service is unavailable
+   - Changed error messages to informational messages to not alarm users
+   - Wrapped order check in try-catch to prevent cascading failures
+   - Allow users to continue with validation even if balance check fails
+
+3. **Key Changes**:
+   - Balance checks now run in background and don't block user flow
+   - Better error messages that inform rather than alarm
+   - Service degradation handling - if balance check fails, validation can still proceed
+
+### Status
+- Fixed: Users can now proceed with validation even if balance service is temporarily unavailable
+- Balance will be checked during actual preview/processing as fallback
+
+## Session: Preview Card Creation
+// ... existing code ...
+
+## Hyperplexity Animation Implementation (Current Session)
+
+### User Request
+- Display hyperplexity_animation.gif on landing page
+- Show first frame with "eliyahu" text below it initially
+- Fade "eliyahu" text out as GIF plays
+- Show "hyperplexity" text in place of "eliyahu"
+- Then redirect to eliyahu.ai/hyperplexity
+
+### Implementation Plan
+- [x] Update agent_logs.md to track progress
+- [x] Modify hyperplexity_animation.py to include text transition in GIF
+- [x] Generate new GIF with text transition (2.09MB, 180 frames + extra final frames)
+- [x] Update index.php to simply play the GIF and redirect
+- [ ] Test animation and redirect flow
+
+### Technical Implementation
+**Animation Generator Updates:**
+- Added ImageFont import for text rendering
+- Created `get_font()` function with cross-platform font support
+- Created `draw_text_centered()` function for text positioning
+- Updated animation timeline:
+  - 0-10%: Static square with "eliyahu" text at full opacity
+  - 10-20%: Square rotates, "eliyahu" fades out
+  - 20-25%: Flag emerges, finish fading "eliyahu"
+  - 25-80%: Main animation (no text)
+  - 80-90%: Strobe effect, "hyperplexity" fades in
+  - 90-100%: Final state with "hyperplexity" at full opacity
+
+**Frontend Updates:**
+- Completely rewrote index.php (removed ~400 lines of CSS animation)
+- Simple `<img>` tag displays hyperplexity_animation.gif
+- Updated redirect timing to 15 seconds to match GIF duration
+- Maintained professional styling and branding
+- Added responsive design for mobile devices
+
+### File Changes
+- `src/hyperplexity_animation.py`: Added text rendering and transition logic
+- `hyperplexity_animation.gif`: New 2.09MB GIF with embedded text transition
+- `frontend/index.php`: Simplified from complex CSS animation to GIF display
+
+### Next Steps
+- Test the complete animation flow in browser
+- Verify text transitions work correctly
+- Confirm redirect timing and functionality

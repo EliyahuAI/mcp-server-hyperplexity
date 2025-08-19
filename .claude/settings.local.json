@@ -5,7 +5,9 @@
       "Bash(python.exe:*)",
       "Bash(python:*)",
       "Bash(grep:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": []
   }

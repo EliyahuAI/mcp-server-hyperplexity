@@ -86,10 +86,11 @@
 
     /* Card Template */
     .card {
-        background-color: var(--card-background);
+        background-color: var(--card-background, #ffffff) !important;
         border-radius: var(--border-radius);
         box-shadow: var(--box-shadow);
         padding: 2rem;
+        will-change: transform, opacity;
         margin-bottom: 2rem;
         transition: var(--transition);
         opacity: 0;
@@ -490,6 +491,7 @@
         background-color: #2DFF45;
         position: absolute;
         top: 50%;
+        will-change: transform, background-color;
         left: 50%;
         transform: translate(-50%, -50%);
         animation: thinkingPulse 1.2s infinite;
@@ -1165,7 +1167,8 @@
                 cardCounter: 0,
                 cardProgress: {}, // Track progress by card ID
                 excelFileUploaded: false, // Track if Excel file has been uploaded to unified storage
-                configStored: false // Track if config has been stored
+                configStored: false, // Track if config has been stored
+                hasInsufficientBalance: false // Track when user has insufficient balance
             };
 
             // ============================================
@@ -1382,8 +1385,10 @@
                         progressText.textContent = message;
                     }
                     
-                    // Keep consistent green color throughout progress
-                    progressSquare.style.backgroundColor = '#2DFF45'; // Always green
+                    // Keep consistent green color throughout progress - batch with other updates
+                    requestAnimationFrame(() => {
+                        progressSquare.style.backgroundColor = '#2DFF45'; // Always green
+                    });
                 }
             }
 
@@ -1502,27 +1507,27 @@
 
                 // Verify buttons container exists
                 const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-                console.log(`Created card ${cardId}, buttons container exists:`, !!buttonsContainer);
 
                 // Add buttons if any provided
                 if (buttons.length > 0) {
-                    // Small delay to ensure DOM is ready
-                    setTimeout(() => {
+                    // Use requestAnimationFrame instead of setTimeout for better performance
+                    requestAnimationFrame(() => {
                         createButtonRow(`${cardId}-buttons`, buttons);
-                    }, 0);
+                    });
                 }
 
-                // Scroll to view
-                setTimeout(() => {
-                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, 100);
+                // Scroll to view - defer to avoid forced reflow
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    });
+                });
 
                 return card;
             }
 
             // Create standardized button row
             function createButtonRow(containerId, buttons) {
-                console.log(`Creating buttons in container: ${containerId}`);
                 const container = document.getElementById(containerId);
                 if (!container) {
                     console.error(`Button container ${containerId} not found`);
@@ -1530,7 +1535,6 @@
                     const cardId = containerId.replace('-buttons', '');
                     const card = document.getElementById(cardId);
                     if (card) {
-                        console.log(`Found card ${cardId}, creating buttons container`);
                         const buttonsDiv = document.createElement('div');
                         buttonsDiv.id = containerId;
                         buttonsDiv.className = 'card-buttons';
@@ -1634,10 +1638,122 @@
                     btn.style.opacity = '';
                 });
             }
+            
+            function resetProcessButtons() {
+                console.log(`[BUTTONS] Looking for buttons to reset...`);
+                
+                // Find all buttons that are in "Opening store" state and reset them
+                const buttons = document.querySelectorAll('button');
+                buttons.forEach(button => {
+                    const buttonText = button.textContent || '';
+                    
+                    if (buttonText.includes('Opening store') || buttonText.includes('💳') || buttonText.includes('Add') || buttonText.includes('Credits')) {
+                        console.log(`[BUTTONS] Found button to check: "${buttonText.trim()}"`);
+                        
+                        // Check if this is a process button by looking for data-action
+                        const processAction = button.getAttribute('data-action');
+                        const isProcessButton = processAction === 'process';
+                        
+                        // Also check if parent card suggests it's a process button
+                        const card = button.closest('.card');
+                        const cardContent = card ? card.textContent : '';
+                        const isPreviewCard = cardContent.includes('Your Balance') || cardContent.includes('Est. Cost') || cardContent.includes('Credits Needed');
+                        
+                        console.log(`[BUTTONS] Button data-action: ${processAction}, isPreviewCard: ${isPreviewCard}`);
+                        
+                        if (isProcessButton || isPreviewCard) {
+                            console.log(`[BUTTONS] This is a button to reset`);
+                            
+                            // Get values from the preview card display instead of global state
+                            const currentBalance = globalState.accountBalance || 0;
+                            
+                            // Find the estimated cost and credits needed from the preview card
+                            let estimatedCost = 0;
+                            let creditsNeeded = 0;
+                            
+                            // Look for the actual credits needed value in the preview card
+                            const previewCard = card.querySelector('.estimates');
+                            if (previewCard) {
+                                console.log(`[BUTTONS] Found preview card, looking for values...`);
+                                const costItems = previewCard.querySelectorAll('.cost-item');
+                                console.log(`[BUTTONS] Found ${costItems.length} cost items`);
+                                
+                                for (const item of costItems) {
+                                    const label = item.querySelector('.cost-label');
+                                    const value = item.querySelector('.cost-value');
+                                    if (label && value) {
+                                        const labelText = label.textContent.trim();
+                                        const valueText = value.textContent.trim();
+                                        console.log(`[BUTTONS] Cost item: "${labelText}" = "${valueText}"`);
+                                        
+                                        if (labelText.includes('Est. Cost')) {
+                                            estimatedCost = parseFloat(valueText.replace('$', '')) || 0;
+                                            console.log(`[BUTTONS] Found Est. Cost: $${estimatedCost}`);
+                                        } else if (labelText.includes('Credits Needed')) {
+                                            creditsNeeded = parseFloat(valueText.replace('$', '')) || 0;
+                                            console.log(`[BUTTONS] Found Credits Needed: $${creditsNeeded}`);
+                                        }
+                                    }
+                                }
+                            } else {
+                                console.log(`[BUTTONS] No preview card found in button's card`);
+                            }
+                            
+                            // If no preview card data, fall back to calculation
+                            if (estimatedCost === 0) {
+                                estimatedCost = globalState.estimatedCost || 0;
+                            }
+                            if (creditsNeeded === 0) {
+                                creditsNeeded = Math.max(0, estimatedCost - currentBalance);
+                            }
+                            
+                            const sufficientBalance = creditsNeeded <= 0;
+                            
+                            console.log(`[BUTTONS] Button logic: Balance=$${currentBalance}, Cost=$${estimatedCost}, Need=$${creditsNeeded}, Sufficient=${sufficientBalance}`);
+                            
+                            // Reset to proper process button state
+                            markButtonUnselected(button);
+                            
+                            if (sufficientBalance) {
+                                // Show process button with cost
+                                button.innerHTML = `<span class="button-text">🔍 Process Table ($${estimatedCost.toFixed(2)})</span>`;
+                                button.className = 'std-button primary';
+                                
+                                // Restore the original process functionality
+                                button.onclick = async (e) => {
+                                    const btn = e.target.closest('button');
+                                    markButtonSelected(btn, '✨ Processing...');
+                                    globalState.activePreviewCard = null;
+                                    createProcessingCard();
+                                };
+                                
+                                console.log(`[BUTTONS] Reset to process button with cost: $${estimatedCost.toFixed(2)}`);
+                            } else {
+                                // Still insufficient balance - show remaining credits needed from preview card
+                                button.innerHTML = `<span class="button-text">💳 Add $${creditsNeeded.toFixed(2)} Credits</span>`;
+                                button.className = 'std-button secondary';
+                                
+                                // Restore add credits functionality with the remaining amount needed
+                                button.onclick = async (e) => {
+                                    const btn = e.target.closest('button');
+                                    globalState.hasInsufficientBalance = true;
+                                    markButtonSelected(btn, '💳 Opening store...');
+                                    const recommendedAmount = Math.ceil(creditsNeeded);
+                                    const cardId = card.querySelector('[id*="preview"]')?.id?.replace('-content', '');
+                                    openAddCreditsPage(recommendedAmount, `${cardId}-messages`);
+                                };
+                                
+                                console.log(`[BUTTONS] Reset to add credits button: $${creditsNeeded.toFixed(2)} remaining from preview card`);
+                            }
+                            
+                            button.setAttribute('data-action', 'process');
+                        }
+                    }
+                });
+            }
 
             // Show preview results - with debugging
             function showPreviewResults(cardId, previewData) {
-                console.log(`Showing preview results for card ${cardId}`);
                 
                 // Hide progress, show results
                 const resultsEl = document.getElementById(`${cardId}-results`);
@@ -1663,7 +1779,7 @@
                         
                         const metrics = previewData.validation_metrics;
                         const totalRows = previewData.total_rows || 0;
-                        const estimatedCost = previewData.cost_estimates.estimated_total_cost || 0;
+                        const estimatedCost = previewData.cost_estimates.quoted_full_cost || 0;
                         const estimatedTime = previewData.estimated_total_processing_time || 0;
                         
                         let estimatesHtml = '';
@@ -1692,6 +1808,8 @@
                         estimatesHtml += `<div class="cost-item"><span class="cost-label">Est. Time</span><span class="cost-value">${Math.ceil(estimatedTime / 60)} min</span></div>`;
                         estimatesHtml += `<div class="cost-item"><span class="cost-label">Est. Cost</span><span class="cost-value">$${estimatedCost.toFixed(2)}</span></div>`;
                         
+                        // Domain multiplier is hidden from frontend display
+                        
                         // Add account balance information if available
                         if (previewData.account_info) {
                             const accountInfo = previewData.account_info;
@@ -1712,18 +1830,17 @@
                         // Store cost and balance info for button logic
                         globalState.estimatedCost = estimatedCost;
                         globalState.accountInfo = previewData.account_info || null;
+                        
                     }
                 }
 
-                // Debug: Check if card exists
                 const card = document.getElementById(cardId);
-                console.log(`Card ${cardId} exists:`, !!card);
-                console.log(`Looking for buttons container: ${cardId}-buttons`);
 
                 // Determine if user has sufficient balance
                 const accountInfo = previewData.account_info;
                 const sufficientBalance = accountInfo ? accountInfo.sufficient_balance : true; // Default to true if no account info
-                const estimatedCost = previewData.cost_estimates ? previewData.cost_estimates.estimated_total_cost : 0;
+                const estimatedCost = previewData.cost_estimates ? previewData.cost_estimates.quoted_full_cost : 0;
+                
 
                 // Show action buttons
                 createButtonRow(`${cardId}-buttons`, [
@@ -1743,7 +1860,7 @@
                     {
                         text: sufficientBalance 
                             ? `Process Table${estimatedCost ? ` ($${estimatedCost.toFixed(2)})` : ''}` 
-                            : `Add Credits ($${accountInfo?.credits_needed?.toFixed(2) || '0.00'})`,
+                            : `Add Credits ($${Math.ceil(accountInfo?.credits_needed || 0).toFixed(2)})`,
                         icon: sufficientBalance ? '✨' : '💳',
                         variant: sufficientBalance ? 'primary' : 'secondary',
                         width: 3,
@@ -1752,15 +1869,17 @@
                             
                             if (sufficientBalance) {
                                 // User has sufficient balance - proceed with processing
+                                globalState.hasInsufficientBalance = false;
                                 markButtonSelected(button, '✨ Processing...');
                                 globalState.activePreviewCard = null;
                                 createProcessingCard();
                             } else {
                                 // Insufficient balance - open add credits page
+                                globalState.hasInsufficientBalance = true;
                                 markButtonSelected(button, '💳 Opening store...');
                                 const creditsNeeded = accountInfo?.credits_needed || estimatedCost;
-                                const recommendedAmount = Math.ceil(creditsNeeded + 0.10); // Round up to nearest dollar
-                                openAddCreditsPage(recommendedAmount);
+                                const recommendedAmount = Math.ceil(creditsNeeded); // Round up to nearest dollar
+                                openAddCreditsPage(recommendedAmount, `${cardId}-messages`);
                                 
                                 // Reset button after a delay
                                 setTimeout(() => {
@@ -1906,10 +2025,8 @@
                 if (sessionWebSockets.has(sessionId)) {
                     const existingWs = sessionWebSockets.get(sessionId);
                     if (existingWs.readyState === WebSocket.OPEN) {
-                        console.log(`Reusing existing WebSocket connection for session ${sessionId}`);
                         return existingWs;
                     } else {
-                        console.log(`Existing WebSocket for session ${sessionId} is not OPEN (state: ${existingWs.readyState}), cleaning up`);
                         // Clean up old connection
                         if (existingWs._healthCheckInterval) {
                             clearInterval(existingWs._healthCheckInterval);
@@ -1923,20 +2040,17 @@
                     }
                 }
 
-                console.log(`Connecting to session ${sessionId} (attempt ${reconnectAttempt + 1})`);
                 
                 const ws = new WebSocket(WEBSOCKET_API_URL);
                 sessionWebSockets.set(sessionId, ws);
 
                 ws.onopen = () => {
-                    console.log(`WebSocket connected to session ${sessionId}`);
                     if (ws.readyState === WebSocket.OPEN) {
                         try {
                             ws.send(JSON.stringify({
                                 action: 'subscribe',
                                 sessionId: sessionId
                             }));
-                            console.log(`Successfully subscribed to session ${sessionId}`);
                             
                             // Removed fallback polling - focusing on main WebSocket path
                             
@@ -1946,7 +2060,6 @@
                             // Start periodic health checks - less aggressive
                             ws._healthCheckInterval = setInterval(() => {
                                 if (ws.readyState !== WebSocket.OPEN) {
-                                    console.log(`WebSocket no longer OPEN for session ${sessionId}, cleaning up interval`);
                                     clearInterval(ws._healthCheckInterval);
                                     sessionWebSockets.delete(sessionId);
                                 }
@@ -1963,16 +2076,8 @@
                     
                     const data = JSON.parse(event.data);
                     
-                    console.log(`WebSocket message for session ${sessionId}:`, data);
                     // Special logging for COMPLETED messages
                     if (data.status === 'COMPLETED') {
-                        console.log(`[COMPLETED] Full message details:`, {
-                            status: data.status,
-                            processed_rows: data.processed_rows,
-                            total_rows: data.total_rows,
-                            percent_complete: data.percent_complete,
-                            verbose_status: data.verbose_status
-                        });
                     }
                     routeMessage(data, sessionId);
                 };
@@ -1982,7 +2087,6 @@
                 };
 
                 ws.onclose = (event) => {
-                    console.log(`WebSocket closed for session ${sessionId}. Code:`, event.code, "Reason:", event.reason);
                     sessionWebSockets.delete(sessionId);
                     
                     // Clean up health check interval
@@ -1996,7 +2100,6 @@
                     
                     if (isUnexpectedClose && reconnectAttempt < maxReconnectAttempts && !wasIntentionallyClosed) {
                         const reconnectDelay = Math.min(1000 * Math.pow(2, reconnectAttempt), 10000);
-                        console.log(`Reconnecting to session ${sessionId} in ${reconnectDelay}ms`);
                         
                         setTimeout(() => {
                             connectToSession(sessionId, reconnectAttempt + 1);
@@ -2009,7 +2112,6 @@
 
             // Handle balance update notifications from WebSocket
             function handleBalanceUpdate(data) {
-                console.log('Balance update received:', data);
                 
                 const newBalance = data.new_balance;
                 const transaction = data.transaction;
@@ -2062,15 +2164,16 @@
             function showInsufficientBalanceError(errorData, cardId = null) {
                 const balance = errorData.current_balance || 0;
                 const minCost = errorData.estimated_minimum_cost || 0.01;
-                const multiplier = errorData.domain_multiplier || 5;
+                // Domain multiplier hidden from frontend
                 const shortfall = Math.max(0, minCost - balance);
                 
                 // Calculate recommended purchase amounts
-                const recommendedMinimum = Math.ceil(shortfall + 0.10); // Round up to nearest dollar, add buffer
+                const recommendedMinimum = Math.ceil(shortfall); // Round up to nearest dollar
                 const recommendedSafe = Math.ceil(minCost * 2); // 2x the minimum cost for multiple validations, rounded up to dollar
                 
                 // Set pending retry flag for post-purchase flow
                 globalState.pendingValidationRetry = true;
+                globalState.hasInsufficientBalance = true;
                 
                 const errorMessage = `
                     <div class="insufficient-balance-error">
@@ -2107,7 +2210,7 @@
                             </div>
                             
                             <div class="domain-info">
-                                <small>💡 Your domain has a ${multiplier}x cost multiplier applied</small>
+                                <small>💡 Additional costs may apply based on your account type</small>
                             </div>
                             
                             <div class="error-actions">
@@ -2141,7 +2244,7 @@
                 }
             }
             
-            function openAddCreditsPage(recommendedAmount = null) {
+            function openAddCreditsPage(recommendedAmount = null, messageContainer = 'messages') {
                 // Get current session info for tracking
                 const sessionId = globalState.sessionId || 'no-session';
                 const userEmail = getCurrentUserEmail() || '';
@@ -2150,13 +2253,17 @@
                 if (!recommendedAmount && globalState.lastInsufficientBalanceError) {
                     const errorData = globalState.lastInsufficientBalanceError;
                     const shortfall = Math.max(0, (errorData.estimated_minimum_cost || 0.01) - (errorData.current_balance || 0));
-                    recommendedAmount = Math.ceil(shortfall + 0.10); // Round up to nearest dollar
+                    recommendedAmount = Math.ceil(shortfall); // Round up to nearest dollar
                 }
                 
-                // Build store URL with parameters
-                let storeUrl = 'https://eliyahu.ai/store';
+                // Show confirmation message in the page instead of system dialog
+                const creditsText = recommendedAmount ? `$${recommendedAmount.toFixed(2)}` : 'custom';
+                showMessage(messageContainer, `💳 You need ${creditsText} in credits. Opening store in new tab...`, 'info', false, 'store-opening');
                 
-                // Add query parameters for cart pre-population
+                // Build store URL - use direct product link
+                const storeUrl = 'https://eliyahu.ai/store/p/10-hyperplexity-credits';
+                
+                // Add query parameters for tracking
                 const params = new URLSearchParams();
                 if (recommendedAmount) {
                     params.append('amount', recommendedAmount.toFixed(2));
@@ -2167,59 +2274,140 @@
                 if (userEmail) {
                     params.append('email', userEmail);
                 }
-                params.append('product', 'hyperplexity-credits');
                 params.append('return_to', window.location.href);
                 
                 // Create the full URL
                 const fullUrl = `${storeUrl}?${params.toString()}`;
                 
-                console.log('Opening store with URL:', fullUrl);
                 window.open(fullUrl, '_blank');
                 
                 // Set flag to refresh balance when user returns
                 globalState.awaitingBalanceRefresh = true;
                 
-                // Show helpful message to user
-                showMessage('messages', `💳 Opening store with $${recommendedAmount ? recommendedAmount.toFixed(2) : 'custom'} credits. Your balance will refresh when you return.`, 'info');
+                // Update the same message instead of creating a new one
+                setTimeout(() => {
+                    showMessage(messageContainer, `💳 Opening store with ${creditsText} credits. Your balance will refresh when you return.`, 'info', false, 'store-opening');
+                }, 500);
+                
+                // Setup balance refresh with proper messaging (only when insufficient balance)
+                setupBalanceRefreshOnReturn(messageContainer);
             }
 
             // Add window focus event listener to refresh balance when user returns
             let windowFocusHandler = null;
             
-            function setupBalanceRefreshOnReturn() {
+            function setupBalanceRefreshOnReturn(messageContainer = 'messages') {
                 if (windowFocusHandler) {
                     window.removeEventListener('focus', windowFocusHandler);
                 }
                 
                 windowFocusHandler = async () => {
                     if (globalState.awaitingBalanceRefresh) {
-                        console.log('Window focus detected - refreshing balance...');
                         globalState.awaitingBalanceRefresh = false;
                         
-                        // Show loading message
-                        showMessage('messages', '🔄 Checking for balance updates...', 'info');
+                        // Show loading message with specific ID
+                        showMessage(messageContainer, '🔄 Checking for balance updates...', 'info', false, 'balance-check');
                         
                         // Wait a moment for any webhook processing to complete
                         await new Promise(resolve => setTimeout(resolve, 2000));
                         
-                        // Refresh balance for current email
+                        // Refresh balance for current email 
+                        await refreshCurrentBalance();
+                        
+                        // Check for orders once on return, then start polling
+                        const foundCredits = await checkForNewOrders(messageContainer);
+                        if (!foundCredits) {
+                            // Only start polling if no credits were found immediately
+                            setTimeout(() => startOrderPolling(messageContainer), 2000);
+                        }
+                    } else if (globalState.hasInsufficientBalance) {
+                        // Only check balance on focus if user has insufficient balance
                         await refreshCurrentBalance();
                     }
+                    // If sufficient balance, no need to check on every focus
                 };
                 
                 window.addEventListener('focus', windowFocusHandler);
             }
             
-            async function refreshCurrentBalance() {
+            // Order polling state
+            let orderPollingInterval = null;
+            let pollingAttempts = 0;
+            const MAX_POLLING_ATTEMPTS = 10; // Poll for ~2 minutes
+
+            function startOrderPolling(messageContainer = 'messages') {
+                // Clear any existing polling
+                if (orderPollingInterval) {
+                    clearInterval(orderPollingInterval);
+                }
+                
+                pollingAttempts = 0;
+                
+                orderPollingInterval = setInterval(async () => {
+                    pollingAttempts++;
+                    
+                    try {
+                        // Always check but only show status messages occasionally to reduce spam
+                        const shouldShowMessage = pollingAttempts % 3 === 1;
+                        const foundCredits = await checkForNewOrders(messageContainer, shouldShowMessage);
+                        
+                        if (foundCredits) {
+                            stopOrderPolling();
+                            return;
+                        }
+                        
+                        if (pollingAttempts >= MAX_POLLING_ATTEMPTS) {
+                            const timeoutEl = showMessage(messageContainer, '⏰ Checkout soon to not lose your work! We\'ll continue checking in the background. When ready for complete analysis, click here.', 'info', false, 'polling-timeout');
+                            
+                            // Make the timeout message clickable to retry validation
+                            if (timeoutEl) {
+                                timeoutEl.style.cursor = 'pointer';
+                                timeoutEl.onclick = () => {
+                                    // Clear the timeout message and try to find a retry button or validation card
+                                    timeoutEl.remove();
+                                    const validationCards = document.querySelectorAll('.validation-card');
+                                    if (validationCards.length > 0) {
+                                        const lastCard = validationCards[validationCards.length - 1];
+                                        const processButton = lastCard.querySelector('button[data-action*="process"], button:contains("Process")');
+                                        if (processButton) {
+                                            processButton.click();
+                                        }
+                                    }
+                                };
+                            }
+                            
+                            stopOrderPolling();
+                        }
+                        
+                    } catch (error) {
+                        console.error('[POLLING] Error during polling:', error);
+                    }
+                }, 5000); // Check every 5 seconds
+            }
+            
+            function stopOrderPolling() {
+                if (orderPollingInterval) {
+                    clearInterval(orderPollingInterval);
+                    orderPollingInterval = null;
+                }
+                pollingAttempts = 0;
+            }
+            
+            // Make polling functions globally accessible
+            window.startOrderPolling = startOrderPolling;
+            window.stopOrderPolling = stopOrderPolling;
+            
+            window.checkForNewOrders = async function checkForNewOrders(messageContainer = 'messages', showStatusMessage = true) {
                 try {
                     const currentEmail = getCurrentUserEmail();
                     if (!currentEmail) {
-                        console.log('No email available for balance refresh');
                         return;
                     }
                     
-                    // First, trigger Squarespace order check
-                    showMessage('messages', '🔄 Checking for new credit purchases...', 'info');
+                    // Trigger Squarespace order check with consistent message ID
+                    if (showStatusMessage) {
+                        showMessage(messageContainer, '🔄 Checking for new credit purchases...', 'info', false, 'order-check');
+                    }
                     
                     const orderCheckResponse = await fetch(`${API_BASE}/validate`, {
                         method: 'POST',
@@ -2232,13 +2420,207 @@
                     
                     if (orderCheckResponse.ok) {
                         const orderData = await orderCheckResponse.json();
-                        console.log('Order check result:', orderData);
                         
                         if (orderData.credits_added && orderData.credits_added > 0) {
-                            showMessage('messages', `🎉 Found your purchase! Added $${orderData.credits_added.toFixed(2)} credits`, 'success');
-                            // Brief pause to show the message
-                            await new Promise(resolve => setTimeout(resolve, 1500));
+                            // Clear all blue info messages first
+                            const container = document.getElementById(messageContainer);
+                            if (container) {
+                                const infoMessages = container.querySelectorAll('.message-info');
+                                infoMessages.forEach(msg => msg.remove());
+                                console.log(`[MESSAGE] Cleared ${infoMessages.length} info messages`);
+                            }
+                            
+                            // Show success message
+                            showMessage(messageContainer, `🎉 Found your purchase! Added $${orderData.credits_added.toFixed(2)} credits`, 'success');
+                            
+                            // Immediately refresh the balance and update UI
+                            await refreshCurrentBalance();
+                            
+                            // Force a longer delay to ensure balance is updated and DOM is ready
+                            setTimeout(() => {
+                                console.log(`[BALANCE] Post-purchase update - globalState.accountBalance: ${globalState.accountBalance}`);
+                                
+                                // Update all displays first
+                                updatePreviewBalanceDisplay();
+                                updateAllBalanceDisplays();
+                                
+                                // Then reset buttons after displays are updated
+                                setTimeout(() => {
+                                    resetProcessButtons();
+                                }, 50);
+                            }, 200);
+                            
+                            return true; // Credits were added
                         }
+                    }
+                    return false; // No credits added
+                } catch (error) {
+                    console.error('Error checking for new orders:', error);
+                    return false;
+                }
+            }
+
+            function updatePreviewBalanceDisplay() {
+                console.log(`[BALANCE] updatePreviewBalanceDisplay called - globalState.accountBalance: ${globalState.accountBalance}`);
+                
+                // Find the active preview card and update its balance display
+                const previewCard = document.querySelector('.card-content[id*="preview"]');
+                if (!previewCard) {
+                    console.log(`[BALANCE] No preview card found`);
+                    return;
+                }
+                
+                const estimatesEl = previewCard.querySelector('.estimates');
+                if (!estimatesEl) {
+                    console.log(`[BALANCE] No estimates element found`);
+                    return;
+                }
+                
+                const currentBalance = globalState.accountBalance || 0;
+                
+                // Get estimated cost from the preview card itself
+                let estimatedCost = 0;
+                const costItems = estimatesEl.querySelectorAll('.cost-item');
+                for (const item of costItems) {
+                    const label = item.querySelector('.cost-label');
+                    const value = item.querySelector('.cost-value');
+                    if (label && value && label.textContent.includes('Est. Cost')) {
+                        estimatedCost = parseFloat(value.textContent.replace('$', '')) || 0;
+                        break;
+                    }
+                }
+                
+                // Fallback to global state if not found in preview
+                if (estimatedCost === 0) {
+                    estimatedCost = globalState.estimatedCost || 0;
+                }
+                
+                const sufficientBalance = currentBalance >= estimatedCost;
+                
+                console.log(`[BALANCE] Current: $${currentBalance}, Cost: $${estimatedCost}, Sufficient: ${sufficientBalance}`);
+                
+                // Find and update the balance line
+                for (const item of costItems) {
+                    const label = item.querySelector('.cost-label');
+                    if (label && label.textContent.includes('Your Balance')) {
+                        const valueEl = item.querySelector('.cost-value');
+                        if (valueEl) {
+                            valueEl.textContent = `$${currentBalance.toFixed(2)}`;
+                            console.log(`[BALANCE] Updated balance display to $${currentBalance.toFixed(2)}`);
+                            // Add a brief highlight to show it updated
+                            valueEl.style.background = '#e8f5e8';
+                            valueEl.style.transition = 'background 2s';
+                            setTimeout(() => {
+                                valueEl.style.background = '';
+                            }, 2000);
+                        }
+                        break;
+                    }
+                }
+                
+                // Update or hide the credits needed section
+                for (const item of costItems) {
+                    const label = item.querySelector('.cost-label');
+                    if (label && label.textContent.includes('Credits Needed')) {
+                        if (sufficientBalance) {
+                            item.style.display = 'none'; // Hide credits needed line
+                            console.log(`[BALANCE] Sufficient balance - hiding credits needed`);
+                        } else {
+                            item.style.display = ''; // Show credits needed line
+                            const valueEl = item.querySelector('.cost-value');
+                            if (valueEl) {
+                                const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
+                                valueEl.textContent = `$${creditsNeeded.toFixed(2)}`;
+                                console.log(`[BALANCE] Updated credits needed to $${creditsNeeded.toFixed(2)}`);
+                            }
+                        }
+                        break;
+                    }
+                }
+                
+                // Update the main action button
+                const cardElement = previewCard.closest('.card');
+                if (cardElement) {
+                    const cardId = cardElement.id;
+                    const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                    if (buttonsContainer) {
+                        // Find the main action button (Process/Add Credits)
+                        const buttons = buttonsContainer.querySelectorAll('.std-button');
+                        const mainButton = Array.from(buttons).find(btn => {
+                            const text = btn.textContent;
+                            return text.includes('Process Table') || text.includes('Add Credits');
+                        });
+                        
+                        if (mainButton) {
+                            const buttonText = mainButton.querySelector('.button-text');
+                            if (buttonText) {
+                                if (sufficientBalance) {
+                                    // Update to Process button
+                                    buttonText.textContent = `🔍 Process Table ($${estimatedCost.toFixed(2)})`;
+                                    mainButton.className = mainButton.className.replace('secondary', 'primary');
+                                    console.log(`[BALANCE] Updated button to Process Table`);
+                                } else {
+                                    // Update to Add Credits button
+                                    const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
+                                    buttonText.textContent = `💳 Add $${creditsNeeded.toFixed(2)} Credits`;
+                                    mainButton.className = mainButton.className.replace('primary', 'secondary');
+                                    console.log(`[BALANCE] Updated button to Add $${creditsNeeded.toFixed(2)} Credits`);
+                                    
+                                    // Update the callback
+                                    mainButton.onclick = async (e) => {
+                                        const button = e.target.closest('button');
+                                        globalState.hasInsufficientBalance = true;
+                                        markButtonSelected(button, '💳 Opening store...');
+                                        const recommendedAmount = Math.ceil(creditsNeeded);
+                                        openAddCreditsPage(recommendedAmount, `${cardId}-messages`);
+                                        
+                                        setTimeout(() => {
+                                            markButtonUnselected(button);
+                                        }, 3000);
+                                    };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Make the function globally accessible for testing
+            window.updatePreviewBalanceDisplay = updatePreviewBalanceDisplay;
+            
+            function updateAllBalanceDisplays() {
+                // Update preview cards
+                updatePreviewBalanceDisplay();
+                
+                // Update any balance display elements
+                const balanceElements = document.querySelectorAll('.balance-amount, .current-balance, [data-balance]');
+                balanceElements.forEach(el => {
+                    if (globalState.accountBalance !== undefined) {
+                        el.textContent = `$${globalState.accountBalance.toFixed(2)}`;
+                    }
+                });
+                
+                // Update credits needed displays
+                const creditsNeededElements = document.querySelectorAll('.credits-needed, [data-credits-needed]');
+                creditsNeededElements.forEach(el => {
+                    const estimatedCost = globalState.lastInsufficientBalanceError?.estimated_minimum_cost || 0;
+                    const currentBalance = globalState.accountBalance || 0;
+                    const needed = Math.max(0, estimatedCost - currentBalance);
+                    if (needed <= 0) {
+                        el.textContent = 'Sufficient Balance';
+                        el.style.color = '#4CAF50';
+                    } else {
+                        el.textContent = `$${needed.toFixed(2)}`;
+                        el.style.color = '#f44336';
+                    }
+                });
+            }
+
+            window.refreshCurrentBalance = async function refreshCurrentBalance() {
+                try {
+                    const currentEmail = getCurrentUserEmail();
+                    if (!currentEmail) {
+                        return;
                     }
                     
                     // Now get the updated balance
@@ -2253,25 +2635,37 @@
                     
                     if (response.ok) {
                         const data = await response.json();
-                        if (data.success && data.balance !== undefined) {
-                            // Update global balance state
-                            const oldBalance = globalState.accountBalance || 0;
-                            globalState.accountBalance = data.balance;
-                            
-                            // Show current balance
-                            showMessage('messages', `✅ Current balance: $${data.balance.toFixed(4)}`, 'success');
-                            
-                            // If there was a pending validation, suggest retrying
-                            if (globalState.pendingValidationRetry && data.balance > oldBalance) {
-                                setTimeout(() => {
-                                    showMessage('messages', '💡 You can now retry your validation with your updated balance.', 'info');
-                                }, 2000);
+                        if (data.success) {
+                            // Handle different response formats
+                            let newBalance = data.balance;
+                            if (newBalance === undefined && data.account_info) {
+                                newBalance = data.account_info.balance;
                             }
+                            
+                            if (newBalance !== undefined) {
+                                // Update global balance state
+                                const oldBalance = globalState.accountBalance || 0;
+                                globalState.accountBalance = newBalance;
+                                
+                                console.log(`[BALANCE] refreshCurrentBalance: ${oldBalance} → ${newBalance}`);
+                                
+                                // If there was a pending validation, clear insufficient balance flag
+                                if (globalState.pendingValidationRetry && newBalance > oldBalance) {
+                                    // Clear insufficient balance flag when balance increases
+                                    globalState.hasInsufficientBalance = false;
+                                }
+                            } else {
+                                console.log(`[BALANCE] refreshCurrentBalance - no balance found in response:`, data);
+                            }
+                        } else {
+                            console.log(`[BALANCE] refreshCurrentBalance failed:`, data);
                         }
+                    } else {
+                        console.log(`[BALANCE] refreshCurrentBalance response not ok:`, response.status);
                     }
                 } catch (error) {
                     console.error('Error refreshing balance:', error);
-                    showMessage('messages', '⚠️ Could not refresh balance. Please try again.', 'warning');
+                    // Don't show balance refresh errors to avoid message spam
                 }
             }
             
@@ -2312,7 +2706,6 @@
                 
                 // Handle completion messages - these need to go to the normal handlers
                 if (data.type === 'config_generation_complete' || data.type === 'config_generation_failed') {
-                    console.log('Routing completion message:', data.type);
                     // Continue to normal routing below for completion messages
                 }
                 
@@ -2336,11 +2729,7 @@
                 }
                 
                 if (latestHandler && latestCardId) {
-                    console.log(`[ROUTING] Routing message to card ${latestCardId}, handler types:`, latestHandler.messageTypes);
-                    console.log(`[ROUTING] About to call handler function for message type:`, data.type);
-                    console.log(`[ROUTING] Handler function:`, latestHandler.handler.toString().substring(0, 100) + '...');
                     latestHandler.handler(data, latestCardId);
-                    console.log(`[ROUTING] Handler function completed`);
                 } else {
                     console.warn('No handler found for WebSocket message:', data);
                 }
@@ -2357,12 +2746,10 @@
             function ensureWebSocketHealth(sessionId) {
                 // Only create if doesn't exist, don't recreate existing connections
                 if (!sessionWebSockets.has(sessionId)) {
-                    console.log(`No WebSocket exists for session ${sessionId}, creating new connection`);
                     return connectToSession(sessionId);
                 }
                 
                 const ws = sessionWebSockets.get(sessionId);
-                console.log(`WebSocket exists for session ${sessionId}, readyState: ${ws.readyState}`);
                 return ws;
             }
             
@@ -2375,7 +2762,6 @@
                     }
                     
                     try {
-                        console.log(`Checking completion status for session ${sessionId}`);
                         const response = await fetch(`${API_BASE}/validate`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -2388,7 +2774,6 @@
                         if (response.ok) {
                             const data = await response.json();
                             if (data.status === 'completed' || data.preview_data) {
-                                console.log(`Fallback detected completion for session ${sessionId}:`, data);
                                 // Route the completion message
                                 routeMessage({
                                     status: 'COMPLETED',
@@ -2410,11 +2795,9 @@
             }
 
             function registerCardHandler(cardId, messageTypes, handler) {
-                console.log(`Registering handler for card ${cardId}, message types:`, messageTypes);
                 
                 // First unregister any existing handler for this card to prevent duplicates
                 if (cardHandlers.has(cardId)) {
-                    console.log(`Removing existing handler for card ${cardId}`);
                     cardHandlers.delete(cardId);
                 }
                 
@@ -2424,7 +2807,6 @@
                     registrationOrder: ++registrationCounter
                 });
                 
-                console.log(`Total registered handlers: ${cardHandlers.size}`);
                 
                 // Check WebSocket health when registering a new handler
                 if (globalState.sessionId) {
@@ -2441,8 +2823,6 @@
             // This is the old handler - will be removed since we have the updated one below
 
             function handleProcessingWebSocketMessage(data, cardId) {
-                console.log(`Handling processing WebSocket message for card ${cardId}:`, data);
-                console.log(`Status: ${data.status}, Percent: ${data.percent_complete}, Verbose: ${data.verbose_status}`);
 
                 if (data.status === 'PROCESSING') {
                     let message = data.verbose_status || 'Processing...';
@@ -2464,17 +2844,14 @@
                     // Progress routed to card level;
                     
                 } else if (data.status === 'COMPLETED') {
-                    console.log(`[HANDLER] Processing COMPLETED message for card ${cardId}`);
                     // First update to 100% if we have a progress bar
                     const indicator = document.getElementById(`${cardId}-thinking`);
                     if (indicator && indicator.classList.contains('with-progress')) {
-                        console.log(`[HANDLER] Found progress indicator, updating to 100%`);
                         updateThinkingProgress(cardId, 100, 'Validation complete!');
                         setTimeout(() => {
                             completeThinkingInCard(cardId, 'Validation complete!');
                         }, 500);
                     } else {
-                        console.log(`[HANDLER] No progress indicator, completing directly`);
                         completeThinkingInCard(cardId, 'Validation complete!');
                     }
                     // Progress routed to card level;
@@ -2485,10 +2862,14 @@
                     // Show success message in the same card instead of creating new one
                     const messagesContainer = document.getElementById(`${cardId}-messages`);
                     if (messagesContainer) {
+                        // Include balance information in final message
+                        const currentBalance = globalState.accountBalance;
+                        const balanceText = currentBalance !== undefined ? ` • Remaining balance: $${currentBalance.toFixed(2)}` : '';
+                        
                         messagesContainer.innerHTML = `
                             <div class="message message-success" style="margin-bottom: 1rem;">
                                 <span class="message-icon">🎉</span>
-                                <span>Your validation has been completed successfully. Results have been sent to your email.</span>
+                                <span>Your validation has been completed successfully. Results have been sent to your email${balanceText}.</span>
                             </div>
                             <button class="std-button primary" onclick="window.location.reload()" style="margin-top: 1rem;">
                                 <span class="button-text">🔄 New Validation</span>
@@ -2499,15 +2880,12 @@
             }
 
             async function handleConfigWebSocketMessage(data, cardId) {
-                console.log('[HANDLER] handleConfigWebSocketMessage called with data.type:', data.type, 'cardId:', cardId);
                 
                 if (data.type === 'config_generation_complete') {
-                    console.log('[HANDLER] Processing config_generation_complete message');
                     completeThinkingInCard(cardId, 'Configuration generated!');
                     // Progress routed to card level;
 
                     // Debug: Log the entire data structure to find where questions are
-                    console.log('Full WebSocket data received:', data);
 
                     globalState.currentConfig = data;
                     // Mark Excel file as uploaded since backend saves it during AI config generation
@@ -2515,30 +2893,21 @@
                     
                     // Try multiple locations for clarifying questions
                     let questions = null;
-                    console.log('[SAVE] Checking data.clarifying_questions:', data.clarifying_questions);
-                    console.log('[SAVE] Type of data.clarifying_questions:', typeof data.clarifying_questions);
                     if (data.clarifying_questions) {
                         questions = data.clarifying_questions;
-                        console.log('[SAVE] Found questions at data.clarifying_questions:', questions);
                     } else if (data.config_data && data.config_data.clarifying_questions) {
                         questions = data.config_data.clarifying_questions;
-                        console.log('Found questions at data.config_data.clarifying_questions');
                     } else if (data.config && data.config.clarifying_questions) {
                         questions = data.config.clarifying_questions;
-                        console.log('Found questions at data.config.clarifying_questions');
                     } else if (data.response_data && data.response_data.clarifying_questions) {
                         questions = data.response_data.clarifying_questions;
-                        console.log('Found questions at data.response_data.clarifying_questions');
                     } else if (data.download_url) {
                         // If no direct questions found, try to fetch the full config from download URL
-                        console.log('No direct questions found, fetching full config from download_url:', data.download_url);
                         try {
                             const configResponse = await fetch(data.download_url);
                             const fullConfig = await configResponse.json();
-                            console.log('Downloaded full config:', fullConfig);
                             questions = getQuestionsFromChangeLog(fullConfig);
                             if (questions) {
-                                console.log('Found questions in downloaded config change_log');
                             }
                         } catch (error) {
                             console.error('Failed to fetch config from download URL:', error);
@@ -2547,13 +2916,7 @@
                     
                     if (questions) {
                         globalState.savedQuestions = questions;
-                        console.log('[SUCCESS] Saved clarifying questions to globalState:', globalState.savedQuestions);
-                        console.log('[DEBUG] Questions type:', typeof questions, 'length:', Array.isArray(questions) ? questions.length : 'not array');
-                        console.log('[DEBUG] GlobalState after save:', Object.keys(globalState));
                     } else {
-                        console.log('[WARNING] No clarifying questions found in data structure');
-                        console.log('[DEBUG] Available keys in data:', Object.keys(data));
-                        console.log('[DEBUG] Full data structure:', data);
                     }
 
                     let aiMessage = data.ai_summary || data.ai_response || 'Configuration generated successfully!';
@@ -2618,15 +2981,41 @@
                 return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + ['Bytes', 'KB', 'MB', 'GB'][i];
             }
 
-            function showMessage(containerId, message, type = 'info') {
+            function showMessage(containerId, message, type = 'info', updateExisting = false, messageId = null) {
                 const container = document.getElementById(containerId);
-                if (!container) return;
+                if (!container) {
+                    console.warn(`Container ${containerId} not found for message: ${message}`);
+                    return;
+                }
                 
                 const icon = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
+                
+                // Always try to update if messageId is provided
+                if (messageId) {
+                    let existingMessage = container.querySelector(`[data-message-id="${messageId}"]`);
+                    
+                    if (existingMessage) {
+                        // Update existing message
+                        existingMessage.className = `message message-${type}`;
+                        existingMessage.innerHTML = `<span class="message-icon">${icon}</span><span>${message}</span>`;
+                        console.log(`[MESSAGE] Updated ${messageId}: ${message}`);
+                        return existingMessage;
+                    }
+                }
+                
+                // Create new message element
                 const messageEl = document.createElement('div');
                 messageEl.className = `message message-${type}`;
                 messageEl.innerHTML = `<span class="message-icon">${icon}</span><span>${message}</span>`;
+                
+                // Add message ID if provided
+                if (messageId) {
+                    messageEl.setAttribute('data-message-id', messageId);
+                    console.log(`[MESSAGE] Created new ${messageId}: ${message}`);
+                }
+                
                 container.appendChild(messageEl);
+                return messageEl;
             }
             
             // Helper to show final card state consistently
@@ -3050,7 +3439,6 @@
             async function handleFileSelect(event, cardId) {
                 const file = event.target.files[0];
                 if (!file) {
-                    console.log('No file selected');
                     return;
                 }
 
@@ -3064,7 +3452,6 @@
                 }
 
                 // Only clear session data after successful validation
-                console.log('File validation successful, clearing old session data');
                 globalState.sessionId = null;
                 globalState.excelFileUploaded = false;
                 globalState.configStored = false;
@@ -3101,7 +3488,6 @@
             }
 
             async function uploadExcelFile(cardId, file) {
-                console.log('Uploading Excel file to establish session...');
                 
                 const formData = new FormData();
                 formData.append('excel_file', file);
@@ -3114,7 +3500,6 @@
                 });
 
                 const data = await response.json();
-                console.log('Excel upload response:', data);
 
                 if (response.ok && data.success && data.session_id) {
                     globalState.sessionId = data.session_id;
@@ -3125,13 +3510,10 @@
                     // Store matching configs if found
                     if (data.matching_configs && data.matching_configs.success && data.matching_configs.matches) {
                         globalState.matchingConfigs = data.matching_configs;
-                        console.log(`Found ${data.matching_configs.matches.length} matching configs automatically`);
                     } else {
                         globalState.matchingConfigs = null;
-                        console.log('No matching configs found');
                     }
                     
-                    console.log('Excel file uploaded successfully, session established:', globalState.sessionId);
                     
                     // Show clean success state - Excel verification = table structure validation
                     showFinalCardState(cardId, 
@@ -3615,7 +3997,6 @@
                     // Save clarifying questions for later use in refinement
                     if (data.clarifying_questions) {
                         globalState.savedQuestions = data.clarifying_questions;
-                        console.log('Saved clarifying questions from repair:', globalState.savedQuestions);
                     }
                     
                     let aiMessage = data.ai_summary || data.ai_response || 'Configuration issues have been fixed!';
@@ -3651,7 +4032,6 @@
             async function handleConfigUpload(event, cardId) {
                 const file = event.target.files[0];
                 if (!file) {
-                    console.log('No config file selected');
                     return;
                 }
 
@@ -3704,7 +4084,6 @@
                     });
 
                     const data = await response.json();
-                    console.log('Config validation response:', response.status, data);
 
                     if (response.ok && data.valid) {
                         completeThinkingInCard(cardId, 'Configuration validated!');
@@ -4048,13 +4427,8 @@
                 const cardId = generateCardId();
                 
                 // Debug: Check what questions are available right now
-                console.log('[REFINE CARD] Creating refinement card');
-                console.log('[REFINE CARD] globalState.currentConfig:', globalState.currentConfig);
-                console.log('[REFINE CARD] globalState.savedQuestions:', globalState.savedQuestions);
                 if (globalState.currentConfig && globalState.currentConfig.clarifying_questions) {
-                    console.log('[REFINE CARD] [SUCCESS] Questions available at globalState.currentConfig.clarifying_questions:', globalState.currentConfig.clarifying_questions);
                 } else {
-                    console.log('[REFINE CARD] [MISSING] No questions found in globalState.currentConfig.clarifying_questions');
                 }
                 
                 const content = `
@@ -4103,27 +4477,20 @@
                 });
 
                 // Add initial AI message with questions if available
-                console.log('[REFINE CARD] Looking for questions to display');
-                console.log('[REFINE CARD] globalState.savedQuestions:', globalState.savedQuestions);
-                console.log('[REFINE CARD] globalState.currentConfig.clarifying_questions:', globalState.currentConfig?.clarifying_questions);
                 
                 let questionsToShow = null;
                 if (globalState.savedQuestions) {
                     questionsToShow = globalState.savedQuestions;
-                    console.log('[REFINE CARD] Using savedQuestions');
                 } else if (globalState.currentConfig?.clarifying_questions) {
                     questionsToShow = globalState.currentConfig.clarifying_questions;
-                    console.log('[REFINE CARD] Using currentConfig.clarifying_questions');
                 }
                 
                 let initialMessage = 'Based on the preview results, how would you like me to refine the configuration? ' +
                     'You can ask me to adjust validation targets, modify search strategies, or change any other aspect of the configuration.';
                 
                 if (questionsToShow) {
-                    console.log('[REFINE CARD] Adding questions to initial message:', questionsToShow);
                     initialMessage += '\n\nHere are some specific questions to help guide your refinement:\n\n' + questionsToShow;
                 } else {
-                    console.log('[REFINE CARD] No questions found to display');
                 }
                 
                 await addChatMessage(cardId, 'ai', initialMessage);
@@ -4183,10 +4550,6 @@ Please answer these questions and then I'll generate your configuration and auto
                         callback: async (e) => {
                             const button = e.target.closest('button');
                             const input = document.getElementById(`${cardId}-refinement-input`).value.trim();
-                            if (!input) {
-                                showMessage(`${cardId}-messages`, 'Please answer the questions to help create the best configuration', 'error');
-                                return;
-                            }
                             
                             // Hide the input and button
                             refinementContainer.style.display = 'none';
@@ -4213,7 +4576,6 @@ Please answer these questions and then I'll generate your configuration and auto
                 try {
                     // First, upload Excel file if not already uploaded to unified storage
                     if (!globalState.excelFileUploaded) {
-                        console.log('Uploading Excel file to unified storage...');
                         const formData = new FormData();
                         formData.append('excel_file', globalState.excelFile);
                         formData.append('email', globalState.email);
@@ -4234,7 +4596,6 @@ Please answer these questions and then I'll generate your configuration and auto
                         }
 
                         const uploadData = await uploadResponse.json();
-                        console.log('Excel file uploaded successfully:', uploadData);
                         
                         // Validate the response
                         if (!uploadData.success) {
@@ -4246,7 +4607,6 @@ Please answer these questions and then I'll generate your configuration and auto
                         if (uploadData.session_id) {
                             globalState.sessionId = uploadData.session_id;
                             localStorage.setItem('sessionId', globalState.sessionId);
-                            console.log('Updated session ID from backend:', globalState.sessionId);
                         }
                         
                         // Store the storage path for reference
@@ -4256,7 +4616,6 @@ Please answer these questions and then I'll generate your configuration and auto
                     }
 
                     // Now request config generation (no need to re-upload Excel)
-                    console.log('Requesting AI config generation using unified storage...');
                     const response = await fetch(`${API_BASE}/validate?async=true`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -4271,14 +4630,9 @@ Please answer these questions and then I'll generate your configuration and auto
                     const data = await response.json();
 
                     if (response.ok && data.success) {
-                        console.log('[DEBUG] Config generation response data:', data);
-                        console.log('[DEBUG] Has ai_summary:', !!data.ai_summary);
-                        console.log('[DEBUG] Has download_url:', !!data.download_url);
-                        console.log('[DEBUG] Has clarifying_questions:', !!data.clarifying_questions);
                         
                         // Check if this is a synchronous completion (config generated immediately)
                         if (data.ai_summary && data.download_url) {
-                            console.log('[SYNC] Config generation completed synchronously');
                             // Handle synchronous config generation completion
                             completeThinkingInCard(cardId, 'Configuration generated!');
                             
@@ -4286,10 +4640,8 @@ Please answer these questions and then I'll generate your configuration and auto
                             globalState.excelFileUploaded = true;
                             
                             // Save clarifying questions for later use in refinement
-                            console.log('[SYNC] Checking for clarifying questions in sync response');
                             if (data.clarifying_questions) {
                                 globalState.savedQuestions = data.clarifying_questions;
-                                console.log('[SYNC] Saved clarifying questions from sync response:', globalState.savedQuestions);
                             }
                             
                             let aiMessage = data.ai_summary || data.ai_response || 'Configuration generated successfully!';
@@ -4332,7 +4684,6 @@ Please answer these questions and then I'll generate your configuration and auto
                             // Even if async, save any clarifying questions from immediate response
                             if (data.clarifying_questions) {
                                 globalState.savedQuestions = data.clarifying_questions;
-                                console.log('[ASYNC] Saved clarifying questions from initial response:', globalState.savedQuestions);
                             }
                             
                             // Continue showing thinking indicators for async WebSocket completion
@@ -4432,8 +4783,10 @@ Please answer these questions and then I'll generate your configuration and auto
                     messageDiv.innerHTML = renderMarkdown(content);
                 }
 
-                // Scroll to bottom
-                chatContainer.scrollTop = chatContainer.scrollHeight;
+                // Scroll to bottom - defer to avoid forced reflow
+                requestAnimationFrame(() => {
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                });
             }
 
             // Stream text with pauses at punctuation
@@ -4582,42 +4935,33 @@ Please answer these questions and then I'll generate your configuration and auto
 
             // Helper function to extract clarifying questions from the latest config change log entry
             function getQuestionsFromChangeLog(config) {
-                console.log('[CHANGELOG] getQuestionsFromChangeLog called with config:', config);
                 
                 if (!config) {
-                    console.log('[CHANGELOG] No config provided');
                     return null;
                 }
                 
                 // Check if this is a WebSocket response rather than a config
                 if (config.type && config.session_id) {
-                    console.log('[CHANGELOG] Detected WebSocket response, not a config object - skipping change log check');
                     return null;
                 }
                 
                 if (!config.config_change_log || !Array.isArray(config.config_change_log)) {
-                    console.log('[CHANGELOG] No config_change_log found or not an array');
                     return null;
                 }
                 
-                console.log('Found config_change_log with', config.config_change_log.length, 'entries');
                 
                 // Get the latest entry from config_change_log that has clarifying_questions
                 for (let i = config.config_change_log.length - 1; i >= 0; i--) {
                     const entry = config.config_change_log[i];
-                    console.log(`Checking entry ${i}:`, entry);
                     if (entry.clarifying_questions) {
-                        console.log('Found clarifying_questions:', entry.clarifying_questions);
                         return entry.clarifying_questions;
                     }
                 }
                 
-                console.log('No clarifying_questions found in any change log entry');
                 return null;
             }
 
             async function showRefinementInterface(cardId) {
-                console.log('[REFINE] ===== showRefinementInterface called for cardId:', cardId, '=====');
                 
                 try {
                     // Show chat container again for refinement interaction
@@ -4627,11 +4971,6 @@ Please answer these questions and then I'll generate your configuration and auto
                     if (messagesContainer) messagesContainer.innerHTML = ''; // Clear processing message
                 
                 // Always show questions from any available source
-                console.log('[REFINE] Checking for questions - currentConfig:', globalState.currentConfig);
-                console.log('[REFINE] Checking for savedQuestions:', globalState.savedQuestions);
-                console.log('[REFINE] GlobalState keys:', Object.keys(globalState));
-                console.log('[REFINE] Type of savedQuestions:', typeof globalState.savedQuestions);
-                console.log('[REFINE] Length of savedQuestions:', globalState.savedQuestions ? globalState.savedQuestions.length : 'null/undefined');
                 
                 let questionsToShow = null;
                 
@@ -4649,27 +4988,19 @@ Please answer these questions and then I'll generate your configuration and auto
                     }
                 }
                 
-                console.log('Actual config to check:', actualConfig);
                 
                 // Priority: saved questions from WebSocket response, then current config questions directly, then config change log
                 if (globalState.savedQuestions) {
                     questionsToShow = globalState.savedQuestions;
-                    console.log('[REFINE] Using saved questions from WebSocket response:', questionsToShow);
                 } else if (globalState.currentConfig && globalState.currentConfig.clarifying_questions) {
                     questionsToShow = globalState.currentConfig.clarifying_questions;
-                    console.log('[REFINE] [SUCCESS] Found questions in globalState.currentConfig.clarifying_questions:', questionsToShow);
                 } else {
-                    console.log('[REFINE] [MISSING] No questions found in globalState.currentConfig.clarifying_questions');
-                    console.log('[REFINE] [DEBUG] globalState.currentConfig keys:', globalState.currentConfig ? Object.keys(globalState.currentConfig) : 'null');
-                    console.log('[REFINE] [DEBUG] globalState.currentConfig.clarifying_questions value:', globalState.currentConfig ? globalState.currentConfig.clarifying_questions : 'N/A');
                     // Only try change log if we have an actual config structure
                     const changeLogQuestions = actualConfig ? getQuestionsFromChangeLog(actualConfig) : null;
                     if (changeLogQuestions) {
                         questionsToShow = changeLogQuestions;
-                        console.log('[REFINE] Using questions from config change log:', questionsToShow);
                     } else if (actualConfig && actualConfig.clarifying_questions) {
                         questionsToShow = actualConfig.clarifying_questions;
-                        console.log('[REFINE] Using questions from actual config:', questionsToShow);
                     }
                 }
                 
@@ -4679,11 +5010,9 @@ Please answer these questions and then I'll generate your configuration and auto
                 
                 // Second paragraph: Show saved questions or generic options
                 if (questionsToShow) {
-                    console.log('[REFINE] [SUCCESS] Found questions to show:', questionsToShow);
                     const questionsMessage = `Here are some specific questions to help refine the configuration:\n\n${questionsToShow}`;
                     await addChatMessage(cardId, 'ai', questionsMessage, false, 'paragraphs');
                 } else {
-                    console.log('[REFINE] [WARNING] No questions found - showing generic refinement prompt');
                     // If no questions available, show a generic refinement prompt as second paragraph
                     const genericMessage = `You can ask me to:\n\n` +
                         `• Adjust validation targets or confidence levels\n` +
@@ -4829,7 +5158,6 @@ Please answer these questions and then I'll generate your configuration and auto
                             globalState.excelFileUploaded = true;
                             
                             // Skip sync response processing - wait for WebSocket only
-                            console.log('Skipping sync response to prevent duplicates, waiting for WebSocket');
                         }
                     } else {
                         completeThinkingInCard(cardId, 'Refinement failed');
@@ -4886,7 +5214,6 @@ Please answer these questions and then I'll generate your configuration and auto
                             });
                         } else if (data.ai_summary) {
                             // Skip sync response processing entirely to prevent duplicates
-                            console.log('Skipping sync refinement response to prevent duplicates, waiting for WebSocket only');
                             // Do not process any sync data - rely only on WebSocket
                         }
                     } else {
@@ -4959,7 +5286,6 @@ Please answer these questions and then I'll generate your configuration and auto
                     // Save clarifying questions for later use in refinement
                     if (data.clarifying_questions) {
                         globalState.savedQuestions = data.clarifying_questions;
-                        console.log('Saved clarifying questions from refinement:', globalState.savedQuestions);
                     }
                     
                     let aiMessage = data.ai_summary || data.ai_response || 'Configuration refined successfully!';
@@ -5075,14 +5401,12 @@ Please answer these questions and then I'll generate your configuration and auto
             function createPreviewCard() {
                 // Check if a preview card already exists
                 if (globalState.activePreviewCard) {
-                    console.log('Preview card already exists, not creating duplicate');
                     return;
                 }
 
                 // Generate the card ID FIRST
                 const cardId = generateCardId();
                 globalState.activePreviewCard = cardId;
-                console.log(`Creating preview card with ID: ${cardId}`);
                 
                 const content = `
                     <div id="${cardId}-progress"></div>
@@ -5109,7 +5433,6 @@ Please answer these questions and then I'll generate your configuration and auto
                 });
 
                 // Auto-start preview with the SAME card ID
-                console.log(`Starting preview for card ID: ${cardId}`);
                 startPreview(cardId);
 
                 return card;
@@ -5117,9 +5440,6 @@ Please answer these questions and then I'll generate your configuration and auto
 
     
             async function startPreview(cardId) {
-                console.log(`Starting preview for card ${cardId}`);
-                console.log('Current session ID:', globalState.sessionId);
-                console.log('Excel file uploaded status:', globalState.excelFileUploaded);
                 
                 // Show thinking indicators
                 showThinkingInCard(cardId, 'Preparing preview...', true);
@@ -5129,18 +5449,13 @@ Please answer these questions and then I'll generate your configuration and auto
 
                 try {
                     // Always use multipart form for preview since backend expects files
-                    console.log('Starting preview with multipart form...');
-                    console.log('Session ID being sent:', globalState.sessionId);
-                    console.log('Excel file uploaded status:', globalState.excelFileUploaded);
                     
                     const formData = new FormData();
                     
                     // Only append Excel file if not already uploaded
                     if (!globalState.excelFileUploaded) {
-                        console.log('Adding Excel file to form data');
                         formData.append('excel_file', globalState.excelFile);
                     } else {
-                        console.log('Excel file already uploaded, relying on unified storage');
                         // Send a dummy file to satisfy backend file requirement
                         const dummyFile = new Blob([JSON.stringify({use_stored_files: true})], {
                             type: 'application/json'
@@ -5157,19 +5472,16 @@ Please answer these questions and then I'll generate your configuration and auto
 
                     const url = `${API_BASE}/validate?async=true&preview_first_row=true&preview_max_rows=3&preview_email=true`;
                     
-                    console.log('Starting preview request...');
                     const response = await fetch(url, {
                         method: 'POST',
                         body: formData
                     });
 
                     const data = await response.json();
-                    console.log('Preview response:', data);
 
                     if (response.ok && data.status === 'processing') {
                         // Use the actual session_id returned by the backend instead of guessing
                         const actualSessionId = data.session_id || `${globalState.sessionId}_preview`;
-                        console.log('Connecting WebSocket to actual session ID:', actualSessionId);
                         
                         // Use unified WebSocket system
                         connectToSession(actualSessionId);
@@ -5181,7 +5493,6 @@ Please answer these questions and then I'll generate your configuration and auto
                         globalState.excelFileUploaded = true;
                         if (data.storage_path) {
                             globalState.storagePath = data.storage_path;
-                            console.log('Files stored at:', data.storage_path);
                         }
                     } else if (response.ok && data.success) {
                         // Handle case where it completed immediately
@@ -5201,7 +5512,6 @@ Please answer these questions and then I'll generate your configuration and auto
 
             // Fixed handlePreviewWebSocketMessage to use card-specific progress
             function handlePreviewWebSocketMessage(data, cardId) {
-                console.log(`Handling preview WebSocket message for card ${cardId}:`, data);
 
                 if (data.status === 'PROCESSING') {
                     const message = data.verbose_status || 'Processing...';
@@ -5267,19 +5577,14 @@ Please answer these questions and then I'll generate your configuration and auto
                 // Progress routed to card level;
 
                 try {
-                    console.log('Starting full processing with session:', globalState.sessionId);
-                    console.log('Storage path:', globalState.storagePath);
-                    console.log('Excel file uploaded status:', globalState.excelFileUploaded);
                     
                     // Always use multipart form for full processing
                     const formData = new FormData();
                     
                     // Only append Excel file if not already uploaded
                     if (!globalState.excelFileUploaded) {
-                        console.log('Adding Excel file to form data for full processing');
                         formData.append('excel_file', globalState.excelFile);
                     } else {
-                        console.log('Excel file already uploaded, relying on unified storage for full processing');
                         // Send a dummy config file to satisfy backend file requirement
                         const dummyConfig = new Blob([JSON.stringify({use_stored_files: true})], {
                             type: 'application/json'
@@ -5302,12 +5607,10 @@ Please answer these questions and then I'll generate your configuration and auto
                     });
 
                     const data = await response.json();
-                    console.log('Full processing response:', data);
 
                     if (response.ok && data.status === 'processing') {
                         globalState.excelFileUploaded = true;
                         const wsSessionId = data.session_id || globalState.sessionId;
-                        console.log('Connecting WebSocket for full processing with session:', wsSessionId);
                         
                         // Connect to session and register processing handler
                         connectToSession(wsSessionId);
@@ -5315,15 +5618,12 @@ Please answer these questions and then I'll generate your configuration and auto
                         // Unregister any preview handlers to prevent conflicts
                         cardHandlers.forEach((handlerInfo, existingCardId) => {
                             if (handlerInfo.messageTypes.includes('preview')) {
-                                console.log(`Unregistering preview handler for card ${existingCardId}`);
                                 unregisterCardHandler(existingCardId);
                             }
                         });
                         
                         unregisterCardHandler(cardId);
-                        console.log(`Registering processing handler for card ${cardId}`);
                         registerCardHandler(cardId, ['processing'], (wsData, cardId) => {
-                            console.log(`Processing handler called for card ${cardId} with data:`, wsData);
                             handleProcessingWebSocketMessage(wsData, cardId);
                         });
                     } else {
@@ -5382,10 +5682,14 @@ Please answer these questions and then I'll generate your configuration and auto
                     }
                 ];
             } else {
+                // Include balance information in final message
+                const currentBalance = globalState.accountBalance;
+                const balanceText = currentBalance !== undefined ? ` • Remaining balance: $${currentBalance.toFixed(2)}` : '';
+                
                 content = `
                     <div class="message message-success" style="margin-bottom: 1rem;">
                         <span class="message-icon">🎉</span>
-                        <span>Your validation has been completed successfully. Results have been sent to your email.</span>
+                        <span>Your validation has been completed successfully. Results have been sent to your email${balanceText}.</span>
                     </div>
                 `;
 
@@ -5428,33 +5732,21 @@ Please answer these questions and then I'll generate your configuration and auto
         // ============================================
 
         document.addEventListener('DOMContentLoaded', function() {
-            // Create initial email card
-            createEmailCard();
-            
-            // Initialize balance refresh system
-            setupBalanceRefreshOnReturn();
-            
-            // Show idle state with delay to ensure DOM is fully ready
-            setTimeout(() => {
-                console.log('Initializing global progress...');
-                const progressBar = document.getElementById('global-progress-bar');
-                console.log('Progress bar element found on init:', !!progressBar);
-                if (progressBar) {
-                    console.log('Progress bar initial classes:', progressBar.className);
-                    console.log('Progress bar initial style:', progressBar.style.cssText);
+            // Use requestAnimationFrame to defer heavy DOM operations
+            requestAnimationFrame(() => {
+                // Check for stored session first (no DOM access)
+                const storedSessionId = localStorage.getItem('sessionId');
+                if (storedSessionId) {
+                    globalState.sessionId = storedSessionId;
                 }
-                // Progress routed to card level;
-                console.log('Global progress initialized');
-            }, 100);
-            
-            // Check for stored session
-            const storedSessionId = localStorage.getItem('sessionId');
-            if (storedSessionId) {
-                globalState.sessionId = storedSessionId;
-                console.log('Restored session ID:', storedSessionId);
-            }
-            
-            // Global progress removed - all progress handled at card level
+                
+                // Balance refresh system will be initialized when needed (when insufficient balance occurs)
+                
+                // Defer heavy DOM operations to next frame
+                requestAnimationFrame(() => {
+                    createEmailCard();
+                });
+            });
             
             // Test functions for animations
             window.testErrorAnimation = (cardId = 'card-1') => {
@@ -5503,18 +5795,12 @@ Please answer these questions and then I'll generate your configuration and auto
                 }, 300);
             };
             
-            console.log('Available test functions:');
-            console.log('- testErrorAnimation() - Basic error animation');
-            console.log('- testSuccessAnimation() - Basic success animation');
-            console.log('- testProgressAnimation() - Progress bar with success');
-            console.log('- testProgressError() - Progress bar with error');
         });
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', () => {
             // Close all session WebSocket connections
             sessionWebSockets.forEach((ws, sessionId) => {
-                console.log(`Closing WebSocket for session ${sessionId}`);
                 ws._intentionallyClosed = true;
                 ws.close();
             });

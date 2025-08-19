@@ -553,6 +553,28 @@ def setup_api_gateway(lambda_client, function_name, region):
             health_resource = apigateway_client.create_resource(restApiId=api_id, parentId=root_resource_id, pathPart='health')
         health_resource_id = health_resource['id']
 
+        # --- Create /webhook Resource and /webhook/payment Resource ---
+        webhook_resource = next((res for res in resources if res.get('pathPart') == 'webhook'), None)
+        if not webhook_resource:
+            webhook_resource = apigateway_client.create_resource(restApiId=api_id, parentId=root_resource_id, pathPart='webhook')
+        webhook_resource_id = webhook_resource['id']
+
+        webhook_payment_resource = next((res for res in resources if res.get('pathPart') == 'payment' and res.get('parentId') == webhook_resource_id), None)
+        if not webhook_payment_resource:
+            webhook_payment_resource = apigateway_client.create_resource(restApiId=api_id, parentId=webhook_resource_id, pathPart='payment')
+        webhook_payment_resource_id = webhook_payment_resource['id']
+
+        # --- Create /payment Resource and /payment/webhook Resource (alternative path) ---
+        payment_resource = next((res for res in resources if res.get('pathPart') == 'payment' and res.get('parentId') == root_resource_id), None)
+        if not payment_resource:
+            payment_resource = apigateway_client.create_resource(restApiId=api_id, parentId=root_resource_id, pathPart='payment')
+        payment_resource_id = payment_resource['id']
+
+        payment_webhook_resource = next((res for res in resources if res.get('pathPart') == 'webhook' and res.get('parentId') == payment_resource_id), None)
+        if not payment_webhook_resource:
+            payment_webhook_resource = apigateway_client.create_resource(restApiId=api_id, parentId=payment_resource_id, pathPart='webhook')
+        payment_webhook_resource_id = payment_webhook_resource['id']
+
         # --- Define Methods and Integrations ---
         lambda_arn = f"arn:aws:lambda:{region}:{account_id}:function:{function_name}"
         lambda_integration_uri = f"arn:aws:apigateway:{region}:lambda:path/2015-03-31/functions/{lambda_arn}/invocations"
@@ -565,6 +587,10 @@ def setup_api_gateway(lambda_client, function_name, region):
             (status_session_resource_id, 'OPTIONS'),
             (health_resource_id, 'GET'),
             (health_resource_id, 'OPTIONS'),
+            (webhook_payment_resource_id, 'POST'),
+            (webhook_payment_resource_id, 'OPTIONS'),
+            (payment_webhook_resource_id, 'POST'),
+            (payment_webhook_resource_id, 'OPTIONS'),
         ]
 
         for resource_id, http_method in resource_setups:
@@ -690,145 +716,19 @@ def setup_dynamodb_tables(region="us-east-1"):
         # Get DynamoDB client
         dynamodb_client = boto3.client('dynamodb', region_name=region)
         
-        # Check and create user validation table
-        logger.info(f"Checking {user_validation_table} table...")
+        # Create user validation table using dynamodb_schemas function
         try:
-            response = dynamodb_client.describe_table(TableName=user_validation_table)
-            logger.info(f"✅ {user_validation_table} table already exists")
-        except dynamodb_client.exceptions.ResourceNotFoundException:
-            logger.info(f"Creating {user_validation_table} table...")
-            
-            # Create user validation table
-            validation_table_config = {
-                'TableName': user_validation_table,
-                'KeySchema': [
-                    {
-                        'AttributeName': 'email',
-                        'KeyType': 'HASH'  # Partition key
-                    }
-                ],
-                'AttributeDefinitions': [
-                    {
-                        'AttributeName': 'email',
-                        'AttributeType': 'S'
-                    },
-                    {
-                        'AttributeName': 'validation_code',
-                        'AttributeType': 'S'
-                    }
-                ],
-                'GlobalSecondaryIndexes': [
-                    {
-                        'IndexName': 'ValidationCodeIndex',
-                        'KeySchema': [
-                            {
-                                'AttributeName': 'validation_code',
-                                'KeyType': 'HASH'
-                            }
-                        ],
-                        'Projection': {
-                            'ProjectionType': 'ALL'
-                        }
-                    }
-                ],
-                'BillingMode': 'PAY_PER_REQUEST',
-                'Tags': [
-                    {
-                        'Key': 'Service',
-                        'Value': 'perplexity-validator'
-                    },
-                    {
-                        'Key': 'Purpose',
-                        'Value': 'user-validation'
-                    }
-                ]
-            }
-            
-            dynamodb_client.create_table(**validation_table_config)
-            logger.info(f"✅ {user_validation_table} table created")
-            
-            # Wait for table to be active before enabling TTL
-            logger.info("Waiting for table to be active...")
-            waiter = dynamodb_client.get_waiter('table_exists')
-            waiter.wait(TableName=user_validation_table, WaiterConfig={'Delay': 5, 'MaxAttempts': 12})
-            
-            # Enable TTL
-            try:
-                dynamodb_client.update_time_to_live(
-                    TableName=user_validation_table,
-                    TimeToLiveSpecification={
-                        'AttributeName': 'ttl',
-                        'Enabled': True
-                    }
-                )
-                logger.info(f"✅ TTL enabled for {user_validation_table}")
-            except Exception as ttl_error:
-                logger.warning(f"Failed to enable TTL (may already be enabled): {ttl_error}")
+            dynamodb_schemas.create_user_validation_table()
+            logger.info("✅ User validation table created/verified")
+        except Exception as e:
+            logger.error(f"Failed to create user validation table: {e}")
         
-        # Check and create user tracking table
-        logger.info(f"Checking {user_tracking_table} table...")
+        # Create user tracking table using dynamodb_schemas function
         try:
-            response = dynamodb_client.describe_table(TableName=user_tracking_table)
-            logger.info(f"✅ {user_tracking_table} table already exists")
-        except dynamodb_client.exceptions.ResourceNotFoundException:
-            logger.info(f"Creating {user_tracking_table} table...")
-            
-            # Create user tracking table
-            tracking_table_config = {
-                'TableName': user_tracking_table,
-                'KeySchema': [
-                    {
-                        'AttributeName': 'email',
-                        'KeyType': 'HASH'  # Partition key
-                    }
-                ],
-                'AttributeDefinitions': [
-                    {
-                        'AttributeName': 'email',
-                        'AttributeType': 'S'
-                    },
-                    {
-                        'AttributeName': 'email_domain',
-                        'AttributeType': 'S'
-                    },
-                    {
-                        'AttributeName': 'last_access',
-                        'AttributeType': 'S'
-                    }
-                ],
-                'GlobalSecondaryIndexes': [
-                    {
-                        'IndexName': 'EmailDomainIndex',
-                        'KeySchema': [
-                            {
-                                'AttributeName': 'email_domain',
-                                'KeyType': 'HASH'
-                            },
-                            {
-                                'AttributeName': 'last_access',
-                                'KeyType': 'RANGE'
-                            }
-                        ],
-                        'Projection': {
-                            'ProjectionType': 'ALL'
-                        }
-                    }
-                ],
-                'BillingMode': 'PAY_PER_REQUEST',
-                'Tags': [
-                    {
-                        'Key': 'Service',
-                        'Value': 'perplexity-validator'
-                    },
-                    {
-                        'Key': 'Purpose',
-                        'Value': 'user-tracking'
-                    }
-                ]
-            }
-            
-            dynamodb_client.create_table(**tracking_table_config)
-            logger.info(f"✅ {user_tracking_table} table created")
+            dynamodb_schemas.create_user_tracking_table()
+            logger.info("✅ User tracking table created/verified")
+        except Exception as e:
+            logger.error(f"Failed to create user tracking table: {e}")
         
         logger.info("✅ All DynamoDB tables are ready!")
         return True
@@ -1207,6 +1107,7 @@ def main():
     parser.add_argument('--test-websocket', action='store_true', help='Test the WebSocket connection')
     parser.add_argument('--force-rebuild', action='store_true', help='Force rebuilding the package even if it exists')
     parser.add_argument('--no-rebuild', action='store_true', help='Skip rebuilding the package')
+    parser.add_argument('--quick-update', action='store_true', help='Quick update: copy only source files, skip dependency downloads')
     parser.add_argument('--setup-db', action='store_true', help='Set up DynamoDB tables for email validation and user tracking')
     parser.add_argument('--skip-db-setup', action='store_true', help='Skip DynamoDB table setup during deployment')
     parser.add_argument('--setup-s3', action='store_true', help='Set up unified S3 bucket')
@@ -1219,15 +1120,40 @@ def main():
     # Check if we need to build the package
     package_exists = OUTPUT_ZIP.exists()
     
-    if package_exists and not args.force_rebuild:
+    if args.quick_update:
+        if not PACKAGE_DIR.exists():
+            logger.error("Package directory doesn't exist. Run full build first before using --quick-update")
+            sys.exit(1)
+        build_package = False
+        quick_update = True
+    elif package_exists and not args.force_rebuild:
         if args.no_rebuild:
             build_package = False
+            quick_update = False
         else:
             build_package = not input("Package already exists. Skip rebuilding? (y/N): ").lower().startswith('y')
+            quick_update = False
     else:
         build_package = True
+        quick_update = False
     
-    if build_package:
+    if quick_update:
+        logger.info("Quick update: copying only source files...")
+        try:
+            # Copy source files only (no dependency installation)
+            copy_source_files()
+            
+            # Create the zip package
+            create_zip()
+            
+            # Get ZIP file size
+            size_mb = OUTPUT_ZIP.stat().st_size / (1024 * 1024)
+            logger.info(f"✅ Quick update completed! Package size: {size_mb:.2f} MB")
+            logger.info(f"Quick update package created at: {OUTPUT_ZIP}")
+        except Exception as e:
+            logger.error(f"❌ Quick update failed: {e}")
+            sys.exit(1)
+    elif build_package:
         logger.info("Creating interface Lambda deployment package...")
         
         try:

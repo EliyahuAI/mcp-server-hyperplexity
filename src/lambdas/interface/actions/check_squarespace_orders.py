@@ -11,9 +11,24 @@ logger = logging.getLogger(__name__)
 
 def handle(request_data: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Handle check for new Squarespace orders for a specific user."""
+    
+    # Import create_response at function level to ensure it's always available
+    try:
+        from interface_lambda.utils.helpers import create_response
+    except ImportError:
+        # Fallback create_response function if import fails
+        def create_response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                'statusCode': status_code,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*'
+                },
+                'body': json.dumps(body)
+            }
+    
     try:
         from .squarespace_order_poller import poll_squarespace_orders, process_credit_order
-        from interface_lambda.utils.helpers import create_response
         import os
         import requests
         
@@ -33,7 +48,10 @@ def handle(request_data: Dict[str, Any], context: Any) -> Dict[str, Any]:
             })
         
         # Check for recent orders for this email (last 2 hours for better coverage)
-        since_time = (datetime.utcnow() - timedelta(hours=2)).isoformat() + 'Z'
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        since_time = (now - timedelta(hours=2)).isoformat().replace('+00:00', 'Z')
+        until_time = now.isoformat().replace('+00:00', 'Z')
         
         headers = {
             'Authorization': f'Bearer {api_key}',
@@ -44,6 +62,7 @@ def handle(request_data: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Query Squarespace for orders by email
         params = {
             'modifiedAfter': since_time,
+            'modifiedBefore': until_time,
             'customerEmail': email  # Filter by customer email
         }
         
@@ -77,17 +96,23 @@ def handle(request_data: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Check each order
             for order in orders:
-                # Only process fulfilled orders
-                if order.get('fulfillmentStatus') != 'FULFILLED':
+                # Process both FULFILLED and PENDING orders (PENDING means payment completed)
+                status = order.get('fulfillmentStatus', '').upper()
+                if status not in ['FULFILLED', 'PENDING']:
                     continue
                 
                 # Check if it's a credit purchase
                 is_credit = False
+                logger.info(f"Checking order {order.get('id')} with {len(order.get('lineItems', []))} line items")
                 for item in order.get('lineItems', []):
                     product_name = item.get('productName', '').lower()
+                    logger.info(f"Product: '{product_name}' - checking for credit keywords")
                     if any(keyword in product_name for keyword in ['credit', 'hyperplexity']):
+                        logger.info(f"Found credit product: '{product_name}'")
                         is_credit = True
                         break
+                
+                logger.info(f"Order {order.get('id')} is_credit: {is_credit}")
                 
                 if is_credit:
                     result = process_credit_order(order)

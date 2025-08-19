@@ -293,7 +293,7 @@ class UnifiedS3Manager:
         """Get Excel file from session folder"""
         try:
             session_path = self.get_session_path(email, session_id)
-            logger.info(f"Looking for Excel file in session path: {session_path}")
+            logger.debug(f"Looking for Excel file in session path: {session_path}")
             
             # Try common Excel file names (including new _input suffix pattern)
             potential_keys = [
@@ -313,10 +313,8 @@ class UnifiedS3Manager:
                 if 'Contents' in response:
                     logger.info(f"Found {len(response['Contents'])} objects in session folder")
                     for obj in response['Contents']:
-                        logger.info(f"Found object: {obj['Key']}")
                         if obj['Key'].endswith(('.xlsx', '.xls', '.csv')):
                             potential_keys.insert(0, obj['Key'])
-                            logger.info(f"Added Excel file to potential keys: {obj['Key']}")
                 else:
                     logger.warning(f"No contents found in session folder: {session_path}")
             except Exception as e:
@@ -324,7 +322,6 @@ class UnifiedS3Manager:
                 pass
             
             # Try to download the first available Excel file
-            logger.info(f"Potential Excel file keys to try: {potential_keys}")
             for key in potential_keys:
                 try:
                     response = self.s3_client.get_object(Bucket=self.bucket_name, Key=key)
@@ -347,7 +344,7 @@ class UnifiedS3Manager:
             session_path = self.get_session_path(email, session_id)
             
             # List all config files in session folder (both new v{N}_ pattern and legacy config_ pattern)
-            logger.info(f"Looking for config files in: {session_path}")
+            logger.debug(f"Looking for config files in: {session_path}")
             
             # First try new versioned pattern - config_v{N}_{source}.json
             response = self.s3_client.list_objects_v2(
@@ -358,7 +355,6 @@ class UnifiedS3Manager:
             
             config_files = []
             if 'Contents' in response:
-                logger.info(f"Found {len(response['Contents'])} objects with prefix 'config_v'")
                 # Filter for config_v{N}_{source}.json pattern (only in main session folder)
                 for obj in response['Contents']:
                     logger.debug(f"Checking object: {obj['Key']}")
@@ -368,7 +364,6 @@ class UnifiedS3Manager:
                         '_' in filename and 
                         obj['Key'].count('/') == session_path.count('/')):  # Ensure it's in main folder, not subfolder
                         config_files.append(obj)
-                        logger.info(f"Found versioned config: {obj['Key']}")
             
             # If no versioned configs found, try legacy pattern
             if not config_files:
@@ -586,3 +581,52 @@ class UnifiedS3Manager:
                 'error': str(e),
                 'files': []
             }
+    
+    def get_latest_validation_results(self, email: str, session_id: str) -> Optional[Dict]:
+        """Get the latest validation results for a session"""
+        try:
+            session_path = self.get_session_path(email, session_id)
+            
+            # List all result folders in session folder
+            response = self.s3_client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=f"{session_path}v",
+                Delimiter='/'
+            )
+            
+            result_folders = []
+            if 'CommonPrefixes' in response:
+                for prefix_info in response['CommonPrefixes']:
+                    folder_path = prefix_info['Prefix']
+                    folder_name = folder_path.rstrip('/').split('/')[-1]
+                    if folder_name.endswith('_results'):
+                        # Extract version number
+                        try:
+                            version_str = folder_name.replace('_results', '').replace('v', '')
+                            version = int(version_str)
+                            result_folders.append((version, folder_path))
+                        except ValueError:
+                            continue
+            
+            if not result_folders:
+                logger.info(f"No validation results found for session {session_id}")
+                return None
+            
+            # Get the latest version
+            latest_version, latest_folder = max(result_folders, key=lambda x: x[0])
+            
+            # Try to get validation_results.json from the latest folder
+            results_key = f"{latest_folder}validation_results.json"
+            
+            try:
+                response = self.s3_client.get_object(Bucket=self.bucket_name, Key=results_key)
+                results_data = json.loads(response['Body'].read().decode('utf-8'))
+                logger.info(f"Retrieved latest validation results from version {latest_version}")
+                return results_data
+            except Exception as e:
+                logger.warning(f"Could not retrieve validation results from {results_key}: {e}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to get latest validation results: {e}")
+            return None

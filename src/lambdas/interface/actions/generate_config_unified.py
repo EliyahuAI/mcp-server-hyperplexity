@@ -260,6 +260,18 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
             else:
                 logger.info("No existing conversation history found to preserve")
             
+            # Get latest validation results for refinement context
+            latest_validation_results = None
+            if existing_config:  # Only for refinements
+                try:
+                    latest_validation_results = storage_manager.get_latest_validation_results(email, session_id)
+                    if latest_validation_results:
+                        logger.info("Retrieved latest validation results for refinement context")
+                    else:
+                        logger.info("No validation results found for context")
+                except Exception as e:
+                    logger.warning(f"Could not retrieve validation results for context: {e}")
+            
             payload = {
                 'table_analysis': table_analysis,
                 'existing_config': existing_config,
@@ -267,7 +279,8 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 'session_id': session_id,
                 'email': email,  # Include email for context
                 'preserve_conversation_history': True,  # Signal to config lambda to preserve history
-                'conversation_history': conversation_history  # Pass existing conversation for preservation
+                'conversation_history': conversation_history,  # Pass existing conversation for preservation
+                'latest_validation_results': latest_validation_results  # Add validation results context
             }
             
             # Progress update

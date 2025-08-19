@@ -226,6 +226,25 @@ class AIAPIClient:
             cached_data = json.loads(cache_response['Body'].read())
             cache_check_time = (datetime.now() - cache_check_start).total_seconds()
             
+            # Fix legacy cached token usage format - ensure it has normalized fields
+            if 'token_usage' in cached_data:
+                token_usage = cached_data['token_usage']
+                api_provider_name = token_usage.get('api_provider', api_provider)
+                
+                # For Perplexity cached data, ensure input_tokens and output_tokens are set
+                if api_provider_name == 'perplexity':
+                    if 'input_tokens' not in token_usage and 'prompt_tokens' in token_usage:
+                        token_usage['input_tokens'] = token_usage['prompt_tokens']
+                    if 'output_tokens' not in token_usage and 'completion_tokens' in token_usage:
+                        token_usage['output_tokens'] = token_usage['completion_tokens']
+                
+                # For Anthropic cached data, the fields should already be correct but double-check
+                elif api_provider_name == 'anthropic':
+                    if 'input_tokens' not in token_usage:
+                        token_usage['input_tokens'] = token_usage.get('input_tokens', 0)
+                    if 'output_tokens' not in token_usage:
+                        token_usage['output_tokens'] = token_usage.get('output_tokens', 0)
+            
             # Log detailed cache hit information
             cached_at = cached_data.get('cached_at', 'Unknown')
             cached_model = cached_data.get('model', 'Unknown')
@@ -385,9 +404,27 @@ class AIAPIClient:
                 total_time = (datetime.now() - call_start_time).total_seconds()
                 logger.info(f"STRUCTURED_API_CACHED: Returning cached response "
                            f"(cache_check: {cache_check_time:.3f}s, total: {total_time:.3f}s)")
+                token_usage = cached_data.get('token_usage', {})
+                # Debug log the cached token usage structure
+                logger.info(f"DEBUG: Cached token usage keys: {list(token_usage.keys())}")
+                logger.info(f"DEBUG: Cached token usage api_provider: {token_usage.get('api_provider')}")
+                logger.info(f"DEBUG: Cached token usage input_tokens: {token_usage.get('input_tokens')}")
+                logger.info(f"DEBUG: Cached token usage prompt_tokens: {token_usage.get('prompt_tokens')}")
+                
+                # Normalize legacy cached token usage for Perplexity
+                if token_usage.get('api_provider') == 'perplexity':
+                    if 'input_tokens' not in token_usage and 'prompt_tokens' in token_usage:
+                        token_usage['input_tokens'] = token_usage['prompt_tokens']
+                        logger.info(f"DEBUG: Fixed input_tokens: {token_usage['input_tokens']}")
+                    if 'output_tokens' not in token_usage and 'completion_tokens' in token_usage:
+                        token_usage['output_tokens'] = token_usage['completion_tokens']
+                        logger.info(f"DEBUG: Fixed output_tokens: {token_usage['output_tokens']}")
+                    
+                    logger.info(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
+                
                 return {
                     'response': cached_data['api_response'],
-                    'token_usage': cached_data.get('token_usage', {}),
+                    'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
                     'is_cached': True
                 }
@@ -443,9 +480,27 @@ class AIAPIClient:
         if use_cache and cache_key:
             cached_data = await self._check_cache(cache_key, 'anthropic')
             if cached_data:
+                token_usage = cached_data.get('token_usage', {})
+                # Debug log the cached token usage structure
+                logger.info(f"DEBUG: Cached token usage keys: {list(token_usage.keys())}")
+                logger.info(f"DEBUG: Cached token usage api_provider: {token_usage.get('api_provider')}")
+                logger.info(f"DEBUG: Cached token usage input_tokens: {token_usage.get('input_tokens')}")
+                logger.info(f"DEBUG: Cached token usage prompt_tokens: {token_usage.get('prompt_tokens')}")
+                
+                # Normalize legacy cached token usage for Perplexity
+                if token_usage.get('api_provider') == 'perplexity':
+                    if 'input_tokens' not in token_usage and 'prompt_tokens' in token_usage:
+                        token_usage['input_tokens'] = token_usage['prompt_tokens']
+                        logger.info(f"DEBUG: Fixed input_tokens: {token_usage['input_tokens']}")
+                    if 'output_tokens' not in token_usage and 'completion_tokens' in token_usage:
+                        token_usage['output_tokens'] = token_usage['completion_tokens']
+                        logger.info(f"DEBUG: Fixed output_tokens: {token_usage['output_tokens']}")
+                    
+                    logger.info(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
+                
                 return {
                     'response': cached_data['api_response'],
-                    'token_usage': cached_data.get('token_usage', {}),
+                    'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
                     'is_cached': True
                 }
@@ -483,9 +538,27 @@ class AIAPIClient:
             cached_data = await self._check_cache(cache_key, 'perplexity')
             if cached_data:
                 logger.info(f"Smart cache hit for validation key: {cache_key[:8]}... (row: {list(row_data.keys())[:2]})")
+                token_usage = cached_data.get('token_usage', {})
+                # Debug log the cached token usage structure
+                logger.info(f"DEBUG: Cached token usage keys: {list(token_usage.keys())}")
+                logger.info(f"DEBUG: Cached token usage api_provider: {token_usage.get('api_provider')}")
+                logger.info(f"DEBUG: Cached token usage input_tokens: {token_usage.get('input_tokens')}")
+                logger.info(f"DEBUG: Cached token usage prompt_tokens: {token_usage.get('prompt_tokens')}")
+                
+                # Normalize legacy cached token usage for Perplexity
+                if token_usage.get('api_provider') == 'perplexity':
+                    if 'input_tokens' not in token_usage and 'prompt_tokens' in token_usage:
+                        token_usage['input_tokens'] = token_usage['prompt_tokens']
+                        logger.info(f"DEBUG: Fixed input_tokens: {token_usage['input_tokens']}")
+                    if 'output_tokens' not in token_usage and 'completion_tokens' in token_usage:
+                        token_usage['output_tokens'] = token_usage['completion_tokens']
+                        logger.info(f"DEBUG: Fixed output_tokens: {token_usage['output_tokens']}")
+                    
+                    logger.info(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
+                
                 return {
                     'response': cached_data['api_response'],
-                    'token_usage': cached_data.get('token_usage', {}),
+                    'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
                     'is_cached': True
                 }
@@ -522,9 +595,27 @@ class AIAPIClient:
         if use_cache and cache_key:
             cached_data = await self._check_cache(cache_key, 'perplexity')
             if cached_data:
+                token_usage = cached_data.get('token_usage', {})
+                # Debug log the cached token usage structure
+                logger.info(f"DEBUG: Cached token usage keys: {list(token_usage.keys())}")
+                logger.info(f"DEBUG: Cached token usage api_provider: {token_usage.get('api_provider')}")
+                logger.info(f"DEBUG: Cached token usage input_tokens: {token_usage.get('input_tokens')}")
+                logger.info(f"DEBUG: Cached token usage prompt_tokens: {token_usage.get('prompt_tokens')}")
+                
+                # Normalize legacy cached token usage for Perplexity
+                if token_usage.get('api_provider') == 'perplexity':
+                    if 'input_tokens' not in token_usage and 'prompt_tokens' in token_usage:
+                        token_usage['input_tokens'] = token_usage['prompt_tokens']
+                        logger.info(f"DEBUG: Fixed input_tokens: {token_usage['input_tokens']}")
+                    if 'output_tokens' not in token_usage and 'completion_tokens' in token_usage:
+                        token_usage['output_tokens'] = token_usage['completion_tokens']
+                        logger.info(f"DEBUG: Fixed output_tokens: {token_usage['output_tokens']}")
+                    
+                    logger.info(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
+                
                 return {
                     'response': cached_data['api_response'],
-                    'token_usage': cached_data.get('token_usage', {}),
+                    'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
                     'is_cached': True
                 }

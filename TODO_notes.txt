@@ -1,0 +1,48 @@
+
+--- The mixed dummy and real messages are problemtatic, particularly for long waits like submission. Lets turn these off for submission. 
+ 
+---- 
+please answer question needs to go away when answer provided, we really should not have it. 
+
+--- 
+When using stored config file no questions available for refine. 
+
+--- 
+should be able to download results after preview and after full results. 
+
+--- 
+need to make it clear that preview is the updated table
+
+---
+Need to work on the money
+
+--- 
+should meet with advisors around Hyperplexity. 
+
+--- 
+Need ads, strategy. 
+Targeted outreach? 
+
+---
+refine webpage. 
+Add graphic. 
+----
+
+--- 
+
+should pass preview output to config for refining calls. 
+----
+
+MIssed processing complete on full validation. 
+
+--- 
+
+Not deducting from balance on full validation 
+
+---
+Should be able to update table by responding to email. 
+
+--- 
+tables in preview that were not completed should get notices by email to complete
+
+

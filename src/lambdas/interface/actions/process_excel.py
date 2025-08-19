@@ -154,7 +154,7 @@ def _process_files(excel_file, config_file, email_address, params, context):
         create_run_record(session_id=session_id, email=email_address, total_rows=total_rows)
 
     if preview:
-        track_validation_call(session_id=preview_session_id, email=email_address, reference_pin=reference_pin, request_type='preview', excel_s3_key=excel_s3_key, config_s3_key=config_s3_key)
+        
         
         if async_mode and SQS_AVAILABLE:
             logger.info(f"Sending preview request to SQS for session {preview_session_id}")
@@ -208,7 +208,7 @@ def _process_files(excel_file, config_file, email_address, params, context):
             return create_response(200, response_body)
     else: # Full validation
         results_key = f"results/{email_folder}/{session_id}.zip"
-        track_validation_call(session_id=session_id, email=email_address, reference_pin=reference_pin, request_type='full', excel_s3_key=excel_s3_key, config_s3_key=config_s3_key, results_s3_key=results_key)
+        
         
         if SQS_AVAILABLE:
             send_full_request(

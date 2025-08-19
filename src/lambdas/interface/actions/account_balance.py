@@ -11,29 +11,57 @@ logger.setLevel(logging.INFO)
 
 def handle(request_data, context):
     """Handle account balance requests."""
+    logger.info(f"[ACCOUNT_BALANCE] Starting handle with request_data: {request_data}")
+    
     try:
         # Import here to avoid circular dependencies
-        from dynamodb_schemas import (
-            check_user_balance, get_domain_multiplier, 
-            get_user_transactions, initialize_user_account
-        )
+        logger.info("[ACCOUNT_BALANCE] Attempting to import from dynamodb_schemas...")
+        try:
+            from dynamodb_schemas import (
+                check_user_balance, get_domain_multiplier, 
+                get_user_transactions, initialize_user_account
+            )
+            logger.info("[ACCOUNT_BALANCE] Successfully imported dynamodb_schemas functions")
+        except ImportError as e:
+            logger.error(f"[ACCOUNT_BALANCE] Failed to import dynamodb_schemas: {e}")
+            # Return proper CORS response even on import error
+            return create_response(500, {
+                'error': 'Internal configuration error',
+                'details': 'Failed to import required modules',
+                'success': False
+            })
         
         email = request_data.get('email', '').lower().strip()
         if not email:
-            return create_response(400, {'error': 'Email address is required'})
+            logger.warning("[ACCOUNT_BALANCE] No email provided in request")
+            return create_response(400, {'error': 'Email address is required', 'success': False})
         
-        logger.info(f"Processing account balance request for {email}")
+        logger.info(f"[ACCOUNT_BALANCE] Processing account balance request for {email}")
         
         # Check if user account exists, initialize if needed
-        current_balance = check_user_balance(email)
-        if current_balance is None:
-            logger.info(f"Initializing new account for {email}")
-            initialize_user_account(email)
-            current_balance = Decimal('0')
+        try:
+            current_balance = check_user_balance(email)
+            if current_balance is None:
+                logger.info(f"[ACCOUNT_BALANCE] Initializing new account for {email}")
+                initialize_user_account(email)
+                current_balance = Decimal('0')
+            logger.info(f"[ACCOUNT_BALANCE] Current balance for {email}: {current_balance}")
+        except Exception as e:
+            logger.error(f"[ACCOUNT_BALANCE] Error checking/initializing balance: {e}")
+            return create_response(500, {
+                'error': 'Failed to check account balance',
+                'details': str(e),
+                'success': False
+            })
         
         # Get domain multiplier for cost calculations
         email_domain = email.split('@')[-1] if '@' in email else 'unknown'
-        domain_multiplier = get_domain_multiplier(email_domain)
+        try:
+            domain_multiplier = get_domain_multiplier(email_domain)
+            logger.info(f"[ACCOUNT_BALANCE] Domain multiplier for {email_domain}: {domain_multiplier}")
+        except Exception as e:
+            logger.warning(f"[ACCOUNT_BALANCE] Could not get domain multiplier: {e}")
+            domain_multiplier = Decimal('1')
         
         # Get recent transactions (last 10)
         try:
@@ -46,7 +74,6 @@ def handle(request_data, context):
         balance_info = {
             'email': email,
             'current_balance': float(current_balance),
-            'domain_multiplier': float(domain_multiplier),
             'email_domain': email_domain,
             'recent_transactions': []
         }

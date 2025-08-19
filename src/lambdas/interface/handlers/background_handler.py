@@ -135,15 +135,23 @@ def handle(event, context):
             EMAIL_SENDER_AVAILABLE = False
         
         try:
+            import sys
+            import os
+            sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
             from dynamodb_schemas import update_processing_metrics, track_email_delivery, track_user_request, update_run_status
             DYNAMODB_AVAILABLE = True
-        except ImportError:
+        except ImportError as e:
+            logger.error(f"Failed to import dynamodb_schemas: {e}")
             DYNAMODB_AVAILABLE = False
             # Define dummy functions if not available
-            def update_processing_metrics(*args, **kwargs): pass
-            def track_email_delivery(*args, **kwargs): pass
-            def track_user_request(*args, **kwargs): pass
-            def update_run_status(**kwargs): pass
+            def update_processing_metrics(*args, **kwargs): 
+                logger.warning("DynamoDB not available - processing metrics not updated")
+            def track_email_delivery(*args, **kwargs): 
+                logger.warning("DynamoDB not available - email delivery not tracked")
+            def track_user_request(*args, **kwargs): 
+                logger.warning("DynamoDB not available - user request not tracked")
+            def update_run_status(**kwargs): 
+                logger.warning("DynamoDB not available - run status not updated")
 
         logger.info("--- Background Handler Started ---")
         
@@ -288,7 +296,9 @@ def handle(event, context):
                 total_rows = validation_results.get('total_rows', 1)
                 metadata = validation_results.get('metadata', {})
                 token_usage = metadata.get('token_usage', {})
-                total_cost = token_usage.get('total_cost', 0.0)  # Raw cost from validation lambda
+                # Get both costs from validation lambda
+                eliyahu_cost = token_usage.get('total_cost', 0.0)  # What we actually paid for this preview run
+                estimated_cost = token_usage.get('estimated_total_cost', eliyahu_cost)  # What this preview run would cost without caching
                 total_tokens = token_usage.get('total_tokens', 0)
                 total_api_calls = token_usage.get('api_calls', 0)
                 total_cached_calls = token_usage.get('cached_calls', 0)
@@ -299,29 +309,34 @@ def handle(event, context):
                 initial_balance = 0
                 final_balance = 0
                 multiplier = 1.0
-                charged_total_cost = total_cost
+                quoted_full_cost = math.ceil(estimated_cost)  # Will become full table quote after scaling and multiplier applied, rounded up
+                charged_cost = 0.0  # Preview is free
                 
-                # Apply domain multiplier to raw costs
+                # Apply domain multiplier to estimated cost (what user pays)
                 try:
-                    from shared.dynamodb_schemas import get_domain_multiplier, track_preview_cost, track_api_usage_detailed, check_user_balance
+                    import sys
+                    import os
+                    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
+                    from dynamodb_schemas import get_domain_multiplier, track_preview_cost, track_api_usage_detailed, check_user_balance
                     from decimal import Decimal
                     
                     email_domain = email.split('@')[-1] if '@' in email else 'unknown'
                     multiplier = float(get_domain_multiplier(email_domain))
                     
-                    # Calculate charged costs (raw cost * multiplier)
-                    charged_total_cost = total_cost * multiplier
+                    # Calculate preview cost with multiplier (this will be used for scaling to full table)
+                    preview_cost_with_multiplier = estimated_cost * multiplier
                     
-                    logger.info(f"Preview costs - Raw: ${total_cost:.6f}, Multiplier: {multiplier}x, Charged: ${charged_total_cost:.6f}")
+                    logger.info(f"INTERFACE_COSTS: Processed {total_rows_processed} rows, Charged: ${charged_cost:.6f} (preview is free)")
+                    logger.debug(f"COST_DEBUG: Domain={email_domain}, Estimated: ${estimated_cost:.6f}, Preview with multiplier: ${preview_cost_with_multiplier:.6f}")
                     
-                    # Get account balance for tracking (no charges for preview)
+                    # Get account balance for tracking (no charges for preview) - moved to just before calculations
                     initial_balance = check_user_balance(email)
                     final_balance = initial_balance  # No change for preview
                     balance_error_occurred = False  # Preview doesn't charge
                     charged_amount = 0  # No charges for preview
                     
-                    # Track preview cost (raw cost only, no charges for preview)
-                    track_preview_cost(session_id, email, Decimal(str(total_cost)), Decimal(str(multiplier)), total_tokens)
+                    # Track preview cost (actual cost for your tracking, estimated cost for user display)
+                    track_preview_cost(session_id, email, Decimal(str(estimated_cost)), Decimal(str(multiplier)), total_tokens)
                     
                     # Track detailed API usage for each provider
                     by_provider = token_usage.get('by_provider', {})
@@ -331,8 +346,8 @@ def handle(event, context):
                                 'api_calls': provider_usage.get('api_calls', 0),
                                 'cached_calls': provider_usage.get('cached_calls', 0),
                                 'total_tokens': provider_usage.get('total_tokens', 0),
-                                'cost': provider_usage.get('total_cost', 0.0) * multiplier,  # Apply multiplier
-                                'raw_cost': provider_usage.get('total_cost', 0.0),  # Store raw cost too
+                                'cost': provider_usage.get('total_cost', 0.0) * multiplier,  # Apply multiplier to actual cost
+                                'eliyahu_cost': provider_usage.get('total_cost', 0.0),  # Your actual expense
                                 'multiplier_applied': multiplier
                             }
                             
@@ -350,12 +365,13 @@ def handle(event, context):
                                 })
                             
                             # Track detailed usage for this provider
-                            track_api_usage_detailed(session_id, provider, usage_data)
+                            
                     
                 except Exception as e:
                     logger.error(f"Error applying domain multiplier in preview: {e}")
                     multiplier = 1.0
-                    charged_total_cost = total_cost
+                    # Fallback if multiplier lookup fails
+                    quoted_full_cost = math.ceil(estimated_cost)  # Will be recalculated with proper scaling, rounded up
                 
                 # --- Start of Complex Estimations Logic ---
                 
@@ -376,17 +392,26 @@ def handle(event, context):
                         time_per_row = processing_time / total_rows_processed
                         time_per_batch = time_per_row * 5 # Assuming 5 rows per batch for estimation
                 
-                # Calculate per-row cost and token metrics (using charged costs for user display)
-                per_row_cost = charged_total_cost / total_rows_processed if total_rows_processed > 0 else 0.02 * multiplier
+                # Scale preview costs to full table estimates for user quotes
+                # estimated_cost remains as preview run cost without caching
+                # quoted_full_cost = scale to full table: (preview_cost / preview_rows) * total_rows * multiplier
+                preview_with_multiplier = estimated_cost * multiplier  # Preview cost with multiplier applied
+                per_row_cost = preview_with_multiplier / total_rows_processed if total_rows_processed > 0 else 0.02 * multiplier
                 per_row_tokens = total_tokens / total_rows_processed if total_rows_processed > 0 else 200
 
-                # Calculate final estimates for the entire file
+                # Project to full table (this becomes quoted_full_cost)
                 total_batches = math.ceil(total_rows / 5) # Assume batches of 5 for estimation
                 estimated_total_time_seconds = total_batches * time_per_batch
-                estimated_total_cost = per_row_cost * total_rows
+                quoted_full_cost = math.ceil(per_row_cost * total_rows)  # Full table quote = per_row_cost * total_rows, rounded up to next dollar
                 estimated_total_tokens = per_row_tokens * total_rows
                 
                 # --- End of Complex Estimations Logic ---
+
+                # Get the most recent account balance right before calculating sufficient_balance
+                # This ensures we capture any recent credit additions from the frontend
+                logger.info(f"[BALANCE_CHECK] Refreshing balance for {email} before sufficient_balance calculation")
+                current_balance = check_user_balance(email)
+                logger.info(f"[BALANCE_CHECK] Current balance: {current_balance}, Quoted full cost: {quoted_full_cost}")
 
                 # Create the markdown table for the response
                 markdown_table = create_markdown_table_from_results(real_results, 3, actual_config_s3_key, S3_UNIFIED_BUCKET)
@@ -399,8 +424,8 @@ def handle(event, context):
                     "estimated_total_processing_time": estimated_total_time_seconds,
                     "estimated_total_time_minutes": round(estimated_total_time_seconds / 60, 1),
                     "cost_estimates": {
-                        "preview_cost": total_cost,
-                        "estimated_total_cost": estimated_total_cost,
+                        "preview_cost": charged_cost,  # What user pays for preview (0)
+                        "quoted_full_cost": quoted_full_cost,  # What user will pay for full validation
                         "preview_tokens": total_tokens,
                         "estimated_total_tokens": estimated_total_tokens,
                         "per_row_cost": per_row_cost,
@@ -410,11 +435,12 @@ def handle(event, context):
                     "token_usage": token_usage,
                     "validation_metrics": validation_metrics,
                     "account_info": {
-                        "current_balance": float(initial_balance) if initial_balance else 0,
-                        "domain_multiplier": multiplier,
-                        "sufficient_balance": float(initial_balance) >= estimated_total_cost if initial_balance else False,
-                        "estimated_full_cost": estimated_total_cost,
-                        "credits_needed": max(0, estimated_total_cost - (float(initial_balance) if initial_balance else 0))
+                        "current_balance": float(current_balance) if current_balance else 0,
+                        "sufficient_balance": float(current_balance) >= quoted_full_cost if current_balance else False,
+                        "quoted_full_cost": quoted_full_cost,  # What user will be charged for full validation
+                        "credits_needed": max(0, quoted_full_cost - (float(current_balance) if current_balance else 0)),
+                        "domain_multiplier": float(multiplier),
+                        "email_domain": email_domain
                     }
                 }
                 
@@ -425,6 +451,31 @@ def handle(event, context):
                     percent_complete=100,
                     processed_rows=len(validation_results['validation_results']),
                     preview_data=preview_payload
+                )
+                
+                # Track enhanced user metrics for preview
+                track_user_request(
+                    email=email,
+                    request_type='preview',
+                    tokens_used=total_tokens,
+                    cost_usd=charged_cost,  # Legacy field
+                    perplexity_tokens=token_usage.get('by_provider', {}).get('perplexity', {}).get('total_tokens', 0),
+                    perplexity_cost=token_usage.get('by_provider', {}).get('perplexity', {}).get('total_cost', 0),
+                    anthropic_tokens=token_usage.get('by_provider', {}).get('anthropic', {}).get('total_tokens', 0),
+                    anthropic_cost=token_usage.get('by_provider', {}).get('anthropic', {}).get('total_cost', 0),
+                    # Enhanced metrics
+                    rows_processed=total_rows_processed,
+                    total_rows=validation_results.get('total_rows', 0),
+                    columns_validated=validation_metrics.get('validated_columns_count', 0),
+                    search_groups=validation_metrics.get('search_groups_count', 0),
+                    high_context_search_groups=validation_metrics.get('high_context_search_groups_count', 0),
+                    claude_calls=validation_metrics.get('claude_search_groups_count', 0),
+                    eliyahu_cost=eliyahu_cost,
+                    estimated_cost=estimated_cost,
+                    quoted_full_cost=quoted_full_cost,  # This is the scaled full table quote
+                    charged_cost=0.0,  # Preview doesn't charge
+                    total_api_calls=total_api_calls,
+                    total_cached_calls=total_cached_calls
                 )
                 
                 # Send WebSocket notification with preview results
@@ -451,7 +502,7 @@ def handle(event, context):
                                 ConnectionId=connection_id,
                                 Data=json.dumps(websocket_payload).encode('utf-8')
                             )
-                            logger.info(f"✅ Successfully sent preview completion notification to WebSocket {connection_id}")
+                            logger.debug(f"Successfully sent preview completion notification to WebSocket {connection_id}")
                         else:
                             logger.error("API Gateway management client is None - cannot send WebSocket message")
                     except client.exceptions.GoneException:
@@ -610,7 +661,8 @@ def handle(event, context):
                     'final_balance': float(final_balance) if final_balance else 0,
                     'amount_charged': 0,  # Previews are free
                     'domain_multiplier': float(multiplier),
-                    'raw_cost': float(total_cost),
+                    'eliyahu_cost': float(eliyahu_cost),  # Your actual expense
+                    'estimated_cost': float(estimated_cost),  # What it would cost without caching
                     'preview_abandoned': False,  # Completed successfully
                     'insufficient_balance_encountered': False,  # Previews don't charge
                     'processing_type': 'preview'
@@ -648,7 +700,7 @@ def handle(event, context):
                 
                 # Update session info for failed preview
                 try:
-                    from shared.dynamodb_schemas import check_user_balance, get_domain_multiplier
+                    from dynamodb_schemas import check_user_balance, get_domain_multiplier
                     initial_balance = check_user_balance(email)
                     email_domain = email.split('@')[-1] if '@' in email else 'unknown'
                     multiplier = float(get_domain_multiplier(email_domain))
@@ -769,16 +821,76 @@ def handle(event, context):
             
             # Apply domain multiplier to raw costs and handle billing
             try:
-                from shared.dynamodb_schemas import get_domain_multiplier, track_api_usage_detailed, deduct_from_balance, check_user_balance
+                import sys
+                import os
+                sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
+                from dynamodb_schemas import get_domain_multiplier, track_api_usage_detailed, deduct_from_balance, check_user_balance
                 from decimal import Decimal
                 
                 email_domain = email.split('@')[-1] if '@' in email else 'unknown'
                 multiplier = float(get_domain_multiplier(email_domain))
                 
-                raw_total_cost = token_usage.get('total_cost', 0.0)
-                charged_total_cost = raw_total_cost * multiplier
+                # Get both costs from validation lambda
+                eliyahu_cost = token_usage.get('total_cost', 0.0)  # What we actually paid for full validation
+                estimated_cost = token_usage.get('estimated_total_cost', eliyahu_cost)  # What this full validation would cost without caching
+                logger.debug(f"BILLING DEBUG: Raw costs from validation - eliyahu_cost={eliyahu_cost}, estimated_cost={estimated_cost}")
                 
-                logger.info(f"Full validation costs - Raw: ${raw_total_cost:.6f}, Multiplier: {multiplier}x, Charged: ${charged_total_cost:.6f}")
+                # For full validation, use the quoted_full_cost from preview (what user was promised to pay)
+                # This ensures users pay exactly what was quoted in preview, regardless of actual full validation costs
+                charged_cost = estimated_cost * multiplier  # Fallback if preview cost not found
+                logger.debug(f"BILLING DEBUG: Calculated fallback charged_cost = {estimated_cost} * {multiplier} = {charged_cost}")
+                
+                try:
+                    # Try to get the quoted cost from preview results stored in S3
+                    # Try multiple config versions since preview and full validation might use different versions
+                    session_path = storage_manager.get_session_path(email, clean_session_id)
+                    logger.debug(f"BILLING DEBUG: Using email='{email}', clean_session_id='{clean_session_id}' for preview lookup")
+                    
+                    preview_data = None
+                    preview_results_key = None
+                    
+                    # Try to find the latest config version first
+                    latest_version = 1
+                    try:
+                        existing_config, latest_config_key = storage_manager.get_latest_config(email, clean_session_id)
+                        if existing_config and existing_config.get('storage_metadata', {}).get('version'):
+                            latest_version = existing_config['storage_metadata']['version']
+                            logger.debug(f"BILLING DEBUG: Found latest config version: {latest_version}")
+                    except Exception as e:
+                        logger.warning(f"Could not determine latest config version: {e}")
+                    
+                    # Try versions from latest down to v1
+                    for version in range(latest_version, 0, -1):
+                        preview_results_key = f"{session_path}v{version}_results/preview_results.json"
+                        logger.debug(f"BILLING DEBUG: Trying preview results at s3://{storage_manager.bucket_name}/{preview_results_key}")
+                        
+                        try:
+                            response = storage_manager.s3_client.get_object(
+                                Bucket=storage_manager.bucket_name,
+                                Key=preview_results_key
+                            )
+                            preview_data = json.loads(response['Body'].read().decode('utf-8'))
+                            logger.debug(f"BILLING DEBUG: Found preview results at version {version}")
+                            break
+                        except storage_manager.s3_client.exceptions.NoSuchKey:
+                            logger.debug(f"BILLING DEBUG: No preview results found at version {version}")
+                            continue
+                    
+                    if not preview_data:
+                        raise Exception("No preview results found in any config version")
+                    
+                    preview_quoted_cost = preview_data.get('account_info', {}).get('quoted_full_cost')
+                    if preview_quoted_cost:
+                        charged_cost = float(preview_quoted_cost)
+                        logger.info(f"Using preview quoted cost for full validation: ${charged_cost:.6f}")
+                    else:
+                        logger.warning("Preview quoted cost not found in results, using calculated cost")
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to retrieve preview quoted cost: {e}, using calculated cost")
+                
+                logger.info(f"Full validation costs - Eliyahu: ${eliyahu_cost:.6f}, Estimated: ${estimated_cost:.6f}, Multiplier: {multiplier}x, User Charged: ${charged_cost:.6f}")
+                logger.info(f"BILLING DEBUG: is_preview={is_preview}, charged_cost={charged_cost}, session_id={session_id}")
                 
                 # For full validation, deduct from account balance
                 initial_balance = check_user_balance(email)
@@ -786,39 +898,42 @@ def handle(event, context):
                 balance_error_occurred = False
                 charged_amount = 0
                 
-                if not is_preview and charged_total_cost > 0:
+                if not is_preview and charged_cost > 0:
+                    logger.info(f"BILLING: Proceeding with charge for {email}: ${charged_cost}")
                     # Check if user has sufficient balance
                     current_balance = check_user_balance(email)
-                    if current_balance is not None and current_balance >= Decimal(str(charged_total_cost)):
+                    if current_balance is not None and current_balance >= Decimal(str(charged_cost)):
                         # Deduct from balance
                         deduct_success = deduct_from_balance(
                             email=email,
-                            amount=Decimal(str(charged_total_cost)),
+                            amount=Decimal(str(charged_cost)),
                             session_id=session_id,
                             description=f"Full validation - {len(real_results)} rows processed",
-                            raw_cost=Decimal(str(raw_total_cost)),
+                            raw_cost=Decimal(str(eliyahu_cost)),
                             multiplier=Decimal(str(multiplier))
                         )
                         if deduct_success:
                             final_balance = check_user_balance(email)
-                            charged_amount = charged_total_cost
+                            charged_amount = charged_cost
                             # Send balance update via WebSocket
                             _send_balance_update(session_id, {
                                 'type': 'balance_update',
                                 'new_balance': float(final_balance) if final_balance else 0,
                                 'transaction': {
-                                    'amount': -float(charged_total_cost),
+                                    'amount': -float(charged_cost),
                                     'description': f"Full validation - {len(real_results)} rows processed",
-                                    'raw_cost': float(raw_total_cost),
+                                    'eliyahu_cost': float(eliyahu_cost),
                                     'multiplier': float(multiplier)
                                 }
                             })
                         else:
-                            logger.error(f"Failed to deduct ${charged_total_cost:.6f} from {email} balance")
+                            logger.error(f"Failed to deduct ${charged_cost:.6f} from {email} balance")
                             balance_error_occurred = True
                     else:
-                        logger.warning(f"Insufficient balance for {email}: {current_balance} < ${charged_total_cost:.6f}")
+                        logger.warning(f"Insufficient balance for {email}: {current_balance} < ${charged_cost:.6f}")
                         balance_error_occurred = True
+                else:
+                    logger.warning(f"BILLING: Skipping charge - is_preview={is_preview}, charged_cost={charged_cost}")
                 
                 # Track detailed API usage for each provider
                 by_provider = token_usage.get('by_provider', {})
@@ -829,7 +944,7 @@ def handle(event, context):
                             'cached_calls': provider_usage.get('cached_calls', 0),
                             'total_tokens': provider_usage.get('total_tokens', 0),
                             'cost': provider_usage.get('total_cost', 0.0) * multiplier,  # Apply multiplier
-                            'raw_cost': provider_usage.get('total_cost', 0.0),  # Store raw cost too
+                            'eliyahu_cost': provider_usage.get('total_cost', 0.0),  # Store eliyahu cost too
                             'multiplier_applied': multiplier
                         }
                         
@@ -847,18 +962,18 @@ def handle(event, context):
                             })
                         
                         # Track detailed usage for this provider
-                        track_api_usage_detailed(session_id, provider, usage_data)
+                        
                 
             except Exception as e:
                 logger.error(f"Error applying domain multiplier in full validation: {e}")
                 multiplier = 1.0
-                charged_total_cost = raw_total_cost
+                charged_cost = eliyahu_cost
             
             if is_preview:
                 logger.info(f"Got preview validation results for {session_id}, storing for polling.")
                 
                 # Extract metrics for this section  
-                total_cost = charged_total_cost  # Use charged cost for display
+                total_cost = charged_cost  # Use charged cost for display
                 total_tokens = token_usage.get('total_tokens', 0)
                 total_rows_processed = validation_results.get('total_processed_rows', len(real_results))
                 
@@ -884,15 +999,10 @@ def handle(event, context):
                         time_per_row = processing_time / total_rows_processed
                         time_per_batch = time_per_row * 5 # Assuming 5 rows per batch for estimation
                 
-                # Calculate per-row cost and token metrics
-                per_row_cost = total_cost / total_rows_processed if total_rows_processed > 0 else 0.02
-                per_row_tokens = total_tokens / total_rows_processed if total_rows_processed > 0 else 200
-
-                # Calculate final estimates for the entire file
-                total_batches = math.ceil(total_rows / 5) # Assume batches of 5 for estimation
-                estimated_total_time_seconds = total_batches * time_per_batch
-                estimated_total_cost = per_row_cost * total_rows
-                estimated_total_tokens = per_row_tokens * total_rows
+                # Use already calculated projection values from earlier (lines 383-394)
+                # Scaling logic: (preview_run_estimated_cost * multiplier) / preview_rows * total_rows
+                # Variables available: quoted_full_cost, estimated_total_tokens, estimated_total_time_seconds,
+                # per_row_cost, per_row_tokens - all correctly scaled from preview run to full table quote
                 
                 # --- End of Complex Estimations Logic ---
 
@@ -907,8 +1017,8 @@ def handle(event, context):
                     "estimated_total_processing_time": estimated_total_time_seconds,
                     "estimated_total_time_minutes": round(estimated_total_time_seconds / 60, 1),
                     "cost_estimates": {
-                        "preview_cost": total_cost,
-                        "estimated_total_cost": estimated_total_cost,
+                        "preview_cost": charged_cost,  # What user pays for preview (0)
+                        "quoted_full_cost": quoted_full_cost,  # What user will pay for full validation
                         "preview_tokens": total_tokens,
                         "estimated_total_tokens": estimated_total_tokens,
                         "per_row_cost": per_row_cost,
@@ -992,7 +1102,7 @@ def handle(event, context):
                     'final_balance': float(final_balance) if final_balance else 0,
                     'amount_charged': float(charged_amount),
                     'domain_multiplier': float(multiplier),
-                    'raw_cost': float(raw_total_cost),
+                    'eliyahu_cost': float(eliyahu_cost),
                     'preview_abandoned': False,  # This is full validation
                     'insufficient_balance_encountered': balance_error_occurred,
                     'processing_type': 'full_validation'
@@ -1091,7 +1201,7 @@ def handle(event, context):
                     # Prepare billing information for receipt
                     billing_info = {
                         'amount_charged': charged_amount,
-                        'raw_cost': raw_total_cost,
+                        'eliyahu_cost': eliyahu_cost,
                         'multiplier': multiplier,
                         'initial_balance': float(initial_balance) if initial_balance else 0,
                         'final_balance': float(final_balance) if final_balance else 0
@@ -1108,13 +1218,36 @@ def handle(event, context):
                         reference_pin=reference_pin, metadata=metadata, preview_email=preview_email,
                         billing_info=billing_info
                     )
-                    if DYNAMODB_AVAILABLE:
-                        track_email_delivery(session_id=session_id, email_sent=email_result['success'], delivery_status='delivered' if email_result['success'] else 'failed', message_id=email_result.get('message_id',''))
                     # Send final completion notification with processed row count and total rows
                     processed_rows_count = len(validation_results.get('validation_results', {}))
                     total_rows_in_file = validation_results.get('total_rows', processed_rows_count)
                     _update_progress(session_id, 'COMPLETED', processed_rows_count, 'Validation complete. Results should be in your inbox shortly.', 100, total_rows_in_file)
                     update_run_status(session_id=session_id, status='COMPLETED', results_s3_key=results_key)
+                    
+                    # Track enhanced user metrics for full validation
+                    track_user_request(
+                        email=email,
+                        request_type='full',
+                        tokens_used=token_usage.get('total_tokens', 0),
+                        cost_usd=charged_cost,  # Legacy field
+                        perplexity_tokens=token_usage.get('by_provider', {}).get('perplexity', {}).get('total_tokens', 0),
+                        perplexity_cost=token_usage.get('by_provider', {}).get('perplexity', {}).get('total_cost', 0),
+                        anthropic_tokens=token_usage.get('by_provider', {}).get('anthropic', {}).get('total_tokens', 0),
+                        anthropic_cost=token_usage.get('by_provider', {}).get('anthropic', {}).get('total_cost', 0),
+                        # Enhanced metrics
+                        rows_processed=processed_rows_count,
+                        total_rows=total_rows_in_file,
+                        columns_validated=validation_metrics.get('validated_columns_count', 0),
+                        search_groups=validation_metrics.get('search_groups_count', 0),
+                        high_context_search_groups=validation_metrics.get('high_context_search_groups_count', 0),
+                        claude_calls=validation_metrics.get('claude_search_groups_count', 0),
+                        eliyahu_cost=eliyahu_cost,
+                        estimated_cost=estimated_cost,
+                        quoted_full_cost=charged_cost,  # This is the quoted cost from preview (what we're charging)
+                        charged_cost=charged_cost,  # Full validation charges user the preview quoted cost
+                        total_api_calls=token_usage.get('api_calls', 0),
+                        total_cached_calls=token_usage.get('cached_calls', 0)
+                    )
         
         else: # No results
              logger.warning(f"No validation results returned from validator for session {session_id}")
@@ -1234,6 +1367,29 @@ def handle_config_generation(event, context):
                 'status': '🎉 Configuration generation complete!',
                 'session_id': session_id
             }, "config_progress_complete")
+            
+            # Track config generation metrics
+            config_cost = response.get('cost_info', {}).get('total_cost', 0.0)
+            config_tokens = response.get('cost_info', {}).get('total_tokens', 0)
+            
+            track_user_request(
+                email=event.get('email', ''),
+                request_type='config',
+                tokens_used=config_tokens,
+                cost_usd=config_cost,  # Legacy field
+                config_cost=config_cost,
+                # Config generation typically uses Perplexity or Anthropic
+                perplexity_tokens=response.get('cost_info', {}).get('perplexity_tokens', 0),
+                perplexity_cost=response.get('cost_info', {}).get('perplexity_cost', 0.0),
+                anthropic_tokens=response.get('cost_info', {}).get('anthropic_tokens', 0),
+                anthropic_cost=response.get('cost_info', {}).get('anthropic_cost', 0.0),
+                eliyahu_cost=config_cost,  # Config generation costs are our actual costs
+                estimated_cost=config_cost,
+                quoted_full_cost=0.0,  # Config generation is currently free
+                charged_cost=0.0,  # Config generation is currently free
+                total_api_calls=response.get('cost_info', {}).get('api_calls', 0),
+                total_cached_calls=response.get('cost_info', {}).get('cached_calls', 0)
+            )
             
             # Extract version from the actual config
             config_version = 1
@@ -1478,7 +1634,7 @@ def _send_websocket_message_deduplicated(session_id: str, message: Dict, message
                     Data=json.dumps(message)
                 )
                 sent_count += 1
-                logger.info(f"✅ Sent WebSocket message to connection {connection_id} (type: {message_type})")
+                # Reduce individual connection logging - already logged in summary
             except Exception as e:
                 logger.error(f"Failed to send to connection {connection_id}: {e}")
                 # Remove stale connection
@@ -1490,7 +1646,9 @@ def _send_websocket_message_deduplicated(session_id: str, message: Dict, message
         
         # Cache this message to prevent duplicates
         _websocket_message_cache[cache_key] = current_time
-        logger.info(f"📤 WebSocket message sent to {sent_count} connections for {session_id} (type: {message_type})")
+        # Only log WebSocket messages for important events or when multiple connections
+        if sent_count > 1 or message_type in ['preview_progress_final', 'validation_complete', 'error']:
+            logger.info(f"📤 WebSocket message sent to {sent_count} connections for {session_id} (type: {message_type})")
                     
     except Exception as e:
         logger.error(f"Failed to send WebSocket message: {e}")

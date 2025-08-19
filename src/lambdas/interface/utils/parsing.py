@@ -118,21 +118,16 @@ def parse_multipart_form_data(body, content_type, is_base64_encoded=False):
                                     logger.error(f"Could not decode form field '{name}'. Storing as hex.")
                                     form_data[name] = content.hex()
         
-        # Log parsed data for debugging
+        # Log parsed data for debugging (keep only counts)
         logger.info(f"Parsed form data fields: {list(form_data.keys())}")
         logger.info(f"Parsed files: {[f for f in files.keys()]}")
         
-        # Additional validation for config_file
+        # Validate config_file JSON without verbose logging
         if 'config_file' in form_data:
-            config_content = form_data['config_file']
-            # Try to validate it's JSON
             try:
-                json.loads(config_content)
-                logger.info("config_file contains valid JSON")
+                json.loads(form_data['config_file'])
             except json.JSONDecodeError as e:
-                logger.warning(f"config_file does not contain valid JSON: {e}")
-                # Log first 200 chars for debugging
-                logger.warning(f"config_file content preview: {config_content[:200]}...")
+                logger.warning(f"config_file contains invalid JSON: {e}")
         
         return files, form_data
         

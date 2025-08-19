@@ -309,7 +309,7 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
         
         logger.info(f"Analyzing {len(config_files)} config files, first 3 by date:")
         for i, cf in enumerate(config_files[:3]):
-            logger.info(f"  {i+1}. {cf['filename']} - {cf['last_modified']} - {cf['key']}")
+            logger.debug(f"  {i+1}. {cf['filename']} - {cf['last_modified']} - {cf['key']}")
         
         # Check the most recent config first for perfect match optimization
         matches = []
@@ -338,8 +338,9 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
                     logger.debug(f"Skipping config with low match score: {match_score:.2f} < 0.8")
                     continue
                 
-                # Log significant matches
-                logger.info(f"Config match: {config_file['filename']} - Score: {match_score:.2f} ({len(config_columns)} columns)")
+                # Log only perfect and strong matches
+                if match_score >= 0.9:
+                    logger.info(f"Config match: {config_file['filename']} - Score: {match_score:.2f} ({len(config_columns)} columns)")
                 
                 # Find matching columns
                 table_cols_lower = [col.lower().strip() for col in table_columns]
@@ -376,7 +377,7 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
                     
                     # For perfect matches, we can skip the rest of the configs
                     # since we already sorted by most recent first
-                    logger.info(f"Stopping search after finding perfect match (checked {i+1} of {len(config_files)} configs)")
+                    logger.debug(f"Stopping search after finding perfect match (checked {i+1} of {len(config_files)} configs)")
                     break
                     
                 # Early termination optimization: if this is the first (most recent) config

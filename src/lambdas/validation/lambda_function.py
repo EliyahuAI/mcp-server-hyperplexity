@@ -588,6 +588,11 @@ def calculate_token_costs(token_usage: Dict[str, Any], pricing_data: Dict[str, D
     if api_provider == 'perplexity':
         input_tokens = token_usage.get('input_tokens', 0)  # ai_api_client normalizes to input_tokens
         output_tokens = token_usage.get('output_tokens', 0)  # ai_api_client normalizes to output_tokens
+        
+        # Handle legacy cached format where we might have prompt_tokens/completion_tokens instead
+        if input_tokens == 0 and output_tokens == 0:
+            input_tokens = token_usage.get('prompt_tokens', 0)
+            output_tokens = token_usage.get('completion_tokens', 0)
     elif api_provider == 'anthropic':
         input_tokens = token_usage.get('input_tokens', 0)
         output_tokens = token_usage.get('output_tokens', 0)
@@ -601,6 +606,12 @@ def calculate_token_costs(token_usage: Dict[str, Any], pricing_data: Dict[str, D
     input_cost = (input_tokens / 1_000_000) * pricing['input_cost_per_million_tokens']
     output_cost = (output_tokens / 1_000_000) * pricing['output_cost_per_million_tokens']
     total_cost = input_cost + output_cost
+    
+    # Debug logging for low cost investigation
+    if input_tokens > 0 or output_tokens > 0:
+        logger.info(f"COST_CALC: {model} ({api_provider}) - Input: {input_tokens} tokens @ ${pricing['input_cost_per_million_tokens']}/M = ${input_cost:.6f}")
+        logger.info(f"COST_CALC: {model} ({api_provider}) - Output: {output_tokens} tokens @ ${pricing['output_cost_per_million_tokens']}/M = ${output_cost:.6f}")
+        logger.info(f"COST_CALC: {model} ({api_provider}) - TOTAL: ${total_cost:.6f}")
     
     return {
         'input_cost': round(input_cost, 6),
@@ -1958,18 +1969,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if '_raw_responses' not in row_results:
                 row_results['_raw_responses'] = {}
             
-            # Extract token usage information 
+            # Extract token usage information and cached status
             if shared_client_result and 'token_usage' in shared_client_result:
                 # For Perplexity, use the token usage from shared client
                 token_usage = shared_client_result['token_usage']
+                is_cached = shared_client_result.get('is_cached', False)
             else:
                 # For Anthropic or legacy responses, extract from the result
                 token_usage = extract_token_usage(result, model, search_context_size)
+                is_cached = False
             
             row_results['_raw_responses'][response_id] = {
                 'prompt': prompt,
                 'response': result,
-                'is_cached': False,
+                'is_cached': is_cached,
                 'fields': [t.column for t in validation_targets],
                 'model': model,  # Add model information
                 'token_usage': token_usage,  # Add token usage tracking
@@ -2092,7 +2105,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'total_tokens': 0,
                 'api_calls': 0,
                 'cached_calls': 0,
-                'total_cost': 0.0,
+                'total_cost': 0.0,  # Actual cost (only non-cached)
+                'estimated_total_cost': 0.0,  # Estimated cost (all calls as if not cached)
                 'by_provider': {
                     'perplexity': {
                         'prompt_tokens': 0,
@@ -2184,16 +2198,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 api_provider = usage.get('api_provider', 'unknown')
                                 total_tokens = usage.get('total_tokens', 0)
                                 costs = calculate_token_costs(usage, pricing_data)
+                                is_cached = response_data.get('is_cached', False)
                                 # Aggregate by provider
                                 if api_provider == 'perplexity':
                                     provider_usage = total_token_usage['by_provider']['perplexity']
-                                    provider_usage['prompt_tokens'] += usage.get('input_tokens', 0)  # ai_api_client normalizes to input_tokens
-                                    provider_usage['completion_tokens'] += usage.get('output_tokens', 0)  # ai_api_client normalizes to output_tokens
+                                    input_tokens = usage.get('input_tokens', 0)
+                                    output_tokens = usage.get('output_tokens', 0)
+                                    
+                                    # Handle legacy cached format where we might have prompt_tokens/completion_tokens instead
+                                    if input_tokens == 0 and output_tokens == 0:
+                                        input_tokens = usage.get('prompt_tokens', 0)
+                                        output_tokens = usage.get('completion_tokens', 0)
+                                    
+                                    provider_usage['prompt_tokens'] += input_tokens  # ai_api_client normalizes to input_tokens
+                                    provider_usage['completion_tokens'] += output_tokens  # ai_api_client normalizes to output_tokens
                                     provider_usage['total_tokens'] += total_tokens
                                     provider_usage['calls'] += 1
-                                    provider_usage['input_cost'] += costs['input_cost']
-                                    provider_usage['output_cost'] += costs['output_cost']
-                                    provider_usage['total_cost'] += costs['total_cost']
+                                    # Add to estimated cost (always) and actual cost (only if not cached)
+                                    if not is_cached:
+                                        provider_usage['input_cost'] += costs['input_cost']
+                                        provider_usage['output_cost'] += costs['output_cost']
+                                        provider_usage['total_cost'] += costs['total_cost']
+                                    # Always add to estimated totals for projection
+                                    total_token_usage['estimated_total_cost'] += costs['total_cost']
                                 elif api_provider == 'anthropic':
                                     provider_usage = total_token_usage['by_provider']['anthropic']
                                     provider_usage['input_tokens'] += usage.get('input_tokens', 0)
@@ -2202,9 +2229,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     provider_usage['cache_read_tokens'] += usage.get('cache_read_tokens', 0)
                                     provider_usage['total_tokens'] += total_tokens
                                     provider_usage['calls'] += 1
-                                    provider_usage['input_cost'] += costs['input_cost']
-                                    provider_usage['output_cost'] += costs['output_cost']
-                                    provider_usage['total_cost'] += costs['total_cost']
+                                    # Add to estimated cost (always) and actual cost (only if not cached)
+                                    if not is_cached:
+                                        provider_usage['input_cost'] += costs['input_cost']
+                                        provider_usage['output_cost'] += costs['output_cost']
+                                        provider_usage['total_cost'] += costs['total_cost']
+                                    # Always add to estimated totals for projection
+                                    total_token_usage['estimated_total_cost'] += costs['total_cost']
                                 
                                 # Track by model
                                 model = response_data.get('model', 'unknown')
@@ -2235,9 +2266,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 model_usage = total_token_usage['by_model'][model]
                                 model_usage['total_tokens'] += total_tokens
                                 model_usage['calls'] += 1
-                                model_usage['input_cost'] += costs['input_cost']
-                                model_usage['output_cost'] += costs['output_cost']
-                                model_usage['total_cost'] += costs['total_cost']
+                                # Add to actual cost only if not cached
+                                if not is_cached:
+                                    model_usage['input_cost'] += costs['input_cost']
+                                    model_usage['output_cost'] += costs['output_cost']
+                                    model_usage['total_cost'] += costs['total_cost']
                                 
                                 if api_provider == 'perplexity':
                                     model_usage['prompt_tokens'] += usage.get('input_tokens', 0)  # ai_api_client normalizes to input_tokens
@@ -2251,14 +2284,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Remove the raw responses from the row result to avoid duplication
                     del row_result['_raw_responses']
             
-            # Log aggregation results BEFORE adding to metadata
-            logger.info(f"DEBUG: About to add processing_time to metadata")
-            logger.info(f"DEBUG: total_processing_time value = {total_processing_time}")
-            logger.info(f"DEBUG: type of total_processing_time = {type(total_processing_time)}")
+            # Calculate total actual cost from providers
+            perplexity_actual_cost = total_token_usage['by_provider']['perplexity']['total_cost']
+            anthropic_actual_cost = total_token_usage['by_provider']['anthropic']['total_cost']
+            total_token_usage['total_cost'] = perplexity_actual_cost + anthropic_actual_cost
             
             # Log token usage and cost summary
             logger.info(f"Token Usage Summary: {total_token_usage['total_tokens']} total tokens")
-            logger.info(f"Total Estimated Cost: ${total_token_usage['total_cost']:.6f}")
+            logger.info(f"Actual Cost: ${total_token_usage['total_cost']:.6f} (non-cached only)")
+            logger.info(f"Estimated Cost: ${total_token_usage['estimated_total_cost']:.6f} (if nothing cached)")
             logger.info(f"API Calls: {total_token_usage['api_calls']} new, {total_token_usage['cached_calls']} cached")
             logger.info(f"Total Processing Time: {total_processing_time:.3f}s")
             
