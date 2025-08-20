@@ -4458,7 +4458,7 @@
                         const configId = match.config_id || match.original_name || `${match.source_session}_v${match.version || 1}`;
                         
                         configButtons += `
-                            <button class="std-button primary" style="width: 100%; text-align: left; padding: 16px; margin-bottom: 12px; background: white; border: 2px solid ${matchColor}; color: #333;" onclick="useConfigById('${cardId}', '${configId}')">
+                            <button class="std-button primary" style="width: 100%; text-align: left; padding: 16px; margin-bottom: 12px; background: white; border: 2px solid ${matchColor}; color: #333;" data-config-id="${configId}" data-card-id="${cardId}">
                                 <div style="font-weight: bold; color: ${matchColor}; font-size: 16px; margin-bottom: 8px;">
                                     ${matchScore}% Match
                                 </div>
@@ -4468,8 +4468,11 @@
                                 <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
                                     Last Used: ${displayLastUsed}
                                 </div>
-                                <div style="font-size: 14px; color: #666;">
+                                <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
                                     ${usageIcon} ${usageLabel}
+                                </div>
+                                <div style="font-size: 12px; color: #999; font-style: italic; margin-top: 8px;">
+                                    (${configId})
                                 </div>
                             </button>
                         `;
@@ -4555,6 +4558,21 @@
                 fileInput.id = `${cardId}-config-file`;
                 fileInput.onchange = (e) => handleConfigUpload(e, cardId);
                 card.appendChild(fileInput);
+
+                // Add event listeners for config buttons after DOM is ready
+                setTimeout(() => {
+                    const configButtons = card.querySelectorAll('button[data-config-id]');
+                    configButtons.forEach(button => {
+                        button.addEventListener('click', async (e) => {
+                            e.preventDefault();
+                            const configId = button.getAttribute('data-config-id');
+                            const cardIdFromButton = button.getAttribute('data-card-id');
+                            if (configId && cardIdFromButton) {
+                                await useConfigById(cardIdFromButton, configId);
+                            }
+                        });
+                    });
+                }, 100);
 
                 return card;
             }
