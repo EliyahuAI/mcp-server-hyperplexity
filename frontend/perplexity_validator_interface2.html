@@ -3715,42 +3715,22 @@
                     
                     const configId = match.config_id || match.original_name || `${match.source_session}_v${match.version || 1}`;
                     
+                    // Simple vertical list format as expected
                     matchElement.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-                            <div>
-                                <div style="font-weight: bold; color: ${matchColor}; font-size: 16px; margin-bottom: 4px;">
-                                    ${matchScore}% Match • ${match.matching_columns.length}/${match.total_columns} columns
-                                </div>
-                                <div style="font-size: 13px; color: #666; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                                    <span>📅 Created: ${createdDate}</span>
-                                    <span title="${usageDetail}">${usageIcon} ${usageLabel}</span>
-                                </div>
+                        <button class="std-button primary" style="width: 100%; text-align: left; padding: 16px; margin-bottom: 12px; background: white; border: 2px solid ${matchColor}; color: #333;" onclick="useConfigById('${cardId}', '${configId}')">
+                            <div style="font-weight: bold; color: ${matchColor}; font-size: 16px; margin-bottom: 8px;">
+                                ${matchScore}% Match
                             </div>
-                            <div style="text-align: right; font-size: 12px; color: #666;">
-                                <div style="margin-bottom: 2px;">Last Used: ${displayLastUsed}</div>
-                                <div style="color: #999;">v${match.version || 1}</div>
+                            <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
+                                Created: ${createdDate}
                             </div>
-                        </div>
-                        
-                        <div style="background: #f8f9fa; border-radius: 6px; padding: 10px; margin-bottom: 10px;">
-                            <div style="margin-bottom: 6px; font-size: 14px;">
-                                <strong>Config ID:</strong> 
-                                <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-size: 13px; font-family: monospace;">${configId}</code>
+                            <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
+                                Last Used: ${displayLastUsed}
                             </div>
-                            <div style="margin-bottom: 6px; font-size: 14px;">
-                                <strong>Description:</strong> ${match.description || 'No description available'}
+                            <div style="font-size: 14px; color: #666;">
+                                ${usageIcon} ${usageLabel}
                             </div>
-                            <div style="font-size: 14px;">
-                                <strong>Matching columns:</strong> 
-                                <span style="color: #28a745; font-weight: 500;">${match.matching_columns.slice(0, 3).join(', ')}${match.matching_columns.length > 3 ? ` (+${match.matching_columns.length - 3} more)` : ''}</span>
-                            </div>
-                        </div>
-                        
-                        <div style="margin-top: 12px;">
-                            <button class="std-button primary config-action-primary" style="width: 100%; background: var(--primary-color); border: 2px solid var(--primary-color); font-weight: bold; font-size: 16px; padding: 12px 20px;" onclick="useConfigById('${cardId}', '${configId}')">
-                                <span class="button-text">✅ Use This Configuration</span>
-                            </button>
-                        </div>
+                        </button>
                     `;
                     
                     // Add hover effect
@@ -3775,13 +3755,12 @@
                 `;
                 
                 buttonContainer.innerHTML = `
-                    <h4 style="margin: 0 0 15px 0; color: #333;">Other Options</h4>
-                    <div style="display: flex; flex-direction: column; gap: 10px;">
-                        <button class="std-button secondary" style="width: 100%;" onclick="generateWithAI('${cardId}')">
-                            <span class="button-text">🤖 Generate with AI</span>
+                    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
+                        <button class="std-button secondary" style="width: 100%; padding: 16px; font-size: 16px;" onclick="generateWithAI('${cardId}')">
+                            <span class="button-text">🤖 Create with AI</span>
                         </button>
-                        <button class="std-button secondary" style="width: 100%;" onclick="showConfigIdInput('${cardId}')">
-                            <span class="button-text">🔗 Use Another Config</span>
+                        <button class="std-button secondary" style="width: 100%; padding: 16px; font-size: 16px;" onclick="showConfigIdInput('${cardId}')">
+                            <span class="button-text">🔗 Use a Code</span>
                         </button>
                     </div>
                 `;

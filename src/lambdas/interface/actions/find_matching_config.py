@@ -680,7 +680,7 @@ def find_last_used_date(content_hash: str, current_config_data: Dict, all_config
         # Return current time as error fallback
         return datetime.now(timezone.utc)
 
-def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[str, Any]:
+def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[str, Any]:
     """
     Find config files that match the uploaded table's column structure
     
@@ -858,7 +858,13 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
                     # Original creation tracking
                     'original_config_id': original_config_id,
                     'creation_source': creation_source,
-                    'original_date_info': original_date_info
+                    # Serialize original_date_info to avoid datetime JSON issues
+                    'original_date_info': {
+                        'source': original_date_info.get('source', 'unknown'),
+                        'original_config_id': original_date_info.get('original_config_id', 'unknown'),
+                        'configs_with_same_content': original_date_info.get('configs_with_same_content', 0),
+                        'chain_length': original_date_info.get('chain_length', 0)
+                    }
                 }
                 
                 # Separate perfect matches from regular matches
@@ -866,15 +872,15 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
                     logger.info(f"PERFECT MATCH FOUND with score {match_score} in config {config_file['key']}")
                     perfect_matches.append(match_data)
                     
-                    # Continue searching for up to 5 perfect matches
-                    if len(perfect_matches) >= 5:
-                        logger.info(f"Found 5 perfect matches, stopping search at config {i+1}")
+                    # Continue searching for up to 2 perfect matches for performance
+                    if len(perfect_matches) >= 2:
+                        logger.info(f"Found 2 perfect matches, stopping search at config {i+1}")
                         break
                 else:
                     matches.append(match_data)
                     
                 # Early termination for regular matches if no perfect matches and we have enough regular matches
-                if len(perfect_matches) == 0 and len(matches) >= 10 and i >= 20:
+                if len(perfect_matches) == 0 and len(matches) >= 4 and i >= 10:
                     logger.info(f"Stopping search after checking {i+1} configs - found sufficient regular matches")
                     break
                 
@@ -910,11 +916,11 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
         # Sort regular matches by score and recency
         matches.sort(key=sort_key, reverse=True)
         
-        # Combine: if we have perfect matches, use up to 5 of them
-        # If we have < 5 perfect matches, fill remaining slots with best regular matches
+        # Combine: if we have perfect matches, use up to 2 of them for performance
+        # If we have < 2 perfect matches, fill remaining slots with best regular matches
         final_matches = []
         if perfect_matches:
-            final_matches.extend(perfect_matches[:5])
+            final_matches.extend(perfect_matches[:limit])
             remaining_slots = limit - len(final_matches)
             if remaining_slots > 0:
                 final_matches.extend(matches[:remaining_slots])
