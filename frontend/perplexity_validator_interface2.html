@@ -3871,11 +3871,26 @@
                     globalState.currentConfig = result.config_data;
                     globalState.configStored = true;
                     
-                    // Show clean success state
-                    showFinalCardState(cardId, 
-                        `Configuration ${configId} applied successfully`, 
-                        'success'
-                    );
+                    // Hide all card content and show only green success message
+                    const messagesContainer = document.getElementById(`${cardId}-messages`);
+                    const optionsContainer = document.getElementById(`${cardId}-options`);
+                    const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                    const configList = document.getElementById(`${cardId}-config-list`);
+                    
+                    // Hide all sections
+                    if (optionsContainer) optionsContainer.style.display = 'none';
+                    if (buttonsContainer) buttonsContainer.style.display = 'none';
+                    if (configList) configList.style.display = 'none';
+                    
+                    // Show only clean success message
+                    if (messagesContainer) {
+                        messagesContainer.innerHTML = `
+                            <div class="message message-success" style="margin-bottom: 1rem;">
+                                <span class="message-icon">✓</span>
+                                <span>Configuration applied successfully</span>
+                            </div>
+                        `;
+                    }
                     
                     // After successful config application, proceed to next step
                     setTimeout(() => {
@@ -4494,22 +4509,33 @@
                         
                         const configId = match.config_id || match.original_name || `${match.source_session}_v${match.version || 1}`;
                         
+                        // Extract short code (suffix after 3rd underscore)
+                        const shortCode = (() => {
+                            const parts = configId.split('_');
+                            if (parts.length > 3) {
+                                return parts.slice(3).join('_');
+                            }
+                            return configId; // Fallback to full ID if format unexpected
+                        })();
+                        
                         configButtons += `
-                            <button class="std-button primary" style="width: 100%; text-align: left; padding: 16px; margin-bottom: 12px; background: white; border: 2px solid ${matchColor}; color: #333; position: relative;" data-config-id="${configId}" data-card-id="${cardId}">
-                                <div style="font-weight: bold; color: ${matchColor}; font-size: 16px; margin-bottom: 8px;">
-                                    ${matchScore}% Match
+                            <button class="std-button primary" style="width: 100%; text-align: left; padding: 16px 16px 8px 16px; margin-bottom: 12px; background: white; border: 2px solid ${matchColor}; color: #333; position: relative; display: flex; flex-direction: column;" data-config-id="${configId}" data-card-id="${cardId}">
+                                <div style="flex: 1;">
+                                    <div style="font-weight: bold; color: ${matchColor}; font-size: 16px; margin-bottom: 8px;">
+                                        ${matchScore}% Match
+                                    </div>
+                                    <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
+                                        Created: ${createdDate}
+                                    </div>
+                                    <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
+                                        Last Used: ${displayLastUsed}
+                                    </div>
+                                    <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
+                                        ${usageIcon} ${usageLabel}
+                                    </div>
                                 </div>
-                                <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
-                                    Created: ${createdDate}
-                                </div>
-                                <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
-                                    Last Used: ${displayLastUsed}
-                                </div>
-                                <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
-                                    ${usageIcon} ${usageLabel}
-                                </div>
-                                <div style="font-size: 12px; color: #999; font-style: italic; border-top: 1px solid #eee; padding-top: 8px; margin-top: 8px; width: 100%; text-align: left;">
-                                    (code: ${configId})
+                                <div style="font-size: 12px; color: #999; font-style: italic; border-top: 1px solid #eee; padding: 8px 0 4px 0; margin-top: 8px; width: 100%;">
+                                    (code: ${shortCode})
                                 </div>
                             </button>
                         `;
