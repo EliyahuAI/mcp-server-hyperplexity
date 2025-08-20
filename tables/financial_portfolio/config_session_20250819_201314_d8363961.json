@@ -1,4 +1,3 @@
-{
   "general_notes": "Financial portfolio validation configuration for investment tracking. Emphasizes precision for numerical data and comprehensive search for news, projections, and investment recommendations. Configured for high-accuracy validation of market data with extensive news and analysis gathering.",
   "default_model": "sonar-pro",
   "default_search_context_size": "low",

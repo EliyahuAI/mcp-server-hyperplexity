@@ -863,7 +863,8 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
                         'source': original_date_info.get('source', 'unknown'),
                         'original_config_id': original_date_info.get('original_config_id', 'unknown'),
                         'configs_with_same_content': original_date_info.get('configs_with_same_content', 0),
-                        'chain_length': original_date_info.get('chain_length', 0)
+                        'chain_length': original_date_info.get('chain_length', 0),
+                        'original_date': original_date_info.get('original_date', '').isoformat() if original_date_info.get('original_date') and hasattr(original_date_info.get('original_date'), 'isoformat') else str(original_date_info.get('original_date', ''))
                     }
                 }
                 
