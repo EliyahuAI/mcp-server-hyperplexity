@@ -74,6 +74,29 @@ def get_confidence_format(confidence, format_dict):
     confidence_str = str(confidence).strip().upper()
     return format_dict.get(confidence_str)
 
+def should_update_value(original_confidence, validation_confidence):
+    """
+    Determine if original value should be updated based on confidence comparison.
+    Only update when validation confidence is higher than original confidence.
+    
+    Confidence hierarchy: HIGH > MEDIUM > LOW > None
+    """
+    if is_null_confidence(original_confidence) or is_null_confidence(validation_confidence):
+        return False
+    
+    # Define confidence hierarchy (higher number = higher confidence)
+    confidence_levels = {
+        'HIGH': 3,
+        'MEDIUM': 2, 
+        'LOW': 1
+    }
+    
+    original_level = confidence_levels.get(str(original_confidence).strip().upper(), 0)
+    validation_level = confidence_levels.get(str(validation_confidence).strip().upper(), 0)
+    
+    # Only update if validation confidence is strictly higher than original
+    return validation_level > original_level
+
 def create_enhanced_excel_with_validation(excel_data, validation_results, config_data, session_id, skip_history=False, validated_sheet_name=None):
     """Create 3-sheet Excel file with validation results.
     
@@ -231,7 +254,88 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                 'LOW': workbook.add_format({'italic': True, 'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
             }
             
-            # SHEET 1: Original Values
+            # SHEET 1: Updated Values
+            updated_sheet = workbook.add_worksheet('Updated Values')
+            
+            # Headers for updated values sheet (no additional columns)
+            updated_headers = headers
+            for col_idx, col_name in enumerate(updated_headers):
+                updated_sheet.write(0, col_idx, col_name, header_format)
+                updated_sheet.set_column(col_idx, col_idx, 20)
+            
+            # Write all rows to updated sheet (not just rows with changes)
+            updated_row_idx = 1
+            for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
+                # Get validation results for this row
+                row_validation_data = None
+                if row_key in validation_results:
+                    row_validation_data = validation_results[row_key]
+                elif str(row_idx) in validation_results:
+                    row_validation_data = validation_results[str(row_idx)]
+                elif row_idx in validation_results:
+                    row_validation_data = validation_results[row_idx]
+                
+                # Write all rows (not just those with updates)
+                if True:  # Process all rows
+                    # Write updated values for this row
+                    
+                    for col_idx, col_name in enumerate(headers):
+                        original_value = row_data.get(col_name, '')
+                        updated_value = original_value
+                        
+                        if row_validation_data and col_name in row_validation_data:
+                            field_data = row_validation_data[col_name]
+                            if isinstance(field_data, dict):
+                                original_confidence = field_data.get('original_confidence')
+                                validation_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
+                                
+                                # Only update if validation confidence is higher than original confidence
+                                if should_update_value(original_confidence, validation_confidence):
+                                    updated_value = field_data.get('value', original_value)
+                        
+                        # Apply validation confidence formatting to updated values
+                        validation_confidence = None
+                        if row_validation_data and col_name in row_validation_data:
+                            field_data = row_validation_data[col_name]
+                            if isinstance(field_data, dict):
+                                validation_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
+                        
+                        cell_format = get_confidence_format(validation_confidence, validation_confidence_formats)
+                        updated_sheet.write(updated_row_idx, col_idx, safe_for_excel(updated_value), cell_format)
+                        
+                        # Add comment with original value and reasoning (same as Original Values sheet)
+                        comment_text = None
+                        if row_validation_data and col_name in row_validation_data:
+                            field_data = row_validation_data[col_name]
+                            if isinstance(field_data, dict):
+                                original_value = row_data.get(col_name, '')
+                                validated_value = field_data.get('value', '')
+                                reasoning = field_data.get('reasoning', '')
+                                
+                                # Create comment with original value and reasoning
+                                if validated_value != original_value or reasoning:
+                                    comment_parts = []
+                                    if validated_value != original_value:
+                                        comment_parts.append(f'Original Value: {original_value}')
+                                    if reasoning:
+                                        comment_parts.append(f'Supporting Information: {reasoning}')
+                                    
+                                    if comment_parts:
+                                        comment_text = '\\n\\n'.join(comment_parts)
+                        
+                        # Add comment if needed
+                        if comment_text:
+                            try:
+                                updated_sheet.write_comment(updated_row_idx, col_idx, comment_text,
+                                                           {'width': 300, 'height': 150})
+                            except Exception as e:
+                                logger.warning(f"Could not add comment to Updated Values sheet: {e}")
+                    
+                    # No additional columns to write (removed Original Value and Supporting Information)
+                    
+                    updated_row_idx += 1
+            
+            # SHEET 2: Original Values
             original_sheet = workbook.add_worksheet('Original Values')
             
             # Write headers
@@ -290,92 +394,6 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                                        {'width': 300, 'height': 150})
                         except Exception as e:
                             logger.warning(f"Could not add comment: {e}")
-            
-            # SHEET 2: Updated Values
-            updated_sheet = workbook.add_worksheet('Updated Values')
-            
-            # Headers for updated values sheet
-            updated_headers = headers + ['Original Value', 'Supporting Information']
-            for col_idx, col_name in enumerate(updated_headers):
-                updated_sheet.write(0, col_idx, col_name, header_format)
-                updated_sheet.set_column(col_idx, col_idx, 20)
-            
-            # Write all rows to updated sheet (not just rows with changes)
-            updated_row_idx = 1
-            for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
-                # Get validation results for this row
-                row_validation_data = None
-                if row_key in validation_results:
-                    row_validation_data = validation_results[row_key]
-                elif str(row_idx) in validation_results:
-                    row_validation_data = validation_results[str(row_idx)]
-                elif row_idx in validation_results:
-                    row_validation_data = validation_results[row_idx]
-                
-                # Write all rows (not just those with updates)
-                if True:  # Process all rows
-                    # Write updated values for this row
-                    original_values_for_row = []
-                    supporting_info_for_row = []
-                    
-                    for col_idx, col_name in enumerate(headers):
-                        original_value = row_data.get(col_name, '')
-                        updated_value = original_value
-                        
-                        if row_validation_data and col_name in row_validation_data:
-                            field_data = row_validation_data[col_name]
-                            if isinstance(field_data, dict):
-                                original_confidence = field_data.get('original_confidence')
-                                if original_confidence in ['MEDIUM', 'LOW']:
-                                    updated_value = field_data.get('value', original_value)
-                                    original_values_for_row.append(f"{col_name}: {original_value}")
-                                    reasoning = field_data.get('reasoning', '')
-                                    if reasoning:
-                                        supporting_info_for_row.append(f"{col_name}: {reasoning}")
-                        
-                        # Apply validation confidence formatting to updated values
-                        validation_confidence = None
-                        if row_validation_data and col_name in row_validation_data:
-                            field_data = row_validation_data[col_name]
-                            if isinstance(field_data, dict):
-                                validation_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
-                        
-                        cell_format = get_confidence_format(validation_confidence, validation_confidence_formats)
-                        updated_sheet.write(updated_row_idx, col_idx, safe_for_excel(updated_value), cell_format)
-                        
-                        # Add comment with original value and reasoning (same as Original Values sheet)
-                        comment_text = None
-                        if row_validation_data and col_name in row_validation_data:
-                            field_data = row_validation_data[col_name]
-                            if isinstance(field_data, dict):
-                                original_value = row_data.get(col_name, '')
-                                validated_value = field_data.get('value', '')
-                                reasoning = field_data.get('reasoning', '')
-                                
-                                # Create comment with original value and reasoning
-                                if validated_value != original_value or reasoning:
-                                    comment_parts = []
-                                    if validated_value != original_value:
-                                        comment_parts.append(f'Original Value: {original_value}')
-                                    if reasoning:
-                                        comment_parts.append(f'Supporting Information: {reasoning}')
-                                    
-                                    if comment_parts:
-                                        comment_text = '\\n\\n'.join(comment_parts)
-                        
-                        # Add comment if needed
-                        if comment_text:
-                            try:
-                                updated_sheet.write_comment(updated_row_idx, col_idx, comment_text,
-                                                           {'width': 300, 'height': 150})
-                            except Exception as e:
-                                logger.warning(f"Could not add comment to Updated Values sheet: {e}")
-                    
-                    # Write original values and supporting info
-                    updated_sheet.write(updated_row_idx, len(headers), safe_for_excel('; '.join(original_values_for_row)))
-                    updated_sheet.write(updated_row_idx, len(headers) + 1, safe_for_excel('; '.join(supporting_info_for_row)))
-                    
-                    updated_row_idx += 1
             
             # SHEET 3: Details (comprehensive view)
             details_sheet = workbook.add_worksheet('Details')

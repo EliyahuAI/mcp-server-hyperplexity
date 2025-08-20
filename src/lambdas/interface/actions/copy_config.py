@@ -24,10 +24,16 @@ def copy_config_to_session(email: str, session_id: str, config_data: Dict[str, A
         source_info: Source metadata
     
     Returns:
-        {'success': bool, 'version': int, 'config_s3_key': str, ...}
+        {'success': bool, 'version': int, 'config_s3_key': str, 'config_id': str, ...}
     """
     try:
         storage_manager = UnifiedS3Manager()
+        
+        # Extract original metadata before cleaning
+        source_metadata = config_data.get('storage_metadata', {})
+        original_name = source_metadata.get('original_name') or source_metadata.get('config_id')
+        source_session = source_info.get('source_session') or source_metadata.get('session_id')
+        source_description = source_metadata.get('description', config_data.get('general_notes', ''))
         
         # Remove storage metadata from source config to avoid conflicts
         clean_config_data = config_data.copy()
@@ -40,22 +46,27 @@ def copy_config_to_session(email: str, session_id: str, config_data: Dict[str, A
         if existing_config and existing_config.get('storage_metadata', {}).get('version'):
             version = existing_config['storage_metadata']['version'] + 1
         
-        # Store the copied config in the current session
+        # Store the copied config with preserved original_name chain
         storage_result = storage_manager.store_config_file(
             email=email, 
             session_id=session_id, 
             config_data=clean_config_data, 
             version=version, 
-            source=f"auto_copied_{source_info.get('source_session', 'unknown')}"
+            source=f"auto_copied_{source_session}",
+            description=source_description,
+            original_name=original_name,  # Preserve original name chain
+            source_session=source_session
         )
         
         if storage_result['success']:
-            logger.info(f"Auto-copied config to {email}/{session_id} v{version}")
+            logger.info(f"Auto-copied config to {email}/{session_id} v{version}, preserving original_name: {original_name}")
             return {
                 'success': True,
                 'version': version,
                 'config_s3_key': storage_result.get('s3_key'),
-                'source_info': source_info
+                'config_id': storage_result.get('config_id'),
+                'source_info': source_info,
+                'original_name': original_name
             }
         else:
             return {'success': False, 'error': storage_result.get('error', 'Storage failed')}
@@ -118,9 +129,15 @@ def handle_copy_config(event_data, context=None):
                 'error': f'Source configuration not found: {str(e)}'
             })
         
+        # Extract original metadata before cleaning
+        source_metadata = source_config_data.get('storage_metadata', {})
+        original_name = source_metadata.get('original_name') or source_metadata.get('config_id')
+        source_description = source_metadata.get('description', source_config_data.get('general_notes', ''))
+        
         # Remove storage metadata from source config to avoid conflicts
-        if 'storage_metadata' in source_config_data:
-            del source_config_data['storage_metadata']
+        clean_config_data = source_config_data.copy()
+        if 'storage_metadata' in clean_config_data:
+            del clean_config_data['storage_metadata']
         
         # Get current config version for the target session
         existing_config, _ = storage_manager.get_latest_config(email, session_id)
@@ -128,13 +145,16 @@ def handle_copy_config(event_data, context=None):
         if existing_config and existing_config.get('storage_metadata', {}).get('version'):
             version = existing_config['storage_metadata']['version'] + 1
         
-        # Store the copied config in the current session
+        # Store the copied config with preserved original_name chain
         storage_result = storage_manager.store_config_file(
             email=email, 
             session_id=session_id, 
-            config_data=source_config_data, 
+            config_data=clean_config_data, 
             version=version, 
-            source='copied_from_previous'
+            source='copied_from_previous',
+            description=source_description,
+            original_name=original_name,  # Preserve original name chain
+            source_session=source_session
         )
         
         if not storage_result['success']:
@@ -152,31 +172,28 @@ def handle_copy_config(event_data, context=None):
                 table_name=table_name,
                 current_config_version=version,
                 config_source='copied_from_previous',
-                source_session=source_session
+                source_session=source_session,
+                config_id=storage_result.get('config_id'),
+                config_description=source_description
             )
             if session_info_result['success']:
                 logger.info(f"Session info updated with copied config tracking")
         except Exception as e:
             logger.warning(f"Failed to update session info: {e}")
         
-        # Create download link for the copied config
-        download_url = storage_manager.create_public_download_link(
-            source_config_data, 
-            f"config_copied_from_{source_session or 'unknown'}_{datetime.now().strftime('%Y%m%d')}.json"
-        )
-        
         logger.info(f"Successfully copied config from {source_config_key} to session {session_id}")
         
         return create_response(200, {
             'success': True,
-            'config_data': source_config_data,
+            'config_data': clean_config_data,
             'config_version': version,
             'config_s3_key': storage_result['s3_key'],
-            'download_url': download_url,
+            'config_id': storage_result.get('config_id'),
             'source_info': {
                 'source_session': source_session,
                 'source_key': source_config_key,
-                'copied_at': datetime.now().isoformat()
+                'copied_at': datetime.now().isoformat(),
+                'original_name': original_name
             },
             'message': f'Configuration successfully copied from previous session'
         })

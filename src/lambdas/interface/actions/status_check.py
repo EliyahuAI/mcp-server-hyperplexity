@@ -60,7 +60,11 @@ def _check_status(session_id, is_preview, email_param):
 
     # If this is a completed preview, the preview data is nested in the record
     if is_preview and status_record.get('status') == 'COMPLETED' and 'preview_data' in status_record:
-        return create_response(200, status_record['preview_data'])
+        preview_data = status_record['preview_data']
+        # Check if there's a preview results S3 key for download
+        if status_record.get('preview_results_s3_key'):
+            preview_data['download_url'] = generate_presigned_url(S3_RESULTS_BUCKET, status_record['preview_results_s3_key'])
+        return create_response(200, preview_data)
         
     # If this is a completed full run, generate a download URL
     if not is_preview and status_record.get('status') == 'COMPLETED' and status_record.get('results_s3_key'):

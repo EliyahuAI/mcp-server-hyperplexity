@@ -55,7 +55,7 @@ def handle(request_data, context):
                 if existing_config and existing_config.get('storage_metadata', {}).get('version'):
                     version = existing_config['storage_metadata']['version'] + 1
                 
-                # Store config in unified storage
+                # Store config in unified storage with enhanced metadata
                 storage_result = storage_manager.store_config_file(
                     email, base_session_id, config_data, version=version, source='upload'
                 )

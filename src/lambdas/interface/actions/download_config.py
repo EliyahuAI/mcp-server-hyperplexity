@@ -15,12 +15,17 @@ logger.setLevel(logging.INFO)
 
 def handle(request_data, context):
     """
-    Handles the downloadConfig action - downloads config from S3 and returns it
+    DEPRECATED: Handles the downloadConfig action - downloads config from S3 and returns it
+    This endpoint is deprecated in favor of using config IDs for security.
     """
     config_s3_key = request_data.get('config_s3_key', '')
     
     if not config_s3_key:
         return create_response(400, {'error': 'Missing config_s3_key parameter'})
+    
+    # Log deprecation warning
+    logger.warning(f"DEPRECATED: Config download endpoint used for key: {config_s3_key}. " +
+                  "This functionality is deprecated in favor of config ID references.")
     
     try:
         # Download config from S3

@@ -237,46 +237,8 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
                         matching_configs = find_matching_configs(email_address, base_session_id, limit=3)
                         logger.info(f"Found {len(matching_configs.get('matches', []))} matching configs")
                         
-                        # Check for perfect match and auto-copy if found
-                        if matching_configs.get('perfect_match', False) and matching_configs.get('auto_select_config'):
-                            logger.info("Perfect match found - auto-copying config to current session")
-                            
-                            try:
-                                from .copy_config import copy_config_to_session
-                                auto_config = matching_configs['auto_select_config']
-                                
-                                copy_result = copy_config_to_session(
-                                    email_address,
-                                    base_session_id,
-                                    auto_config['config_data'],
-                                    source_info={
-                                        'source_session': auto_config['source_session'],
-                                        'source_filename': auto_config['config_filename'],
-                                        'match_score': auto_config['match_score'],
-                                        'auto_selected': True
-                                    }
-                                )
-                                
-                                if copy_result['success']:
-                                    logger.info(f"Auto-copied perfect match config: {auto_config['config_filename']}")
-                                    return create_response(200, {
-                                        'success': True,
-                                        'message': f'Excel file uploaded and perfect match config auto-selected: {auto_config["config_filename"]}',
-                                        'session_id': session_id,
-                                        'excel_s3_key': excel_s3_key,
-                                        'storage_path': storage_manager.get_session_path(email_address, base_session_id),
-                                        'auto_selected_config': True,
-                                        'config_details': {
-                                            'source': auto_config['config_filename'],
-                                            'match_score': auto_config['match_score'],
-                                            'version': copy_result.get('version', 1)
-                                        },
-                                        'matching_configs': matching_configs
-                                    })
-                                    
-                            except Exception as copy_error:
-                                logger.error(f"Failed to auto-copy perfect match config: {copy_error}")
-                                # Fall through to normal response
+                        # Don't auto-copy configs - let user explicitly select them
+                        # This prevents premature version increments (configs should only be copied when user chooses to use them)
                         
                     except Exception as e:
                         logger.error(f"Error searching for matching configs: {e}")
