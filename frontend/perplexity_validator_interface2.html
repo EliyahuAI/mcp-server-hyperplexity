@@ -2954,13 +2954,21 @@
                             
                             if (downloadBtn) {
                                 downloadBtn.addEventListener('click', async () => {
-                                    await downloadValidationResults();
+                                    try {
+                                        await window.downloadValidationResults();
+                                    } catch (error) {
+                                        console.error('Download error:', error);
+                                    }
                                 });
                             }
                             
                             if (refineBtn) {
                                 refineBtn.addEventListener('click', async () => {
-                                    await createRefinementCard();
+                                    try {
+                                        await window.createRefinementCard();
+                                    } catch (error) {
+                                        console.error('Refine error:', error);
+                                    }
                                 });
                             }
                         }, 100);
@@ -4779,7 +4787,7 @@
             }
 
             // Create refinement card specifically for post-preview refinement
-            async function createRefinementCard() {
+            window.createRefinementCard = async function() {
                 const cardId = generateCardId();
                 
                 // Debug: Check what questions are available right now
@@ -6089,7 +6097,7 @@ Please answer these questions and then I'll generate your configuration and auto
                         width: 'half',
                         callback: async () => {
                             try {
-                                await downloadValidationResults();
+                                await window.downloadValidationResults();
                             } catch (error) {
                                 console.error('Download error:', error);
                             }
@@ -6102,7 +6110,7 @@ Please answer these questions and then I'll generate your configuration and auto
                         width: 'half',
                         callback: async () => {
                             try {
-                                await createRefinementCard();
+                                await window.createRefinementCard();
                             } catch (error) {
                                 console.error('Refine error:', error);
                             }
@@ -6310,7 +6318,7 @@ Please answer these questions and then I'll generate your configuration and auto
         }
 
         // Function to download validation results
-        async function downloadValidationResults() {
+        window.downloadValidationResults = async function() {
             try {
                 if (!globalState.sessionId) {
                     throw new Error('No session ID available');
