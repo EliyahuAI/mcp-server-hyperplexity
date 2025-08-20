@@ -1768,28 +1768,32 @@
                 }
                 resultsEl.style.display = 'block';
 
-                // Render markdown table with header
+                // Render markdown table with blue info header
                 const previewContent = document.getElementById(`${cardId}-preview-content`);
                 if (previewContent && previewData.markdown_table) {
+                    // Generate download URL for full preview
+                    let fullPreviewUrl = '#';
+                    if (previewData.full_preview_url) {
+                        fullPreviewUrl = previewData.full_preview_url;
+                    } else if (globalState.sessionId) {
+                        // Generate preview download URL based on session
+                        fullPreviewUrl = `${API_BASE}/download/${globalState.sessionId}/preview_results.xlsx`;
+                    }
+                    
                     const headerHtml = `
-                        <div style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #007bff;">
-                            <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <strong>Preview: Summary of Updated Values</strong>
-                                <button type="button" class="std-button secondary" style="padding: 4px 8px; font-size: 12px;" onclick="showConfidenceInfoModal()">
-                                    ℹ️ Info
-                                </button>
-                            </div>
-                            <div style="font-size: 14px; color: #666; margin-top: 5px;">
-                                This shows a preview of how your data will be updated and validated. The full results will include Updated, Original, and Details sheets.
-                            </div>
-                            <div style="display: flex; gap: 10px; margin-top: 10px; justify-content: flex-end;">
-                                <button type="button" class="std-button secondary" style="padding: 6px 12px; font-size: 12px;" onclick="downloadPreviewResults(${JSON.stringify(previewData).replace(/"/g, '&quot;')})">
-                                    📥 Download Preview
-                                </button>
+                        <div class="message message-info" style="margin-bottom: 15px; background: #e3f2fd; border-left: 4px solid #2196f3;">
+                            <div style="font-size: 14px; color: #1976d2; line-height: 1.6;">
+                                The preview below is a light version of the Updated values. A richer preview can be downloaded 
+                                <a href="${fullPreviewUrl}" target="_blank" style="color: #1976d2; text-decoration: underline;">here</a> 
+                                or at the button below.
                             </div>
                         </div>
                     `;
+                    
                     previewContent.innerHTML = headerHtml + renderMarkdown(previewData.markdown_table);
+                    
+                    // Store the download URL for the button
+                    previewContent.dataset.fullPreviewUrl = fullPreviewUrl;
                 }
 
                 // Show cost estimates
@@ -1868,6 +1872,33 @@
                 // Show action buttons
                 createButtonRow(`${cardId}-buttons`, [
                     {
+                        text: 'Download Preview',
+                        icon: '📥',
+                        variant: 'secondary',
+                        width: 1,
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            const previewContent = document.getElementById(`${cardId}-preview-content`);
+                            const downloadUrl = previewContent?.dataset?.fullPreviewUrl || '#';
+                            
+                            if (downloadUrl !== '#') {
+                                // Create temporary link and trigger download
+                                const link = document.createElement('a');
+                                link.href = downloadUrl;
+                                link.download = 'preview_results.xlsx';
+                                link.target = '_blank';
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                
+                                markButtonSelected(button, '📥 Downloaded');
+                                setTimeout(() => markButtonUnselected(button), 1000);
+                            } else {
+                                showMessage(`${cardId}-messages`, 'Download not available yet', 'error');
+                            }
+                        }
+                    },
+                    {
                         text: 'Refine Configuration (Free)',
                         icon: '🔧',
                         variant: 'secondary',
@@ -1886,7 +1917,7 @@
                             : `Add Credits ($${Math.ceil(accountInfo?.credits_needed || 0).toFixed(2)})`,
                         icon: sufficientBalance ? '✨' : '💳',
                         variant: sufficientBalance ? 'primary' : 'secondary',
-                        width: 3,
+                        width: 2,
                         callback: async (e) => {
                             const button = e.target.closest('button');
                             
@@ -4534,8 +4565,8 @@
                                         ${usageIcon} ${usageLabel}
                                     </div>
                                 </div>
-                                <div style="font-size: 12px; color: #999; font-style: italic; border-top: 1px solid #eee; padding: 8px 0 4px 0; margin-top: 8px; width: 100%;">
-                                    (code: ${shortCode})
+                                <div style="font-size: 12px; color: #999; font-style: italic; border-top: 1px solid #eee; padding: 8px 0 4px 0; margin-top: 8px; width: 100%; text-align: center;">
+                                    (code ends with: ${shortCode})
                                 </div>
                             </button>
                         `;
