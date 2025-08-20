@@ -1255,10 +1255,41 @@ def handle(event, context):
                         billing_info=billing_info,
                         config_id=config_id
                     )
-                    # Send final completion notification with processed row count and total rows
+                    # Send final completion notification with download URLs
                     processed_rows_count = len(validation_results.get('validation_results', {}))
                     total_rows_in_file = validation_results.get('total_rows', processed_rows_count)
-                    _update_progress(session_id, 'COMPLETED', processed_rows_count, 'Validation complete. Results should be in your inbox shortly.', 100, total_rows_in_file)
+                    
+                    # Create ZIP download URL from results_key
+                    zip_download_url = None
+                    if results_key:
+                        try:
+                            zip_download_url = s3_client.generate_presigned_url(
+                                'get_object',
+                                Params={'Bucket': S3_RESULTS_BUCKET, 'Key': results_key},
+                                ExpiresIn=7200  # 2 hours
+                            )
+                            logger.info(f"Created ZIP download link: {zip_download_url}")
+                        except Exception as e:
+                            logger.error(f"Failed to create ZIP download URL: {e}")
+                            zip_download_url = None
+                    
+                    # Send completion with download URLs (consistent with preview completion)
+                    completion_payload = {
+                        'status': 'COMPLETED',
+                        'processed_rows': processed_rows_count,
+                        'total_rows': total_rows_in_file,
+                        'verbose_status': 'Validation complete. Results should be in your inbox shortly.',
+                        'percent_complete': 100
+                    }
+                    
+                    # Add download URLs if available
+                    if enhanced_download_url:
+                        completion_payload['enhanced_download_url'] = enhanced_download_url
+                    if zip_download_url:
+                        completion_payload['download_url'] = zip_download_url
+                    
+                    logger.info(f"Sending completion WebSocket message with download URLs: enhanced={bool(enhanced_download_url)}, zip={bool(zip_download_url)}")
+                    _send_websocket_message(session_id, completion_payload)
                     
                     # Update status with both ZIP file and enhanced Excel download URLs
                     status_update_data = {
@@ -1268,6 +1299,8 @@ def handle(event, context):
                     }
                     if enhanced_download_url:
                         status_update_data['enhanced_download_url'] = enhanced_download_url
+                    if zip_download_url:
+                        status_update_data['download_url'] = zip_download_url
                     
                     update_run_status(**status_update_data)
                     

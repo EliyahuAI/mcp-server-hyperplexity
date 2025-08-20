@@ -298,9 +298,9 @@ def send_validation_results_email(email_address, excel_content, config_content, 
                 config_version = f" (v{int(version_match.group(1))})"
         
         if reference_pin:
-            message["Subject"] = f"📊 {subject_type}{config_version} - {base_filename} #{reference_pin}"
+            message["Subject"] = f"🟩 {subject_type}{config_version} - {base_filename} #{reference_pin}"
         else:
-            message["Subject"] = f"📊 {subject_type}{config_version} - {base_filename}"
+            message["Subject"] = f"🟩 {subject_type}{config_version} - {base_filename}"
         
         # Extract summary data
         total_rows = summary_data.get('total_rows', 0)
@@ -342,10 +342,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         part.add_header("Content-Disposition", f'attachment; filename="{input_filename}"')
         message.attach(part)
         
-        # Attach config file
-        part = MIMEApplication(config_content)
-        part.add_header("Content-Disposition", f'attachment; filename="{config_filename}"')
-        message.attach(part)
+        # Note: Config JSON file attachment removed - only provide configuration code for reuse
         
         # Generate and attach receipt if there are charges
         if billing_info and billing_info.get('amount_charged', 0) > 0 and not preview_email:
@@ -633,7 +630,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
     </head>
     <body>
         <div class="header">
-            <h1>📊 Validation Complete</h1>
+            <h1>Validation Complete</h1>
             <p>Hyperplexity Table Validation Results</p>
         </div>
         
@@ -660,37 +657,30 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
                 <h3>📎 Attached Files</h3>
                 <ul class="attachment-list">
                     <li class="primary-file">
-                        📊 <b>{enhanced_excel_filename or 'Validated_Results.xlsx'}</b><br>
-                        <small>Your validated results with color-coded confidence levels</small>
+                        📊 <b>{enhanced_excel_filename or 'Validated_Results.xlsx'}</b> (Updated Page)<br>
+                        <small>Color-coded validation results - updates values when we found better information</small>
                     </li>
                     <li>
-                        📄 <b>{input_filename or 'Original_Input.xlsx'}</b><br>
-                        <small>Your original input file</small>
-                    </li>
-                    <li>
-                        ⚙️ <b>Configuration ID: {config_id or 'N/A'}</b><br>
-                        <small>Use this ID to rerun validation with the same configuration</small>
+                        📄 <b>{input_filename or 'Original_Input.xlsx'}</b> (Original Page)<br>
+                        <small>Fact-check version of your table without updates - color-coded by confidence</small>
                     </li>
                 </ul>
+                <p><strong>Configuration Code:</strong> {config_id or 'N/A'}</p>
+                <p><small>Save this code to keep the same settings for future validations. For full validations, use the Updated page with this configuration to update your table.</small></p>
             </div>
             
             <h3>Understanding Your Results</h3>
-            <p>The enhanced Excel file contains three worksheets:</p>
-            <ul>
-                <li><b>"Original Values"</b> - Your data with color-coded confidence levels</li>
-                <li><b>"Updated Values"</b> - AI-validated data with confidence indicators</li>
-                <li><b>"Details"</b> - Complete validation information including sources and reasoning</li>
-            </ul>
+            <p>Both files are color-coded by confidence level:</p>
+            <p><b>🟢 Green = HIGH confidence | 🟡 Yellow = MEDIUM confidence | 🔴 Red = LOW confidence</b></p>
             
-            <p><b>Color coding:</b> 🟢 Green = HIGH confidence | 🟡 Yellow = MEDIUM confidence | 🔴 Red = LOW confidence</p>
-            <p><b>Tip:</b> Enable editing in Excel to see detailed cell comments with validation information.</p>
+            <p><b>Visit <a href="https://eliyahu.ai/hyperplexity">eliyahu.ai/hyperplexity</a></b> to process more tables or refine your configuration.</p>
             
             <p><b>Questions or need help?</b> Simply reply to this email and our team will assist you.</p>
         </div>
         
         <div class="footer">
             <p>Best regards,<br>
-            The <a href="https://www.eliyahu.ai">Eliyahu.AI</a> Team</p>
+            The <a href="https://eliyahu.ai/hyperplexity">Eliyahu.AI</a> Team</p>
             
             <p><small>This email was sent because you requested validation results. 
             Your data is processed securely and is not stored beyond the validation session.</small></p>
