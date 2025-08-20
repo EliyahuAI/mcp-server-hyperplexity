@@ -741,6 +741,13 @@
         border-collapse: collapse;
         width: 100%;
         margin: 1em 0;
+        max-width: 100%;
+        table-layout: auto;
+    }
+    
+    .markdown-content {
+        overflow-x: auto;
+        max-width: 100%;
     }
 
     .markdown-content th, .markdown-content td {
@@ -1773,7 +1780,9 @@
                 if (previewContent && previewData.markdown_table) {
                     // Generate download URL for full preview
                     let fullPreviewUrl = '#';
-                    if (previewData.full_preview_url) {
+                    if (previewData.enhanced_download_url) {
+                        fullPreviewUrl = previewData.enhanced_download_url;
+                    } else if (previewData.full_preview_url) {
                         fullPreviewUrl = previewData.full_preview_url;
                     } else if (globalState.sessionId) {
                         // Generate preview download URL based on session
@@ -1783,9 +1792,7 @@
                     const headerHtml = `
                         <div class="message message-info">
                             <span class="message-icon">ℹ️</span>
-                            <span>The preview below is a light version of the Updated values. A richer preview can be downloaded 
-                            <a href="${fullPreviewUrl}" target="_blank" style="color: #1565c0; text-decoration: underline;">here</a> 
-                            or at the button below.</span>
+                            <span>The preview below is a light version of the Updated values. A richer preview can be downloaded at the button below.</span>
                         </div>
                     `;
                     
@@ -1799,7 +1806,7 @@
                 const actionsHtml = `
                     <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
                         <button type="button" class="std-button secondary" data-action="download-preview">
-                            📥 Download Preview
+                            📥 Download Rich Preview
                         </button>
                         <button type="button" class="std-button secondary" data-action="refine-config">
                             🔧 Refine Configuration
@@ -2898,24 +2905,53 @@
                         messagesContainer.innerHTML = `
                             <div class="message message-success" style="margin-bottom: 1rem;">
                                 <span class="message-icon">🎉</span>
-                                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-                                    <span>Your validation has been completed successfully${balanceText}.</span>
-                                    <div style="display: flex; gap: 8px;">
-                                        <button type="button" class="std-button secondary" style="padding: 6px 12px; font-size: 12px;" onclick="showConfidenceInfoModal()">
-                                            ℹ️ Info
-                                        </button>
-                                        <button class="std-button primary" onclick="downloadValidationResults()" style="padding: 6px 12px; font-size: 12px;">
-                                            📥 Download Results
-                                        </button>
+                                <div style="line-height: 1.6;">
+                                    <div style="margin-bottom: 8px;">
+                                        • Your validation has been completed successfully and emailed to you and available at the button below
+                                    </div>
+                                    <div style="margin-bottom: 8px;">
+                                        • Notice the Updated and Original sheets, color coded by confidence with green/yellow/red meaning high/medium/low confidence
+                                    </div>
+                                    <div style="margin-bottom: 8px;">
+                                        • If you want to change anything, refine the configuration and check out the preview
+                                    </div>
+                                    <div>
+                                        • Remaining balance: $${(globalState.accountBalance || 0).toFixed(2)}
                                     </div>
                                 </div>
                             </div>
                             <div style="display: flex; gap: 10px; margin-top: 1rem;">
+                                <button class="std-button primary" id="${cardId}-download-btn" style="flex: 1;">
+                                    <span class="button-text">📥 Download Results</span>
+                                </button>
+                                <button class="std-button secondary" id="${cardId}-refine-btn" style="flex: 1;">
+                                    <span class="button-text">🔧 Refine Configuration</span>
+                                </button>
+                            </div>
+                            <div style="display: flex; gap: 10px; margin-top: 0.5rem;">
                                 <button class="std-button secondary" onclick="window.location.reload()" style="flex: 1;">
                                     <span class="button-text">🔄 New Validation</span>
                                 </button>
                             </div>
                         `;
+                        
+                        // Add event listeners for the buttons after DOM update
+                        setTimeout(() => {
+                            const downloadBtn = document.getElementById('${cardId}-download-btn');
+                            const refineBtn = document.getElementById('${cardId}-refine-btn');
+                            
+                            if (downloadBtn) {
+                                downloadBtn.addEventListener('click', async () => {
+                                    await downloadValidationResults();
+                                });
+                            }
+                            
+                            if (refineBtn) {
+                                refineBtn.addEventListener('click', async () => {
+                                    await createRefinementCard();
+                                });
+                            }
+                        }, 100);
                     }
                 }
             }
@@ -3145,6 +3181,12 @@
                         </div>
                         <div id="${cardId}-code-section" style="display: none;">
                             <div class="privacy-checkbox">
+                                <input type="checkbox" id="${cardId}-terms" required>
+                                <label for="${cardId}-terms">
+                                    I agree to the <a href="https://eliyahu.ai/terms" target="_blank" style="color: var(--primary-color); text-decoration: underline;">Terms and Conditions</a>
+                                </label>
+                            </div>
+                            <div class="privacy-checkbox">
                                 <input type="checkbox" id="${cardId}-privacy">
                                 <label for="${cardId}-privacy">
                                     I accept the <a href="https://eliyahu.ai/privacy-notice" target="_blank">Privacy Notice</a>
@@ -3260,7 +3302,13 @@
 
             async function verifyCode(cardId, button) {
                 const code = document.getElementById(`${cardId}-code`).value.trim();
+                const termsCheckbox = document.getElementById(`${cardId}-terms`);
                 const privacyCheckbox = document.getElementById(`${cardId}-privacy`);
+                
+                if (!termsCheckbox.checked) {
+                    showMessage(`${cardId}-messages`, 'Please agree to the Terms and Conditions to continue', 'error');
+                    throw new Error('Terms not accepted');
+                }
                 
                 if (!privacyCheckbox.checked) {
                     showMessage(`${cardId}-messages`, 'Please accept the Privacy Notice to continue', 'error');
@@ -3708,12 +3756,12 @@
                     
                     // Parse enhanced metadata with proper created and last used dates
                     const createdDate = match.created_date ? new Date(match.created_date).toLocaleDateString() : 'Unknown';
-                    const lastUsedDate = match.last_used_date ? new Date(match.last_used_date).toLocaleDateString() : createdDate;
+                    const lastUsedDate = match.last_used_date ? new Date(match.last_used_date).toLocaleDateString() : null;
                     const usageType = match.usage_info?.type || 'unknown';
                     const verboseStatus = match.usage_info?.verbose_status || '';
                     
-                    // Show "Never used" if last used equals created (no actual usage)
-                    const displayLastUsed = (lastUsedDate === createdDate) ? 'Never used' : lastUsedDate;
+                    // Show "Never used" if no actual usage date exists
+                    const displayLastUsed = lastUsedDate ? lastUsedDate : 'Never used';
                     
                     // More accurate usage labels based on verbose_status
                     let usageIcon, usageLabel, usageDetail = '';
@@ -4498,8 +4546,8 @@
                         const matchScore = Math.round(match.match_score * 100);
                         const matchColor = matchScore >= 80 ? '#2d5a27' : matchScore >= 50 ? '#b8860b' : '#666';
                         const createdDate = match.created_date ? new Date(match.created_date).toLocaleDateString() : 'Unknown';
-                        const lastUsedDate = match.last_used_date ? new Date(match.last_used_date).toLocaleDateString() : createdDate;
-                        const displayLastUsed = (lastUsedDate === createdDate) ? 'Never used' : lastUsedDate;
+                        const lastUsedDate = match.last_used_date ? new Date(match.last_used_date).toLocaleDateString() : null;
+                        const displayLastUsed = lastUsedDate ? lastUsedDate : 'Never used';
                         
                         // Usage type
                         const usageType = match.usage_info?.type || 'unknown';
@@ -4731,7 +4779,7 @@
                 const card = createCard({
                     id: cardId,
                     icon: '🔧',
-                    title: 'Refine Configuration (Free)',
+                    title: 'Refine Configuration',
                     subtitle: 'Improve configuration based on preview results',
                     content,
                     buttons: [
@@ -4739,6 +4787,7 @@
                             text: 'Submit Refinement',
                             icon: '📤',
                             variant: 'primary',
+                            width: 'full',
                             callback: async (e) => {
                                 const button = e.target.closest('button');
                                 const input = document.getElementById(`${cardId}-refinement-input`).value.trim();
@@ -4769,11 +4818,10 @@
                     questionsToShow = globalState.currentConfig.clarifying_questions;
                 }
                 
-                let initialMessage = 'Based on the preview results, how would you like me to refine the configuration? ' +
-                    'You can ask me to adjust validation targets, modify search strategies, or change any other aspect of the configuration.';
+                let initialMessage = 'What did you like and not like about the preview results?';
                 
                 if (questionsToShow) {
-                    initialMessage += '\n\nHere are some specific questions to help guide your refinement:\n\n' + questionsToShow;
+                    initialMessage += '\n\nHere are some specific questions to consider:\n\n' + questionsToShow;
                 } else {
                 }
                 
@@ -5300,7 +5348,7 @@ Please answer these questions and then I'll generate your configuration and auto
                 }
                 
                 // First paragraph: Ask about preview-based changes
-                const initialMessage = `Based on the preview results that will be generated, do you want to change anything about the configuration?`;
+                const initialMessage = `What did you like and not like about the preview results?`;
                 await addChatMessage(cardId, 'ai', initialMessage);
                 
                 // Second paragraph: Show saved questions or generic options
@@ -5329,6 +5377,7 @@ Please answer these questions and then I'll generate your configuration and auto
                         text: 'Submit Refinement',
                         icon: '📤',
                         variant: 'secondary',
+                        width: 'full',
                         callback: async (e) => {
                             const button = e.target.closest('button');
                             const input = document.getElementById(`${cardId}-refinement-input`).value.trim();
@@ -5672,6 +5721,7 @@ Please answer these questions and then I'll generate your configuration and auto
                                     text: 'Submit Refinement',
                                     icon: '📤',
                                     variant: 'primary',
+                                    width: 'full',
                                     callback: async (e) => {
                                         const button = e.target.closest('button');
                                         const input = document.getElementById(`${cardId}-refinement-input`).value.trim();
@@ -5990,15 +6040,18 @@ Please answer these questions and then I'll generate your configuration and auto
                 content = `
                     <div class="message message-success" style="margin-bottom: 1rem;">
                         <span class="message-icon">🎉</span>
-                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-                            <span>Your validation has been completed successfully${balanceText}.</span>
-                            <div style="display: flex; gap: 8px;">
-                                <button type="button" class="std-button secondary" style="padding: 6px 12px; font-size: 12px;" onclick="showConfidenceInfoModal()">
-                                    ℹ️ Info
-                                </button>
-                                <button class="std-button primary" onclick="downloadValidationResults()" style="padding: 6px 12px; font-size: 12px;">
-                                    📥 Download Results
-                                </button>
+                        <div style="line-height: 1.6;">
+                            <div style="margin-bottom: 8px;">
+                                • Your validation has been completed successfully and emailed to you and available at the button below
+                            </div>
+                            <div style="margin-bottom: 8px;">
+                                • Notice the Updated and Original sheets, color coded by confidence with green/yellow/red meaning high/medium/low confidence
+                            </div>
+                            <div style="margin-bottom: 8px;">
+                                • If you want to change anything, refine the configuration and check out the preview
+                            </div>
+                            <div>
+                                • Remaining balance: $${(globalState.accountBalance || 0).toFixed(2)}
                             </div>
                         </div>
                     </div>
@@ -6006,10 +6059,24 @@ Please answer these questions and then I'll generate your configuration and auto
 
                 buttons = [
                     {
+                        text: 'Download Results',
+                        icon: '📥',
+                        variant: 'primary',
+                        width: 'half',
+                        callback: () => downloadValidationResults()
+                    },
+                    {
+                        text: 'Refine Configuration',
+                        icon: '🔧',
+                        variant: 'secondary',
+                        width: 'half',
+                        callback: () => createRefinementCard()
+                    },
+                    {
                         text: 'New Validation',
                         icon: '🔄',
                         variant: 'secondary',
-                        width: 1,
+                        width: 'full',
                         callback: () => window.location.reload()
                     }
                 ];

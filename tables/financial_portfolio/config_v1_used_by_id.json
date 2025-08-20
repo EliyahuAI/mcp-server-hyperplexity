@@ -1,0 +1,213 @@
+{
+  "general_notes": "Financial portfolio validation configuration for investment tracking. Emphasizes precision for numerical data and comprehensive search for news, projections, and investment recommendations. Configured for high-accuracy validation of market data with extensive news and analysis gathering.",
+  "default_model": "sonar-pro",
+  "default_search_context_size": "low",
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Company Identifiers",
+      "description": "Core company identification fields used for context in validation",
+      "model": "sonar-pro",
+      "search_context": "low"
+    },
+    {
+      "group_id": 1,
+      "group_name": "Market Data & Fundamentals",
+      "description": "Current market pricing, valuation metrics, and fundamental analysis data",
+      "model": "sonar-pro",
+      "search_context": "low"
+    },
+    {
+      "group_id": 2,
+      "group_name": "News & Analysis",
+      "description": "Latest news, market projections, and investment recommendations",
+      "model": "sonar-pro",
+      "search_context": "high"
+    }
+  ],
+  "validation_targets": [
+    {
+      "column": "Ticker_Symbol",
+      "description": "Stock ticker symbol for the company",
+      "importance": "ID",
+      "format": "string",
+      "examples": [
+        "AAPL",
+        "AMZN",
+        "BRK.B"
+      ],
+      "search_group": 0,
+      "notes": "Primary identifier for stock lookup"
+    },
+    {
+      "column": "Company_Name",
+      "description": "Full legal company name",
+      "importance": "ID",
+      "format": "string",
+      "examples": [
+        "Alphabet Inc. Class A",
+        "Alphabet Inc. Class C",
+        "Amazon.com Inc."
+      ],
+      "search_group": 0,
+      "notes": "Secondary identifier for company validation"
+    },
+    {
+      "column": "Asset_ID",
+      "description": "Unique asset identifier (CUSIP or similar)",
+      "importance": "HIGH",
+      "format": "string",
+      "examples": [
+        "US02079K3059",
+        "US0231351067",
+        "US0378331005"
+      ],
+      "search_group": 0,
+      "notes": "Unique financial instrument identifier"
+    },
+    {
+      "column": "Sector",
+      "description": "Industry sector classification",
+      "importance": "HIGH",
+      "format": "string",
+      "examples": [
+        "Communication Services",
+        "Consumer Discretionary",
+        "Consumer Staples"
+      ],
+      "search_group": 0,
+      "notes": "Standard industry classification"
+    },
+    {
+      "column": "Current_Price",
+      "description": "Current stock price in USD",
+      "importance": "CRITICAL",
+      "format": "decimal",
+      "examples": [
+        "153.92",
+        "166.12",
+        "167.89"
+      ],
+      "search_group": 1,
+      "notes": "Must be precise and current - falsifiable data"
+    },
+    {
+      "column": "Market_Cap_B",
+      "description": "Market capitalization in billions USD",
+      "importance": "CRITICAL",
+      "format": "decimal",
+      "examples": [
+        "1342.8",
+        "1598.4",
+        "2067.8"
+      ],
+      "search_group": 1,
+      "notes": "Must be precise and current - falsifiable data"
+    },
+    {
+      "column": "PE_Ratio",
+      "description": "Price-to-earnings ratio",
+      "importance": "CRITICAL",
+      "format": "decimal",
+      "examples": [
+        "11.2",
+        "23.1",
+        "24.7"
+      ],
+      "search_group": 1,
+      "notes": "Must be precise and current - falsifiable data"
+    },
+    {
+      "column": "Last_Updated",
+      "description": "Date when data was last updated",
+      "importance": "HIGH",
+      "format": "date",
+      "examples": [
+        "2024-12-15"
+      ],
+      "search_group": 1,
+      "notes": "Timestamp for data currency validation"
+    },
+    {
+      "column": "Latest News",
+      "description": "Recent news headlines and developments about the company",
+      "importance": "CRITICAL",
+      "format": "string",
+      "examples": [
+        "Recent earnings beat expectations",
+        "New product launch announced",
+        "Regulatory approval received"
+      ],
+      "search_group": 2,
+      "search_context_size": "high",
+      "notes": "Extensive search required - format as bullet points for latest developments"
+    },
+    {
+      "column": "Projections",
+      "description": "Trusted analyst projections and forecasts",
+      "importance": "CRITICAL",
+      "format": "string",
+      "examples": [
+        "Q1 2025 EPS estimate: $2.45",
+        "12-month price target: $180",
+        "Revenue growth forecast: 8%"
+      ],
+      "search_group": 2,
+      "search_context_size": "high",
+      "notes": "Focus on trusted analyst projections and forecasts from reputable sources"
+    },
+    {
+      "column": "Invest Now?",
+      "description": "Investment recommendation based on current analysis",
+      "importance": "CRITICAL",
+      "format": "string",
+      "examples": [
+        "Buy - Strong fundamentals",
+        "Hold - Wait for better entry",
+        "Sell - Overvalued"
+      ],
+      "search_group": 2,
+      "search_context_size": "high",
+      "notes": "Synthesize investment recommendations from trusted financial analysts and sources"
+    }
+  ],
+  "config_change_log": [
+    {
+      "timestamp": "2025-08-20T16:50:43.392303",
+      "action": "unified_generation",
+      "session_id": "session_20250820_164808_cc18517e",
+      "instructions": "Generate an optimal configuration for this data validation scenario. User provided these answers to clarifying questions: Table tracks companies to invest in, numerical data must be precise as it is falsifiable. Look extensively for latest news, keep that last few items in bullets. I want you to also look carefully for trusted projections and investment recommendations.",
+      "clarifying_questions": "1. For the numerical data validation (Current_Price, Market_Cap_B, PE_Ratio), what tolerance level should be acceptable for minor discrepancies between sources (e.g., \u00b11% for intraday price variations)?\n\n2. For the \"Latest News\" column, how many recent news items should be included, and what time frame defines \"latest\" (e.g., last 30 days, last quarter)?\n\n3. When gathering \"Projections,\" should the focus be on consensus estimates, or do you prefer projections from specific types of analysts (e.g., sell-side research, independent research firms)?\n\n4. For the \"Invest Now?\" recommendations, should these be based on technical analysis, fundamental analysis, or a combination of both, and should they include specific price targets or time horizons?",
+      "clarification_urgency": 0.4,
+      "reasoning": "",
+      "ai_summary": "I created a financial portfolio validation configuration with 3 search groups: Company Identifiers (Group 0) for ticker symbols and company details, Market Data & Fundamentals (Group 1) for precise numerical metrics, and News & Analysis (Group 2) for comprehensive news and investment insights. \n\nKey assumptions made: All numerical data (prices, market cap, PE ratios) are marked as CRITICAL importance since you emphasized precision for falsifiable data. The news, projections, and investment recommendation columns use high search context for extensive information gathering as requested. I structured the search groups to optimize for financial data sources where company identifiers, market metrics, and analytical content typically appear together.\n\nThe configuration addresses your requirements for precise numerical validation and extensive news/projection gathering, but would benefit from clarification on specific tolerances, timeframes, and analytical preferences to fine-tune the validation approach.",
+      "version": 1,
+      "model_used": "claude-sonnet-4-0",
+      "config_filename": "financial_portfolio_input_config_V01.json"
+    }
+  ],
+  "generation_metadata": {
+    "version": 1,
+    "last_updated": "2025-08-20T16:50:43.392314",
+    "total_interactions": 1,
+    "model_used": "claude-sonnet-4-0",
+    "saved_filename": "financial_portfolio_input_config_V01.json"
+  },
+  "storage_metadata": {
+    "version": 1,
+    "source": "used_by_id",
+    "session_id": "session_20250820_175043_8f289095",
+    "email": "eliyahu@eliyahu.ai",
+    "stored_at": "2025-08-20T17:51:45.580108",
+    "config_id": "session_20250820_175043_8f289095_v1_Financial_portfolio_valid",
+    "description": "Financial portfolio validation configuration for investment tracking. Emphasizes precision for numerical data and comprehensive search for news, projections, and investment recommendations. Configured for high-accuracy validation of market data with extensive news and analysis gathering.",
+    "original_name": "session_20250820_164808_cc18517e_v1_Financial_portfolio_valid",
+    "source_session": "session_20250820_173115_db8cf4b9",
+    "content_hash": "788cd8037e9cb02b62230014343f54bf",
+    "creation_method": "used_by_id",
+    "usage_count": 1,
+    "first_created": "2025-08-20T17:51:45.580108",
+    "metadata_version": "2.0",
+    "last_used": "2025-08-20T17:51:45.579866"
+  }
+}
