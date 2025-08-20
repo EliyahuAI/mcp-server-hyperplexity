@@ -43,6 +43,80 @@ class UnifiedS3Manager:
         
         return f"results/{domain}/{email_prefix}/{session_folder}/"
     
+    def _calculate_config_content_hash(self, config_data: Dict) -> str:
+        """
+        Calculate SHA256 hash of configuration content for deduplication.
+        Only includes validation targets and rules, excluding metadata like names, descriptions, etc.
+        """
+        try:
+            # Extract only the validation content, not metadata
+            validation_targets = config_data.get('validation_targets', [])
+            
+            # Normalize validation targets for consistent hashing
+            normalized_targets = []
+            for target in validation_targets:
+                if isinstance(target, dict):
+                    # Extract key validation fields, ignore metadata like names/descriptions
+                    normalized_target = {}
+                    
+                    # Core validation fields that affect behavior
+                    for field in ['column', 'name', 'column_name', 'validation_rules', 'required', 'data_type']:
+                        if field in target:
+                            value = target[field]
+                            # Normalize string values (case insensitive, strip whitespace)
+                            if isinstance(value, str):
+                                normalized_target[field] = value.lower().strip()
+                            else:
+                                normalized_target[field] = value
+                    
+                    if normalized_target:
+                        normalized_targets.append(normalized_target)
+                elif isinstance(target, str):
+                    # Simple string target
+                    normalized_targets.append(target.lower().strip())
+            
+            # Sort targets for consistent ordering
+            normalized_targets.sort(key=lambda x: json.dumps(x, sort_keys=True) if isinstance(x, dict) else str(x))
+            
+            # Include other validation settings that affect behavior
+            validation_content = {
+                'targets': normalized_targets
+            }
+            
+            # Include ALL fields that affect validation behavior (not just validation_targets)
+            validation_affecting_fields = [
+                'validation_mode', 'strictness', 'custom_rules', 'validation_settings',
+                'column_mappings', 'search_instructions', 'general_notes', 
+                'table_structure', 'processing_rules', 'output_format'
+            ]
+            
+            for field in validation_affecting_fields:
+                if field in config_data and config_data[field]:
+                    # Normalize string values for consistent hashing
+                    value = config_data[field]
+                    if isinstance(value, str):
+                        validation_content[field] = value.lower().strip()
+                    elif isinstance(value, dict):
+                        # Recursively normalize dict values
+                        normalized_dict = {}
+                        for k, v in value.items():
+                            if isinstance(v, str):
+                                normalized_dict[k.lower().strip()] = v.lower().strip()
+                            else:
+                                normalized_dict[k.lower().strip()] = v
+                        validation_content[field] = normalized_dict
+                    else:
+                        validation_content[field] = value
+            
+            # Create consistent hash - use 32 chars to reduce collision risk
+            content_str = json.dumps(validation_content, sort_keys=True)
+            full_hash = hashlib.sha256(content_str.encode('utf-8')).hexdigest()
+            return full_hash[:32]  # 32 chars for better collision resistance
+            
+        except Exception as e:
+            logger.warning(f"Failed to calculate content hash: {e}")
+            return f"error_{hash(str(config_data))}"[:32]
+    
     def store_excel_file(self, email: str, session_id: str, file_content: bytes, 
                         filename: str = None) -> Dict[str, Any]:
         """Store Excel file in session folder with _input suffix"""
@@ -89,23 +163,73 @@ class UnifiedS3Manager:
             }
     
     def store_config_file(self, email: str, session_id: str, config_data: Dict, 
-                         version: int = 1, source: str = 'user') -> Dict[str, Any]:
+                         version: int = 1, source: str = 'user', description: str = None,
+                         original_name: str = None, source_session: str = None, 
+                         usage_timestamp: str = None) -> Dict[str, Any]:
         """Store config file in session folder with versioning"""
         try:
             session_path = self.get_session_path(email, session_id)
             config_filename = f"config_v{version}_{source}.json"
             file_key = f"{session_path}{config_filename}"
             
-            # Add metadata to config
+            # Generate human-friendly config ID and description with uniqueness guarantee
+            base_config_id = f"{session_id}_v{version}"
+            
+            # Create safe description
+            desc_suffix = ""
+            if description:
+                desc_suffix = ''.join(c for c in description.replace(' ', '_') if c.isalnum() or c == '_')[:25]
+            elif config_data.get('general_notes'):
+                notes = config_data['general_notes']
+                desc_suffix = ''.join(c for c in notes.replace(' ', '_') if c.isalnum() or c == '_')[:25]
+            else:
+                # Generate description based on validation targets
+                targets = config_data.get('validation_targets', [])
+                if targets and len(targets) > 0:
+                    target_name = targets[0].get('column_name') or targets[0].get('column') or targets[0].get('name', 'data')
+                    desc_suffix = ''.join(c for c in target_name.replace(' ', '_') if c.isalnum() or c == '_')[:20]
+                else:
+                    desc_suffix = "validation"
+            
+            # Ensure uniqueness by adding timestamp suffix if needed
+            if desc_suffix:
+                config_id = f"{base_config_id}_{desc_suffix}"
+            else:
+                config_id = f"{base_config_id}_{datetime.now().strftime('%H%M%S')}"
+            
+            # Calculate and store content hash directly in the config for easy access
+            content_hash = self._calculate_config_content_hash(config_data)
+            
+            # Add comprehensive metadata including content tracking
+            now = datetime.now().isoformat()
+            storage_metadata = {
+                'version': version,
+                'source': source,
+                'session_id': session_id,
+                'email': email,
+                'stored_at': now,
+                'config_id': config_id,
+                'description': description or config_data.get('general_notes', ''),
+                'original_name': original_name,
+                'source_session': source_session,
+                # Enhanced tracking fields
+                'content_hash': content_hash,
+                'creation_method': source,
+                'usage_count': 1 if source in ['used_by_id', 'copied', 'applied'] else 0,
+                'first_created': now,  # Will be updated if we find earlier version
+                'metadata_version': '2.0'  # For future schema evolution
+            }
+            
+            # Add usage timestamp if this config is being used/applied
+            if usage_timestamp:
+                storage_metadata['last_used'] = usage_timestamp
+            elif source in ['used_by_id', 'copied', 'applied']:
+                # If it's being used but no explicit timestamp, use current time
+                storage_metadata['last_used'] = now
+                
             config_with_meta = {
                 **config_data,
-                'storage_metadata': {
-                    'version': version,
-                    'source': source,
-                    'session_id': session_id,
-                    'email': email,
-                    'stored_at': datetime.now().isoformat()
-                }
+                'storage_metadata': storage_metadata
             }
             
             self.s3_client.put_object(
@@ -126,7 +250,8 @@ class UnifiedS3Manager:
                 'success': True,
                 's3_key': file_key,
                 'session_path': session_path,
-                'version': version
+                'version': version,
+                'config_id': config_id
             }
             
         except Exception as e:
@@ -138,7 +263,8 @@ class UnifiedS3Manager:
     
     def create_session_info(self, email: str, session_id: str, table_name: str, 
                            current_config_version: int = 1, config_source: str = None, 
-                           source_session: str = None) -> Dict[str, Any]:
+                           source_session: str = None, config_id: str = None, 
+                           config_description: str = None) -> Dict[str, Any]:
         """Create or update session_info.json file"""
         try:
             session_path = self.get_session_path(email, session_id)
@@ -162,7 +288,9 @@ class UnifiedS3Manager:
                 config_entry = {
                     'version': current_config_version,
                     'source': config_source,
-                    'created_at': datetime.now().isoformat()
+                    'created_at': datetime.now().isoformat(),
+                    'config_id': config_id,
+                    'description': config_description
                 }
                 if source_session:
                     config_entry['source_session'] = source_session
@@ -630,3 +758,69 @@ class UnifiedS3Manager:
         except Exception as e:
             logger.error(f"Failed to get latest validation results: {e}")
             return None
+    
+    def get_config_by_id(self, config_id: str, email: str) -> Tuple[Optional[Dict], Optional[str]]:
+        """Get config by config ID, restricted to user's email"""
+        try:
+            # Parse config_id to extract session_id and version
+            # Format: {session_id}_v{version}_{description}
+            parts = config_id.split('_v')
+            if len(parts) < 2:
+                logger.warning(f"Invalid config_id format: {config_id}")
+                return None, None
+            
+            session_id = parts[0]
+            version_part = parts[1].split('_')[0]
+            
+            try:
+                version = int(version_part)
+            except ValueError:
+                logger.warning(f"Invalid version in config_id: {config_id}")
+                return None, None
+            
+            # Get session path and construct config key
+            session_path = self.get_session_path(email, session_id)
+            
+            # Try different config filename patterns (expanded to cover all source types)
+            potential_keys = [
+                f"{session_path}config_v{version}_user.json",
+                f"{session_path}config_v{version}_upload.json",
+                f"{session_path}config_v{version}_ai_generated.json",
+                f"{session_path}config_v{version}_copied_from_previous.json",
+                f"{session_path}config_v{version}_used_by_id.json"
+            ]
+            
+            # Note: auto_copied patterns have dynamic session IDs, will be found by S3 search below
+            
+            # Also search for any config with this version
+            response = self.s3_client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=f"{session_path}config_v{version}_"
+            )
+            
+            if 'Contents' in response:
+                for obj in response['Contents']:
+                    potential_keys.insert(0, obj['Key'])
+            
+            # Try to find and validate the config
+            for key in potential_keys:
+                try:
+                    config_response = self.s3_client.get_object(Bucket=self.bucket_name, Key=key)
+                    config_data = json.loads(config_response['Body'].read().decode('utf-8'))
+                    
+                    # Verify this config matches the requested ID
+                    stored_config_id = config_data.get('storage_metadata', {}).get('config_id')
+                    if stored_config_id == config_id:
+                        logger.info(f"Found config by ID: {config_id}")
+                        return config_data, key
+                        
+                except Exception as e:
+                    logger.debug(f"Failed to retrieve config from {key}: {e}")
+                    continue
+            
+            logger.warning(f"Config not found for ID: {config_id}")
+            return None, None
+            
+        except Exception as e:
+            logger.error(f"Failed to get config by ID: {e}")
+            return None, None

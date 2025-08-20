@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from interface_lambda.utils.helpers import create_response
-from interface_lambda.actions import status_check, generate_config_unified, email_validation, user_stats, config_validation, find_matching_config, copy_config, diagnostics, account_balance, payment_webhook, check_squarespace_orders
+from interface_lambda.actions import status_check, generate_config_unified, email_validation, user_stats, config_validation, find_matching_config, copy_config, diagnostics, account_balance, payment_webhook, check_squarespace_orders, use_config_by_id
 from interface_lambda.utils.parsing import parse_multipart_form_data
 from interface_lambda.actions import process_excel_unified
 
@@ -141,6 +141,8 @@ def handle(event, context):
                 return find_matching_config.handle_find_matching_config(request_data, context)
             elif action == 'copyConfig':
                 return copy_config.handle_copy_config(request_data, context)
+            elif action == 'useConfigById':
+                return use_config_by_id.handle_use_config_by_id(request_data, context)
             elif action == 'getAccountBalance':
                 return account_balance.handle(request_data, context)
             elif action == 'addCredits':

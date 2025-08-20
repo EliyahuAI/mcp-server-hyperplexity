@@ -5,8 +5,9 @@ Searches user's results folder for configs with validation targets that match up
 import logging
 import json
 import boto3
+import hashlib
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Set
 from pathlib import Path
 
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
@@ -15,6 +16,83 @@ from interface_lambda.utils.helpers import create_response
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+def calculate_content_hash(config_data: Dict) -> str:
+    """
+    Calculate SHA256 hash of configuration content for deduplication.
+    Only includes validation targets and rules, excluding metadata like names, descriptions, etc.
+    """
+    if not config_data:
+        return ""
+    
+    try:
+        # Extract only the validation content, not metadata
+        validation_targets = config_data.get('validation_targets', [])
+        
+        # Normalize validation targets for consistent hashing
+        normalized_targets = []
+        for target in validation_targets:
+            if isinstance(target, dict):
+                # Extract key validation fields, ignore metadata like names/descriptions
+                normalized_target = {}
+                
+                # Core validation fields that affect behavior
+                for field in ['column', 'name', 'column_name', 'validation_rules', 'required', 'data_type']:
+                    if field in target:
+                        value = target[field]
+                        # Normalize string values (case insensitive, strip whitespace)
+                        if isinstance(value, str):
+                            normalized_target[field] = value.lower().strip()
+                        else:
+                            normalized_target[field] = value
+                
+                if normalized_target:
+                    normalized_targets.append(normalized_target)
+            elif isinstance(target, str):
+                # Simple string target
+                normalized_targets.append(target.lower().strip())
+        
+        # Sort targets for consistent ordering
+        normalized_targets.sort(key=lambda x: json.dumps(x, sort_keys=True) if isinstance(x, dict) else str(x))
+        
+        # Include other validation settings that affect behavior
+        validation_content = {
+            'targets': normalized_targets
+        }
+        
+        # Include ALL fields that affect validation behavior (not just validation_targets)
+        validation_affecting_fields = [
+            'validation_mode', 'strictness', 'custom_rules', 'validation_settings',
+            'column_mappings', 'search_instructions', 'general_notes', 
+            'table_structure', 'processing_rules', 'output_format'
+        ]
+        
+        for field in validation_affecting_fields:
+            if field in config_data and config_data[field]:
+                # Normalize string values for consistent hashing
+                value = config_data[field]
+                if isinstance(value, str):
+                    validation_content[field] = value.lower().strip()
+                elif isinstance(value, dict):
+                    # Recursively normalize dict values
+                    normalized_dict = {}
+                    for k, v in value.items():
+                        if isinstance(v, str):
+                            normalized_dict[k.lower().strip()] = v.lower().strip()
+                        else:
+                            normalized_dict[k.lower().strip()] = v
+                    validation_content[field] = normalized_dict
+                else:
+                    validation_content[field] = value
+        
+        # Create consistent hash - use 32 chars to reduce collision risk
+        content_str = json.dumps(validation_content, sort_keys=True)
+        full_hash = hashlib.sha256(content_str.encode('utf-8')).hexdigest()
+        return full_hash[:32]  # 32 chars instead of 16 for better collision resistance
+        
+    except Exception as e:
+        logger.warning(f"Failed to calculate content hash: {e}")
+        return ""
 
 def extract_validation_targets(config_data: Dict) -> List[str]:
     """Extract column names from config validation_targets"""
@@ -249,6 +327,359 @@ def search_user_configs(email: str, storage_manager: UnifiedS3Manager) -> List[D
         logger.error(f"Failed to search user configs: {e}")
         return []
 
+def get_session_usage_info(email: str, source_session: str, storage_manager: UnifiedS3Manager) -> Dict[str, Any]:
+    """
+    Determine if a session was used for preview or full validation
+    """
+    try:
+        # Try DynamoDB first - more reliable
+        try:
+            import sys
+            import os
+            sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
+            from dynamodb_schemas import get_run_by_session_id
+            
+            run_data = get_run_by_session_id(source_session)
+            if run_data:
+                total_rows = float(run_data.get('total_rows', 0))
+                processed_rows = float(run_data.get('processed_rows', 0))
+                status = run_data.get('status', '')
+                verbose_status = run_data.get('verbose_status', '')
+                
+                # PRIMARY: Use verbose_status to determine usage type (most reliable)
+                usage_type = 'unknown'
+                is_error = False
+                
+                if verbose_status:
+                    verbose_lower = verbose_status.lower().strip()
+                    if verbose_lower.startswith('preview'):
+                        usage_type = 'preview'
+                    elif verbose_lower.startswith('validation'):
+                        usage_type = 'full_validation'
+                    else:
+                        # Other verbose_status values indicate errors/incomplete runs
+                        usage_type = 'error'
+                        is_error = True
+                        logger.debug(f"Session {source_session} has error status: {verbose_status}")
+                
+                # FALLBACK: If no verbose_status, use completion ratio (less reliable)
+                if usage_type == 'unknown':
+                    if total_rows > 0 and processed_rows > 0:
+                        completion_ratio = processed_rows / total_rows
+                        if completion_ratio >= 0.8 and status == 'COMPLETED':
+                            usage_type = 'full_validation'
+                        else:
+                            usage_type = 'preview'
+                    else:
+                        usage_type = 'unknown'
+                
+                return {
+                    'type': usage_type,
+                    'is_error': is_error,
+                    'total_rows': int(total_rows),
+                    'processed_rows': int(processed_rows),
+                    'completion_ratio': processed_rows / total_rows if total_rows > 0 else 0,
+                    'status': status,
+                    'verbose_status': verbose_status,
+                    'source': 'dynamodb'
+                }
+        except ImportError:
+            logger.debug("DynamoDB schemas not available for usage detection")
+        except Exception as e:
+            logger.debug(f"DynamoDB usage detection failed: {e}")
+        
+        # Fallback: Check S3 for .zip files in results folder
+        try:
+            domain = email.split('@')[-1] if '@' in email else 'unknown'
+            email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_plus_')[:20]
+            
+            # Sanitization
+            domain = domain.replace('..', '').replace('/', '')
+            email_prefix = email_prefix.replace('..', '').replace('/', '')
+            
+            results_prefix = f"results/{domain}/{email_prefix}/{source_session}/"
+            
+            s3_client = storage_manager.s3_client
+            response = s3_client.list_objects_v2(
+                Bucket=storage_manager.bucket_name,
+                Prefix=results_prefix,
+                MaxKeys=50
+            )
+            
+            # Check for .zip files (indicates full validation)
+            has_zip = False
+            if 'Contents' in response:
+                for obj in response['Contents']:
+                    if obj['Key'].endswith('.zip'):
+                        has_zip = True
+                        break
+            
+            usage_type = 'full_validation' if has_zip else 'preview'
+            return {
+                'type': usage_type,
+                'source': 's3_detection',
+                'has_results_zip': has_zip
+            }
+            
+        except Exception as e:
+            logger.debug(f"S3 usage detection failed: {e}")
+            
+        # Default fallback
+        return {
+            'type': 'unknown',
+            'source': 'fallback'
+        }
+        
+    except Exception as e:
+        logger.error(f"Usage info detection failed: {e}")
+        return {
+            'type': 'unknown',
+            'source': 'error',
+            'error': str(e)
+        }
+
+def find_original_creation_date(content_hash: str, current_config_data: Dict, current_file_date: datetime, 
+                              all_config_files: List[Dict], storage_manager: UnifiedS3Manager) -> Dict[str, Any]:
+    """
+    Find the original creation date for a configuration by tracing back through identical content.
+    
+    Rules:
+    1. Check original_version field to trace back to source
+    2. Find all configs with same content hash and use earliest stored_at
+    3. Fall back to earliest file modification date
+    4. Use current config date as final fallback
+    """
+    try:
+        current_metadata = current_config_data.get('storage_metadata', {})
+        
+        # Rule 1: Follow original_version chain if available
+        original_version = current_metadata.get('original_version') or current_metadata.get('original_name')
+        if original_version:
+            # Try to find the referenced original config
+            for config_file in all_config_files:
+                try:
+                    # Check if this could be the original config
+                    if (original_version in config_file['key'] or 
+                        original_version in config_file.get('filename', '') or
+                        original_version in str(config_file.get('session_path', ''))):
+                        
+                        # Load and verify it has the same content
+                        response = storage_manager.s3_client.get_object(
+                            Bucket=storage_manager.bucket_name, 
+                            Key=config_file['key']
+                        )
+                        orig_config_data = json.loads(response['Body'].read().decode('utf-8'))
+                        orig_hash = calculate_content_hash(orig_config_data)
+                        
+                        if orig_hash == content_hash:
+                            # Found the original! Get its date
+                            orig_metadata = orig_config_data.get('storage_metadata', {})
+                            if orig_metadata.get('stored_at'):
+                                orig_date = datetime.fromisoformat(orig_metadata['stored_at'].replace('Z', '+00:00'))
+                                return {
+                                    'original_date': orig_date,
+                                    'source': 'original_version_chain',
+                                    'original_config_id': orig_metadata.get('config_id', original_version),
+                                    'chain_length': 1
+                                }
+                            else:
+                                # Use file modification date as fallback
+                                return {
+                                    'original_date': config_file['last_modified'],
+                                    'source': 'original_version_file_date',
+                                    'original_config_id': orig_metadata.get('config_id', original_version),
+                                    'chain_length': 1
+                                }
+                except Exception as e:
+                    logger.debug(f"Error checking original version {original_version}: {e}")
+                    continue
+        
+        # Rule 2: Find all configs with same content hash and use earliest stored_at
+        earliest_stored_date = None
+        earliest_config_id = None
+        configs_checked = 0
+        
+        for config_file in all_config_files:
+            try:
+                # Load config and get stored hash
+                response = storage_manager.s3_client.get_object(
+                    Bucket=storage_manager.bucket_name, 
+                    Key=config_file['key']
+                )
+                other_config_data = json.loads(response['Body'].read().decode('utf-8'))
+                other_metadata = other_config_data.get('storage_metadata', {})
+                other_hash = other_metadata.get('content_hash', '')
+                
+                # Fallback to calculation if hash not stored
+                if not other_hash:
+                    other_hash = calculate_content_hash(other_config_data)
+                
+                if other_hash == content_hash:
+                    configs_checked += 1
+                    # other_metadata already defined above
+                    
+                    if other_metadata.get('stored_at'):
+                        stored_date = datetime.fromisoformat(other_metadata['stored_at'].replace('Z', '+00:00'))
+                        if earliest_stored_date is None or stored_date < earliest_stored_date:
+                            earliest_stored_date = stored_date
+                            earliest_config_id = other_metadata.get('config_id', 'unknown')
+                
+                # Limit search to avoid performance issues
+                if configs_checked >= 10:
+                    break
+                    
+            except Exception as e:
+                logger.debug(f"Error checking config {config_file['key']} for hash matching: {e}")
+                continue
+        
+        if earliest_stored_date:
+            return {
+                'original_date': earliest_stored_date,
+                'source': 'content_hash_search',
+                'original_config_id': earliest_config_id,
+                'configs_with_same_content': configs_checked
+            }
+        
+        # Rule 3: Fall back to earliest file modification date among matching configs
+        earliest_file_date = current_file_date
+        earliest_file_config = None
+        
+        for config_file in all_config_files:
+            try:
+                response = storage_manager.s3_client.get_object(
+                    Bucket=storage_manager.bucket_name, 
+                    Key=config_file['key']
+                )
+                other_config_data = json.loads(response['Body'].read().decode('utf-8'))
+                other_hash = calculate_content_hash(other_config_data)
+                
+                if other_hash == content_hash:
+                    if config_file['last_modified'] < earliest_file_date:
+                        earliest_file_date = config_file['last_modified']
+                        earliest_file_config = config_file
+                        
+            except Exception as e:
+                continue
+        
+        if earliest_file_config:
+            return {
+                'original_date': earliest_file_date,
+                'source': 'file_modification_date',
+                'original_config_id': earliest_file_config.get('filename', 'unknown')
+            }
+        
+        # Rule 4: Final fallback - use current config date
+        current_stored_date = current_file_date
+        if current_metadata.get('stored_at'):
+            try:
+                current_stored_date = datetime.fromisoformat(current_metadata['stored_at'].replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                pass
+                
+        return {
+            'original_date': current_stored_date,
+            'source': 'current_config_fallback',
+            'original_config_id': current_metadata.get('config_id', 'current')
+        }
+        
+    except Exception as e:
+        logger.error(f"Error finding original creation date: {e}")
+        return {
+            'original_date': current_file_date,
+            'source': 'error_fallback',
+            'error': str(e)
+        }
+
+def find_last_used_date(content_hash: str, current_config_data: Dict, all_config_files: List[Dict], 
+                       storage_manager: UnifiedS3Manager) -> datetime:
+    """
+    Find the most recent usage date for a configuration by looking at all instances with same content.
+    
+    Logic:
+    1. Check all configs with same content hash
+    2. Look for usage indicators in storage_metadata (last_used, applied_at, etc.)
+    3. Fall back to file modification dates of configs with same content
+    4. Use creation date as final fallback
+    """
+    try:
+        latest_usage_date = None
+        current_metadata = current_config_data.get('storage_metadata', {})
+        
+        # Check current config's usage metadata first
+        for usage_field in ['last_used', 'applied_at', 'used_at', 'copied_at']:
+            if current_metadata.get(usage_field):
+                try:
+                    usage_date = datetime.fromisoformat(current_metadata[usage_field].replace('Z', '+00:00'))
+                    if latest_usage_date is None or usage_date > latest_usage_date:
+                        latest_usage_date = usage_date
+                except (ValueError, AttributeError):
+                    continue
+        
+        # Search through all configs with same content for usage dates
+        configs_checked = 0
+        for config_file in all_config_files:
+            try:
+                # Don't check too many files for performance
+                if configs_checked >= 10:
+                    break
+                    
+                # Load config and verify same content
+                response = storage_manager.s3_client.get_object(
+                    Bucket=storage_manager.bucket_name, 
+                    Key=config_file['key']
+                )
+                other_config_data = json.loads(response['Body'].read().decode('utf-8'))
+                other_hash = calculate_content_hash(other_config_data)
+                
+                if other_hash == content_hash:
+                    configs_checked += 1
+                    other_metadata = other_config_data.get('storage_metadata', {})
+                    
+                    # Check for usage timestamps in metadata
+                    for usage_field in ['last_used', 'applied_at', 'used_at', 'copied_at']:
+                        if other_metadata.get(usage_field):
+                            try:
+                                usage_date = datetime.fromisoformat(other_metadata[usage_field].replace('Z', '+00:00'))
+                                if latest_usage_date is None or usage_date > latest_usage_date:
+                                    latest_usage_date = usage_date
+                                    logger.debug(f"Found usage date {usage_date} in {config_file['filename']}")
+                            except (ValueError, AttributeError):
+                                continue
+                    
+                    # Also consider file modification date as potential usage indicator
+                    file_mod_date = config_file['last_modified']
+                    if isinstance(file_mod_date, str):
+                        try:
+                            file_mod_date = datetime.fromisoformat(file_mod_date.replace('Z', '+00:00'))
+                        except:
+                            continue
+                    
+                    if latest_usage_date is None or file_mod_date > latest_usage_date:
+                        latest_usage_date = file_mod_date
+                    
+            except Exception as e:
+                logger.debug(f"Error checking usage date for {config_file['key']}: {e}")
+                continue
+        
+        # If we found usage dates, return the latest one
+        if latest_usage_date:
+            return latest_usage_date
+        
+        # Fallback: use current config's stored_at date
+        if current_metadata.get('stored_at'):
+            try:
+                return datetime.fromisoformat(current_metadata['stored_at'].replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                pass
+        
+        # Final fallback: current time (shouldn't happen but prevents errors)
+        return datetime.now(timezone.utc)
+        
+    except Exception as e:
+        logger.error(f"Error finding last used date: {e}")
+        # Return current time as error fallback
+        return datetime.now(timezone.utc)
+
 def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[str, Any]:
     """
     Find config files that match the uploaded table's column structure
@@ -311,10 +742,11 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
         for i, cf in enumerate(config_files[:3]):
             logger.debug(f"  {i+1}. {cf['filename']} - {cf['last_modified']} - {cf['key']}")
         
-        # Check the most recent config first for perfect match optimization
+        # Check configs and collect up to 5 perfect matches or best matches
         matches = []
+        perfect_matches = []
         s3_client = storage_manager.s3_client
-        perfect_match_found = False
+        seen_content_hashes: Set[str] = set()  # For deduplication
         
         for i, config_file in enumerate(config_files):
             try:
@@ -329,6 +761,22 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
                     continue
                 
                 logger.debug(f"Checking config {config_file['filename']}: {len(config_columns)} columns")
+                
+                # Get content hash from stored metadata (calculated when config was stored)
+                storage_metadata = config_data.get('storage_metadata', {})
+                content_hash = storage_metadata.get('content_hash', '')
+                
+                # Fallback: calculate hash if not stored (for older configs)
+                if not content_hash:
+                    content_hash = calculate_content_hash(config_data)
+                
+                # Skip if we've already seen this exact configuration content
+                if content_hash and content_hash in seen_content_hashes:
+                    logger.debug(f"Skipping duplicate config content with hash {content_hash}: {config_file['filename']}")
+                    continue
+                    
+                if content_hash:
+                    seen_content_hashes.add(content_hash)
                 
                 # Calculate match score
                 match_score = calculate_column_match_score(table_columns, config_columns)
@@ -351,13 +799,43 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
                 path_parts = config_file['key'].split('/')
                 source_session = path_parts[-2] if len(path_parts) >= 2 else 'unknown'
                 
-                # Create download link
-                download_url = storage_manager.create_public_download_link(
+                # Extract config ID and description from storage metadata
+                storage_metadata = config_data.get('storage_metadata', {})
+                config_id = storage_metadata.get('config_id')
+                
+                # Generate fallback config_id if not present
+                if not config_id:
+                    version = storage_metadata.get('version', 1)
+                    config_id = f"{source_session}_v{version}_legacy"
+                
+                description = storage_metadata.get('description') or config_data.get('general_notes', 'No description available')
+                
+                # Get usage information for this session
+                usage_info = get_session_usage_info(email, source_session, storage_manager)
+                
+                # FILTER OUT ERROR CONFIGURATIONS - don't offer configs from failed runs
+                if usage_info.get('is_error', False) or usage_info.get('type') == 'error':
+                    logger.debug(f"Skipping error config from session {source_session}: {usage_info.get('verbose_status', 'unknown error')}")
+                    continue
+                
+                # Find the original creation date for this configuration content
+                original_date_info = find_original_creation_date(
+                    content_hash, 
                     config_data, 
-                    f"config_{source_session}_{datetime.now().strftime('%Y%m%d')}.json"
+                    config_file['last_modified'], 
+                    config_files, 
+                    storage_manager
                 )
                 
-                matches.append({
+                # Use original creation date, not just this instance's date
+                created_date = original_date_info['original_date']
+                original_config_id = original_date_info.get('original_config_id', 'unknown')
+                creation_source = original_date_info.get('source', 'unknown')
+                
+                # Find the most recent usage date for this configuration content
+                last_used_date = find_last_used_date(content_hash, config_data, config_files, storage_manager)
+                
+                match_data = {
                     'config_key': config_file['key'],
                     'config_data': config_data,
                     'match_score': match_score,
@@ -365,40 +843,57 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
                     'total_columns': len(config_columns),
                     'session_path': config_file['session_path'],
                     'last_modified': config_file['last_modified'].isoformat(),
-                    'download_url': download_url,
                     'source_session': source_session,
-                    'config_filename': config_file['filename']
-                })
+                    'config_filename': config_file['filename'],
+                    'config_id': config_id,
+                    'description': description,
+                    # Enhanced metadata with original creation tracking
+                    'created_date': created_date.isoformat() if hasattr(created_date, 'isoformat') else str(created_date),
+                    'last_used_date': last_used_date.isoformat() if hasattr(last_used_date, 'isoformat') else str(last_used_date),
+                    'usage_info': usage_info,
+                    'content_hash': content_hash,
+                    'version': storage_metadata.get('version', 1),
+                    'original_name': storage_metadata.get('original_name'),
+                    'source': storage_metadata.get('source', 'unknown'),
+                    # Original creation tracking
+                    'original_config_id': original_config_id,
+                    'creation_source': creation_source,
+                    'original_date_info': original_date_info
+                }
                 
-                # Check for perfect match - if found, prioritize it and stop searching
+                # Separate perfect matches from regular matches
                 if match_score >= 1.0:
                     logger.info(f"PERFECT MATCH FOUND with score {match_score} in config {config_file['key']}")
-                    perfect_match_found = True
+                    perfect_matches.append(match_data)
                     
-                    # For perfect matches, we can skip the rest of the configs
-                    # since we already sorted by most recent first
-                    logger.debug(f"Stopping search after finding perfect match (checked {i+1} of {len(config_files)} configs)")
-                    break
+                    # Continue searching for up to 5 perfect matches
+                    if len(perfect_matches) >= 5:
+                        logger.info(f"Found 5 perfect matches, stopping search at config {i+1}")
+                        break
+                else:
+                    matches.append(match_data)
                     
-                # Early termination optimization: if this is the first (most recent) config
-                # and it's not a perfect match, we still need to check others
-                # But if we've found any decent matches and checked enough configs, consider stopping
-                if i >= 10 and matches and all(m['match_score'] < 0.9 for m in matches):
-                    logger.info(f"Stopping search after checking {i+1} configs - no strong matches found")
+                # Early termination for regular matches if no perfect matches and we have enough regular matches
+                if len(perfect_matches) == 0 and len(matches) >= 10 and i >= 20:
+                    logger.info(f"Stopping search after checking {i+1} configs - found sufficient regular matches")
                     break
                 
             except Exception as e:
                 logger.error(f"Error processing config {config_file['key']}: {e}")
                 continue
         
-        # Sort matches by score first, but give bonus to very recent configs
-        # For configs within the last 24 hours, add 0.05 to score for sorting purposes only
+        # Combine and sort matches: perfect matches first, then by score and recency
         now = datetime.now(timezone.utc)
         yesterday = now - timedelta(hours=24)
         
         def sort_key(match):
             base_score = match['match_score']
-            last_modified = datetime.fromisoformat(match['last_modified'].replace('Z', '+00:00'))
+            try:
+                last_modified_str = match['last_modified'].replace('Z', '+00:00')
+                last_modified = datetime.fromisoformat(last_modified_str)
+            except (ValueError, AttributeError):
+                # Fallback to epoch if date parsing fails
+                last_modified = datetime.fromtimestamp(0, tz=timezone.utc)
             
             # Give slight bonus to very recent configs (within 24 hours)
             if last_modified > yesterday:
@@ -409,26 +904,40 @@ def find_matching_configs(email: str, session_id: str, limit: int = 5) -> Dict[s
             # Sort primarily by score+bonus, then by date for final tiebreaker
             return (base_score + recency_bonus, last_modified)
         
+        # Sort perfect matches by recency (since they all have score 1.0)
+        perfect_matches.sort(key=lambda x: datetime.fromisoformat(x['last_modified'].replace('Z', '+00:00')), reverse=True)
+        
+        # Sort regular matches by score and recency
         matches.sort(key=sort_key, reverse=True)
         
-        # Apply limit after collecting all valid matches
-        matches = matches[:limit]
+        # Combine: if we have perfect matches, use up to 5 of them
+        # If we have < 5 perfect matches, fill remaining slots with best regular matches
+        final_matches = []
+        if perfect_matches:
+            final_matches.extend(perfect_matches[:5])
+            remaining_slots = limit - len(final_matches)
+            if remaining_slots > 0:
+                final_matches.extend(matches[:remaining_slots])
+        else:
+            final_matches = matches[:limit]
         
-        logger.info(f"Found {len(matches)} matching configs out of {len(config_files)} total configs")
+        logger.info(f"Found {len(perfect_matches)} perfect matches and {len(matches)} regular matches, returning {len(final_matches)} total matches")
         
         # Special handling for perfect matches
         result = {
             'success': True,
-            'matches': matches,
+            'matches': final_matches,
             'table_columns': table_columns,
-            'total_configs_searched': len(config_files)
+            'total_configs_searched': len(config_files),
+            'perfect_matches_found': len(perfect_matches),
+            'regular_matches_found': len(matches)
         }
         
-        # If we found a perfect match, mark it for auto-selection
-        if perfect_match_found and matches and matches[0]['match_score'] >= 1.0:
+        # If we found perfect matches, mark the first one for auto-selection
+        if perfect_matches and final_matches and final_matches[0]['match_score'] >= 1.0:
             result['perfect_match'] = True
-            result['auto_select_config'] = matches[0]
-            logger.info(f"Perfect match found - suggesting auto-selection of config: {matches[0]['config_filename']}")
+            result['auto_select_config'] = final_matches[0]
+            logger.info(f"Perfect matches found - suggesting auto-selection of config: {final_matches[0]['config_id']}")
         else:
             result['perfect_match'] = False
             

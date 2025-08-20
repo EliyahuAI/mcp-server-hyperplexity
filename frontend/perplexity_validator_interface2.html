@@ -879,6 +879,68 @@
         }
     }
 
+    /* Configuration ID Display Styles */
+    .config-id-display {
+        background: linear-gradient(135deg, #f0f8ff 0%, #e8f4fd 100%);
+        border: 1px solid #b3d9ff;
+        border-radius: 8px;
+        padding: 16px;
+        margin: 12px 0;
+        font-family: var(--font-family);
+    }
+
+    .config-id-display code {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 8px 12px;
+        font-family: 'Courier New', 'Monaco', monospace;
+        font-size: 14px;
+        font-weight: bold;
+        color: #1a472a;
+        display: inline-block;
+        margin: 4px 0;
+        word-break: break-all;
+    }
+
+    .config-id-display .config-id-label {
+        font-weight: bold;
+        color: #2c5530;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+    }
+
+    .config-id-display .config-id-help {
+        font-size: 13px;
+        color: #555;
+        line-height: 1.4;
+        margin-top: 8px;
+    }
+
+    .config-id-display .config-id-help div {
+        margin-bottom: 4px;
+    }
+
+    /* Enhanced button styling for config actions */
+    .config-action-primary {
+        background: var(--primary-color) !important;
+        border: 2px solid var(--primary-color) !important;
+        color: white !important;
+        font-weight: bold !important;
+        font-size: 16px !important;
+        padding: 12px 20px !important;
+        border-radius: var(--border-radius) !important;
+        transition: var(--transition) !important;
+    }
+
+    .config-action-primary:hover {
+        background: var(--primary-hover) !important;
+        border-color: var(--primary-hover) !important;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
     /* Balance Notification Styles */
     .balance-notification {
         position: fixed;
@@ -1706,10 +1768,28 @@
                 }
                 resultsEl.style.display = 'block';
 
-                // Render markdown table
+                // Render markdown table with header
                 const previewContent = document.getElementById(`${cardId}-preview-content`);
                 if (previewContent && previewData.markdown_table) {
-                    previewContent.innerHTML = renderMarkdown(previewData.markdown_table);
+                    const headerHtml = `
+                        <div style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid #007bff;">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <strong>Preview: Summary of Updated Values</strong>
+                                <button type="button" class="std-button secondary" style="padding: 4px 8px; font-size: 12px;" onclick="showConfidenceInfoModal()">
+                                    ℹ️ Info
+                                </button>
+                            </div>
+                            <div style="font-size: 14px; color: #666; margin-top: 5px;">
+                                This shows a preview of how your data will be updated and validated. The full results will include Updated, Original, and Details sheets.
+                            </div>
+                            <div style="display: flex; gap: 10px; margin-top: 10px; justify-content: flex-end;">
+                                <button type="button" class="std-button secondary" style="padding: 6px 12px; font-size: 12px;" onclick="downloadPreviewResults(${JSON.stringify(previewData).replace(/"/g, '&quot;')})">
+                                    📥 Download Preview
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    previewContent.innerHTML = headerHtml + renderMarkdown(previewData.markdown_table);
                 }
 
                 // Show cost estimates
@@ -1788,7 +1868,7 @@
                 // Show action buttons
                 createButtonRow(`${cardId}-buttons`, [
                     {
-                        text: 'Refine Configuration',
+                        text: 'Refine Configuration (Free)',
                         icon: '🔧',
                         variant: 'secondary',
                         width: 1,
@@ -2794,11 +2874,23 @@
                         messagesContainer.innerHTML = `
                             <div class="message message-success" style="margin-bottom: 1rem;">
                                 <span class="message-icon">🎉</span>
-                                <span>Your validation has been completed successfully. Results have been sent to your email${balanceText}.</span>
+                                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                                    <span>Your validation has been completed successfully${balanceText}.</span>
+                                    <div style="display: flex; gap: 8px;">
+                                        <button type="button" class="std-button secondary" style="padding: 6px 12px; font-size: 12px;" onclick="showConfidenceInfoModal()">
+                                            ℹ️ Info
+                                        </button>
+                                        <button class="std-button primary" onclick="downloadValidationResults()" style="padding: 6px 12px; font-size: 12px;">
+                                            📥 Download Results
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
-                            <button class="std-button primary" onclick="window.location.reload()" style="margin-top: 1rem;">
-                                <span class="button-text">🔄 New Validation</span>
-                            </button>
+                            <div style="display: flex; gap: 10px; margin-top: 1rem;">
+                                <button class="std-button secondary" onclick="window.location.reload()" style="flex: 1;">
+                                    <span class="button-text">🔄 New Validation</span>
+                                </button>
+                            </div>
                         `;
                     }
                 }
@@ -2826,17 +2918,7 @@
                         questions = data.config.clarifying_questions;
                     } else if (data.response_data && data.response_data.clarifying_questions) {
                         questions = data.response_data.clarifying_questions;
-                    } else if (data.download_url) {
-                        // If no direct questions found, try to fetch the full config from download URL
-                        try {
-                            const configResponse = await fetch(data.download_url);
-                            const fullConfig = await configResponse.json();
-                            questions = getQuestionsFromChangeLog(fullConfig);
-                            if (questions) {
-                            }
-                        } catch (error) {
-                            console.error('Failed to fetch config from download URL:', error);
-                        }
+                    // Config data should now come directly from API response
                     }
                     
                     if (questions) {
@@ -2848,20 +2930,31 @@
                     
                     await addChatMessage(cardId, 'ai', aiMessage);
                     
-                    // Add download button if URL available
-                    if (data.download_url) {
+                    // Add config ID display if available
+                    if (data.config_id || data.session_id) {
                         const chatContainer = document.getElementById(`${cardId}-chat`);
                         if (chatContainer) {
-                            const downloadDiv = document.createElement('div');
-                            downloadDiv.className = 'chat-message ai';
+                            const configIdDiv = document.createElement('div');
+                            configIdDiv.className = 'chat-message ai';
                             const version = data.config_version || 1;
-                            downloadDiv.innerHTML = `
-                                <button class="std-button secondary" style="margin-top: 8px;" 
-                                        onclick="window.viewConfigInNewTab('${data.download_url}', '${data.session_id || 'generated'}')">
-                                    📥 Download Configuration v${version}
-                                </button>
+                            const configId = data.config_id || `${data.session_id}_v${version}`;
+                            configIdDiv.innerHTML = `
+                                <div class="config-id-display" style="margin-top: 16px; padding: 16px; background: linear-gradient(135deg, #f0f8ff 0%, #e8f4fd 100%); border-radius: 8px; border: 1px solid #b3d9ff;">
+                                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                                        <span style="font-size: 18px; margin-right: 8px;">🆔</span>
+                                        <strong style="color: #2c5530;">Configuration ID Generated</strong>
+                                    </div>
+                                    <div style="background: white; padding: 12px; border-radius: 4px; border: 1px solid #ddd; margin-bottom: 8px;">
+                                        <code style="font-size: 16px; font-weight: bold; color: #1a472a; font-family: 'Courier New', monospace;">${configId}</code>
+                                    </div>
+                                    <div style="font-size: 14px; color: #555; line-height: 1.4;">
+                                        <div style="margin-bottom: 4px;">💾 <strong>Save this ID</strong> - it will be included in your validation results email</div>
+                                        <div style="margin-bottom: 4px;">🔄 <strong>Reuse anywhere</strong> - enter this ID to apply the same configuration to future validations</div>
+                                        <div>🔒 <strong>Secure</strong> - share this ID safely without exposing configuration details</div>
+                                    </div>
+                                </div>
                             `;
-                            chatContainer.appendChild(downloadDiv);
+                            chatContainer.appendChild(configIdDiv);
                         }
                     }
                     
@@ -3510,8 +3603,8 @@
                     } else {
                         const totalFound = result.matches ? result.matches.length : 0;
                         const message = totalFound > 0 ?
-                                      `Found ${totalFound} previous configs but none match well enough (need ≥80% match). You can upload a config file or create one with AI.` :
-                                      'No matching configurations found from your previous sessions. You can upload a config file or create one with AI.';
+                                      `Found ${totalFound} previous configs but none match well enough (need ≥80% match). Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.` :
+                                      'No matching configurations found from your previous sessions. Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.';
                         
                         showMessage(`${cardId}-messages`, message, 'info');
                         // Reset button
@@ -3540,8 +3633,8 @@
                         const totalMatches = (globalState.matchingConfigs && globalState.matchingConfigs.matches) ? 
                                            globalState.matchingConfigs.matches.length : 0;
                         const message = totalMatches > 0 ? 
-                                       `Found ${totalMatches} previous configs but none match well enough (need ≥80% match). You can upload a config file or create one with AI.` :
-                                       'No matching configurations available. You can upload a config file or create one with AI.';
+                                       `Found ${totalMatches} previous configs but none match well enough (need ≥80% match). Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.` :
+                                       'No matching configurations available. Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.';
                         
                         showMessage(`${cardId}-messages`, message, 'info');
                         // Reset button
@@ -3590,31 +3683,73 @@
                     const matchScore = Math.round(match.match_score * 100);
                     const matchColor = matchScore >= 80 ? '#2d5a27' : matchScore >= 50 ? '#b8860b' : '#666';
                     
+                    // Parse enhanced metadata with proper created and last used dates
+                    const createdDate = match.created_date ? new Date(match.created_date).toLocaleDateString() : 'Unknown';
+                    const lastUsedDate = match.last_used_date ? new Date(match.last_used_date).toLocaleDateString() : createdDate;
+                    const usageType = match.usage_info?.type || 'unknown';
+                    const verboseStatus = match.usage_info?.verbose_status || '';
+                    
+                    // Show "Never used" if last used equals created (no actual usage)
+                    const displayLastUsed = (lastUsedDate === createdDate) ? 'Never used' : lastUsedDate;
+                    
+                    // More accurate usage labels based on verbose_status
+                    let usageIcon, usageLabel, usageDetail = '';
+                    if (usageType === 'full_validation') {
+                        usageIcon = '🔍';
+                        usageLabel = 'Full Validation';
+                        usageDetail = verboseStatus ? ` (${verboseStatus})` : '';
+                    } else if (usageType === 'preview') {
+                        usageIcon = '👁️';
+                        usageLabel = 'Preview Only';
+                        usageDetail = verboseStatus ? ` (${verboseStatus})` : '';
+                    } else if (usageType === 'error') {
+                        // This shouldn't appear since we filter them out, but just in case
+                        usageIcon = '⚠️';
+                        usageLabel = 'Error';
+                        usageDetail = verboseStatus ? ` (${verboseStatus})` : '';
+                    } else {
+                        usageIcon = '❓';
+                        usageLabel = 'Unknown';
+                        usageDetail = '';
+                    }
+                    
+                    const configId = match.config_id || match.original_name || `${match.source_session}_v${match.version || 1}`;
+                    
                     matchElement.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <div style="font-weight: bold; color: ${matchColor};">
-                                ${matchScore}% Match • ${match.matching_columns.length} columns
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                            <div>
+                                <div style="font-weight: bold; color: ${matchColor}; font-size: 16px; margin-bottom: 4px;">
+                                    ${matchScore}% Match • ${match.matching_columns.length}/${match.total_columns} columns
+                                </div>
+                                <div style="font-size: 13px; color: #666; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                                    <span>📅 Created: ${createdDate}</span>
+                                    <span title="${usageDetail}">${usageIcon} ${usageLabel}</span>
+                                </div>
                             </div>
-                            <div style="font-size: 12px; color: #666;">
-                                ${new Date(match.last_modified).toLocaleDateString()}
+                            <div style="text-align: right; font-size: 12px; color: #666;">
+                                <div style="margin-bottom: 2px;">Last Used: ${displayLastUsed}</div>
+                                <div style="color: #999;">v${match.version || 1}</div>
                             </div>
                         </div>
-                        <div style="margin-bottom: 8px; font-size: 14px;">
-                            <strong>Matching columns:</strong> ${match.matching_columns.join(', ')}
+                        
+                        <div style="background: #f8f9fa; border-radius: 6px; padding: 10px; margin-bottom: 10px;">
+                            <div style="margin-bottom: 6px; font-size: 14px;">
+                                <strong>Config ID:</strong> 
+                                <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px; font-size: 13px; font-family: monospace;">${configId}</code>
+                            </div>
+                            <div style="margin-bottom: 6px; font-size: 14px;">
+                                <strong>Description:</strong> ${match.description || 'No description available'}
+                            </div>
+                            <div style="font-size: 14px;">
+                                <strong>Matching columns:</strong> 
+                                <span style="color: #28a745; font-weight: 500;">${match.matching_columns.slice(0, 3).join(', ')}${match.matching_columns.length > 3 ? ` (+${match.matching_columns.length - 3} more)` : ''}</span>
+                            </div>
                         </div>
-                        <div style="font-size: 12px; color: #666;">
-                            From session: ${match.source_session} • ${match.total_columns} total columns
-                        </div>
-                        <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
-                            <button class="std-button primary" style="flex: 1; min-width: 120px;" onclick="useRecentConfig('${cardId}', '${match.config_key}', '${match.source_session}')">
-                                <span class="button-text">✅ Use Config</span>
+                        
+                        <div style="margin-top: 12px;">
+                            <button class="std-button primary config-action-primary" style="width: 100%; background: var(--primary-color); border: 2px solid var(--primary-color); font-weight: bold; font-size: 16px; padding: 12px 20px;" onclick="useConfigById('${cardId}', '${configId}')">
+                                <span class="button-text">✅ Use This Configuration</span>
                             </button>
-                            <button class="std-button secondary" style="flex: 0 0 auto;" onclick="viewConfigInNewTab('${match.download_url}', '${match.source_session}')">
-                                <span class="button-text">👁️ View</span>
-                            </button>
-                            <a href="${match.download_url}" download class="std-button secondary" style="text-decoration: none; flex: 0 0 auto;">
-                                <span class="button-text">📥 Save</span>
-                            </a>
                         </div>
                     `;
                     
@@ -3630,6 +3765,28 @@
                     
                     optionsContainer.appendChild(matchElement);
                 });
+                
+                // Add the new button hierarchy after config matches
+                const buttonContainer = document.createElement('div');
+                buttonContainer.style.cssText = `
+                    margin-top: 20px;
+                    padding-top: 15px;
+                    border-top: 1px solid #ddd;
+                `;
+                
+                buttonContainer.innerHTML = `
+                    <h4 style="margin: 0 0 15px 0; color: #333;">Other Options</h4>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <button class="std-button secondary" style="width: 100%;" onclick="generateWithAI('${cardId}')">
+                            <span class="button-text">🤖 Generate with AI</span>
+                        </button>
+                        <button class="std-button secondary" style="width: 100%;" onclick="showConfigIdInput('${cardId}')">
+                            <span class="button-text">🔗 Use Another Config</span>
+                        </button>
+                    </div>
+                `;
+                
+                optionsContainer.appendChild(buttonContainer);
             }
 
             async function useRecentConfig(cardId, configKey, sourceSession) {
@@ -3657,6 +3814,14 @@
                     // Store the config in global state
                     globalState.currentConfig = result.config_data;
                     globalState.configStored = true;
+                    globalState.currentConfigId = result.config_id || configId;
+                    globalState.configSource = 'config_id';
+                    globalState.configMetadata = {
+                        config_id: result.config_id || configId,
+                        version: result.config_version,
+                        source_info: result.source_info,
+                        applied_at: new Date().toISOString()
+                    };
                     
                     // Show clean success state (no checkmark - green bar has one)
                     showFinalCardState(cardId, 
@@ -3670,33 +3835,194 @@
                 }
             }
 
-            function viewConfigInNewTab(downloadUrl, sourceSession) {
-                // Fetch and download the JSON properly
-                fetch(downloadUrl)
-                    .then(response => response.json())
-                    .then(config => {
-                        // Create blob and download
-                        const jsonString = JSON.stringify(config, null, 2);
-                        const blob = new Blob([jsonString], { type: 'application/json' });
-                        const url = URL.createObjectURL(blob);
-                        
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `config_${sourceSession}.json`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                    })
-                    .catch(error => {
-                        console.error('Error downloading config:', error);
-                        // Fallback to opening URL directly
-                        window.open(downloadUrl, '_blank');
+            async function useConfigById(cardId, configId) {
+                try {
+                    showMessage(`${cardId}-messages`, `Using configuration ID: ${configId}...`, 'info');
+                    
+                    const response = await fetch('/api', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'useConfigById',
+                            email: globalState.email,
+                            session_id: globalState.sessionId || '',
+                            config_id: configId
+                        })
                     });
+                    
+                    const result = await response.json();
+                    
+                    if (!result.success) {
+                        throw new Error(result.error || 'Failed to use configuration');
+                    }
+                    
+                    // Store the config in global state
+                    globalState.currentConfig = result.config_data;
+                    globalState.configStored = true;
+                    
+                    // Show clean success state
+                    showFinalCardState(cardId, 
+                        `Configuration ${configId} applied successfully`, 
+                        'success'
+                    );
+                    
+                } catch (error) {
+                    console.error('Error using config by ID:', error);
+                    showMessage(`${cardId}-messages`, `Error using configuration: ${error.message}`, 'error');
+                }
             }
-            
-            // Make function globally accessible
-            window.viewConfigInNewTab = viewConfigInNewTab;
+
+            // DEPRECATED: viewConfigInNewTab function removed in favor of config ID system
+            // All config references now use secure config IDs instead of download URLs
+
+            function showConfigIdInput(cardId) {
+                const optionsContainer = document.getElementById(`${cardId}-options`);
+                if (!optionsContainer) return;
+                
+                // Clear existing content
+                optionsContainer.innerHTML = '';
+                
+                const inputContainer = document.createElement('div');
+                inputContainer.style.cssText = `
+                    padding: 20px;
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    background: #f9f9f9;
+                `;
+                
+                inputContainer.innerHTML = `
+                    <h4 style="margin: 0 0 15px 0; color: #333;">Enter Configuration ID</h4>
+                    <div style="background: #f8f9fa; padding: 12px; border-radius: 4px; margin-bottom: 15px; border-left: 4px solid var(--primary-color);">
+                        <strong>💡 Tip:</strong> Configuration IDs are the easiest way to reuse validated configurations. Check your validation results emails for IDs like <code>session_20250819_v1_financial_portfolio</code>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <input type="text" id="${cardId}-config-id-input" placeholder="session_20250819_v1_financial_portfolio" 
+                               style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: monospace;">
+                    </div>
+                    <div style="font-size: 13px; color: #666; margin-bottom: 15px;">
+                        📧 Find this ID in your validation results email<br>
+                        📋 Format: <code>sessionID_vVersion_description</code><br>
+                        ✅ Example: <code>session_20250819_v1_financial_portfolio</code>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <button class="std-button primary" onclick="submitConfigId('${cardId}')">
+                            <span class="button-text">✅ Use Config</span>
+                        </button>
+                    </div>
+                    <button class="std-button secondary" style="width: 100%;" onclick="location.reload()">
+                        <span class="button-text">← Back to Options</span>
+                    </button>
+                `;
+                
+                optionsContainer.appendChild(inputContainer);
+                
+                // Focus the input field
+                setTimeout(() => {
+                    const input = document.getElementById(`${cardId}-config-id-input`);
+                    if (input) input.focus();
+                }, 100);
+            }
+
+            function submitConfigId(cardId) {
+                const input = document.getElementById(`${cardId}-config-id-input`);
+                if (!input) return;
+                
+                const configId = input.value.trim();
+                if (!configId) {
+                    showMessage(`${cardId}-messages`, 'Please enter a configuration ID', 'error');
+                    input.focus();
+                    return;
+                }
+                
+                // Secret upload trigger - check if user typed "upload" (case insensitive)
+                if (configId.toLowerCase() === 'upload') {
+                    console.log('Secret upload trigger activated');
+                    showMessage(`${cardId}-messages`, 'Opening file picker...', 'info');
+                    
+                    // Trigger the hidden file input for config upload
+                    const fileInput = document.getElementById('config-upload-input');
+                    if (fileInput) {
+                        fileInput.click();
+                    } else {
+                        // Create hidden file input if it doesn't exist
+                        const hiddenInput = document.createElement('input');
+                        hiddenInput.type = 'file';
+                        hiddenInput.id = 'config-upload-input';
+                        hiddenInput.accept = '.json';
+                        hiddenInput.style.display = 'none';
+                        hiddenInput.onchange = function(e) {
+                            if (e.target.files.length > 0) {
+                                handleConfigUpload(e.target.files[0], cardId);
+                            }
+                        };
+                        document.body.appendChild(hiddenInput);
+                        hiddenInput.click();
+                    }
+                    
+                    // Clear the input
+                    input.value = '';
+                    return;
+                }
+                
+                // Enhanced validation for config ID format
+                const configIdRegex = /^[a-zA-Z0-9_]+_v\d+/;
+                if (!configIdRegex.test(configId)) {
+                    showMessage(`${cardId}-messages`, 'Invalid configuration ID format.<br><br>Expected format: sessionID_vVersion_description<br>Example: session_20250819_v1_financial_portfolio<br><br>Please check your validation results email for the correct ID.', 'error');
+                    input.focus();
+                    return;
+                }
+                
+                // Check for minimum length to avoid obviously invalid IDs
+                if (configId.length < 15) {
+                    showMessage(`${cardId}-messages`, 'Configuration ID appears too short. Please verify you have the complete ID from your email.', 'error');
+                    input.focus();
+                    return;
+                }
+                
+                // Check for maximum reasonable length
+                if (configId.length > 200) {
+                    showMessage(`${cardId}-messages`, 'Configuration ID is too long. Please check for any extra characters.', 'error');
+                    input.focus();
+                    return;
+                }
+                
+                useConfigById(cardId, configId);
+            }
+
+            function generateWithAI(cardId) {
+                // This should redirect to AI generation flow
+                // For now, just clear and show AI option
+                const optionsContainer = document.getElementById(`${cardId}-options`);
+                if (!optionsContainer) return;
+                
+                optionsContainer.innerHTML = `
+                    <div style="padding: 20px; text-align: center; border: 1px solid #ddd; border-radius: 8px; background: #f0f8f0;">
+                        <h4 style="margin: 0 0 15px 0; color: #2d5a27;">🤖 AI Configuration Generation</h4>
+                        <p style="margin: 0 0 15px 0; color: #666;">
+                            AI configuration generation will analyze your table and create an optimal validation configuration.
+                        </p>
+                        <button class="std-button primary" style="width: 100%; margin-bottom: 10px;" onclick="proceedToAIGeneration('${cardId}')">
+                            <span class="button-text">🚀 Proceed with AI Generation</span>
+                        </button>
+                        <button class="std-button secondary" style="width: 100%;" onclick="location.reload()">
+                            <span class="button-text">← Back to Options</span>
+                        </button>
+                    </div>
+                `;
+            }
+
+            function proceedToAIGeneration(cardId) {
+                // Store that user wants AI generation and proceed to next step
+                globalState.useAIGeneration = true;
+                
+                // Show success state for this card
+                showFinalCardState(cardId, 
+                    'AI Configuration Generation selected', 
+                    'success'
+                );
+                
+                // The workflow will continue with AI generation in the next step
+            }
 
             async function validateRecentConfig(cardId) {
                 // Create progress indicator like in config upload
@@ -4109,12 +4435,12 @@
                     matchingConfigInfo = `
                         <div style="background: #f0f8f0; border: 1px solid #d4edda; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                <div style="font-weight: bold; color: ${matchColor}; font-size: 16px;">
-                                    📊 Recent Config Found: ${matchScore}% Match • ${matchDate}
+                                <div style="color: ${matchColor}; font-size: 16px;">
+                                    Recent Config Found: ${matchScore}% Match • ${matchDate}
                                 </div>
-                                <button class="std-button" style="background: white; border: 1px solid #ddd; padding: 6px 12px; font-size: var(--font-size-small);" 
-                                        onclick="window.viewConfigInNewTab('${bestMatch.download_url}', '${bestMatch.source_session}')">
-                                    📥 Download Config
+                                <button class="std-button primary" style="margin-top: 8px; background: var(--primary-color); font-weight: bold;" 
+                                        onclick="useConfigById('${cardId}', '${bestMatch.config_id || bestMatch.original_name || `${bestMatch.source_session}_v${bestMatch.version || 1}`}')">
+                                    ✅ Use ${bestMatch.config_id || bestMatch.original_name || `${bestMatch.source_session}_v${bestMatch.version || 1}`}
                                 </button>
                             </div>
                             ${columnsNotInConfig.length > 0 ? `
@@ -4367,7 +4693,7 @@
                 const card = createCard({
                     id: cardId,
                     icon: '🔧',
-                    title: 'Refine Configuration',
+                    title: 'Refine Configuration (Free)',
                     subtitle: 'Improve configuration based on preview results',
                     content,
                     buttons: [
@@ -4567,20 +4893,31 @@ Please answer these questions and then I'll generate your configuration and auto
                             let aiMessage = data.ai_summary || data.ai_response || 'Configuration generated successfully!';
                             await addChatMessage(cardId, 'ai', aiMessage);
                             
-                            // Add download button if URL available
-                            if (data.download_url) {
+                            // Add config ID display if available
+                            if (data.config_id || data.session_id) {
                                 const chatContainer = document.getElementById(`${cardId}-chat`);
                                 if (chatContainer) {
-                                    const downloadDiv = document.createElement('div');
-                                    downloadDiv.className = 'chat-message ai';
+                                    const configIdDiv = document.createElement('div');
+                                    configIdDiv.className = 'chat-message ai';
                                     const version = data.config_version || 1;
-                                    downloadDiv.innerHTML = `
-                                        <button class="std-button secondary" style="margin-top: 8px;" 
-                                                onclick="window.viewConfigInNewTab('${data.download_url}', '${data.session_id || 'generated'}')">
-                                            📥 Download Configuration v${version}
-                                        </button>
+                                    const configId = data.config_id || `${data.session_id}_v${version}`;
+                                    configIdDiv.innerHTML = `
+                                        <div class="config-id-display" style="margin-top: 16px; padding: 16px; background: linear-gradient(135deg, #f0f8ff 0%, #e8f4fd 100%); border-radius: 8px; border: 1px solid #b3d9ff;">
+                                            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                                                <span style="font-size: 18px; margin-right: 8px;">🆔</span>
+                                                <strong style="color: #2c5530;">Configuration ID Generated</strong>
+                                            </div>
+                                            <div style="background: white; padding: 12px; border-radius: 4px; border: 1px solid #ddd; margin-bottom: 8px;">
+                                                <code style="font-size: 16px; font-weight: bold; color: #1a472a; font-family: 'Courier New', monospace;">${configId}</code>
+                                            </div>
+                                            <div style="font-size: 14px; color: #555; line-height: 1.4;">
+                                                <div style="margin-bottom: 4px;">💾 <strong>Save this ID</strong> - it will be included in your validation results email</div>
+                                                <div style="margin-bottom: 4px;">🔄 <strong>Reuse anywhere</strong> - enter this ID to apply the same configuration to future validations</div>
+                                                <div>🔒 <strong>Secure</strong> - share this ID safely without exposing configuration details</div>
+                                            </div>
+                                        </div>
                                     `;
-                                    chatContainer.appendChild(downloadDiv);
+                                    chatContainer.appendChild(configIdDiv);
                                 }
                             }
                             
@@ -5237,20 +5574,31 @@ Please answer these questions and then I'll generate your configuration and auto
                     
                     await addChatMessage(cardId, 'ai', aiMessage, false, 'paragraphs');
                     
-                    // Add download button if URL available
-                    if (data.download_url) {
+                    // Add config ID display if available
+                    if (data.config_id || data.session_id) {
                         const chatContainer = document.getElementById(`${cardId}-chat`);
                         if (chatContainer) {
-                            const downloadDiv = document.createElement('div');
-                            downloadDiv.className = 'chat-message ai';
+                            const configIdDiv = document.createElement('div');
+                            configIdDiv.className = 'chat-message ai';
                             const version = data.config_version || 1;
-                            downloadDiv.innerHTML = `
-                                <button class="std-button secondary" style="margin-top: 8px;" 
-                                        onclick="window.viewConfigInNewTab('${data.download_url}', '${data.session_id || 'refined'}')">
-                                    📥 Download Configuration v${version}
-                                </button>
+                            const configId = data.config_id || `${data.session_id}_v${version}`;
+                            configIdDiv.innerHTML = `
+                                <div class="config-id-display" style="margin-top: 16px; padding: 16px; background: linear-gradient(135deg, #f0f8ff 0%, #e8f4fd 100%); border-radius: 8px; border: 1px solid #b3d9ff;">
+                                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                                        <span style="font-size: 18px; margin-right: 8px;">🆔</span>
+                                        <strong style="color: #2c5530;">Configuration ID Generated</strong>
+                                    </div>
+                                    <div style="background: white; padding: 12px; border-radius: 4px; border: 1px solid #ddd; margin-bottom: 8px;">
+                                        <code style="font-size: 16px; font-weight: bold; color: #1a472a; font-family: 'Courier New', monospace;">${configId}</code>
+                                    </div>
+                                    <div style="font-size: 14px; color: #555; line-height: 1.4;">
+                                        <div style="margin-bottom: 4px;">💾 <strong>Save this ID</strong> - it will be included in your validation results email</div>
+                                        <div style="margin-bottom: 4px;">🔄 <strong>Reuse anywhere</strong> - enter this ID to apply the same configuration to future validations</div>
+                                        <div>🔒 <strong>Secure</strong> - share this ID safely without exposing configuration details</div>
+                                    </div>
+                                </div>
                             `;
-                            chatContainer.appendChild(downloadDiv);
+                            chatContainer.appendChild(configIdDiv);
                         }
                     }
                     showRefinementActions(cardId);
@@ -5332,10 +5680,6 @@ Please answer these questions and then I'll generate your configuration and auto
                     <div id="${cardId}-progress"></div>
                     <div id="${cardId}-results" style="display: none;">
                         <div id="${cardId}-preview-content"></div>
-                        <div class="message message-success" style="margin: 1rem 0;">
-                            <span class="message-icon">📧</span>
-                            <span>Check your email for a more comprehensive preview in a verified excel file.</span>
-                        </div>
                         <div id="${cardId}-cost-estimate" class="cost-estimate" style="display: none;">
                             <div class="cost-estimate-header">Estimates for Processing Entire Table</div>
                             <div class="cost-estimate-items" id="${cardId}-estimates"></div>
@@ -5390,7 +5734,7 @@ Please answer these questions and then I'll generate your configuration and auto
                         throw new Error('No session ID available. Please upload an Excel file first.');
                     }
 
-                    const url = `${API_BASE}/validate?async=true&preview_first_row=true&preview_max_rows=3&preview_email=true`;
+                    const url = `${API_BASE}/validate?async=true&preview_first_row=true&preview_max_rows=3`;
                     
                     const response = await fetch(url, {
                         method: 'POST',
@@ -5609,7 +5953,17 @@ Please answer these questions and then I'll generate your configuration and auto
                 content = `
                     <div class="message message-success" style="margin-bottom: 1rem;">
                         <span class="message-icon">🎉</span>
-                        <span>Your validation has been completed successfully. Results have been sent to your email${balanceText}.</span>
+                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                            <span>Your validation has been completed successfully${balanceText}.</span>
+                            <div style="display: flex; gap: 8px;">
+                                <button type="button" class="std-button secondary" style="padding: 6px 12px; font-size: 12px;" onclick="showConfidenceInfoModal()">
+                                    ℹ️ Info
+                                </button>
+                                <button class="std-button primary" onclick="downloadValidationResults()" style="padding: 6px 12px; font-size: 12px;">
+                                    📥 Download Results
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 `;
 
@@ -5617,7 +5971,7 @@ Please answer these questions and then I'll generate your configuration and auto
                     {
                         text: 'New Validation',
                         icon: '🔄',
-                        variant: 'primary',
+                        variant: 'secondary',
                         width: 1,
                         callback: () => window.location.reload()
                     }
@@ -5730,6 +6084,227 @@ Please answer these questions and then I'll generate your configuration and auto
             cardCurrentProgress.clear();
             registrationCounter = 0;
         });
+
+        // Function to download preview results
+        async function downloadPreviewResults(previewData) {
+            try {
+                if (!globalState.sessionId) {
+                    throw new Error('No session ID available');
+                }
+                
+                // Get version info
+                const version = globalState.currentConfig?.config_version || 1;
+                const originalFileName = globalState.excelFile?.name || 'preview_results';
+                const fileNameBase = originalFileName.replace(/\.[^/.]+$/, ''); // Remove extension
+                
+                // Check if enhanced Excel download URL is available
+                if (previewData.enhanced_download_url) {
+                    // Use the enhanced Excel download URL from backend
+                    const enhancedFileName = `${fileNameBase}_v${version}_preview_enhanced.xlsx`;
+                    
+                    const a = document.createElement('a');
+                    a.href = previewData.enhanced_download_url;
+                    a.download = enhancedFileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    return;
+                }
+                
+                // Fallback to CSV if no enhanced Excel available
+                let csvData = '';
+                
+                if (previewData.markdown_table) {
+                    // Parse the markdown table to extract data
+                    const lines = previewData.markdown_table.split('\n');
+                    let headers = [];
+                    let rows = [];
+                    
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i].trim();
+                        if (line.startsWith('|') && line.endsWith('|')) {
+                            const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
+                            if (i === 0 || (i === 1 && line.includes('---'))) {
+                                if (i === 0) headers = cells;
+                                // Skip separator line
+                            } else {
+                                rows.push(cells);
+                            }
+                        }
+                    }
+                    
+                    // Convert to CSV
+                    if (headers.length > 0) {
+                        csvData = headers.join(',') + '\n';
+                        rows.forEach(row => {
+                            const escapedRow = row.map(cell => {
+                                // Escape cells containing commas or quotes
+                                if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
+                                    return '"' + cell.replace(/"/g, '""') + '"';
+                                }
+                                return cell;
+                            });
+                            csvData += escapedRow.join(',') + '\n';
+                        });
+                    }
+                } else {
+                    csvData = 'No preview data available\n';
+                }
+                
+                // Create and download the file
+                const blob = new Blob([csvData], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${fileNameBase}_v${version}_preview.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+            } catch (error) {
+                console.error('Error downloading preview results:', error);
+                alert(`Error downloading preview results: ${error.message}`);
+            }
+        }
+
+        // Function to download validation results
+        async function downloadValidationResults() {
+            try {
+                if (!globalState.sessionId) {
+                    throw new Error('No session ID available');
+                }
+                
+                // Check status to get download URL
+                const response = await fetch(`${API_BASE}/status?session_id=${globalState.sessionId}`, {
+                    method: 'GET'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to get validation status');
+                }
+                
+                const statusData = await response.json();
+                
+                // Get version from status data (more reliable than global state)
+                const version = statusData.config_version || 
+                               statusData.session_info?.config_version || 
+                               globalState.currentConfig?.config_version || 1;
+                
+                const originalFileName = globalState.excelFile?.name || 'validation_results';
+                const fileNameBase = originalFileName.replace(/\.[^/.]+$/, ''); // Remove extension
+                
+                // Prefer enhanced Excel download if available
+                if (statusData.enhanced_download_url) {
+                    const enhancedFileName = `${fileNameBase}_v${version}_full_enhanced.xlsx`;
+                    
+                    const a = document.createElement('a');
+                    a.href = statusData.enhanced_download_url;
+                    a.download = enhancedFileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                } else if (statusData.download_url) {
+                    // Fallback to ZIP download
+                    const zipFileName = `${fileNameBase}_v${version}_full_enhanced.zip`;
+                    
+                    const a = document.createElement('a');
+                    a.href = statusData.download_url;
+                    a.download = zipFileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                } else {
+                    throw new Error('Results are not ready for download yet');
+                }
+            } catch (error) {
+                console.error('Error downloading results:', error);
+                alert(`Error downloading results: ${error.message}`);
+            }
+        }
+
+        // Function to show confidence info modal
+        function showConfidenceInfoModal() {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+            `;
+            
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = `
+                background: white;
+                border-radius: 8px;
+                padding: 20px;
+                max-width: 600px;
+                max-height: 80vh;
+                overflow-y: auto;
+                position: relative;
+            `;
+            
+            modalContent.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; color: #333;">Results Structure & Confidence Levels</h3>
+                    <button onclick="this.closest('[style*=fixed]').remove()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #999;">×</button>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <h4 style="color: #007bff; margin-bottom: 10px;">📊 Excel File Structure</h4>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
+                        <strong>Sheet 1: Updated Values</strong> - Your data with AI-enhanced and validated information<br>
+                        <strong>Sheet 2: Original Values</strong> - Your original data for reference<br>
+                        <strong>Sheet 3: Details</strong> - Detailed validation information, sources, and confidence scores
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <h4 style="color: #007bff; margin-bottom: 10px;">🎯 Confidence Levels</h4>
+                    <div style="display: grid; gap: 10px;">
+                        <div style="display: flex; align-items: center; padding: 8px; background: #d4edda; border-radius: 4px;">
+                            <span style="width: 20px; height: 20px; background: #28a745; border-radius: 3px; margin-right: 10px;"></span>
+                            <div>
+                                <strong>HIGH (Green)</strong> - Verified information with reliable sources
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; padding: 8px; background: #fff3cd; border-radius: 4px;">
+                            <span style="width: 20px; height: 20px; background: #ffc107; border-radius: 3px; margin-right: 10px;"></span>
+                            <div>
+                                <strong>MEDIUM (Yellow)</strong> - Reasonable information that may need verification
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; padding: 8px; background: #f8d7da; border-radius: 4px;">
+                            <span style="width: 20px; height: 20px; background: #dc3545; border-radius: 3px; margin-right: 10px;"></span>
+                            <div>
+                                <strong>LOW (Red)</strong> - Information that requires manual verification
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="background: #e7f3ff; padding: 15px; border-radius: 6px; border-left: 4px solid #007bff;">
+                    <strong>💡 Tip:</strong> The Enhanced Excel file includes cell comments with sources and detailed explanations. Hover over cells in Excel to see additional information.
+                </div>
+            `;
+            
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            // Close on background click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+        }
     })();
    </script>
 

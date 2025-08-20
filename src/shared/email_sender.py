@@ -242,7 +242,7 @@ def send_credit_confirmation_email(email_address: str, amount_purchased: float, 
         }
 
 
-def send_validation_results_email(email_address, excel_content, config_content, enhanced_excel_content, input_filename, config_filename, enhanced_excel_filename, session_id, summary_data, processing_time=None, reference_pin=None, metadata=None, preview_email=False, billing_info=None):
+def send_validation_results_email(email_address, excel_content, config_content, enhanced_excel_content, input_filename, config_filename, enhanced_excel_filename, session_id, summary_data, processing_time=None, reference_pin=None, metadata=None, preview_email=False, billing_info=None, config_id=None):
     """
     Send validation results via email with individual file attachments
     
@@ -260,6 +260,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
           reference_pin: Reference PIN for the validation
           metadata: Optional metadata including token usage
           billing_info: Optional billing information for receipt generation
+          config_id: Configuration ID to reference instead of exposing filename
         
     Returns:
         dict: Response with status and message ID
@@ -323,7 +324,8 @@ def send_validation_results_email(email_address, excel_content, config_content, 
             enhanced_excel_filename,
             input_filename,
             config_filename,
-            preview_email
+            preview_email,
+            config_id
         )
         
         # Attach HTML body
@@ -473,7 +475,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         }
 
 
-def create_validation_results_email_body(session_id, total_rows, fields_validated, confidence_distribution, processing_time=None, reference_pin=None, token_usage=None, enhanced_excel_filename=None, input_filename=None, config_filename=None, preview_email=False):
+def create_validation_results_email_body(session_id, total_rows, fields_validated, confidence_distribution, processing_time=None, reference_pin=None, token_usage=None, enhanced_excel_filename=None, input_filename=None, config_filename=None, preview_email=False, config_id=None):
     """Create clean validation results email body following Eliyahu.AI style guide"""
     
     # Format fields list
@@ -520,7 +522,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
         preview_notice = f"""
         <div style="background: #FFF3CD; border: 1px solid #FFEAA7; padding: 15px; border-radius: 6px; margin: 15px 0;">
             <p><b>📋 Preview Results</b></p>
-            <p>This email contains validation results for a preview of your data ({total_rows} rows). To process your full table, please use the Hyperplexity Tool with your original table and the configuration file attached to this email.</p>
+            <p>This email contains validation results for a preview of your data ({total_rows} rows). To process your full table, please use the Hyperplexity Tool with your original table and Configuration ID: {config_id or 'N/A'}.</p>
         </div>
         """
     
@@ -639,7 +641,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             <div class="summary">
                 <h2>Your Results Are Ready</h2>
                 {preview_notice}
-                <p><b>Configuration:</b> {config_filename or 'config.json'}</p>
+                <p><b>Configuration ID:</b> {config_id or 'N/A'}</p>
                 <p><b>Total rows processed:</b> {total_rows:,}</p>
                 {pin_info}
                 <p><b>Fields validated:</b> {len(fields_validated)}</p>
@@ -666,8 +668,8 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
                         <small>Your original input file</small>
                     </li>
                     <li>
-                        ⚙️ <b>{config_filename or 'config.json'}</b><br>
-                        <small>Configuration file (reusable for future validations)</small>
+                        ⚙️ <b>Configuration ID: {config_id or 'N/A'}</b><br>
+                        <small>Use this ID to rerun validation with the same configuration</small>
                     </li>
                 </ul>
             </div>

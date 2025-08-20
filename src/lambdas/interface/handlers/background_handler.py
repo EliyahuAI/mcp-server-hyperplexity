@@ -595,7 +595,27 @@ def handle(event, context):
                                       f"config_content_len={len(json.dumps(config_data, indent=2).encode('utf-8'))}, "
                                       f"enhanced_excel_content_len={len(enhanced_excel_content) if enhanced_excel_content else 0}, "
                                       f"input_filename={input_filename}, config_filename={config_filename}, "
-                                      f"session_id={session_id}, reference_pin={reference_pin}, preview_email=True")
+                                      f"session_id={session_id}, reference_pin={reference_pin}, preview_email=False")
+                            
+                            # Create download link for enhanced Excel if available
+                            enhanced_download_url = None
+                            if enhanced_excel_content:
+                                try:
+                                    # Get version from config
+                                    config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                                    enhanced_filename = f"{os.path.splitext(input_filename)[0]}_v{config_version}_preview_enhanced.xlsx"
+                                    
+                                    enhanced_download_url = storage_manager.create_public_download_link(
+                                        enhanced_excel_content, 
+                                        enhanced_filename,
+                                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                                    )
+                                    logger.info(f"Created enhanced Excel download link for preview: {enhanced_download_url}")
+                                except Exception as e:
+                                    logger.error(f"Failed to create enhanced Excel download link: {e}")
+                            
+                            # Extract config_id from config metadata
+                            config_id = config_data.get('storage_metadata', {}).get('config_id', 'N/A')
                             
                             email_result = send_validation_results_email(
                                 email_address=email_address, 
@@ -610,38 +630,28 @@ def handle(event, context):
                                 processing_time=processing_time,
                                 reference_pin=reference_pin, 
                                 metadata=metadata, 
-                                preview_email=True,
-                                billing_info=None  # No charges for previews
+                                preview_email=False,  # No emails for preview - just generate enhanced Excel for download
+                                billing_info=None,  # No charges for previews
+                                config_id=config_id
                             )
                             
                             logger.info(f"Email result received: {email_result}")
                             
-                            # Send email completion progress update
-                            if email_result.get('success', False):
-                                _send_websocket_message_deduplicated(session_id, {
-                                    'type': 'preview_progress',
-                                    'progress': 95,
-                                    'status': '✅ Preview email sent successfully!',
-                                    'session_id': session_id
-                                }, "preview_progress_email_sent")
-                            else:
-                                _send_websocket_message_deduplicated(session_id, {
-                                    'type': 'preview_progress',
-                                    'progress': 95,
-                                    'status': '⚠️ Preview completed (email may have failed)',
-                                    'session_id': session_id
-                                }, "preview_progress_email_failed")
+                            # Send processing completion progress update (no email for preview)
+                            _send_websocket_message_deduplicated(session_id, {
+                                'type': 'preview_progress',
+                                'progress': 95,
+                                'status': '✅ Enhanced Excel file generated for download!',
+                                'session_id': session_id
+                            }, "preview_progress_processing_complete")
                             
-                            logger.info(f"Preview email sent: {email_result.get('success', False)}")
+                            logger.info(f"Preview processing completed, enhanced Excel generated for download")
                         else:
-                            logger.error("Could not retrieve files for preview email")
+                            logger.error("Could not retrieve files for preview processing")
                     except Exception as e:
-                        logger.error(f"Error sending preview email: {str(e)}")
+                        logger.error(f"Error processing preview files: {str(e)}")
                         import traceback
-                        logger.error(f"Preview email error traceback: {traceback.format_exc()}")
-                        # Log the email_result if available
-                        if 'email_result' in locals():
-                            logger.error(f"Email result details: {email_result}")
+                        logger.error(f"Preview processing error traceback: {traceback.format_exc()}")
                 
                 # Store preview results in versioned results folder using unified storage
                 config_version = 1
@@ -1021,6 +1031,7 @@ def handle(event, context):
                     "preview_processing_time": processing_time,
                     "estimated_total_processing_time": estimated_total_time_seconds,
                     "estimated_total_time_minutes": round(estimated_total_time_seconds / 60, 1),
+                    "enhanced_download_url": enhanced_download_url,  # Download link for enhanced Excel
                     "cost_estimates": {
                         "preview_cost": charged_cost,  # What user pays for preview (0)
                         "quoted_full_cost": quoted_full_cost,  # What user will pay for full validation
@@ -1212,6 +1223,26 @@ def handle(event, context):
                         'final_balance': float(final_balance) if final_balance else 0
                     }
                     
+                    # Create download link for enhanced Excel if available  
+                    enhanced_download_url = None
+                    if safe_enhanced_excel_content:
+                        try:
+                            # Get version from config
+                            config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                            enhanced_filename = f"{os.path.splitext(input_filename)[0]}_v{config_version}_full_enhanced.xlsx"
+                            
+                            enhanced_download_url = storage_manager.create_public_download_link(
+                                safe_enhanced_excel_content, 
+                                enhanced_filename,
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                            )
+                            logger.info(f"Created enhanced Excel download link for full results: {enhanced_download_url}")
+                        except Exception as e:
+                            logger.error(f"Failed to create enhanced Excel download link: {e}")
+                    
+                    # Extract config_id from config metadata
+                    config_id = config_data.get('storage_metadata', {}).get('config_id', 'N/A')
+                    
                     email_result = send_validation_results_email(
                         email_address=email_address, excel_content=excel_content, 
                         config_content=json.dumps(config_data, indent=2).encode('utf-8'),
@@ -1221,13 +1252,24 @@ def handle(event, context):
                         session_id=session_id, summary_data=summary_data, 
                         processing_time=metadata.get('processing_time',0),
                         reference_pin=reference_pin, metadata=metadata, preview_email=preview_email,
-                        billing_info=billing_info
+                        billing_info=billing_info,
+                        config_id=config_id
                     )
                     # Send final completion notification with processed row count and total rows
                     processed_rows_count = len(validation_results.get('validation_results', {}))
                     total_rows_in_file = validation_results.get('total_rows', processed_rows_count)
                     _update_progress(session_id, 'COMPLETED', processed_rows_count, 'Validation complete. Results should be in your inbox shortly.', 100, total_rows_in_file)
-                    update_run_status(session_id=session_id, status='COMPLETED', results_s3_key=results_key)
+                    
+                    # Update status with both ZIP file and enhanced Excel download URLs
+                    status_update_data = {
+                        'session_id': session_id, 
+                        'status': 'COMPLETED', 
+                        'results_s3_key': results_key
+                    }
+                    if enhanced_download_url:
+                        status_update_data['enhanced_download_url'] = enhanced_download_url
+                    
+                    update_run_status(**status_update_data)
                     
                     # Track enhanced user metrics for full validation
                     track_user_request(
