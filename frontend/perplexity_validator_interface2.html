@@ -3578,7 +3578,7 @@
                 
                 try {
                     // Search for matching configs
-                    const response = await fetch('/api', {
+                    const response = await fetch(`${API_BASE}/validate`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -3818,25 +3818,37 @@
                 try {
                     showMessage(`${cardId}-messages`, `Using configuration ID: ${configId}...`, 'info');
                     
+                    console.log('useConfigById called with:', { cardId, configId, email: globalState.email, sessionId: globalState.sessionId });
+                    
+                    const requestBody = {
+                        action: 'useConfigById',
+                        email: globalState.email,
+                        session_id: globalState.sessionId || '',
+                        config_id: configId
+                    };
+                    
+                    console.log('Sending request with body:', requestBody);
+                    
                     const response = await fetch(`${API_BASE}/validate`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'useConfigById',
-                            email: globalState.email,
-                            session_id: globalState.sessionId || '',
-                            config_id: configId
-                        })
+                        body: JSON.stringify(requestBody)
                     });
+                    
+                    console.log('Response status:', response.status);
+                    console.log('Response headers:', [...response.headers.entries()]);
                     
                     // Check if response is ok before parsing JSON
                     if (!response.ok) {
                         const errorText = await response.text();
+                        console.error('HTTP error response:', errorText);
                         throw new Error(`HTTP ${response.status}: ${errorText || 'Unknown server error'}`);
                     }
                     
                     // Check if response has content before parsing
                     const responseText = await response.text();
+                    console.log('Response text:', responseText);
+                    
                     if (!responseText.trim()) {
                         throw new Error('Empty response from server');
                     }
@@ -3844,10 +3856,11 @@
                     let result;
                     try {
                         result = JSON.parse(responseText);
+                        console.log('Parsed result:', result);
                     } catch (parseError) {
                         console.error('JSON parse error:', parseError);
                         console.error('Response text:', responseText);
-                        throw new Error(`Invalid JSON response: ${parseError.message}`);
+                        throw new Error(`Invalid JSON response: ${parseError.message}. Response: ${responseText.substring(0, 200)}`);
                     }
                     
                     if (!result.success) {
