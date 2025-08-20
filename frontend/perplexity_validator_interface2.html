@@ -739,15 +739,27 @@
 
     .markdown-content table {
         border-collapse: collapse;
-        width: 100%;
-        margin: 1em 0;
-        max-width: 100%;
+        width: 100% !important;
+        margin: 1em -2rem;
+        max-width: calc(100% + 4rem) !important;
         table-layout: auto;
+        position: relative;
+        left: 0;
+        right: 0;
     }
     
     .markdown-content {
         overflow-x: auto;
         max-width: 100%;
+        width: 100%;
+    }
+
+    /* Force table container to be full width */
+    .card .markdown-content table {
+        margin-left: -2rem;
+        margin-right: -2rem;
+        width: calc(100% + 4rem) !important;
+        max-width: calc(100% + 4rem) !important;
     }
 
     .markdown-content th, .markdown-content td {
@@ -3092,6 +3104,18 @@
             
             // Helper to show final card state consistently
             function showFinalCardState(cardId, message, type = 'success') {
+                // Hide all card sections first
+                const optionsContainer = document.getElementById(`${cardId}-options`);
+                const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                const configList = document.getElementById(`${cardId}-config-list`);
+                const matchingInfoContainer = document.getElementById(`${cardId}-matching-info`);
+                
+                if (optionsContainer) optionsContainer.style.display = 'none';
+                if (buttonsContainer) buttonsContainer.style.display = 'none';
+                if (configList) configList.style.display = 'none';
+                if (matchingInfoContainer) matchingInfoContainer.style.display = 'none';
+                
+                // Show only the message
                 const messagesContainer = document.getElementById(`${cardId}-messages`);
                 if (messagesContainer) {
                     messagesContainer.innerHTML = '';
@@ -6063,14 +6087,26 @@ Please answer these questions and then I'll generate your configuration and auto
                         icon: '📥',
                         variant: 'primary',
                         width: 'half',
-                        callback: () => downloadValidationResults()
+                        callback: async () => {
+                            try {
+                                await downloadValidationResults();
+                            } catch (error) {
+                                console.error('Download error:', error);
+                            }
+                        }
                     },
                     {
                         text: 'Refine Configuration',
                         icon: '🔧',
                         variant: 'secondary',
                         width: 'half',
-                        callback: () => createRefinementCard()
+                        callback: async () => {
+                            try {
+                                await createRefinementCard();
+                            } catch (error) {
+                                console.error('Refine error:', error);
+                            }
+                        }
                     },
                     {
                         text: 'New Validation',
