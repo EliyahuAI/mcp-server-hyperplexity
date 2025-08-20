@@ -3818,7 +3818,7 @@
                 try {
                     showMessage(`${cardId}-messages`, `Using configuration ID: ${configId}...`, 'info');
                     
-                    const response = await fetch('/api', {
+                    const response = await fetch(`${API_BASE}/validate`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -3829,7 +3829,26 @@
                         })
                     });
                     
-                    const result = await response.json();
+                    // Check if response is ok before parsing JSON
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`HTTP ${response.status}: ${errorText || 'Unknown server error'}`);
+                    }
+                    
+                    // Check if response has content before parsing
+                    const responseText = await response.text();
+                    if (!responseText.trim()) {
+                        throw new Error('Empty response from server');
+                    }
+                    
+                    let result;
+                    try {
+                        result = JSON.parse(responseText);
+                    } catch (parseError) {
+                        console.error('JSON parse error:', parseError);
+                        console.error('Response text:', responseText);
+                        throw new Error(`Invalid JSON response: ${parseError.message}`);
+                    }
                     
                     if (!result.success) {
                         throw new Error(result.error || 'Failed to use configuration');
@@ -3844,6 +3863,11 @@
                         `Configuration ${configId} applied successfully`, 
                         'success'
                     );
+                    
+                    // After successful config application, proceed to next step
+                    setTimeout(() => {
+                        createPreviewCard();
+                    }, 1000);
                     
                 } catch (error) {
                     console.error('Error using config by ID:', error);
@@ -4468,11 +4492,11 @@
                                 <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
                                     Last Used: ${displayLastUsed}
                                 </div>
-                                <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
+                                <div style="font-size: 14px; color: #666; margin-bottom: 8px;">
                                     ${usageIcon} ${usageLabel}
                                 </div>
-                                <div style="font-size: 12px; color: #999; font-style: italic; margin-top: 8px;">
-                                    (${configId})
+                                <div style="font-size: 12px; color: #999; font-style: italic; border-top: 1px solid #eee; padding-top: 8px; margin-top: 8px;">
+                                    (code: ${configId})
                                 </div>
                             </button>
                         `;
