@@ -1781,12 +1781,11 @@
                     }
                     
                     const headerHtml = `
-                        <div class="message message-info" style="margin-bottom: 15px; background: #e3f2fd; border-left: 4px solid #2196f3;">
-                            <div style="font-size: 14px; color: #1976d2; line-height: 1.6;">
-                                The preview below is a light version of the Updated values. A richer preview can be downloaded 
-                                <a href="${fullPreviewUrl}" target="_blank" style="color: #1976d2; text-decoration: underline;">here</a> 
-                                or at the button below.
-                            </div>
+                        <div class="message message-info">
+                            <span class="message-icon">ℹ️</span>
+                            <span>The preview below is a light version of the Updated values. A richer preview can be downloaded 
+                            <a href="${fullPreviewUrl}" target="_blank" style="color: #1565c0; text-decoration: underline;">here</a> 
+                            or at the button below.</span>
                         </div>
                     `;
                     
@@ -1795,6 +1794,19 @@
                     // Store the download URL for the button
                     previewContent.dataset.fullPreviewUrl = fullPreviewUrl;
                 }
+
+                // Add buttons above estimates
+                const actionsHtml = `
+                    <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
+                        <button type="button" class="std-button secondary" data-action="download-preview">
+                            📥 Download Preview
+                        </button>
+                        <button type="button" class="std-button secondary" data-action="refine-config">
+                            🔧 Refine Configuration
+                        </button>
+                    </div>
+                `;
+                previewContent.innerHTML += actionsHtml;
 
                 // Show cost estimates
                 if (previewData.cost_estimates && previewData.validation_metrics) {
@@ -1833,7 +1845,7 @@
                         }
                         
                         estimatesHtml += `<div class="cost-item"><span class="cost-label">Est. Time</span><span class="cost-value">${Math.ceil(estimatedTime / 60)} min</span></div>`;
-                        estimatesHtml += `<div class="cost-item"><span class="cost-label">Est. Cost</span><span class="cost-value">$${estimatedCost.toFixed(2)}</span></div>`;
+                        estimatesHtml += `<div class="cost-item"><span class="cost-label">Cost</span><span class="cost-value">$${estimatedCost.toFixed(2)}</span></div>`;
                         
                         // Domain multiplier is hidden from frontend display
                         
@@ -1868,56 +1880,35 @@
                 const sufficientBalance = accountInfo ? accountInfo.sufficient_balance : true; // Default to true if no account info
                 const estimatedCost = previewData.cost_estimates ? previewData.cost_estimates.quoted_full_cost : 0;
                 
-
-                // Show action buttons
-                createButtonRow(`${cardId}-buttons`, [
-                    {
-                        text: 'Download Preview',
-                        icon: '📥',
-                        variant: 'secondary',
-                        width: 1,
-                        callback: async (e) => {
-                            const button = e.target.closest('button');
-                            const previewContent = document.getElementById(`${cardId}-preview-content`);
-                            const downloadUrl = previewContent?.dataset?.fullPreviewUrl || '#';
-                            
-                            if (downloadUrl !== '#') {
-                                // Create temporary link and trigger download
-                                const link = document.createElement('a');
-                                link.href = downloadUrl;
-                                link.download = 'preview_results.xlsx';
-                                link.target = '_blank';
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
-                                
-                                markButtonSelected(button, '📥 Downloaded');
-                                setTimeout(() => markButtonUnselected(button), 1000);
-                            } else {
-                                showMessage(`${cardId}-messages`, 'Download not available yet', 'error');
-                            }
-                        }
-                    },
-                    {
-                        text: 'Refine Configuration (Free)',
-                        icon: '🔧',
-                        variant: 'secondary',
-                        width: 1,
-                        callback: async (e) => {
-                            const button = e.target.closest('button');
-                            markButtonSelected(button, '🔧 Refining...');
-                            // Clear active preview card before creating refinement card
+                // Add event listeners for the buttons above estimates
+                setTimeout(() => {
+                    const downloadBtn = card.querySelector('[data-action="download-preview"]');
+                    const refineBtn = card.querySelector('[data-action="refine-config"]');
+                    
+                    if (downloadBtn) {
+                        downloadBtn.addEventListener('click', async () => {
+                            await downloadPreviewResults(previewData);
+                        });
+                    }
+                    
+                    if (refineBtn) {
+                        refineBtn.addEventListener('click', async () => {
+                            markButtonSelected(refineBtn, '🔧 Refining...');
                             globalState.activePreviewCard = null;
                             await createRefinementCard();
-                        }
-                    },
+                        });
+                    }
+                }, 100);
+
+                // Show single Process Table button at bottom
+                createButtonRow(`${cardId}-buttons`, [
                     {
                         text: sufficientBalance 
                             ? `Process Table${estimatedCost ? ` ($${estimatedCost.toFixed(2)})` : ''}` 
                             : `Add Credits ($${Math.ceil(accountInfo?.credits_needed || 0).toFixed(2)})`,
                         icon: sufficientBalance ? '✨' : '💳',
                         variant: sufficientBalance ? 'primary' : 'secondary',
-                        width: 2,
+                        width: 'full',
                         callback: async (e) => {
                             const button = e.target.closest('button');
                             
@@ -2970,14 +2961,13 @@
                             const version = data.config_version || 1;
                             const configId = data.config_id || `${data.session_id}_v${version}`;
                             configIdDiv.innerHTML = `
-                                <div class="config-id-display" style="margin-top: 16px; padding: 16px; background: linear-gradient(135deg, #f0f8ff 0%, #e8f4fd 100%); border-radius: 8px; border: 1px solid #b3d9ff;">
-                                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                                        <span style="font-size: 18px; margin-right: 8px;">🆔</span>
-                                        <strong style="color: #2c5530;">Configuration ID Generated</strong>
-                                    </div>
-                                    <div style="background: white; padding: 12px; border-radius: 4px; border: 1px solid #ddd; margin-bottom: 8px;">
-                                        <code style="font-size: 16px; font-weight: bold; color: #1a472a; font-family: 'Courier New', monospace;">${configId}</code>
-                                    </div>
+                                <div class="message message-success" style="margin-bottom: 1rem;">
+                                    <span class="message-icon">✓</span>
+                                    <span>Configuration generated, code for reuse: <strong>${(() => {
+                                        const parts = configId.split('_');
+                                        return parts.length > 3 ? parts.slice(3).join('_') : configId;
+                                    })()}</strong>, running preview now</span>
+                                </div>
                                     <div style="font-size: 14px; color: #555; line-height: 1.4;">
                                         <div style="margin-bottom: 4px;">💾 <strong>Save this ID</strong> - it will be included in your validation results email</div>
                                         <div style="margin-bottom: 4px;">🔄 <strong>Reuse anywhere</strong> - enter this ID to apply the same configuration to future validations</div>
@@ -5644,14 +5634,13 @@ Please answer these questions and then I'll generate your configuration and auto
                             const version = data.config_version || 1;
                             const configId = data.config_id || `${data.session_id}_v${version}`;
                             configIdDiv.innerHTML = `
-                                <div class="config-id-display" style="margin-top: 16px; padding: 16px; background: linear-gradient(135deg, #f0f8ff 0%, #e8f4fd 100%); border-radius: 8px; border: 1px solid #b3d9ff;">
-                                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                                        <span style="font-size: 18px; margin-right: 8px;">🆔</span>
-                                        <strong style="color: #2c5530;">Configuration ID Generated</strong>
-                                    </div>
-                                    <div style="background: white; padding: 12px; border-radius: 4px; border: 1px solid #ddd; margin-bottom: 8px;">
-                                        <code style="font-size: 16px; font-weight: bold; color: #1a472a; font-family: 'Courier New', monospace;">${configId}</code>
-                                    </div>
+                                <div class="message message-success" style="margin-bottom: 1rem;">
+                                    <span class="message-icon">✓</span>
+                                    <span>Configuration generated, code for reuse: <strong>${(() => {
+                                        const parts = configId.split('_');
+                                        return parts.length > 3 ? parts.slice(3).join('_') : configId;
+                                    })()}</strong>, running preview now</span>
+                                </div>
                                     <div style="font-size: 14px; color: #555; line-height: 1.4;">
                                         <div style="margin-bottom: 4px;">💾 <strong>Save this ID</strong> - it will be included in your validation results email</div>
                                         <div style="margin-bottom: 4px;">🔄 <strong>Reuse anywhere</strong> - enter this ID to apply the same configuration to future validations</div>
