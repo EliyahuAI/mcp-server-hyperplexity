@@ -3851,6 +3851,39 @@
                 }
             }
 
+            function handleConfigIdInput(cardId) {
+                const input = document.getElementById(`${cardId}-config-id-input`);
+                if (!input) return;
+                
+                const configId = input.value.trim();
+                if (!configId) return;
+                
+                // Secret upload functionality
+                if (configId.toLowerCase() === 'upload') {
+                    // Trigger file upload
+                    const fileInput = document.getElementById(`${cardId}-config-file`);
+                    if (fileInput) {
+                        fileInput.click();
+                    } else {
+                        // Create a temporary file input
+                        const tempFileInput = document.createElement('input');
+                        tempFileInput.type = 'file';
+                        tempFileInput.accept = '.json';
+                        tempFileInput.style.display = 'none';
+                        tempFileInput.onchange = (e) => handleConfigUpload(e, cardId);
+                        document.body.appendChild(tempFileInput);
+                        tempFileInput.click();
+                        document.body.removeChild(tempFileInput);
+                    }
+                    // Clear the input
+                    input.value = '';
+                    return;
+                }
+                
+                // Regular config ID usage
+                useConfigById(cardId, configId);
+            }
+
             // DEPRECATED: viewConfigInNewTab function removed in favor of config ID system
             // All config references now use secure config IDs instead of download URLs
 
@@ -4396,184 +4429,96 @@
             function createConfigCard() {
                 const cardId = generateCardId();
                 
-                // Create content with matching config info if available
-                let matchingConfigInfo = '';
+                // Create vertical list of config buttons if matches available
+                let configButtons = '';
                 if (globalState.matchingConfigs && globalState.matchingConfigs.matches && globalState.matchingConfigs.matches.length > 0) {
-                    const bestMatch = globalState.matchingConfigs.matches[0]; // Best match is first
-                    const matchScore = Math.round(bestMatch.match_score * 100);
-                    const matchColor = matchScore >= 80 ? '#2d5a27' : matchScore >= 50 ? '#b8860b' : '#666';
-                    const matchDate = new Date(bestMatch.last_modified).toLocaleDateString();
+                    const matches = globalState.matchingConfigs.matches;
                     
-                    // Calculate columns not in config
-                    const tableColumns = globalState.matchingConfigs.table_columns || [];
-                    const configColumns = bestMatch.matching_columns || [];
-                    const columnsNotInConfig = tableColumns.filter(col => 
-                        !configColumns.some(configCol => configCol.toLowerCase() === col.toLowerCase())
-                    );
-                    
-                    matchingConfigInfo = `
-                        <div style="background: #f0f8f0; border: 1px solid #d4edda; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                <div style="color: ${matchColor}; font-size: 16px;">
-                                    Recent Config Found: ${matchScore}% Match • ${matchDate}
+                    matches.forEach((match, index) => {
+                        const matchScore = Math.round(match.match_score * 100);
+                        const matchColor = matchScore >= 80 ? '#2d5a27' : matchScore >= 50 ? '#b8860b' : '#666';
+                        const createdDate = match.created_date ? new Date(match.created_date).toLocaleDateString() : 'Unknown';
+                        const lastUsedDate = match.last_used_date ? new Date(match.last_used_date).toLocaleDateString() : createdDate;
+                        const displayLastUsed = (lastUsedDate === createdDate) ? 'Never used' : lastUsedDate;
+                        
+                        // Usage type
+                        const usageType = match.usage_info?.type || 'unknown';
+                        let usageIcon, usageLabel;
+                        if (usageType === 'full_validation') {
+                            usageIcon = '🔍';
+                            usageLabel = 'Full Validation';
+                        } else if (usageType === 'preview') {
+                            usageIcon = '👁️';
+                            usageLabel = 'Preview Only';
+                        } else {
+                            usageIcon = '❓';
+                            usageLabel = 'Unknown';
+                        }
+                        
+                        const configId = match.config_id || match.original_name || `${match.source_session}_v${match.version || 1}`;
+                        
+                        configButtons += `
+                            <button class="std-button primary" style="width: 100%; text-align: left; padding: 16px; margin-bottom: 12px; background: white; border: 2px solid ${matchColor}; color: #333;" onclick="useConfigById('${cardId}', '${configId}')">
+                                <div style="font-weight: bold; color: ${matchColor}; font-size: 16px; margin-bottom: 8px;">
+                                    ${matchScore}% Match
                                 </div>
-                                <button class="std-button primary" style="margin-top: 8px; background: var(--primary-color); font-weight: bold;" 
-                                        onclick="useConfigById('${cardId}', '${bestMatch.config_id || bestMatch.original_name || `${bestMatch.source_session}_v${bestMatch.version || 1}`}')">
-                                    ✅ Use ${bestMatch.config_id || bestMatch.original_name || `${bestMatch.source_session}_v${bestMatch.version || 1}`}
-                                </button>
-                            </div>
-                            ${columnsNotInConfig.length > 0 ? `
-                                <div style="font-size: 14px; margin-bottom: 5px;">
-                                    <strong>Columns not in config:</strong> ${columnsNotInConfig.join(', ')}
+                                <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
+                                    Created: ${createdDate}
                                 </div>
-                            ` : ''}
-                        </div>
-                    `;
+                                <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
+                                    Last Used: ${displayLastUsed}
+                                </div>
+                                <div style="font-size: 14px; color: #666;">
+                                    ${usageIcon} ${usageLabel}
+                                </div>
+                            </button>
+                        `;
+                    });
                 }
                 
+                // Create content with vertical list of config buttons or alternative options
                 const content = `
-                    <div id="${cardId}-matching-info">${matchingConfigInfo}</div>
-                    <div id="${cardId}-options"></div>
+                    <div id="${cardId}-config-list">
+                        ${configButtons}
+                    </div>
+                    <div id="${cardId}-options" style="margin-top: 20px;">
+                        <div style="text-align: center; margin-bottom: 16px;">
+                            <input type="text" 
+                                id="${cardId}-config-id-input" 
+                                class="form-input" 
+                                placeholder="I have a configuration code!" 
+                                style="max-width: 300px; text-align: center;"
+                                onkeydown="if(event.key==='Enter'){handleConfigIdInput('${cardId}')}"
+                                onfocus="this.placeholder='Enter configuration ID...'"
+                                onblur="if(this.value===''){this.placeholder='I have a configuration code!'}"
+                            />
+                        </div>
+                    </div>
                     <div id="${cardId}-messages"></div>
                 `;
 
-                // Check if there are good matching configs (>= 80% match)
-                const hasGoodMatches = globalState.matchingConfigs && 
-                                     globalState.matchingConfigs.matches && 
-                                     globalState.matchingConfigs.matches.some(match => match.match_score >= 0.8);
-                
-                // Always show the three main buttons
+                // Bottom button for Create with AI (purple as requested)
                 const buttons = [
-                    {
-                        text: hasGoodMatches ? 'Use Recent Config' : 'Use Config',
-                        icon: '✅',
-                        variant: 'success',
-                        width: 'auto',
-                        disabled: !hasGoodMatches && !globalState.uploadedConfigFile, // Disable if no good matches and no uploaded config
-                        callback: async (e) => {
-                            const button = e.target.closest('button');
-                            
-                            // Show single green completion box immediately
-                            const messagesContainer = document.getElementById(`${cardId}-messages`);
-                            const optionsContainer = document.getElementById(`${cardId}-options`);
-                            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-                            
-                            // Hide all content including matching info
-                            const matchingInfoContainer = document.getElementById(`${cardId}-matching-info`);
-                            if (optionsContainer) optionsContainer.style.display = 'none';
-                            if (buttonsContainer) buttonsContainer.style.display = 'none';
-                            if (matchingInfoContainer) matchingInfoContainer.style.display = 'none';
-                            
-                            // Show completion message
-                            if (messagesContainer) {
-                                messagesContainer.innerHTML = `
-                                    <div class="message message-success" style="margin-bottom: 1rem;">
-                                        <span class="message-icon"></span>
-                                        <span>Using recent configuration and setting up validation...</span>
-                                    </div>
-                                `;
-                            }
-                            
-                            if (hasGoodMatches) {
-                                const bestMatch = globalState.matchingConfigs.matches[0];
-                                
-                                try {
-                                    // Copy the config first (this shows its own messages)
-                                    await useRecentConfig(cardId, bestMatch.config_key, bestMatch.source_session);
-                                    
-                                    // Check if config is 100% match
-                                    const matchScore = Math.round(bestMatch.match_score * 100);
-                                    
-                                    if (matchScore === 100) {
-                                        // Perfect match - proceed directly to preview
-                                        setTimeout(() => {
-                                            createPreviewCard();
-                                        }, 1000);
-                                    } else {
-                                        // Not perfect match - run config validation first (same as upload pathway)
-                                        setTimeout(() => {
-                                            validateRecentConfig(cardId);
-                                        }, 1000);
-                                    }
-                                    
-                                } catch (error) {
-                                    console.error('Error using recent config:', error);
-                                    if (messagesContainer) {
-                                        messagesContainer.innerHTML = `
-                                            <div class="message message-error" style="margin-bottom: 1rem;">
-                                                <span class="message-icon"></span>
-                                                <span>Error using recent config: ${error.message}</span>
-                                            </div>
-                                        `;
-                                    }
-                                }
-                            } else {
-                                if (messagesContainer) {
-                                    messagesContainer.innerHTML = `
-                                        <div class="message message-info" style="margin-bottom: 1rem;">
-                                            <span class="message-icon"></span>
-                                            <span>No suitable recent config available (need ≥80% match). Please upload a config or create one with AI.</span>
-                                        </div>
-                                    `;
-                                }
-                            }
-                        }
-                    },
-                    {
-                        text: 'Upload Config',
-                        icon: '📤',
-                        variant: 'secondary',
-                        width: 'auto',
-                        callback: async (e) => {
-                            const button = e.target.closest('button');
-                            
-                            // Show single green completion box immediately
-                            const messagesContainer = document.getElementById(`${cardId}-messages`);
-                            const optionsContainer = document.getElementById(`${cardId}-options`);
-                            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-                            
-                            // Hide all content including matching info
-                            const matchingInfoContainer = document.getElementById(`${cardId}-matching-info`);
-                            if (optionsContainer) optionsContainer.style.display = 'none';
-                            if (buttonsContainer) buttonsContainer.style.display = 'none';
-                            if (matchingInfoContainer) matchingInfoContainer.style.display = 'none';
-                            
-                            // Hide recent config notice and show completion message
-                            if (messagesContainer) {
-                                messagesContainer.innerHTML = `
-                                    <div class="message message-success" style="margin-bottom: 1rem;">
-                                        <span class="message-icon"></span>
-                                        <span>Opening file picker for configuration upload...</span>
-                                    </div>
-                                `;
-                            }
-                            
-                            // Trigger file picker after brief delay
-                            setTimeout(() => {
-                                document.getElementById(`${cardId}-config-file`).click();
-                            }, 500);
-                        }
-                    },
                     {
                         text: 'Create with AI',
                         icon: '🤖',
                         variant: 'primary',
                         width: 'auto',
+                        style: 'background: #6b46c1; border-color: #6b46c1; color: white;', // Purple styling
                         callback: async (e) => {
                             const button = e.target.closest('button');
                             
-                            // Show single green completion box immediately
+                            // Show completion message
                             const messagesContainer = document.getElementById(`${cardId}-messages`);
                             const optionsContainer = document.getElementById(`${cardId}-options`);
                             const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                            const configList = document.getElementById(`${cardId}-config-list`);
                             
-                            // Hide all content including matching info
-                            const matchingInfoContainer = document.getElementById(`${cardId}-matching-info`);
+                            // Hide all content
                             if (optionsContainer) optionsContainer.style.display = 'none';
                             if (buttonsContainer) buttonsContainer.style.display = 'none';
-                            if (matchingInfoContainer) matchingInfoContainer.style.display = 'none';
+                            if (configList) configList.style.display = 'none';
                             
-                            // Hide recent config notice and show completion message
                             if (messagesContainer) {
                                 messagesContainer.innerHTML = `
                                     <div class="message message-success" style="margin-bottom: 1rem;">
