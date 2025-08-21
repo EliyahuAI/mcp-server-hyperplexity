@@ -13,7 +13,7 @@ import boto3
 import asyncio
 import random
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from perplexity_schema import get_response_format_schema
 import traceback
 
@@ -26,6 +26,17 @@ logger.info("AI_API_CLIENT: Module loaded successfully")
 
 class AIAPIClient:
     """Shared AI API client with caching and schema support."""
+    
+    # Model hierarchy from best to most basic
+    MODEL_HIERARCHY = [
+        "claude-opus-4-1",
+        "claude-opus-4-0", 
+        "claude-sonnet-4-0",
+        "sonar-pro",
+        "claude-3-7-sonnet-latest",
+        "sonar",
+        "claude-3-5-haiku-latest"
+    ]
     
     def __init__(self, s3_bucket: str = None):
         # Check if using unified bucket structure
@@ -122,6 +133,26 @@ class AIAPIClient:
         elif model.startswith('anthropic.'):
             return model.replace('anthropic.', '').replace('-v1:0', '')
         return model
+    
+    def _get_backup_models(self, primary_model: str, count: int = 2) -> List[str]:
+        """Get the next N backup models based on hierarchy position."""
+        try:
+            # Find the primary model in hierarchy
+            primary_index = self.MODEL_HIERARCHY.index(primary_model)
+            
+            # Get the next models after the primary
+            backup_models = []
+            for i in range(1, count + 1):
+                backup_index = primary_index + i
+                if backup_index < len(self.MODEL_HIERARCHY):
+                    backup_models.append(self.MODEL_HIERARCHY[backup_index])
+            
+            return backup_models
+            
+        except ValueError:
+            # Primary model not in hierarchy, return default backups
+            logger.warning(f"Model {primary_model} not in hierarchy, using default backups")
+            return ["claude-opus-4-0", "claude-3-7-sonnet-latest"][:count]
     
     def _get_cache_key(self, prompt: str, model: str, schema: Dict = None, context: str = "") -> str:
         """Generate a unique cache key for the request."""
@@ -364,16 +395,16 @@ class AIAPIClient:
         except Exception as e:
             logger.error(f"[DEBUG] Failed to save debug data: {str(e)}")
     
-    async def call_structured_api(self, prompt: str, schema: Dict, model: str = "claude-3-5-sonnet-20241022", 
+    async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-3-5-sonnet-20241022", 
                                  tool_name: str = "structured_response", use_cache: bool = True, 
                                  context: str = "") -> Dict:
         """
-        Call Claude API with structured output using JSON response format.
+        Call AI API with structured output using JSON response format.
         
         Args:
-            prompt: The prompt to send to Claude
+            prompt: The prompt to send to the AI
             schema: JSON schema for the expected response structure
-            model: The Claude model to use
+            model: The model to use (string) or list of models to try in sequence
             tool_name: Name of the tool for structured output (legacy parameter, now ignored)
             use_cache: Whether to use caching
             context: Additional context for cache key generation
@@ -382,91 +413,127 @@ class AIAPIClient:
             Dict containing the structured response and metadata
         """
         call_start_time = datetime.now()
-        normalized_model = self._normalize_anthropic_model(model)
         
-        logger.info(f"STRUCTURED_API_CALL: Starting call to {normalized_model}, "
+        # Convert single model to list and auto-add backup models
+        if isinstance(model, str):
+            models_to_try = [model]
+            # Auto-add next 2 models from hierarchy as backup
+            backup_models = self._get_backup_models(model, 2)
+            models_to_try.extend(backup_models)
+            logger.info(f"Auto-selected backup models for {model}: {backup_models}")
+        else:
+            models_to_try = model
+        
+        logger.info(f"STRUCTURED_API_CALL: Starting call with {len(models_to_try)} model(s): {models_to_try}, "
                    f"use_cache: {use_cache}, context: '{context[:50]}...', "
                    f"prompt_length: {len(prompt)}, schema_keys: {list(schema.keys()) if schema else 'None'}")
         
-        cache_key = self._get_cache_key(prompt, normalized_model, schema, context) if use_cache else None
+        last_error = None
         
-        if cache_key:
-            logger.info(f"STRUCTURED_API_CACHE_KEY: Generated cache key: {cache_key[:16]}... "
-                       f"(full key hash: {cache_key})")
-        
-        # Check cache first
-        if use_cache and cache_key:
-            cache_check_start = datetime.now()
-            cached_data = await self._check_cache(cache_key, 'anthropic')
-            cache_check_time = (datetime.now() - cache_check_start).total_seconds()
-            
-            if cached_data:
-                total_time = (datetime.now() - call_start_time).total_seconds()
-                logger.info(f"STRUCTURED_API_CACHED: Returning cached response "
-                           f"(cache_check: {cache_check_time:.3f}s, total: {total_time:.3f}s)")
-                token_usage = cached_data.get('token_usage', {})
-                # Debug log the cached token usage structure
-                logger.info(f"DEBUG: Cached token usage keys: {list(token_usage.keys())}")
-                logger.info(f"DEBUG: Cached token usage api_provider: {token_usage.get('api_provider')}")
-                logger.info(f"DEBUG: Cached token usage input_tokens: {token_usage.get('input_tokens')}")
-                logger.info(f"DEBUG: Cached token usage prompt_tokens: {token_usage.get('prompt_tokens')}")
+        # Try each model once in sequence
+        for model_index, current_model in enumerate(models_to_try):
+            try:
+                logger.info(f"[MODEL_TRY] Attempting model {model_index + 1}/{len(models_to_try)}: {current_model}")
                 
-                # Normalize legacy cached token usage for Perplexity
-                if token_usage.get('api_provider') == 'perplexity':
-                    if 'input_tokens' not in token_usage and 'prompt_tokens' in token_usage:
-                        token_usage['input_tokens'] = token_usage['prompt_tokens']
-                        logger.info(f"DEBUG: Fixed input_tokens: {token_usage['input_tokens']}")
-                    if 'output_tokens' not in token_usage and 'completion_tokens' in token_usage:
-                        token_usage['output_tokens'] = token_usage['completion_tokens']
-                        logger.info(f"DEBUG: Fixed output_tokens: {token_usage['output_tokens']}")
+                # Normalize model for current provider
+                api_provider = self._determine_api_provider(current_model)
+                current_model_normalized = self._normalize_anthropic_model(current_model)
+                
+                # Generate cache key for this specific model
+                cache_key = self._get_cache_key(prompt, current_model_normalized, schema, context) if use_cache else None
+                
+                # Check cache for this specific model
+                if use_cache and cache_key:
+                    cached_data = await self._check_cache(cache_key, api_provider)
+                    if cached_data:
+                        logger.info(f"[CACHE_HIT] Using cached response for model {current_model}")
+                        token_usage = cached_data.get('token_usage', {})
+                        # Normalize legacy cached token usage for Perplexity
+                        if token_usage.get('api_provider') == 'perplexity':
+                            if 'input_tokens' not in token_usage and 'prompt_tokens' in token_usage:
+                                token_usage['input_tokens'] = token_usage['prompt_tokens']
+                            if 'output_tokens' not in token_usage and 'completion_tokens' in token_usage:
+                                token_usage['output_tokens'] = token_usage['completion_tokens']
+                        
+                        return {
+                            'response': cached_data['api_response'],
+                            'token_usage': token_usage,
+                            'processing_time': cached_data.get('processing_time', 0),
+                            'is_cached': True,
+                            'model_used': current_model
+                        }
+                
+                # Make API call based on provider
+                if api_provider == 'anthropic':
+                    # Anthropic API call
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': self.anthropic_api_key,
+                        'anthropic-version': '2023-06-01'
+                    }
                     
-                    logger.info(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
+                    data = {
+                        "model": current_model_normalized,
+                        "max_tokens": 8000,
+                        "temperature": 0.1,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "tools": [{
+                            "name": tool_name,
+                            "description": f"Provide structured response using {tool_name}",
+                            "input_schema": schema
+                        }],
+                        "tool_choice": {"type": "tool", "name": tool_name}
+                    }
+                    
+                    result = await self._make_single_anthropic_call("https://api.anthropic.com/v1/messages", 
+                                                                   headers, data, current_model_normalized, 
+                                                                   use_cache, cache_key, call_start_time)
+                    
+                elif api_provider == 'perplexity':
+                    # Perplexity API call for structured output
+                    result = await self._make_single_perplexity_structured_call(prompt, schema, current_model,
+                                                                               use_cache, cache_key, call_start_time)
+                else:
+                    logger.warning(f"[SKIP] Unknown provider for model {current_model}")
+                    continue
                 
-                return {
-                    'response': cached_data['api_response'],
-                    'token_usage': token_usage,
-                    'processing_time': cached_data.get('processing_time', 0),
-                    'is_cached': True
-                }
-            else:
-                logger.info(f"STRUCTURED_API_NO_CACHE: Cache miss, proceeding with API call "
-                           f"(cache_check: {cache_check_time:.3f}s)")
+                # If we got a result, add model info and return it
+                if result:
+                    result['model_used'] = current_model
+                    result['used_backup_model'] = model_index > 0
+                    logger.info(f"[SUCCESS] Model {current_model} succeeded")
+                    return result
+                    
+            except Exception as e:
+                error_msg = str(e)
+                logger.warning(f"[FAILED] Model {current_model} failed: {error_msg}")
+                last_error = e
+                
+                # If this is a 529 overload, try next model. For other errors, continue trying too.
+                if "overloaded" in error_msg and "529" in error_msg:
+                    logger.info(f"[OVERLOAD] Model {current_model} overloaded, trying next model")
+                    continue
+                elif model_index == len(models_to_try) - 1:
+                    # This was the last model, re-raise the error
+                    raise
+                else:
+                    # Try next model for any error
+                    continue
         
-        # Make API call with fallback strategy
-        headers = {
-            'Content-Type': 'application/json',
-            'X-API-Key': self.anthropic_api_key,
-            'anthropic-version': '2023-06-01'
-        }
-        
-        # Use tool use approach (response_format not supported by Claude API)
-        data = {
-            "model": normalized_model,
-            "max_tokens": 8000,
-            "temperature": 0.1,
-            "messages": [{"role": "user", "content": prompt}],
-            "tools": [{
-                "name": tool_name,
-                "description": f"Provide structured response using {tool_name}",
-                "input_schema": schema
-            }],
-            "tool_choice": {"type": "tool", "name": tool_name}
-        }
-        
-        
-        start_time = datetime.now()
-        
-        return await self._make_claude_api_call_with_retry("https://api.anthropic.com/v1/messages", headers, data, 
-                                                         normalized_model, use_cache, cache_key, start_time)
+        # If we get here, all models failed
+        if last_error:
+            raise last_error
+        else:
+            raise Exception("All models failed - no specific error captured")
     
-    async def call_text_api(self, prompt: str, model: str = "claude-3-5-sonnet-20241022", 
+    async def call_text_api(self, prompt: str, model: Union[str, List[str]] = "claude-3-5-sonnet-20241022", 
                            use_cache: bool = True, context: str = "") -> Dict:
         """
-        Call Claude API for text response.
+        Call AI API for text response.
         
         Args:
-            prompt: The prompt to send to Claude
-            model: The Claude model to use
+            prompt: The prompt to send to the AI
+            model: The model to use (string) or list of models to try in sequence
             use_cache: Whether to use caching
             context: Additional context for cache key generation
             
@@ -841,6 +908,131 @@ class AIAPIClient:
                 delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
                 logger.warning(f"Retrying Claude API call in {delay:.1f}s...")
                 await asyncio.sleep(delay)
+    
+    async def _make_single_anthropic_call(self, url: str, headers: Dict, data: Dict, 
+                                         normalized_model: str, use_cache: bool, 
+                                         cache_key: str, start_time: datetime) -> Dict:
+        """Make a single Anthropic API call without retries."""
+        debug_request = {
+            'url': url,
+            'headers': {k: v if k != 'X-API-Key' else 'REDACTED' for k, v in headers.items()},
+            'data': data
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=data) as response:
+                    processing_time = (datetime.now() - start_time).total_seconds()
+                    response_text = await response.text()
+                    
+                    if response.status == 200:
+                        response_json = json.loads(response_text)
+                        
+                        # Save debug data for successful call
+                        await self._save_debug_data('anthropic', normalized_model, debug_request, 
+                                                  response_json, context="single_call_success")
+                        
+                        token_usage = self._extract_token_usage(response_json, normalized_model)
+                        
+                        # Cache the response
+                        if use_cache and cache_key:
+                            await self._save_to_cache(cache_key, response_json, token_usage, processing_time, normalized_model, 'anthropic')
+                        
+                        return {
+                            'response': response_json,
+                            'token_usage': token_usage,
+                            'processing_time': processing_time,
+                            'is_cached': False
+                        }
+                    else:
+                        error = Exception(f"Anthropic API returned status {response.status}: {response_text}")
+                        await self._save_debug_data('anthropic', normalized_model, debug_request, 
+                                                  response_text, error=error, context=f"single_call_status_{response.status}")
+                        raise error
+                        
+        except Exception as e:
+            await self._save_debug_data('anthropic', normalized_model, debug_request, 
+                                      None, error=e, context="single_call_exception")
+            raise
+    
+    async def _make_single_perplexity_structured_call(self, prompt: str, schema: Dict, model: str,
+                                                     use_cache: bool, cache_key: str, start_time: datetime) -> Dict:
+        """Make a single Perplexity API call for structured output."""
+        # Perplexity supports structured output via response_format
+        headers = {
+            "Authorization": f"Bearer {self.perplexity_api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant. Return your answer in valid JSON format."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.1,
+            "max_tokens": 8000,
+            "response_format": {
+                "type": "json_object",
+                "schema": schema
+            },
+            "web_search_options": {
+                "search_context_size": "low"  # Default to low for structured calls
+            }
+        }
+        
+        debug_request = {
+            'url': "https://api.perplexity.ai/chat/completions",
+            'headers': {k: v if k != 'Authorization' else 'Bearer REDACTED' for k, v in headers.items()},
+            'data': data
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                timeout = aiohttp.ClientTimeout(total=60)
+                async with session.post(
+                    "https://api.perplexity.ai/chat/completions",
+                    headers=headers,
+                    json=data,
+                    timeout=timeout
+                ) as response:
+                    processing_time = (datetime.now() - start_time).total_seconds()
+                    
+                    if response.status == 200:
+                        response_json = await response.json()
+                        
+                        # Save debug data for successful call
+                        await self._save_debug_data('perplexity', model, debug_request, 
+                                                  response_json, context="structured_call_success")
+                        
+                        token_usage = self._extract_token_usage(response_json, model, "low")
+                        
+                        # Cache the response
+                        if use_cache and cache_key:
+                            await self._save_to_cache(cache_key, response_json, token_usage, processing_time, model, 'perplexity')
+                        
+                        return {
+                            'response': response_json,
+                            'token_usage': token_usage,
+                            'processing_time': processing_time,
+                            'is_cached': False
+                        }
+                    else:
+                        error_text = await response.text()
+                        error = Exception(f"Perplexity API returned status {response.status}: {error_text}")
+                        await self._save_debug_data('perplexity', model, debug_request, 
+                                                  error_text, error=error, context=f"structured_call_status_{response.status}")
+                        raise error
+                        
+        except asyncio.TimeoutError as e:
+            timeout_error = Exception(f"Perplexity API timeout: {str(e)}")
+            await self._save_debug_data('perplexity', model, debug_request, 
+                                      None, error=timeout_error, context="structured_call_timeout")
+            raise timeout_error
+        except Exception as e:
+            await self._save_debug_data('perplexity', model, debug_request, 
+                                      None, error=e, context="structured_call_exception")
+            raise
 
 # Global instance for easy import
 ai_client = AIAPIClient()
