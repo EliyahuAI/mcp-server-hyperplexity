@@ -13,11 +13,10 @@ Create a comprehensive configuration that includes:
    - Group 1+: Columns that appear together in typical sources
    - Every column must be assigned to a search group
 
-2. **Validation Targets** (CRITICAL REQUIREMENT)
-   - MUST include ALL columns from the table without exception
-   - Proper importance levels for each column  
-   - Realistic examples from the actual data
-   - Appropriate format specifications
+2. **Validation Targets**
+   - All important columns with proper importance levels
+   - Realistic examples from the actual data (INCLUDING UNITS when applicable)
+   - Appropriate format specifications with unit requirements for measurements
 
 3. **AI Summary** (REQUIRED)
    - Overview of the search group structure you created

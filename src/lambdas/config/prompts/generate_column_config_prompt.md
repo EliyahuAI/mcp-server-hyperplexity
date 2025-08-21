@@ -13,13 +13,10 @@ Examine the provided table file and make intelligent assumptions:
 4. **Deduce domain/industry** from content and terminology
 5. **Group related columns** that would appear in same sources
 6. **Extract real examples** from the actual data (if possible, otherwise specify a consistent set)
-7. **Assign importance levels** based on column criticality
+7. **Include units** for any measurements or quantities in examples and notes
+8. **Assign importance levels** based on column criticality
 
 ### Step 2: Present Your Analysis
-**CRITICAL REQUIREMENTS:**
-- **Every column must have an entry**: The configuration MUST include an entry in validation_targets for every single column in the table, without exception.
-- **Questions are about columns, not rows**: All clarifying questions should focus on column-level properties, data types, validation rules, and column relationships. Never ask questions about specific row values or individual data points.
-
 Show your assumptions clearly in this format:
 
 **MY ANALYSIS:**
@@ -45,16 +42,12 @@ Show your assumptions clearly in this format:
 ### Step 3: Ask Only Targeted Questions
 Only ask when genuinely unclear or need confirmation:
 
-#### Types of Questions to Ask (COLUMN-LEVEL ONLY):
-- **Column purpose clarifications**: "Is my understanding of what the [column name] column represents correct?"
-- **Column data type questions**: "For [column name], should this be: A) [data type A] or B) [data type B]?"
-- **Column validation strategy**: "For [column name], what validation approach would be most appropriate?"
-- **Column relationship questions**: "Are columns [A] and [B] related in a way that affects validation?"
-- **Domain-specific column requirements**: "What specific validation criteria should I apply to [column name]?"
+#### Types of Questions to Ask:
+- **Corrections**: "Is my understanding of [specific assumption] correct?"
+- **A/B Clarifications**: "For [ambiguous column], should this be: A) [option A] or B) [option B]?"
+- **Domain specifics**: "What specific sources should I prioritize for [domain-specific information]?"
 
 #### Avoid Asking:
-- ❌ Questions about specific row values or data points
-- ❌ Questions about individual records or entries  
 - ❌ Obvious table purposes (clear from column names)
 - ❌ Clear data formats (evident from sample data)
 - ❌ Standard examples (use real data from table)
@@ -64,9 +57,7 @@ Only ask when genuinely unclear or need confirmation:
 ### Step 4: Generate Configuration
 Create the simplified `column_config.json` based on analysis and any clarifications.
 
-**CRITICAL REQUIREMENTS**: 
-- The configuration MUST include search groups - this is not optional.
-- The configuration MUST include an entry for every single column in the table without exception.
+**CRITICAL**: The configuration MUST include search groups - this is not optional.
 
 ```json
 {
@@ -95,7 +86,7 @@ Create the simplified `column_config.json` based on analysis and any clarificati
       "description": "Clear description based on analysis",
       "importance": "ID|CRITICAL|HIGH|MEDIUM|LOW|IGNORED",
       "format": "String|Date|Number|URL|Email|etc.",
-      "notes": "Inferred formatting rules and validation guidelines",
+      "notes": "Inferred formatting rules and validation guidelines (include units for measurements)",
       "examples": ["real_value1", "real_value2", "real_value3"],
       "search_group": 0,
       "search_context_size": "high"
@@ -210,7 +201,7 @@ ANALYST: I've analyzed your pharmaceutical products table. Here's my assessment:
 | Target | CRITICAL | String | Medical targets | "Cancer", "Heart Disease" |
 | Status | CRITICAL | String | Clinical phases | "Phase3", "Approved" |
 | Launch_Date | HIGH | Date | YYYY-MM-DD format | "2025-06-01", "2026-12-15" |
-| Revenue_M | MEDIUM | Number | Millions USD | "150.5", "89.2" |
+| Revenue_M | MEDIUM | Number | Millions USD (include units) | "150.5M USD", "89.2M USD" |
 
 **CLARIFYING QUESTIONS:**
 1. Is my understanding correct that this is for investment tracking?

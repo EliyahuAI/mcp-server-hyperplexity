@@ -58,13 +58,15 @@ Refine the existing configuration by:
 ### 4. Column-Level Improvements
 - **Goal**: Clear, actionable validation guidance with precise examples
 - **Strategy**: Refine notes, examples, and formats based on actual data patterns
-- **Requirements**: Use exact column names from table analysis, provide realistic examples
+- **Requirements**: Use exact column names from table analysis, provide realistic examples WITH UNITS for measurements
+- **Units Focus**: Ensure numerical data includes appropriate units (mg, kg, mL, °C, etc.) in both notes and examples
 
 ## Common Refinement Scenarios
 - **Adjust importance levels** based on business priorities and user feedback
 - **Restructure search groups** to better reflect where information appears in sources
-- **Update examples** with more accurate, realistic data from the table
+- **Update examples** with more accurate, realistic data from the table (including proper units)
 - **Refine descriptions** for clarity and business relevance
+- **Add unit requirements** to notes for measurement columns (weights, volumes, temperatures, etc.)
 - **Optimize model selection** (sonar-pro vs claude-sonnet-4-0) based on complexity
 - **Adjust search context sizes** for performance (prefer "low" unless "high" is specifically needed)
 

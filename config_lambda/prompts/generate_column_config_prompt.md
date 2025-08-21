@@ -13,7 +13,8 @@ Examine the provided table file and make intelligent assumptions:
 4. **Deduce domain/industry** from content and terminology
 5. **Group related columns** that would appear in same sources
 6. **Extract real examples** from the actual data (if possible, otherwise specify a consistent set)
-7. **Assign importance levels** based on column criticality
+7. **Include units** for any measurements or quantities in examples and notes
+8. **Assign importance levels** based on column criticality
 
 ### Step 2: Present Your Analysis
 Show your assumptions clearly in this format:
@@ -85,7 +86,7 @@ Create the simplified `column_config.json` based on analysis and any clarificati
       "description": "Clear description based on analysis",
       "importance": "ID|CRITICAL|HIGH|MEDIUM|LOW|IGNORED",
       "format": "String|Date|Number|URL|Email|etc.",
-      "notes": "Inferred formatting rules and validation guidelines",
+      "notes": "Inferred formatting rules and validation guidelines (include units for measurements)",
       "examples": ["real_value1", "real_value2", "real_value3"],
       "search_group": 0,
       "search_context_size": "high"
@@ -200,7 +201,7 @@ ANALYST: I've analyzed your pharmaceutical products table. Here's my assessment:
 | Target | CRITICAL | String | Medical targets | "Cancer", "Heart Disease" |
 | Status | CRITICAL | String | Clinical phases | "Phase3", "Approved" |
 | Launch_Date | HIGH | Date | YYYY-MM-DD format | "2025-06-01", "2026-12-15" |
-| Revenue_M | MEDIUM | Number | Millions USD | "150.5", "89.2" |
+| Revenue_M | MEDIUM | Number | Millions USD (include units) | "150.5M USD", "89.2M USD" |
 
 **CLARIFYING QUESTIONS:**
 1. Is my understanding correct that this is for investment tracking?

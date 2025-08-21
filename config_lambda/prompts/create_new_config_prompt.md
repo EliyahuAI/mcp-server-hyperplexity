@@ -15,8 +15,8 @@ Create a comprehensive configuration that includes:
 
 2. **Validation Targets**
    - All important columns with proper importance levels
-   - Realistic examples from the actual data
-   - Appropriate format specifications
+   - Realistic examples from the actual data (INCLUDING UNITS when applicable)
+   - Appropriate format specifications with unit requirements for measurements
 
 3. **AI Summary** (REQUIRED)
    - Overview of the search group structure you created

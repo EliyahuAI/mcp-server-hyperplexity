@@ -98,6 +98,34 @@ Auto-detect from sample data:
 - Emails: @ symbol patterns
 - Strings: Default for text data
 
+## Units and Measurements Guidelines
+
+**CRITICAL**: When dealing with numerical data representing measurements, quantities, or scientific values, always emphasize the importance of including proper units in the validation notes and examples.
+
+### When to Emphasize Units:
+- **Physical measurements**: Weight, height, length, volume, area
+- **Scientific values**: Doses, concentrations, temperatures, pressures
+- **Medical data**: Dosages, lab values, vital signs
+- **Chemical data**: Molecular weights, concentrations, pH levels
+- **Engineering data**: Dimensions, capacities, power ratings
+- **Financial data**: Currency amounts (already handled by currency patterns)
+
+### Implementation Strategy:
+- **In Notes Field**: Always specify expected unit format (e.g., "Include units like mg, kg, mL, etc.")
+- **In Examples**: Show realistic values WITH units (e.g., "25 mg", "180 cm", "37.2°C")
+- **Validation Guidance**: Emphasize that sources should include units for accuracy
+- **Consistency**: Ensure unit formats are standardized across similar measurements
+
+### Common Unit Categories:
+- **Mass/Weight**: mg, g, kg, lb, oz
+- **Volume**: mL, L, fl oz, cups, gallons
+- **Length**: mm, cm, m, ft, in, miles, km
+- **Temperature**: °C, °F, K
+- **Time**: sec, min, hr, days, weeks, months, years
+- **Concentration**: mg/mL, g/L, M (molar), ppm, %
+- **Pressure**: mmHg, kPa, bar, psi
+- **Energy**: J, cal, kWh, BTU
+
 ## Search Group Requirements (MANDATORY)
 
 Search groups are **REQUIRED** for every configuration - they are essential for building an effective search strategy and cannot be omitted.
