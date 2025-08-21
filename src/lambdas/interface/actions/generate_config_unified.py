@@ -408,6 +408,7 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 'clarification_urgency': body.get('clarification_urgency', 0.0),
                 'reasoning': body.get('reasoning', ''),
                 'ai_summary': body.get('ai_summary', ''),
+                'technical_ai_summary': body.get('technical_ai_summary', ''),
                 'config_s3_key': storage_result['s3_key'],
                 'config_version': version,
                 'config_filename': config_filename,  # Include config lambda filename

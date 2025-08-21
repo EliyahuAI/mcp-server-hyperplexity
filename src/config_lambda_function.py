@@ -170,12 +170,13 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         clarifying_questions = response_data.get('clarifying_questions', '')
         clarification_urgency = response_data.get('clarification_urgency', 0.0)
         ai_summary = response_data.get('ai_summary', '')
+        technical_ai_summary = response_data.get('technical_ai_summary', '')
         
         # Add conversation entry to config change log
         if updated_config:
             updated_config = add_conversation_entry(
                 updated_config, existing_config, instructions, 
-                clarifying_questions, clarification_urgency, ai_summary, session_id,
+                clarifying_questions, clarification_urgency, ai_summary, technical_ai_summary, session_id,
                 conversation_history
             )
         
@@ -202,6 +203,7 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             'clarifying_questions': clarifying_questions,
             'clarification_urgency': clarification_urgency,
             'ai_summary': ai_summary,
+            'technical_ai_summary': technical_ai_summary,
             'config_s3_key': config_s3_key,
             'download_url': download_url,
             'session_id': session_id
@@ -360,7 +362,8 @@ def get_unified_generation_schema() -> Dict:
 def add_conversation_entry(updated_config: Dict, existing_config: Dict = None, 
                           instructions: str = '', clarifying_questions: str = '',
                           clarification_urgency: float = 0.0, ai_summary: str = '', 
-                          session_id: str = 'unknown', conversation_history: list = None) -> Dict:
+                          technical_ai_summary: str = '', session_id: str = 'unknown', 
+                          conversation_history: list = None) -> Dict:
     """Add conversation entry to config change log and update metadata."""
     from datetime import datetime
     
@@ -395,6 +398,7 @@ def add_conversation_entry(updated_config: Dict, existing_config: Dict = None,
         'clarifying_questions': clarifying_questions,
         'clarification_urgency': clarification_urgency,
         'ai_summary': ai_summary,
+        'technical_ai_summary': technical_ai_summary,
         'version': current_version,
         'model_used': 'claude-sonnet-4-0'
     }

@@ -186,6 +186,7 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         clarification_urgency = response_data.get('clarification_urgency', 0.0)
         reasoning = response_data.get('reasoning', '')
         ai_summary = response_data.get('ai_summary', '')
+        technical_ai_summary = response_data.get('technical_ai_summary', '')
         
         # Validate the AI-generated config before proceeding
         if updated_config:
@@ -213,6 +214,7 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
                     # Merge retry information
                     reasoning += f"\n\nRetry: {retry_result.get('reasoning', '')}"
                     ai_summary += f"\n\nRetry Summary: {retry_result.get('ai_summary', '')}"
+                    technical_ai_summary += f"\n\nRetry Technical Summary: {retry_result.get('technical_ai_summary', '')}"
                 else:
                     logger.error("Failed to fix config validation errors on retry")
         
@@ -235,7 +237,7 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             # Add conversation entry with metadata
             updated_config = add_conversation_entry(
                 updated_config, existing_config, instructions, 
-                clarifying_questions, clarification_urgency, reasoning, ai_summary, session_id,
+                clarifying_questions, clarification_urgency, reasoning, ai_summary, technical_ai_summary, session_id,
                 config_filename=config_filename
             )
         
@@ -272,6 +274,7 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             'clarification_urgency': clarification_urgency,
             'reasoning': reasoning,
             'ai_summary': ai_summary,
+            'technical_ai_summary': technical_ai_summary,
             'config_s3_key': config_s3_key,
             'config_download_url': config_download_url,
             'config_filename': config_filename,
@@ -554,7 +557,7 @@ def embed_user_message_in_log(existing_config: Dict, instructions: str, session_
 def add_conversation_entry(updated_config: Dict, existing_config: Dict = None, 
                           instructions: str = '', clarifying_questions: str = '',
                           clarification_urgency: float = 0.0, reasoning: str = '', 
-                          ai_summary: str = '', session_id: str = 'unknown',
+                          ai_summary: str = '', technical_ai_summary: str = '', session_id: str = 'unknown',
                           config_filename: str = None) -> Dict:
     """Add conversation entry to config change log and update metadata."""
     
@@ -582,6 +585,7 @@ def add_conversation_entry(updated_config: Dict, existing_config: Dict = None,
         'clarification_urgency': clarification_urgency,
         'reasoning': reasoning,
         'ai_summary': ai_summary,
+        'technical_ai_summary': technical_ai_summary,
         'version': current_version,
         'model_used': 'claude-sonnet-4-0'
     }

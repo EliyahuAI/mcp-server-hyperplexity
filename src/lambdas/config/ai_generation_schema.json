@@ -2,7 +2,7 @@
   "title": "AI Config Generation Response Schema",
   "description": "Schema for AI responses when generating or refining column configurations",
   "type": "object",
-  "required": ["updated_config", "clarifying_questions", "clarification_urgency", "ai_summary"],
+  "required": ["updated_config", "clarifying_questions", "clarification_urgency", "technical_ai_summary", "ai_summary"],
   "properties": {
     "updated_config": {
       "type": "object",
@@ -65,9 +65,13 @@
       "type": "number",
       "description": "Urgency score from 0-1: 0 = no clarification needed, 1 = critical columns will likely be wrong without clarification"
     },
+    "technical_ai_summary": {
+      "type": "string",
+      "description": "Technical summary explaining what you did, highlighting assumptions that you needed to make. Include details about search groups, context, criticality, and specific configuration decisions. The focus changes depending on whether the configuration is new or a refinement (you are updating an existing configuration):\n\nFOR NEW CONFIGURATIONS: What is your understanding of the context of this table? What were your assumptions? Does this need refinement? \n\n FOR REFINEMENTS: Focus on changes made and the reasons why they were made. Does this need futher refinement?"
+    },
     "ai_summary": {
       "type": "string",
-      "description": "Short but clear summary in simple language explaining what you did, highlighting assumptions that you needed to make. The focus changes depending on whether the configuration is new or a refinement (you are updating an existing configuration):\n\nFOR NEW CONFIGURATIONS: What is your understanding of the context of this table? What were your assumptions? Does this need refinement? \n\n FOR REFINEMENTS: Focus on changes made and the reasons why they were made. Does this need futher refinement?"
+      "description": "Simple lay person description of what is happening without explicitly mentioning search groups, context, or criticality. This should be shorter and clearer than the technical summary. Examples: 'Increased search context to high' becomes 'Instructed Perplexity to look at more sources', 'Created dedicated search group' becomes 'Looking for that value by itself'. Focus on the 'why' in simple terms."
     }
   },
   "additionalProperties": false
