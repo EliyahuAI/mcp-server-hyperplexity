@@ -67,29 +67,27 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
         if field_name not in field_keys:  # Avoid duplicates
             field_keys.append(field_name)
     
-    # Then add any validation fields not in config
+    # Then add any validation fields not in config (excluding internal/meta fields)
     for field_name in sorted(list(validation_field_names)): # sort for consistent order
-        if field_name not in field_keys:
+        if field_name not in field_keys and field_name not in ['holistic_validation', 'reasons', 'next_check', '_raw_responses', 'validation_history']:
             field_keys.append(field_name)
     
-    # Sort function: ID fields first (by search group), then other fields by search group
-    # Within each group, preserve original order from config
+    # Sort function: ID fields first, then preserve original config order
     def get_field_sort_key(field_name):
         config = field_config_map.get(field_name, {})
         importance = config.get('importance', 'MEDIUM')
-        search_group = config.get('search_group', 999)
         
-        # Get original position in config for ordering within groups
+        # Get original position in config for ordering
         try:
             config_position = all_config_fields.index(field_name)
         except ValueError:
             config_position = 9999  # Put fields not in config at the end
         
-        # ID fields come first (sort key 0), then by search group
+        # ID fields come first (sort key 0), then preserve original config order
         if importance == 'ID':
-            return (0, search_group, config_position)
+            return (0, config_position)
         else:
-            return (1, search_group, config_position)
+            return (1, config_position)
     
     # Sort field keys
     field_keys.sort(key=get_field_sort_key)
@@ -97,22 +95,22 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
     # Create transposed table: fields as rows, data rows as columns
     table_lines = []
     
-    # Add legend as a separate sentence before the table
-    legend = "**Confidence Legend:** 🟢 High • 🟡 Medium • 🔴 Low • 🔵 ID/Input\n\n"
+    # Add legend as a separate sentence before the table - ID first
+    legend = "**Confidence Legend:** 🔵 ID/Input • 🟢 High • 🟡 Medium • 🔴 Low\n\n"
     
-    # Create header row - add Search Group column
+    # Create header row - no search group column
     header = "| Field"
     for i, row_key in enumerate(sorted_row_keys):
         row_number = i + 1
         header += f" | Row {row_number}"
-    header += " | Search Group |"
+    header += " |"
     table_lines.append(header)
     
-    # Create separator row
+    # Create separator row - no search group column
     separator = "|" + "-" * 26
     for _ in sorted_row_keys:
         separator += "|" + "-" * 31
-    separator += "|" + "-" * 14 + "|"  # Search Group column
+    separator += "|"
     table_lines.append(separator)
     
     # Create data rows (one for each field)
@@ -164,9 +162,8 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
             
             row_line += f" | {display_value:<29}"
         
-        # Add search group information
-        search_group = config.get('search_group', '-')
-        row_line += f" | {str(search_group):<12} |"
+        # End the row - no search group column
+        row_line += " |"
         
         table_lines.append(row_line)
     
