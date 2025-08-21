@@ -1634,7 +1634,7 @@
                 const buttonRow = document.createElement('div');
                 buttonRow.className = 'button-row';
 
-                buttons.forEach(btnConfig => {
+                buttons.forEach((btnConfig, index) => {
                     const button = document.createElement('button');
                     button.className = `std-button ${btnConfig.variant || 'primary'}`;
                     button.style.flex = btnConfig.width || 1;
@@ -2892,6 +2892,9 @@
                     // Progress routed to card level;
                     
                 } else if (data.status === 'COMPLETED') {
+                    // Store completion data for download
+                    globalState.completionData = data;
+                    
                     // First update to 100% if we have a progress bar
                     const indicator = document.getElementById(`${cardId}-thinking`);
                     if (indicator && indicator.classList.contains('with-progress')) {
@@ -2949,8 +2952,8 @@
                         
                         // Add event listeners for the buttons after DOM update
                         setTimeout(() => {
-                            const downloadBtn = document.getElementById('${cardId}-download-btn');
-                            const refineBtn = document.getElementById('${cardId}-refine-btn');
+                            const downloadBtn = document.getElementById(`${cardId}-download-btn`);
+                            const refineBtn = document.getElementById(`${cardId}-refine-btn`);
                             
                             if (downloadBtn) {
                                 downloadBtn.addEventListener('click', async () => {
@@ -4850,7 +4853,13 @@
                     questionsToShow = globalState.currentConfig.clarifying_questions;
                 }
                 
-                let initialMessage = 'What did you like and not like about the preview results?';
+                // Determine if we're refining from preview or full validation results
+                let initialMessage;
+                if (globalState.completionData) {
+                    initialMessage = 'What did you like and not like about the full validation results?';
+                } else {
+                    initialMessage = 'What did you like and not like about the preview results?';
+                }
                 
                 if (questionsToShow) {
                     initialMessage += '\n\nHere are some specific questions to consider:\n\n' + questionsToShow;
@@ -5085,8 +5094,12 @@ Please answer these questions and then I'll generate your configuration and auto
                         
                         if (data.error_type === 'format_error') {
                             errorMessage += '\n\n🔄 You can try generating the configuration again with simpler instructions.';
+                            throw new Error(errorMessage);
                         } else if (data.error_type === 'api_overloaded') {
-                            errorMessage += '\n\n⏱️ Please wait a moment and try again.';
+                            // Show blue info notification for API overload instead of error
+                            completeThinkingInCard(cardId, 'Generation paused');
+                            showMessage(`${cardId}-messages`, 'ℹ️ Claude API is temporarily overloaded. This happens sometimes during peak usage. Please try again in 5-15 minutes and the submission button will be re-enabled.', 'info');
+                            return; // Don't throw error, just return to show the configuration card again
                         }
                         
                         throw new Error(errorMessage);
@@ -6095,11 +6108,12 @@ Please answer these questions and then I'll generate your configuration and auto
                         icon: '📥',
                         variant: 'primary',
                         width: 'half',
-                        callback: async () => {
+                        callback: async function() {
                             try {
                                 await window.downloadValidationResults();
                             } catch (error) {
                                 console.error('Download error:', error);
+                                alert('Download failed: ' + error.message);
                             }
                         }
                     },
@@ -6108,11 +6122,12 @@ Please answer these questions and then I'll generate your configuration and auto
                         icon: '🔧',
                         variant: 'secondary',
                         width: 'half',
-                        callback: async () => {
+                        callback: async function() {
                             try {
                                 await window.createRefinementCard();
                             } catch (error) {
                                 console.error('Refine error:', error);
+                                alert('Refine failed: ' + error.message);
                             }
                         }
                     },
@@ -6324,16 +6339,23 @@ Please answer these questions and then I'll generate your configuration and auto
                     throw new Error('No session ID available');
                 }
                 
-                // Check status to get download URL
-                const response = await fetch(`${API_BASE}/status?session_id=${globalState.sessionId}`, {
-                    method: 'GET'
-                });
+                let statusData;
                 
-                if (!response.ok) {
-                    throw new Error('Failed to get validation status');
+                // First try to use completion data if available (should now include download URLs)
+                if (globalState.completionData && (globalState.completionData.enhanced_download_url || globalState.completionData.download_url)) {
+                    statusData = globalState.completionData;
+                } else {
+                    // Fallback: Check status API to get download URLs
+                    const response = await fetch(`${API_BASE}/status?session_id=${globalState.sessionId}`, {
+                        method: 'GET'
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to get validation status');
+                    }
+                    
+                    statusData = await response.json();
                 }
-                
-                const statusData = await response.json();
                 
                 // Get version from status data (more reliable than global state)
                 const version = statusData.config_version || 
