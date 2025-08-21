@@ -98,6 +98,10 @@ Auto-detect from sample data:
 - Emails: @ symbol patterns
 - Strings: Default for text data
 
+## Units and Measurements Guidelines
+
+**Units Consistency**: If a column contains values with units (e.g., $B for billions, °C for temperature, mg for dosage), make sure to specify in the notes that all values should consistently include the same units across all rows. This ensures validation results maintain proper unit formatting.
+
 ## Search Group Requirements (MANDATORY)
 
 Search groups are **REQUIRED** for every configuration - they are essential for building an effective search strategy and cannot be omitted.
