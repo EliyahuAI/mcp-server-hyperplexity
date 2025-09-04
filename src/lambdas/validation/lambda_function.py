@@ -21,14 +21,6 @@ from perplexity_schema import get_response_format_schema
 from row_key_utils import generate_row_key
 from ai_api_client import ai_client
 
-# Import WebSocket client for progress updates
-try:
-    from websocket_client import WebSocketClient
-    websocket_client = WebSocketClient()
-except ImportError:
-    websocket_client = None
-    logger.warning("WebSocket client not available")
-
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -42,6 +34,23 @@ if not logger.handlers:
 else:
     logger.info("Logger already has handlers, skipping handler setup")
 
+# Import enhanced batch manager (after logger is configured)
+try:
+    from enhanced_batch_manager import EnhancedDynamicBatchSizeManager
+    ENHANCED_BATCH_MANAGER_AVAILABLE = True
+    logger.info("✅ Enhanced batch manager available")
+except ImportError as e:
+    logger.warning(f"Enhanced batch manager not available: {e}")
+    ENHANCED_BATCH_MANAGER_AVAILABLE = False
+
+# Import WebSocket client for progress updates
+try:
+    from websocket_client import WebSocketClient
+    websocket_client = WebSocketClient()
+except ImportError:
+    websocket_client = None
+    logger.warning("WebSocket client not available")
+
 # Initialize AWS clients with retry configuration
 config = Config(
     retries = dict(
@@ -52,6 +61,261 @@ s3 = boto3.client('s3', config=config)
 ssm = boto3.client('ssm', config=config)
 # Bedrock not needed - using direct Anthropic API for web search support
 # bedrock = boto3.client('bedrock-runtime', config=config)
+
+class DynamicBatchSizeManager:
+    """
+    Manages dynamic batch sizing based on rate limiting and success patterns.
+    
+    PER-MODEL STRATEGY:
+    - Track separate batch sizes for each model (auto-registers new models)
+    - When multiple models are used in a batch, use the minimum batch size
+    - When multiple models are successful, only increase the model with lowest batch size
+    - 10% increase after 5 consecutive successes
+    - 25% decrease after 2 consecutive failures
+    """
+    
+    def __init__(self, 
+                 initial_batch_size: int = 50,
+                 min_batch_size: int = 10,
+                 max_batch_size: int = 100,
+                 success_increase_factor: float = 1.1,  # 10% increase
+                 failure_decrease_factor: float = 0.75,  # 25% decrease
+                 consecutive_successes_for_increase: int = 5,  # 5 successes
+                 consecutive_failures_for_decrease: int = 2):  # 2 failures
+        
+        # Per-model tracking dictionaries
+        self.model_batch_sizes = {}  # Dict[str, int] - model_name -> batch_size
+        self.model_consecutive_successes = {}  # Dict[str, int]
+        self.model_consecutive_failures = {}  # Dict[str, int]
+        self.model_rate_limit_events = {}  # Dict[str, int]
+        
+        self.initial_batch_size = initial_batch_size
+        self.min_batch_size = min_batch_size
+        self.max_batch_size = max_batch_size
+        self.success_increase_factor = success_increase_factor
+        self.failure_decrease_factor = failure_decrease_factor
+        self.consecutive_successes_for_increase = consecutive_successes_for_increase
+        self.consecutive_failures_for_decrease = consecutive_failures_for_decrease
+        self.total_batches = 0
+        
+        logger.info(f"🔧 PER-MODEL BATCH MANAGER: Initialized with batch_size={initial_batch_size}, "
+                   f"range=[{min_batch_size}, {max_batch_size}], "
+                   f"increase_factor={success_increase_factor} (10%), "
+                   f"decrease_factor={failure_decrease_factor} (25%), "
+                   f"successes_for_increase={consecutive_successes_for_increase}, "
+                   f"failures_for_decrease={consecutive_failures_for_decrease}")
+    
+    def register_model(self, model: str):
+        """Register a new model if not already tracked."""
+        if model not in self.model_batch_sizes:
+            self.model_batch_sizes[model] = self.initial_batch_size
+            self.model_consecutive_successes[model] = 0
+            self.model_consecutive_failures[model] = 0
+            self.model_rate_limit_events[model] = 0
+            logger.info(f"📝 NEW MODEL REGISTERED: {model} with batch_size={self.initial_batch_size}")
+    
+    def get_batch_size_for_models(self, models: set) -> int:
+        """
+        Get the appropriate batch size based on which models will be used.
+        
+        Args:
+            models: Set of model names (e.g., 'claude-3-5-sonnet-20241022', 'llama-3.1-sonar-small-128k-online')
+            
+        Returns:
+            The batch size to use for this batch (minimum across all models)
+        """
+        if not models:
+            # No models specified, use default
+            return self.initial_batch_size
+        
+        # Register any new models
+        for model in models:
+            self.register_model(model)
+        
+        # Use minimum batch size across all models
+        batch_sizes = [self.model_batch_sizes[model] for model in models]
+        min_batch_size = min(batch_sizes)
+        
+        if len(models) > 1:
+            model_sizes_str = ", ".join([f"{model}={self.model_batch_sizes[model]}" for model in sorted(models)])
+            logger.info(f"🔀 MULTI-MODEL BATCH: Using minimum batch size {min_batch_size} ({model_sizes_str})")
+        
+        return min_batch_size
+    
+    def on_rate_limit(self, model: str):
+        """
+        Called when a rate limit is encountered for a specific model.
+        
+        Args:
+            model: The model that hit the rate limit
+        """
+        self.register_model(model)
+        
+        self.model_rate_limit_events[model] += 1
+        self.model_consecutive_failures[model] += 1
+        self.model_consecutive_successes[model] = 0
+        
+        new_batch_size = max(
+            self.min_batch_size,
+            int(self.model_batch_sizes[model] * self.failure_decrease_factor)
+        )
+        
+        if new_batch_size != self.model_batch_sizes[model]:
+            logger.warning(f"🚨 {model} RATE LIMIT: Reducing batch size from {self.model_batch_sizes[model]} to {new_batch_size}")
+            self.model_batch_sizes[model] = new_batch_size
+        else:
+            logger.warning(f"🚨 {model} RATE LIMIT: Batch size already at minimum ({self.model_batch_sizes[model]})")
+    
+    def on_success(self, models_used: set):
+        """
+        Called when a batch completes successfully.
+        
+        Args:
+            models_used: Set of models actually used in this batch
+        """
+        self.total_batches += 1
+        
+        if not models_used:
+            return
+        
+        # Register any new models and update success counters
+        for model in models_used:
+            self.register_model(model)
+            self.model_consecutive_successes[model] += 1
+            self.model_consecutive_failures[model] = 0
+        
+        # Only increase the model with the lowest batch size
+        min_model = min(models_used, key=lambda m: self.model_batch_sizes[m])
+        self._try_increase_batch_size(min_model)
+    
+    def on_failure(self, models_used: set, is_rate_limit: bool = False):
+        """
+        Called when a batch fails.
+        
+        Args:
+            models_used: Set of models used in this batch
+            is_rate_limit: Whether the failure was due to rate limiting
+        """
+        if is_rate_limit:
+            # Rate limits are handled by on_rate_limit
+            return
+        
+        if not models_used:
+            return
+        
+        # Register models and update failure counters
+        for model in models_used:
+            self.register_model(model)
+            self.model_consecutive_failures[model] += 1
+            self.model_consecutive_successes[model] = 0
+            self._try_decrease_batch_size(model)
+    
+    def _try_increase_batch_size(self, model: str):
+        """Helper method to try increasing batch size for a specific model."""
+        if (self.model_consecutive_successes[model] >= self.consecutive_successes_for_increase and 
+            self.model_batch_sizes[model] < self.max_batch_size):
+            
+            new_batch_size = min(
+                self.max_batch_size,
+                int(self.model_batch_sizes[model] * self.success_increase_factor)
+            )
+            
+            if new_batch_size != self.model_batch_sizes[model]:
+                logger.info(f"✅ {model} SUCCESS STREAK: Increasing batch size from {self.model_batch_sizes[model]} to {new_batch_size} "
+                           f"(consecutive successes: {self.model_consecutive_successes[model]})")
+                self.model_batch_sizes[model] = new_batch_size
+                self.model_consecutive_successes[model] = 0
+    
+    def _try_decrease_batch_size(self, model: str):
+        """Helper method to try decreasing batch size for a specific model."""
+        if self.model_consecutive_failures[model] >= self.consecutive_failures_for_decrease:
+            new_batch_size = max(
+                self.min_batch_size,
+                int(self.model_batch_sizes[model] * self.failure_decrease_factor)
+            )
+            
+            if new_batch_size != self.model_batch_sizes[model]:
+                logger.warning(f"⚠️ {model} FAILURE STREAK: Reducing batch size from {self.model_batch_sizes[model]} to {new_batch_size} "
+                              f"(consecutive failures: {self.model_consecutive_failures[model]})")
+                self.model_batch_sizes[model] = new_batch_size
+                self.model_consecutive_failures[model] = 0
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get current statistics for monitoring."""
+        stats = {
+            'total_batches': self.total_batches,
+            'registered_models': list(self.model_batch_sizes.keys()),
+            'model_batch_sizes': dict(self.model_batch_sizes),
+            'model_consecutive_successes': dict(self.model_consecutive_successes),
+            'model_consecutive_failures': dict(self.model_consecutive_failures),
+            'model_rate_limit_events': dict(self.model_rate_limit_events)
+        }
+        
+        # Add success rates per model
+        model_success_rates = {}
+        for model in self.model_batch_sizes.keys():
+            # Approximate success rate based on recent performance
+            failures = self.model_consecutive_failures[model]
+            rate_limits = self.model_rate_limit_events[model]
+            total_issues = failures + rate_limits
+            # Use a simple heuristic: if total_batches > 10, estimate success rate
+            if self.total_batches > 10:
+                model_success_rates[model] = max(0.0, 1.0 - (total_issues / max(1, self.total_batches)))
+            else:
+                model_success_rates[model] = 1.0 if total_issues == 0 else 0.5
+        
+        stats['model_success_rates'] = model_success_rates
+        return stats
+    
+    def log_status(self):
+        """Log current status for monitoring."""
+        if not self.model_batch_sizes:
+            logger.info("📊 PER-MODEL BATCH MANAGER STATUS: No models registered yet")
+            return
+        
+        model_status = []
+        for model in sorted(self.model_batch_sizes.keys()):
+            status = (f"{model}={self.model_batch_sizes[model]} "
+                     f"(succ={self.model_consecutive_successes[model]}, "
+                     f"fail={self.model_consecutive_failures[model]}, "
+                     f"rl={self.model_rate_limit_events[model]})")
+            model_status.append(status)
+        
+        logger.info(f"📊 PER-MODEL BATCH MANAGER STATUS: {'; '.join(model_status)}")
+
+def discover_batch_models(rows, validator):
+    """
+    Discover all models that will be used for a batch of rows.
+    
+    Args:
+        rows: List of row data dictionaries
+        validator: Validator instance with validation targets and configuration
+        
+    Returns:
+        Set[str]: Set of model names that will be used
+    """
+    models = set()
+    
+    # Get validation targets that aren't ID or IGNORED
+    validation_targets = [t for t in validator.validation_targets 
+                        if t.importance.upper() not in ["ID", "IGNORED"]]
+    
+    if not validation_targets:
+        logger.info("🔍 No validation targets found for model discovery")
+        return models
+    
+    # Group targets by search group
+    grouped_targets = validator.group_columns_by_search_group(validation_targets)
+    
+    # Resolve model for each search group
+    for group_id, group_targets in grouped_targets.items():
+        if group_targets:
+            model, _ = resolve_search_group_model(group_targets, validator)
+            models.add(model)
+            logger.debug(f"🔍 Search group {group_id}: model {model}")
+    
+    logger.info(f"🔍 BATCH MODEL DISCOVERY: Found models {sorted(models)}")
+    return models
 
 def get_perplexity_api_key() -> str:
     """Get Perplexity API key from environment or SSM."""
@@ -199,6 +463,18 @@ async def validate_with_anthropic(
     }
     
     try:
+        # Apply web search rate limiting before making the call
+        try:
+            from shared.web_search_rate_limiter import apply_web_search_rate_limiting
+            session_id = "validation_session"  # You might want to pass this as a parameter
+            max_searches = data.get("tools", [{}])[0].get("max_uses", 10)
+            await apply_web_search_rate_limiting(session_id, anthropic_model, max_searches)
+            logger.info(f"✅ Web search rate limiting applied for {anthropic_model}")
+        except ImportError:
+            logger.warning("Web search rate limiter not available, proceeding without rate limiting")
+        except Exception as e:
+            logger.warning(f"Web search rate limiting failed: {e}, proceeding without rate limiting")
+        
         logger.info(f"Sending request to Anthropic API with model: {anthropic_model}")
         
         # Log the formatted prompt for better diagnostics
@@ -507,7 +783,7 @@ def extract_token_usage(result: Dict[str, Any], model: str, search_context_size:
         }
 
 def load_pricing_data() -> Dict[str, Dict[str, float]]:
-    """Load pricing data from CSV file."""
+    """Load pricing data from DynamoDB model config table, fallback to CSV."""
     pricing_data = {}
     
     # Default pricing for unknown models
@@ -516,6 +792,33 @@ def load_pricing_data() -> Dict[str, Dict[str, float]]:
         'anthropic': {'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0}
     }
     
+    try:
+        # Try DynamoDB model config table first (preferred)
+        from shared.model_config_table import ModelConfigTable
+        config_table = ModelConfigTable()
+        configs = config_table.list_all_configs()
+        
+        if configs:
+            logger.info(f"Loading pricing from DynamoDB model config table ({len(configs)} configs)")
+            for config in configs:
+                if config.get('enabled', False):
+                    model_pattern = config.get('model_pattern', '')
+                    pricing_data[model_pattern] = {
+                        'api_provider': config.get('api_provider', 'unknown'),
+                        'input_cost_per_million_tokens': float(config.get('input_cost_per_million_tokens', 3.0)),
+                        'output_cost_per_million_tokens': float(config.get('output_cost_per_million_tokens', 15.0)),
+                        'notes': config.get('notes', ''),
+                        'priority': config.get('priority', 999)
+                    }
+            logger.info(f"Loaded {len(pricing_data)} model configurations from DynamoDB")
+            return pricing_data
+        else:
+            logger.warning("No configurations found in DynamoDB model config table, falling back to CSV")
+            
+    except Exception as e:
+        logger.warning(f"Failed to load pricing from DynamoDB: {str(e)}, falling back to CSV")
+    
+    # Fallback to CSV file (legacy)
     try:
         # Try multiple possible locations for the CSV file
         possible_paths = [
@@ -543,6 +846,7 @@ def load_pricing_data() -> Dict[str, Dict[str, float]]:
                         'output_cost_per_million_tokens': float(row['output_cost_per_million_tokens']),
                         'notes': row.get('notes', '')
                     }
+            logger.info(f"Loaded {len(pricing_data)} model configurations from CSV fallback")
         else:
             logger.warning(f"Pricing CSV file not found in any of the expected locations, using defaults")
             
@@ -563,13 +867,29 @@ def calculate_token_costs(token_usage: Dict[str, Any], pricing_data: Dict[str, D
     pricing = None
     if model in pricing_data:
         pricing = pricing_data[model]
+        logger.info(f"Using exact pricing match for model {model}")
     else:
-        # Try to find a partial match for the model
-        for pricing_model in pricing_data:
-            if pricing_model.lower() in model.lower() or model.lower() in pricing_model.lower():
-                pricing = pricing_data[pricing_model]
-                logger.info(f"Using pricing for {pricing_model} for model {model}")
-                break
+        # Sort pricing patterns by priority (if available) and try pattern matching
+        sorted_patterns = sorted(pricing_data.items(), key=lambda x: x[1].get('priority', 999))
+        
+        # Try pattern matching (for DynamoDB configs with wildcards)
+        import re
+        for pricing_pattern, pricing_config in sorted_patterns:
+            # Convert glob pattern to regex
+            regex_pattern = pricing_pattern.replace('*', '.*')
+            regex_pattern = f"^{regex_pattern}$"
+            
+            try:
+                if re.match(regex_pattern, model, re.IGNORECASE):
+                    pricing = pricing_config
+                    logger.info(f"Using pattern match '{pricing_pattern}' (priority {pricing_config.get('priority', 999)}) for model {model}")
+                    break
+            except re.error:
+                # If pattern is invalid regex, try simple string matching
+                if pricing_pattern.lower() in model.lower() or model.lower() in pricing_pattern.lower():
+                    pricing = pricing_config
+                    logger.info(f"Using simple string match '{pricing_pattern}' for model {model}")
+                    break
     
     # Fallback to default pricing by provider
     if not pricing:
@@ -825,7 +1145,10 @@ async def retry_api_call_with_backoff(
     max_delay: float = 60.0,
     backoff_multiplier: float = 2.0,
     jitter: bool = True,
-    custom_delays: List[float] = None
+    custom_delays: List[float] = None,
+    batch_manager: Optional[DynamicBatchSizeManager] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None
 ):
     """
     Retry an API call with exponential backoff for rate limiting and timeout errors.
@@ -863,6 +1186,10 @@ async def retry_api_call_with_backoff(
             is_rate_limit = "rate_limit" in error_str or "429" in error_str
             is_timeout = "timeout" in error_str or "499" in error_str or "client disconnected" in error_str
             is_server_error = "500" in error_str or "502" in error_str or "503" in error_str or "504" in error_str
+            
+            # Notify batch manager of rate limits
+            if is_rate_limit and batch_manager and model:
+                batch_manager.on_rate_limit(model)
             
             if not (is_rate_limit or is_timeout or is_server_error):
                 # Non-retryable error, raise immediately
@@ -1392,6 +1719,30 @@ def send_websocket_progress(session_id: str, message: str, progress: int = None)
         except Exception as e:
             logger.warning(f"Failed to send WebSocket progress: {e}")
 
+def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, completed_counter, last_reported_counter):
+    """Thread-safe AI call progress reporting that prevents out-of-order updates"""
+    if not session_id or total_expected <= 0:
+        return completed_counter[0], last_reported_counter[0]
+    
+    with counter_lock:
+        completed_counter[0] += 1
+        current_count = completed_counter[0]
+        
+        # Only report if count actually increased from last reported value
+        if current_count > last_reported_counter[0]:
+            last_reported_counter[0] = current_count
+            
+            # Calculate progress percentage
+            ai_progress = 5 + (current_count / total_expected) * 85
+            progress_percent = min(90, int(ai_progress))  # Cap at 90%
+            
+            send_websocket_progress(session_id, f"AI call {current_count}/{total_expected} completed", progress_percent)
+            logger.info(f"[AI PROGRESS] Reported {current_count}/{total_expected} (was {completed_counter[0]-1})")
+        else:
+            logger.debug(f"[AI PROGRESS] Skipped reporting {current_count}/{total_expected} (already reported)")
+    
+    return completed_counter[0], last_reported_counter[0]
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests and config generation."""
     try:
@@ -1547,71 +1898,184 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         total_multiplex_validations = 0
         total_single_validations = 0
         
-        # Track batch-level timing
+        # Thread-safe counter for AI call progress tracking
+        import threading
+        ai_call_counter_lock = threading.Lock()
+        completed_ai_calls = [0]  # Use list for mutable reference
+        last_reported_count = [0]  # Use list for mutable reference
+        
+        # Calculate total expected AI calls for progress tracking
+        # Interface lambda now sends ALL rows at once, so len(rows) = total dataset size
+        validation_targets = [t for t in validator.validation_targets if t.importance.upper() not in ["ID", "IGNORED"]]
+        grouped_targets = validator.group_columns_by_search_group(validation_targets)
+        search_groups_count = len(grouped_targets)
+        total_expected_ai_calls = search_groups_count * len(rows)
+        
+        logger.info(f"📊 AI CALL PROGRESS SETUP: Processing {len(rows)} total rows")
+        logger.info(f"📊   Expected AI calls: {search_groups_count} search groups × {len(rows)} rows = {total_expected_ai_calls} total calls")
+        
+        # Track batch-level timing and API provider usage
         batch_timing_data = []
         total_batches = 0
+        batches_with_claude = 0
+        batches_without_claude = 0
+        batch_manager = None  # Will be set in process_all_rows
         
         async def process_all_rows():
-            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, batch_timing_data, total_batches
+            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, batch_timing_data, total_batches, total_expected_ai_calls, batches_with_claude, batches_without_claude, batch_manager, search_groups_count
             
-            # Process rows in batches
-            batch_size = 5  # Fixed batch size for parallel processing
-            total_batches = (len(rows) + batch_size - 1) // batch_size  # Calculate total number of batches
+            # Initialize dynamic batch size manager (enhanced version with CSV config if available)
+            if ENHANCED_BATCH_MANAGER_AVAILABLE:
+                try:
+                    batch_manager = EnhancedDynamicBatchSizeManager(
+                        session_id=session_id,
+                        enable_audit_logging=True
+                    )
+                    logger.info("🚀 Using EnhancedDynamicBatchSizeManager with CSV configuration")
+                except Exception as e:
+                    logger.error(f"Failed to initialize enhanced batch manager: {e}")
+                    logger.info("🔄 Falling back to basic DynamicBatchSizeManager")
+                    batch_manager = DynamicBatchSizeManager(
+                        initial_batch_size=50,  # Start with 50 rows per batch
+                        min_batch_size=10,      # Minimum 10 rows per batch
+                        max_batch_size=100,     # Maximum 100 rows per batch
+                        success_increase_factor=1.1,      # 10% increase on success streak
+                        failure_decrease_factor=0.75,     # 25% decrease on failure
+                        consecutive_successes_for_increase=5,  # Need 5 consecutive successes
+                        consecutive_failures_for_decrease=2    # Reduce after 2 failures
+                    )
+            else:
+                # Fallback to basic batch manager if enhanced version not available
+                logger.info("🔄 Using basic DynamicBatchSizeManager (enhanced version not available)")
+                batch_manager = DynamicBatchSizeManager(
+                    initial_batch_size=50,  # Start with 50 rows per batch
+                    min_batch_size=10,      # Minimum 10 rows per batch
+                    max_batch_size=100,     # Maximum 100 rows per batch
+                    success_increase_factor=1.1,      # 10% increase on success streak
+                    failure_decrease_factor=0.75,     # 25% decrease on failure
+                    consecutive_successes_for_increase=5,  # Need 5 consecutive successes
+                    consecutive_failures_for_decrease=2    # Reduce after 2 failures
+                )
             
-            logger.info(f"🚀 BATCH PROCESSING: {len(rows)} rows in {total_batches} batches of {batch_size} rows each")
+            # Discover which models will be used across all rows
+            all_models = discover_batch_models(rows, validator)
+            
+            # Get initial batch size based on discovered models
+            current_batch_size = batch_manager.get_batch_size_for_models(all_models)
+            total_batches = (len(rows) + current_batch_size - 1) // current_batch_size  # Calculate total number of batches
+            
+            logger.info(f"🚀 PER-MODEL BATCH PROCESSING: {len(rows)} rows in {total_batches} batches starting with {current_batch_size} rows each")
+            logger.info(f"🔍 Models that will be used: {sorted(all_models) if all_models else ['default']}")
             
             async with aiohttp.ClientSession() as session:
-                for batch_num in range(0, len(rows), batch_size):
-                    batch_start_time = time.time()  # Start timing this batch
+                processed_rows = 0
+                batch_num = 0
+                
+                while processed_rows < len(rows):
+                    # Discover models for this specific batch
+                    batch_start_idx = processed_rows
+                    batch_end_idx = min(batch_start_idx + batch_manager.get_batch_size_for_models(all_models), len(rows))
+                    potential_batch = rows[batch_start_idx:batch_end_idx]
                     
-                    batch = rows[batch_num:batch_num + batch_size]
+                    # Get current batch size based on models for this batch
+                    batch_models = discover_batch_models(potential_batch, validator) if potential_batch else all_models
+                    current_batch_size = batch_manager.get_batch_size_for_models(batch_models)
+                    
+                    # Calculate batch boundaries with updated batch size
+                    start_idx = processed_rows
+                    end_idx = min(start_idx + current_batch_size, len(rows))
+                    batch = rows[start_idx:end_idx]
                     actual_batch_size = len(batch)
-                    batch_index = batch_num // batch_size + 1
+                    batch_index = batch_num + 1
                     
-                    logger.info(f"🎯 Starting batch {batch_index}/{total_batches} with {actual_batch_size} rows")
+                    logger.info(f"🎯 Starting batch {batch_index} with {actual_batch_size} rows (current batch size: {current_batch_size})")
                     
-                    # Send progress update via WebSocket
-                    if session_id:
-                        progress = min(90, 10 + (batch_index / total_batches) * 75)  # 10-85% for batch processing
-                        if batch_index == 1:
-                            send_websocket_progress(session_id, "Processing first batch...", int(progress))
-                        elif batch_index == total_batches:
-                            send_websocket_progress(session_id, "Processing final batch...", int(progress))
-                        elif batch_index % 3 == 0:  # Send updates every few batches to avoid spam
-                            send_websocket_progress(session_id, f"Processing batch {batch_index} of {total_batches}...", int(progress))
+                    # Log batch manager status every 10 batches
+                    if batch_index % 10 == 0:
+                        batch_manager.log_status()
+                    
+                    batch_start_time = time.time()
+                    
+                    # REMOVED: Batch progress messages (interface lambda handles batch-level progress)
+                    # Validation lambda will send row-level detail updates instead
                     
                     row_tasks = []
                     for row_idx, row in enumerate(batch):
-                        task = asyncio.create_task(process_row(session, row, batch_num + row_idx))
+                        task = asyncio.create_task(process_row(session, row, start_idx + row_idx, batch_manager))
                         row_tasks.append(task)
                     
                     # Wait for all rows in the batch to complete
+                    batch_success = True
                     try:
                         batch_results = await asyncio.gather(*row_tasks)
                         
                         batch_end_time = time.time()
                         batch_processing_time = batch_end_time - batch_start_time
                         
+                        # Track models used in this batch
+                        batch_models_used = set()
+                        batch_api_providers = set()
+                        for row_idx, row_results, row_models in batch_results:
+                            batch_models_used.update(row_models)
+                            # Also track providers for backward compatibility
+                            for model in row_models:
+                                batch_api_providers.add(determine_api_provider(model))
+                        
+                        # Count batches with Claude vs without Claude (for backward compatibility)
+                        if 'anthropic' in batch_api_providers:
+                            batches_with_claude += 1
+                            logger.info(f"🔵 Batch {batch_index} used Claude models: {sorted([m for m in batch_models_used if determine_api_provider(m) == 'anthropic'])}")
+                        else:
+                            batches_without_claude += 1
+                            logger.info(f"🟡 Batch {batch_index} used only Perplexity models: {sorted([m for m in batch_models_used if determine_api_provider(m) == 'perplexity'])}")
+                        
                         # Store batch timing data
                         batch_timing_info = {
                             'batch_number': batch_index,
                             'batch_size': actual_batch_size,
                             'processing_time_seconds': batch_processing_time,
-                            'time_per_row_in_batch': batch_processing_time / actual_batch_size if actual_batch_size > 0 else 0
+                            'time_per_row_in_batch': batch_processing_time / actual_batch_size if actual_batch_size > 0 else 0,
+                            'dynamic_batch_size': current_batch_size,
+                            'api_providers': list(batch_api_providers)
                         }
                         batch_timing_data.append(batch_timing_info)
                         
-                        logger.info(f"✅ Completed batch {batch_index}/{total_batches} in {batch_processing_time:.2f}s (avg {batch_processing_time/actual_batch_size:.2f}s per row in batch)")
+                        logger.info(f"✅ Completed batch {batch_index} in {batch_processing_time:.2f}s (avg {batch_processing_time/actual_batch_size:.2f}s per row)")
+                        
+                        # Notify batch manager of success with models used
+                        batch_manager.on_success(batch_models_used)
                         
                         # Store results
                         logger.info(f"Storing results for batch {batch_index}: {len(batch_results)} results")
-                        for idx, result in batch_results:
+                        for idx, result, _ in batch_results:
                             validation_results[idx] = result
                             
                     except Exception as batch_error:
+                        batch_success = False
                         batch_end_time = time.time()
                         batch_processing_time = batch_end_time - batch_start_time
-                        logger.error(f"❌ Batch {batch_index}/{total_batches} failed after {batch_processing_time:.2f}s: {str(batch_error)}")
+                        logger.error(f"❌ Batch {batch_index} failed after {batch_processing_time:.2f}s: {str(batch_error)}")
+                        
+                        # Check if this was a rate limit error
+                        error_str = str(batch_error).lower()
+                        is_rate_limit = "rate_limit" in error_str or "429" in error_str
+                        
+                        # Extract models from completed results in failed batch
+                        failed_batch_models = set()
+                        for task in row_tasks:
+                            if task.done() and not task.exception():
+                                try:
+                                    _, _, row_models = task.result()
+                                    failed_batch_models.update(row_models)
+                                except Exception as e:
+                                    logger.debug(f"Could not extract models from completed task: {e}")
+                        
+                        # If no completed results, use the expected models for this batch
+                        if not failed_batch_models:
+                            failed_batch_models = batch_models
+                        
+                        # Notify batch manager of failure with models used
+                        batch_manager.on_failure(failed_batch_models, is_rate_limit=is_rate_limit)
                         
                         # Store partial results if any tasks completed successfully
                         completed_results = []
@@ -1623,12 +2087,41 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     logger.warning(f"Failed to get result from completed task: {e}")
                         
                         logger.info(f"Storing {len(completed_results)} partial results from failed batch {batch_index}")
-                        for idx, result in completed_results:
+                        for idx, result, _ in completed_results:
                             validation_results[idx] = result
+                    
+                    # Update progress
+                    processed_rows = end_idx
+                    batch_num += 1
+                    
+                    # Add small delay between batches to prevent overwhelming the system
+                    if batch_num < total_batches:
+                        await asyncio.sleep(0.1)
+                
+                # Log final batch manager statistics
+                final_stats = batch_manager.get_stats()
+                logger.info(f"📊 FINAL PER-MODEL BATCH STATS: Total batches={final_stats['total_batches']}, "
+                           f"Models registered={len(final_stats['registered_models'])}")
+                
+                # Log detailed model statistics
+                for model in final_stats['registered_models']:
+                    batch_size = final_stats['model_batch_sizes'][model]
+                    rate_limits = final_stats['model_rate_limit_events'][model]
+                    success_rate = final_stats['model_success_rates'][model]
+                    logger.info(f"  📈 {model}: batch_size={batch_size}, rate_limits={rate_limits}, success_rate={success_rate:.2%}")
+                
+                # Log batch API provider statistics
+                logger.info(f"🔵 BATCH API PROVIDER STATS: Batches with Claude={batches_with_claude}, "
+                           f"Batches without Claude={batches_without_claude}, "
+                           f"Total batches={batches_with_claude + batches_without_claude}")
+                
         
-        async def process_row(session, row, row_idx):
+        async def process_row(session, row, row_idx, batch_manager=None):
             """Process a single row with progressive multiplexing."""
-            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations
+            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls
+            
+            # Track which models were used for this row
+            row_models_used = set()
             
             row_results = {}
             accumulated_results = {}  # Store results to pass as context to later groups
@@ -1719,8 +2212,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info(f"Processing search group {group_id} with {len(targets)} columns")
                 
                 # Always use multiplex validation regardless of number of fields
-                await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history)
+                await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used)
                 total_multiplex_validations += 1
+                
+                # Send AI call progress update via WebSocket using thread-safe counter
+                report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, last_reported_count)
                 
                 # Add this group's results to accumulated results for next groups
                 for target in targets:
@@ -1732,11 +2228,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             row_results['next_check'] = next_check.isoformat() if next_check else None
             row_results['reasons'] = reasons
             
-            return row_idx, row_results
+            return row_idx, row_results, row_models_used
         
-        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False):
+        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False, row_models_used=None):
             """Process a group of columns with a single multiplex API call, even if there's only one column."""
             nonlocal total_cache_hits, total_cache_misses
+            
+            # Initialize row_models_used if not provided
+            if row_models_used is None:
+                row_models_used = set()
+            
+            # Get access to row_api_providers from the calling function
+            import inspect
+            frame = inspect.currentframe()
+            while frame:
+                if 'row_api_providers' in frame.f_locals:
+                    row_api_providers = frame.f_locals['row_api_providers']
+                    break
+                frame = frame.f_back
+            else:
+                # Fallback if we can't find row_api_providers
+                row_api_providers = set()
             
             # First, filter out any ID or IGNORED fields - we don't validate these
             validation_targets = [t for t in targets if t.importance.upper() not in ["ID", "IGNORED"]]
@@ -1921,6 +2433,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             api_provider = determine_api_provider(model)
             start_time = time.time()  # Track API call timing
             
+            # Track which model is being used for this row
+            row_models_used.add(model)
+            
             # Use shared AI client for all API calls
             logger.info(f"Using shared AI client for {api_provider} API with model: {model}")
             
@@ -1944,7 +2459,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 result = await retry_api_call_with_backoff(
                     lambda: call_claude_with_shared_client(prompt, model, tool_schema),
                     max_retries=5,  # 6 total attempts with specific delays
-                    custom_delays=[1, 5, 10, 20, 30, 60]  # 1s, 5s, 10s, 20s, 30s, 60s
+                    custom_delays=[1, 5, 10, 20, 30, 60],  # 1s, 5s, 10s, 20s, 30s, 60s
+                    batch_manager=batch_manager,
+                    model=model
                 )
             else:
                 # For Perplexity, use the validate_with_perplexity method
@@ -1960,7 +2477,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 result = await retry_api_call_with_backoff(
                     call_perplexity_wrapper,
                     max_retries=5,  # 6 total attempts with specific delays
-                    custom_delays=[1, 5, 10, 20, 30, 60]  # 1s, 5s, 10s, 20s, 30s, 60s
+                    custom_delays=[1, 5, 10, 20, 30, 60],  # 1s, 5s, 10s, 20s, 30s, 60s
+                    batch_manager=batch_manager,
+                    model=model
                 )
             processing_time = time.time() - start_time
             
@@ -2091,365 +2610,377 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             loop.run_until_complete(process_all_rows())
         finally:
             loop.close()
-            
-            # Ensure we're returning the complete validation results for each row
-            logger.info(f"Returning full validation results for {len(validation_results)} rows")
-            
-            # Load pricing data for cost calculations
-            pricing_data = load_pricing_data()
-            
-            # Collect all raw responses from all rows and aggregate token usage and processing time
-            all_raw_responses = {}
-            total_processing_time = 0.0  # This will be the sum of all batch times (parallel processing)
-            total_token_usage = {
-                'total_tokens': 0,
-                'api_calls': 0,
-                'cached_calls': 0,
-                'total_cost': 0.0,  # Actual cost (only non-cached)
-                'estimated_total_cost': 0.0,  # Estimated cost (all calls as if not cached)
-                'by_provider': {
-                    'perplexity': {
-                        'prompt_tokens': 0,
-                        'completion_tokens': 0,
-                        'total_tokens': 0,
-                        'calls': 0,
-                        'input_cost': 0.0,
-                        'output_cost': 0.0,
-                        'total_cost': 0.0
-                    },
-                    'anthropic': {
-                        'input_tokens': 0,
-                        'output_tokens': 0,
-                        'cache_creation_tokens': 0,
-                        'cache_read_tokens': 0,
-                        'total_tokens': 0,
-                        'calls': 0,
-                        'input_cost': 0.0,
-                        'output_cost': 0.0,
-                        'total_cost': 0.0
-                    }
+        
+        # Extract final batch manager statistics
+        final_stats = batch_manager.get_stats() if batch_manager else {}
+        
+        # Ensure we're returning the complete validation results for each row
+        logger.info(f"Returning full validation results for {len(validation_results)} rows")
+        
+        # Load pricing data for cost calculations
+        pricing_data = load_pricing_data()
+        
+        # Collect all raw responses from all rows and aggregate token usage and processing time
+        all_raw_responses = {}
+        total_processing_time = 0.0  # This will be the sum of all batch times (parallel processing)
+        total_token_usage = {
+            'total_tokens': 0,
+            'api_calls': 0,
+            'cached_calls': 0,
+            'total_cost': 0.0,  # Actual cost (only non-cached)
+            'estimated_total_cost': 0.0,  # Estimated cost (all calls as if not cached)
+            'by_provider': {
+                'perplexity': {
+                    'prompt_tokens': 0,
+                    'completion_tokens': 0,
+                    'total_tokens': 0,
+                    'calls': 0,
+                    'input_cost': 0.0,
+                    'output_cost': 0.0,
+                    'total_cost': 0.0
                 },
-                'by_model': {}
-            }
-            
-            # First pass: collect all responses and calculate token usage
-            # For timing, we need to calculate the maximum processing time per batch (parallel processing)
-            batch_processing_times = {}  # batch_number -> max_processing_time_in_that_batch
-            
-            for row_idx, row_result in validation_results.items():
-                if '_raw_responses' in row_result:
-                    # Calculate which batch this row was in (batch_size = 5)
-                    batch_number = row_idx // 5
-                    if batch_number not in batch_processing_times:
-                        batch_processing_times[batch_number] = 0.0
-                    
-                    # Track the total processing time for this row
-                    row_processing_time = 0.0
-                    
-                    # Add a row prefix to each response ID to avoid collisions
-                    for response_id, response_data in row_result['_raw_responses'].items():
-                        new_response_id = f"row{row_idx}_{response_id}"
-                        all_raw_responses[new_response_id] = response_data
-                        
-                        # Count API calls (move this OUTSIDE token usage check)
-                        is_cached = response_data.get('is_cached', False)
-                        if is_cached:
-                            total_token_usage['cached_calls'] += 1
-                            logger.info(f"DEBUG: Counting as cached call - response_id: {new_response_id}, is_cached: {is_cached}")
-                        else:
-                            total_token_usage['api_calls'] += 1
-                            logger.info(f"DEBUG: Counting as API call - response_id: {new_response_id}, is_cached: {is_cached}")
-                        
-                        # Aggregate token usage
-                        if 'token_usage' in response_data:
-                            usage = response_data['token_usage']
-                            if usage:  # Only process if token_usage is not empty
-                                api_provider = usage.get('api_provider', 'unknown')
-                                total_tokens = usage.get('total_tokens', 0)
-                                total_token_usage['total_tokens'] += total_tokens
-                                
-                                # Calculate costs for this usage
-                                costs = calculate_token_costs(usage, pricing_data)
-                                total_token_usage['total_cost'] += costs['total_cost']
-                        
-                        # Aggregate processing time for this row
-                        if 'processing_time' in response_data:
-                            proc_time = response_data.get('processing_time', 0.0)
-                            if proc_time and isinstance(proc_time, (int, float)):
-                                row_processing_time += proc_time
-                    
-                    # For parallel processing, the batch time is the maximum time of any row in that batch
-                    # (since all rows in a batch are processed in parallel)
-                    batch_processing_times[batch_number] = max(batch_processing_times[batch_number], row_processing_time)
-                    logger.info(f"Row {row_idx} (batch {batch_number}) total time: {row_processing_time:.3f}s, batch max now: {batch_processing_times[batch_number]:.3f}s")
-            
-            # Calculate total processing time as sum of all batch times (since batches are processed sequentially)
-            total_processing_time = sum(batch_processing_times.values())
-            logger.info(f"Calculated parallel processing time: {total_processing_time:.3f}s across {len(batch_processing_times)} batches")
-            
-            # Second pass: aggregate provider-specific token usage
-            for row_idx, row_result in validation_results.items():
-                if '_raw_responses' in row_result:
-                    for response_id, response_data in row_result['_raw_responses'].items():
-                        # Continue with provider-specific token usage aggregation
-                        if 'token_usage' in response_data:
-                            usage = response_data['token_usage']
-                            if usage:  # Only process if token_usage is not empty
-                                api_provider = usage.get('api_provider', 'unknown')
-                                total_tokens = usage.get('total_tokens', 0)
-                                costs = calculate_token_costs(usage, pricing_data)
-                                is_cached = response_data.get('is_cached', False)
-                                # Aggregate by provider
-                                if api_provider == 'perplexity':
-                                    provider_usage = total_token_usage['by_provider']['perplexity']
-                                    input_tokens = usage.get('input_tokens', 0)
-                                    output_tokens = usage.get('output_tokens', 0)
-                                    
-                                    # Handle legacy cached format where we might have prompt_tokens/completion_tokens instead
-                                    if input_tokens == 0 and output_tokens == 0:
-                                        input_tokens = usage.get('prompt_tokens', 0)
-                                        output_tokens = usage.get('completion_tokens', 0)
-                                    
-                                    provider_usage['prompt_tokens'] += input_tokens  # ai_api_client normalizes to input_tokens
-                                    provider_usage['completion_tokens'] += output_tokens  # ai_api_client normalizes to output_tokens
-                                    provider_usage['total_tokens'] += total_tokens
-                                    provider_usage['calls'] += 1
-                                    # Add to estimated cost (always) and actual cost (only if not cached)
-                                    if not is_cached:
-                                        provider_usage['input_cost'] += costs['input_cost']
-                                        provider_usage['output_cost'] += costs['output_cost']
-                                        provider_usage['total_cost'] += costs['total_cost']
-                                    # Always add to estimated totals for projection
-                                    total_token_usage['estimated_total_cost'] += costs['total_cost']
-                                elif api_provider == 'anthropic':
-                                    provider_usage = total_token_usage['by_provider']['anthropic']
-                                    provider_usage['input_tokens'] += usage.get('input_tokens', 0)
-                                    provider_usage['output_tokens'] += usage.get('output_tokens', 0)
-                                    provider_usage['cache_creation_tokens'] += usage.get('cache_creation_tokens', 0)
-                                    provider_usage['cache_read_tokens'] += usage.get('cache_read_tokens', 0)
-                                    provider_usage['total_tokens'] += total_tokens
-                                    provider_usage['calls'] += 1
-                                    # Add to estimated cost (always) and actual cost (only if not cached)
-                                    if not is_cached:
-                                        provider_usage['input_cost'] += costs['input_cost']
-                                        provider_usage['output_cost'] += costs['output_cost']
-                                        provider_usage['total_cost'] += costs['total_cost']
-                                    # Always add to estimated totals for projection
-                                    total_token_usage['estimated_total_cost'] += costs['total_cost']
-                                
-                                # Track by model
-                                model = response_data.get('model', 'unknown')
-                                if model not in total_token_usage['by_model']:
-                                    total_token_usage['by_model'][model] = {
-                                        'api_provider': api_provider,
-                                        'total_tokens': 0,
-                                        'calls': 0,
-                                        'input_cost': 0.0,
-                                        'output_cost': 0.0,
-                                        'total_cost': 0.0
-                                    }
-                                    # Add provider-specific fields
-                                    if api_provider == 'perplexity':
-                                        total_token_usage['by_model'][model].update({
-                                            'prompt_tokens': 0,
-                                            'completion_tokens': 0
-                                        })
-                                    elif api_provider == 'anthropic':
-                                        total_token_usage['by_model'][model].update({
-                                            'input_tokens': 0,
-                                            'output_tokens': 0,
-                                            'cache_creation_tokens': 0,
-                                            'cache_read_tokens': 0
-                                        })
-                                
-                                # Update model-specific usage
-                                model_usage = total_token_usage['by_model'][model]
-                                model_usage['total_tokens'] += total_tokens
-                                model_usage['calls'] += 1
-                                # Add to actual cost only if not cached
-                                if not is_cached:
-                                    model_usage['input_cost'] += costs['input_cost']
-                                    model_usage['output_cost'] += costs['output_cost']
-                                    model_usage['total_cost'] += costs['total_cost']
-                                
-                                if api_provider == 'perplexity':
-                                    model_usage['prompt_tokens'] += usage.get('input_tokens', 0)  # ai_api_client normalizes to input_tokens
-                                    model_usage['completion_tokens'] += usage.get('output_tokens', 0)  # ai_api_client normalizes to output_tokens
-                                elif api_provider == 'anthropic':
-                                    model_usage['input_tokens'] += usage.get('input_tokens', 0)
-                                    model_usage['output_tokens'] += usage.get('output_tokens', 0)
-                                    model_usage['cache_creation_tokens'] += usage.get('cache_creation_tokens', 0)
-                                    model_usage['cache_read_tokens'] += usage.get('cache_read_tokens', 0)
-                    
-                    # Remove the raw responses from the row result to avoid duplication
-                    del row_result['_raw_responses']
-            
-            # Calculate total actual cost from providers
-            perplexity_actual_cost = total_token_usage['by_provider']['perplexity']['total_cost']
-            anthropic_actual_cost = total_token_usage['by_provider']['anthropic']['total_cost']
-            total_token_usage['total_cost'] = perplexity_actual_cost + anthropic_actual_cost
-            
-            # Log token usage and cost summary
-            logger.info(f"Token Usage Summary: {total_token_usage['total_tokens']} total tokens")
-            logger.info(f"Actual Cost: ${total_token_usage['total_cost']:.6f} (non-cached only)")
-            logger.info(f"Estimated Cost: ${total_token_usage['estimated_total_cost']:.6f} (if nothing cached)")
-            logger.info(f"API Calls: {total_token_usage['api_calls']} new, {total_token_usage['cached_calls']} cached")
-            logger.info(f"Total Processing Time: {total_processing_time:.3f}s")
-            
-            # Log by provider
-            perplexity_usage = total_token_usage['by_provider']['perplexity']
-            anthropic_usage = total_token_usage['by_provider']['anthropic']
-            
-            if perplexity_usage['calls'] > 0:
-                logger.info(f"Perplexity API: {perplexity_usage['prompt_tokens']} prompt + {perplexity_usage['completion_tokens']} completion = {perplexity_usage['total_tokens']} total tokens across {perplexity_usage['calls']} calls")
-                logger.info(f"Perplexity Cost: ${perplexity_usage['input_cost']:.6f} input + ${perplexity_usage['output_cost']:.6f} output = ${perplexity_usage['total_cost']:.6f} total")
-            
-            if anthropic_usage['calls'] > 0:
-                logger.info(f"Anthropic API: {anthropic_usage['input_tokens']} input + {anthropic_usage['output_tokens']} output + {anthropic_usage['cache_creation_tokens']} cache_creation + {anthropic_usage['cache_read_tokens']} cache_read = {anthropic_usage['total_tokens']} total tokens across {anthropic_usage['calls']} calls")
-                logger.info(f"Anthropic Cost: ${anthropic_usage['input_cost']:.6f} input + ${anthropic_usage['output_cost']:.6f} output = ${anthropic_usage['total_cost']:.6f} total")
-            
-            # Log by model
-            for model, model_usage in total_token_usage['by_model'].items():
-                api_provider = model_usage.get('api_provider', 'unknown')
-                logger.info(f"Model {model} ({api_provider}): {model_usage['total_tokens']} tokens across {model_usage['calls']} calls, cost: ${model_usage['total_cost']:.6f}")
-            
-            # Log the size of the response data (approximately)
-            response_json = json.dumps({
-                'validation_results': validation_results,
-                'cache_stats': {
-                    'hits': total_cache_hits,
-                    'misses': total_cache_misses,
-                    'multiplex_validations': total_multiplex_validations,
-                    'single_validations': total_single_validations
+                'anthropic': {
+                    'input_tokens': 0,
+                    'output_tokens': 0,
+                    'cache_creation_tokens': 0,
+                    'cache_read_tokens': 0,
+                    'total_tokens': 0,
+                    'calls': 0,
+                    'input_cost': 0.0,
+                    'output_cost': 0.0,
+                    'total_cost': 0.0
                 }
-            })
-            response_size_kb = len(response_json) / 1024
-            logger.info(f"Response size without raw responses: approximately {response_size_kb:.2f} KB")
-            
-            # Estimate size with raw responses
-            raw_responses_json = json.dumps(all_raw_responses)
-            raw_size_kb = len(raw_responses_json) / 1024
-            logger.info(f"Raw responses size: approximately {raw_size_kb:.2f} KB")
-            logger.info(f"Total estimated response size: {response_size_kb + raw_size_kb:.2f} KB")
-            
-            # Calculate batch timing statistics using parallel processing time calculation
-            num_batches = len(batch_processing_times)
-            if num_batches > 0:
-                avg_batch_time = total_processing_time / num_batches  # Parallel time per batch
-                avg_time_per_row_across_batches = total_processing_time / len(validation_results) if validation_results else 0
-                total_batch_time = total_processing_time  # Use parallel processing time
-            else:
-                avg_batch_time = 0
-                avg_time_per_row_across_batches = 0
-                total_batch_time = 0
-            
-            # Log batch timing summary
-            logger.info(f"📊 BATCH TIMING SUMMARY:")
-            logger.info(f"  🚀 Total batches processed: {len(batch_processing_times)}")
-            logger.info(f"  ⏱️ Average time per batch: {avg_batch_time:.2f}s")
-            logger.info(f"  → Average time per row across all batches: {avg_time_per_row_across_batches:.2f}s")
-            logger.info(f"  ✅ Total batch processing time: {total_batch_time:.2f}s")
-            
-            # Calculate validation structure metrics
-            validation_targets = [t for t in validator.validation_targets if t.importance.upper() not in ["ID", "IGNORED"]]
-            validated_columns_count = len(validation_targets)
-            grouped_targets = validator.group_columns_by_search_group(validation_targets)
-            search_groups_count = len(grouped_targets)
-            
-            # Count high context and Claude search groups
-            high_context_groups_count = 0
-            claude_groups_count = 0
-            for group_id, targets in grouped_targets.items():
-                if targets:
-                    # Check if any target in this group has high context
-                    group_has_high_context = any(
-                        (getattr(target, 'search_context_size', '') or '').lower() == 'high'
-                        for target in targets
-                    )
-                    if group_has_high_context:
-                        high_context_groups_count += 1
-                    
-                    # Check if any target in this group uses Claude/Anthropic model
-                    group_model, _ = resolve_search_group_model(targets, validator)
-                    if determine_api_provider(group_model) == 'anthropic':
-                        claude_groups_count += 1
-            
-            # Log validation metrics summary
-            logger.info(f"🔍 VALIDATION STRUCTURE METRICS:")
-            logger.info(f"  📊 Validated columns: {validated_columns_count}")
-            logger.info(f"  🔗 Search groups: {search_groups_count}")
-            logger.info(f"  🎯 High context search groups: {high_context_groups_count}")
-            logger.info(f"  🤖 Claude search groups: {claude_groups_count}")
-            
-            # Create a single response
-            response = {
-                "statusCode": 200,
-                "body": {
-                    "success": True,
-                    "message": "Validation completed",
-                    "data": {
-                        # Map row indices to results
-                        "rows": validation_results
-                    },
-                    "metadata": {
-                        "total_rows": len(rows),
-                        "completed_rows": len(validation_results),
-                        "cache_hits": total_cache_hits,
-                        "cache_misses": total_cache_misses,
-                        "multiplex_validations": total_multiplex_validations,
-                        "single_validations": total_single_validations,
-                        "token_usage": total_token_usage,
-                        "processing_time": total_processing_time,  # Keep for backward compatibility
-                        # NEW: Batch timing data
-                        "batch_timing": {
-                            "total_batches": len(batch_processing_times),
-                            "batch_size": 5,  # Fixed batch size
-                            "total_batch_time_seconds": total_batch_time,
-                            "average_batch_time_seconds": avg_batch_time,
-                            "average_time_per_row_seconds": avg_time_per_row_across_batches,
-                            "batch_details": list(batch_processing_times.items())  # Convert dict to list of (batch_num, time) pairs
-                        },
-                        # NEW: Validation structure metrics
-                        "validation_metrics": {
-                            "validated_columns_count": validated_columns_count,
-                            "search_groups_count": search_groups_count,
-                            "high_context_search_groups_count": high_context_groups_count,
-                            "claude_search_groups_count": claude_groups_count
-                        }
-                    }
-                }
-            }
-            
-            # DEBUG: Log what we're actually returning in metadata
-            logger.info(f"DEBUG: Metadata being returned: {list(response['body']['metadata'].keys())}")
-            logger.info(f"DEBUG: processing_time in metadata = {response['body']['metadata'].get('processing_time', 'NOT FOUND')}")
-            
-            # Add the raw responses for debugging if in test_mode
-            test_mode = event.get('test_mode', False)
-            if test_mode:
-                # Return the raw responses as well in test mode
-                if 'raw_responses' in event:
-                    response['body']['raw_responses'] = event['raw_responses']
-            
-            # Remove any raw response content if not in test mode
-            else:
-                # Clean up any raw response content that might have been added (just to be safe)
-                if 'raw_responses' in response['body']:
-                    del response['body']['raw_responses']
+            },
+            'by_model': {}
+        }
+        
+        # First pass: collect all responses and calculate token usage
+        # For timing, we need to calculate the maximum processing time per batch (parallel processing)
+        batch_processing_times = {}  # batch_number -> max_processing_time_in_that_batch
+        
+        for row_idx, row_result in validation_results.items():
+            if '_raw_responses' in row_result:
+                # Calculate which batch this row was in (batch_size = 5)
+                batch_number = row_idx // 5
+                if batch_number not in batch_processing_times:
+                    batch_processing_times[batch_number] = 0.0
                 
-            # Send final progress update
-            if session_id:
-                send_websocket_progress(session_id, "Validation completed successfully!", 100)
+                # Track the total processing time for this row
+                row_processing_time = 0.0
+                
+                # Add a row prefix to each response ID to avoid collisions
+                for response_id, response_data in row_result['_raw_responses'].items():
+                    new_response_id = f"row{row_idx}_{response_id}"
+                    all_raw_responses[new_response_id] = response_data
+                    
+                    # Count API calls (move this OUTSIDE token usage check)
+                    is_cached = response_data.get('is_cached', False)
+                    if is_cached:
+                        total_token_usage['cached_calls'] += 1
+                        logger.info(f"DEBUG: Counting as cached call - response_id: {new_response_id}, is_cached: {is_cached}")
+                    else:
+                        total_token_usage['api_calls'] += 1
+                        logger.info(f"DEBUG: Counting as API call - response_id: {new_response_id}, is_cached: {is_cached}")
+                    
+                    # Aggregate token usage
+                    if 'token_usage' in response_data:
+                        usage = response_data['token_usage']
+                        if usage:  # Only process if token_usage is not empty
+                            api_provider = usage.get('api_provider', 'unknown')
+                            total_tokens = usage.get('total_tokens', 0)
+                            total_token_usage['total_tokens'] += total_tokens
+                            
+                            # Calculate costs for this usage
+                            costs = calculate_token_costs(usage, pricing_data)
+                            total_token_usage['total_cost'] += costs['total_cost']
+                    
+                    # Aggregate processing time for this row
+                    if 'processing_time' in response_data:
+                        proc_time = response_data.get('processing_time', 0.0)
+                        if proc_time and isinstance(proc_time, (int, float)):
+                            row_processing_time += proc_time
+                
+                # For parallel processing, the batch time is the maximum time of any row in that batch
+                # (since all rows in a batch are processed in parallel)
+                batch_processing_times[batch_number] = max(batch_processing_times[batch_number], row_processing_time)
+                logger.info(f"Row {row_idx} (batch {batch_number}) total time: {row_processing_time:.3f}s, batch max now: {batch_processing_times[batch_number]:.3f}s")
+        
+        # Calculate total processing time as sum of all batch times (since batches are processed sequentially)
+        total_processing_time = sum(batch_processing_times.values())
+        logger.info(f"Calculated parallel processing time: {total_processing_time:.3f}s across {len(batch_processing_times)} batches")
+        
+        # Second pass: aggregate provider-specific token usage
+        for row_idx, row_result in validation_results.items():
+            if '_raw_responses' in row_result:
+                for response_id, response_data in row_result['_raw_responses'].items():
+                    # Continue with provider-specific token usage aggregation
+                    if 'token_usage' in response_data:
+                        usage = response_data['token_usage']
+                        if usage:  # Only process if token_usage is not empty
+                            api_provider = usage.get('api_provider', 'unknown')
+                            total_tokens = usage.get('total_tokens', 0)
+                            costs = calculate_token_costs(usage, pricing_data)
+                            is_cached = response_data.get('is_cached', False)
+                            # Aggregate by provider
+                            if api_provider == 'perplexity':
+                                provider_usage = total_token_usage['by_provider']['perplexity']
+                                input_tokens = usage.get('input_tokens', 0)
+                                output_tokens = usage.get('output_tokens', 0)
+                                
+                                # Handle legacy cached format where we might have prompt_tokens/completion_tokens instead
+                                if input_tokens == 0 and output_tokens == 0:
+                                    input_tokens = usage.get('prompt_tokens', 0)
+                                    output_tokens = usage.get('completion_tokens', 0)
+                                
+                                provider_usage['prompt_tokens'] += input_tokens  # ai_api_client normalizes to input_tokens
+                                provider_usage['completion_tokens'] += output_tokens  # ai_api_client normalizes to output_tokens
+                                provider_usage['total_tokens'] += total_tokens
+                                provider_usage['calls'] += 1
+                                # Add to estimated cost (always) and actual cost (only if not cached)
+                                if not is_cached:
+                                    provider_usage['input_cost'] += costs['input_cost']
+                                    provider_usage['output_cost'] += costs['output_cost']
+                                    provider_usage['total_cost'] += costs['total_cost']
+                                # Always add to estimated totals for projection
+                                total_token_usage['estimated_total_cost'] += costs['total_cost']
+                            elif api_provider == 'anthropic':
+                                provider_usage = total_token_usage['by_provider']['anthropic']
+                                provider_usage['input_tokens'] += usage.get('input_tokens', 0)
+                                provider_usage['output_tokens'] += usage.get('output_tokens', 0)
+                                provider_usage['cache_creation_tokens'] += usage.get('cache_creation_tokens', 0)
+                                provider_usage['cache_read_tokens'] += usage.get('cache_read_tokens', 0)
+                                provider_usage['total_tokens'] += total_tokens
+                                provider_usage['calls'] += 1
+                                # Add to estimated cost (always) and actual cost (only if not cached)
+                                if not is_cached:
+                                    provider_usage['input_cost'] += costs['input_cost']
+                                    provider_usage['output_cost'] += costs['output_cost']
+                                    provider_usage['total_cost'] += costs['total_cost']
+                                # Always add to estimated totals for projection
+                                total_token_usage['estimated_total_cost'] += costs['total_cost']
+                            
+                            # Track by model
+                            model = response_data.get('model', 'unknown')
+                            if model not in total_token_usage['by_model']:
+                                total_token_usage['by_model'][model] = {
+                                    'api_provider': api_provider,
+                                    'total_tokens': 0,
+                                    'calls': 0,
+                                    'input_cost': 0.0,
+                                    'output_cost': 0.0,
+                                    'total_cost': 0.0
+                                }
+                                # Add provider-specific fields
+                                if api_provider == 'perplexity':
+                                    total_token_usage['by_model'][model].update({
+                                        'prompt_tokens': 0,
+                                        'completion_tokens': 0
+                                    })
+                                elif api_provider == 'anthropic':
+                                    total_token_usage['by_model'][model].update({
+                                        'input_tokens': 0,
+                                        'output_tokens': 0,
+                                        'cache_creation_tokens': 0,
+                                        'cache_read_tokens': 0
+                                    })
+                            
+                            # Update model-specific usage
+                            model_usage = total_token_usage['by_model'][model]
+                            model_usage['total_tokens'] += total_tokens
+                            model_usage['calls'] += 1
+                            # Add to actual cost only if not cached
+                            if not is_cached:
+                                model_usage['input_cost'] += costs['input_cost']
+                                model_usage['output_cost'] += costs['output_cost']
+                                model_usage['total_cost'] += costs['total_cost']
+                            
+                            if api_provider == 'perplexity':
+                                model_usage['prompt_tokens'] += usage.get('input_tokens', 0)  # ai_api_client normalizes to input_tokens
+                                model_usage['completion_tokens'] += usage.get('output_tokens', 0)  # ai_api_client normalizes to output_tokens
+                            elif api_provider == 'anthropic':
+                                model_usage['input_tokens'] += usage.get('input_tokens', 0)
+                                model_usage['output_tokens'] += usage.get('output_tokens', 0)
+                                model_usage['cache_creation_tokens'] += usage.get('cache_creation_tokens', 0)
+                                model_usage['cache_read_tokens'] += usage.get('cache_read_tokens', 0)
+                
+                # Remove the raw responses from the row result to avoid duplication
+                del row_result['_raw_responses']
+        
+        # Calculate total actual cost from providers
+        perplexity_actual_cost = total_token_usage['by_provider']['perplexity']['total_cost']
+        anthropic_actual_cost = total_token_usage['by_provider']['anthropic']['total_cost']
+        total_token_usage['total_cost'] = perplexity_actual_cost + anthropic_actual_cost
+        
+        # Log token usage and cost summary
+        logger.info(f"Token Usage Summary: {total_token_usage['total_tokens']} total tokens")
+        logger.info(f"Actual Cost: ${total_token_usage['total_cost']:.6f} (non-cached only)")
+        logger.info(f"Estimated Cost: ${total_token_usage['estimated_total_cost']:.6f} (if nothing cached)")
+        logger.info(f"API Calls: {total_token_usage['api_calls']} new, {total_token_usage['cached_calls']} cached")
+        logger.info(f"Total Processing Time: {total_processing_time:.3f}s")
+        
+        # Log by provider
+        perplexity_usage = total_token_usage['by_provider']['perplexity']
+        anthropic_usage = total_token_usage['by_provider']['anthropic']
+        
+        if perplexity_usage['calls'] > 0:
+            logger.info(f"Perplexity API: {perplexity_usage['prompt_tokens']} prompt + {perplexity_usage['completion_tokens']} completion = {perplexity_usage['total_tokens']} total tokens across {perplexity_usage['calls']} calls")
+            logger.info(f"Perplexity Cost: ${perplexity_usage['input_cost']:.6f} input + ${perplexity_usage['output_cost']:.6f} output = ${perplexity_usage['total_cost']:.6f} total")
+        
+        if anthropic_usage['calls'] > 0:
+            logger.info(f"Anthropic API: {anthropic_usage['input_tokens']} input + {anthropic_usage['output_tokens']} output + {anthropic_usage['cache_creation_tokens']} cache_creation + {anthropic_usage['cache_read_tokens']} cache_read = {anthropic_usage['total_tokens']} total tokens across {anthropic_usage['calls']} calls")
+            logger.info(f"Anthropic Cost: ${anthropic_usage['input_cost']:.6f} input + ${anthropic_usage['output_cost']:.6f} output = ${anthropic_usage['total_cost']:.6f} total")
+        
+        # Log by model
+        for model, model_usage in total_token_usage['by_model'].items():
+            api_provider = model_usage.get('api_provider', 'unknown')
+            logger.info(f"Model {model} ({api_provider}): {model_usage['total_tokens']} tokens across {model_usage['calls']} calls, cost: ${model_usage['total_cost']:.6f}")
+        
+        # Log the size of the response data (approximately)
+        response_json = json.dumps({
+            'validation_results': validation_results,
+            'cache_stats': {
+                'hits': total_cache_hits,
+                'misses': total_cache_misses,
+                'multiplex_validations': total_multiplex_validations,
+                'single_validations': total_single_validations
+            }
+        })
+        response_size_kb = len(response_json) / 1024
+        logger.info(f"Response size without raw responses: approximately {response_size_kb:.2f} KB")
+        
+        # Estimate size with raw responses
+        raw_responses_json = json.dumps(all_raw_responses)
+        raw_size_kb = len(raw_responses_json) / 1024
+        logger.info(f"Raw responses size: approximately {raw_size_kb:.2f} KB")
+        logger.info(f"Total estimated response size: {response_size_kb + raw_size_kb:.2f} KB")
+        
+        # Calculate batch timing statistics using parallel processing time calculation
+        num_batches = len(batch_processing_times)
+        if num_batches > 0:
+            avg_batch_time = total_processing_time / num_batches  # Parallel time per batch
+            avg_time_per_row_across_batches = total_processing_time / len(validation_results) if validation_results else 0
+            total_batch_time = total_processing_time  # Use parallel processing time
+        else:
+            avg_batch_time = 0
+            avg_time_per_row_across_batches = 0
+            total_batch_time = 0
+        
+        # Log batch timing summary
+        logger.info(f"📊 BATCH TIMING SUMMARY:")
+        logger.info(f"  🚀 Total batches processed: {len(batch_processing_times)}")
+        logger.info(f"  ⏱️ Average time per batch: {avg_batch_time:.2f}s")
+        logger.info(f"  → Average time per row across all batches: {avg_time_per_row_across_batches:.2f}s")
+        logger.info(f"  ✅ Total batch processing time: {total_batch_time:.2f}s")
+        
+        # Calculate validation structure metrics
+        validation_targets = [t for t in validator.validation_targets if t.importance.upper() not in ["ID", "IGNORED"]]
+        validated_columns_count = len(validation_targets)
+        grouped_targets = validator.group_columns_by_search_group(validation_targets)
+        search_groups_count = len(grouped_targets)
+        
+        # Count high context and Claude search groups
+        high_context_groups_count = 0
+        claude_groups_count = 0
+        for group_id, targets in grouped_targets.items():
+            if targets:
+                # Check if any target in this group has high context
+                group_has_high_context = any(
+                    (getattr(target, 'search_context_size', '') or '').lower() == 'high'
+                    for target in targets
+                )
+                if group_has_high_context:
+                    high_context_groups_count += 1
+                
+                # Check if any target in this group uses Claude/Anthropic model
+                group_model, _ = resolve_search_group_model(targets, validator)
+                if determine_api_provider(group_model) == 'anthropic':
+                    claude_groups_count += 1
+        
+        # Log validation metrics summary
+        logger.info(f"🔍 VALIDATION STRUCTURE METRICS:")
+        logger.info(f"  📊 Validated columns: {validated_columns_count}")
+        logger.info(f"  🔗 Search groups: {search_groups_count}")
+        logger.info(f"  🎯 High context search groups: {high_context_groups_count}")
+        logger.info(f"  🤖 Claude search groups: {claude_groups_count}")
+        
+        # Create a single response
+        response = {
+            "statusCode": 200,
+            "body": {
+                "success": True,
+                "message": "Validation completed",
+                "data": {
+                    # Map row indices to results
+                    "rows": validation_results
+                },
+                "metadata": {
+                    "total_rows": len(rows),
+                    "completed_rows": len(validation_results),
+                    "cache_hits": total_cache_hits,
+                    "cache_misses": total_cache_misses,
+                    "multiplex_validations": total_multiplex_validations,
+                    "single_validations": total_single_validations,
+                    "token_usage": total_token_usage,
+                    "processing_time": total_processing_time,  # Keep for backward compatibility
+                    # NEW: Batch timing data
+                    "batch_timing": {
+                        "total_batches": len(batch_processing_times),
+                        "dynamic_batch_sizing": True,  # Indicate that batch sizes were dynamic
+                        "total_batch_time_seconds": total_batch_time,
+                        "average_batch_time_seconds": avg_batch_time,
+                        "average_time_per_row_seconds": avg_time_per_row_across_batches,
+                        "batch_details": list(batch_processing_times.items())  # Convert dict to list of (batch_num, time) pairs
+                    },
+                    # NEW: Validation structure metrics
+                    "validation_metrics": {
+                        "validated_columns_count": validated_columns_count,
+                        "search_groups_count": search_groups_count,
+                        "high_context_search_groups_count": high_context_groups_count,
+                        "claude_search_groups_count": claude_groups_count
+                    },
+                    # NEW: Batch API provider statistics (backward compatibility)
+                    "batch_provider_stats": {
+                        "batches_with_claude": batches_with_claude,
+                        "batches_without_claude": batches_without_claude,
+                        "total_batches": batches_with_claude + batches_without_claude
+                    },
+                    # NEW: Per-model batch statistics
+                    "per_model_batch_stats": final_stats
+                }
+            }
+        }
+        
+        # DEBUG: Log what we're actually returning in metadata
+        logger.info(f"DEBUG: Metadata being returned: {list(response['body']['metadata'].keys())}")
+        logger.info(f"DEBUG: processing_time in metadata = {response['body']['metadata'].get('processing_time', 'NOT FOUND')}")
+        
+        # Add the raw responses for debugging if in test_mode
+        test_mode = event.get('test_mode', False)
+        if test_mode:
+            # Return the raw responses as well in test mode
+            if 'raw_responses' in event:
+                response['body']['raw_responses'] = event['raw_responses']
+        
+        # Remove any raw response content if not in test mode
+        else:
+            # Clean up any raw response content that might have been added (just to be safe)
+            if 'raw_responses' in response['body']:
+                del response['body']['raw_responses']
             
-            # Return the combined results
-            return response
+        # Send final progress update
+        if session_id:
+            final_count = completed_ai_calls[0]
+            send_websocket_progress(session_id, f"Validation completed! {final_count} AI calls processed", 100)
+        
+        # Return the combined results
+        return response
         
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}")
         logger.error(traceback.format_exc())
         return {
-            'statusCode': 500,
-            'body': {
-                'error': str(e)
-            }
+        'statusCode': 500,
+        'body': {
+            'error': str(e)
+        }
         } 

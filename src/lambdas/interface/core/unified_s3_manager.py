@@ -165,11 +165,17 @@ class UnifiedS3Manager:
     def store_config_file(self, email: str, session_id: str, config_data: Dict, 
                          version: int = 1, source: str = 'user', description: str = None,
                          original_name: str = None, source_session: str = None, 
-                         usage_timestamp: str = None) -> Dict[str, Any]:
+                         usage_timestamp: str = None, preserve_original_filename: str = None) -> Dict[str, Any]:
         """Store config file in session folder with versioning"""
         try:
             session_path = self.get_session_path(email, session_id)
-            config_filename = f"config_v{version}_{source}.json"
+            
+            # Use preserved filename if provided (for copying), otherwise generate new one
+            if preserve_original_filename:
+                config_filename = preserve_original_filename
+            else:
+                config_filename = f"config_v{version}_{source}.json"
+            
             file_key = f"{session_path}{config_filename}"
             
             # Generate human-friendly config ID and description with uniqueness guarantee
@@ -202,12 +208,18 @@ class UnifiedS3Manager:
             
             # Add comprehensive metadata including content tracking
             now = datetime.now().isoformat()
+            
+            # Preserve first_created from existing metadata or set new
+            existing_metadata = config_data.get('storage_metadata', {})
+            first_created = existing_metadata.get('first_created', now)
+            
             storage_metadata = {
                 'version': version,
                 'source': source,
                 'session_id': session_id,
                 'email': email,
                 'stored_at': now,
+                'created_at': now,
                 'config_id': config_id,
                 'description': description or config_data.get('general_notes', ''),
                 'original_name': original_name,
@@ -216,7 +228,7 @@ class UnifiedS3Manager:
                 'content_hash': content_hash,
                 'creation_method': source,
                 'usage_count': 1 if source in ['used_by_id', 'copied', 'applied'] else 0,
-                'first_created': now,  # Will be updated if we find earlier version
+                'first_created': first_created,  # CRITICAL: Preserve original creation time
                 'metadata_version': '2.0'  # For future schema evolution
             }
             
@@ -432,6 +444,7 @@ class UnifiedS3Manager:
             ]
             
             # Also list files in the session folder to find any Excel file
+            # BUT prioritize original input files over enhanced/results files
             try:
                 response = self.s3_client.list_objects_v2(
                     Bucket=self.bucket_name,
@@ -440,9 +453,36 @@ class UnifiedS3Manager:
                 
                 if 'Contents' in response:
                     logger.info(f"Found {len(response['Contents'])} objects in session folder")
+                    input_files = []
+                    other_files = []
+                    
                     for obj in response['Contents']:
                         if obj['Key'].endswith(('.xlsx', '.xls', '.csv')):
-                            potential_keys.insert(0, obj['Key'])
+                            # Only include files directly in the session folder, not in subfolders like v1_results/
+                            # and prioritize original input files over enhanced/results files
+                            key_parts = obj['Key'].replace(session_path, '').split('/')
+                            filename = key_parts[-1]
+                            
+                            # Skip files in subfolders (like v1_results/enhanced_validation.xlsx)
+                            if len(key_parts) > 1 and key_parts[0]:  # Has subfolder
+                                logger.debug(f"Skipping file in subfolder: {obj['Key']}")
+                                continue
+                            
+                            # Prioritize original input files over any processed/enhanced files
+                            if ('_input.' in filename or 
+                                filename in ['excel_file.xlsx', 'input.xlsx', 'table.xlsx'] or
+                                ('enhanced' not in filename and 'validation' not in filename)):
+                                input_files.append(obj['Key'])
+                                logger.debug(f"Prioritizing input file: {obj['Key']}")
+                            else:
+                                other_files.append(obj['Key'])
+                                logger.debug(f"Adding as fallback file: {obj['Key']}")
+                    
+                    # Add input files first (prioritized), then other files as fallback
+                    for key in input_files:
+                        potential_keys.insert(0, key)
+                    for key in other_files:
+                        potential_keys.append(key)
                 else:
                     logger.warning(f"No contents found in session folder: {session_path}")
             except Exception as e:
@@ -450,10 +490,18 @@ class UnifiedS3Manager:
                 pass
             
             # Try to download the first available Excel file
+            logger.info(f"Attempting to retrieve Excel file from {len(potential_keys)} potential keys:")
+            for i, key in enumerate(potential_keys):
+                logger.info(f"  {i+1}. {key}")
+            
             for key in potential_keys:
                 try:
                     response = self.s3_client.get_object(Bucket=self.bucket_name, Key=key)
-                    logger.info(f"Successfully retrieved Excel file: {key}")
+                    filename = key.split('/')[-1]
+                    if 'enhanced_validation' in filename:
+                        logger.warning(f"USING ENHANCED FILE (not original input): {key}")
+                    else:
+                        logger.info(f"Successfully retrieved original Excel file: {key}")
                     return response['Body'].read(), key
                 except Exception as e:
                     logger.debug(f"Failed to retrieve {key}: {e}")
@@ -573,17 +621,36 @@ class UnifiedS3Manager:
     def create_public_download_link(self, data: Any, filename: str = None, 
                                   content_type: str = 'application/json') -> str:
         """Create public download link in downloads folder"""
+        logger.info(f"[DEBUG] create_public_download_link called with data type: {type(data)}")
+        logger.info(f"[DEBUG] create_public_download_link filename: {filename}")
+        logger.info(f"[DEBUG] create_public_download_link content_type: {content_type}")
+        
         try:
             download_uuid = str(uuid.uuid4())
             download_key = f"downloads/{download_uuid}/{filename or 'download.json'}"
+            logger.info(f"[DEBUG] Generated download_key: {download_key}")
             
             # Prepare content
-            if isinstance(data, (dict, list)):
-                content = json.dumps(data, indent=2)
-            elif isinstance(data, bytes):
-                content = data
-            else:
-                content = str(data)
+            try:
+                if isinstance(data, (dict, list)):
+                    content = json.dumps(data, indent=2)
+                    logger.info(f"[DEBUG] Data is dict/list, converted to JSON, size: {len(content)}")
+                elif isinstance(data, bytes):
+                    content = data
+                    logger.info(f"[DEBUG] Data is bytes, size: {len(content)}")
+                else:
+                    content = str(data)
+                    logger.info(f"[DEBUG] Data converted to string, size: {len(content)}")
+                
+                # Debug logging
+                logger.info(f"[DEBUG] S3 Upload - Data type: {type(data)}, Content size: {len(content) if hasattr(content, '__len__') else 'unknown'}")
+                logger.info(f"[DEBUG] S3 Upload - Key: {download_key}, ContentType: {content_type}")
+                
+            except Exception as e:
+                logger.error(f"[DEBUG] Error during content preparation: {e}")
+                import traceback
+                logger.error(f"[DEBUG] Content preparation traceback: {traceback.format_exc()}")
+                raise
             
             # Store in public downloads folder
             self.s3_client.put_object(
@@ -596,6 +663,14 @@ class UnifiedS3Manager:
                     'expires_after': '7_days'
                 }
             )
+            
+            # Verify upload by checking object size
+            try:
+                response = self.s3_client.head_object(Bucket=self.bucket_name, Key=download_key)
+                uploaded_size = response['ContentLength']
+                logger.info(f"[DEBUG] S3 Upload verified - Object size: {uploaded_size} bytes")
+            except Exception as e:
+                logger.error(f"[DEBUG] Failed to verify S3 upload: {e}")
             
             # Generate public URL
             public_url = f"https://{self.bucket_name}.s3.amazonaws.com/{download_key}"
@@ -714,7 +789,21 @@ class UnifiedS3Manager:
         """Get the latest validation results for a session"""
         try:
             session_path = self.get_session_path(email, session_id)
+            logger.info(f"DEBUG_VALIDATION_RESULTS: Searching for validation results in session_path: {session_path}")
             
+            # List ALL objects in session folder first to debug what's actually there
+            all_objects_response = self.s3_client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=session_path
+            )
+            
+            if 'Contents' in all_objects_response:
+                logger.info(f"DEBUG_VALIDATION_RESULTS: Found {len(all_objects_response['Contents'])} total objects in session folder:")
+                for obj in all_objects_response['Contents']:
+                    logger.info(f"DEBUG_VALIDATION_RESULTS: - {obj['Key']}")
+            else:
+                logger.warning(f"DEBUG_VALIDATION_RESULTS: No objects found in session folder: {session_path}")
+                
             # List all result folders in session folder
             response = self.s3_client.list_objects_v2(
                 Bucket=self.bucket_name,
@@ -724,17 +813,40 @@ class UnifiedS3Manager:
             
             result_folders = []
             if 'CommonPrefixes' in response:
+                logger.info(f"DEBUG_VALIDATION_RESULTS: Found {len(response['CommonPrefixes'])} CommonPrefixes with v prefix:")
                 for prefix_info in response['CommonPrefixes']:
                     folder_path = prefix_info['Prefix']
                     folder_name = folder_path.rstrip('/').split('/')[-1]
+                    logger.info(f"DEBUG_VALIDATION_RESULTS: Checking folder: {folder_path} -> {folder_name}")
                     if folder_name.endswith('_results'):
                         # Extract version number
                         try:
                             version_str = folder_name.replace('_results', '').replace('v', '')
                             version = int(version_str)
                             result_folders.append((version, folder_path))
+                            logger.info(f"DEBUG_VALIDATION_RESULTS: Added result folder: version {version}, path {folder_path}")
                         except ValueError:
+                            logger.warning(f"DEBUG_VALIDATION_RESULTS: Could not extract version from folder: {folder_name}")
                             continue
+            else:
+                logger.info(f"DEBUG_VALIDATION_RESULTS: No CommonPrefixes found with v prefix")
+                
+            # Also check for validation results files directly in the session folder (alternative storage pattern)
+            direct_results_patterns = [
+                f"{session_path}validation_results.json",
+                f"{session_path}preview_results.json"
+            ]
+            
+            logger.info(f"DEBUG_VALIDATION_RESULTS: Checking for direct validation results files...")
+            for pattern in direct_results_patterns:
+                try:
+                    response = self.s3_client.get_object(Bucket=self.bucket_name, Key=pattern)
+                    results_data = json.loads(response['Body'].read().decode('utf-8'))
+                    logger.info(f"DEBUG_VALIDATION_RESULTS: Found direct validation results at: {pattern}")
+                    return results_data
+                except Exception as e:
+                    logger.info(f"DEBUG_VALIDATION_RESULTS: No direct results at {pattern}: {e}")
+                    pass
             
             if not result_folders:
                 logger.info(f"No validation results found for session {session_id}")
@@ -743,16 +855,28 @@ class UnifiedS3Manager:
             # Get the latest version
             latest_version, latest_folder = max(result_folders, key=lambda x: x[0])
             
-            # Try to get validation_results.json from the latest folder
+            # Try to get validation results from the latest folder - check both full and preview results
+            # First try full validation results
             results_key = f"{latest_folder}validation_results.json"
             
             try:
                 response = self.s3_client.get_object(Bucket=self.bucket_name, Key=results_key)
                 results_data = json.loads(response['Body'].read().decode('utf-8'))
-                logger.info(f"Retrieved latest validation results from version {latest_version}")
+                logger.info(f"Retrieved latest full validation results from version {latest_version}")
                 return results_data
             except Exception as e:
-                logger.warning(f"Could not retrieve validation results from {results_key}: {e}")
+                logger.info(f"Full validation results not found at {results_key}: {e}")
+                
+            # Fallback to preview results if full validation not available
+            preview_results_key = f"{latest_folder}preview_results.json"
+            
+            try:
+                response = self.s3_client.get_object(Bucket=self.bucket_name, Key=preview_results_key)
+                results_data = json.loads(response['Body'].read().decode('utf-8'))
+                logger.info(f"Retrieved latest preview results from version {latest_version}")
+                return results_data
+            except Exception as e:
+                logger.warning(f"Could not retrieve preview results from {preview_results_key}: {e}")
                 return None
                 
         except Exception as e:

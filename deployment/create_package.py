@@ -207,6 +207,26 @@ def copy_source_files():
         logger.info("Copied pricing_data.csv for cost calculations")
     else:
         logger.warning(f"pricing_data.csv not found at {pricing_file}")
+    
+    # 5. Copy config directory for enhanced batch manager
+    config_src_dir = PROJECT_DIR / "src" / "config"
+    if config_src_dir.exists():
+        # Copy entire config directory
+        config_dest_dir = PACKAGE_DIR / "config"
+        if config_dest_dir.exists():
+            shutil.rmtree(config_dest_dir)
+        shutil.copytree(config_src_dir, config_dest_dir)
+        logger.info("Copied config directory for enhanced batch manager")
+    else:
+        logger.warning(f"config directory not found at {config_src_dir}")
+    
+    # 6. Copy logo file for PDF receipts
+    logo_file = PROJECT_DIR / "src" / "lambdas" / "config" / "EliyahuLogo_NoText_Crop.png"
+    if logo_file.exists():
+        shutil.copy(logo_file, PACKAGE_DIR / "EliyahuLogo_NoText_Crop.png")
+        logger.info("Copied EliyahuLogo_NoText_Crop.png for PDF receipts")
+    else:
+        logger.warning(f"Logo file not found at {logo_file}")
 
 def create_zip():
     """Create deployment zip file."""

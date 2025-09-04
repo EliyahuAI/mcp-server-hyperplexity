@@ -173,7 +173,10 @@ def copy_source_files():
         "config_validator.py",
         "ai_api_client.py",
         "email_sender.py",
-        "perplexity_schema.py"
+        "perplexity_schema.py",
+        "batch_audit_logger.py",
+        "model_config_table.py",
+        "web_search_rate_limiter.py"
     ]
     
     for file_name in shared_modules:
@@ -183,6 +186,14 @@ def copy_source_files():
             logger.info(f"Copied shared module: {file_name}")
         else:
             logger.warning(f"Shared module not found, skipping: {file_name}")
+    
+    # 4. Copy logo file for PDF receipts
+    logo_file = PROJECT_DIR / "src" / "lambdas" / "config" / "EliyahuLogo_NoText_Crop.png"
+    if logo_file.exists():
+        shutil.copy(logo_file, PACKAGE_DIR / "EliyahuLogo_NoText_Crop.png")
+        logger.info("Copied EliyahuLogo_NoText_Crop.png for PDF receipts")
+    else:
+        logger.warning(f"Logo file not found at {logo_file}")
 
 def create_zip():
     """Create ZIP file for Lambda deployment."""
@@ -708,6 +719,53 @@ def setup_dynamodb_tables(region="us-east-1"):
             logger.info("✅ Domain multipliers table created/verified")
         except Exception as e:
             logger.error(f"Failed to create domain multipliers table: {e}")
+        
+        # Create batch audit table
+        try:
+            from src.shared.batch_audit_logger import create_batch_audit_table
+            create_batch_audit_table()
+            logger.info("✅ Batch audit table created/verified")
+        except Exception as e:
+            logger.error(f"Failed to create batch audit table: {e}")
+        
+        # Create model config table
+        try:
+            from src.shared.model_config_table import create_model_config_table, ModelConfigTable
+            create_model_config_table()
+            logger.info("✅ Model config table created/verified")
+            
+            # Check if model configurations exist, and populate if empty
+            try:
+                config_table = ModelConfigTable()
+                configs = config_table.list_all_configs()
+                
+                if not configs:
+                    logger.info("📋 Model config table is empty, loading default configurations...")
+                    # Try to load from the unified model config CSV
+                    import os
+                    from pathlib import Path
+                    
+                    script_dir = Path(__file__).parent.absolute()
+                    project_dir = script_dir.parent
+                    config_csv_path = project_dir / "src" / "config" / "unified_model_config.csv"
+                    
+                    if config_csv_path.exists():
+                        loaded_count = config_table.load_config_from_csv(str(config_csv_path))
+                        if loaded_count > 0:
+                            logger.info(f"✅ Loaded {loaded_count} model configurations from {config_csv_path}")
+                        else:
+                            logger.warning("⚠️ No configurations loaded from CSV file")
+                    else:
+                        logger.warning(f"⚠️ Model config CSV not found at {config_csv_path}")
+                else:
+                    logger.info(f"✅ Model config table already has {len(configs)} configurations")
+                    
+            except Exception as config_load_error:
+                logger.error(f"Failed to load model configurations: {config_load_error}")
+                # Don't fail the deployment for this
+                
+        except Exception as e:
+            logger.error(f"Failed to create model config table: {e}")
         
         # Define table names using the same pattern as the original code
         user_validation_table = dynamodb_schemas.DynamoDBSchemas.USER_VALIDATION_TABLE

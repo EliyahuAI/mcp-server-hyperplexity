@@ -6,9 +6,9 @@ import logging
 import json
 import boto3
 import hashlib
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple, Any, Set
-from pathlib import Path
 
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 from shared_table_parser import s3_table_parser
@@ -438,6 +438,54 @@ def get_session_usage_info(email: str, source_session: str, storage_manager: Uni
             'error': str(e)
         }
 
+def get_config_usage_info(storage_manager, config_key: str) -> Optional[Dict]:
+    """Get usage information for a configuration from session tracking files."""
+    try:
+        # Extract session info from config key path
+        # Format: results/{domain}/{email_prefix}/{session_id}/config_v1.json
+        path_parts = config_key.split('/')
+        if len(path_parts) >= 4:
+            domain = path_parts[1]
+            email_prefix = path_parts[2]
+            session_id = path_parts[3]
+
+            # Look for session_info.json in the same directory
+            session_info_key = f"results/{domain}/{email_prefix}/{session_id}/session_info.json"
+
+            try:
+                response = storage_manager.s3_client.get_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=session_info_key
+                )
+                session_info = json.loads(response['Body'].read().decode('utf-8'))
+
+                # Look for validation usage in session_info
+                validations = session_info.get('validations', [])
+                if validations:
+                    # Get most recent validation timestamp
+                    latest_validation = max(validations, key=lambda x: x.get('timestamp', ''))
+                    return {
+                        'last_used': latest_validation.get('timestamp'),
+                        'usage_type': 'validation'
+                    }
+
+                # Check for preview usage
+                previews = session_info.get('previews', [])
+                if previews:
+                    latest_preview = max(previews, key=lambda x: x.get('timestamp', ''))
+                    return {
+                        'last_used': latest_preview.get('timestamp'),
+                        'usage_type': 'preview'
+                    }
+
+            except Exception as e:
+                logger.debug(f"Could not load session info for usage tracking: {e}")
+
+    except Exception as e:
+        logger.debug(f"Could not extract session info from config key: {e}")
+
+    return None
+
 def find_original_creation_date(content_hash: str, current_config_data: Dict, current_file_date: datetime, 
                               all_config_files: List[Dict], storage_manager: UnifiedS3Manager) -> Dict[str, Any]:
     """
@@ -646,39 +694,40 @@ def find_last_used_date(content_hash: str, current_config_data: Dict, all_config
                             except (ValueError, AttributeError):
                                 continue
                     
-                    # Also consider file modification date as potential usage indicator
-                    file_mod_date = config_file['last_modified']
-                    if isinstance(file_mod_date, str):
-                        try:
-                            file_mod_date = datetime.fromisoformat(file_mod_date.replace('Z', '+00:00'))
-                        except:
-                            continue
-                    
-                    if latest_usage_date is None or file_mod_date > latest_usage_date:
-                        latest_usage_date = file_mod_date
+                    # For previews: If no explicit usage timestamp exists, use stored_at as proxy for when config was used
+                    # But only if this config shows evidence of being used for validation (has usage_info data)
+                    if latest_usage_date is None and other_metadata.get('stored_at'):
+                        # Only treat stored_at as usage if this config was used for validation
+                        config_path_parts = config_file['key'].split('/')
+                        config_session = config_path_parts[-2] if len(config_path_parts) >= 2 else None
+                        
+                        if config_session:
+                            try:
+                                session_usage = get_session_usage_info("", config_session, storage_manager)
+                                # If session shows validation usage, use stored_at as approximate usage time
+                                if session_usage.get('type') in ['preview', 'full_validation'] and not session_usage.get('is_error', False):
+                                    stored_date = datetime.fromisoformat(other_metadata['stored_at'].replace('Z', '+00:00'))
+                                    latest_usage_date = stored_date
+                                    logger.debug(f"Using stored_at as usage date for validated config: {stored_date}")
+                            except Exception as e:
+                                logger.debug(f"Could not check session usage for stored_at logic: {e}")
                     
             except Exception as e:
                 logger.debug(f"Error checking usage date for {config_file['key']}: {e}")
                 continue
         
-        # If we found usage dates, return the latest one
+        # If we found explicit usage dates, return the latest one
         if latest_usage_date:
             return latest_usage_date
         
-        # Fallback: use current config's stored_at date
-        if current_metadata.get('stored_at'):
-            try:
-                return datetime.fromisoformat(current_metadata['stored_at'].replace('Z', '+00:00'))
-            except (ValueError, AttributeError):
-                pass
-        
-        # Final fallback: current time (shouldn't happen but prevents errors)
-        return datetime.now(timezone.utc)
+        # If no explicit usage found, return None to indicate "never used"
+        # Don't use stored_at or file modification dates as they don't represent actual usage
+        return None
         
     except Exception as e:
         logger.error(f"Error finding last used date: {e}")
-        # Return current time as error fallback
-        return datetime.now(timezone.utc)
+        # Return None as error fallback to indicate "never used"
+        return None
 
 def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[str, Any]:
     """
@@ -818,54 +867,59 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
                     logger.debug(f"Skipping error config from session {source_session}: {usage_info.get('verbose_status', 'unknown error')}")
                     continue
                 
-                # Find the original creation date for this configuration content
-                original_date_info = find_original_creation_date(
-                    content_hash, 
-                    config_data, 
-                    config_file['last_modified'], 
-                    config_files, 
-                    storage_manager
-                )
+                # Use original creation date from metadata with proper timezone handling
+                storage_metadata = config_data.get('storage_metadata', {})
                 
-                # Use original creation date, not just this instance's date
-                created_date = original_date_info['original_date']
-                original_config_id = original_date_info.get('original_config_id', 'unknown')
-                creation_source = original_date_info.get('source', 'unknown')
-                
-                # Find the most recent usage date for this configuration content
-                last_used_date = find_last_used_date(content_hash, config_data, config_files, storage_manager)
+                # Get creation date - preserve original creation even for copied configs
+                created_date = None
+                if 'first_created' in storage_metadata and storage_metadata['first_created']:
+                    created_date = storage_metadata['first_created']
+                elif 'created_at' in storage_metadata and storage_metadata['created_at']:
+                    created_date = storage_metadata['created_at']
+                else:
+                    # Fallback to S3 object creation date
+                    s3_response = storage_manager.s3_client.head_object(
+                        Bucket=storage_manager.bucket_name, 
+                        Key=config_file['key']
+                    )
+                    created_date = s3_response['LastModified'].isoformat()
+
+                # Get last used date from session usage tracking
+                last_used_date = None
+                try:
+                    # Check session_info.json files for usage tracking
+                    usage_info = get_config_usage_info(storage_manager, config_file['key'])
+                    if usage_info and 'last_used' in usage_info:
+                        last_used_date = usage_info['last_used']
+                    else:
+                        # Fallback: use file modification date only if no usage tracking
+                        last_used_date = config_file['last_modified']
+                except Exception as e:
+                    logger.warning(f"Could not determine last used date: {e}")
+                    last_used_date = created_date  # Safe fallback
                 
                 match_data = {
-                    'config_key': config_file['key'],
+                    'config_s3_key': config_file['key'],
                     'config_data': config_data,
+                    'created_date': created_date.isoformat() if hasattr(created_date, 'isoformat') else str(created_date),
+                    'last_used_date': last_used_date.isoformat() if last_used_date and hasattr(last_used_date, 'isoformat') else None,
+                    'source_session': storage_metadata.get('session_id', source_session),
+                    'match_percentage': int(match_score * 100),
+                    'content_hash_match': True,
+                    'original_filename': storage_metadata.get('original_name', Path(config_file['key']).name),
                     'match_score': match_score,
                     'matching_columns': matching_columns,
                     'total_columns': len(config_columns),
                     'session_path': config_file['session_path'],
                     'last_modified': config_file['last_modified'].isoformat(),
-                    'source_session': source_session,
                     'config_filename': config_file['filename'],
                     'config_id': config_id,
                     'description': description,
-                    # Enhanced metadata with original creation tracking
-                    'created_date': created_date.isoformat() if hasattr(created_date, 'isoformat') else str(created_date),
-                    'last_used_date': last_used_date.isoformat() if hasattr(last_used_date, 'isoformat') else str(last_used_date),
                     'usage_info': usage_info,
                     'content_hash': content_hash,
                     'version': storage_metadata.get('version', 1),
                     'original_name': storage_metadata.get('original_name'),
-                    'source': storage_metadata.get('source', 'unknown'),
-                    # Original creation tracking
-                    'original_config_id': original_config_id,
-                    'creation_source': creation_source,
-                    # Serialize original_date_info to avoid datetime JSON issues
-                    'original_date_info': {
-                        'source': original_date_info.get('source', 'unknown'),
-                        'original_config_id': original_date_info.get('original_config_id', 'unknown'),
-                        'configs_with_same_content': original_date_info.get('configs_with_same_content', 0),
-                        'chain_length': original_date_info.get('chain_length', 0),
-                        'original_date': original_date_info.get('original_date', '').isoformat() if original_date_info.get('original_date') and hasattr(original_date_info.get('original_date'), 'isoformat') else str(original_date_info.get('original_date', ''))
-                    }
+                    'source': storage_metadata.get('source', 'unknown')
                 }
                 
                 # Separate perfect matches from regular matches
@@ -917,20 +971,18 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
         # Sort regular matches by score and recency
         matches.sort(key=sort_key, reverse=True)
         
-        # Combine: if we have perfect matches, use up to 2 of them for performance
-        # If we have < 2 perfect matches, fill remaining slots with best regular matches
+        # NEW LOGIC: Only return the most recent 100% match, or no matches if none exist
         final_matches = []
         if perfect_matches:
-            final_matches.extend(perfect_matches[:limit])
-            remaining_slots = limit - len(final_matches)
-            if remaining_slots > 0:
-                final_matches.extend(matches[:remaining_slots])
+            # Sort by created_date and return only the most recent
+            perfect_matches.sort(key=lambda x: x.get('created_date', ''), reverse=True)
+            final_matches = [perfect_matches[0]]  # Only most recent
+            logger.info(f"Returning only most recent perfect match: {perfect_matches[0]['config_id']} created {perfect_matches[0].get('created_date')}")
         else:
-            final_matches = matches[:limit]
+            # No perfect matches - return empty list (frontend will show only "Create with AI")
+            final_matches = []
+            logger.info("No perfect matches found - returning empty list")
         
-        logger.info(f"Found {len(perfect_matches)} perfect matches and {len(matches)} regular matches, returning {len(final_matches)} total matches")
-        
-        # Special handling for perfect matches
         result = {
             'success': True,
             'matches': final_matches,
@@ -941,10 +993,10 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
         }
         
         # If we found perfect matches, mark the first one for auto-selection
-        if perfect_matches and final_matches and final_matches[0]['match_score'] >= 1.0:
+        if final_matches:
             result['perfect_match'] = True
             result['auto_select_config'] = final_matches[0]
-            logger.info(f"Perfect matches found - suggesting auto-selection of config: {final_matches[0]['config_id']}")
+            logger.info(f"Perfect match found - suggesting auto-selection of config: {final_matches[0]['config_id']}")
         else:
             result['perfect_match'] = False
             

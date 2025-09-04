@@ -729,6 +729,48 @@
         font-size: var(--font-size-small);
     }
 
+    /* Configuration Match Button Styles */
+    .config-action-buttons {
+        display: flex;
+        gap: 15px;
+        margin: 20px 0;
+        justify-content: center;
+    }
+
+    .btn-match-config, .btn-create-ai {
+        flex: 1;
+        padding: 15px 20px;
+        border: 2px solid var(--primary-color);
+        border-radius: var(--border-radius);
+        background: white;
+        color: var(--text-color);
+        cursor: pointer;
+        text-align: center;
+        transition: var(--transition);
+    }
+
+    .btn-match-config:hover, .btn-create-ai:hover {
+        background: var(--primary-color);
+        color: white;
+    }
+
+    .btn-title {
+        font-size: 16px;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+
+    .btn-subtitle {
+        font-size: 12px;
+        color: #666;
+        opacity: 0.8;
+    }
+
+    .btn-match-config:hover .btn-subtitle,
+    .btn-create-ai:hover .btn-subtitle {
+        color: rgba(255,255,255,0.8);
+    }
+
     .markdown-content pre {
         background-color: rgba(0,0,0,0.05);
         padding: 0.8em;
@@ -1250,8 +1292,61 @@
                 cardProgress: {}, // Track progress by card ID
                 excelFileUploaded: false, // Track if Excel file has been uploaded to unified storage
                 configStored: false, // Track if config has been stored
-                hasInsufficientBalance: false // Track when user has insufficient balance
+                hasInsufficientBalance: false, // Track when user has insufficient balance
+                isProcessingConfig: false, // Track if config generation/refinement is in progress
+                debounceTimers: new Map() // Track debounce timers by function/card ID
             };
+
+            // ============================================
+            // DEBOUNCING UTILITIES
+            // ============================================
+            
+            /**
+             * Debounce config generation functions to prevent multiple rapid calls
+             * @param {string} key - Unique identifier for the debounced function
+             * @param {Function} func - Function to debounce
+             * @param {number} delay - Delay in milliseconds (default: 1000)
+             * @returns {Function} Debounced function
+             */
+            function debounceConfigAction(key, func, delay = 2000) {
+                return function(...args) {
+                    // Check if already processing
+                    if (globalState.isProcessingConfig) {
+                        console.log(`[DEBOUNCE] Config processing already in progress, ignoring ${key}`);
+                        return;
+                    }
+                    
+                    // Clear existing timer for this key
+                    if (globalState.debounceTimers.has(key)) {
+                        clearTimeout(globalState.debounceTimers.get(key));
+                    }
+                    
+                    // Set new timer
+                    const timerId = setTimeout(() => {
+                        globalState.debounceTimers.delete(key);
+                        globalState.isProcessingConfig = true;
+                        
+                        // Set a safety timeout to reset processing state after 10 minutes
+                        setTimeout(() => {
+                            if (globalState.isProcessingConfig) {
+                                console.warn('[DEBOUNCE] Safety timeout - resetting processing state after 10 minutes');
+                                globalState.isProcessingConfig = false;
+                            }
+                        }, 600000); // 10 minutes
+                        
+                        // Execute the function and handle completion
+                        Promise.resolve(func.apply(this, args))
+                            .catch(error => {
+                                console.error(`[DEBOUNCE] Error in ${key}:`, error);
+                            })
+                            .finally(() => {
+                                globalState.isProcessingConfig = false;
+                            });
+                    }, delay);
+                    
+                    globalState.debounceTimers.set(key, timerId);
+                };
+            }
 
             // ============================================
             // GLOBAL PROGRESS SYSTEM REMOVED
@@ -1922,13 +2017,13 @@
                     }
                     
                     if (refineBtn) {
-                        refineBtn.addEventListener('click', async () => {
+                        refineBtn.addEventListener('click', debounceConfigAction('refine-config', async () => {
                             // Don't use markButtonSelected as it expects different button structure
                             refineBtn.disabled = true;
                             refineBtn.textContent = '🔧 Refining...';
                             globalState.activePreviewCard = null;
                             await createRefinementCard();
-                        });
+                        }));
                     }
                 }, 100);
 
@@ -2794,6 +2889,7 @@
                 
                 // Handle completion messages - these need to go to the normal handlers
                 if (data.type === 'config_generation_complete' || data.type === 'config_generation_failed') {
+                    globalState.isProcessingConfig = false; // Reset processing state
                     // Continue to normal routing below for completion messages
                 }
                 
@@ -3015,13 +3111,13 @@
                             }
                             
                             if (refineBtn) {
-                                refineBtn.addEventListener('click', async () => {
+                                refineBtn.addEventListener('click', debounceConfigAction('refine-config-2', async () => {
                                     try {
                                         await window.createRefinementCard();
                                     } catch (error) {
                                         console.error('Refine error:', error);
                                     }
-                                });
+                                }));
                             }
                         }, 100);
                     }
@@ -3063,30 +3159,21 @@
                     
                     await addChatMessage(cardId, 'ai', aiMessage);
                     
-                    // Add config ID display if available
+                    // Add config ID display if available - place it at end of card, not in chat
                     if (data.config_id || data.session_id) {
-                        const chatContainer = document.getElementById(`${cardId}-chat`);
-                        if (chatContainer) {
+                        const card = document.querySelector(`[data-card-id="${cardId}"]`);
+                        if (card) {
                             const configIdDiv = document.createElement('div');
-                            configIdDiv.className = 'chat-message ai';
+                            configIdDiv.className = 'config-success-banner';
                             const version = data.config_version || 1;
                             const configId = data.config_id || `${data.session_id}_v${version}`;
                             configIdDiv.innerHTML = `
-                                <div class="message message-success" style="margin-bottom: 1rem;">
+                                <div class="message message-success" style="margin: 1rem; margin-top: 0;">
                                     <span class="message-icon">✓</span>
-                                    <span>Configuration generated, code for reuse: <strong>${(() => {
-                                        const parts = configId.split('_');
-                                        return parts.length > 3 ? parts.slice(3).join('_') : configId;
-                                    })()}</strong>, running preview now</span>
-                                </div>
-                                    <div style="font-size: 14px; color: #555; line-height: 1.4;">
-                                        <div style="margin-bottom: 4px;">💾 <strong>Save this ID</strong> - it will be included in your validation results email</div>
-                                        <div style="margin-bottom: 4px;">🔄 <strong>Reuse anywhere</strong> - enter this ID to apply the same configuration to future validations</div>
-                                        <div>🔒 <strong>Secure</strong> - share this ID safely without exposing configuration details</div>
-                                    </div>
+                                    <span>Configuration generated, code for reuse: <strong>${configId}</strong>, running preview now</span>
                                 </div>
                             `;
-                            chatContainer.appendChild(configIdDiv);
+                            card.appendChild(configIdDiv);
                         }
                     }
                     
@@ -3095,7 +3182,6 @@
                     globalState.configStored = true;
                     globalState.configIsAI = true;
                     
-                    await addChatMessage(cardId, 'ai', 'Configuration accepted automatically. Generating preview...');
                     
                     // Auto-generate preview after a brief delay to show completion
                     setTimeout(() => {
@@ -3109,9 +3195,19 @@
                     const errorMessage = data.error || data.message || 'Configuration generation failed';
                     showMessage(`${cardId}-messages`, `Error: ${errorMessage}`, 'error');
                     
-                    // Create a new configuration card for retry
+                    // Show configuration options for retry using new system
                     setTimeout(() => {
-                        createConfigCard();
+                        const cardId = 'upload'; // Use the upload card for retry
+                        if (globalState.matchingConfigs && globalState.matchingConfigs.matches) {
+                            const goodMatches = globalState.matchingConfigs.matches.filter(match => match.match_score >= 0.8);
+                            if (goodMatches.length > 0) {
+                                showRecentConfigOptions(cardId, goodMatches, globalState.matchingConfigs.table_columns);
+                            } else {
+                                showCreateWithAIButton(cardId);
+                            }
+                        } else {
+                            showCreateWithAIButton(cardId);
+                        }
                     }, 1500); // Wait a bit for error message to be seen
                 }
             }
@@ -3645,8 +3741,22 @@
                 // Immediately upload Excel file to establish session
                 try {
                     await uploadExcelFile(cardId, file);
-                    // Create config card after successful upload
-                    setTimeout(() => createConfigCard(), 500);
+                    // Check for matching configs and show appropriate options
+                    setTimeout(() => {
+                        if (globalState.matchingConfigs && globalState.matchingConfigs.matches) {
+                            const goodMatches = globalState.matchingConfigs.matches.filter(match => match.match_score >= 0.8);
+                            if (goodMatches.length > 0) {
+                                // Use our new system for configuration options
+                                showRecentConfigOptions('upload', goodMatches, globalState.matchingConfigs.table_columns);
+                            } else {
+                                // No good matches - show only Create with AI button
+                                showCreateWithAIButton('upload');
+                            }
+                        } else {
+                            // No matching configs found - show only Create with AI button  
+                            showCreateWithAIButton('upload');
+                        }
+                    }, 500);
                 } catch (error) {
                     console.error('Excel file upload failed:', error);
                     // Reset UI on failure
@@ -3804,6 +3914,79 @@
                 }
             }
 
+            function formatLocalDateTime(dateString) {
+                if (!dateString) return 'Unknown';
+
+                try {
+                    // Handle various date formats from backend
+                    let date;
+                    if (typeof dateString === 'string') {
+                        // Handle ISO strings with or without timezone info
+                        if (dateString.endsWith('Z') || dateString.includes('+') || dateString.includes('T')) {
+                            date = new Date(dateString);
+                        } else {
+                            // Assume local time if no timezone info
+                            date = new Date(dateString + 'T00:00:00');
+                        }
+                    } else {
+                        date = new Date(dateString);
+                    }
+                    
+                    // Verify date is valid
+                    if (isNaN(date.getTime())) {
+                        console.warn('Invalid date string:', dateString);
+                        return 'Invalid date';
+                    }
+                    
+                    // Use local timezone with date and time
+                    return date.toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                        timeZoneName: 'short'
+                    });
+                } catch (e) {
+                    console.error('Date formatting error for:', dateString, e);
+                    return 'Invalid date';
+                }
+            }
+
+            function showMatchAndCreateButtons(cardId, match) {
+                const optionsContainer = document.getElementById(`${cardId}-options`);
+                if (!optionsContainer) return;
+                
+                const buttonsHtml = `
+                    <div class="config-action-buttons">
+                        <button class="btn-match-config" onclick="useMatchingConfig('${match.config_s3_key}', '${match.source_session}')">
+                            <div class="btn-title">Use Match (100%)</div>
+                            <div class="btn-subtitle">Created: ${formatLocalDateTime(match.created_date)}</div>
+                        </button>
+                        <button class="btn-create-ai" onclick="generateWithAI('${cardId}')">
+                            <div class="btn-title">Create with AI</div>
+                            <div class="btn-subtitle">Generate new configuration</div>
+                        </button>
+                    </div>
+                `;
+                optionsContainer.innerHTML = buttonsHtml;
+            }
+
+            function showCreateWithAIButton(cardId) {
+                const optionsContainer = document.getElementById(`${cardId}-options`);
+                if (!optionsContainer) return;
+                
+                optionsContainer.innerHTML = `
+                    <div style="margin: 20px 0; text-align: center;">
+                        <button class="btn-create-ai" onclick="generateWithAI('${cardId}')" style="padding: 15px 30px;">
+                            <div class="btn-title">Create with AI</div>
+                            <div class="btn-subtitle">Generate new configuration</div>
+                        </button>
+                    </div>
+                `;
+            }
+
             async function showRecentConfigOptions(cardId, matches, tableColumns) {
                 const optionsContainer = document.getElementById(`${cardId}-options`);
                 if (!optionsContainer) return;
@@ -3811,117 +3994,57 @@
                 // Clear existing content
                 optionsContainer.innerHTML = '';
                 
-                // Create header
-                const header = document.createElement('div');
-                header.className = 'recent-config-header';
-                header.innerHTML = `
-                    <h4 style="margin: 0 0 10px 0; color: #2d5a27;">Recent Matching Configurations</h4>
-                    <p style="margin: 0 0 15px 0; color: #666; font-size: 14px;">
-                        Found ${matches.length} configurations with columns matching your table.
-                    </p>
-                `;
-                optionsContainer.appendChild(header);
-                
-                // Create config options
-                matches.forEach((match, index) => {
-                    const matchElement = document.createElement('div');
-                    matchElement.className = 'recent-config-option';
-                    matchElement.style.cssText = `
-                        border: 1px solid #ddd;
-                        border-radius: 8px;
-                        padding: 15px;
-                        margin-bottom: 10px;
-                        cursor: pointer;
-                        transition: all 0.2s ease;
-                        background: #f9f9f9;
-                    `;
+                // Find most recent 100% match only
+                const perfectMatch = matches.find(config =>
+                    Math.round(config.match_score * 100) === 100
+                );
+
+                if (!perfectMatch) {
+                    // No perfect match - show only "Create with AI"
+                    showCreateWithAIButton(cardId);
+                    return;
+                }
+
+                // Show side-by-side buttons: "Use Match" (left) and "Create with AI" (right)
+                showMatchAndCreateButtons(cardId, perfectMatch);
+            }
+
+            async function useMatchingConfig(configKey, sourceSession) {
+                try {
+                    const cardId = 'upload'; // Default card for configuration matching
+                    showMessage(`${cardId}-messages`, 'Copying configuration from previous session...', 'info');
                     
-                    const matchScore = Math.round(match.match_score * 100);
-                    const matchColor = matchScore >= 80 ? '#2d5a27' : matchScore >= 50 ? '#b8860b' : '#666';
+                    const response = await fetch(`${API_BASE}/validate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'copyConfig',
+                            email: globalState.email,
+                            session_id: globalState.sessionId || '',
+                            source_config_key: configKey,
+                            source_session: sourceSession
+                        })
+                    });
                     
-                    // Parse enhanced metadata with proper created and last used dates
-                    const createdDate = match.created_date ? new Date(match.created_date).toLocaleDateString() : 'Unknown';
-                    const lastUsedDate = match.last_used_date ? new Date(match.last_used_date).toLocaleDateString() : null;
-                    const usageType = match.usage_info?.type || 'unknown';
-                    const verboseStatus = match.usage_info?.verbose_status || '';
-                    
-                    // Show "Never used" if no actual usage date exists
-                    const displayLastUsed = lastUsedDate ? lastUsedDate : 'Never used';
-                    
-                    // More accurate usage labels based on verbose_status
-                    let usageIcon, usageLabel, usageDetail = '';
-                    if (usageType === 'full_validation') {
-                        usageIcon = '🔍';
-                        usageLabel = 'Full Validation';
-                        usageDetail = verboseStatus ? ` (${verboseStatus})` : '';
-                    } else if (usageType === 'preview') {
-                        usageIcon = '👁️';
-                        usageLabel = 'Preview Only';
-                        usageDetail = verboseStatus ? ` (${verboseStatus})` : '';
-                    } else if (usageType === 'error') {
-                        // This shouldn't appear since we filter them out, but just in case
-                        usageIcon = '⚠️';
-                        usageLabel = 'Error';
-                        usageDetail = verboseStatus ? ` (${verboseStatus})` : '';
-                    } else {
-                        usageIcon = '❓';
-                        usageLabel = 'Unknown';
-                        usageDetail = '';
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
                     
-                    const configId = match.config_id || match.original_name || `${match.source_session}_v${match.version || 1}`;
+                    const result = await response.json();
+                    if (!result.success) {
+                        throw new Error(result.error || 'Failed to copy configuration');
+                    }
                     
-                    // Simple vertical list format as expected
-                    matchElement.innerHTML = `
-                        <button class="std-button primary" style="width: 100%; text-align: left; padding: 16px; margin-bottom: 12px; background: white; border: 2px solid ${matchColor}; color: #333;" onclick="useConfigById('${cardId}', '${configId}')">
-                            <div style="font-weight: bold; color: ${matchColor}; font-size: 16px; margin-bottom: 8px;">
-                                ${matchScore}% Match
-                            </div>
-                            <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
-                                Created: ${createdDate}
-                            </div>
-                            <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
-                                Last Used: ${displayLastUsed}
-                            </div>
-                            <div style="font-size: 14px; color: #666;">
-                                ${usageIcon} ${usageLabel}
-                            </div>
-                        </button>
-                    `;
+                    showMessage(`${cardId}-messages`, 'Configuration copied successfully! You can now validate your data.', 'success');
                     
-                    // Add hover effect
-                    matchElement.addEventListener('mouseenter', () => {
-                        matchElement.style.borderColor = '#2d5a27';
-                        matchElement.style.background = '#f0f8f0';
-                    });
-                    matchElement.addEventListener('mouseleave', () => {
-                        matchElement.style.borderColor = '#ddd';
-                        matchElement.style.background = '#f9f9f9';
-                    });
+                    // Update UI to show validation options
+                    globalState.configLoaded = true;
+                    updateUploadCardStatus('upload');
                     
-                    optionsContainer.appendChild(matchElement);
-                });
-                
-                // Add the new button hierarchy after config matches
-                const buttonContainer = document.createElement('div');
-                buttonContainer.style.cssText = `
-                    margin-top: 20px;
-                    padding-top: 15px;
-                    border-top: 1px solid #ddd;
-                `;
-                
-                buttonContainer.innerHTML = `
-                    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
-                        <button class="std-button secondary" style="width: 100%; padding: 16px; font-size: 16px;" onclick="generateWithAI('${cardId}')">
-                            <span class="button-text">🤖 Create with AI</span>
-                        </button>
-                        <button class="std-button secondary" style="width: 100%; padding: 16px; font-size: 16px;" onclick="showConfigIdInput('${cardId}')">
-                            <span class="button-text">🔗 Use a Code</span>
-                        </button>
-                    </div>
-                `;
-                
-                optionsContainer.appendChild(buttonContainer);
+                } catch (error) {
+                    console.error('Error using matching config:', error);
+                    showMessage('upload-messages', `Error copying configuration: ${error.message}`, 'error');
+                }
             }
 
             async function useRecentConfig(cardId, configKey, sourceSession) {
@@ -4618,193 +4741,6 @@
             }
 
             // selectCreateWithAI function removed - now handled inline in button callback
-            // 3. Configuration Card
-            function createConfigCard() {
-                const cardId = generateCardId();
-                
-                // Create vertical list of config buttons if matches available
-                let configButtons = '';
-                if (globalState.matchingConfigs && globalState.matchingConfigs.matches && globalState.matchingConfigs.matches.length > 0) {
-                    const matches = globalState.matchingConfigs.matches;
-                    
-                    matches.forEach((match, index) => {
-                        const matchScore = Math.round(match.match_score * 100);
-                        const matchColor = matchScore >= 80 ? '#2d5a27' : matchScore >= 50 ? '#b8860b' : '#666';
-                        const createdDate = match.created_date ? new Date(match.created_date).toLocaleDateString() : 'Unknown';
-                        const lastUsedDate = match.last_used_date ? new Date(match.last_used_date).toLocaleDateString() : null;
-                        const displayLastUsed = lastUsedDate ? lastUsedDate : 'Never used';
-                        
-                        // Usage type
-                        const usageType = match.usage_info?.type || 'unknown';
-                        let usageIcon, usageLabel;
-                        if (usageType === 'full_validation') {
-                            usageIcon = '🔍';
-                            usageLabel = 'Full Validation';
-                        } else if (usageType === 'preview') {
-                            usageIcon = '👁️';
-                            usageLabel = 'Preview Only';
-                        } else {
-                            usageIcon = '❓';
-                            usageLabel = 'Unknown';
-                        }
-                        
-                        const configId = match.config_id || match.original_name || `${match.source_session}_v${match.version || 1}`;
-                        
-                        // Extract short code (suffix after 3rd underscore)
-                        const shortCode = (() => {
-                            const parts = configId.split('_');
-                            if (parts.length > 3) {
-                                return parts.slice(3).join('_');
-                            }
-                            return configId; // Fallback to full ID if format unexpected
-                        })();
-                        
-                        configButtons += `
-                            <button class="std-button primary" style="width: 100%; text-align: left; padding: 16px 16px 8px 16px; margin-bottom: 12px; background: white; border: 2px solid ${matchColor}; color: #333; position: relative; display: flex; flex-direction: column;" data-config-id="${configId}" data-card-id="${cardId}">
-                                <div style="flex: 1;">
-                                    <div style="font-weight: bold; color: ${matchColor}; font-size: 16px; margin-bottom: 8px;">
-                                        ${matchScore}% Match
-                                    </div>
-                                    <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
-                                        Created: ${createdDate}
-                                    </div>
-                                    <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
-                                        Last Used: ${displayLastUsed}
-                                    </div>
-                                    <div style="font-size: 14px; color: #666; margin-bottom: 4px;">
-                                        ${usageIcon} ${usageLabel}
-                                    </div>
-                                </div>
-                                <div style="font-size: 12px; color: #999; font-style: italic; border-top: 1px solid #eee; padding: 8px 0 4px 0; margin-top: 8px; width: 100%; text-align: center;">
-                                    (code ends with: ${shortCode})
-                                </div>
-                            </button>
-                        `;
-                    });
-                }
-                
-                // Create content with vertical list of config buttons or alternative options
-                const content = `
-                    <div id="${cardId}-config-list">
-                        ${configButtons}
-                    </div>
-                    <div id="${cardId}-options" style="margin-top: 20px;">
-                        <div style="margin-bottom: 16px;">
-                            <input type="text" 
-                                id="${cardId}-config-id-input" 
-                                class="form-input" 
-                                placeholder="I have a configuration code!" 
-                                style="width: 100%; text-align: center;"
-                                data-card-id="${cardId}"
-                            />
-                        </div>
-                    </div>
-                    <div id="${cardId}-messages"></div>
-                `;
-
-                // Bottom button for Create with AI (purple as requested)
-                const buttons = [
-                    {
-                        text: 'Create with AI',
-                        icon: '🤖',
-                        variant: 'primary',
-                        width: 'auto',
-                        style: 'background: #6b46c1; border-color: #6b46c1; color: white;', // Purple styling
-                        callback: async (e) => {
-                            const button = e.target.closest('button');
-                            
-                            // Show completion message
-                            const messagesContainer = document.getElementById(`${cardId}-messages`);
-                            const optionsContainer = document.getElementById(`${cardId}-options`);
-                            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-                            const configList = document.getElementById(`${cardId}-config-list`);
-                            
-                            // Hide all content
-                            if (optionsContainer) optionsContainer.style.display = 'none';
-                            if (buttonsContainer) buttonsContainer.style.display = 'none';
-                            if (configList) configList.style.display = 'none';
-                            
-                            if (messagesContainer) {
-                                messagesContainer.innerHTML = `
-                                    <div class="message message-success" style="margin-bottom: 1rem;">
-                                        <span class="message-icon"></span>
-                                        <span>Creating new AI configuration...</span>
-                                    </div>
-                                `;
-                            }
-                            
-                            // Create AI config card after brief delay
-                            setTimeout(() => {
-                                createAIConfigCard(false);
-                            }, 500);
-                        }
-                    }
-                ];
-
-                const card = createCard({
-                    id: cardId,  // Pass explicit ID
-                    icon: '⚙️',
-                    title: 'Configuration',
-                    subtitle: globalState.matchingConfigs && globalState.matchingConfigs.matches && globalState.matchingConfigs.matches.length > 0 ? 
-                        `Recent matching config found - choose an option below` :
-                        'Identify a configuration file with table metadata and research strategy',
-                    content,
-                    buttons: buttons
-                });
-
-                // Hidden file input for config upload
-                const fileInput = document.createElement('input');
-                fileInput.type = 'file';
-                fileInput.accept = '.json';
-                fileInput.style.display = 'none';
-                fileInput.id = `${cardId}-config-file`;
-                fileInput.onchange = (e) => handleConfigUpload(e, cardId);
-                card.appendChild(fileInput);
-
-                // Add event listeners for config buttons and input after DOM is ready
-                setTimeout(() => {
-                    // Config button event listeners
-                    const configButtons = card.querySelectorAll('button[data-config-id]');
-                    configButtons.forEach(button => {
-                        button.addEventListener('click', async (e) => {
-                            e.preventDefault();
-                            const configId = button.getAttribute('data-config-id');
-                            const cardIdFromButton = button.getAttribute('data-card-id');
-                            if (configId && cardIdFromButton) {
-                                await useConfigById(cardIdFromButton, configId);
-                            }
-                        });
-                    });
-                    
-                    // Config ID input event listeners
-                    const configInput = card.querySelector('#' + cardId + '-config-id-input');
-                    if (configInput) {
-                        // Focus/blur handlers for placeholder
-                        configInput.addEventListener('focus', () => {
-                            configInput.placeholder = 'Enter configuration ID...';
-                        });
-                        
-                        configInput.addEventListener('blur', () => {
-                            if (configInput.value === '') {
-                                configInput.placeholder = 'I have a configuration code!';
-                            }
-                        });
-                        
-                        // Enter key handler
-                        configInput.addEventListener('keydown', async (e) => {
-                            if (e.key === 'Enter') {
-                                e.preventDefault();
-                                const cardIdFromInput = configInput.getAttribute('data-card-id');
-                                if (cardIdFromInput) {
-                                    await handleConfigIdInput(cardIdFromInput);
-                                }
-                            }
-                        });
-                    }
-                }, 100);
-
-                return card;
-            }
             // 4. AI Configuration Card
             function createAIConfigCard(isRepair = false) {
                 const cardId = generateCardId();
@@ -4881,7 +4817,7 @@
                                     return;
                                 }
                                 markButtonSelected(button, '📤 Submitting...');
-                                await submitConfigRefinementFromPreview(cardId, input);
+                                await submitConfigRefinementWithAutoPreview(cardId, input);
                             }
                         }
                     ]
@@ -4970,7 +4906,7 @@ Please answer these questions and then I'll generate your configuration and auto
                         text: 'Submit Answers & Generate Config',
                         icon: '🤖',
                         variant: 'primary',
-                        callback: async (e) => {
+                        callback: debounceConfigAction(`generate-config-${cardId}`, async (e) => {
                             const button = e.target.closest('button');
                             const input = document.getElementById(`${cardId}-refinement-input`).value.trim();
                             
@@ -4984,7 +4920,7 @@ Please answer these questions and then I'll generate your configuration and auto
                             
                             // Now start the actual config generation with the context
                             await startConfigGenerationWithContext(cardId, input);
-                        }
+                        })
                     }
                 ]);
             }
@@ -5185,7 +5121,7 @@ Please answer these questions and then I'll generate your configuration and auto
                                 showMessage(`${cardId}-messages`, 'Please enter repair instructions', 'error');
                                 return;
                             }
-                            await submitConfigRefinement(cardId, input);
+                            await submitConfigRefinementWithAutoPreview(cardId, input);
                         }
                     }
                 ]);
@@ -5756,30 +5692,21 @@ Please answer these questions and then I'll generate your configuration and auto
                     
                     await addChatMessage(cardId, 'ai', aiMessage, false, 'paragraphs');
                     
-                    // Add config ID display if available
+                    // Add config ID display if available - place it at end of card, not in chat
                     if (data.config_id || data.session_id) {
-                        const chatContainer = document.getElementById(`${cardId}-chat`);
-                        if (chatContainer) {
+                        const card = document.querySelector(`[data-card-id="${cardId}"]`);
+                        if (card) {
                             const configIdDiv = document.createElement('div');
-                            configIdDiv.className = 'chat-message ai';
+                            configIdDiv.className = 'config-success-banner';
                             const version = data.config_version || 1;
                             const configId = data.config_id || `${data.session_id}_v${version}`;
                             configIdDiv.innerHTML = `
-                                <div class="message message-success" style="margin-bottom: 1rem;">
+                                <div class="message message-success" style="margin: 1rem; margin-top: 0;">
                                     <span class="message-icon">✓</span>
-                                    <span>Configuration generated, code for reuse: <strong>${(() => {
-                                        const parts = configId.split('_');
-                                        return parts.length > 3 ? parts.slice(3).join('_') : configId;
-                                    })()}</strong>, running preview now</span>
-                                </div>
-                                    <div style="font-size: 14px; color: #555; line-height: 1.4;">
-                                        <div style="margin-bottom: 4px;">💾 <strong>Save this ID</strong> - it will be included in your validation results email</div>
-                                        <div style="margin-bottom: 4px;">🔄 <strong>Reuse anywhere</strong> - enter this ID to apply the same configuration to future validations</div>
-                                        <div>🔒 <strong>Secure</strong> - share this ID safely without exposing configuration details</div>
-                                    </div>
+                                    <span>Configuration generated, code for reuse: <strong>${configId}</strong>, running preview now</span>
                                 </div>
                             `;
-                            chatContainer.appendChild(configIdDiv);
+                            card.appendChild(configIdDiv);
                         }
                     }
                     showRefinementActions(cardId);
@@ -5825,7 +5752,7 @@ Please answer these questions and then I'll generate your configuration and auto
                                             return;
                                         }
                                         markButtonSelected(button, '📤 Submitting...');
-                                        await submitConfigRefinementFromPreview(cardId, input);
+                                        await submitConfigRefinementWithAutoPreview(cardId, input);
                                     }
                                 }
                             ]);
