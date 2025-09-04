@@ -22,13 +22,88 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 s3_client = boto3.client('s3')
-lambda_client = boto3.client('lambda')
+lambda_client = boto3.client('lambda', config=boto3.session.Config(
+    read_timeout=900,  # 15 minutes read timeout for validation lambda calls
+    connect_timeout=60  # 1 minute connect timeout
+))
+
+def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, max_retries=2):
+    """
+    Invoke validator lambda with retry logic for timeouts.
+    Since the validation lambda caches results, retries are safe and efficient.
+    """
+    import botocore.exceptions
+    
+    # Get session info for tracking
+    session_id = payload.get('session_id', 'unknown')
+    payload_size_kb = len(json.dumps(payload).encode('utf-8')) / 1024
+    
+    logger.info(f"[RETRY_TRACKER] Starting validation lambda call for session {session_id}")
+    logger.info(f"[RETRY_TRACKER] Function: {function_name}, Payload size: {payload_size_kb:.1f}KB, Max retries: {max_retries}")
+    
+    for attempt in range(max_retries + 1):
+        attempt_start_time = time.time()
+        try:
+            logger.info(f"[RETRY_TRACKER] ATTEMPT {attempt + 1}/{max_retries + 1} - Starting lambda invoke at {time.strftime('%H:%M:%S')}")
+            
+            response = lambda_client.invoke(
+                FunctionName=function_name,
+                InvocationType='RequestResponse',
+                Payload=json.dumps(payload)
+            )
+            
+            elapsed_time = time.time() - attempt_start_time
+            logger.info(f"[RETRY_TRACKER] SUCCESS - Attempt {attempt + 1} completed in {elapsed_time:.2f}s")
+            
+            # Log success without interfering with the response stream
+            logger.info(f"[RETRY_TRACKER] Lambda invoke completed successfully")
+            
+            return response
+            
+        except botocore.exceptions.ReadTimeoutError as e:
+            elapsed_time = time.time() - attempt_start_time
+            logger.error(f"[RETRY_TRACKER] READ_TIMEOUT - Attempt {attempt + 1} failed after {elapsed_time:.2f}s")
+            logger.error(f"[RETRY_TRACKER] Read timeout details: {str(e)}")
+            
+            if attempt < max_retries:
+                wait_time = 5 * (attempt + 1)  # Progressive backoff: 5s, 10s
+                logger.warning(f"[RETRY_TRACKER] RETRYING - Will retry in {wait_time}s (attempt {attempt + 2}/{max_retries + 1})")
+                logger.info(f"[RETRY_TRACKER] Note: Validation lambda uses caching, so retry should be faster")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"[RETRY_TRACKER] FINAL_FAILURE - All {max_retries + 1} attempts failed due to read timeouts")
+                logger.error(f"[RETRY_TRACKER] Total elapsed time across all attempts: {time.time() - (attempt_start_time - elapsed_time):.2f}s")
+                raise
+                
+        except botocore.exceptions.ConnectTimeoutError as e:
+            elapsed_time = time.time() - attempt_start_time
+            logger.error(f"[RETRY_TRACKER] CONNECT_TIMEOUT - Attempt {attempt + 1} failed after {elapsed_time:.2f}s")
+            logger.error(f"[RETRY_TRACKER] Connection timeout details: {str(e)}")
+            
+            if attempt < max_retries:
+                wait_time = 3 * (attempt + 1)  # Shorter backoff for connection issues
+                logger.warning(f"[RETRY_TRACKER] RETRYING - Will retry in {wait_time}s (attempt {attempt + 2}/{max_retries + 1})")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"[RETRY_TRACKER] FINAL_FAILURE - All {max_retries + 1} attempts failed due to connection timeouts")
+                raise
+                
+        except Exception as e:
+            elapsed_time = time.time() - attempt_start_time
+            logger.error(f"[RETRY_TRACKER] NON_TIMEOUT_ERROR - Attempt {attempt + 1} failed after {elapsed_time:.2f}s")
+            logger.error(f"[RETRY_TRACKER] Error type: {type(e).__name__}")
+            logger.error(f"[RETRY_TRACKER] Error details: {str(e)}")
+            logger.error(f"[RETRY_TRACKER] NOT_RETRYING - Non-timeout errors are not retried")
+            raise
 
 def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S3_CACHE_BUCKET, VALIDATOR_LAMBDA_NAME, preview_first_row=False, preview_max_rows=5, sequential_call=None, session_id=None, update_callback=None, special_request=None):
     """Invoke the core validator Lambda with Excel data."""
     
+    function_start_time = time.time()
     logger.info(">>> ENTER invoke_validator_lambda <<<")
     logger.info(f">>> Parameters: excel_s3_key={excel_s3_key}, preview={preview_first_row}, sequential_call={sequential_call}, special_request={special_request} <<<")
+    logger.info(f"[RETRY_TRACKER] FUNCTION_START - invoke_validator_lambda called at {time.strftime('%H:%M:%S')} for session {session_id}")
+    logger.info(f"[RETRY_TRACKER] Lambda timeouts configured: read_timeout=900s, connect_timeout=60s")
     
     # Handle special requests (like config generation)
     if special_request:
@@ -290,18 +365,28 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             preview_rows = rows[:total_rows_to_send]
             
             payload = {
-                "test_mode": True, "config": config_data,
-                "validation_data": {"rows": preview_rows}, "validation_history": {},
+                "test_mode": True, 
+                "config": config_data,
+                "validation_data": {
+                    "rows": preview_rows,
+                    "batch_info": {
+                        "current_batch": 1,
+                        "total_batches": 1,
+                        "batch_start_idx": 0,
+                        "batch_end_idx": len(preview_rows),
+                        "total_dataset_size": len(rows)
+                    }
+                }, 
+                "validation_history": {},
                 "session_id": session_id
             }
             
             try:
                 validation_start_time = time.time()
-                response = lambda_client.invoke(
-                    FunctionName=VALIDATOR_LAMBDA_NAME, InvocationType='RequestResponse', Payload=json.dumps(payload)
-                )
+                logger.info(f"[RETRY_TRACKER] PREVIEW_MODE - Starting validation call for {len(preview_rows)} rows")
+                response = _invoke_validator_with_retry(lambda_client, VALIDATOR_LAMBDA_NAME, payload, logger)
                 validation_processing_time = time.time() - validation_start_time
-                logger.info(f"Validator Lambda processing took {validation_processing_time:.2f} seconds")
+                logger.info(f"[RETRY_TRACKER] PREVIEW_COMPLETE - Validator Lambda processing took {validation_processing_time:.2f} seconds")
                 
                 response_payload = json.loads(response['Payload'].read().decode('utf-8'))
                 
@@ -338,91 +423,78 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 return result_response
                 
             except Exception as e:
+                logger.error(f"[RETRY_TRACKER] PREVIEW_FAILED - Final error after all retries: {str(e)}")
                 logger.warning(f"Validator Lambda timeout or error in preview mode: {str(e)}")
-                return {'status': 'timeout', 'total_rows': total_rows, 'validation_results': None, 'metadata': aggregated_metadata, 'note': f'Validation timed out (>25s), using demo data. Error: {str(e)}'}
+                return {'status': 'timeout', 'total_rows': total_rows, 'validation_results': {}, 'metadata': aggregated_metadata, 'note': f'Validation timed out after retries. Error: {str(e)}'}
         else:
-            # For normal mode, process in batches
-            all_validation_results = {}
-            # Use the passed batch_size, defaulting to 10 if it's None or invalid
-            effective_batch_size = batch_size if batch_size and batch_size > 0 else 10
-            total_batches = (len(rows) + effective_batch_size - 1) // effective_batch_size
-            
-            logger.info(f"Processing {len(rows)} rows in {total_batches} batches of size {effective_batch_size}")
+            # For normal mode, send full dataset to validation lambda and let enhanced batch manager handle batching
+            logger.info(f"Sending {len(rows)} rows to validation lambda for enhanced batch processing")
             
             if update_callback:
-                update_callback(session_id, "PROCESSING", 0, f"Starting processing of {len(rows)} rows in {total_batches} batches.", 0, None, 0, total_batches)
+                update_callback(session_id, "PROCESSING", 0, f"Starting enhanced batch processing of {len(rows)} rows.", 0, None, 0, 1)
 
-            for batch_num in range(total_batches):
-                start_idx = batch_num * effective_batch_size
-                end_idx = min(start_idx + effective_batch_size, len(rows))
-                batch_rows = rows[start_idx:end_idx]
-                current_batch = batch_num + 1
+            # Send full dataset to validation lambda - let enhanced batch manager determine optimal batching
+            payload = {
+                "test_mode": False, 
+                "config": config_data, 
+                "validation_data": {
+                    "rows": rows,  # Send ALL rows at once
+                    "max_rows": max_rows,
+                    "batch_size": batch_size,  # Pass through the batch_size (may be None)
+                    "total_dataset_size": len(rows)
+                }, 
+                "validation_history": validation_history, 
+                "session_id": session_id
+            }
+            
+            try:
+                logger.info(f"[RETRY_TRACKER] FULL_MODE - Starting validation call for {len(rows)} rows")
+                response = _invoke_validator_with_retry(lambda_client, VALIDATOR_LAMBDA_NAME, payload, logger)
+                response_payload = json.loads(response['Payload'].read().decode('utf-8'))
                 
-                logger.info(f"Processing batch {current_batch}/{total_batches}, rows {start_idx+1}-{end_idx}")
-                
-                batch_payload = {"test_mode": False, "config": config_data, "validation_data": {"rows": batch_rows}, "validation_history": validation_history, "session_id": session_id}
-                
-                try:
-                    response = lambda_client.invoke(FunctionName=VALIDATOR_LAMBDA_NAME, InvocationType='RequestResponse', Payload=json.dumps(batch_payload))
-                    response_payload = json.loads(response['Payload'].read().decode('utf-8'))
+                validation_results, metadata = None, None
+                if isinstance(response_payload, dict):
+                    body = response_payload.get('body', {})
+                    if isinstance(body, dict):
+                       validation_results = body.get('data', {}).get('rows')
+                       metadata = body.get('metadata', {})
+                    if 'validation_results' in response_payload:
+                       validation_results = response_payload['validation_results']
+                       metadata = response_payload.get('metadata', {})
+
+                # Merge the metadata from the single response
+                if metadata:
+                    if 'token_usage' in metadata:
+                        aggregated_metadata['token_usage'] = metadata['token_usage']
                     
-                    batch_validation_results, batch_metadata = None, None
-                    if isinstance(response_payload, dict):
-                        body = response_payload.get('body', {})
-                        if isinstance(body, dict):
-                           batch_validation_results = body.get('data', {}).get('rows')
-                           batch_metadata = body.get('metadata', {})
-                        if 'validation_results' in response_payload:
-                           batch_validation_results = response_payload['validation_results']
-
-                    if batch_metadata and 'token_usage' in batch_metadata:
-                        batch_token_usage = batch_metadata['token_usage']
-                        agg_token_usage = aggregated_metadata['token_usage']
-                        agg_token_usage['total_tokens'] += batch_token_usage.get('total_tokens', 0)
-                        agg_token_usage['total_cost'] += batch_token_usage.get('total_cost', 0.0)
-                        agg_token_usage['api_calls'] += batch_token_usage.get('api_calls', 0)
-                        agg_token_usage['cached_calls'] += batch_token_usage.get('cached_calls', 0)
-                        
-                        if 'by_provider' in batch_token_usage:
-                            for provider, data in batch_token_usage['by_provider'].items():
-                                for key, val in data.items():
-                                    if isinstance(val, (int, float)):
-                                        agg_token_usage['by_provider'].setdefault(provider, {})[key] = agg_token_usage['by_provider'].setdefault(provider, {}).get(key, 0) + val
-                        
-                        if 'by_model' in batch_token_usage:
-                            for model, data in batch_token_usage['by_model'].items():
-                                if model not in agg_token_usage['by_model']: agg_token_usage['by_model'][model] = {}
-                                for key, val in data.items():
-                                     if isinstance(val, (int, float)):
-                                         agg_token_usage['by_model'][model][key] = agg_token_usage['by_model'][model].get(key, 0) + val
-                                     else:
-                                         agg_token_usage['by_model'][model][key] = val
-
-                    if batch_validation_results:
-                        for batch_key, batch_result in batch_validation_results.items():
-                            if batch_key.isdigit():
-                                all_validation_results[str(start_idx + int(batch_key))] = batch_result
-                            else:
-                                all_validation_results[batch_key] = batch_result
+                    # Copy other metadata fields
+                    for key, value in metadata.items():
+                        if key != 'token_usage':
+                            aggregated_metadata[key] = value
+                
+                # Use the validation results directly (no need to reindex since we sent all rows at once)
+                all_validation_results = validation_results if validation_results else {}
                     
-                except Exception as e:
-                    logger.error(f"Error processing batch {batch_num+1}: {str(e)}")
-                
-                if batch_num < total_batches - 1:
-                    time.sleep(0.5)
-                
-                # After processing a batch, call the update_callback
-                if update_callback:
-                    processed_rows_count = end_idx
-                    percent_complete = int((processed_rows_count / len(rows)) * 100)
-                    verbose_status = f"Processing batch {current_batch} of {total_batches}..."
-                    # Pass batch information as additional parameters
-                    update_callback(session_id, "PROCESSING", processed_rows_count, verbose_status, percent_complete, None, current_batch, total_batches)
+            except Exception as e:
+                logger.error(f"[RETRY_TRACKER] FULL_MODE_FAILED - Final error after all retries: {str(e)}")
+                logger.error(f"Error processing full dataset: {str(e)}")
+                return {'status': 'error', 'total_rows': total_rows, 'validation_results': {}, 'metadata': aggregated_metadata, 'error': str(e)}
+            
+            # Update callback with completion
+            if update_callback:
+                processed_rows_count = len(all_validation_results)
+                percent_complete = 100
+                verbose_status = "Enhanced batch processing completed"
+                update_callback(session_id, "COMPLETED", processed_rows_count, verbose_status, percent_complete, None, 1, 1)
 
-            logger.info(f"Completed processing all batches. Total results: {len(all_validation_results)}")
+            logger.info(f"Enhanced batch processing completed. Total results: {len(all_validation_results)}")
+            total_function_time = time.time() - function_start_time
+            logger.info(f"[RETRY_TRACKER] FUNCTION_COMPLETE - Total function execution time: {total_function_time:.2f}s")
             return {'total_rows': total_rows, 'validation_results': all_validation_results, 'metadata': aggregated_metadata, 'status': 'completed'}
             
     except Exception as e:
+        total_function_time = time.time() - function_start_time
+        logger.error(f"[RETRY_TRACKER] FUNCTION_ERROR - Function failed after {total_function_time:.2f}s")
         logger.error(f"Error invoking validator Lambda: {str(e)}")
         import traceback
         traceback.print_exc()
@@ -451,13 +523,10 @@ def _handle_special_request(special_request, excel_s3_key, S3_CACHE_BUCKET, VALI
             }
             
             logger.info(f"Calling validation lambda for config generation with session_id: {special_request.get('session_id')}")
+            logger.info(f"[RETRY_TRACKER] CONFIG_GEN - Starting config generation call")
             
             # Call validation lambda
-            response = lambda_client.invoke(
-                FunctionName=VALIDATOR_LAMBDA_NAME,
-                InvocationType='RequestResponse',
-                Payload=json.dumps(payload)
-            )
+            response = _invoke_validator_with_retry(lambda_client, VALIDATOR_LAMBDA_NAME, payload, logger)
             
             response_payload = json.loads(response['Payload'].read().decode('utf-8'))
             logger.info(f"Config generation response received from validation lambda")

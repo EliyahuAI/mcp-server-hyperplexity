@@ -339,12 +339,26 @@ class AIAPIClient:
             # Create filename: YYYYMMDD_HHMMSS_provider_model_status.json
             debug_filename = f"{timestamp}_{api_provider}_{model_clean}_{status}.json"
             
+            # Extract input prompts for easier debugging
+            input_prompts = []
+            try:
+                if 'data' in request_data and 'messages' in request_data['data']:
+                    for message in request_data['data']['messages']:
+                        if isinstance(message, dict) and 'content' in message:
+                            input_prompts.append({
+                                'role': message.get('role', 'unknown'),
+                                'content': message['content']
+                            })
+            except Exception as prompt_extract_error:
+                logger.warning(f"Failed to extract input prompts: {str(prompt_extract_error)}")
+            
             debug_entry = {
                 'timestamp': datetime.now(timezone.utc).isoformat(),
                 'api_provider': api_provider,
                 'model': model,
                 'status': status,
                 'context': context,
+                'input_prompts': input_prompts,  # NEW: Extracted prompts for easy access
                 'request': request_data,
                 'response': None,
                 'error': None,
@@ -377,7 +391,7 @@ class AIAPIClient:
             self.s3_client.put_object(
                 Bucket=self.s3_bucket,
                 Key=s3_key,
-                Body=json.dumps(debug_entry, indent=2),
+                Body=json.dumps(debug_entry, indent=2, ensure_ascii=False),
                 ContentType='application/json'
             )
             
@@ -397,7 +411,7 @@ class AIAPIClient:
     
     async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-3-5-sonnet-20241022", 
                                  tool_name: str = "structured_response", use_cache: bool = True, 
-                                 context: str = "") -> Dict:
+                                 context: str = "", max_tokens: int = None) -> Dict:
         """
         Call AI API with structured output using JSON response format.
         
@@ -474,7 +488,7 @@ class AIAPIClient:
                     
                     data = {
                         "model": current_model_normalized,
-                        "max_tokens": 8000,
+                        "max_tokens": max_tokens or 8000,
                         "temperature": 0.1,
                         "messages": [{"role": "user", "content": prompt}],
                         "tools": [{

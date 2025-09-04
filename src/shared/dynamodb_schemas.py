@@ -2003,12 +2003,29 @@ def create_validation_runs_table():
         else:
             raise
 
-def create_run_record(session_id: str, email: str, total_rows: int):
+def create_run_record(session_id: str, email: str, total_rows: int, batch_size: int = None):
     """Creates an initial record for a new validation run."""
     try:
         table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
-        table.put_item(
-            Item={
+        item = {
+            'session_id': session_id,
+            'email': email,
+            'status': 'PENDING',
+            'total_rows': total_rows,
+            'processed_rows': 0,
+            'start_time': datetime.now(timezone.utc).isoformat(),
+            'last_update': datetime.now(timezone.utc).isoformat()
+        }
+        if batch_size is not None:
+            item['batch_size'] = batch_size
+        
+        table.put_item(Item=item)
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceNotFoundException':
+            logger.warning(f"Table {VALIDATION_RUNS_TABLE_NAME} not found. Attempting to create it now.")
+            create_validation_runs_table()
+            # Retry the operation once after creating the table
+            item = {
                 'session_id': session_id,
                 'email': email,
                 'status': 'PENDING',
@@ -2017,27 +2034,14 @@ def create_run_record(session_id: str, email: str, total_rows: int):
                 'start_time': datetime.now(timezone.utc).isoformat(),
                 'last_update': datetime.now(timezone.utc).isoformat()
             }
-        )
-    except ClientError as e:
-        if e.response['Error']['Code'] == 'ResourceNotFoundException':
-            logger.warning(f"Table {VALIDATION_RUNS_TABLE_NAME} not found. Attempting to create it now.")
-            create_validation_runs_table()
-            # Retry the operation once after creating the table
-            table.put_item(
-                Item={
-                    'session_id': session_id,
-                    'email': email,
-                    'status': 'PENDING',
-                    'total_rows': total_rows,
-                    'processed_rows': 0,
-                    'start_time': datetime.now(timezone.utc).isoformat(),
-                    'last_update': datetime.now(timezone.utc).isoformat()
-                }
-            )
+            if batch_size is not None:
+                item['batch_size'] = batch_size
+            
+            table.put_item(Item=item)
         else:
             raise
 
-def update_run_status(session_id: str, status: str, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None):
+def update_run_status(session_id: str, status: str, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None, batch_size: int = None, **kwargs):
     """Updates the status and progress of a validation run."""
     table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
     
@@ -2067,9 +2071,45 @@ def update_run_status(session_id: str, status: str, processed_rows: int = None, 
     if preview_data:
         update_expression += ", preview_data = :pd"
         expression_attribute_values[':pd'] = convert_floats_to_decimal(preview_data)
+    if batch_size is not None:
+        update_expression += ", batch_size = :bs"
+        expression_attribute_values[':bs'] = batch_size
     if status in ['COMPLETED', 'FAILED']:
         update_expression += ", end_time = :et"
         expression_attribute_values[':et'] = now
+        
+        # Calculate and store actual processing time
+        try:
+            response = table.get_item(Key={'session_id': session_id})
+            if 'Item' in response:
+                item = response['Item']
+                start_time_str = item.get('start_time')
+                if start_time_str and processed_rows:
+                    start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                    end_time = datetime.fromisoformat(now.replace('Z', '+00:00'))
+                    actual_duration_seconds = (end_time - start_time).total_seconds()
+                    
+                    # Calculate per-row and per-batch timing metrics
+                    time_per_row = actual_duration_seconds / processed_rows if processed_rows > 0 else 0
+                    actual_batch_size = batch_size or item.get('batch_size', 10)  # fallback to default if none
+                    time_per_batch = time_per_row * actual_batch_size
+                    
+                    # Store actual timing metrics and replace estimated values with actual ones
+                    update_expression += ", actual_processing_time_seconds = :apt"
+                    update_expression += ", actual_time_per_row_seconds = :atpr"
+                    update_expression += ", actual_time_per_batch_seconds = :atpb"
+                    # Replace estimated times with actual times for CSV export
+                    update_expression += ", estimated_total_processing_time_seconds = :apt"
+                    update_expression += ", estimated_total_time_minutes = :atm"
+                    
+                    expression_attribute_values[':apt'] = convert_floats_to_decimal(actual_duration_seconds)
+                    expression_attribute_values[':atpr'] = convert_floats_to_decimal(time_per_row)
+                    expression_attribute_values[':atpb'] = convert_floats_to_decimal(time_per_batch)
+                    expression_attribute_values[':atm'] = convert_floats_to_decimal(actual_duration_seconds / 60)
+                    
+                    logger.info(f"Calculated actual timing for {session_id}: {actual_duration_seconds:.2f}s total, {time_per_row:.2f}s/row, {time_per_batch:.2f}s/batch")
+        except Exception as e:
+            logger.warning(f"Could not calculate actual processing time for {session_id}: {e}")
 
     table.update_item(
         Key={'session_id': session_id},
