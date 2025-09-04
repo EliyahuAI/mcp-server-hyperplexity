@@ -187,13 +187,28 @@ def copy_source_files():
         else:
             logger.warning(f"Shared module not found, skipping: {file_name}")
     
-    # 4. Copy logo file for PDF receipts
-    logo_file = PROJECT_DIR / "src" / "lambdas" / "config" / "EliyahuLogo_NoText_Crop.png"
-    if logo_file.exists():
-        shutil.copy(logo_file, PACKAGE_DIR / "EliyahuLogo_NoText_Crop.png")
-        logger.info("Copied EliyahuLogo_NoText_Crop.png for PDF receipts")
+    # 4. Copy logo files for PDF receipts
+    # Primary: New hyperplexity logo
+    new_logo_file = PROJECT_DIR / "frontend" / "hyperplexity-logo-2.png"
+    if new_logo_file.exists():
+        shutil.copy(new_logo_file, PACKAGE_DIR / "hyperplexity-logo-2.png")
+        logger.info("Copied hyperplexity-logo-2.png for PDF receipts")
     else:
-        logger.warning(f"Logo file not found at {logo_file}")
+        logger.warning(f"New logo file not found at {new_logo_file}")
+    
+    # Fallback: Legacy Eliyahu logo
+    legacy_logo_file = PROJECT_DIR / "src" / "lambdas" / "config" / "EliyahuLogo_NoText_Crop.png"
+    if legacy_logo_file.exists():
+        shutil.copy(legacy_logo_file, PACKAGE_DIR / "EliyahuLogo_NoText_Crop.png")
+        logger.info("Copied EliyahuLogo_NoText_Crop.png as fallback")
+    else:
+        logger.warning(f"Legacy logo file not found at {legacy_logo_file}")
+    
+    # Also copy from project root if it exists
+    root_logo_file = PROJECT_DIR / "EliyahuLogo_NoText_Crop.png"
+    if root_logo_file.exists():
+        shutil.copy(root_logo_file, PACKAGE_DIR / "EliyahuLogo_NoText_Crop.png")
+        logger.info("Copied EliyahuLogo_NoText_Crop.png from project root")
 
 def create_zip():
     """Create ZIP file for Lambda deployment."""

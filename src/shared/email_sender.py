@@ -25,7 +25,8 @@ try:
     from reportlab.lib.utils import ImageReader
     from reportlab.lib.units import inch
     REPORTLAB_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    print(f"WARNING: ReportLab not available during import: {e}")
     REPORTLAB_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -39,9 +40,18 @@ CHARSET = "UTF-8"
 def generate_receipt_pdf(session_id: str, email: str, amount: float, 
                         transaction_details: dict) -> bytes:
     """Generate PDF receipt for validation charges"""
+    # Try to import ReportLab directly in the function to avoid scope issues
     try:
-        if not REPORTLAB_AVAILABLE:
-            raise ImportError("ReportLab not available for PDF generation")
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.utils import ImageReader  
+        from reportlab.lib.units import inch
+        logger.info("ReportLab imported successfully for PDF generation")
+    except ImportError as import_e:
+        logger.error(f"ReportLab not available: {import_e}")
+        raise ImportError("ReportLab not available for PDF generation")
+    
+    try:
             
         buffer = BytesIO()
         c = canvas.Canvas(buffer, pagesize=letter)
@@ -50,17 +60,20 @@ def generate_receipt_pdf(session_id: str, email: str, amount: float,
         # Logo at top center (1.5 inch square)
         # Try multiple potential paths where the logo might be located
         logo_fallback_paths = [
-            # Lambda function package root (most likely location after deployment)
+            # New hyperplexity logo - Lambda function package root
+            "/var/task/hyperplexity-logo-2.png",
+            # New hyperplexity logo - current working directory
+            "./hyperplexity-logo-2.png",
+            "./frontend/hyperplexity-logo-2.png",
+            # AWS Lambda layer paths for new logo
+            "/opt/hyperplexity-logo-2.png",
+            # Legacy logo paths for backward compatibility
             "/var/task/EliyahuLogo_NoText_Crop.png",
-            # Current working directory (local testing)
             "./EliyahuLogo_NoText_Crop.png",
-            # AWS Lambda layer paths
-            "/opt/EliyahuLogo_NoText_Crop.png",
-            "/opt/python/lib/python3.9/site-packages/EliyahuLogo_NoText_Crop.png",
-            # Development paths  
             "./src/lambdas/config/EliyahuLogo_NoText_Crop.png",
             "../config/EliyahuLogo_NoText_Crop.png",
             # Temporary directory fallback
+            "/tmp/hyperplexity-logo-2.png",
             "/tmp/EliyahuLogo_NoText_Crop.png"
         ]
         
@@ -173,23 +186,76 @@ def generate_receipt_pdf(session_id: str, email: str, amount: float,
         
     except Exception as e:
         logger.error(f"Error generating PDF receipt: {e}")
-        # Fallback to text receipt as bytes
-        fallback_text = f"""Hyperplexity.AI Table Research RECEIPT
-==============================
-Session: {session_id}
-Date: {datetime.now().isoformat()}
-Email: {email}
-
-Service: Table Validation
-Rows Processed: {transaction_details.get('rows_processed', 0):,}
-Fields Validated: {transaction_details.get('fields_validated_count', 0):,}
-Perplexity Calls: {transaction_details.get('perplexity_api_calls', 0):,}
-Claude Calls: {transaction_details.get('anthropic_api_calls', 0):,}
-Total Charged: ${amount:.4f}
-
-Thank you for using Hyperplexity!
-        """
-        return fallback_text.encode('utf-8')
+        import traceback
+        logger.error(f"PDF generation traceback: {traceback.format_exc()}")
+        
+        # Check if ReportLab is available and log diagnostic info
+        try:
+            import reportlab
+            logger.info(f"ReportLab version: {reportlab.Version}")
+        except ImportError:
+            logger.error("ReportLab not available in Lambda environment")
+        
+        # Log current working directory and available files
+        logger.error(f"Current working directory: {os.getcwd()}")
+        logger.error(f"Files in current directory: {os.listdir('.')}")
+        
+        # Since PDF generation failed, try to create a basic PDF without logo
+        logger.warning("Attempting to create basic PDF receipt without logo")
+        try:
+            # Import ReportLab again for basic fallback
+            try:
+                from reportlab.lib.pagesizes import letter
+                from reportlab.pdfgen import canvas
+                from reportlab.lib.utils import ImageReader  
+                from reportlab.lib.units import inch
+            except ImportError as basic_import_e:
+                logger.error(f"ReportLab not available for basic PDF: {basic_import_e}")
+                raise ImportError("ReportLab not available even for basic PDF")
+            
+            buffer = BytesIO()
+            c = canvas.Canvas(buffer, pagesize=letter)
+            width, height = letter
+            
+            # Basic text-only receipt without logo
+            y_position = height - 2 * inch
+            c.setFont("Helvetica-Bold", 20)
+            text_width = c.stringWidth("Hyperplexity.AI Table Research", "Helvetica-Bold", 20)
+            c.drawString((width - text_width) / 2, y_position, "Hyperplexity.AI Table Research")
+            
+            y_position -= 0.4 * inch
+            c.setFont("Helvetica", 16)
+            text_width = c.stringWidth("Payment Receipt", "Helvetica", 16)
+            c.drawString((width - text_width) / 2, y_position, "Payment Receipt")
+            
+            # Basic receipt info
+            y_position -= 0.8 * inch
+            c.setFont("Helvetica", 11)
+            
+            receipt_date = datetime.now().strftime("%B %d, %Y at %I:%M %p UTC")
+            left_margin = 1.5 * inch
+            right_margin = width - 1.5 * inch
+            
+            def draw_basic_row(label, value, y_pos):
+                c.setFont("Helvetica-Bold", 11)
+                c.drawString(left_margin, y_pos, label)
+                c.setFont("Helvetica", 11)
+                c.drawRightString(right_margin, y_pos, str(value))
+                return y_pos - 0.25 * inch
+            
+            y_position = draw_basic_row("Date:", receipt_date, y_position)
+            y_position = draw_basic_row("Session:", session_id, y_position)
+            y_position = draw_basic_row("Email:", email, y_position)
+            y_position = draw_basic_row("Total Charged:", f"${amount:.4f}", y_position)
+            
+            c.save()
+            buffer.seek(0)
+            return buffer.getvalue()
+            
+        except Exception as basic_e:
+            logger.error(f"Even basic PDF generation failed: {basic_e}")
+            # Final fallback - raise the original exception
+            raise Exception(f"All PDF generation attempts failed. Original error: {e}, Basic PDF error: {basic_e}")
 
 
 def generate_receipt(session_id: str, email: str, amount: float, raw_cost: float, 
@@ -456,14 +522,15 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         subject_type = "Hyperplexity Results"
         
         if reference_pin:
-            message["Subject"] = f"{subject_type} - {original_filename} (Ref# {reference_pin})"
+            message["Subject"] = f"🟩 {subject_type} - {original_filename} (Ref# {reference_pin})"
         else:
-            message["Subject"] = f"{subject_type} - {original_filename}"
+            message["Subject"] = f"🟩 {subject_type} - {original_filename}"
         
         # Extract summary data
         total_rows = summary_data.get('total_rows', 0)
         fields_validated = summary_data.get('fields_validated', [])
         confidence_distribution = summary_data.get('confidence_distribution', {})
+        original_confidence_distribution = summary_data.get('original_confidence_distribution', {})
         
         # Extract token usage from metadata
         token_usage = None
@@ -484,7 +551,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
             config_filename,
             preview_email,
             config_id,
-            None  # original_confidence_distribution - TODO: implement delta calculation
+            original_confidence_distribution
         )
         
         # Attach HTML body
@@ -677,7 +744,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
     else:
         fields_html = "No fields processed"
     
-    # Format confidence distribution with deltas
+    # Format confidence distribution with Original -> Updated format
     confidence_html = ""
     total_validations = sum(confidence_distribution.values())
     for level in ["HIGH", "MEDIUM", "LOW"]:
@@ -686,18 +753,15 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             percentage = (count / total_validations * 100) if total_validations > 0 else 0
             emoji = "🟢" if level == "HIGH" else "🟡" if level == "MEDIUM" else "🔴"
             
-            # TODO: Calculate delta when original_confidence_distribution is available
-            delta_text = ""
+            # Show Original -> Updated format when original data is available
             if original_confidence_distribution:
                 original_count = original_confidence_distribution.get(level, 0)
                 original_total = sum(original_confidence_distribution.values())
                 original_percentage = (original_count / original_total * 100) if original_total > 0 else 0
-                delta = percentage - original_percentage
-                if abs(delta) >= 0.1:  # Only show delta if significant
-                    sign = "+" if delta > 0 else ""
-                    delta_text = f" ({sign}{delta:.1f}%)"
-            
-            confidence_html += f"<li>{emoji} <b>{level}:</b> {percentage:.1f}%{delta_text}</li>"
+                confidence_html += f"<li>{emoji} <b>{level}:</b> {original_percentage:.1f}% (Original) -> {percentage:.1f}% (Updated)</li>"
+            else:
+                # Show updated results when no original data available 
+                confidence_html += f"<li>{emoji} <b>{level}:</b> {percentage:.1f}% (Updated)</li>"
     
     if not confidence_html:
         confidence_html = "<li>No confidence data available</li>"
@@ -726,6 +790,12 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
         
         if call_parts:
             api_calls_info = "\n".join(call_parts)
+    
+    # Cost info
+    cost_info = ""
+    if token_usage and token_usage.get('total_cost'):
+        cost = token_usage.get('total_cost', 0)
+        cost_info = f"<p><b>Cost:</b> ${cost:.4f}</p>"
     
     # Reference pin removed from display per requirements
     
@@ -818,7 +888,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
                 border-left: 4px solid #4CAF50;
             }}
             .primary-file {{
-                background: #000000;
+                background: #4CAF50;
                 color: white;
                 font-weight: bold;
             }}
@@ -853,16 +923,16 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
         
         <div class="content">
             <div class="summary">
-                <h2>Your Results Are Ready</h2>
                 {preview_notice}
                 <p><b>Total rows processed:</b> {total_rows:,}</p>
                 <p><b>Fields validated:</b> {len(fields_validated)}</p>
                 <p><small>({fields_html})</small></p>
-                {time_info}
                 {api_calls_info}
+                {time_info}
+                {cost_info}
                 
                 <div class="confidence">
-                    <p><b>Updated Confidence Distribution:</b></p>
+                    <p><b>Original and Updated Confidence Distribution:</b></p>
                     <ul>
                         {confidence_html}
                     </ul>
