@@ -3989,6 +3989,16 @@
                     // Find the upload card ID dynamically
                     const uploadCard = document.querySelector('[data-card-id]');
                     const cardId = uploadCard ? uploadCard.getAttribute('data-card-id') : 'upload';
+                    
+                    // Clear the input field and buttons before proceeding
+                    const inputField = document.getElementById(`${cardId}-config-id-input`);
+                    const optionsContainer = document.getElementById(`${cardId}-options`);
+                    if (inputField) inputField.style.display = 'none';
+                    if (optionsContainer) {
+                        const buttonContainer = optionsContainer.querySelector('[id$="-button-container"]');
+                        if (buttonContainer) buttonContainer.style.display = 'none';
+                    }
+                    
                     showMessage(`${cardId}-messages`, 'Copying configuration from previous session...', 'info');
                     
                     const response = await fetch(`${API_BASE}/validate`, {
@@ -4012,15 +4022,22 @@
                         throw new Error(result.error || 'Failed to copy configuration');
                     }
                     
-                    showMessage(`${cardId}-messages`, 'Configuration copied successfully! You can now validate your data.', 'success');
+                    // Clear everything and show only success message like upload card does
+                    showFinalCardState(cardId, 'Configuration copied successfully! Generating preview...', 'success');
                     
-                    // Update UI to show validation options
+                    // Update UI state
                     globalState.configLoaded = true;
-                    updateUploadCardStatus('upload');
+                    globalState.configValidated = true;
+                    globalState.configStored = true;
+                    
+                    // Auto-generate preview after brief delay, like AI config does
+                    setTimeout(() => {
+                        createPreviewCard();
+                    }, 1500);
                     
                 } catch (error) {
                     console.error('Error using matching config:', error);
-                    showMessage('upload-messages', `Error copying configuration: ${error.message}`, 'error');
+                    showMessage(`${cardId}-messages`, `Error copying configuration: ${error.message}`, 'error');
                 }
             }
 
@@ -4806,7 +4823,7 @@
                                             <button class="std-button primary" onclick="useMatchingConfig('${perfectMatch.config_s3_key}', '${perfectMatch.source_session}')" style="flex: 1;">
                                                 <span class="button-text">🔗 Use Match (100%)</span>
                                             </button>
-                                            <button class="std-button secondary" onclick="createAIConfigCard(false)" style="flex: 1; background: #6b46c1; border-color: #6b46c1; color: white;">
+                                            <button class="std-button secondary" onclick="createAIConfigCard(false)" style="flex: 1;">
                                                 <span class="button-text">🤖 Create with AI</span>
                                             </button>
                                         </div>
@@ -4814,7 +4831,7 @@
                                 } else {
                                     buttonContainer.innerHTML = `
                                         <div style="margin: 20px 0; text-align: center;">
-                                            <button class="std-button secondary" onclick="createAIConfigCard(false)" style="background: #6b46c1; border-color: #6b46c1; color: white;">
+                                            <button class="std-button secondary" onclick="createAIConfigCard(false)">
                                                 <span class="button-text">🤖 Create with AI</span>
                                             </button>
                                         </div>

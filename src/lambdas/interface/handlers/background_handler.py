@@ -560,13 +560,24 @@ def handle(event, context):
                         # Calculate summary data for potential email
                         all_fields = set()
                         confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+                        original_confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+                        
                         for row_data in real_results.values():
                             for field_name, field_data in row_data.items():
-                                if isinstance(field_data, dict) and 'confidence_level' in field_data:
+                                if isinstance(field_data, dict):
                                     all_fields.add(field_name)
-                                    conf_level = field_data.get('confidence_level', 'UNKNOWN')
-                                    if conf_level in confidence_counts:
-                                        confidence_counts[conf_level] += 1
+                                    
+                                    # Count updated confidence levels
+                                    if 'confidence_level' in field_data:
+                                        conf_level = field_data.get('confidence_level', 'UNKNOWN')
+                                        if conf_level in confidence_counts:
+                                            confidence_counts[conf_level] += 1
+                                    
+                                    # Count original confidence levels
+                                    if 'original_confidence' in field_data:
+                                        original_conf = field_data.get('original_confidence')
+                                        if original_conf and str(original_conf).upper() in original_confidence_counts:
+                                            original_confidence_counts[str(original_conf).upper()] += 1
                         
                         # Create enhanced Excel if available
                         enhanced_excel_content = None
@@ -1284,18 +1295,30 @@ def handle(event, context):
                     # Calculate summary data for the email
                     all_fields = set()
                     confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+                    original_confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+                    
                     for row_data in real_results.values():
                         for field_name, field_data in row_data.items():
-                            if isinstance(field_data, dict) and 'confidence_level' in field_data:
+                            if isinstance(field_data, dict):
                                 all_fields.add(field_name)
-                                conf_level = field_data.get('confidence_level', 'UNKNOWN')
-                                if conf_level in confidence_counts:
-                                    confidence_counts[conf_level] += 1
+                                
+                                # Count updated confidence levels
+                                if 'confidence_level' in field_data:
+                                    conf_level = field_data.get('confidence_level', 'UNKNOWN')
+                                    if conf_level in confidence_counts:
+                                        confidence_counts[conf_level] += 1
+                                
+                                # Count original confidence levels
+                                if 'original_confidence' in field_data:
+                                    original_conf = field_data.get('original_confidence')
+                                    if original_conf and str(original_conf).upper() in original_confidence_counts:
+                                        original_confidence_counts[str(original_conf).upper()] += 1
                     
                     summary_data = {
                         'total_rows': len(real_results) if real_results else 0,
                         'fields_validated': list(all_fields),
-                        'confidence_distribution': confidence_counts
+                        'confidence_distribution': confidence_counts,
+                        'original_confidence_distribution': original_confidence_counts
                     }
                     
                     enhanced_excel_content = None
