@@ -4,7 +4,7 @@ This document describes the current DynamoDB table structure for the Perplexity 
 
 ## Table Overview
 
-The system uses 8 DynamoDB tables to manage validation sessions, user data, financial transactions, and real-time connections:
+The system uses 10 DynamoDB tables to manage validation sessions, user data, financial transactions, real-time connections, batch size management, and model configurations:
 
 ### 📊 **Core Tables (Essential)**
 
@@ -16,6 +16,8 @@ The system uses 8 DynamoDB tables to manage validation sessions, user data, fina
 | `perplexity-validator-account-transactions` | Financial transaction history | 1 | 230B | ✅ Active |
 | `perplexity-validator-domain-multipliers` | Domain-specific cost multipliers | 2 | ~300B | ✅ Active |
 | `perplexity-validator-ws-connections` | WebSocket connection management | 0 | 0B | ✅ Active (ephemeral) |
+| `perplexity-validator-batch-audit` | Dynamic batch size change audit log | 0 | 0B | ✅ Active |
+| `perplexity-validator-model-config` | Model configuration management | 0 | 0B | ✅ Active |
 
 ### 🗑️ **Legacy Tables (Cleaned)**
 
@@ -44,7 +46,10 @@ The system uses 8 DynamoDB tables to manage validation sessions, user data, fina
   "percent_complete": 100.0,
   "processed_rows": 3.0,
   "total_rows": 114.0,
+  "batch_size": 80,
   "preview_data": {
+    "actual_batch_size": 80,
+    "estimated_total_batches": 2,
     "cost_estimates": {
       "per_row_cost": 0.057859,
       "estimated_total_cost": 6.595926,
@@ -82,6 +87,13 @@ The system uses 8 DynamoDB tables to manage validation sessions, user data, fina
 **Cost Scaling Logic:** Only `quoted_full_cost` involves scaling. For preview runs: `(preview_estimated_cost × multiplier ÷ preview_rows) × total_rows`.
 
 **Business Logic:** Preview calculates and sends `quoted_full_cost` via websocket. Full validation charges exactly that `quoted_full_cost` from preview, ensuring users pay the promised amount regardless of actual full validation costs.
+
+**Batch Size Tracking:** Enhanced dynamic batch sizing with per-model configuration.
+- **`batch_size`**: Top-level field storing the actual batch size used for validation
+- **`preview_data.actual_batch_size`**: Batch size determined by enhanced batch manager
+- **`preview_data.estimated_total_batches`**: Total batches calculated with actual batch size
+- **Dynamic sizing**: Uses minimum batch size across models for multi-model validations
+- **Pattern matching**: Configured via hierarchical model patterns (e.g., "claude-4*", "sonar-pro*")
 
 ### 2. `perplexity-validator-user-tracking`
 
@@ -138,7 +150,7 @@ The system uses 8 DynamoDB tables to manage validation sessions, user data, fina
   "config_generation_cost": 5.25,
   
   // NEW: Processing parameters tracking (per-run values)
-  "batch_size": 25,                    // Batch size used for current/latest run
+  "batch_size": 80,                    // Actual batch size from enhanced dynamic batch manager
   "estimated_time": 2.5,               // Estimated processing time for current/latest run (hours)
   
   // NEW: API call tracking
@@ -248,6 +260,98 @@ The system uses 8 DynamoDB tables to manage validation sessions, user data, fina
 
 **Note:** Connections are ephemeral and auto-expire via TTL.
 
+### 7. `perplexity-validator-batch-audit`
+
+**Purpose:** Audit trail for dynamic batch size changes with comprehensive context tracking.
+
+**Key Schema:**
+- `audit_id` (HASH) - Unique audit entry UUID
+
+**Global Secondary Indexes:**
+- `ModelIndex`: `model` (HASH) + `timestamp` (RANGE) - Query changes by model
+- `SessionIndex`: `session_id` (HASH) + `timestamp` (RANGE) - Query changes by session
+
+**Key Fields:**
+```json
+{
+  "audit_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2025-08-22T10:30:45.123456+00:00",
+  "model": "claude-4-opus",
+  "old_batch_size": 100,
+  "new_batch_size": 110,
+  "change_reason": "success_streak|failure_streak|rate_limit|model_registration",
+  "session_id": "session_20250822_103045_abc12345",
+  "additional_context": {
+    "consecutive_successes": 8,
+    "weight": 1.5,
+    "increase_factor": 1.15,
+    "rate_limit_factor": 0.5,
+    "rate_limit_count": 3
+  },
+  "ttl": 1732000000
+}
+```
+
+**Features:**
+- **90-day TTL**: Automatic cleanup of old audit entries
+- **Full Context**: Captures all relevant parameters that influenced the change
+- **Change Reasons**: success_streak, failure_streak, rate_limit, model_registration
+- **Session Linkage**: Links batch changes to specific validation sessions
+
+### 8. `perplexity-validator-model-config`
+
+**Purpose:** Centralized model configuration management with hierarchical pattern matching and pricing data.
+
+**Key Schema:**
+- `config_id` (HASH) - Unique configuration UUID
+
+**Global Secondary Indexes:**
+- `ModelPatternIndex`: `model_pattern` (HASH) + `priority` (RANGE) - Pattern-based lookup
+- `ProviderIndex`: `api_provider` (HASH) + `priority` (RANGE) - Provider-based queries
+
+**Key Fields:**
+```json
+{
+  "config_id": "7a3b4c2d-1e5f-4a6b-8c9d-0e1f2a3b4c5d",
+  "model_pattern": "claude-4*",
+  "api_provider": "anthropic",
+  "priority": 1,
+  "enabled": true,
+  "created_at": "2025-08-22T10:30:45.123456+00:00",
+  "last_updated": "2025-08-22T10:30:45.123456+00:00",
+  
+  // Batch sizing configuration
+  "min_batch_size": 5,
+  "max_batch_size": 200,
+  "initial_batch_size": 100,
+  "weight": 1.5,
+  "rate_limit_factor": 0.5,
+  "success_threshold": 5,
+  "failure_threshold": 2,
+  
+  // Pricing configuration
+  "input_cost_per_million_tokens": 3.00,
+  "output_cost_per_million_tokens": 15.00,
+  
+  "notes": "Latest Claude 4 models with high rate limits",
+  "ttl": 1732000000
+}
+```
+
+**Features:**
+- **Pattern Matching**: Hierarchical model matching using wildcards (e.g., "claude-4*", "*sonar*")
+- **Priority-Based**: Lower numbers = higher priority for pattern conflicts
+- **Unified Config**: Combines batch sizing and pricing in single table
+- **Provider Separation**: Separate configurations per API provider
+- **Audit Trail**: Created/updated timestamps for change tracking
+- **1-Year TTL**: Configurations auto-expire unless updated
+
+**Pattern Examples:**
+- `claude-4*` - Matches all Claude 4 models (priority 1)
+- `claude-3.5*` - Matches Claude 3.5 models (priority 2)  
+- `llama-3.1-sonar-large*` - Matches large Perplexity models (priority 1)
+- `*` - Fallback for unmatched models (priority 999)
+
 ## Data Flow & Relationships
 
 ```mermaid
@@ -258,12 +362,16 @@ graph TB
     C --> E[perplexity-validator-user-tracking]
     C --> F[perplexity-validator-account-transactions]
     E --> G[perplexity-validator-domain-multipliers]
+    C --> H[perplexity-validator-batch-audit]
+    C --> I[perplexity-validator-model-config]
     
     B -.->|Email Verification| A
     C -.->|Real-time Updates| D
     C -.->|Aggregate Metrics| E  
     C -.->|Cost Deduction| F
     G -.->|Pricing Rules| F
+    H -.->|Batch Size Changes| C
+    I -.->|Model Configuration| C
 ```
 
 ## Tracking Metrics Summary
@@ -310,6 +418,15 @@ python manage_dynamodb_tables.py export-all-csv
 python manage_dynamodb_tables.py check-balance user@domain.com
 python manage_dynamodb_tables.py list-transactions user@domain.com
 python manage_dynamodb_tables.py set-multiplier domain.com 2.5
+
+# Batch size audit management
+python manage_dynamodb_tables.py batch-history model_name
+python manage_dynamodb_tables.py recent-batch-changes
+
+# Model configuration management
+python manage_dynamodb_tables.py load-model-config path/to/config.csv
+python manage_dynamodb_tables.py list-model-configs
+python manage_dynamodb_tables.py test-model-config model_name
 ```
 
 ## Architecture Evolution

@@ -127,8 +127,13 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
     try:
         from ..core.sqs_service import send_preview_request, send_full_request
         SQS_AVAILABLE = True
-    except ImportError:
+        logger.info("✅ SQS service is available - will use async processing")
+    except ImportError as e:
         SQS_AVAILABLE = False
+        logger.warning(f"❌ SQS service not available - will use sync processing: {e}")
+    except Exception as e:
+        SQS_AVAILABLE = False
+        logger.error(f"❌ Failed to load SQS service - will use sync processing: {e}")
 
     # Validate email
     if not is_email_validated(email_address):
@@ -267,7 +272,7 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
             max_rows = int(max_rows_str) if max_rows_str else None
             
             batch_size_str = params.get('batch_size')
-            batch_size = int(batch_size_str) if batch_size_str else 10
+            batch_size = int(batch_size_str) if batch_size_str else None  # Let enhanced batch manager determine optimal size
             
             preview_max_rows_str = params.get('preview_max_rows')
             preview_max_rows = int(preview_max_rows_str) if preview_max_rows_str else 3
@@ -288,7 +293,7 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
             total_rows = -1
 
         # Create tracking records
-        create_run_record(session_id=session_id, email=email_address, total_rows=total_rows)
+        create_run_record(session_id=session_id, email=email_address, total_rows=total_rows, batch_size=batch_size)
         reference_pin = session_id.split('_')[-1] if '_' in session_id else session_id[:6]
         track_validation_call(
             email=email_address,
@@ -394,7 +399,7 @@ def _handle_full_validation_request(storage_manager, email_address, session_id, 
         })
     
     if async_mode and SQS_AVAILABLE:
-        logger.info(f"Sending full validation request to SQS for session {session_id} (preview_email={preview_email})")
+        logger.info(f"🚀 USING ASYNC PROCESSING: Sending full validation request to SQS for session {session_id} (preview_email={preview_email})")
         from ..core.sqs_service import send_full_request
         
         message_id = send_full_request(
@@ -414,6 +419,7 @@ def _handle_full_validation_request(storage_manager, email_address, session_id, 
         return create_response(200, response_body)
     else:
         # Synchronous full validation processing
+        logger.warning(f"⚠️ USING SYNC PROCESSING: async_mode={async_mode}, SQS_AVAILABLE={SQS_AVAILABLE}, batch_size={batch_size}")
         return _process_validation_sync(
             storage_manager, email_address, session_id, excel_s3_key, config_s3_key, max_rows, batch_size
         )
