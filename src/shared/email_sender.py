@@ -44,11 +44,20 @@ def generate_receipt_pdf(session_id: str, email: str, amount: float,
     try:
         from reportlab.lib.pagesizes import letter
         from reportlab.pdfgen import canvas
-        from reportlab.lib.utils import ImageReader  
         from reportlab.lib.units import inch
-        logger.info("ReportLab imported successfully for PDF generation")
+        logger.info("ReportLab core imported successfully for PDF generation")
+        
+        # Try to import image support - this might fail with PIL issues
+        try:
+            from reportlab.lib.utils import ImageReader
+            image_support = True
+            logger.info("ReportLab ImageReader imported successfully")
+        except ImportError as img_e:
+            logger.warning(f"ReportLab ImageReader not available: {img_e}. PDF will be generated without logo.")
+            image_support = False
+            
     except ImportError as import_e:
-        logger.error(f"ReportLab not available: {import_e}")
+        logger.error(f"ReportLab core not available: {import_e}")
         raise ImportError("ReportLab not available for PDF generation")
     
     try:
@@ -78,21 +87,25 @@ def generate_receipt_pdf(session_id: str, email: str, amount: float,
         ]
         
         logo_found = False
-        for path in logo_fallback_paths:
-            if os.path.exists(path):
-                try:
-                    logo_size = 1.5 * inch
-                    logo_x = (width - logo_size) / 2
-                    logo_y = height - 2 * inch
-                    c.drawImage(path, logo_x, logo_y, width=logo_size, height=logo_size)
-                    logo_found = True
-                    break
-                except Exception as logo_e:
-                    logger.warning(f"Could not load logo from {path}: {logo_e}")
-                    continue
-        
-        if not logo_found:
-            logger.warning("Logo not found, proceeding without logo")
+        if image_support:
+            for path in logo_fallback_paths:
+                if os.path.exists(path):
+                    try:
+                        logo_size = 1.5 * inch
+                        logo_x = (width - logo_size) / 2
+                        logo_y = height - 2 * inch
+                        c.drawImage(path, logo_x, logo_y, width=logo_size, height=logo_size)
+                        logo_found = True
+                        logger.info(f"Logo loaded successfully from {path}")
+                        break
+                    except Exception as logo_e:
+                        logger.warning(f"Could not load logo from {path}: {logo_e}")
+                        continue
+            
+            if not logo_found:
+                logger.warning("Logo files exist but could not be loaded, proceeding without logo")
+        else:
+            logger.info("Image support not available, generating PDF without logo")
         
         # Company name and receipt title
         y_position = height - 3.8 * inch
@@ -207,8 +220,8 @@ def generate_receipt_pdf(session_id: str, email: str, amount: float,
             try:
                 from reportlab.lib.pagesizes import letter
                 from reportlab.pdfgen import canvas
-                from reportlab.lib.utils import ImageReader  
                 from reportlab.lib.units import inch
+                logger.info("ReportLab available for basic PDF generation")
             except ImportError as basic_import_e:
                 logger.error(f"ReportLab not available for basic PDF: {basic_import_e}")
                 raise ImportError("ReportLab not available even for basic PDF")
