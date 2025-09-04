@@ -6,22 +6,21 @@ This document contains shared guidelines used by both new config creation and re
 - **Default Model**: `sonar-pro` is the default for most use cases
 - **Alternative Models**: Available models include:
   - Perplexity models: `sonar`, `sonar-pro` (recommended for most validation tasks)
-  - Anthropic models: `claude-sonnet-4-0` (latest Claude 4), `claude-3-opus`, `claude-3-haiku`
-- **Per-Column Model**: Use `preferred_model` field to override default for specific columns
+  - Anthropic models: `claude-opus-4-1` (latest Claude 4 opus for advanced reasoning, bring out the big guns only when really deep thought and synthesis is needed), `claude-sonnet-4-0` (latest Claude 4 - this is the first line of defense for reasoning solutions that require search, used mostly when pure reasoning is needed in response to a problem with sonar-pro), `claude-3.5-haiku-latest` (great for fast reasoning solutions that dont need much thought)
 - **Best Practices**:
   - Use Perplexity models (`sonar-pro`) for standard web search and validation tasks
-  - Only use Anthropic models when deeper reasoning, complex analysis, or nuanced understanding is specifically required
+  - Only use Anthropic models when deeper reasoning (sonnet-4 in most cases, opus when deep reasoning is called for)
   - Consider the validation complexity before choosing Anthropic models
 
 ## Search Context Size Guidelines
-- **Values**: `"low"`, `"high"`
+- **Values**: `"low"`, `"high"`, (Perplexity only)
 - **Global Default**: Set `default_search_context_size` at the root level (defaults to `"low"`)
 - **Per-Column Override**: Use `search_context_size` field for specific columns
 - **Best Practices**:
   - Use `"low"` for most columns (faster, cheaper, usually sufficient)
-  - Use `"high"` only when search results are missing critical information
+  - Use `"high"` when search results are critical and expected to be hard to find, or when it we are unhappy with previews or results
   - Avoid `"high"` unless necessary as it increases cost and latency
-- **Search Group Behavior**: When multiple columns in a search group have different context sizes, the highest value is used for the entire group
+
 
 ## Importance Level Guidelines
 - **ID**: These define the rows - at least one column must be assigned 'ID', usually it is one or more columns to the left of the table. 
@@ -29,26 +28,21 @@ This document contains shared guidelines used by both new config creation and re
 - **HIGH**: Important descriptive or analytical fields
 - **MEDIUM**: Supporting information, secondary attributes
 - **LOW**: Optional or supplementary data
-- **IGNORED**: Metadata, internal fields, timestamps
+- **IGNORED**: Indices, metadata, internal fields, timestamps
 
 ## Search Group Strategy
-Create search groups based on where information typically appears together:
-- **Regulatory data**: FDA approvals, clinical phases, trial IDs
-- **Commercial data**: Companies, products, market information  
-- **Technical data**: Targets, mechanisms, scientific details
-- **Timeline data**: Launch dates, milestone timelines
+Create search groups based on where information typically appears together. Are these elements usually found together? For example, a conference start date, end date, and location are almost always found together, and should be part of the same group. 
 
 ## Intelligent Analysis Process
 
 When analyzing any table, follow this process:
 
-1. **Infer table purpose** from column names and data patterns
-2. **Detect data types** from sample values (dates, numbers, strings, URLs)
-3. **Identify likely ID columns** from names and uniqueness patterns
-4. **Deduce domain/industry** from content and terminology
+1. **Infer table purpose** from column names and data patterns, how is this table used? who uses it? what are the critical patterns?
+2. **Detect data types** from sample values (dates, time, numbers, strings, URLs, etc.) - be specific about the format in the notes is not evident in the examples. 
+3. **Identify likely ID columns** usually the first column(s), these are used to identify the row and are not used for research.
 5. **Group related columns** that would appear in same sources
-6. **Extract real examples** from the actual data (if possible, otherwise specify a consistent set)
-7. **Assign importance levels** based on column criticality
+6. **Extract real examples** from the actual data (if possible, otherwise specify a consistent set), if the examples do not match other requirements (like out of date or other), update the examples to be in scope. 
+7. **Assign importance levels** based on column criticality, ignore columns that are not informational or on the internet, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose, and low, medium, high for supporting columns with less and less relevance to the primary function. 
 
 ## Analysis Presentation Format
 
@@ -57,10 +51,7 @@ Show your assumptions clearly in this format:
 **MY ANALYSIS:**
 
 **Table Purpose**: [Your inference from columns/data]
-**Domain**: [Deduced industry/field]
-**Preferred Sources**: [Logical sources for this domain]
-
-**Unique Identifiers**: [Likely ID columns based on names/uniqueness]
+**Unique Identifiers**: [Likely ID columns]
 
 **Search Groups**:
 - Group 0: [ID columns] (not validated, used for context)
@@ -73,12 +64,23 @@ Show your assumptions clearly in this format:
 |--------|------------|--------|-------|---------------------|
 | [name] | [level] | [type] | [formatting rules] | [actual values] |
 
+## Clarification Urgency Scale
+
+**Use these anchored levels:**
+- 0.0-0.1 = MINIMAL (configuration is solid, minor tweaks only)
+- 0.2-0.3 = LOW (clarification would improve the output modestly)
+- 0.4-0.6 = MODERATE (important clarifications needed)
+- 0.7-0.8 = HIGH (significant assumptions made)
+- 0.9-1.0 = CRITICAL (core columns will likely be wrong)
+
+**REFINEMENT RULE**: Always use LOWER urgency than new configurations (typically 0.1-0.3)
+
 ## Targeted Questions Guidelines
 
 Only ask when genuinely unclear or need confirmation:
 
 ### Types of Questions to Ask:
-- **Corrections**: "Is my understanding of [specific assumption] correct?"
+- **Risky Assumptions**: "Is my understanding of [specific assumption] correct?"
 - **A/B Clarifications**: "For [ambiguous column], should this be: A) [option A] or B) [option B]?"
 - **Domain specifics**: "What specific sources should I prioritize for [domain-specific information]?"
 
@@ -92,7 +94,7 @@ Only ask when genuinely unclear or need confirmation:
 ## Format Detection Guidelines
 
 Auto-detect from sample data:
-- Dates: YYYY-MM-DD, MM/DD/YYYY patterns
+- Dates: YYYY-MM-DD, MM/DD/YYYY patterns, be consistent about the inclusion of time. 
 - Numbers: Integer, decimal, currency patterns
 - URLs: http/https patterns
 - Emails: @ symbol patterns
@@ -103,20 +105,14 @@ Auto-detect from sample data:
 **Units Consistency**: If a column contains values with units (e.g., $B for billions, °C for temperature, mg for dosage), make sure to specify in the notes that all values should consistently include the same units across all rows. This ensures validation results maintain proper unit formatting.
 
 ## Search Group Requirements (MANDATORY)
-
 Search groups are **REQUIRED** for every configuration - they are essential for building an effective search strategy and cannot be omitted.
 
 **MANDATORY REQUIREMENTS:**
-- **You MUST define at least two search groups** in the `search_groups` array (Group 0 and another)
-- **Every validation target MUST be assigned to a search group** via the `search_group` field
+- **You MUST define at least two search groups** in the `search_groups` array (Group 0/ID Group and another)
+- **Every validation target MUST be assigned to a search group** via the `search_group` field (except those that are Ignore)
 - **Group 0**: Always ID/identifier fields (not validated, used for context), you must provide an ID group and assign at least one validation target to this. Note - these usually come from the left-most column(s).  
 - **Group 1+**: Columns whose information appears together in typical sources
-- **Upper limit**: No more than 5 gropus allowed
+- **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or Ignore)/3)
+- **Upper limit**: Maximum 10
 - **No ungrouped fields allowed**: Every column must belong to a search group for optimal performance
-
-**Why Search Groups are Mandatory:**
-- **Performance**: Grouped validation is faster and more efficient than individual column validation
-- **Consistency**: Related fields get validated together using the same sources
-- **Cost Optimization**: Reduces API calls by batching related columns
-- **Source Strategy**: Ensures fields that appear together in sources are searched together
 

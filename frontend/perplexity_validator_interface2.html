@@ -729,47 +729,6 @@
         font-size: var(--font-size-small);
     }
 
-    /* Configuration Match Button Styles */
-    .config-action-buttons {
-        display: flex;
-        gap: 15px;
-        margin: 20px 0;
-        justify-content: center;
-    }
-
-    .btn-match-config, .btn-create-ai {
-        flex: 1;
-        padding: 15px 20px;
-        border: 2px solid var(--primary-color);
-        border-radius: var(--border-radius);
-        background: white;
-        color: var(--text-color);
-        cursor: pointer;
-        text-align: center;
-        transition: var(--transition);
-    }
-
-    .btn-match-config:hover, .btn-create-ai:hover {
-        background: var(--primary-color);
-        color: white;
-    }
-
-    .btn-title {
-        font-size: 16px;
-        font-weight: bold;
-        margin-bottom: 5px;
-    }
-
-    .btn-subtitle {
-        font-size: 12px;
-        color: #666;
-        opacity: 0.8;
-    }
-
-    .btn-match-config:hover .btn-subtitle,
-    .btn-create-ai:hover .btn-subtitle {
-        color: rgba(255,255,255,0.8);
-    }
 
     .markdown-content pre {
         background-color: rgba(0,0,0,0.05);
@@ -3197,16 +3156,19 @@
                     
                     // Show configuration options for retry using new system
                     setTimeout(() => {
-                        const cardId = 'upload'; // Use the upload card for retry
+                        // Find the upload card ID dynamically 
+                        const uploadCard = document.querySelector('[data-card-id]');
+                        const uploadCardId = uploadCard ? uploadCard.getAttribute('data-card-id') : 'upload';
+                        
                         if (globalState.matchingConfigs && globalState.matchingConfigs.matches) {
                             const goodMatches = globalState.matchingConfigs.matches.filter(match => match.match_score >= 0.8);
                             if (goodMatches.length > 0) {
-                                showRecentConfigOptions(cardId, goodMatches, globalState.matchingConfigs.table_columns);
+                                showRecentConfigOptions(uploadCardId, goodMatches, globalState.matchingConfigs.table_columns);
                             } else {
-                                showCreateWithAIButton(cardId);
+                                showCreateWithAIButton(uploadCardId);
                             }
                         } else {
-                            showCreateWithAIButton(cardId);
+                            showCreateWithAIButton(uploadCardId);
                         }
                     }, 1500); // Wait a bit for error message to be seen
                 }
@@ -3599,6 +3561,7 @@
                         </div>
                     </div>
                     <div id="${cardId}-messages"></div>
+                    <div id="${cardId}-options"></div>
                 `;
 
                 const card = createCard({
@@ -3741,21 +3704,12 @@
                 // Immediately upload Excel file to establish session
                 try {
                     await uploadExcelFile(cardId, file);
-                    // Check for matching configs and show appropriate options
+                    // Create configuration card after successful upload
                     setTimeout(() => {
-                        if (globalState.matchingConfigs && globalState.matchingConfigs.matches) {
-                            const goodMatches = globalState.matchingConfigs.matches.filter(match => match.match_score >= 0.8);
-                            if (goodMatches.length > 0) {
-                                // Use our new system for configuration options
-                                showRecentConfigOptions('upload', goodMatches, globalState.matchingConfigs.table_columns);
-                            } else {
-                                // No good matches - show only Create with AI button
-                                showCreateWithAIButton('upload');
-                            }
-                        } else {
-                            // No matching configs found - show only Create with AI button  
-                            showCreateWithAIButton('upload');
-                        }
+                        console.log('[DEBUG] Configuration check after upload:');
+                        console.log('[DEBUG] globalState.matchingConfigs:', globalState.matchingConfigs);
+                        
+                        createConfigurationCard();
                     }, 500);
                 } catch (error) {
                     console.error('Excel file upload failed:', error);
@@ -3787,9 +3741,12 @@
                     localStorage.setItem('sessionId', globalState.sessionId);
                     
                     // Store matching configs if found
+                    console.log('[DEBUG] Upload response data.matching_configs:', data.matching_configs);
                     if (data.matching_configs && data.matching_configs.success && data.matching_configs.matches) {
+                        console.log('[DEBUG] Setting globalState.matchingConfigs with', data.matching_configs.matches.length, 'matches');
                         globalState.matchingConfigs = data.matching_configs;
                     } else {
+                        console.log('[DEBUG] No matching configs in response or unsuccessful - setting to null');
                         globalState.matchingConfigs = null;
                     }
                     
@@ -3821,6 +3778,7 @@
                         </div>
                     </div>
                     <div id="${cardId}-messages"></div>
+                    <div id="${cardId}-options"></div>
                 `;
 
                 const card = createCard({
@@ -3974,8 +3932,13 @@
             }
 
             function showCreateWithAIButton(cardId) {
+                console.log('[DEBUG] showCreateWithAIButton called with cardId:', cardId);
                 const optionsContainer = document.getElementById(`${cardId}-options`);
-                if (!optionsContainer) return;
+                if (!optionsContainer) {
+                    console.error('[DEBUG] No options container found for cardId:', cardId);
+                    return;
+                }
+                console.log('[DEBUG] Options container found, displaying single Create AI button');
                 
                 optionsContainer.innerHTML = `
                     <div style="margin: 20px 0; text-align: center;">
@@ -3988,30 +3951,44 @@
             }
 
             async function showRecentConfigOptions(cardId, matches, tableColumns) {
+                console.log('[DEBUG] showRecentConfigOptions called with cardId:', cardId, 'matches:', matches);
                 const optionsContainer = document.getElementById(`${cardId}-options`);
-                if (!optionsContainer) return;
+                if (!optionsContainer) {
+                    console.error('[DEBUG] No options container found for cardId:', cardId);
+                    return;
+                }
+                console.log('[DEBUG] Options container found, processing', matches.length, 'matches');
                 
                 // Clear existing content
                 optionsContainer.innerHTML = '';
                 
                 // Find most recent 100% match only
-                const perfectMatch = matches.find(config =>
-                    Math.round(config.match_score * 100) === 100
-                );
+                console.log('[DEBUG] Looking for perfect matches in:', matches);
+                const perfectMatch = matches.find(config => {
+                    const matchScore = Math.round(config.match_score * 100);
+                    console.log('[DEBUG] Config match score:', matchScore, 'for config:', config);
+                    return matchScore === 100;
+                });
+                
+                console.log('[DEBUG] Perfect match found:', perfectMatch);
 
                 if (!perfectMatch) {
+                    console.log('[DEBUG] No perfect match - showing Create with AI button');
                     // No perfect match - show only "Create with AI"
                     showCreateWithAIButton(cardId);
                     return;
                 }
 
+                console.log('[DEBUG] Showing side-by-side buttons for perfect match');
                 // Show side-by-side buttons: "Use Match" (left) and "Create with AI" (right)
                 showMatchAndCreateButtons(cardId, perfectMatch);
             }
 
-            async function useMatchingConfig(configKey, sourceSession) {
+            window.useMatchingConfig = async function(configKey, sourceSession) {
                 try {
-                    const cardId = 'upload'; // Default card for configuration matching
+                    // Find the upload card ID dynamically
+                    const uploadCard = document.querySelector('[data-card-id]');
+                    const cardId = uploadCard ? uploadCard.getAttribute('data-card-id') : 'upload';
                     showMessage(`${cardId}-messages`, 'Copying configuration from previous session...', 'info');
                     
                     const response = await fetch(`${API_BASE}/validate`, {
@@ -4741,8 +4718,135 @@
             }
 
             // selectCreateWithAI function removed - now handled inline in button callback
+            
+            function createConfigurationCard() {
+                const cardId = generateCardId();
+                console.log('[DEBUG] Creating configuration card with ID:', cardId);
+                
+                // Create the content structure with config input and messages
+                const content = `
+                    <div id="${cardId}-config-list"></div>
+                    <div id="${cardId}-options" style="margin-top: 20px;">
+                        <div style="margin-bottom: 16px;">
+                            <input type="text" 
+                                id="${cardId}-config-id-input" 
+                                class="form-input" 
+                                placeholder="I have a configuration code!" 
+                                style="width: 100%; text-align: center;"
+                                data-card-id="${cardId}"
+                            />
+                        </div>
+                        <div id="${cardId}-button-container"></div>
+                    </div>
+                    <div id="${cardId}-messages"></div>
+                `;
+
+                // Create the card
+                const card = createCard({
+                    id: cardId,
+                    icon: '⚙️',
+                    title: 'Configuration',
+                    subtitle: 'Identify a configuration file with table metadata and research strategy',
+                    content
+                });
+
+                // Hidden file input for config upload
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.accept = '.json';
+                fileInput.style.display = 'none';
+                fileInput.id = `${cardId}-config-file`;
+                fileInput.onchange = (e) => handleConfigUpload(e, cardId);
+                card.appendChild(fileInput);
+
+                // Setup event handlers after DOM is ready
+                setTimeout(() => {
+                    // Config ID input event listeners
+                    const configInput = document.getElementById(`${cardId}-config-id-input`);
+                    if (configInput) {
+                        // Focus/blur handlers for placeholder
+                        configInput.addEventListener('focus', () => {
+                            configInput.placeholder = 'Enter configuration ID...';
+                        });
+                        
+                        configInput.addEventListener('blur', () => {
+                            if (configInput.value === '') {
+                                configInput.placeholder = 'I have a configuration code!';
+                            }
+                        });
+                        
+                        // Enter key handler
+                        configInput.addEventListener('keydown', async (e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const cardIdFromInput = configInput.getAttribute('data-card-id');
+                                if (cardIdFromInput) {
+                                    await handleConfigIdInput(cardIdFromInput);
+                                }
+                            }
+                        });
+                    }
+
+                    // Now populate the green buttons based on matching configs
+                    const buttonContainer = document.getElementById(`${cardId}-button-container`);
+                    if (buttonContainer) {
+                        if (globalState.matchingConfigs && globalState.matchingConfigs.matches) {
+                            console.log('[DEBUG] Found matches:', globalState.matchingConfigs.matches);
+                            const goodMatches = globalState.matchingConfigs.matches.filter(match => match.match_score >= 0.8);
+                            console.log('[DEBUG] Good matches (>=80%):', goodMatches);
+                            
+                            if (goodMatches.length > 0) {
+                                console.log('[DEBUG] Adding side-by-side buttons to container');
+                                // Check for perfect matches
+                                const perfectMatch = goodMatches.find(config => Math.round(config.match_score * 100) === 100);
+                                
+                                if (perfectMatch) {
+                                    buttonContainer.innerHTML = `
+                                        <div style="display: flex; gap: 10px; margin: 20px 0;">
+                                            <button class="std-button primary" onclick="useMatchingConfig('${perfectMatch.config_s3_key}', '${perfectMatch.source_session}')" style="flex: 1;">
+                                                <span class="button-text">🔗 Use Match (100%)</span>
+                                            </button>
+                                            <button class="std-button secondary" onclick="createAIConfigCard(false)" style="flex: 1; background: #6b46c1; border-color: #6b46c1; color: white;">
+                                                <span class="button-text">🤖 Create with AI</span>
+                                            </button>
+                                        </div>
+                                    `;
+                                } else {
+                                    buttonContainer.innerHTML = `
+                                        <div style="margin: 20px 0; text-align: center;">
+                                            <button class="std-button secondary" onclick="createAIConfigCard(false)" style="background: #6b46c1; border-color: #6b46c1; color: white;">
+                                                <span class="button-text">🤖 Create with AI</span>
+                                            </button>
+                                        </div>
+                                    `;
+                                }
+                            } else {
+                                console.log('[DEBUG] No good matches - showing Create with AI button');
+                                buttonContainer.innerHTML = `
+                                    <div style="margin: 20px 0; text-align: center;">
+                                        <button class="std-button secondary" onclick="createAIConfigCard(false)" style="background: #6b46c1; border-color: #6b46c1; color: white;">
+                                            <span class="button-text">🤖 Create with AI</span>
+                                        </button>
+                                    </div>
+                                `;
+                            }
+                        } else {
+                            console.log('[DEBUG] No matching configs found - showing Create with AI button');
+                            buttonContainer.innerHTML = `
+                                <div style="margin: 20px 0; text-align: center;">
+                                    <button class="std-button secondary" onclick="createAIConfigCard(false)" style="background: #6b46c1; border-color: #6b46c1; color: white;">
+                                        <span class="button-text">🤖 Create with AI</span>
+                                    </button>
+                                </div>
+                            `;
+                        }
+                    }
+                }, 100);
+
+                return card;
+            }
             // 4. AI Configuration Card
-            function createAIConfigCard(isRepair = false) {
+            window.createAIConfigCard = function(isRepair = false) {
                 const cardId = generateCardId();
                 const content = `
                     <div id="${cardId}-progress"></div>

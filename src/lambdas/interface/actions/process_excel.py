@@ -124,9 +124,9 @@ def _process_files(excel_file, config_file, email_address, params, context):
         max_rows_str = params.get('max_rows')
         max_rows = int(max_rows_str) if max_rows_str else None
         
-        # Default batch_size to 10 if not provided in the request
+        # Let enhanced batch manager determine optimal batch size if not explicitly provided
         batch_size_str = params.get('batch_size')
-        batch_size = int(batch_size_str) if batch_size_str else 10
+        batch_size = int(batch_size_str) if batch_size_str else None
         
         preview_max_rows_str = params.get('preview_max_rows')
         preview_max_rows = int(preview_max_rows_str) if preview_max_rows_str else 3
@@ -149,9 +149,9 @@ def _process_files(excel_file, config_file, email_address, params, context):
     if preview:
         timestamp = datetime.utcnow().strftime('%H%M%S')
         preview_session_id = f"{session_id}_preview_{timestamp}"
-        create_run_record(session_id=preview_session_id, email=email_address, total_rows=total_rows)
+        create_run_record(session_id=preview_session_id, email=email_address, total_rows=total_rows, batch_size=batch_size)
     else:
-        create_run_record(session_id=session_id, email=email_address, total_rows=total_rows)
+        create_run_record(session_id=session_id, email=email_address, total_rows=total_rows, batch_size=batch_size)
 
     if preview:
         

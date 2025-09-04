@@ -77,12 +77,19 @@ def get_confidence_format(confidence, format_dict):
 def should_update_value(original_confidence, validation_confidence):
     """
     Determine if original value should be updated based on confidence comparison.
-    Only update when validation confidence is higher than original confidence.
+    Only update when validation confidence is higher than or equal to original confidence.
     
     Confidence hierarchy: HIGH > MEDIUM > LOW > None
+    Special case: If original has no confidence (blank/empty values), any validation confidence is better.
     """
-    if is_null_confidence(original_confidence) or is_null_confidence(validation_confidence):
+    # If we have no validation confidence, never update
+    if is_null_confidence(validation_confidence):
         return False
+    
+    # If original has no confidence but we have validation confidence, always update
+    # (any confidence is better than no confidence for blank/empty values)
+    if is_null_confidence(original_confidence):
+        return True
     
     # Define confidence hierarchy (higher number = higher confidence)
     confidence_levels = {
@@ -94,8 +101,8 @@ def should_update_value(original_confidence, validation_confidence):
     original_level = confidence_levels.get(str(original_confidence).strip().upper(), 0)
     validation_level = confidence_levels.get(str(validation_confidence).strip().upper(), 0)
     
-    # Only update if validation confidence is strictly higher than original
-    return validation_level > original_level
+    # Only update if validation confidence is higher than or equal to original
+    return validation_level >= original_level
 
 def create_enhanced_excel_with_validation(excel_data, validation_results, config_data, session_id, skip_history=False, validated_sheet_name=None):
     """Create 3-sheet Excel file with validation results.
@@ -290,6 +297,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 validation_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
                                 
                                 # Only update if validation confidence is higher than original confidence
+                                # Now properly handles case where original has no confidence (blank values)
                                 if should_update_value(original_confidence, validation_confidence):
                                     updated_value = field_data.get('value', original_value)
                         

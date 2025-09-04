@@ -35,10 +35,22 @@ def copy_config_to_session(email: str, session_id: str, config_data: Dict[str, A
         source_session = source_info.get('source_session') or source_metadata.get('session_id')
         source_description = source_metadata.get('description', config_data.get('general_notes', ''))
         
-        # Remove storage metadata from source config to avoid conflicts
+        # Extract original filename for preservation - check multiple sources
+        source_filename = source_info.get('source_filename') or source_info.get('config_filename')
+        if not source_filename and source_info.get('source_config_key'):
+            source_filename = Path(source_info['source_config_key']).name
+        
+        # If still no filename, try to get it from the original_name metadata
+        if not source_filename and original_name:
+            # If original_name looks like a filename, use it
+            if '.' in original_name:
+                source_filename = original_name
+            else:
+                # Generate filename from original_name
+                source_filename = f"{original_name}.json"
+        
+        # Keep all config data including metadata
         clean_config_data = config_data.copy()
-        if 'storage_metadata' in clean_config_data:
-            del clean_config_data['storage_metadata']
         
         # Get current config version for the target session
         existing_config, _ = storage_manager.get_latest_config(email, session_id)
@@ -46,7 +58,7 @@ def copy_config_to_session(email: str, session_id: str, config_data: Dict[str, A
         if existing_config and existing_config.get('storage_metadata', {}).get('version'):
             version = existing_config['storage_metadata']['version'] + 1
         
-        # Store the copied config with preserved original_name chain
+        # Store the copied config with preserved original_name chain and filename
         storage_result = storage_manager.store_config_file(
             email=email, 
             session_id=session_id, 
@@ -55,7 +67,8 @@ def copy_config_to_session(email: str, session_id: str, config_data: Dict[str, A
             source=f"auto_copied_{source_session}",
             description=source_description,
             original_name=original_name,  # Preserve original name chain
-            source_session=source_session
+            source_session=source_session,
+            preserve_original_filename=source_filename  # Keep exact filename
         )
         
         if storage_result['success']:
@@ -134,10 +147,20 @@ def handle_copy_config(event_data, context=None):
         original_name = source_metadata.get('original_name') or source_metadata.get('config_id')
         source_description = source_metadata.get('description', source_config_data.get('general_notes', ''))
         
-        # Remove storage metadata from source config to avoid conflicts
+        # Extract original filename from S3 key for preservation
+        original_filename = Path(source_config_key).name if source_config_key else None
+        
+        # If no filename from S3 key, try to get it from the original_name metadata
+        if not original_filename and original_name:
+            # If original_name looks like a filename, use it
+            if '.' in original_name:
+                original_filename = original_name
+            else:
+                # Generate filename from original_name
+                original_filename = f"{original_name}.json"
+        
+        # Keep all config data including metadata
         clean_config_data = source_config_data.copy()
-        if 'storage_metadata' in clean_config_data:
-            del clean_config_data['storage_metadata']
         
         # Get current config version for the target session
         existing_config, _ = storage_manager.get_latest_config(email, session_id)
@@ -145,7 +168,7 @@ def handle_copy_config(event_data, context=None):
         if existing_config and existing_config.get('storage_metadata', {}).get('version'):
             version = existing_config['storage_metadata']['version'] + 1
         
-        # Store the copied config with preserved original_name chain
+        # Store the copied config with preserved original_name chain and filename
         storage_result = storage_manager.store_config_file(
             email=email, 
             session_id=session_id, 
@@ -154,7 +177,8 @@ def handle_copy_config(event_data, context=None):
             source='copied_from_previous',
             description=source_description,
             original_name=original_name,  # Preserve original name chain
-            source_session=source_session
+            source_session=source_session,
+            preserve_original_filename=original_filename  # Keep exact filename
         )
         
         if not storage_result['success']:

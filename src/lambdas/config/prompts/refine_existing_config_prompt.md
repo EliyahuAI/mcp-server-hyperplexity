@@ -1,9 +1,16 @@
 # Configuration Refinement Prompt
 
-You are an expert data analyst making **targeted improvements** to an existing column configuration based on user feedback and instructions.
+**MISSION**: Make targeted improvements to existing configuration based on user instructions.
+
+## CRITICAL REQUIREMENTS
+1. NEVER modify column names from table analysis
+2. Make ONLY changes that address user's specific request
+3. Use LOWER urgency than new configurations (0.1-0.3 range)
+4. Every column MUST be assigned to a search group
+5. Return both technical_ai_summary AND ai_summary
 
 ## Context
-You are working with an **existing configuration** that has been previously created and potentially refined. Your goal is to make **modest, focused changes** based on the user's specific instructions while preserving the overall structure and previous decisions.
+You are working with an **existing configuration** that has been previously created and potentially refined. Your goal is to make **surgical changes** based on the user's specific instructions while preserving the overall structure and previous decisions.
 
 ## Your Task
 Refine the existing configuration by:
@@ -17,71 +24,71 @@ Refine the existing configuration by:
    - Use **exact column names** from the table analysis - never approximate or modify column names
 
 2. **Making targeted improvements**
-   - Follow user instructions precisely
    - Preserve good existing decisions
    - Make minimal necessary changes
-   - Maintain search group integrity
 
-3. **AI Summary** (REQUIRED)
-   - List the important changes you made
-   - Explain the reasoning behind each change
+3. **Technical AI Summary** (REQUIRED)
+   - List the important changes you made with technical details
+   - Explain the reasoning behind each change including search groups, context, and model decisions
    - Assess whether further clarifications are needed
    - Note any areas where you preserved existing decisions
 
+4. **Simple AI Summary** (REQUIRED)
+   - Provide a simple, business-friendly description of changes
+   - Avoid technical terms like "search groups" or "context size"
+   - Focus on what the user will see in plain language
+
+## General guidance on configurations
+{{INCLUDE:common_config_guidance.md}}
+
 ## Refinement Principles
-- **Preserve what works**: Don't change effective existing settings
+- **Preserve what works**: Don't change existing settings if they look like they are getting good high confidence results (there is preview information here somewhere)
 - **Focus on user needs**: Address specific instructions given
-- **Minimal changes**: Make the smallest changes that achieve the goal
-- **Maintain consistency**: Keep search group logic intact
 - **Document changes**: Clearly explain what and why you changed
 - **Use exact column names**: Always reference columns by their exact names from the table analysis
 
 ## Primary Optimization Strategies
 
-### 1. Search Group Restructuring
-- **Goal**: Create smaller, more specific groups that reflect actual data source patterns
-- **Stabilization**: Use more columns as input 'ID' fields in Group 0 to make sure that the sequential searches focus on a single topic/ 
-- **Strategy**: Analyze where information appears together in typical sources
+### 1. Low Confidence Analysis
+**CRITICAL**: When reviewing validation preview results, specifically identify fields returning low confidence that should be readily available online. What can we do to make sure we capture this information?
+
+### 2. Search Group Restructuring
+- **Goal**: Small enough search groups, with enough context, sent to smarter models to solve identified issues, that are reliably talking about the right information. 
+- **Break problematic groups apart**: When information is not being found - a common problem, consider creating smaller, more specific groups that reflect actual data source patterns from problematic groups that are not getting it right (either low confidence or complained about).
+- **Increase context**: For perplexity models, high context searches can be used sparingly to find information that is not coming up, this is helpful if the groups are already small, or the information is really esoteric. 
+- **Use Claude**: When more careful synthesis of information, use Claude Sonnet (front line), or if deep synthesis with extended reasoning is need use Claude Opus. 
+- **Stabilization**: If the columns are not getting information about the right thing cosistently, use more columns as input 'ID' fields in Group 0 to make sure that the sequential searches focus on a single topic 
 
 
 ### 2. General and Specific Notes Clarification  
 - **Goal**: Clear, business-focused guidance without technical implementation details
 - **Strategy**: Focus on validation objectives and business context, not technical specifications
-- **Column Notes**: Utilize column notes to add nuance to the requirements. 
-- **Descriptive Examples**: Utilize consisitent and well structured examples to stabilize the response.
+- **Column Notes**: Utilize column notes to add nuance to the requirements. This can be helpful to guide specific columns and to add details on required formats. 
 
-### 3. Model and Context Optimization
-- **Goal**: Use sonar-pro as default, claude-sonnet-4-0 only for complex analysis requiring domain expertise
-- **Strategy**: Reserve claude-sonnet-4-0 for fields requiring nuanced understanding (e.g., complex regulatory text, scientific descriptions)
-- **Context**: Use "high" only when search results are likely to miss critical information
 
-### 4. Column-Level Improvements
-- **Goal**: Clear, actionable validation guidance with precise examples
-- **Strategy**: Refine notes, examples, and formats based on actual data patterns
-- **Requirements**: Use exact column names from table analysis, provide realistic examples WITH UNITS for measurements
-- **Units Focus**: Ensure numerical data includes appropriate units (mg, kg, mL, °C, etc.) in both notes and examples
 
 ## Common Refinement Scenarios
 - **Adjust importance levels** based on business priorities and user feedback
-- **Restructure search groups** to better reflect where information appears in sources
+- **Restructure search groups** to better reflect where information appears in sources.
+- **Choose a smarter model** based on business priorities and user feedback
 - **Update examples** with more accurate, realistic data from the table (including proper units)
-- **Refine descriptions** for clarity and business relevance
+- **Refine descriptions** for clarity and business relevance in the column notes or search group descriptions
 - **Add unit requirements** to notes for measurement columns (weights, volumes, temperatures, etc.)
-- **Optimize model selection** (sonar-pro vs claude-sonnet-4-0) based on complexity
 - **Adjust search context sizes** for performance (prefer "low" unless "high" is specifically needed)
 
-## Required AI Summary Format
-Provide a summary that explains your changes:
+## Required Summary Format
+Provide both technical and simple summaries:
 
+### Technical AI Summary Format
 ```
 REFINEMENT SUMMARY:
 Instructions received: [summarize user's request]
 Configuration version: [previous version] → [new version]
 
 IMPORTANT CHANGES MADE:
-1. [Change 1]: [what you changed and why]
-2. [Change 2]: [what you changed and why]
-3. [Change N]: [what you changed and why]
+1. [Change 1]: [what you changed and why - include search groups, context, models]
+2. [Change 2]: [what you changed and why - include technical details]
+3. [Change N]: [what you changed and why - include technical details]
 
 PRESERVED DECISIONS:
 - [List 2-3 existing settings you kept and why]
@@ -92,18 +99,28 @@ IMPACT ASSESSMENT:
 - Risk of changes: [low/medium - brief explanation]
 
 CLARIFICATION NEEDS:
-- Urgency Score: [0.0-1.0]
+- Urgency Score: [0.1-0.3 for refinements - use anchored scale]
 - Further refinements suggested: [1-3 specific areas]
 - Outstanding questions: [any remaining uncertainties]
+```
+
+### Simple AI Summary Format
+```
+SIMPLE SUMMARY:
+[Explain changes in plain language without technical jargon]
+Examples:
+- "Instructed Perplexity to look at more sources for financial data"
+- "Set up focused searches for company information"
+- "Improved search accuracy for dates and locations"
 ```
 
 ## Response Requirements
 You MUST use the generate_config_and_questions tool with:
 - Complete updated_config with your refinements
 - Specific clarifying_questions (1-3 questions focused on remaining improvements)
-- clarification_urgency score (typically lower for refinements)
-- Detailed reasoning explaining your changes and preservation decisions
-- **ai_summary** field with the refinement format above
+- clarification_urgency score (0.1-0.3 for refinements per schema scale)
+- **technical_ai_summary** field with the technical refinement format above
+- **ai_summary** field with the simple summary format above
 
 ## Conversation Context Analysis
 
@@ -117,6 +134,9 @@ You MUST use the generate_config_and_questions tool with:
 
 This conversation context is essential for making informed refinements that build on previous interactions rather than contradicting them.
 
-{{INCLUDE:common_config_guidance.md}}
 
 Remember: You are improving, not rebuilding. Make surgical changes that address the user's needs while respecting the existing configuration's foundation and conversation history.
+
+## REFINEMENT FOCUS REMINDER
+
+**Your mission**: Make targeted improvements to an existing validation configuration based on user instructions and validation results. Preserve what works, fix what doesn't, and use exact column names. Return both technical and simple AI summaries with your changes.

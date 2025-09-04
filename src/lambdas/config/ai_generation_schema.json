@@ -63,7 +63,7 @@
     },
     "clarification_urgency": {
       "type": "number",
-      "description": "Urgency score from 0-1: 0 = no clarification needed, 1 = critical columns will likely be wrong without clarification"
+      "description": "Urgency score from 0-1 with anchored levels:\n0.0-0.1 = MINIMAL (configuration is solid, minor tweaks only)\n0.2-0.3 = LOW (refinements should typically use this range - good foundation, some improvements possible)\n0.4-0.6 = MODERATE (several important clarifications needed)\n0.7-0.8 = HIGH (significant assumptions made, clarification strongly recommended)\n0.9-1.0 = CRITICAL (core columns will likely be wrong without clarification)\n\nREFINEMENT RULE: Refinements must use LOWER urgency than new configurations (typically 0.1-0.3) since they build on existing validated foundations."
     },
     "technical_ai_summary": {
       "type": "string",

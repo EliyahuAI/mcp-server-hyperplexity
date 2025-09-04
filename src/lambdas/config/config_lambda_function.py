@@ -28,6 +28,20 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def load_config_settings():
+    """Load configuration settings from JSON file"""
+    import os
+    settings_path = os.path.join(os.path.dirname(__file__), 'config_settings.json')
+    try:
+        with open(settings_path, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # Fallback to defaults
+        return {
+            'max_tokens': 16000,
+            'model': ['claude-opus-4-1', 'claude-4-opus-20240229', 'claude-sonnet-4-0']
+        }
+
 def send_websocket_progress(session_id: str, message: str, progress: int = None):
     """Send progress update via WebSocket"""
     if websocket_client and session_id:
@@ -168,11 +182,13 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         # Call Claude using shared client with unified schema
         schema = get_unified_generation_schema()
         
+        config_settings = load_config_settings()
         result = await ai_client.call_structured_api(
             prompt=prompt,
             schema=schema,
-            model="claude-sonnet-4-0",
-            tool_name="generate_config_and_questions"
+            model=config_settings.get('model', 'claude-opus-4-1'),
+            tool_name="generate_config_and_questions",
+            max_tokens=config_settings.get('max_tokens', 16000)
             # Removed context parameter - it was incorrectly using session_id
             # Context should be for search_context_size in validation calls
         )
@@ -332,25 +348,27 @@ def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict 
     
     base_prompt = f"""{prompt_template}
 
-TABLE ANALYSIS:
+# TABLE ANALYSIS
+
+**File Information:**
 - File: {basic_info.get('filename', 'Unknown')}
 - Size: {basic_info.get('shape', [0, 0])[0]} rows × {basic_info.get('shape', [0, 0])[1]} columns
 - Domain: {domain_info.get('likely_domain', 'general')} (confidence: {domain_info.get('confidence', 0)})
 
-ALL COLUMN NAMES ({len(basic_info.get('column_names', []))} total):
+**All Column Names ({len(basic_info.get('column_names', []))} total):**
 {', '.join(basic_info.get('column_names', []))}
 
-CRITICAL REQUIREMENT: Your configuration MUST include a validation_target entry for EVERY SINGLE one of these {len(basic_info.get('column_names', []))} columns. No column can be omitted.
+**CRITICAL REQUIREMENT:** Your configuration MUST include a validation_target entry for EVERY SINGLE one of these {len(basic_info.get('column_names', []))} columns. No column can be omitted.
 
-COLUMN DETAILS:"""
+## Column Details"""
     
     for col_name, col_info in column_analysis.items():
         sample_values = col_info.get('sample_values', [])[:3]
         base_prompt += f"""
-{col_name}:
-  - Type: {col_info.get('data_type', 'Unknown')}
-  - Fill Rate: {col_info.get('fill_rate', 0):.1%}
-  - Sample Values: {sample_values}"""
+**{col_name}:**
+- Type: {col_info.get('data_type', 'Unknown')}
+- Fill Rate: {col_info.get('fill_rate', 0):.1%}
+- Sample Values: {sample_values}"""
     
     if existing_config:
         # Extract conversation history for context
@@ -358,29 +376,57 @@ COLUMN DETAILS:"""
         current_version = existing_config.get('generation_metadata', {}).get('version', 1)
         next_version = current_version + 1
         
+        # Always add the existing configuration section header
+        base_prompt += f"""
+
+# EXISTING CONFIGURATION
+"""
+        
         if change_log:
             base_prompt += f"""
-
-EXISTING CONFIGURATION:
 This configuration has been iteratively improved through {len(change_log)} previous interactions.
 
-Recent conversation history:"""
+## Recent Conversation History
+"""
             # Include last 3 interactions for context
             for entry in change_log[-3:]:
                 base_prompt += f"""
-- {entry.get('timestamp', 'Unknown')}: "{entry.get('instructions', 'No instructions')}"
-  Response: {entry.get('clarifying_questions', 'No questions')[:100]}..."""
+- **{entry.get('timestamp', 'Unknown')}**: "{entry.get('instructions', 'No instructions')}"
+  - Response: {entry.get('clarifying_questions', 'No questions')[:100]}...
+"""
+        else:
+            base_prompt += f"""
+This is the current configuration that needs to be refined.
+"""
         
         base_prompt += f"""
 
-CURRENT CONFIGURATION SUMMARY:
-- Search Groups: {len(existing_config.get('search_groups', []))}
-- Validation Targets: {len(existing_config.get('validation_targets', []))}
-- General Notes: {existing_config.get('general_notes', 'None')[:200]}..."""
+## Current Configuration Summary
+- **Search Groups**: {len(existing_config.get('search_groups', []))}
+- **Validation Targets**: {len(existing_config.get('validation_targets', []))}
+- **General Notes**: {existing_config.get('general_notes', 'None')[:200]}...
+
+## Complete Current Configuration
+
+Here is the full current configuration that you need to refine:
+
+```json
+{json.dumps(existing_config, indent=2)}
+```
+
+**IMPORTANT**: You MUST work with this existing configuration structure. Make only the specific changes requested by the user while preserving the overall structure and any settings that are working well."""
         
         # Add validation results context if available
+        logger.info(f"VALIDATION_CONTEXT_DEBUG: latest_validation_results type: {type(latest_validation_results)}, is_none: {latest_validation_results is None}")
+        if latest_validation_results is not None:
+            logger.info(f"VALIDATION_CONTEXT_DEBUG: latest_validation_results is NOT None, proceeding with processing")
+        else:
+            logger.info(f"VALIDATION_CONTEXT_DEBUG: latest_validation_results is None, skipping validation context section")
+            
         if latest_validation_results:
             try:
+                logger.info(f"Processing validation results for context. Keys: {list(latest_validation_results.keys())}")
+                
                 # Extract key validation insights
                 validation_summary = latest_validation_results.get('summary', {})
                 overall_confidence = validation_summary.get('overall_confidence', 'Unknown')
@@ -389,54 +435,133 @@ CURRENT CONFIGURATION SUMMARY:
                 
                 base_prompt += f"""
 
-LATEST VALIDATION RESULTS CONTEXT:
+# LATEST VALIDATION RESULTS
+
 This configuration was recently tested with validation. Use these results to inform your refinements:
-- Overall Confidence: {overall_confidence}
-- Validation Errors: {error_count}
-- Validation Warnings: {warning_count}"""
+
+## Validation Summary
+- **Overall Confidence**: {overall_confidence}
+- **Validation Errors**: {error_count}
+- **Validation Warnings**: {warning_count}"""
                 
                 # Include specific error/warning patterns if present
                 if error_count > 0:
                     errors = latest_validation_results.get('validation_errors', [])[:3]  # First 3 errors
                     base_prompt += f"""
-- Recent Error Examples: {[err.get('message', 'Unknown error')[:100] for err in errors]}"""
+
+## Recent Error Examples
+{chr(10).join([f"- {err.get('message', 'Unknown error')[:100]}..." for err in errors])}"""
                 
                 if warning_count > 0:
                     warnings = latest_validation_results.get('validation_warnings', [])[:3]  # First 3 warnings
                     base_prompt += f"""
-- Recent Warning Examples: {[warn.get('message', 'Unknown warning')[:100] for warn in warnings]}"""
+
+## Recent Warning Examples
+{chr(10).join([f"- {warn.get('message', 'Unknown warning')[:100]}..." for warn in warnings])}"""
+                
+                # Include first 3 rows of actual validation results for detailed refinement context
+                row_results = latest_validation_results.get('validation_results', {})
+                markdown_table = latest_validation_results.get('markdown_table', '')
+                logger.info(f"Row results available: {bool(row_results)}, markdown_table available: {bool(markdown_table)}")
+                
+                if row_results:
+                    # Use detailed validation_results structure (full validation)
+                    base_prompt += f"""
+
+## Detailed Validation Results - First 3 Rows
+
+This shows how the current configuration performed on the first few rows:"""
+                    
+                    for row_idx in ["0", "1", "2"]:
+                        if row_idx in row_results:
+                            row_data = row_results[row_idx]
+                            logger.info(f"Processing row {row_idx}, columns: {len(row_data) if isinstance(row_data, dict) else 'not dict'}")
+                            base_prompt += f"""
+
+### Row {int(row_idx) + 1} Results"""
+                            
+                            # Show validation results for each column in this row
+                            for col_name, col_result in row_data.items():
+                                if isinstance(col_result, dict) and 'confidence' in col_result:
+                                    confidence = col_result.get('confidence', 0)
+                                    confidence_level = col_result.get('confidence_level', 'UNKNOWN')
+                                    value = col_result.get('value', 'N/A')
+                                    update_required = col_result.get('update_required', False)
+                                    
+                                    # Truncate long values for readability
+                                    display_value = str(value)[:100] + "..." if len(str(value)) > 100 else str(value)
+                                    
+                                    base_prompt += f"""
+- **{col_name}**: "{display_value}" 
+  - Confidence: {confidence:.2f}
+  - Level: {confidence_level}{"" if not update_required else " ⚠️ NEEDS UPDATE"}"""
+                
+                elif markdown_table:
+                    # Use preview results markdown table (preview validation)
+                    logger.info("Using markdown table from preview results")
+                    base_prompt += f"""
+
+## Validation Preview Results
+
+This shows how the current configuration performed on the first few rows:
+
+{markdown_table}
+
+### Key Observations from Preview:
+- 🔵 **ID/Input fields** are working correctly for row identification
+- 🟢 **High confidence fields** are finding information successfully  
+- 🟡 **Medium confidence fields** may need optimization
+- 🔴 **Low confidence fields** require immediate attention - these should be readily available online"""
+                
+                else:
+                    logger.info("No row results or markdown table found in validation results structure")
+                    base_prompt += f"""
+
+## Validation Results Note
+Validation results were found but contain no detailed row data or markdown table for analysis."""
                     
             except Exception as e:
-                logger.warning(f"Could not parse validation results for context: {e}")
+                logger.error(f"Could not parse validation results for context: {e}")
+                import traceback
+                logger.error(f"Validation results parsing traceback: {traceback.format_exc()}")
                 base_prompt += f"""
 
-LATEST VALIDATION RESULTS: Available but could not be parsed for context"""
+## Validation Results Error
+Latest validation results were available but could not be parsed for context."""
+        else:
+            logger.info("No latest_validation_results provided for refinement context")
     
     base_prompt += f"""
 
-USER INSTRUCTIONS: {instructions}
+# USER INSTRUCTIONS
 
-TASK: You must ALWAYS provide both:
-1. An updated/optimized configuration (required search groups + validation targets)
-2. Clarifying questions to gather more information for further improvements
+{instructions}
 
-Requirements:
+# TASK REQUIREMENTS
+
+You must ALWAYS provide both:
+1. **An updated/optimized configuration** (required search groups + validation targets)
+2. **Clarifying questions** to gather more information for further improvements
+
+## Configuration Requirements
 - Update the configuration based on the instructions and table analysis
-- MANDATORY: Include exactly {len(basic_info.get('column_names', []))} validation_targets (one for each column)
+- **MANDATORY**: Include exactly {len(basic_info.get('column_names', []))} validation_targets (one for each column)
 - Generate 2-4 specific clarifying questions that would help improve the configuration further
 - Set clarification_urgency (0-1 scale): 
-  * 0.0 = Configuration is solid, no clarification needed
-  * 0.1-0.3 = Minor improvements possible with clarification
-  * 0.4-0.6 = Moderate improvements likely with clarification  
-  * 0.7-0.9 = Important columns may have suboptimal settings
-  * 1.0 = Critical columns will likely be wrong without clarification
+  * **0.0** = Configuration is solid, no clarification needed
+  * **0.1-0.3** = Minor improvements possible with clarification
+  * **0.4-0.6** = Moderate improvements likely with clarification  
+  * **0.7-0.9** = Important columns may have suboptimal settings
+  * **1.0** = Critical columns will likely be wrong without clarification
 - Include your reasoning for the changes made
 
-VALIDATION CHECKLIST - Verify your response includes:
-✓ Exactly {len(basic_info.get('column_names', []))} validation_targets
-✓ Each column name appears once: {', '.join(basic_info.get('column_names', []))}
+## Validation Checklist
+Verify your response includes:
+- ✅ Exactly {len(basic_info.get('column_names', []))} validation_targets
+- ✅ Each column name appears once: {', '.join(basic_info.get('column_names', []))}
 
-Use the generate_config_and_questions tool to return both the configuration and questions."""
+## Final Step
+Use the **generate_config_and_questions** tool to return both the configuration and questions."""
     
     return base_prompt
 
@@ -587,7 +712,7 @@ def add_conversation_entry(updated_config: Dict, existing_config: Dict = None,
         'ai_summary': ai_summary,
         'technical_ai_summary': technical_ai_summary,
         'version': current_version,
-        'model_used': 'claude-sonnet-4-0'
+        'model_used': 'claude-opus-4-1'
     }
     
     # Add config filename if provided
@@ -604,7 +729,7 @@ def add_conversation_entry(updated_config: Dict, existing_config: Dict = None,
         'version': current_version,
         'last_updated': datetime.now().isoformat(),
         'total_interactions': len(updated_config['config_change_log']),
-        'model_used': 'claude-sonnet-4-0'
+        'model_used': 'claude-opus-4-1'
     })
     
     # Add saved filename to metadata if provided

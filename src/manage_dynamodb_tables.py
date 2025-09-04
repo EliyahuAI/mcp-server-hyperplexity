@@ -35,6 +35,8 @@ DOMAIN_MULTIPLIERS_TABLE = "perplexity-validator-domain-multipliers"
 RUNS_TABLE = "perplexity-validator-runs"
 TOKEN_USAGE_TABLE = "perplexity-validator-token-usage"
 WS_CONNECTIONS_TABLE = "perplexity-validator-ws-connections"
+BATCH_AUDIT_TABLE = "perplexity-validator-batch-audit"
+MODEL_CONFIG_TABLE = "perplexity-validator-model-config"
 
 # Logical column ordering for CSV exports
 USER_VALIDATION_COLUMNS = [
@@ -725,6 +727,8 @@ def show_dashboard():
             (ACCOUNT_TRANSACTIONS_TABLE, "Account Transactions"),
             (DOMAIN_MULTIPLIERS_TABLE, "Domain Multipliers"),
             (USER_VALIDATION_TABLE, "Email Validation"),
+            (BATCH_AUDIT_TABLE, "Batch Size Audit"),
+            (MODEL_CONFIG_TABLE, "Model Configuration"),
             (WS_CONNECTIONS_TABLE, "WebSocket Connections")
         ]
         
@@ -1023,7 +1027,8 @@ def export_all_tables_to_csv(output_dir="events", limit=None):
     tables_to_export = [
         USER_VALIDATION_TABLE, USER_TRACKING_TABLE, RUNS_TABLE,
         ACCOUNT_TRANSACTIONS_TABLE, DOMAIN_MULTIPLIERS_TABLE,
-        TOKEN_USAGE_TABLE, WS_CONNECTIONS_TABLE
+        TOKEN_USAGE_TABLE, WS_CONNECTIONS_TABLE, BATCH_AUDIT_TABLE,
+        MODEL_CONFIG_TABLE
     ]
     exported_files = []
     
@@ -1402,6 +1407,17 @@ Account Management Commands:
     python manage_dynamodb_tables.py get-multiplier <domain>            # Get domain cost multiplier
     python manage_dynamodb_tables.py set-global-multiplier <multiplier> # Set global cost multiplier
     python manage_dynamodb_tables.py create-account-tables              # Create account management tables
+    
+Batch Size Audit Commands:
+    python manage_dynamodb_tables.py batch-history <model> [limit]      # View batch size history for model
+    python manage_dynamodb_tables.py recent-batch-changes [hours] [limit] # Recent batch changes across all models  
+    python manage_dynamodb_tables.py create-batch-audit-table           # Create batch audit table
+
+Model Configuration Management Commands:
+    python manage_dynamodb_tables.py load-model-config <csv_file>       # Load model configurations from CSV
+    python manage_dynamodb_tables.py list-model-configs                 # List all model configurations
+    python manage_dynamodb_tables.py test-model-config <model_name>     # Test model pattern matching
+    python manage_dynamodb_tables.py create-model-config-table          # Create model config table
 
 Examples:
     python manage_dynamodb_tables.py validation eliyahu@eliyahu.ai
@@ -1418,6 +1434,12 @@ Examples:
     python manage_dynamodb_tables.py get-multiplier eliyahu.ai
     python manage_dynamodb_tables.py set-global-multiplier 5.0
     python manage_dynamodb_tables.py create-account-tables
+    
+    python manage_dynamodb_tables.py batch-history claude-4-opus 10
+    python manage_dynamodb_tables.py recent-batch-changes 24 20
+    python manage_dynamodb_tables.py load-model-config src/config/unified_model_config.csv
+    python manage_dynamodb_tables.py list-model-configs
+    python manage_dynamodb_tables.py test-model-config claude-4-sonnet
         """)
         return
     
@@ -1568,9 +1590,237 @@ Examples:
     elif command == "create-account-tables":
         create_account_tables()
     
+    elif command == "batch-history":
+        if len(sys.argv) < 3:
+            print("Usage: python manage_dynamodb_tables.py batch-history <model_name> [limit]")
+            return
+        model_name = sys.argv[2]
+        limit = int(sys.argv[3]) if len(sys.argv) > 3 else 50
+        get_batch_audit_history(model_name, limit)
+    
+    elif command == "recent-batch-changes":
+        hours = int(sys.argv[2]) if len(sys.argv) > 2 else 24
+        limit = int(sys.argv[3]) if len(sys.argv) > 3 else 100
+        get_recent_batch_changes(hours, limit)
+    
+    elif command == "create-batch-audit-table":
+        create_batch_audit_table_command()
+    
+    elif command == "load-model-config":
+        if len(sys.argv) < 3:
+            print("Usage: python manage_dynamodb_tables.py load-model-config <csv_file_path>")
+            return
+        csv_file_path = sys.argv[2]
+        load_model_config_command(csv_file_path)
+    
+    elif command == "list-model-configs":
+        list_model_configs_command()
+    
+    elif command == "test-model-config":
+        if len(sys.argv) < 3:
+            print("Usage: python manage_dynamodb_tables.py test-model-config <model_name>")
+            return
+        model_name = sys.argv[2]
+        test_model_config_command(model_name)
+    
+    elif command == "create-model-config-table":
+        create_model_config_table_command()
+    
     else:
         print(f"Unknown command: {command}")
         print("Use 'python manage_dynamodb_tables.py' for help.")
+
+def get_batch_audit_history(model_name, limit=50):
+    """Get batch size change history for a specific model."""
+    try:
+        from shared.batch_audit_logger import BatchAuditLogger
+        audit_logger = BatchAuditLogger()
+        
+        history = audit_logger.get_model_history(model_name, limit)
+        
+        print(f"\n=== Batch Size History for {model_name} ===")
+        if history:
+            print(f"Found {len(history)} changes:\n")
+            for i, entry in enumerate(history, 1):
+                timestamp = entry.get('timestamp', 'Unknown')[:19]
+                old_size = entry.get('old_batch_size', 0)
+                new_size = entry.get('new_batch_size', 0)
+                change = entry.get('change_amount', 0)
+                change_percent = float(entry.get('change_percent', 0))
+                reason = entry.get('change_reason', 'unknown')
+                session = entry.get('session_id', 'N/A')
+                
+                change_str = f"{change:+d} ({change_percent:+.1f}%)"
+                print(f"{i:3d}. {timestamp}  {old_size:3d} → {new_size:3d}  {change_str:>12}  {reason}")
+                print(f"     Session: {session}")
+                
+                # Show additional context if available
+                context_str = entry.get('additional_context', '{}')
+                try:
+                    import json
+                    context = json.loads(context_str)
+                    if context:
+                        context_parts = []
+                        for key, value in context.items():
+                            if key in ['consecutive_successes', 'consecutive_failures', 'rate_limit_count']:
+                                context_parts.append(f"{key}: {value}")
+                            elif key in ['increase_factor', 'decrease_factor', 'weight']:
+                                context_parts.append(f"{key}: {value:.2f}")
+                        if context_parts:
+                            print(f"     Context: {', '.join(context_parts)}")
+                except:
+                    pass
+                print()
+        else:
+            print("No batch size changes found for this model.")
+        
+        return history
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to get batch audit history: {e}")
+        return []
+
+def get_recent_batch_changes(hours=24, limit=100):
+    """Get recent batch size changes across all models."""
+    try:
+        from shared.batch_audit_logger import BatchAuditLogger
+        audit_logger = BatchAuditLogger()
+        
+        changes = audit_logger.get_recent_changes(hours, limit)
+        
+        print(f"\n=== Recent Batch Changes (Last {hours} Hours) ===")
+        if changes:
+            print(f"Found {len(changes)} changes:\n")
+            for i, entry in enumerate(changes, 1):
+                timestamp = entry.get('timestamp', 'Unknown')[:19]
+                model = entry.get('model', 'Unknown')
+                old_size = entry.get('old_batch_size', 0)
+                new_size = entry.get('new_batch_size', 0)
+                change = entry.get('change_amount', 0)
+                reason = entry.get('change_reason', 'unknown')
+                
+                change_str = f"{change:+d}"
+                model_short = model[:30] + "..." if len(model) > 30 else model
+                print(f"{i:3d}. {timestamp}  {model_short:<33}  {old_size:3d}→{new_size:3d} ({change_str:>4})  {reason}")
+        else:
+            print("No recent batch size changes found.")
+        
+        return changes
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to get recent batch changes: {e}")
+        return []
+
+def create_batch_audit_table_command():
+    """Create the batch audit table."""
+    try:
+        from shared.batch_audit_logger import create_batch_audit_table
+        table = create_batch_audit_table()
+        if table:
+            print("[SUCCESS] Batch audit table created successfully!")
+        else:
+            print("[ERROR] Failed to create batch audit table.")
+    except Exception as e:
+        print(f"[ERROR] Failed to create batch audit table: {e}")
+
+def load_model_config_command(csv_file_path):
+    """Load model configurations from CSV into DynamoDB."""
+    try:
+        from shared.model_config_table import ModelConfigTable
+        config_table = ModelConfigTable()
+        
+        loaded_count = config_table.load_config_from_csv(csv_file_path)
+        if loaded_count > 0:
+            print(f"[SUCCESS] Loaded {loaded_count} model configurations from {csv_file_path}")
+        else:
+            print("[ERROR] Failed to load any configurations.")
+    except Exception as e:
+        print(f"[ERROR] Failed to load model configurations: {e}")
+
+def list_model_configs_command():
+    """List all model configurations."""
+    try:
+        from shared.model_config_table import ModelConfigTable
+        config_table = ModelConfigTable()
+        
+        configs = config_table.list_all_configs()
+        
+        print("\n=== Model Configurations ===")
+        if configs:
+            print(f"Found {len(configs)} configurations:\n")
+            for i, config in enumerate(configs, 1):
+                try:
+                    pattern = str(config.get('model_pattern', 'Unknown'))
+                    provider = str(config.get('api_provider', 'unknown'))
+                    priority = int(config.get('priority', 999))
+                    min_batch = int(config.get('min_batch_size', 0))
+                    max_batch = int(config.get('max_batch_size', 0))
+                    batch_range = str(min_batch) + "-" + str(max_batch)
+                    initial = int(config.get('initial_batch_size', 0))
+                    weight = float(config.get('weight', 1.0))
+                    input_cost = float(config.get('input_cost_per_million_tokens', 0))
+                    output_cost = float(config.get('output_cost_per_million_tokens', 0))
+                    enabled = config.get('enabled', False)
+                    
+                    status = "[ENABLED] " if enabled else "[DISABLED]"
+                    print("{:3d}. {} {:<35} [{}] Priority: {:3d}".format(i, status, pattern[:35], provider[:10], priority))
+                    print("     Batch: {:3d} (range: {}) Weight: {:.1f}".format(initial, batch_range, weight))
+                    print("     Cost: ${:.2f} input / ${:.2f} output per million tokens".format(input_cost, output_cost))
+                    print()
+                except Exception as e:
+                    print("[ERROR] Failed to process config {}: {}".format(i, str(e)))
+                    print("Config data: {}".format(str(config)))
+        else:
+            print("No configurations found.")
+        
+        return configs
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to list model configurations: {e}")
+        return []
+
+def test_model_config_command(model_name):
+    """Test which configuration a model would match."""
+    try:
+        from shared.model_config_table import ModelConfigTable
+        config_table = ModelConfigTable()
+        
+        config = config_table.get_config_for_model(model_name)
+        
+        print(f"\n=== Configuration Test for '{model_name}' ===")
+        if config:
+            print(f"[SUCCESS] Matched configuration:")
+            print(f"  Pattern: {config.get('model_pattern', 'Unknown')}")
+            print(f"  Priority: {config.get('priority', 999)}")
+            print(f"  Provider: {config.get('api_provider', 'unknown')}")
+            print(f"  Initial Batch Size: {config.get('initial_batch_size', 0)}")
+            print(f"  Batch Range: {config.get('min_batch_size', 0)}-{config.get('max_batch_size', 0)}")
+            print(f"  Weight: {float(config.get('weight', 1.0)):.1f}")
+            print(f"  Rate Limit Factor: {float(config.get('rate_limit_factor', 0.75)):.2f}")
+            print(f"  Input Cost: ${float(config.get('input_cost_per_million_tokens', 0)):.2f} per million tokens")
+            print(f"  Output Cost: ${float(config.get('output_cost_per_million_tokens', 0)):.2f} per million tokens")
+            print(f"  Notes: {config.get('notes', 'None')}")
+        else:
+            print("[ERROR] No matching configuration found.")
+            print("This model would use default fallback settings.")
+        
+        return config
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to test model configuration: {e}")
+        return None
+
+def create_model_config_table_command():
+    """Create the model configuration table."""
+    try:
+        from shared.model_config_table import create_model_config_table
+        table = create_model_config_table()
+        if table:
+            print("[SUCCESS] Model configuration table created successfully!")
+        else:
+            print("[ERROR] Failed to create model configuration table.")
+    except Exception as e:
+        print(f"[ERROR] Failed to create model configuration table: {e}")
 
 if __name__ == "__main__":
     main() 

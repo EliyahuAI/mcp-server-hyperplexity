@@ -237,7 +237,16 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
         
         # Call config lambda with unified architecture
         try:
-            lambda_client = boto3.client('lambda')
+            from botocore.config import Config
+            
+            # Configure longer timeouts for Opus processing
+            config = Config(
+                read_timeout=900,  # 15 minutes read timeout  
+                connect_timeout=60,  # 1 minute connect timeout
+                retries={'max_attempts': 1}  # Don't retry on timeout
+            )
+            
+            lambda_client = boto3.client('lambda', config=config)
             config_lambda_name = os.environ.get('CONFIG_LAMBDA_NAME', 'perplexity-validator-config')
             
             # Prepare payload for config lambda
@@ -264,13 +273,24 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
             latest_validation_results = None
             if existing_config:  # Only for refinements
                 try:
+                    logger.error(f"🔍 VALIDATION_RETRIEVAL_TEST: This is a refinement - attempting to get latest validation results for email: {email}, session_id: {session_id}")
                     latest_validation_results = storage_manager.get_latest_validation_results(email, session_id)
                     if latest_validation_results:
-                        logger.info("Retrieved latest validation results for refinement context")
+                        logger.error(f"✅ SUCCESS: Retrieved validation results! Type: {type(latest_validation_results)}")
+                        logger.error(f"✅ Keys: {list(latest_validation_results.keys()) if isinstance(latest_validation_results, dict) else 'N/A'}")
+                        if 'markdown_table' in latest_validation_results:
+                            logger.error(f"✅ markdown_table present, size: {len(latest_validation_results['markdown_table'])}")
+                        if 'validation_results' in latest_validation_results:
+                            logger.error(f"✅ validation_results present, type: {type(latest_validation_results['validation_results'])}")
                     else:
-                        logger.info("No validation results found for context")
+                        logger.error("❌ FAILURE: No validation results found - latest_validation_results is None or empty")
                 except Exception as e:
-                    logger.warning(f"Could not retrieve validation results for context: {e}")
+                    logger.error(f"DEBUG_CONFIG_UNIFIED: EXCEPTION - Could not retrieve validation results for context: {e}")
+                    import traceback
+                    logger.error(f"DEBUG_CONFIG_UNIFIED: Traceback: {traceback.format_exc()}")
+                    latest_validation_results = None
+            else:
+                logger.info("DEBUG_CONFIG_UNIFIED: This is a new config generation (no existing_config) - skipping validation results retrieval")
             
             payload = {
                 'table_analysis': table_analysis,
@@ -282,6 +302,20 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 'conversation_history': conversation_history,  # Pass existing conversation for preservation
                 'latest_validation_results': latest_validation_results  # Add validation results context
             }
+            
+            # Debug the payload being sent to config lambda
+            logger.info(f"DEBUG_CONFIG_UNIFIED: Payload being sent to config lambda:")
+            logger.info(f"DEBUG_CONFIG_UNIFIED: - has table_analysis: {bool(payload.get('table_analysis'))}")
+            logger.info(f"DEBUG_CONFIG_UNIFIED: - has existing_config: {bool(payload.get('existing_config'))}")
+            logger.info(f"DEBUG_CONFIG_UNIFIED: - instructions: {payload.get('instructions', '')[:50]}...")
+            logger.info(f"DEBUG_CONFIG_UNIFIED: - session_id: {payload.get('session_id')}")
+            logger.info(f"DEBUG_CONFIG_UNIFIED: - latest_validation_results is None: {payload.get('latest_validation_results') is None}")
+            if payload.get('latest_validation_results'):
+                vr = payload.get('latest_validation_results')
+                logger.info(f"DEBUG_CONFIG_UNIFIED: - latest_validation_results type: {type(vr)}")
+                logger.info(f"DEBUG_CONFIG_UNIFIED: - latest_validation_results keys: {list(vr.keys()) if isinstance(vr, dict) else 'N/A'}")
+            else:
+                logger.info(f"DEBUG_CONFIG_UNIFIED: - latest_validation_results is None or empty")
             
             # Progress update
             if websocket_callback:

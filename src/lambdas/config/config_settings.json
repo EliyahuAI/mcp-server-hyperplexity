@@ -1,0 +1,4 @@
+{
+  "max_tokens": 16000,
+  "model": ["claude-opus-4-1", "claude-4-opus-20240229", "claude-sonnet-4-0"]
+}

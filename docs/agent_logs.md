@@ -99,6 +99,72 @@
 
 ## Status: ✅ COMPLETE - All Changes Successfully Committed
 
+## Current Session: Dynamic Batch Size Strategy Implementation 🔧
+
+### Task: Add dynamic batch size strategy with API provider tracking
+- **Goal**: Implement adaptive batch sizing (10-100 rows) that responds to rate limiting
+- **Additional Requirement**: Track batches that use Claude vs those that don't
+
+### Progress:
+- [x] **Review existing throttling/batching system**
+  - Fixed batch size of 5 for parallel processing
+  - Exponential backoff retry mechanism with custom delays [1s, 5s, 10s, 20s, 30s, 60s]
+  - S3 caching for API responses
+  - Cost tracking and token usage monitoring
+  - Search group optimization for multiplex validation
+
+- [x] **Implement DynamicBatchSizeManager class**
+  - Initial batch size: 50 rows
+  - Range: 10-100 rows
+  - Rate limit reduction: 50% decrease
+  - Success increase: 20% increase after 3 consecutive successes
+  - Failure decrease: 50% decrease after 1 failure
+  - Comprehensive statistics tracking
+
+- [x] **Integrate dynamic batch sizing into validation lambda**
+  - Modified `process_all_rows()` to use dynamic batch manager
+  - Updated `retry_api_call_with_backoff()` to notify batch manager of rate limits
+  - Enhanced batch processing loop with adaptive sizing
+  - Added batch manager statistics to final metadata
+
+- [x] **Implement API provider tracking for batches**
+  - Added tracking variables: `batches_with_claude`, `batches_without_claude`
+  - Modified `process_row()` to track API providers used per row
+  - Enhanced `process_multiplex_group()` to record API provider usage
+  - Updated batch processing to aggregate provider usage per batch
+  - Added provider statistics to final response metadata
+
+### Implementation Details:
+✅ **Dynamic Batch Size Manager:**
+- **Strategy**: Start at 50, reduce by 50% on rate limits, increase by 20% on success streaks
+- **Range**: 10-100 rows per batch
+- **Triggers**: Rate limits (immediate), success streaks (3 consecutive), failures (1 consecutive)
+- **Statistics**: Tracks consecutive successes/failures, rate limit events, success rate
+
+✅ **API Provider Tracking:**
+- **Row Level**: Track which API providers (anthropic/perplexity) are used per row
+- **Batch Level**: Aggregate provider usage across all rows in a batch
+- **Classification**: Batches with Claude vs batches without Claude
+- **Metadata**: Final statistics included in response metadata
+
+✅ **Enhanced Logging:**
+- **Batch Manager**: Status updates every 10 batches, final statistics
+- **API Providers**: Clear indicators for Claude (🔵) vs Perplexity-only (🟡) batches
+- **Final Summary**: Comprehensive statistics in final response
+
+### Response Metadata Added:
+```json
+{
+  "batch_provider_stats": {
+    "batches_with_claude": 5,
+    "batches_without_claude": 3,
+    "total_batches": 8
+  }
+}
+```
+
+### Status: ✅ COMPLETE - Dynamic batch sizing with API provider tracking fully implemented
+
 ### Final Completed Tasks:
 1. ✅ Updated column config generator prompt with search context and Anthropic model support
 2. ✅ Created 5 comprehensive test cases with real ID fields (Python generation scripts only)
@@ -2377,3 +2443,93 @@ if ',' in text_content and not excel_content.startswith(b'PK'):
 - Test the complete animation flow in browser
 - Verify text transitions work correctly
 - Confirm redirect timing and functionality
+
+## Current Session: Throttling & Batching System Review 🔍
+
+### Requirements:
+- Review the throttling and batching mechanisms used to limit volume sent to Perplexity and Claude APIs
+- Understand how the system manages API rate limits and costs
+- Identify potential improvements or optimizations
+
+### Analysis Status: 🔄 IN PROGRESS
+
+### Key Findings So Far:
+
+#### 1. **Batch Processing Architecture**:
+- **Fixed Batch Size**: 5 rows per batch in validation lambda (line 1565)
+- **Interface Batch Size**: Configurable, defaults to 10 rows per batch
+- **Parallel Processing**: Each batch processes 5 rows concurrently using `asyncio.gather()`
+
+#### 2. **Retry & Rate Limiting Mechanisms**:
+- **Exponential Backoff**: `retry_api_call_with_backoff()` function with configurable delays
+- **Custom Delays**: [1s, 5s, 10s, 20s, 30s, 60s] for API calls
+- **Rate Limit Detection**: Handles 429 errors from both Perplexity and Claude APIs
+- **Timeout Handling**: 60-second timeout for API calls
+
+#### 3. **Caching Strategy**:
+- **S3-Based Caching**: Reduces API calls through intelligent caching
+- **Smart Cache Keys**: Based on row data, targets, model, and search context
+- **Cache Hit Optimization**: Avoids duplicate API calls for identical validation requests
+
+#### 4. **API Provider Management**:
+- **Model Hierarchy**: Fallback chain from Claude Opus → Sonnet → Haiku
+- **Provider Selection**: Automatic routing based on model requirements
+- **Token Usage Tracking**: Comprehensive tracking per provider and model
+
+### Key Findings So Far:
+
+#### 1. **Batch Processing Architecture**:
+- **Fixed Batch Size**: 5 rows per batch in validation lambda (line 1565)
+- **Interface Batch Size**: Configurable, defaults to 10 rows per batch
+- **Parallel Processing**: Each batch processes 5 rows concurrently using `asyncio.gather()`
+
+#### 2. **Retry & Rate Limiting Mechanisms**:
+- **Exponential Backoff**: `retry_api_call_with_backoff()` function with configurable delays
+- **Custom Delays**: [1s, 5s, 10s, 20s, 30s, 60s] for API calls
+- **Rate Limit Detection**: Handles 429 errors from both Perplexity and Claude APIs
+- **Timeout Handling**: 60-second timeout for API calls
+
+#### 3. **Caching Strategy**:
+- **S3-Based Caching**: Reduces API calls through intelligent caching
+- **Smart Cache Keys**: Based on row data, targets, model, and search context
+- **Cache Hit Optimization**: Avoids duplicate API calls for identical validation requests
+
+#### 4. **API Provider Management**:
+- **Model Hierarchy**: Fallback chain from Claude Opus → Sonnet → Haiku
+- **Provider Selection**: Automatic routing based on model requirements
+- **Token Usage Tracking**: Comprehensive tracking per provider and model
+
+#### 5. **Token Usage & Cost Management**:
+- **Real-time Cost Calculation**: `calculate_token_costs()` function with pricing data from CSV
+- **Provider-specific Pricing**: Different rates for Perplexity vs Anthropic models
+- **Token Normalization**: Handles both Perplexity (prompt/completion) and Anthropic (input/output) formats
+- **Cost Aggregation**: Tracks costs by provider, model, and overall session
+
+#### 6. **Search Group Optimization**:
+- **Multiplex Validation**: Groups related columns into single API calls
+- **Search Group Assignment**: Every validation target must be assigned to a search group
+- **Model Resolution**: Handles conflicts when different columns prefer different models
+- **Context Size Management**: Configurable search context (low/high) per group
+
+#### 7. **Batch Timing vs Cost Calculations**:
+- **Timing**: Batch-based calculation (`total_batches * time_per_batch`)
+- **Costs**: Per-row calculation (`total_rows * cost_per_row`)
+- **Parallel Processing**: 5 rows processed concurrently per batch
+- **Timing Metadata**: Comprehensive batch timing tracking and statistics
+
+### System Strengths:
+✅ **Intelligent Caching**: Reduces API calls through smart cache key generation
+✅ **Robust Retry Logic**: Handles rate limits and timeouts with exponential backoff
+✅ **Cost Optimization**: Real-time cost tracking and provider-specific pricing
+✅ **Parallel Processing**: Efficient batch processing with concurrent row validation
+✅ **Model Fallback**: Automatic fallback to cheaper models when needed
+
+### Potential Areas for Optimization:
+🔍 **Batch Size Tuning**: Could experiment with different batch sizes (currently fixed at 5)
+🔍 **Cache Strategy**: Could implement more aggressive caching for similar data patterns
+🔍 **Rate Limit Prediction**: Could implement proactive rate limiting based on API quotas
+🔍 **Cost Budgeting**: Could add user-level cost limits and early termination
+🔍 **Model Selection**: Could implement more sophisticated model selection based on data complexity
+
+### Status: ✅ COMPLETE
+Comprehensive review of throttling and batching mechanisms completed. System shows well-designed architecture for managing API volume and costs.

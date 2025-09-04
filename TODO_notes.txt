@@ -1,7 +1,6 @@
 
 --- The mixed dummy and real messages are problemtatic, particularly for long waits like submission. Lets turn these off for submission. 
  
----- 
 please answer question needs to go away when answer provided, we really should not have it. 
 
 --- 
@@ -28,21 +27,168 @@ refine webpage.
 Add graphic. 
 ----
 
---- 
-
-should pass preview output to config for refining calls. 
-----
-
-MIssed processing complete on full validation. 
-
---- 
-
-Not deducting from balance on full validation 
 
 ---
 Should be able to update table by responding to email. 
 
 --- 
 tables in preview that were not completed should get notices by email to complete
+
+----
+configs are still attached to emails 
+
+----
+
+Hit Error: Config generation failed: Claude API overloaded after 3 retries (529): {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"},"request_id":null}
+----
+
+Preview rich download empty.
+
+----
+The auto configuration response s problematic, the ID is shortened and wont work. The notices about saving the ID, Re-using, and security are distraction. I dont need the COnfiguration accepted automatically, generating preview notice at the end. THe green box should be outside of the chat and the last thing on the card. Currently:
+✓
+Configuration generated, code for reuse: bb9cc8ec_v1, running preview now
+💾 Save this ID - it will be included in your validation results email
+🔄 Reuse anywhere - enter this ID to apply the same configuration to future validations
+🔒 Secure - share this ID safely without exposing configuration details
+Configuration accepted automatically. Generating preview...
+
+For refining, we should also end in the same way and launch directly inro preview. 
+----
+during processing, we should turn off the phony updates. 
+----
+We can probably make the batch sizes larger than 10 now that we have more throughput. 
+
+---
+Store image, update text about adding to be in the cart, notify about pushing the shopping cart to checkout. 
+
+--- 
+Receipt it htmp (needs to be pdf, on Eliyahu stationary, should not have multiplier, should have the name of the table, the number of columns validated, the number of rows, should not have the raw processing cost. 
+
+--- 
+The use of dummy collumns to get a better answer - these are background questions that will help guide an answer that are added and removed that aid in the search. 
+
+---
+Better description of the formatiing, for example time with or without hours, particularly for examples. 
+
+--- 
+last use preview/full not working, and last use should have a timestamp if the same day (in local time or relative time (2 hours ago). 
+
+---
+Need to change the confidence to have more levels (add orange), and change requirement to whether update is an improvement and to never go back on confidence, probably need confidence defined better and not independently for Original and Updated.  
+
+--- 
+should lose _input from the Validated filename. 
+
+----
+Should add an iterate option after a full run. Perhaps asking for specific problematic rows for preview
+
+---
+
+Prview of table when asking questions at the beginning of generate config with AI. The original questions should make it to the config
+
+----
+Email validation still has Perplexity Validaor and mentions of the privacy notice, should use the green box emoji at the beginning of the sentence
+
+----
+Refine configuration is not bringing up the questions, 
+
+---
+Limiting the number of search groups may not make sense. 	
+---
+
+config code changing when reused can be confusing. 
+
+---
+
+inconsequential columns like index or number should be listed as "Ignored"
+
+--- 
+For validation history, we should pass the reasoning for the last value as well, and the sources. 
+
+--- 
+Sources seem sparse, make sure getting all of the citation
+
+----
+new vs historical is not working 
+
+---
+blue selection of found config duplicated. 
+
+-----
+had a 94% match and a failed preview over websocket that was not handled. 
+
+----
+
+failed preview just gets stuck, need to gracefully handle. 
+
+----
+Generating config progress bar jumps too high for 'Processing Table Data', gets to 100% for config complete then gets stuck, then a bunch of messages all come through at the same time.  It seems to go back to [DEBUG] routeMessage called with data: {type: 'config_progress_update', message: 'Processing table data...', session_id: 'session_20250827_201154_2524bec3', timestamp: '2025-08-27T20:21:55.141327', progress: 60}, is it processing twice? Do we need a debounce on the button?. The loop (confirmed in logs) resulted in a problem: ✗
+Error: Failed to invoke config lambda: Read timeout on endpoint URL: "https://lambda.us-east-1.amazonaws.com/2015-03-31/functions/perplexity-validator-config/invocations"
+----
+Need to make sure Updated sheet is being looked for with priority (I see this in the config l;ambda logs: 
+	
+No 'Results' sheet found, using first sheet: 'Congresses Master List'
+
+----
+I dont think the download rich results after refinement is downloading the right files - they seem to be older and have the older name.  These files need to be saved in results as well as in downloads.     
+
+----
+I tried to get copied configs to name match but they do not. 
+
+----
+The counting n/N AI calls bounces, presumabley these are different threads.
+
+---
+processing time in email is not correct (40 minutes when it was estimated to take 3 and took 4), presumable old batch information - it should be actual, should check runs dynamodb
+
+We fixed dynamodb, but email is bad
+----
+
+Remove session from email, add the number of perplexity and claude calls. Still messy. 
+
+-----
+
+Should have auto demo that do cool things and use prebuilt configurations. 
+
+-----
+
+Need to keep processing down to less than 15 minutes or the interface lambda will crap out, need to see if the SQS can handle this with the caching.  We can also limit the number of rows..
+
+-----
+Enhanced validation is coming in as input after preview for full validation - we need to stop the latest excel from finding it. 
+
+---
+
+[FIXED] Full runs are not capturing tokens/cost like previews in the runs dynamodb:
+- Fixed by adding token/cost data to update_run_status call in background_handler.py (lines 1480-1502)
+- Full runs now store token usage, cost estimates, and validation metrics in preview_data field like preview runs
+- This ensures CSV exports have complete token metrics for both preview and full runs
+- Uses same data structure as preview runs so existing CSV export logic works correctly
+
+-----
+
+Configuration times are still wrong, and we should only show the best match. The last/used never used is also not working:
+
+⚙️
+Configuration
+Recent matching config found - choose an option below
+
+
+100% Match • Created: Sep 2, 2025, 9:16 PM • Last Used: Never used
+ 
+100% Match • Created: Sep 2, 2025, 9:04 PM • Last Used: Sep 2, 2025, 9:04 PM
+
+
+Lets move to 2 buttons: Use match (only if match found) leave the configuration code option. 
+----
+
+Need to remove the debug console messages for message routing. 
+---
+Working on
+- preview download
+- websockets real meassaging
+- deleted validation record for Eliyahu.ai and added 100
+- adaptive batch size
 
 

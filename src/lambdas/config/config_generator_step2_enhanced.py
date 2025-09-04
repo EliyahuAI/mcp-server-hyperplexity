@@ -42,9 +42,27 @@ class EnhancedClaudeConfigGenerator:
     def __init__(self, api_key=None):
         # Initialize shared AI API client
         self.ai_client = AIAPIClient()
-        self.model = "claude-sonnet-4-0"  # Latest Claude 4
-        self.max_tokens = 8000  # Increased for better responses
+        
+        # Load settings from config file
+        self._load_settings()
+        
         self.temperature = 0.1
+        
+    def _load_settings(self):
+        """Load configuration settings from JSON file"""
+        import json
+        import os
+        
+        settings_path = os.path.join(os.path.dirname(__file__), 'config_settings.json')
+        try:
+            with open(settings_path, 'r') as f:
+                settings = json.load(f)
+            self.max_tokens = settings.get('max_tokens', 16000)
+            self.model = settings.get('model', 'claude-opus-4-1')
+        except (FileNotFoundError, json.JSONDecodeError):
+            # Fallback to defaults if file not found
+            self.max_tokens = 16000
+            self.model = "claude-opus-4-1"
         
         # Available prompt strategies
         self.prompt_strategies = {

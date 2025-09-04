@@ -1,460 +1,314 @@
-#!/usr/bin/env python3
-"""
-Hyperplexity Logo Animation Generator - Final Version
-Looking DOWN from above - flags appear vertically compressed
-"""
+# Fixed Hyperplexity animation
+# - Preserves center black seam
+# - No green "kink" (uses true inner rectangles per half, not self-intersecting polys)
+# - Green opacity respected
+# - Edge-on line robust at any SCALE_FACTOR
+#
+# Exports: /mnt/data/hyperplexity_animation_fix.gif
 
-import numpy as np
 from PIL import Image, ImageDraw
 import math
 
-# Animation parameters
-SCALE_FACTOR = 2  # Smaller scale for compact GIF
-BASE_SIZE = 140  # Smaller base to reduce whitespace
-CANVAS_SIZE = BASE_SIZE * SCALE_FACTOR  # Actual render size = 280px
+# ========= Tunables =========
+SCALE_FACTOR = 4
+BASE_SIZE = 140
+CANVAS_SIZE = BASE_SIZE * SCALE_FACTOR
 CENTER = CANVAS_SIZE // 2
-SQUARE_SIZE = 100 * SCALE_FACTOR  # Scale all elements
-FLAG_SIZE = 100 * SCALE_FACTOR  # Flag size
-FRAME_COUNT = 180  # More frames for smoother animation
-VIEWING_ANGLE = 45  # degrees - looking DOWN from above
+SQUARE_SIZE = 100 * SCALE_FACTOR
+FLAG_SIZE = 100 * SCALE_FACTOR
 
-# Colors - match HTML exactly
-GREEN = (45, 255, 69, 204)  # #2DFF45 with 80% opacity
+FRAME_COUNT = 120
+FRAME_DURATION_MS = 28  # ~36 fps
+
+VIEWING_ANGLE = 45  # degrees (camera pitched downward)
+MIN_EDGE_THICKNESS = 6 * SCALE_FACTOR  # visible when edge-on
+WHEEL_SPOKES = 8
+
+# Colors
+GREEN_RGB = (45, 255, 69)
+GREEN_ALPHA = 150  # respect this for all green fills
 BLACK = (0, 0, 0, 255)
-WHITE = (255, 255, 255)
+WHITE = (255, 255, 255, 255)
+BORDER_WIDTH = 8 * SCALE_FACTOR
 
-# Proportions from HTML - all scaled
-BORDER_WIDTH = 8 * SCALE_FACTOR  # Black border width
-MIN_THICKNESS = 6 * SCALE_FACTOR  # Thicker minimum for edge-on flags
-GREEN_SIZE_RATIO = 0.7  # Green is 70% of inner area (ratio stays the same)
+# ========= Helpers =========
+def transform_point(cx, cy, x, y, z, rot_y_deg):
+    """Rotate a 3D point about Y, then apply a simple camera tilt to screen coords."""
+    ry = math.radians(rot_y_deg)
+    va = math.radians(VIEWING_ANGLE)
+    xr = x * math.cos(ry) - z * math.sin(ry)
+    yr = y
+    zr = x * math.sin(ry) + z * math.cos(ry)
+    sx = cx + xr
+    sy = cy + yr * math.cos(va) + zr * math.sin(va)
+    return (sx, sy), zr
 
+def rect_to_poly(cx, cy, left, top, right, bottom, rot_y_deg):
+    """Project an axis-aligned rectangle (z=0 plane) to a 4-pt polygon and return (poly, avg_z)."""
+    corners = [(left, top, 0), (right, top, 0), (right, bottom, 0), (left, bottom, 0)]
+    poly = []
+    zs = []
+    for x,y,z in corners:
+        p, zval = transform_point(cx, cy, x, y, z, rot_y_deg)
+        poly.append(p)
+        zs.append(zval)
+    return poly, sum(zs)/4.0
 
-def draw_half_flag(center_x, center_y, size, rotation_y, is_left_half, opacity=255, debug=False):
-    """Draw HALF of a 3D flag - either left or right half"""
-    
-    viewing_angle_rad = math.radians(VIEWING_ANGLE)
-    rotation_y_rad = math.radians(rotation_y)
-    
-    half_width = size // 2
-    half_height = size // 2
-    
-    # Create temporary image
-    temp_img = Image.new('RGBA', (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255, 0))
-    temp_draw = ImageDraw.Draw(temp_img)
-    
-    def transform_point(x, y, z):
-        # Rotate around Y-axis
-        rotated_x = x * math.cos(rotation_y_rad) - z * math.sin(rotation_y_rad)
-        rotated_y = y
-        rotated_z = x * math.sin(rotation_y_rad) + z * math.cos(rotation_y_rad)
-        
-        # Apply viewing angle (looking DOWN from above)
-        screen_x = center_x + rotated_x
-        screen_y = center_y + rotated_y * math.cos(viewing_angle_rad) + rotated_z * math.sin(viewing_angle_rad)
-        
-        return (screen_x, screen_y), rotated_z
-    
-    # Check if this half would be edge-on
-    angle_normalized = (rotation_y % 360 + 360) % 360
-    
-    if (87 < angle_normalized < 93) or (267 < angle_normalized < 273):
-        return temp_img, 0  # Return empty for edge-on
-    
-    # Normal (non-edge-on) rendering
-    # Define the half we're drawing
-    if is_left_half:
-        half_corners_3d = [
-            (-half_width, -half_height, 0),  # top left
-            (0, -half_height, 0),            # top center
-            (0, half_height, 0),             # bottom center
-            (-half_width, half_height, 0)    # bottom left
-        ]
-    else:  # right half
-        half_corners_3d = [
-            (0, -half_height, 0),            # top center
-            (half_width, -half_height, 0),   # top right
-            (half_width, half_height, 0),    # bottom right
-            (0, half_height, 0)              # bottom center
-        ]
-    
-    # Transform corners and calculate average Z
-    corners = []
-    z_values = []
-    for x, y, z in half_corners_3d:
-        point, z_val = transform_point(x, y, z)
-        corners.append(point)
-        z_values.append(z_val)
-    
-    avg_z = sum(z_values) / len(z_values)
-    
-    # Determine color for debug mode
-    if debug:
-        # Color based on Z-depth for debugging
-        if avg_z < -30:
-            border_color = (150, 0, 0, opacity)  # Dark red for far back
-        elif avg_z < 0:
-            border_color = (100, 50, 0, opacity)  # Brown for back
-        elif avg_z < 30:
-            border_color = (0, 50, 100, opacity)  # Dark blue for front
-        else:
-            border_color = (0, 0, 150, opacity)  # Bright blue for very front
+def draw_edge_strip(cx, cy, size, opacity=255):
+    """Draw a vertical 'edge-on' strip so the logo never disappears."""
+    img = Image.new('RGBA', (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255, 0))
+    d = ImageDraw.Draw(img)
+
+    va = math.radians(VIEWING_ANGLE)
+    half_h = size // 2
+    visual_half_h = half_h * math.cos(va)
+    top_y = cy - visual_half_h
+    bot_y = cy + visual_half_h
+
+    # Outer black strip
+    x0 = cx - MAX_EDGE_THICKNESS // 2
+    x1 = cx + MAX_EDGE_THICKNESS // 2
+    d.rectangle([x0, top_y, x1, bot_y], fill=(0,0,0,opacity))
+
+    # Inner green line (70% height)
+    inner_h = (bot_y - top_y) * 0.7
+    gy0 = cy - inner_h / 2
+    gy1 = cy + inner_h / 2
+    inner_w = max(2, MAX_EDGE_THICKNESS // 3)
+    gx0 = cx - inner_w/2
+    gx1 = cx + inner_w/2
+    green_alpha = int(min(255, GREEN_ALPHA * (opacity/255)))
+    d.rectangle([gx0, gy0, gx1, gy1], fill=(GREEN_RGB[0], GREEN_RGB[1], GREEN_RGB[2], green_alpha))
+
+    return img, 0.0
+
+# Clamp to ensure we never draw too thin a strip
+MAX_EDGE_THICKNESS = max(2, MIN_EDGE_THICKNESS)
+
+def draw_half_flag(cx, cy, size, rot_y_deg, is_left, opacity=255):
+    """Draw one half using object-space rectangles to avoid self-intersection kinks."""
+    # Edge-on check
+    angle = (rot_y_deg % 360 + 360) % 360
+    if (87 < angle < 93) or (267 < angle < 273):
+        return draw_edge_strip(cx, cy, size, opacity)
+
+    hw = size // 2
+    hh = size // 2
+
+    # Define object-space rectangles for this half
+    if is_left:
+        # outer half [-hw, 0]
+        outer = (-hw, -hh, 0, hh)
+        # inner white gap leaves a center seam of BORDER_WIDTH
+        inner_gap = (-hw + BORDER_WIDTH, -hh + BORDER_WIDTH, -BORDER_WIDTH, hh - BORDER_WIDTH)
+        # green inner inset (same from all sides, including center seam)
+        inner = size - 2 * BORDER_WIDTH
+        border = inner * 0.15
+        inset = BORDER_WIDTH + border
+        green_rect = (-hw + inset, -hh + inset, -inset, hh - inset)
     else:
-        border_color = (BLACK[0], BLACK[1], BLACK[2], opacity)
-    
-    # Draw black border
-    temp_draw.polygon(corners, fill=border_color)
-    
-    # Draw transparent interior
-    inner_corners_3d = []
-    for x, y, z in half_corners_3d:
-        if x == 0:  # Center line
-            inner_x = 0
-        else:
-            inner_x = x + (BORDER_WIDTH if x < 0 else -BORDER_WIDTH)
-        inner_y = y + (BORDER_WIDTH if y < 0 else -BORDER_WIDTH)
-        inner_corners_3d.append((inner_x, inner_y, z))
-    
-    inner_corners = []
-    for x, y, z in inner_corners_3d:
-        point, _ = transform_point(x, y, z)
-        inner_corners.append(point)
-    
-    temp_draw.polygon(inner_corners, fill=(255, 255, 255, 0))
-    
-    # Draw green center
-    green_corners_3d = []
-    for x, y, z in half_corners_3d:
-        if x == 0:
-            green_x = 0
-        else:
-            green_x = x * 0.7
-        green_y = y * 0.7
-        green_corners_3d.append((green_x, green_y, z))
-    
-    green_corners = []
-    for x, y, z in green_corners_3d:
-        point, _ = transform_point(x, y, z)
-        green_corners.append(point)
-    
-    green_alpha = int(opacity * 0.8)
-    temp_draw.polygon(green_corners, fill=(GREEN[0], GREEN[1], GREEN[2], green_alpha))
-    
-    return temp_img, avg_z
+        outer = (0, -hh, hw, hh)
+        inner_gap = (BORDER_WIDTH, -hh + BORDER_WIDTH, hw - BORDER_WIDTH, hh - BORDER_WIDTH)
+        inner = size - 2 * BORDER_WIDTH
+        border = inner * 0.15
+        inset = BORDER_WIDTH + border
+        green_rect = (inset, -hh + inset, hw - inset, hh - inset)
 
-def draw_3d_flag(center_x, center_y, size, rotation_y, opacity=255, debug=False):
-    """Draw a 3D flag by combining two halves - for compatibility"""
-    
-    # Check if edge-on
-    angle_normalized = (rotation_y % 360 + 360) % 360
-    is_edge_on = (87 < angle_normalized < 93) or (267 < angle_normalized < 273)
-    
-    if is_edge_on:
-        # Return empty image for edge-on flags (no rendering during animation)
-        temp_img = Image.new('RGBA', (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255, 0))
-        return temp_img, 0
-    
-    # Draw left half
-    left_img, left_z = draw_half_flag(center_x, center_y, size, rotation_y, 
-                                      is_left_half=True, opacity=opacity, debug=debug)
-    
-    # Draw right half
-    right_img, right_z = draw_half_flag(center_x, center_y, size, rotation_y, 
-                                        is_left_half=False, opacity=opacity, debug=debug)
-    
-    # Combine based on Z-depth
-    combined = Image.new('RGBA', (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255, 0))
+    # Compose
+    img = Image.new('RGBA', (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255, 0))
+    d = ImageDraw.Draw(img)
+
+    # Outer black
+    poly, avg_z = rect_to_poly(CENTER, CENTER, *outer, rot_y_deg)
+    d.polygon(poly, fill=(0,0,0,opacity))
+
+    # Inner white (opaque so it actually covers interior)
+    poly_gap, _ = rect_to_poly(CENTER, CENTER, *inner_gap, rot_y_deg)
+    d.polygon(poly_gap, fill=WHITE)
+
+    # Green center (respect global opacity & configured GREEN_ALPHA)
+    poly_green, _ = rect_to_poly(CENTER, CENTER, *green_rect, rot_y_deg)
+    green_alpha = int(min(255, GREEN_ALPHA * (opacity/255)))
+    d.polygon(poly_green, fill=(GREEN_RGB[0], GREEN_RGB[1], GREEN_RGB[2], green_alpha))
+
+    return img, avg_z
+
+def draw_flag(cx, cy, size, rot_y_deg, opacity=255):
+    """Two halves composed with simple painter's order by Z."""
+    left_img, left_z = draw_half_flag(cx, cy, size, rot_y_deg, True, opacity)
+    right_img, right_z = draw_half_flag(cx, cy, size, rot_y_deg, False, opacity)
+
+    comp = Image.new('RGBA', (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255, 0))
     if left_z < right_z:
-        # Left is behind right
-        combined = Image.alpha_composite(combined, left_img)
-        combined = Image.alpha_composite(combined, right_img)
+        comp = Image.alpha_composite(comp, left_img)
+        comp = Image.alpha_composite(comp, right_img)
     else:
-        # Right is behind left
-        combined = Image.alpha_composite(combined, right_img)
-        combined = Image.alpha_composite(combined, left_img)
-    
-    avg_z = (left_z + right_z) / 2
-    return combined, avg_z
+        comp = Image.alpha_composite(comp, right_img)
+        comp = Image.alpha_composite(comp, left_img)
+    return comp
 
-def draw_static_square(draw, x, y, size):
-    """Draw the original eliyahu square logo"""
-    half_size = size // 2
-    
-    # Black outer border
-    corners = [
-        (x - half_size, y - half_size),
-        (x + half_size, y - half_size),
-        (x + half_size, y + half_size),
-        (x - half_size, y + half_size)
-    ]
-    draw.polygon(corners, fill=BLACK[:3])
-    
-    # Transparent gap
-    gap_corners = [
-        (x - half_size + BORDER_WIDTH, y - half_size + BORDER_WIDTH),
-        (x + half_size - BORDER_WIDTH, y - half_size + BORDER_WIDTH),
-        (x + half_size - BORDER_WIDTH, y + half_size - BORDER_WIDTH),
-        (x - half_size + BORDER_WIDTH, y + half_size - BORDER_WIDTH)
-    ]
-    draw.polygon(gap_corners, fill=(255, 255, 255, 0))
-    
-    # Green center (70% of inner area)
-    inner_size = size - 2 * BORDER_WIDTH
-    green_border = inner_size * 0.15
-    green_inset = BORDER_WIDTH + green_border
-    
-    green_corners = [
-        (x - half_size + green_inset, y - half_size + green_inset),
-        (x + half_size - green_inset, y - half_size + green_inset),
-        (x + half_size - green_inset, y + half_size - green_inset),
-        (x - half_size + green_inset, y + half_size - green_inset)
-    ]
-    draw.polygon(green_corners, fill=GREEN[:3])
+def draw_eliyahu_square(draw, cx, cy, size):
+    """Original square (parent logo)."""
+    hs = size // 2
+    # black outer
+    draw.rectangle([cx-hs, cy-hs, cx+hs, cy+hs], fill=(0,0,0,255))
+    # white inner gap
+    draw.rectangle([cx-hs+BORDER_WIDTH, cy-hs+BORDER_WIDTH, cx+hs-BORDER_WIDTH, cy+hs-BORDER_WIDTH], fill=(255,255,255,255))
+    # green center
+    inner = size - 2 * BORDER_WIDTH
+    border = inner * 0.15
+    inset = BORDER_WIDTH + border
+    green_alpha = GREEN_ALPHA
+    draw.rectangle([cx-hs+inset, cy-hs+inset, cx+hs-inset, cy+hs-inset], fill=(GREEN_RGB[0], GREEN_RGB[1], GREEN_RGB[2], green_alpha))
 
-def draw_rotating_square(draw, x, y, size, rotation_y, opacity=255):
-    """Draw the logo rotating to become edge-on"""
-    
-    rotation_rad = math.radians(rotation_y)
-    half_size = size // 2
-    
-    # Calculate apparent width based on rotation
-    apparent_width = half_size * abs(math.cos(rotation_rad))
-    
-    if apparent_width < 1:
-        return None
-    
-    # Draw rotating square
-    corners = [
-        (x - apparent_width, y - half_size),
-        (x + apparent_width, y - half_size),
-        (x + apparent_width, y + half_size),
-        (x - apparent_width, y + half_size)
-    ]
-    
-    temp_img = Image.new('RGBA', (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255, 0))
-    temp_draw = ImageDraw.Draw(temp_img)
-    
-    # Black border
-    temp_draw.polygon(corners, fill=(BLACK[0], BLACK[1], BLACK[2], opacity))
-    
-    if apparent_width > BORDER_WIDTH:
-        # Transparent gap
-        gap_corners = [
-            (x - apparent_width + BORDER_WIDTH, y - half_size + BORDER_WIDTH),
-            (x + apparent_width - BORDER_WIDTH, y - half_size + BORDER_WIDTH),
-            (x + apparent_width - BORDER_WIDTH, y + half_size - BORDER_WIDTH),
-            (x - apparent_width + BORDER_WIDTH, y + half_size - BORDER_WIDTH)
-        ]
-        temp_draw.polygon(gap_corners, fill=(255, 255, 255, 0))
-        
+def draw_rotating_square(draw, cx, cy, size, rot_y_deg, opacity=255):
+    """Billboard-y rotation with minimum edge thickness clamp."""
+    ry = math.radians(rot_y_deg)
+    hs = size // 2
+    apparent = hs * abs(math.cos(ry))
+
+    img = Image.new('RGBA', (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255, 0))
+    d = ImageDraw.Draw(img)
+
+    if apparent < MAX_EDGE_THICKNESS / 2:
+        strip, _ = draw_edge_strip(cx, cy, size, opacity)
+        return strip
+
+    # Draw squeezed outer black
+    corners = [(cx-apparent, cy-hs), (cx+apparent, cy-hs), (cx+apparent, cy+hs), (cx-apparent, cy+hs)]
+    d.polygon(corners, fill=(0,0,0,opacity))
+
+    if apparent > BORDER_WIDTH:
+        # Inner white gap
+        gap = [(cx-apparent+BORDER_WIDTH, cy-hs+BORDER_WIDTH),
+               (cx+apparent-BORDER_WIDTH, cy-hs+BORDER_WIDTH),
+               (cx+apparent-BORDER_WIDTH, cy+hs-BORDER_WIDTH),
+               (cx-apparent+BORDER_WIDTH, cy+hs-BORDER_WIDTH)]
+        d.polygon(gap, fill=(255,255,255,255))
+
         # Green center
-        if apparent_width > BORDER_WIDTH + 8:
-            inner_size = size - 2 * BORDER_WIDTH
-            green_border = inner_size * 0.15
-            green_inset = BORDER_WIDTH + green_border
-            green_width = apparent_width - green_inset if apparent_width > green_inset else 0
-            
-            if green_width > 0:
-                green_corners = [
-                    (x - green_width, y - half_size + green_inset),
-                    (x + green_width, y - half_size + green_inset),
-                    (x + green_width, y + half_size - green_inset),
-                    (x - green_width, y + half_size - green_inset)
-                ]
-                temp_draw.polygon(green_corners, fill=GREEN)
-    
-    return temp_img
+        inner = size - 2 * BORDER_WIDTH
+        border = inner * 0.15
+        inset = BORDER_WIDTH + border
+        gw = max(0.0, apparent - inset)
+        if gw > 0:
+            green = [(cx-gw, cy-hs+inset), (cx+gw, cy-hs+inset), (cx+gw, cy+hs-inset), (cx-gw, cy+hs-inset)]
+            green_alpha = int(min(255, GREEN_ALPHA * (opacity/255)))
+            d.polygon(green, fill=(GREEN_RGB[0], GREEN_RGB[1], GREEN_RGB[2], green_alpha))
+    return img
 
-def create_frame(frame_num):
-    """Create a single frame of the animation"""
-    img = Image.new('RGBA', (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255, 255))
-    draw = ImageDraw.Draw(img)
-    
-    progress = frame_num / FRAME_COUNT
-    
-    if progress <= 0.1:  # Initial state - static square
-        draw_static_square(draw, CENTER, CENTER, SQUARE_SIZE)
-        
-    elif progress <= 0.2:  # Square rotates to edge-on and disappears
-        t = (progress - 0.1) / 0.1
-        rotation = t * 90  # Rotate to edge-on
-        
-        rotating_img = draw_rotating_square(draw, CENTER, CENTER, SQUARE_SIZE, rotation, 255)
-        if rotating_img:
-            img = Image.alpha_composite(img, rotating_img)
-            
-    elif progress <= 0.25:  # Flag emerges from edge-on position
-        t = (progress - 0.2) / 0.05
-        # Start from 90° (edge-on) and rotate to 0° (facing us)
-        rotation = 90 * (1 - t)
-        
-        flag_img, _ = draw_3d_flag(CENTER, CENTER, FLAG_SIZE, rotation, int(255 * t))
-        if flag_img:
-            img = Image.alpha_composite(img, flag_img)
-            
-    elif progress <= 0.5:  # Steady rotation in one direction
-        t = (progress - 0.25) / 0.25
-        # Continue from 0° and make 2 full rotations
-        rotation = t * 720
-        
-        flag_img, _ = draw_3d_flag(CENTER, CENTER, FLAG_SIZE, rotation, 255)
-        if flag_img:
-            img = Image.alpha_composite(img, flag_img)
-            
-    elif progress <= 0.65:  # Acceleration - FASTER
-        t = (progress - 0.5) / 0.15
-        # Stronger quadratic acceleration
-        rotation = 720 + t * t * 2160  # Double the acceleration
-        
-        flag_img, _ = draw_3d_flag(CENTER, CENTER, FLAG_SIZE, rotation, 255)
-        if flag_img:
-            img = Image.alpha_composite(img, flag_img)
-            
-    elif progress <= 0.8:  # Blur phase - MUCH faster rotation
-        t = (progress - 0.65) / 0.15
-        base_rotation = 2880 + t * 5400  # Much faster
-        
-        # Motion blur with many overlapping flags
-        blur_flags = []
-        num_blur_flags = 32
-        for i in range(num_blur_flags):
-            angle = base_rotation + (360 / num_blur_flags) * i
-            opacity = int(30 + (1 - i/num_blur_flags) * 30)  # Intentional low opacity for blur
-            
-            flag_img, z_val = draw_3d_flag(CENTER, CENTER, FLAG_SIZE, angle, opacity)
-            if flag_img:
-                blur_flags.append((flag_img, z_val))
-        
-        # Sort by Z (back to front)
-        blur_flags.sort(key=lambda x: x[1])
-        for flag_img, _ in blur_flags:
-            img = Image.alpha_composite(img, flag_img)
-            
-    elif progress <= 0.9:  # Strobe effect - appears to reverse
-        t = (progress - 0.8) / 0.1
-        # Wagon wheel effect - slow backward rotation
-        base_rotation = -t * 45
-        
-        # 8 flags appearing
-        flags_with_depth = []
-        for i in range(8):
-            angle = base_rotation + i * 45
-            flag_img, z_val = draw_3d_flag(CENTER, CENTER, FLAG_SIZE, angle, 200)  # Intentional lower opacity
-            if flag_img:
-                flags_with_depth.append((flag_img, z_val))
-        
-        # Sort by depth (back to front)
-        flags_with_depth.sort(key=lambda x: x[1])
-        for flag_img, _ in flags_with_depth:
-            img = Image.alpha_composite(img, flag_img)
-            
-    else:  # Final state - 8 spokes with vertical line
-        # Final 8-spoke pattern - collect ALL halves from ALL flags
-        final_angles = [0, 45, 90, 135, 180, 225, 270, 315]
-        
-        # Enable debug for final frame
-        debug_mode = False  # Set to True to see debug colors
-        
-        # Collect ALL halves with their Z-depths
-        all_halves = []
-        
-        for angle in final_angles:
-            # Get left half
-            left_img, left_z = draw_half_flag(CENTER, CENTER, FLAG_SIZE, angle, 
-                                             is_left_half=True, opacity=255, debug=debug_mode)
-            all_halves.append((left_img, left_z, angle, "L"))
-            
-            # Get right half
-            right_img, right_z = draw_half_flag(CENTER, CENTER, FLAG_SIZE, angle, 
-                                               is_left_half=False, opacity=255, debug=debug_mode)
-            all_halves.append((right_img, right_z, angle, "R"))
-        
-        # Sort ALL halves by Z-depth (back to front)
-        all_halves.sort(key=lambda x: x[1])
-        
-        # Draw them all in order from back to front with FULL opacity
-        for half_img, z_val, angle, side in all_halves:
-            img = Image.alpha_composite(img, half_img)
-        
-        # NOW draw the rectangle AFTER everything else is rendered
-        # Create a fresh draw object for the composited image
-        draw = ImageDraw.Draw(img)
-        
-        # Calculate the actual visual height using the same 3D transform as facing panels
-        viewing_angle_rad = math.radians(VIEWING_ANGLE)
-        half_height = FLAG_SIZE // 2
-        
-        # For a panel facing us (0° rotation), the corners are at:
-        # Top: (0, -half_height, 0) -> screen_y = center_y + (-half_height) * cos(45°) = center_y - half_height * 0.707
-        # Bottom: (0, half_height, 0) -> screen_y = center_y + half_height * cos(45°) = center_y + half_height * 0.707
-        
-        # So the actual visual height from top to bottom is:
-        visual_half_height = half_height * math.cos(viewing_angle_rad)
-        
-        # But wait, that's the compressed height. For edge-on, we want the FULL panel height
-        # The edge-on line should extend to the same Y coordinates as the facing panel corners
-        top_y = CENTER - visual_half_height
-        bottom_y = CENTER + visual_half_height
-        actual_visual_height = visual_half_height
-        
-        # Draw the vertical line to match the exact coordinates of the facing panels
-        line_thickness = 6 * SCALE_FACTOR
-        draw.line(
-            [(CENTER, top_y),
-             (CENTER, bottom_y)],
-            fill=BLACK[:3],
-            width=line_thickness
-        )
-        
-        # Draw green center line
-        green_range = (bottom_y - top_y) * 0.7  # 70% of total height
-        green_center_top = CENTER - green_range / 2
-        green_center_bottom = CENTER + green_range / 2
-        green_thickness = 3 * SCALE_FACTOR
-        draw.line(
-            [(CENTER, green_center_top),
-             (CENTER, green_center_bottom)],
-            fill=GREEN[:3],
-            width=green_thickness
-        )
-        print(f"Drew vertical line from ({CENTER}, {top_y}) to ({CENTER}, {bottom_y}), thickness={line_thickness}")
-        
-        # Convert and add this final frame
-        final_frame = img.convert('RGB')
-        frames.append(final_frame)
-        
-        # Hold this frame longer - add extra copies
-        for _ in range(20):
-            frames.append(final_frame)
-    
+# ========= Animation schedule =========
+def angle_schedule(progress):
+    if progress <= 0.12:        # static parent
+        return 0.0
+    elif progress <= 0.22:      # rotate to edge-on (kept brisk as requested)
+        t = (progress - 0.12) / 0.10
+        return t * 90
+    elif progress <= 0.28:      # emerge as flag
+        t = (progress - 0.22) / 0.06
+        return 90 * (1 - t)
+    elif progress <= 0.52:      # two full rotations
+        t = (progress - 0.28) / 0.24
+        return t * 720
+    elif progress <= 0.66:      # accelerate hard
+        t = (progress - 0.52) / 0.14
+        return 720 + (t * t) * 2160
+    elif progress <= 0.80:      # very fast + motion blur
+        t = (progress - 0.66) / 0.14
+        return 2880 + t * 5400
+    elif progress <= 0.90:      # strobe/wagon wheel illusion
+        t = (progress - 0.80) / 0.10
+        return -t * 45
+    else:                        # settle into spokes
+        return 0.0
+
+def create_frame(i):
+    progress = i / FRAME_COUNT
+    img = Image.new('RGBA', (CANVAS_SIZE, CANVAS_SIZE), WHITE)
+    d = ImageDraw.Draw(img)
+
+    if progress <= 0.12:
+        draw_eliyahu_square(d, CENTER, CENTER, SQUARE_SIZE)
+        return img.convert('RGB')
+
+    if progress <= 0.22:
+        t = (progress - 0.12) / 0.10
+        rot = t * 90
+        sq = draw_rotating_square(d, CENTER, CENTER, SQUARE_SIZE, rot, 255)
+        img = Image.alpha_composite(img, sq)
+        return img.convert('RGB')
+
+    if progress <= 0.28:
+        t = (progress - 0.22) / 0.06
+        rot = 90 * (1 - t)
+        fl = draw_flag(CENTER, CENTER, FLAG_SIZE, rot, int(255 * t))
+        img = Image.alpha_composite(img, fl)
+        return img.convert('RGB')
+
+    if progress <= 0.52:
+        t = (progress - 0.28) / 0.24
+        rot = t * 720
+        fl = draw_flag(CENTER, CENTER, FLAG_SIZE, rot, 255)
+        img = Image.alpha_composite(img, fl)
+        return img.convert('RGB')
+
+    if progress <= 0.66:
+        t = (progress - 0.52) / 0.14
+        rot = 720 + (t * t) * 2160
+        fl = draw_flag(CENTER, CENTER, FLAG_SIZE, rot, 255)
+        img = Image.alpha_composite(img, fl)
+        return img.convert('RGB')
+
+    if progress <= 0.80:
+        t = (progress - 0.66) / 0.14
+        base = 2880 + t * 5400
+        num = 24
+        layers = []
+        for j in range(num):
+            ang = base + (360 / num) * j
+            op = int(30 + (1 - j/num) * 30)
+            LH, _ = draw_half_flag(CENTER, CENTER, FLAG_SIZE, ang, True, op)
+            RH, _ = draw_half_flag(CENTER, CENTER, FLAG_SIZE, ang, False, op)
+            lay = Image.new('RGBA', (CANVAS_SIZE, CANVAS_SIZE), (255, 255, 255, 0))
+            lay = Image.alpha_composite(lay, LH)
+            lay = Image.alpha_composite(lay, RH)
+            layers.append(lay)
+        for lay in layers:
+            img = Image.alpha_composite(img, lay)
+        return img.convert('RGB')
+
+    if progress <= 0.90:
+        t = (progress - 0.80) / 0.10
+        base = -t * 45
+        num = WHEEL_SPOKES
+        pairs = []
+        for k in range(num):
+            ang = base + k * (360 / num)
+            LH, lz = draw_half_flag(CENTER, CENTER, FLAG_SIZE, ang, True, 200)
+            RH, rz = draw_half_flag(CENTER, CENTER, FLAG_SIZE, ang, False, 200)
+            pairs.append((lz, LH)); pairs.append((rz, RH))
+        pairs.sort(key=lambda x: x[0])
+        for _, layer in pairs:
+            img = Image.alpha_composite(img, layer)
+        return img.convert('RGB')
+
+    # Final spokes (render halves sorted by depth)
+    final = [0, 45, 90, 135, 180, 225, 270, 315]
+    halves = []
+    for ang in final:
+        LH, lz = draw_half_flag(CENTER, CENTER, FLAG_SIZE, ang, True, 255)
+        RH, rz = draw_half_flag(CENTER, CENTER, FLAG_SIZE, ang, False, 255)
+        halves.append((lz, LH)); halves.append((rz, RH))
+    halves.sort(key=lambda x: x[0])
+    for _, h in halves:
+        img = Image.alpha_composite(img, h)
     return img.convert('RGB')
 
-def generate_gif():
-    """Generate the complete animation as a GIF"""
-    global frames  # Make frames accessible to final state
-    frames = []
-    
-    print("Generating frames...")
-    for i in range(FRAME_COUNT):
-        if i % 10 == 0:
-            print(f"Frame {i}/{FRAME_COUNT}")
-        frame = create_frame(i)
-        
-        # Add all frames normally
-        frames.append(frame)
-    
-    # Hold final frame
-    for _ in range(10):
-        frames.append(frames[-1])
-    
-    print("Saving GIF...")
-    frames[0].save(
-        'hyperplexity_animation.gif',
-        save_all=True,
-        append_images=frames[1:],
-        duration=80,
-        loop=0
-    )
-    print("Animation saved as 'hyperplexity_animation.gif'")
+# ========= Render =========
+frames = [create_frame(i) for i in range(FRAME_COUNT)]
+frames = frames + [frames[-1]] * 8
 
-if __name__ == "__main__":
-    generate_gif()
+out_path = "frontend/hyperplexity_animation_fix.gif"
+frames[0].save(out_path, save_all=True, append_images=frames[1:], duration=FRAME_DURATION_MS, loop=0)
+
+out_path

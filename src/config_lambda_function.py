@@ -27,6 +27,20 @@ logger = logging.getLogger(__name__)
 # Also ensure ai_api_client logger is set to INFO
 logging.getLogger('ai_api_client').setLevel(logging.INFO)
 
+def load_config_settings():
+    """Load configuration settings from JSON file"""
+    import os
+    settings_path = os.path.join(os.path.dirname(__file__), 'config_settings.json')
+    try:
+        with open(settings_path, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # Fallback to defaults
+        return {
+            'max_tokens': 16000,
+            'model': ['claude-opus-4-1', 'claude-4-opus-20240229', 'claude-sonnet-4-0']
+        }
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for configuration generation requests."""
     try:
@@ -127,12 +141,14 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         
         # Call Claude using shared client with unified schema
         # Note: Empty context allows cache hits across sessions with same table analysis
+        config_settings = load_config_settings()
         result = await ai_client.call_structured_api(
             prompt=prompt,
             schema=get_unified_generation_schema(),
-            model="claude-sonnet-4-0",
+            model=config_settings.get('model', 'claude-opus-4-1'),
             tool_name="generate_config_and_questions",
-            context=""
+            context="",
+            max_tokens=config_settings.get('max_tokens', 16000)
         )
         
         # Debug logging
@@ -400,7 +416,7 @@ def add_conversation_entry(updated_config: Dict, existing_config: Dict = None,
         'ai_summary': ai_summary,
         'technical_ai_summary': technical_ai_summary,
         'version': current_version,
-        'model_used': 'claude-sonnet-4-0'
+        'model_used': 'claude-opus-4-1'
     }
     
     updated_config['config_change_log'].append(conversation_entry)
@@ -413,7 +429,7 @@ def add_conversation_entry(updated_config: Dict, existing_config: Dict = None,
         'version': current_version,
         'last_updated': datetime.now().isoformat(),
         'total_interactions': len(updated_config['config_change_log']),
-        'model_used': 'claude-sonnet-4-0'
+        'model_used': 'claude-opus-4-1'
     })
     
     return updated_config
