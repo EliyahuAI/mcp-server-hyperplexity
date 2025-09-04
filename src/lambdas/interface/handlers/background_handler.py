@@ -46,6 +46,74 @@ except ImportError as e:
 # Global variable for the API Gateway Management client
 api_gateway_management_client = None
 
+def _create_fallback_preview_excel(validation_results, config_data, input_filename, is_full=False):
+    """Create a basic Excel file using openpyxl when xlsxwriter is not available."""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, Alignment, PatternFill
+        from openpyxl.utils import get_column_letter
+        
+        # Create a new workbook and worksheet
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Validation Results"
+        
+        # Header styles
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        
+        # Get unique column names from validation results
+        all_columns = set()
+        for result in validation_results:
+            all_columns.update(result.keys())
+        
+        # Sort columns for consistent ordering
+        column_list = sorted(list(all_columns))
+        
+        # Write headers
+        for col_idx, column in enumerate(column_list, 1):
+            cell = ws.cell(row=1, column=col_idx, value=column)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+        
+        # Write data rows
+        for row_idx, result in enumerate(validation_results, 2):
+            for col_idx, column in enumerate(column_list, 1):
+                value = result.get(column, "")
+                # Handle complex objects by converting to string
+                if isinstance(value, (dict, list)):
+                    value = str(value)
+                ws.cell(row=row_idx, column=col_idx, value=value)
+        
+        # Adjust column widths
+        for col_idx in range(1, len(column_list) + 1):
+            column_letter = get_column_letter(col_idx)
+            ws.column_dimensions[column_letter].width = 15
+        
+        # Add metadata sheet
+        meta_ws = wb.create_sheet("Metadata")
+        meta_ws.append(["Key", "Value"])
+        meta_ws.append(["Original File", input_filename])
+        meta_ws.append(["Validation Type", "Full Validation" if is_full else "Preview"])
+        meta_ws.append(["Timestamp", datetime.now().isoformat()])
+        meta_ws.append(["Total Rows", len(validation_results) if validation_results else 0])
+        meta_ws.append(["Total Columns", len(column_list)])
+        
+        if config_data:
+            config_version = config_data.get('storage_metadata', {}).get('version', 1)
+            meta_ws.append(["Config Version", config_version])
+        
+        # Save to bytes buffer
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return buffer.getvalue()
+        
+    except Exception as e:
+        logger.error(f"Error creating fallback Excel: {str(e)}")
+        return None
+
 def _get_api_gateway_management_client(context):
     """Initializes the API Gateway Management client."""
     global api_gateway_management_client
@@ -197,11 +265,11 @@ def handle(event, context):
             max_rows = int(max_rows_str) if max_rows_str else 1000
             
             batch_size_str = event.get('batch_size')
-            batch_size = int(batch_size_str) if batch_size_str else 10
+            batch_size = int(batch_size_str) if batch_size_str else None  # Let enhanced batch manager determine optimal size
         except (ValueError, TypeError):
             logger.warning("Invalid max_rows or batch_size, using defaults.")
             max_rows = 1000
-            batch_size = 10
+            batch_size = None  # Let enhanced batch manager determine optimal size
 
         email_folder = event.get('email_folder', 'default')
         email_address = event.get('email_address')
@@ -214,26 +282,26 @@ def handle(event, context):
             sequential_call_num = event.get('sequential_call')
             logger.info(f"Background preview processing for session {session_id}")
             
-            # Send initial WebSocket progress update
+            # Send initial WebSocket progress update - interface setup range 0-5%
             _send_websocket_message_deduplicated(session_id, {
                 'type': 'preview_progress',
-                'progress': 5,
+                'progress': 1,  # Interface setup: 0-5% range
                 'status': f'🚀 Starting preview validation for {preview_max_rows} rows...',
                 'session_id': session_id,
                 'preview_max_rows': preview_max_rows
             }, "preview_progress_start")
             
-            # Initial status update for preview
+            # Initial status update for preview - use 0-5% range for interface setup
             update_run_status(
                 session_id=session_id, status='PROCESSING', 
                 verbose_status=f"Starting preview for {preview_max_rows} rows...",
-                percent_complete=10
+                percent_complete=2  # Interface setup: 0-5% range
             )
 
-            # Send file retrieval progress update
+            # Send file retrieval progress update - interface setup range 0-5%
             _send_websocket_message_deduplicated(session_id, {
                 'type': 'preview_progress',
-                'progress': 15,
+                'progress': 3,  # Interface setup: 0-5% range
                 'status': '📁 Retrieving Excel file and configuration...',
                 'session_id': session_id
             }, "preview_progress_files")
@@ -265,10 +333,10 @@ def handle(event, context):
                 )
                 return {'statusCode': 500, 'body': json.dumps({'status': 'failed', 'error': 'Files not found'})}
             
-            # Send validation start progress update
+            # Send validation start progress update - interface setup complete, AI work begins (5-90% reserved for validation lambda)
             _send_websocket_message_deduplicated(session_id, {
                 'type': 'preview_progress',
-                'progress': 30,
+                'progress': 5,  # Interface setup complete: hand off to validation lambda for 5-90%
                 'status': f'🔍 Running AI validation on {preview_max_rows} sample rows...',
                 'session_id': session_id
             }, "preview_progress_validation")
@@ -278,18 +346,18 @@ def handle(event, context):
                 preview_first_row=True, preview_max_rows=preview_max_rows, sequential_call=sequential_call_num
             )
             
-            # Send validation completion progress update
+            # Send validation completion progress update - interface final processing begins (90-100% range)
             _send_websocket_message_deduplicated(session_id, {
                 'type': 'preview_progress',
-                'progress': 70,
+                'progress': 90,  # Interface final processing: 90-100% range
                 'status': '✅ AI validation completed, processing results...',
                 'session_id': session_id
             }, "preview_progress_validation_complete")
             
-            # Send results processing progress update
+            # Send results processing progress update - interface final processing (90-100% range)
             _send_websocket_message_deduplicated(session_id, {
                 'type': 'preview_progress',
-                'progress': 80,
+                'progress': 92,  # Interface final processing: 90-100% range
                 'status': '📊 Analyzing results and generating estimates...',
                 'session_id': session_id
             }, "preview_progress_analysis")
@@ -380,6 +448,30 @@ def handle(event, context):
                 
                 # --- Start of Complex Estimations Logic ---
                 
+                # Get actual batch size used during validation
+                per_model_batch_stats = metadata.get('per_model_batch_stats', {})
+                
+                # The validator uses a single effective batch size for the entire run
+                # Extract it from the batch stats or use the configured batch size
+                effective_batch_size = 50  # Default fallback (reasonable default from enhanced batch manager)
+                
+                if per_model_batch_stats:
+                    # Look for the actual batch size used in the validation run
+                    actual_batch_sizes = per_model_batch_stats.get('model_batch_sizes', {})
+                    if actual_batch_sizes:
+                        # For multi-model runs, the validator uses the minimum batch size
+                        # So we should use the minimum as that's what was actually used
+                        effective_batch_size = min(actual_batch_sizes.values())
+                        logger.info(f"📊 Using actual batch size from validation: {effective_batch_size} (from models: {actual_batch_sizes})")
+                    else:
+                        logger.warning(f"📊 per_model_batch_stats available but no model_batch_sizes found")
+                elif batch_size and batch_size > 0:
+                    # Fallback to configured batch size if validation stats not available
+                    effective_batch_size = batch_size
+                    logger.info(f"📊 Using configured batch size: {effective_batch_size}")
+                else:
+                    logger.warning(f"📊 No batch size data available, using default: {effective_batch_size}")
+                
                 # Use batch timing info from the validator if available, otherwise fallback
                 batch_timing = metadata.get('batch_timing', {})
                 validator_processing_time = metadata.get('processing_time', 0.0)
@@ -395,7 +487,7 @@ def handle(event, context):
                     processing_time = validator_processing_time
                     if total_rows_processed > 0:
                         time_per_row = processing_time / total_rows_processed
-                        time_per_batch = time_per_row * 5 # Assuming 5 rows per batch for estimation
+                        time_per_batch = time_per_row * effective_batch_size  # Use actual batch size
                 
                 # Scale preview costs to full table estimates for user quotes
                 # estimated_cost remains as preview run cost without caching
@@ -404,8 +496,8 @@ def handle(event, context):
                 per_row_cost = preview_with_multiplier / total_rows_processed if total_rows_processed > 0 else 0.02 * multiplier
                 per_row_tokens = total_tokens / total_rows_processed if total_rows_processed > 0 else 200
 
-                # Project to full table (this becomes quoted_full_cost)
-                total_batches = math.ceil(total_rows / 5) # Assume batches of 5 for estimation
+                # Project to full table (this becomes quoted_full_cost) - using actual batch size
+                total_batches = math.ceil(total_rows / effective_batch_size)
                 estimated_total_time_seconds = total_batches * time_per_batch
                 quoted_full_cost = math.ceil(per_row_cost * total_rows)  # Full table quote = per_row_cost * total_rows, rounded up to next dollar
                 estimated_total_tokens = per_row_tokens * total_rows
@@ -428,6 +520,8 @@ def handle(event, context):
                     "preview_processing_time": processing_time,
                     "estimated_total_processing_time": estimated_total_time_seconds,
                     "estimated_total_time_minutes": round(estimated_total_time_seconds / 60, 1),
+                    "actual_batch_size": effective_batch_size,
+                    "estimated_total_batches": total_batches,
                     "cost_estimates": {
                         "preview_cost": charged_cost,  # What user pays for preview (0)
                         "quoted_full_cost": quoted_full_cost,  # What user will pay for full validation
@@ -449,12 +543,123 @@ def handle(event, context):
                     }
                 }
                 
+                # Generate enhanced Excel download link and add to preview payload
+                enhanced_download_url = None
+                logger.info("Generating enhanced Excel for preview mode")
+                
+                try:
+                    # Get excel content and config for enhanced Excel generation
+                    from ..core.unified_s3_manager import UnifiedS3Manager
+                    storage_manager = UnifiedS3Manager()
+                    excel_content, excel_s3_key = storage_manager.get_excel_file(email, clean_session_id)
+                    config_data, config_s3_key = storage_manager.get_latest_config(email, clean_session_id)
+                    
+                    if excel_content and config_data:
+                        input_filename = excel_s3_key.split('/')[-1]
+                        
+                        # Calculate summary data for potential email
+                        all_fields = set()
+                        confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+                        for row_data in real_results.values():
+                            for field_name, field_data in row_data.items():
+                                if isinstance(field_data, dict) and 'confidence_level' in field_data:
+                                    all_fields.add(field_name)
+                                    conf_level = field_data.get('confidence_level', 'UNKNOWN')
+                                    if conf_level in confidence_counts:
+                                        confidence_counts[conf_level] += 1
+                        
+                        # Create enhanced Excel if available
+                        enhanced_excel_content = None
+                        logger.info(f"[DEBUG] EXCEL_ENHANCEMENT_AVAILABLE: {EXCEL_ENHANCEMENT_AVAILABLE}")
+                        logger.info(f"[DEBUG] About to create enhanced Excel for preview. real_results count: {len(real_results) if real_results and isinstance(real_results, (dict, list)) else 0}")
+                        
+                        if EXCEL_ENHANCEMENT_AVAILABLE:
+                            try:
+                                # Use shared_table_parser to get structured data
+                                from shared_table_parser import S3TableParser
+                                table_parser = S3TableParser()
+                                logger.info(f"[DEBUG] Parsing S3 table: {S3_UNIFIED_BUCKET}/{excel_s3_key}")
+                                table_data = table_parser.parse_s3_table(S3_UNIFIED_BUCKET, excel_s3_key)
+                                logger.info(f"[DEBUG] Table data parsed. Type: {type(table_data)}, Keys: {list(table_data.keys()) if isinstance(table_data, dict) else 'N/A'}")
+                                
+                                validated_sheet = table_data.get('metadata', {}).get('sheet_name') if isinstance(table_data, dict) else None
+                                logger.info(f"[DEBUG] Validated sheet: {validated_sheet}")
+                                
+                                excel_buffer = create_enhanced_excel_with_validation(
+                                    table_data, real_results, config_data, session_id, validated_sheet_name=validated_sheet
+                                )
+                                logger.info(f"[DEBUG] Excel buffer created. Type: {type(excel_buffer)}, Is None: {excel_buffer is None}")
+                                
+                                if excel_buffer:
+                                    enhanced_excel_content = excel_buffer.getvalue()
+                                    logger.info(f"[DEBUG] Enhanced Excel content extracted. Size: {len(enhanced_excel_content)} bytes")
+                                else:
+                                    logger.error("[DEBUG] Excel buffer is None - enhanced Excel creation failed")
+                            except Exception as e:
+                                logger.error(f"Error creating enhanced Excel for preview: {str(e)}")
+                                import traceback
+                                logger.error(traceback.format_exc())
+                        else:
+                            # Fallback: Create basic Excel using openpyxl when xlsxwriter is not available
+                            try:
+                                logger.info("[DEBUG] xlsxwriter not available, creating fallback Excel using openpyxl")
+                                enhanced_excel_content = _create_fallback_preview_excel(real_results, config_data, input_filename)
+                                logger.info(f"[DEBUG] Fallback Excel created. Size: {len(enhanced_excel_content) if enhanced_excel_content else 0} bytes")
+                            except Exception as e:
+                                logger.error(f"Error creating fallback Excel for preview: {str(e)}")
+                                import traceback
+                                logger.error(traceback.format_exc())
+                        
+                        # Store enhanced Excel in versioned results folder and create download link
+                        logger.info(f"[DEBUG] About to store enhanced Excel. enhanced_excel_content size: {len(enhanced_excel_content) if enhanced_excel_content else 0}")
+                        if enhanced_excel_content:
+                            try:
+                                # Get version from config
+                                config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                                enhanced_filename = f"{os.path.splitext(input_filename)[0]}_v{config_version}_preview_enhanced.xlsx"
+                                logger.info(f"[DEBUG] Storing enhanced Excel with filename: {enhanced_filename}")
+                                
+                                # Store enhanced Excel in versioned results folder
+                                enhanced_result = storage_manager.store_enhanced_files(
+                                    email, clean_session_id, config_version, 
+                                    enhanced_excel_content, None
+                                )
+                                
+                                if enhanced_result['success']:
+                                    logger.info(f"[DEBUG] Enhanced Excel stored in results folder: {enhanced_result['stored_files']}")
+                                    
+                                    # Also create public download link for immediate download
+                                    enhanced_download_url = storage_manager.create_public_download_link(
+                                        enhanced_excel_content, 
+                                        enhanced_filename,
+                                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                                    )
+                                    logger.info(f"[DEBUG] Enhanced Excel download link created successfully: {enhanced_download_url}")
+                                else:
+                                    logger.error(f"[DEBUG] Failed to store enhanced Excel in results folder: {enhanced_result.get('error')}")
+                                    enhanced_download_url = None
+                                    
+                            except Exception as e:
+                                logger.error(f"Failed to store enhanced Excel: {e}")
+                                import traceback
+                                logger.error(traceback.format_exc())
+                        else:
+                            logger.error("[DEBUG] No enhanced Excel content available - cannot store or create download link")
+                except Exception as e:
+                    logger.error(f"Error during enhanced Excel generation for preview: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+
+                # Add enhanced Excel download URL to preview payload
+                preview_payload["enhanced_download_url"] = enhanced_download_url
+                logger.info(f"[DEBUG] Added enhanced_download_url to preview_payload: {enhanced_download_url}")
+                
                 # Update DynamoDB with the complete preview payload
                 update_run_status(
                     session_id=session_id, status='COMPLETED',
                     verbose_status="Preview complete. Results available.",
                     percent_complete=100,
-                    processed_rows=len(validation_results['validation_results']),
+                    processed_rows=len(validation_results.get('validation_results', {})) if validation_results else 0,
                     preview_data=preview_payload
                 )
                 
@@ -520,138 +725,8 @@ def handle(event, context):
                 else:
                     logger.warning(f"No WebSocket connection found for session {session_id} - cannot send notification")
                 
-                # Send preview email if requested
-                logger.info(f"Preview email check: preview_email={preview_email}, EMAIL_SENDER_AVAILABLE={EMAIL_SENDER_AVAILABLE}, email_address={email_address}")
-                if preview_email and EMAIL_SENDER_AVAILABLE and email_address:
-                    # Send email preparation progress update
-                    _send_websocket_message_deduplicated(session_id, {
-                        'type': 'preview_progress',
-                        'progress': 85,
-                        'status': '📧 Preparing enhanced Excel email...',
-                        'session_id': session_id
-                    }, "preview_progress_email_prep")
-                    
-                    logger.info(f"Sending preview email for session {session_id}")
-                    try:
-                        # Get excel content and config for email
-                        from ..core.unified_s3_manager import UnifiedS3Manager
-                        storage_manager = UnifiedS3Manager()
-                        excel_content, excel_s3_key = storage_manager.get_excel_file(email, clean_session_id)
-                        config_data, config_s3_key = storage_manager.get_latest_config(email, clean_session_id)
-                        
-                        if excel_content and config_data:
-                            input_filename = excel_s3_key.split('/')[-1]
-                            
-                            # Try to get the config lambda filename from metadata, fallback to S3 key
-                            config_filename = config_s3_key.split('/')[-1] if config_s3_key else 'config.json'
-                            if 'generation_metadata' in config_data:
-                                # First try config_lambda_filename (set by interface lambda)
-                                if 'config_lambda_filename' in config_data['generation_metadata']:
-                                    config_filename = config_data['generation_metadata']['config_lambda_filename']
-                                    logger.info(f"Using config lambda filename from metadata for preview: {config_filename}")
-                                # Then try saved_filename (set by config lambda)
-                                elif 'saved_filename' in config_data['generation_metadata']:
-                                    config_filename = config_data['generation_metadata']['saved_filename']
-                                    logger.info(f"Using saved filename from metadata for preview: {config_filename}")
-                            
-                            # Calculate summary data for the email
-                            all_fields = set()
-                            confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
-                            for row_data in real_results.values():
-                                for field_name, field_data in row_data.items():
-                                    if isinstance(field_data, dict) and 'confidence_level' in field_data:
-                                        all_fields.add(field_name)
-                                        conf_level = field_data.get('confidence_level', 'UNKNOWN')
-                                        if conf_level in confidence_counts:
-                                            confidence_counts[conf_level] += 1
-                            
-                            summary_data = {
-                                'total_rows': len(real_results),
-                                'fields_validated': list(all_fields),
-                                'confidence_distribution': confidence_counts
-                            }
-                            
-                            # Create enhanced Excel if available
-                            enhanced_excel_content = None
-                            if EXCEL_ENHANCEMENT_AVAILABLE:
-                                try:
-                                    # Use shared_table_parser to get structured data
-                                    from shared_table_parser import S3TableParser
-                                    table_parser = S3TableParser()
-                                    table_data = table_parser.parse_s3_table(S3_UNIFIED_BUCKET, excel_s3_key)
-                                    
-                                    validated_sheet = table_data.get('metadata', {}).get('sheet_name')
-                                    excel_buffer = create_enhanced_excel_with_validation(
-                                        table_data, real_results, config_data, session_id, validated_sheet_name=validated_sheet
-                                    )
-                                    if excel_buffer:
-                                        enhanced_excel_content = excel_buffer.getvalue()
-                                except Exception as e:
-                                    logger.error(f"Error creating enhanced Excel for preview: {str(e)}")
-                            
-                            # Send the email
-                            logger.info(f"Calling send_validation_results_email with: email_address={email_address}, "
-                                      f"excel_content_len={len(excel_content) if excel_content else 0}, "
-                                      f"config_content_len={len(json.dumps(config_data, indent=2).encode('utf-8'))}, "
-                                      f"enhanced_excel_content_len={len(enhanced_excel_content) if enhanced_excel_content else 0}, "
-                                      f"input_filename={input_filename}, config_filename={config_filename}, "
-                                      f"session_id={session_id}, reference_pin={reference_pin}, preview_email=False")
-                            
-                            # Create download link for enhanced Excel if available
-                            enhanced_download_url = None
-                            if enhanced_excel_content:
-                                try:
-                                    # Get version from config
-                                    config_version = config_data.get('storage_metadata', {}).get('version', 1)
-                                    enhanced_filename = f"{os.path.splitext(input_filename)[0]}_v{config_version}_preview_enhanced.xlsx"
-                                    
-                                    enhanced_download_url = storage_manager.create_public_download_link(
-                                        enhanced_excel_content, 
-                                        enhanced_filename,
-                                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                                    )
-                                    logger.info(f"Created enhanced Excel download link for preview: {enhanced_download_url}")
-                                except Exception as e:
-                                    logger.error(f"Failed to create enhanced Excel download link: {e}")
-                            
-                            # Extract config_id from config metadata
-                            config_id = config_data.get('storage_metadata', {}).get('config_id', 'N/A')
-                            
-                            email_result = send_validation_results_email(
-                                email_address=email_address, 
-                                excel_content=excel_content, 
-                                config_content=json.dumps(config_data, indent=2).encode('utf-8'),
-                                enhanced_excel_content=enhanced_excel_content,
-                                input_filename=input_filename, 
-                                config_filename=config_filename,
-                                enhanced_excel_filename=f"{os.path.splitext(input_filename)[0]}_Preview_Validated.xlsx",
-                                session_id=session_id, 
-                                summary_data=summary_data, 
-                                processing_time=processing_time,
-                                reference_pin=reference_pin, 
-                                metadata=metadata, 
-                                preview_email=False,  # No emails for preview - just generate enhanced Excel for download
-                                billing_info=None,  # No charges for previews
-                                config_id=config_id
-                            )
-                            
-                            logger.info(f"Email result received: {email_result}")
-                            
-                            # Send processing completion progress update (no email for preview)
-                            _send_websocket_message_deduplicated(session_id, {
-                                'type': 'preview_progress',
-                                'progress': 95,
-                                'status': '✅ Enhanced Excel file generated for download!',
-                                'session_id': session_id
-                            }, "preview_progress_processing_complete")
-                            
-                            logger.info(f"Preview processing completed, enhanced Excel generated for download")
-                        else:
-                            logger.error("Could not retrieve files for preview processing")
-                    except Exception as e:
-                        logger.error(f"Error processing preview files: {str(e)}")
-                        import traceback
-                        logger.error(f"Preview processing error traceback: {traceback.format_exc()}")
+                # Enhanced Excel generation has been moved earlier in the function (before WebSocket message)
+                # to ensure enhanced_download_url is available in the preview payload
                 
                 # Store preview results in versioned results folder using unified storage
                 config_version = 1
@@ -662,10 +737,10 @@ def handle(event, context):
                 except Exception as e:
                     logger.warning(f"Could not determine config version for preview: {e}")
                 
-                # Send final storage progress update
+                # Send final storage progress update - interface final processing (90-100% range)
                 _send_websocket_message_deduplicated(session_id, {
                     'type': 'preview_progress',
-                    'progress': 98,
+                    'progress': 98,  # Interface final processing: 90-100% range
                     'status': '💾 Storing preview results...',
                     'session_id': session_id
                 }, "preview_progress_storage")
@@ -694,10 +769,10 @@ def handle(event, context):
                 else:
                     logger.error(f"Failed to store preview results: {result.get('error')}")
                 
-                # Send final completion progress update
+                # Send final completion progress update - interface final processing complete (100%)
                 _send_websocket_message_deduplicated(session_id, {
                     'type': 'preview_progress',
-                    'progress': 100,
+                    'progress': 100,  # Interface final processing complete: 100%
                     'status': '🎉 Preview completed successfully!',
                     'session_id': session_id
                 }, "preview_progress_final")
@@ -782,10 +857,27 @@ def handle(event, context):
             
             update_run_status(session_id=session_id, status='PROCESSING', verbose_status=f"Preparing to process {rows_to_process} rows in {total_batches} batches.")
 
-            # We need the full rows data to iterate through, not just invoke the lambda
-            # This is a conceptual simplification. The real invoker already does this.
-            # We will simulate the batch processing here for the sake of status updates.
+            # DISABLED: Fake simulation replaced with real validation lambda invocation
+            logger.info(f"[DEBUG] Fake batch processing loop DISABLED for session {session_id}")
+            logger.info(f"[DEBUG] Should invoke validation lambda with {rows_to_process} rows in {total_batches} batches")
             
+            # TODO: Replace with actual validation lambda invocation
+            # This simulation was creating fake "first batch -> final batch" jumps
+            
+            # Interface setup for full validation - use 0-5% range
+            update_run_status(
+                session_id=session_id, 
+                status='PROCESSING',
+                processed_rows=0,
+                percent_complete=2,  # Interface setup: 0-5% range
+                verbose_status=f"Starting full validation processing for {rows_to_process} rows..."
+            )
+            
+            # The real processing should happen via validation lambda invocation
+            # which will send proper WebSocket progress updates
+            
+            # Original simulation loop commented out:
+            """
             for i in range(total_batches):
                 start_row = i * batch_size
                 end_row = min(start_row + batch_size, rows_to_process)
@@ -807,6 +899,7 @@ def handle(event, context):
                     percent_complete=percent_complete,
                     verbose_status=verbose_status
                 )
+            """
             
             # After the loop, we would have the final results.
             # For now, we will call the original invoker to get the final result in one go,
@@ -923,7 +1016,7 @@ def handle(event, context):
                             email=email,
                             amount=Decimal(str(charged_cost)),
                             session_id=session_id,
-                            description=f"Full validation - {len(real_results)} rows processed",
+                            description=f"Full validation - {len(real_results) if real_results else 0} rows processed",
                             raw_cost=Decimal(str(eliyahu_cost)),
                             multiplier=Decimal(str(multiplier))
                         )
@@ -936,7 +1029,7 @@ def handle(event, context):
                                 'new_balance': float(final_balance) if final_balance else 0,
                                 'transaction': {
                                     'amount': -float(charged_cost),
-                                    'description': f"Full validation - {len(real_results)} rows processed",
+                                    'description': f"Full validation - {len(real_results) if real_results else 0} rows processed",
                                     'eliyahu_cost': float(eliyahu_cost),
                                     'multiplier': float(multiplier)
                                 }
@@ -990,12 +1083,30 @@ def handle(event, context):
                 # Extract metrics for this section  
                 total_cost = charged_cost  # Use charged cost for display
                 total_tokens = token_usage.get('total_tokens', 0)
-                total_rows_processed = validation_results.get('total_processed_rows', len(real_results))
+                total_rows_processed = validation_results.get('total_processed_rows', len(real_results) if real_results else 0)
                 
                 # Create the markdown table for the response
                 markdown_table = create_markdown_table_from_results(real_results, 3, actual_config_s3_key, S3_UNIFIED_BUCKET)
                 
                 # --- Start of Complex Estimations Logic ---
+                
+                # Get actual batch size used during validation (same logic as preview)
+                per_model_batch_stats = metadata.get('per_model_batch_stats', {})
+                effective_batch_size = 50  # Default fallback (reasonable default from enhanced batch manager)
+                
+                if per_model_batch_stats:
+                    actual_batch_sizes = per_model_batch_stats.get('model_batch_sizes', {})
+                    if actual_batch_sizes:
+                        # Use minimum batch size (what the validator actually used)
+                        effective_batch_size = min(actual_batch_sizes.values())
+                        logger.info(f"📊 Using actual batch size from full validation: {effective_batch_size} (from models: {actual_batch_sizes})")
+                    else:
+                        logger.warning(f"📊 per_model_batch_stats available but no model_batch_sizes found")
+                elif batch_size and batch_size > 0:
+                    effective_batch_size = batch_size
+                    logger.info(f"📊 Using configured batch size for full validation: {effective_batch_size}")
+                else:
+                    logger.warning(f"📊 No batch size data available for full validation, using default: {effective_batch_size}")
                 
                 # Use batch timing info from the validator if available, otherwise fallback
                 batch_timing = metadata.get('batch_timing', {})
@@ -1012,12 +1123,15 @@ def handle(event, context):
                     processing_time = validator_processing_time
                     if total_rows_processed > 0:
                         time_per_row = processing_time / total_rows_processed
-                        time_per_batch = time_per_row * 5 # Assuming 5 rows per batch for estimation
+                        time_per_batch = time_per_row * effective_batch_size  # Use actual batch size
                 
                 # Use already calculated projection values from earlier (lines 383-394)
                 # Scaling logic: (preview_run_estimated_cost * multiplier) / preview_rows * total_rows
                 # Variables available: quoted_full_cost, estimated_total_tokens, estimated_total_time_seconds,
                 # per_row_cost, per_row_tokens - all correctly scaled from preview run to full table quote
+                
+                # Calculate total batches for full validation using actual batch size
+                total_batches = math.ceil(total_rows / effective_batch_size) if total_rows > 0 else 0
                 
                 # --- End of Complex Estimations Logic ---
 
@@ -1031,6 +1145,8 @@ def handle(event, context):
                     "preview_processing_time": processing_time,
                     "estimated_total_processing_time": estimated_total_time_seconds,
                     "estimated_total_time_minutes": round(estimated_total_time_seconds / 60, 1),
+                    "actual_batch_size": effective_batch_size,
+                    "estimated_total_batches": total_batches,
                     "enhanced_download_url": enhanced_download_url,  # Download link for enhanced Excel
                     "cost_estimates": {
                         "preview_cost": charged_cost,  # What user pays for preview (0)
@@ -1177,12 +1293,14 @@ def handle(event, context):
                                     confidence_counts[conf_level] += 1
                     
                     summary_data = {
-                        'total_rows': len(real_results),
+                        'total_rows': len(real_results) if real_results else 0,
                         'fields_validated': list(all_fields),
                         'confidence_distribution': confidence_counts
                     }
                     
                     enhanced_excel_content = None
+                    logger.info(f"EXCEL_ENHANCEMENT_AVAILABLE: {EXCEL_ENHANCEMENT_AVAILABLE}")
+                    
                     if EXCEL_ENHANCEMENT_AVAILABLE:
                         try:
                             # Use shared_table_parser to get structured data instead of raw bytes
@@ -1207,12 +1325,39 @@ def handle(event, context):
                             )
                             if excel_buffer:
                                 enhanced_excel_content = excel_buffer.getvalue()
+                                logger.info("Created enhanced Excel using xlsxwriter")
                         except Exception as e:
                             logger.error(f"Error creating enhanced Excel: {str(e)}")
+                            enhanced_excel_content = None
+                    else:
+                        # Fallback: Create basic Excel using openpyxl when xlsxwriter is not available
+                        try:
+                            logger.info("Creating fallback Excel using openpyxl")
+                            enhanced_excel_content = _create_fallback_preview_excel(real_results, config_data, input_filename, is_full=True)
+                            logger.info("Created fallback Excel successfully")
+                        except Exception as e:
+                            logger.error(f"Error creating fallback Excel: {str(e)}")
                             enhanced_excel_content = None
                     
                     # Ensure enhanced_excel_content is bytes or None (not other types)
                     safe_enhanced_excel_content = enhanced_excel_content if isinstance(enhanced_excel_content, (bytes, type(None))) else None
+                    
+                    # Extract API call counts from token usage for receipt
+                    by_provider = token_usage.get('by_provider', {})
+                    perplexity_calls = by_provider.get('perplexity', {}).get('calls', 0)
+                    anthropic_calls = by_provider.get('anthropic', {}).get('calls', 0)
+                    
+                    # Extract original table name (remove _input suffix if present)
+                    original_table_name = input_filename
+                    if input_filename and '_input' in input_filename:
+                        original_table_name = input_filename.replace('_input', '').rsplit('.', 1)[0]
+                        if '.' in original_table_name:  # Add extension back if it had one
+                            original_table_name += '.xlsx'
+                    elif input_filename:
+                        original_table_name = input_filename.rsplit('.', 1)[0] + '.xlsx'
+                    
+                    # Extract config_id from config metadata (will be added later after config_id is calculated)
+                    # This is a placeholder - config_id will be added to billing_info after line 1404
                     
                     # Prepare billing information for receipt
                     billing_info = {
@@ -1220,10 +1365,16 @@ def handle(event, context):
                         'eliyahu_cost': eliyahu_cost,
                         'multiplier': multiplier,
                         'initial_balance': float(initial_balance) if initial_balance else 0,
-                        'final_balance': float(final_balance) if final_balance else 0
+                        'final_balance': float(final_balance) if final_balance else 0,
+                        # Add receipt-specific data
+                        'perplexity_api_calls': perplexity_calls,
+                        'anthropic_api_calls': anthropic_calls,
+                        'rows_processed': processed_rows_count,
+                        'table_name': original_table_name,
+                        'fields_validated_count': len(summary_data.get('fields_validated', []))
                     }
                     
-                    # Create download link for enhanced Excel if available  
+                    # Store enhanced Excel in versioned results folder and create download link
                     enhanced_download_url = None
                     if safe_enhanced_excel_content:
                         try:
@@ -1231,26 +1382,61 @@ def handle(event, context):
                             config_version = config_data.get('storage_metadata', {}).get('version', 1)
                             enhanced_filename = f"{os.path.splitext(input_filename)[0]}_v{config_version}_full_enhanced.xlsx"
                             
-                            enhanced_download_url = storage_manager.create_public_download_link(
-                                safe_enhanced_excel_content, 
-                                enhanced_filename,
-                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                            # Store enhanced Excel in versioned results folder
+                            enhanced_result = storage_manager.store_enhanced_files(
+                                email, clean_session_id, config_version, 
+                                safe_enhanced_excel_content, None
                             )
-                            logger.info(f"Created enhanced Excel download link for full results: {enhanced_download_url}")
+                            
+                            if enhanced_result['success']:
+                                logger.info(f"Enhanced Excel stored in results folder for full validation: {enhanced_result['stored_files']}")
+                                
+                                # Also create public download link for immediate download
+                                enhanced_download_url = storage_manager.create_public_download_link(
+                                    safe_enhanced_excel_content, 
+                                    enhanced_filename,
+                                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                                )
+                                logger.info(f"Created enhanced Excel download link for full results: {enhanced_download_url}")
+                            else:
+                                logger.error(f"Failed to store enhanced Excel in results folder for full validation: {enhanced_result.get('error')}")
+                                
                         except Exception as e:
-                            logger.error(f"Failed to create enhanced Excel download link: {e}")
+                            logger.error(f"Failed to store enhanced Excel for full validation: {e}")
                     
                     # Extract config_id from config metadata
                     config_id = config_data.get('storage_metadata', {}).get('config_id', 'N/A')
+                    
+                    # Add config_id to billing_info for receipt
+                    billing_info['config_id'] = config_id
+                    
+                    # Get actual processing time from DynamoDB run record instead of metadata
+                    actual_processing_time = 0
+                    try:
+                        from dynamodb_schemas import get_run_status
+                        run_status = get_run_status(session_id)
+                        if run_status:
+                            # Use actual processing time if available, otherwise calculate from start/end times
+                            if 'actual_processing_time_seconds' in run_status:
+                                actual_processing_time = float(run_status['actual_processing_time_seconds'])
+                            elif 'start_time' in run_status and 'end_time' in run_status:
+                                from datetime import datetime, timezone
+                                start_time = datetime.fromisoformat(run_status['start_time'].replace('Z', '+00:00'))
+                                end_time = datetime.fromisoformat(run_status['end_time'].replace('Z', '+00:00'))
+                                actual_processing_time = (end_time - start_time).total_seconds()
+                        logger.info(f"Using actual processing time for email: {actual_processing_time:.2f} seconds")
+                    except Exception as e:
+                        logger.warning(f"Could not get actual processing time for email, using metadata fallback: {e}")
+                        actual_processing_time = metadata.get('processing_time', 0)
                     
                     email_result = send_validation_results_email(
                         email_address=email_address, excel_content=excel_content, 
                         config_content=json.dumps(config_data, indent=2).encode('utf-8'),
                         enhanced_excel_content=safe_enhanced_excel_content,
                         input_filename=input_filename, config_filename=config_filename,
-                        enhanced_excel_filename=f"{os.path.splitext(input_filename)[0]}_Validated.xlsx",
+                        enhanced_excel_filename=f"{os.path.splitext(input_filename)[0].replace('_input', '')}_Validated.xlsx",
                         session_id=session_id, summary_data=summary_data, 
-                        processing_time=metadata.get('processing_time',0),
+                        processing_time=actual_processing_time,
                         reference_pin=reference_pin, metadata=metadata, preview_email=preview_email,
                         billing_info=billing_info,
                         config_id=config_id
@@ -1279,7 +1465,7 @@ def handle(event, context):
                         'processed_rows': processed_rows_count,
                         'total_rows': total_rows_in_file,
                         'verbose_status': 'Validation complete. Results should be in your inbox shortly.',
-                        'percent_complete': 100
+                        'percent_complete': 100  # Interface final processing complete: 100%
                     }
                     
                     # Add download URLs if available
@@ -1301,6 +1487,43 @@ def handle(event, context):
                         status_update_data['enhanced_download_url'] = enhanced_download_url
                     if zip_download_url:
                         status_update_data['download_url'] = zip_download_url
+                    
+                    # Get and add the actual batch size used during validation
+                    per_model_batch_stats = metadata.get('per_model_batch_stats', {})
+                    effective_batch_size = 50  # Default fallback
+                    
+                    if per_model_batch_stats:
+                        actual_batch_sizes = per_model_batch_stats.get('model_batch_sizes', {})
+                        if actual_batch_sizes:
+                            effective_batch_size = min(actual_batch_sizes.values())
+                            logger.info(f"📊 Final status update batch size from validation: {effective_batch_size}")
+                    elif batch_size and batch_size > 0:
+                        effective_batch_size = batch_size
+                    
+                    if effective_batch_size:
+                        status_update_data['batch_size'] = effective_batch_size
+                    
+                    # Add token/cost data to runs table for full runs (similar to preview runs)
+                    # This ensures CSV exports have complete token metrics for both preview and full runs
+                    full_run_data = {
+                        "actual_batch_size": effective_batch_size,
+                        "estimated_total_batches": math.ceil(total_rows_in_file / effective_batch_size) if effective_batch_size > 0 else 0,
+                        "cost_estimates": {
+                            "per_row_cost": eliyahu_cost / processed_rows_count if processed_rows_count > 0 else 0,
+                            "estimated_total_cost": charged_cost,
+                            "preview_cost": 0  # Full runs don't have preview cost
+                        },
+                        "token_usage": {
+                            "total_tokens": token_usage.get('total_tokens', 0),
+                            "by_provider": token_usage.get('by_provider', {}),
+                            "api_calls": token_usage.get('api_calls', 0),
+                            "cached_calls": token_usage.get('cached_calls', 0),
+                            "total_cost": eliyahu_cost,
+                            "estimated_total_cost": estimated_cost
+                        },
+                        "validation_metrics": validation_metrics
+                    }
+                    status_update_data['preview_data'] = full_run_data
                     
                     update_run_status(**status_update_data)
                     
@@ -1379,26 +1602,26 @@ def handle_config_generation(event, context):
         logger.info(f"[CONFIG_GEN_START] {execution_id} - Handling config generation request for session {event.get('session_id')}")
         session_id = event.get('session_id')
         
-        # Send initial progress update
+        # Send initial progress update - interface setup (0-5% range)
         _send_websocket_message_deduplicated(session_id, {
             'type': 'config_generation_progress',
-            'progress': 5,
+            'progress': 1,  # Interface setup: 0-5% range
             'status': '🚀 Starting AI configuration generation...',
             'session_id': session_id
         }, "config_progress_start")
         
-        # Send analysis progress update
+        # Send analysis progress update - interface setup (0-5% range)
         _send_websocket_message_deduplicated(session_id, {
             'type': 'config_generation_progress', 
-            'progress': 15,
+            'progress': 3,  # Interface setup: 0-5% range
             'status': '🔍 Analyzing table structure and data patterns...',
             'session_id': session_id
         }, "config_progress_analysis")
         
-        # Invoke the config lambda directly
+        # Invoke the config lambda directly - interface setup complete (5% handoff to config lambda for 5-90%)
         _send_websocket_message_deduplicated(session_id, {
             'type': 'config_generation_progress',
-            'progress': 30,
+            'progress': 5,  # Interface setup complete: hand off to config lambda for 5-90%
             'status': '🤖 Developing configuration with AI...',
             'session_id': session_id
         }, "config_progress_ai_invoke")
@@ -1408,10 +1631,10 @@ def handle_config_generation(event, context):
         logger.info(f"Config generation response: {response}")
         logger.info(f"Response keys: {list(response.keys()) if isinstance(response, dict) else 'Not a dict'}")
         
-        # Send AI processing completion update
+        # Send AI processing completion update - interface final processing begins (90-100% range)
         _send_websocket_message_deduplicated(session_id, {
             'type': 'config_generation_progress',
-            'progress': 70,
+            'progress': 90,  # Interface final processing: 90-100% range
             'status': '✨ AI configuration generated successfully!',
             'session_id': session_id
         }, "config_progress_ai_complete")
@@ -1425,10 +1648,10 @@ def handle_config_generation(event, context):
             
             logger.info(f"Extracted fields: config_s3_key={config_s3_key}, ai_summary_length={len(ai_summary) if ai_summary else 0}, download_url={download_url}")
             
-            # Send storage progress update
+            # Send storage progress update - interface final processing (90-100% range)
             _send_websocket_message_deduplicated(session_id, {
                 'type': 'config_generation_progress',
-                'progress': 85,
+                'progress': 95,  # Interface final processing: 90-100% range
                 'status': '💾 Storing configuration in unified storage...',
                 'session_id': session_id
             }, "config_progress_storage")
@@ -1440,10 +1663,10 @@ def handle_config_generation(event, context):
             elif download_url:
                 logger.info(f"Using download URL from config lambda: {download_url}")
             
-            # Send final completion progress
+            # Send final completion progress - interface final processing complete (100%)
             _send_websocket_message_deduplicated(session_id, {
                 'type': 'config_generation_progress',
-                'progress': 100,
+                'progress': 100,  # Interface final processing complete: 100%
                 'status': '🎉 Configuration generation complete!',
                 'session_id': session_id
             }, "config_progress_complete")
@@ -1587,11 +1810,68 @@ def invoke_config_lambda(event: Dict) -> Dict:
     """Invoke the config lambda function."""
     try:
         import boto3
+        from botocore.config import Config
         
-        lambda_client = boto3.client('lambda')
+        # Configure longer timeouts for Opus processing
+        config = Config(
+            read_timeout=900,  # 15 minutes read timeout  
+            connect_timeout=60,  # 1 minute connect timeout
+            retries={'max_attempts': 1}  # Don't retry on timeout
+        )
+        
+        lambda_client = boto3.client('lambda', config=config)
         config_lambda_name = os.environ.get('CONFIG_LAMBDA_NAME', 'perplexity-validator-config')
         
         logger.info(f"Invoking config lambda: {config_lambda_name}")
+        
+        # Add validation results to event if this is a refinement (has existing_config)
+        if event.get('existing_config') and event.get('email') and event.get('session_id'):
+            try:
+                logger.info(f"BACKGROUND_HANDLER: This is a refinement - retrieving validation results for {event.get('email')}/{event.get('session_id')}")
+                
+                # Import and use UnifiedS3Manager to get validation results
+                from ..core.unified_s3_manager import UnifiedS3Manager
+                storage_manager = UnifiedS3Manager()
+                
+                latest_validation_results = storage_manager.get_latest_validation_results(
+                    email=event.get('email'),
+                    session_id=event.get('session_id')
+                )
+                
+                if latest_validation_results:
+                    event['latest_validation_results'] = latest_validation_results
+                    logger.info(f"BACKGROUND_HANDLER: Successfully added validation results to config lambda payload!")
+                    logger.info(f"Validation results keys: {list(latest_validation_results.keys())}")
+                    if 'markdown_table' in latest_validation_results:
+                        logger.info(f"markdown_table size: {len(latest_validation_results['markdown_table'])}")
+                else:
+                    logger.info(f"BACKGROUND_HANDLER: No validation results found")
+                    
+            except Exception as e:
+                logger.warning(f"BACKGROUND_HANDLER: Exception retrieving validation results: {e}")
+                import traceback
+                logger.warning(f"Traceback: {traceback.format_exc()}")
+        
+        # Debug what we're sending to config lambda
+        logger.info(f"CONFIG_LAMBDA_PAYLOAD_DEBUG: Event keys being sent: {list(event.keys())}")
+        logger.info(f"CONFIG_LAMBDA_PAYLOAD_DEBUG: Has existing_config: {bool(event.get('existing_config'))}")
+        logger.info(f"CONFIG_LAMBDA_PAYLOAD_DEBUG: Has latest_validation_results: {bool(event.get('latest_validation_results'))}")
+        if 'email' in event and 'session_id' in event:
+            logger.info(f"CONFIG_LAMBDA_PAYLOAD_DEBUG: email={event.get('email')}, session_id={event.get('session_id')}")
+        
+        # Check payload size for potential issues
+        try:
+            payload_json = json.dumps(event)
+            payload_size_mb = len(payload_json.encode('utf-8')) / (1024 * 1024)
+            logger.info(f"CONFIG_LAMBDA_PAYLOAD_SIZE: {payload_size_mb:.2f} MB")
+            if payload_size_mb > 5.5:
+                logger.warning(f"CONFIG_LAMBDA_PAYLOAD_SIZE: Large payload detected! Size: {payload_size_mb:.2f} MB (limit is 6MB)")
+                # Log size breakdown if payload is large
+                if event.get('latest_validation_results'):
+                    vr_size = len(json.dumps(event['latest_validation_results']).encode('utf-8')) / (1024 * 1024)
+                    logger.info(f"latest_validation_results contributes: {vr_size:.2f} MB")
+        except Exception as size_check_error:
+            logger.warning(f"Could not check payload size: {size_check_error}")
         
         # Invoke the lambda
         response = lambda_client.invoke(

@@ -10,6 +10,7 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from io import BytesIO
 import json
+import os
 
 def get_excel_features_text():
     """Common language about Excel file features used in all validation emails."""
@@ -17,6 +18,15 @@ def get_excel_features_text():
 from datetime import datetime
 import re
 import logging
+
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
+    from reportlab.lib.units import inch
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +36,165 @@ BCC_ADDRESS = "ppp@eliyahu.ai"  # For tracking/analytics
 CHARSET = "UTF-8"
 
 
+def generate_receipt_pdf(session_id: str, email: str, amount: float, 
+                        transaction_details: dict) -> bytes:
+    """Generate PDF receipt for validation charges"""
+    try:
+        if not REPORTLAB_AVAILABLE:
+            raise ImportError("ReportLab not available for PDF generation")
+            
+        buffer = BytesIO()
+        c = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        
+        # Logo at top center (1.5 inch square)
+        # Try multiple potential paths where the logo might be located
+        logo_fallback_paths = [
+            # Lambda function package root (most likely location after deployment)
+            "/var/task/EliyahuLogo_NoText_Crop.png",
+            # Current working directory (local testing)
+            "./EliyahuLogo_NoText_Crop.png",
+            # AWS Lambda layer paths
+            "/opt/EliyahuLogo_NoText_Crop.png",
+            "/opt/python/lib/python3.9/site-packages/EliyahuLogo_NoText_Crop.png",
+            # Development paths  
+            "./src/lambdas/config/EliyahuLogo_NoText_Crop.png",
+            "../config/EliyahuLogo_NoText_Crop.png",
+            # Temporary directory fallback
+            "/tmp/EliyahuLogo_NoText_Crop.png"
+        ]
+        
+        logo_found = False
+        for path in logo_fallback_paths:
+            if os.path.exists(path):
+                try:
+                    logo_size = 1.5 * inch
+                    logo_x = (width - logo_size) / 2
+                    logo_y = height - 2 * inch
+                    c.drawImage(path, logo_x, logo_y, width=logo_size, height=logo_size)
+                    logo_found = True
+                    break
+                except Exception as logo_e:
+                    logger.warning(f"Could not load logo from {path}: {logo_e}")
+                    continue
+        
+        if not logo_found:
+            logger.warning("Logo not found, proceeding without logo")
+        
+        # Company name and receipt title
+        y_position = height - 3.8 * inch
+        c.setFont("Helvetica-Bold", 20)
+        text_width = c.stringWidth("Hyperplexity.AI Table Research", "Helvetica-Bold", 20)
+        c.drawString((width - text_width) / 2, y_position, "Hyperplexity.AI Table Research")
+        
+        y_position -= 0.4 * inch
+        c.setFont("Helvetica", 16)
+        text_width = c.stringWidth("Payment Receipt", "Helvetica", 16)
+        c.drawString((width - text_width) / 2, y_position, "Payment Receipt")
+        
+        # Receipt information
+        y_position -= 0.8 * inch
+        c.setFont("Helvetica", 11)
+        
+        receipt_date = datetime.now().strftime("%B %d, %Y at %I:%M %p UTC")
+        
+        # Left column labels, right column values
+        left_margin = 1.5 * inch
+        right_margin = width - 1.5 * inch
+        
+        def draw_info_row(label, value, y_pos):
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(left_margin, y_pos, label)
+            c.setFont("Helvetica", 11)
+            c.drawRightString(right_margin, y_pos, str(value))
+            return y_pos - 0.25 * inch
+        
+        y_position = draw_info_row("Receipt Date:", receipt_date, y_position)
+        y_position = draw_info_row("Session ID:", session_id, y_position)
+        y_position = draw_info_row("Customer Email:", email, y_position)
+        y_position = draw_info_row("Service:", "Table Validation", y_position)
+        
+        # Add table name if available
+        table_name = transaction_details.get('table_name', transaction_details.get('input_filename', 'N/A'))
+        if table_name and table_name != 'N/A':
+            y_position = draw_info_row("Input Table:", table_name, y_position)
+        
+        # Add configuration code if available
+        config_id = transaction_details.get('config_id', 'N/A')
+        if config_id and config_id != 'N/A':
+            y_position = draw_info_row("Configuration Code:", config_id, y_position)
+        
+        # Service details section
+        y_position -= 0.4 * inch
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(left_margin, y_position, "Service Details")
+        
+        y_position -= 0.3 * inch
+        
+        # Service details in requested order: Rows, Fields, Perplexity Calls, Claude Calls
+        rows_processed = transaction_details.get('rows_processed', 0)
+        fields_validated = transaction_details.get('fields_validated_count', 0)
+        perplexity_calls = transaction_details.get('perplexity_api_calls', 0)
+        claude_calls = transaction_details.get('anthropic_api_calls', 0)
+        
+        y_position = draw_info_row("Rows Processed:", f"{rows_processed:,}", y_position)
+        y_position = draw_info_row("Fields Validated:", f"{fields_validated:,}", y_position)
+        y_position = draw_info_row("Perplexity API Calls:", f"{perplexity_calls:,}", y_position)
+        y_position = draw_info_row("Claude API Calls:", f"{claude_calls:,}", y_position)
+        
+        # Total section
+        y_position -= 0.4 * inch
+        
+        # Draw line
+        c.line(left_margin, y_position + 0.1 * inch, right_margin, y_position + 0.1 * inch)
+        
+        y_position -= 0.2 * inch
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(left_margin, y_position, "Total Charged:")
+        c.drawRightString(right_margin, y_position, f"${amount:.4f}")
+        
+        # Footer
+        y_position = 2 * inch
+        c.setFont("Helvetica", 10)
+        text_width = c.stringWidth("Thank you for using Hyperplexity!", "Helvetica", 10)
+        c.drawString((width - text_width) / 2, y_position, "Thank you for using Hyperplexity!")
+        
+        y_position -= 0.25 * inch
+        text_width = c.stringWidth("For support, contact: eliyahu@eliyahu.ai", "Helvetica", 10)
+        c.drawString((width - text_width) / 2, y_position, "For support, contact: eliyahu@eliyahu.ai")
+        
+        y_position -= 0.25 * inch
+        text_width = c.stringWidth("This receipt is for your records.", "Helvetica", 10)
+        c.drawString((width - text_width) / 2, y_position, "This receipt is for your records.")
+        
+        c.save()
+        buffer.seek(0)
+        return buffer.getvalue()
+        
+    except Exception as e:
+        logger.error(f"Error generating PDF receipt: {e}")
+        # Fallback to text receipt as bytes
+        fallback_text = f"""Hyperplexity.AI Table Research RECEIPT
+==============================
+Session: {session_id}
+Date: {datetime.now().isoformat()}
+Email: {email}
+
+Service: Table Validation
+Rows Processed: {transaction_details.get('rows_processed', 0):,}
+Fields Validated: {transaction_details.get('fields_validated_count', 0):,}
+Perplexity Calls: {transaction_details.get('perplexity_api_calls', 0):,}
+Claude Calls: {transaction_details.get('anthropic_api_calls', 0):,}
+Total Charged: ${amount:.4f}
+
+Thank you for using Hyperplexity!
+        """
+        return fallback_text.encode('utf-8')
+
+
 def generate_receipt(session_id: str, email: str, amount: float, raw_cost: float, 
                     multiplier: float, transaction_details: dict) -> str:
-    """Generate HTML receipt for validation charges"""
+    """Legacy HTML receipt function - kept for compatibility"""
     try:
         receipt_date = datetime.now().strftime("%B %d, %Y at %I:%M %p UTC")
         receipt_content = f"""
@@ -285,22 +451,14 @@ def send_validation_results_email(email_address, excel_content, config_content, 
             base_name = re.sub(r'_Verified\d*$', '', base_name)
             return base_name or "Table"
         
-        # Create subject line based on email type
-        base_filename = clean_filename(input_filename)
-        subject_type = "Preview Results" if preview_email else "Validation Results"
-        
-        # Extract version from config filename (e.g., "RatioCompetitiveIntelligence_Verified1_input_config_V03.json" -> "v3")
-        config_version = ""
-        if config_filename:
-            import re
-            version_match = re.search(r'_V(\d+)\.json$', config_filename)
-            if version_match:
-                config_version = f" (v{int(version_match.group(1))})"
+        # Create subject line - use original filename with extension
+        original_filename = input_filename or "Table"
+        subject_type = "Hyperplexity Results"
         
         if reference_pin:
-            message["Subject"] = f"🟩 {subject_type}{config_version} - {base_filename} #{reference_pin}"
+            message["Subject"] = f"{subject_type} - {original_filename} (Ref# {reference_pin})"
         else:
-            message["Subject"] = f"🟩 {subject_type}{config_version} - {base_filename}"
+            message["Subject"] = f"{subject_type} - {original_filename}"
         
         # Extract summary data
         total_rows = summary_data.get('total_rows', 0)
@@ -325,7 +483,8 @@ def send_validation_results_email(email_address, excel_content, config_content, 
             input_filename,
             config_filename,
             preview_email,
-            config_id
+            config_id,
+            None  # original_confidence_distribution - TODO: implement delta calculation
         )
         
         # Attach HTML body
@@ -347,35 +506,69 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         # Generate and attach receipt if there are charges
         if billing_info and billing_info.get('amount_charged', 0) > 0 and not preview_email:
             try:
+                # Enhanced transaction details with API call counts and table name
                 transaction_details = {
-                    'rows_processed': summary_data.get('total_rows', 0),
+                    'rows_processed': billing_info.get('rows_processed', summary_data.get('total_rows', 0)),
                     'description': f"Full validation - {summary_data.get('total_rows', 0)} rows processed",
-                    'session_id': session_id
+                    'session_id': session_id,
+                    'perplexity_api_calls': billing_info.get('perplexity_api_calls', 0),
+                    'anthropic_api_calls': billing_info.get('anthropic_api_calls', 0),
+                    'fields_validated_count': billing_info.get('fields_validated_count', 0),
+                    'table_name': billing_info.get('table_name', 'N/A'),
+                    'input_filename': billing_info.get('table_name', 'N/A'),
+                    'config_id': billing_info.get('config_id', 'N/A')
                 }
                 
-                receipt_html = generate_receipt(
+                # Generate PDF receipt
+                receipt_pdf_bytes = generate_receipt_pdf(
                     session_id=session_id,
                     email=email_address,
                     amount=billing_info.get('amount_charged', 0),
-                    raw_cost=billing_info.get('raw_cost', 0),
-                    multiplier=billing_info.get('multiplier', 1.0),
                     transaction_details=transaction_details
                 )
                 
                 # Create receipt filename
-                receipt_filename = f"receipt_{session_id}.html"
+                receipt_filename = f"receipt_{session_id}.pdf"
                 
-                # Attach receipt as HTML file
-                receipt_part = MIMEApplication(receipt_html.encode('utf-8'))
+                # Attach receipt as PDF file
+                receipt_part = MIMEApplication(receipt_pdf_bytes)
                 receipt_part.add_header("Content-Disposition", f'attachment; filename="{receipt_filename}"')
-                receipt_part.add_header("Content-Type", "text/html; charset=utf-8")
+                receipt_part.add_header("Content-Type", "application/pdf")
                 message.attach(receipt_part)
                 
-                logger.info(f"Receipt attached to email for session {session_id}: ${billing_info.get('amount_charged', 0):.4f}")
+                logger.info(f"PDF receipt attached to email for session {session_id}: ${billing_info.get('amount_charged', 0):.4f}")
                 
             except Exception as e:
-                logger.error(f"Failed to generate/attach receipt for session {session_id}: {e}")
-                # Don't fail the email if receipt generation fails
+                logger.error(f"Failed to generate/attach PDF receipt for session {session_id}: {e}")
+                # Fallback to HTML receipt if PDF generation fails
+                try:
+                    logger.info(f"Attempting HTML receipt fallback for session {session_id}")
+                    transaction_details_fallback = {
+                        'rows_processed': summary_data.get('total_rows', 0),
+                        'description': f"Full validation - {summary_data.get('total_rows', 0)} rows processed",
+                        'session_id': session_id
+                    }
+                    
+                    receipt_html = generate_receipt(
+                        session_id=session_id,
+                        email=email_address,
+                        amount=billing_info.get('amount_charged', 0),
+                        raw_cost=billing_info.get('eliyahu_cost', 0),
+                        multiplier=billing_info.get('multiplier', 1.0),
+                        transaction_details=transaction_details_fallback
+                    )
+                    
+                    receipt_filename = f"receipt_{session_id}.html"
+                    receipt_part = MIMEApplication(receipt_html.encode('utf-8'))
+                    receipt_part.add_header("Content-Disposition", f'attachment; filename="{receipt_filename}"')
+                    receipt_part.add_header("Content-Type", "text/html; charset=utf-8")
+                    message.attach(receipt_part)
+                    
+                    logger.info(f"HTML receipt fallback attached for session {session_id}")
+                    
+                except Exception as fallback_e:
+                    logger.error(f"Both PDF and HTML receipt generation failed for session {session_id}: {fallback_e}")
+                    # Don't fail the email if receipt generation fails
         
         # Send email via SES
         ses_client = boto3.client('ses')
@@ -472,7 +665,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         }
 
 
-def create_validation_results_email_body(session_id, total_rows, fields_validated, confidence_distribution, processing_time=None, reference_pin=None, token_usage=None, enhanced_excel_filename=None, input_filename=None, config_filename=None, preview_email=False, config_id=None):
+def create_validation_results_email_body(session_id, total_rows, fields_validated, confidence_distribution, processing_time=None, reference_pin=None, token_usage=None, enhanced_excel_filename=None, input_filename=None, config_filename=None, preview_email=False, config_id=None, original_confidence_distribution=None):
     """Create clean validation results email body following Eliyahu.AI style guide"""
     
     # Format fields list
@@ -484,14 +677,27 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
     else:
         fields_html = "No fields processed"
     
-    # Format confidence distribution
+    # Format confidence distribution with deltas
     confidence_html = ""
     total_validations = sum(confidence_distribution.values())
-    for level, count in confidence_distribution.items():
-        if count > 0:
+    for level in ["HIGH", "MEDIUM", "LOW"]:
+        count = confidence_distribution.get(level, 0)
+        if count > 0 or total_validations > 0:  # Show even if 0 for completeness
             percentage = (count / total_validations * 100) if total_validations > 0 else 0
             emoji = "🟢" if level == "HIGH" else "🟡" if level == "MEDIUM" else "🔴"
-            confidence_html += f"<li>{emoji} <b>{level}:</b> {count} fields ({percentage:.1f}%)</li>"
+            
+            # TODO: Calculate delta when original_confidence_distribution is available
+            delta_text = ""
+            if original_confidence_distribution:
+                original_count = original_confidence_distribution.get(level, 0)
+                original_total = sum(original_confidence_distribution.values())
+                original_percentage = (original_count / original_total * 100) if original_total > 0 else 0
+                delta = percentage - original_percentage
+                if abs(delta) >= 0.1:  # Only show delta if significant
+                    sign = "+" if delta > 0 else ""
+                    delta_text = f" ({sign}{delta:.1f}%)"
+            
+            confidence_html += f"<li>{emoji} <b>{level}:</b> {percentage:.1f}%{delta_text}</li>"
     
     if not confidence_html:
         confidence_html = "<li>No confidence data available</li>"
@@ -505,13 +711,23 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             minutes = processing_time / 60
             time_info = f"<p><b>Processing time:</b> {minutes:.1f} minutes</p>"
     
-    # Token usage info removed from user-facing emails
-    token_info = ""
+    # API calls info
+    api_calls_info = ""
+    if token_usage:
+        by_provider = token_usage.get('by_provider', {})
+        perplexity_calls = by_provider.get('perplexity', {}).get('calls', 0)
+        claude_calls = by_provider.get('anthropic', {}).get('calls', 0)
+        
+        call_parts = []
+        if perplexity_calls > 0:
+            call_parts.append(f"<p><b>Perplexity Calls:</b> {perplexity_calls:,}</p>")
+        if claude_calls > 0:
+            call_parts.append(f"<p><b>Claude Calls:</b> {claude_calls:,}</p>")
+        
+        if call_parts:
+            api_calls_info = "\n".join(call_parts)
     
-    # Format reference pin
-    pin_info = ""
-    if reference_pin:
-        pin_info = f"<p><b>Reference #:</b> {reference_pin}</p>"
+    # Reference pin removed from display per requirements
     
     # Preview email notice
     preview_notice = ""
@@ -541,11 +757,12 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
                 background-color: #ffffff;
             }}
             .header {{
-                background: #000000;
-                color: white;
+                background: #ffffff;
+                color: #333333;
                 padding: 30px;
                 text-align: center;
                 border-radius: 8px 8px 0 0;
+                border-bottom: 3px solid #4CAF50;
             }}
             .content {{
                 background: #ffffff;
@@ -556,7 +773,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             .summary {{
                 background: #ffffff;
                 border: 1px solid #E5E5E5;
-                border-left: 4px solid #00FF00;
+                border-left: 4px solid #4CAF50;
                 padding: 20px;
                 border-radius: 8px;
                 margin: 20px 0;
@@ -577,7 +794,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             }}
             .attachments {{
                 background: #ffffff;
-                border: 2px solid #00FF00;
+                border: 2px solid #4CAF50;
                 padding: 20px;
                 border-radius: 8px;
                 margin: 25px 0;
@@ -598,7 +815,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
                 padding: 12px;
                 margin: 8px 0;
                 border-radius: 6px;
-                border-left: 4px solid #00FF00;
+                border-left: 4px solid #4CAF50;
             }}
             .primary-file {{
                 background: #000000;
@@ -614,39 +831,38 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
                 border-top: 1px solid #E5E5E5;
             }}
             .logo {{
-                color: #00FF00;
+                color: #4CAF50;
                 font-weight: bold;
             }}
             a {{
                 color: #000000;
                 text-decoration: none;
-                border-bottom: 2px solid #00FF00;
+                border-bottom: 2px solid #4CAF50;
             }}
             a:hover {{
-                background-color: #00FF00;
+                background-color: #4CAF50;
                 color: #000000;
             }}
         </style>
     </head>
     <body>
         <div class="header">
-            <h1>Validation Complete</h1>
-            <p>Hyperplexity Table Validation Results</p>
+            <h1>Hyperplexity Analysis Complete</h1>
+            <p>Your validation results are ready</p>
         </div>
         
         <div class="content">
             <div class="summary">
                 <h2>Your Results Are Ready</h2>
                 {preview_notice}
-                <p><b>Configuration ID:</b> {config_id or 'N/A'}</p>
                 <p><b>Total rows processed:</b> {total_rows:,}</p>
-                {pin_info}
                 <p><b>Fields validated:</b> {len(fields_validated)}</p>
                 <p><small>({fields_html})</small></p>
                 {time_info}
+                {api_calls_info}
                 
                 <div class="confidence">
-                    <p><b>Confidence Distribution:</b></p>
+                    <p><b>Updated Confidence Distribution:</b></p>
                     <ul>
                         {confidence_html}
                     </ul>
@@ -657,21 +873,21 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
                 <h3>📎 Attached Files</h3>
                 <ul class="attachment-list">
                     <li class="primary-file">
-                        📊 <b>{enhanced_excel_filename or 'Validated_Results.xlsx'}</b> (Updated Page)<br>
-                        <small>Color-coded validation results - updates values when we found better information</small>
+                        📊 <b>{enhanced_excel_filename or 'Validated_Results.xlsx'}</b><br>
+                        <small>Two worksheets: "Updated" (with improved values) and "Original" (fact-checked only). Both are color-coded by confidence level.</small>
                     </li>
                     <li>
-                        📄 <b>{input_filename or 'Original_Input.xlsx'}</b> (Original Page)<br>
-                        <small>Fact-check version of your table without updates - color-coded by confidence</small>
+                        📄 <b>{input_filename or 'Original_Table.xlsx'}</b><br>
+                        <small>Your original uploaded table (unchanged)</small>
+                    </li>
+                    <li>
+                        🧾 <b>Receipt</b><br>
+                        <small>Payment receipt for this validation</small>
                     </li>
                 </ul>
                 <p><strong>Configuration Code:</strong> {config_id or 'N/A'}</p>
-                <p><small>Save this code to keep the same settings for future validations. For full validations, use the Updated page with this configuration to update your table.</small></p>
+                <p><small>Save this code to keep the same settings for future validations.</small></p>
             </div>
-            
-            <h3>Understanding Your Results</h3>
-            <p>Both files are color-coded by confidence level:</p>
-            <p><b>🟢 Green = HIGH confidence | 🟡 Yellow = MEDIUM confidence | 🔴 Red = LOW confidence</b></p>
             
             <p><b>Visit <a href="https://eliyahu.ai/hyperplexity">eliyahu.ai/hyperplexity</a></b> to process more tables or refine your configuration.</p>
             
@@ -682,8 +898,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             <p>Best regards,<br>
             The <a href="https://eliyahu.ai/hyperplexity">Eliyahu.AI</a> Team</p>
             
-            <p><small>This email was sent because you requested validation results. 
-            Your data is processed securely and is not stored beyond the validation session.</small></p>
+            <p><small>This email was sent because you requested validation results.</small></p>
         </div>
     </body>
     </html>
@@ -742,7 +957,7 @@ def send_validation_code_email(email_address: str, validation_code: str):
                 }}
                 .verification-code {{
                     background: #F8F9FA;
-                    border: 2px solid #00FF00;
+                    border: 2px solid #4CAF50;
                     color: #000000;
                     font-size: 32px;
                     font-weight: bold;
@@ -779,7 +994,7 @@ def send_validation_code_email(email_address: str, validation_code: str):
                     border-radius: 8px;
                     margin: 15px 0;
                     text-align: center;
-                    border-left: 4px solid #00FF00;
+                    border-left: 4px solid #4CAF50;
                     font-size: 14px;
                 }}
                 .code-notice.hidden {{
@@ -792,22 +1007,22 @@ def send_validation_code_email(email_address: str, validation_code: str):
                     padding: 25px;
                     border-radius: 8px;
                     margin: 25px 0;
-                    border-left: 4px solid #00FF00;
+                    border-left: 4px solid #4CAF50;
                     text-align: center;
                 }}
                 .privacy-link {{
                     color: #000000;
                     text-decoration: none;
-                    border-bottom: 2px solid #00FF00;
+                    border-bottom: 2px solid #4CAF50;
                     font-weight: bold;
                 }}
                 .privacy-link:hover {{
-                    background-color: #00FF00;
+                    background-color: #4CAF50;
                     color: #000000;
                 }}
                 .acceptance-warning {{
                     background: #FFFFFF;
-                    border: 2px solid #00FF00;
+                    border: 2px solid #4CAF50;
                     color: #000000;
                     padding: 15px;
                     border-radius: 8px;
@@ -829,7 +1044,7 @@ def send_validation_code_email(email_address: str, validation_code: str):
                     border-radius: 8px;
                     font-size: 16px;
                     font-weight: bold;
-                    border: 2px solid #00FF00;
+                    border: 2px solid #4CAF50;
                     transition: all 0.3s ease;
                 }}
                 .privacy-button:hover {{
@@ -845,7 +1060,7 @@ def send_validation_code_email(email_address: str, validation_code: str):
                     padding: 15px;
                     border-radius: 8px;
                     margin: 20px 0;
-                    border-left: 4px solid #00FF00;
+                    border-left: 4px solid #4CAF50;
                 }}
                 .footer {{
                     text-align: center;
@@ -856,7 +1071,7 @@ def send_validation_code_email(email_address: str, validation_code: str):
                     border-top: 1px solid #E5E5E5;
                 }}
                 .logo {{
-                    color: #00FF00;
+                    color: #4CAF50;
                     font-weight: bold;
                 }}
             </style>
