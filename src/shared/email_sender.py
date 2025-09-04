@@ -37,6 +37,63 @@ BCC_ADDRESS = "ppp@eliyahu.ai"  # For tracking/analytics
 CHARSET = "UTF-8"
 
 
+def generate_simple_text_receipt(session_id: str, email: str, amount: float, 
+                                transaction_details: dict) -> bytes:
+    """Generate a simple text-based receipt when PDF generation is not available"""
+    from datetime import datetime
+    
+    receipt_date = datetime.now().strftime("%B %d, %Y at %I:%M %p UTC")
+    
+    # Extract transaction details with defaults
+    rows_processed = transaction_details.get('rows_processed', 0)
+    fields_validated = transaction_details.get('fields_validated_count', 0)
+    perplexity_calls = transaction_details.get('perplexity_api_calls', 0)
+    claude_calls = transaction_details.get('anthropic_api_calls', 0)
+    table_name = transaction_details.get('table_name', transaction_details.get('input_filename', 'N/A'))
+    config_id = transaction_details.get('config_id', 'N/A')
+    
+    receipt_text = f"""
+======================================================================
+                    HYPERPLEXITY.AI TABLE RESEARCH
+                           PAYMENT RECEIPT
+======================================================================
+
+Receipt Date:          {receipt_date}
+Session ID:            {session_id}
+Customer Email:        {email}
+Service:               Table Validation
+
+{f'Input Table:            {table_name}' if table_name and table_name != 'N/A' else ''}
+{f'Configuration Code:     {config_id}' if config_id and config_id != 'N/A' else ''}
+
+----------------------------------------------------------------------
+                            SERVICE DETAILS
+----------------------------------------------------------------------
+
+Rows Processed:        {rows_processed:,}
+Fields Validated:      {fields_validated:,}
+Perplexity API Calls:  {perplexity_calls:,}
+Claude API Calls:      {claude_calls:,}
+
+----------------------------------------------------------------------
+                               TOTAL
+----------------------------------------------------------------------
+
+Total Charged:         ${amount:.4f}
+
+======================================================================
+
+Thank you for using Hyperplexity!
+For support, contact: eliyahu@eliyahu.ai
+This receipt is for your records.
+
+======================================================================
+    """.strip()
+    
+    logger.info(f"Generated simple text receipt for session {session_id}: ${amount:.4f}")
+    return receipt_text.encode('utf-8')
+
+
 def generate_receipt_pdf(session_id: str, email: str, amount: float, 
                         transaction_details: dict) -> bytes:
     """Generate PDF receipt for validation charges"""
@@ -58,7 +115,9 @@ def generate_receipt_pdf(session_id: str, email: str, amount: float,
             
     except ImportError as import_e:
         logger.error(f"ReportLab core not available: {import_e}")
-        raise ImportError("ReportLab not available for PDF generation")
+        logger.info("Falling back to simple text-based receipt")
+        # Return a simple text receipt as bytes when ReportLab is unavailable
+        return generate_simple_text_receipt(session_id, email, amount, transaction_details)
     
     try:
             
@@ -599,24 +658,32 @@ def send_validation_results_email(email_address, excel_content, config_content, 
                     'config_id': billing_info.get('config_id', 'N/A')
                 }
                 
-                # Generate PDF receipt
-                receipt_pdf_bytes = generate_receipt_pdf(
+                # Generate receipt (PDF or text fallback)
+                receipt_bytes = generate_receipt_pdf(
                     session_id=session_id,
                     email=email_address,
                     amount=billing_info.get('amount_charged', 0),
                     transaction_details=transaction_details
                 )
                 
-                # Create receipt filename
-                receipt_filename = f"receipt_{session_id}.pdf"
+                # Detect file type based on content
+                if receipt_bytes.startswith(b'%PDF'):
+                    # It's a PDF file
+                    receipt_filename = f"receipt_{session_id}.pdf"
+                    content_type = "application/pdf"
+                else:
+                    # It's a text file
+                    receipt_filename = f"receipt_{session_id}.txt"
+                    content_type = "text/plain; charset=utf-8"
                 
-                # Attach receipt as PDF file
-                receipt_part = MIMEApplication(receipt_pdf_bytes)
+                # Attach receipt file
+                receipt_part = MIMEApplication(receipt_bytes)
                 receipt_part.add_header("Content-Disposition", f'attachment; filename="{receipt_filename}"')
-                receipt_part.add_header("Content-Type", "application/pdf")
+                receipt_part.add_header("Content-Type", content_type)
                 message.attach(receipt_part)
                 
-                logger.info(f"PDF receipt attached to email for session {session_id}: ${billing_info.get('amount_charged', 0):.4f}")
+                receipt_type = "PDF" if receipt_bytes.startswith(b'%PDF') else "text"
+                logger.info(f"{receipt_type} receipt attached to email for session {session_id}: ${billing_info.get('amount_charged', 0):.4f}")
                 
             except Exception as e:
                 logger.error(f"Failed to generate/attach PDF receipt for session {session_id}: {e}")
