@@ -102,6 +102,7 @@
         color: #333333 !important;
     }
 
+
     /* Smooth slide-in animation with minimal layout impact */
     @keyframes fadeInUp {
         from { 
@@ -1659,12 +1660,14 @@
                     });
                 }
 
-                // Scroll to view - defer to avoid forced reflow
-                requestAnimationFrame(() => {
+                // Scroll to view - defer to avoid forced reflow, but skip for first card to allow reading content above
+                if (globalState.cardCounter > 1) {
                     requestAnimationFrame(() => {
-                        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        requestAnimationFrame(() => {
+                            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        });
                     });
-                });
+                }
 
                 return card;
             }
@@ -1902,7 +1905,13 @@
                         
                         const metrics = previewData.validation_metrics;
                         const totalRows = previewData.total_rows || 0;
-                        const estimatedCost = previewData.cost_estimates.quoted_full_cost || 0;
+                        
+                        // DEBUG: Log cost estimates to identify field name issue
+                        console.log('[COST_DEBUG] Full cost_estimates object:', previewData.cost_estimates);
+                        console.log('[COST_DEBUG] account_info object:', previewData.account_info);
+                        
+                        // Fix field name mismatch: backend uses quoted_validation_cost, frontend was looking for quoted_full_cost
+                        const estimatedCost = previewData.cost_estimates.quoted_validation_cost || previewData.cost_estimates.quoted_full_cost || 0;
                         const estimatedTime = previewData.estimated_total_processing_time || 0;
                         
                         let estimatesHtml = '';
@@ -1962,7 +1971,7 @@
                 // Determine if user has sufficient balance
                 const accountInfo = previewData.account_info;
                 const sufficientBalance = accountInfo ? accountInfo.sufficient_balance : true; // Default to true if no account info
-                const estimatedCost = previewData.cost_estimates ? previewData.cost_estimates.quoted_full_cost : 0;
+                const estimatedCost = previewData.cost_estimates ? (previewData.cost_estimates.quoted_validation_cost || previewData.cost_estimates.quoted_full_cost) : 0;
                 
                 // Add event listeners for the buttons above estimates
                 setTimeout(() => {
@@ -6267,21 +6276,32 @@ Please answer these questions and then I'll generate your configuration and auto
         // ============================================
 
         document.addEventListener('DOMContentLoaded', function() {
-            // Use requestAnimationFrame to defer heavy DOM operations
-            requestAnimationFrame(() => {
-                // Check for stored session first (no DOM access)
-                const storedSessionId = localStorage.getItem('sessionId');
-                if (storedSessionId) {
-                    globalState.sessionId = storedSessionId;
-                }
+            // Check for stored session first (no DOM access)
+            const storedSessionId = localStorage.getItem('sessionId');
+            if (storedSessionId) {
+                globalState.sessionId = storedSessionId;
+            }
+            
+            // Balance refresh system will be initialized when needed (when insufficient balance occurs)
+            
+            // Prevent automatic scrolling during initial load
+            const originalScrollTo = window.scrollTo;
+            const originalScrollIntoView = Element.prototype.scrollIntoView;
+            
+            // Temporarily disable scrolling
+            window.scrollTo = () => {};
+            Element.prototype.scrollIntoView = () => {};
+            
+            // Defer card creation to allow user to read content above first
+            setTimeout(() => {
+                createEmailCard();
                 
-                // Balance refresh system will be initialized when needed (when insufficient balance occurs)
-                
-                // Defer heavy DOM operations to next frame
-                requestAnimationFrame(() => {
-                    createEmailCard();
-                });
-            });
+                // Restore scrolling after card is created and settled
+                setTimeout(() => {
+                    window.scrollTo = originalScrollTo;
+                    Element.prototype.scrollIntoView = originalScrollIntoView;
+                }, 500);
+            }, 100);
             
             // Test functions for animations
             window.testErrorAnimation = (cardId = 'card-1') => {

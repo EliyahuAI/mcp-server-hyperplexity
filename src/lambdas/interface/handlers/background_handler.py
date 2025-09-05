@@ -29,6 +29,8 @@ def track_user_request(*args, **kwargs):
     logger.warning("DynamoDB not available - user request not tracked")
 def update_run_status(**kwargs): 
     logger.warning("DynamoDB not available - run status not updated")
+def create_run_record(*args, **kwargs):
+    logger.warning("DynamoDB not available - run record not created")
 
 DYNAMODB_AVAILABLE = False
 
@@ -36,7 +38,7 @@ try:
     import sys
     import os
     sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
-    from dynamodb_schemas import update_processing_metrics, track_email_delivery, track_user_request, update_run_status
+    from dynamodb_schemas import update_processing_metrics, track_email_delivery, track_user_request, update_run_status, create_run_record
     DYNAMODB_AVAILABLE = True
     logger.info("DynamoDB functions imported successfully at module level")
 except ImportError as e:
@@ -249,7 +251,7 @@ def handle(event, context):
                 reference_pin = clean_session_id[:6]
         excel_s3_key = event['excel_s3_key']
         config_s3_key = event['config_s3_key']
-        email = event.get('email', 'unknown@example.com')
+        email = event.get('email', 'unknown@example.com').lower().strip()
         preview_email = event.get('preview_email', False)
         
         # Always use a clean session ID format: session_YYYY-MM-DDTHH_MM_SS_XXXXXX
@@ -273,9 +275,12 @@ def handle(event, context):
 
         email_folder = event.get('email_folder', 'default')
         email_address = event.get('email_address')
+        if email_address:
+            email_address = email_address.lower().strip()
         
         # After a job starts
-        update_run_status(session_id=session_id, status='PROCESSING')
+        run_type_initial = "Preview" if is_preview else "Validation"
+        update_run_status(session_id=session_id, status='PROCESSING', run_type=run_type_initial)
 
         if is_preview:
             preview_max_rows = event.get('preview_max_rows', 5)
@@ -294,8 +299,10 @@ def handle(event, context):
             # Initial status update for preview - use 0-5% range for interface setup
             update_run_status(
                 session_id=session_id, status='PROCESSING', 
+                run_type="Preview",
                 verbose_status=f"Starting preview for {preview_max_rows} rows...",
-                percent_complete=2  # Interface setup: 0-5% range
+                percent_complete=2,  # Interface setup: 0-5% range
+                batch_size=preview_max_rows
             )
 
             # Send file retrieval progress update - interface setup range 0-5%
@@ -328,8 +335,15 @@ def handle(event, context):
                 
                 update_run_status(
                     session_id=session_id, status='FAILED',
+                    run_type="Preview",
                     verbose_status="Failed to retrieve files for preview.",
-                    percent_complete=100
+                    percent_complete=100,
+                    processed_rows=0,
+                    batch_size=10,
+                    eliyahu_cost=0.0,
+                    quoted_validation_cost=0.0,
+                    estimated_validation_eliyahu_cost=0.0,
+                    time_per_row_seconds=0.0
                 )
                 return {'statusCode': 500, 'body': json.dumps({'status': 'failed', 'error': 'Files not found'})}
             
@@ -477,30 +491,47 @@ def handle(event, context):
                 validator_processing_time = metadata.get('processing_time', 0.0)
                 processing_time = 0.0
                 time_per_batch = 20.0 # Default fallback
-                time_per_row = 4.0 # Default fallback
-
+                
                 if batch_timing:
                     processing_time = batch_timing.get('total_batch_time_seconds', 0.0)
                     time_per_batch = batch_timing.get('average_batch_time_seconds', time_per_batch)
-                    time_per_row = batch_timing.get('average_time_per_row_seconds', time_per_row)
                 elif validator_processing_time > 0:
                     processing_time = validator_processing_time
-                    if total_rows_processed > 0:
-                        time_per_row = processing_time / total_rows_processed
-                        time_per_batch = time_per_row * effective_batch_size  # Use actual batch size
+                    # For preview: Processing time is the actual time taken for the preview batch
+                    # We assume this represents the time for a full batch, even if only few rows were processed
+                    time_per_batch = processing_time  # Preview gives actual batch time
+                
+                # Calculate total batches needed for full table
+                total_batches = math.ceil(total_rows / effective_batch_size) if effective_batch_size > 0 else 1
+                
+                # Calculate estimated total processing time based on batches and total rows
+                estimated_total_time_seconds = total_batches * time_per_batch
+                
+                # Time per row for preview should be estimated based on full batch efficiency
+                # This gives an estimate of how long a row will take at full batch sizes
+                time_per_row = time_per_batch / effective_batch_size if effective_batch_size > 0 else (time_per_batch / max(1, total_rows_processed))
                 
                 # Scale preview costs to full table estimates for user quotes
-                # estimated_cost remains as preview run cost without caching
-                # quoted_full_cost = scale to full table: (preview_cost / preview_rows) * total_rows * multiplier
-                preview_with_multiplier = estimated_cost * multiplier  # Preview cost with multiplier applied
-                per_row_cost = preview_with_multiplier / total_rows_processed if total_rows_processed > 0 else 0.02 * multiplier
+                # CORRECTED FORMULA: Preview eliyahu_cost includes caching savings, validation assumes no caching
+                # So estimated_validation_eliyahu_cost should be based on estimated_cost (without caching)
+                per_row_eliyahu_cost = estimated_cost / total_rows_processed if total_rows_processed > 0 else 0.02
+                estimated_total_cost_raw = per_row_eliyahu_cost * total_rows  # Raw eliyahu cost estimate for full table (no multiplier, no caching)
+                
+                # Apply multiplier for user pricing (use estimated_cost which doesn't include caching savings)
+                per_row_cost_with_multiplier = (estimated_cost * multiplier) / total_rows_processed if total_rows_processed > 0 else 0.02 * multiplier
                 per_row_tokens = total_tokens / total_rows_processed if total_rows_processed > 0 else 200
 
-                # Project to full table (this becomes quoted_full_cost) - using actual batch size
-                total_batches = math.ceil(total_rows / effective_batch_size)
-                estimated_total_time_seconds = total_batches * time_per_batch
-                quoted_full_cost = math.ceil(per_row_cost * total_rows)  # Full table quote = per_row_cost * total_rows, rounded up to next dollar
+                # Project to full table with multiplier, rounding, and $2 minimum (this becomes quoted_validation_cost)
+                raw_quoted_cost = per_row_cost_with_multiplier * total_rows
+                quoted_full_cost = max(2.0, math.ceil(raw_quoted_cost))  # Add $2 minimum charge, rounded up to next dollar
                 estimated_total_tokens = per_row_tokens * total_rows
+                
+                # DEBUG: Log cost calculation details
+                logger.info(f"[COST_DEBUG] Cost calculation details:")
+                logger.info(f"[COST_DEBUG]   per_row_cost_with_multiplier: {per_row_cost_with_multiplier}")
+                logger.info(f"[COST_DEBUG]   total_rows: {total_rows}")
+                logger.info(f"[COST_DEBUG]   raw_quoted_cost: {raw_quoted_cost}")
+                logger.info(f"[COST_DEBUG]   quoted_full_cost (with $2 min): {quoted_full_cost}")
                 
                 # --- End of Complex Estimations Logic ---
 
@@ -519,15 +550,16 @@ def handle(event, context):
                     "total_processed_rows": total_rows_processed,
                     "preview_processing_time": processing_time,
                     "estimated_total_processing_time": estimated_total_time_seconds,
-                    "estimated_total_time_minutes": round(estimated_total_time_seconds / 60, 1),
+                    "estimated_validation_time_minutes": round(estimated_total_time_seconds / 60, 1),
                     "actual_batch_size": effective_batch_size,
-                    "estimated_total_batches": total_batches,
+                    "estimated_validation_batches": total_batches,
                     "cost_estimates": {
                         "preview_cost": charged_cost,  # What user pays for preview (0)
-                        "quoted_full_cost": quoted_full_cost,  # What user will pay for full validation
+                        "quoted_validation_cost": quoted_full_cost,  # What user will pay for full validation (rounded up)
+                        "estimated_validation_eliyahu_cost": estimated_total_cost_raw,  # Raw eliyahu cost estimate for full table (no multiplier)
                         "preview_tokens": total_tokens,
                         "estimated_total_tokens": estimated_total_tokens,
-                        "per_row_cost": per_row_cost,
+                        "per_row_cost": per_row_cost_with_multiplier,
                         "per_row_tokens": per_row_tokens,
                         "per_row_time": time_per_row
                     },
@@ -665,17 +697,92 @@ def handle(event, context):
                 preview_payload["enhanced_download_url"] = enhanced_download_url
                 logger.info(f"[DEBUG] Added enhanced_download_url to preview_payload: {enhanced_download_url}")
                 
-                # Update DynamoDB with the complete preview payload
+                # Get account balance and multiplier for preview tracking
+                try:
+                    import sys
+                    import os
+                    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
+                    from dynamodb_schemas import check_user_balance, get_domain_multiplier
+                    
+                    current_balance = check_user_balance(email)
+                    email_domain = email.split('@')[-1] if '@' in email else 'unknown'
+                    multiplier = float(get_domain_multiplier(email_domain))
+                except Exception as e:
+                    logger.warning(f"Could not get account info for preview: {e}")
+                    current_balance = None
+                    multiplier = 1.0
+                
+                # Create search group models tracking string for preview
+                search_groups_models = []
+                by_provider = token_usage.get('by_provider', {})
+                for provider, provider_data in by_provider.items():
+                    calls = provider_data.get('calls', 0)
+                    if calls > 0:
+                        if provider == 'perplexity':
+                            # Check if it's high context based on token usage patterns
+                            total_tokens = provider_data.get('total_tokens', 0)
+                            avg_tokens_per_call = total_tokens / calls if calls > 0 else 0
+                            if avg_tokens_per_call > 5000:  # Threshold for high context
+                                search_groups_models.append(f"sonar-pro (high context) X {calls}")
+                            else:
+                                search_groups_models.append(f"sonar-pro X {calls}")
+                        elif provider == 'anthropic':
+                            # Determine Claude model based on metadata if available
+                            models_used = provider_data.get('models_used', [])
+                            if models_used:
+                                for model in models_used:
+                                    if 'opus' in model.lower():
+                                        search_groups_models.append(f"opus-4 X {calls}")
+                                    elif 'sonnet' in model.lower():
+                                        search_groups_models.append(f"sonnet-4 X {calls}")
+                                    else:
+                                        search_groups_models.append(f"{model} X {calls}")
+                            else:
+                                search_groups_models.append(f"claude X {calls}")
+                
+                # Get configuration ID for tracking
+                configuration_id = config_data.get('storage_metadata', {}).get('config_id', 'unknown')
+                if not configuration_id or configuration_id == 'unknown':
+                    # Fallback to generation metadata
+                    configuration_id = config_data.get('generation_metadata', {}).get('config_id', 'unknown')
+                
+                # Extract consolidated fields from preview payload
+                eliyahu_cost = preview_payload.get('cost_estimates', {}).get('preview_cost', 0.0)  # Actual cost incurred
+                quoted_validation_cost_value = preview_payload.get('cost_estimates', {}).get('quoted_validation_cost', 0.0)  # What user will pay for full
+                estimated_validation_eliyahu_cost_value = preview_payload.get('cost_estimates', {}).get('estimated_validation_eliyahu_cost', 0.0)  # Raw eliyahu cost estimate
+                time_per_row = preview_payload.get('cost_estimates', {}).get('per_row_time', 0.0)  # Time per row estimate
+                estimated_time_minutes = preview_payload.get('estimated_validation_time_minutes', 0.0)  # Total estimated time in minutes
+                batch_size_used = preview_payload.get('actual_batch_size', 10)  # Actual batch size used for preview
+                
+                # Update DynamoDB with the complete preview payload and account tracking
                 update_run_status(
                     session_id=session_id, status='COMPLETED',
+                    run_type="Preview",
                     verbose_status="Preview complete. Results available.",
                     percent_complete=100,
                     processed_rows=len(validation_results.get('validation_results', {})) if validation_results else 0,
-                    preview_data=preview_payload
+                    total_rows=total_rows,  # Actual total rows in the table
+                    preview_data=preview_payload,
+                    account_current_balance=float(current_balance) if current_balance else 0,
+                    account_sufficient_balance="n/a",
+                    account_credits_needed="n/a",
+                    account_domain_multiplier=float(multiplier),
+                    models=", ".join(search_groups_models) if search_groups_models else "No API calls made",
+                    input_table_name=input_filename,
+                    configuration_id=configuration_id,
+                    batch_size=batch_size_used,
+                    eliyahu_cost=eliyahu_cost,
+                    quoted_validation_cost=quoted_validation_cost_value,
+                    estimated_validation_eliyahu_cost=estimated_validation_eliyahu_cost_value,
+                    time_per_row_seconds=time_per_row,
+                    estimated_validation_time_minutes=estimated_time_minutes,
+                    run_time_s=preview_payload.get('preview_processing_time', 0.0)  # Actual run time in seconds
                 )
                 
                 # Track enhanced user metrics for preview
-                track_user_request(
+                logger.info(f"[USER_TRACKING] Tracking preview request for email: {email}")
+                try:
+                    track_result = track_user_request(
                     email=email,
                     request_type='preview',
                     tokens_used=total_tokens,
@@ -697,7 +804,12 @@ def handle(event, context):
                     charged_cost=0.0,  # Preview doesn't charge
                     total_api_calls=total_api_calls,
                     total_cached_calls=total_cached_calls
-                )
+                    )
+                    logger.info(f"[USER_TRACKING] Preview tracking result: {track_result}")
+                except Exception as e:
+                    logger.error(f"[USER_TRACKING] Failed to track preview request: {e}")
+                    import traceback
+                    logger.error(f"[USER_TRACKING] Traceback: {traceback.format_exc()}")
                 
                 # Send WebSocket notification with preview results
                 from dynamodb_schemas import get_connection_by_session, remove_websocket_connection
@@ -717,6 +829,12 @@ def handle(event, context):
                                 'verbose_status': 'Preview complete. Results available.',
                                 'preview_data': preview_payload
                             }
+                            
+                            # DEBUG: Log the cost estimates being sent to frontend
+                            cost_estimates = preview_payload.get('cost_estimates', {})
+                            logger.info(f"[COST_DEBUG] WebSocket payload cost_estimates: {cost_estimates}")
+                            logger.info(f"[COST_DEBUG] quoted_validation_cost: {cost_estimates.get('quoted_validation_cost')}")
+                            
                             logger.info(f"Sending WebSocket payload to connection {connection_id}: {len(json.dumps(websocket_payload))} bytes")
                             
                             client.post_to_connection(
@@ -822,8 +940,13 @@ def handle(event, context):
                 
                 update_run_status(
                     session_id=session_id, status='FAILED',
+                    run_type="Preview",
                     verbose_status="Preview failed to generate results.",
-                    percent_complete=100
+                    percent_complete=100,
+                    processed_rows=0,
+                    batch_size=10,  # Default batch size
+                    eliyahu_cost=0.0,
+                    time_per_row_seconds=0.0
                 )
             
             # Return early for preview mode to prevent fallthrough to normal processing
@@ -866,7 +989,7 @@ def handle(event, context):
             processed_rows_count = 0
             total_batches = (rows_to_process + batch_size - 1) // batch_size
             
-            update_run_status(session_id=session_id, status='PROCESSING', verbose_status=f"Preparing to process {rows_to_process} rows in {total_batches} batches.")
+            update_run_status(session_id=session_id, status='PROCESSING', run_type="Validation", verbose_status=f"Validation preparing to process {rows_to_process} rows in {total_batches} batches.", batch_size=batch_size)
 
             # DISABLED: Fake simulation replaced with real validation lambda invocation
             logger.info(f"[DEBUG] Fake batch processing loop DISABLED for session {session_id}")
@@ -881,7 +1004,7 @@ def handle(event, context):
                 status='PROCESSING',
                 processed_rows=0,
                 percent_complete=2,  # Interface setup: 0-5% range
-                verbose_status=f"Starting full validation processing for {rows_to_process} rows..."
+                verbose_status=f"Validation starting full processing for {rows_to_process} rows..."
             )
             
             # The real processing should happen via validation lambda invocation
@@ -925,7 +1048,8 @@ def handle(event, context):
         # After invoke_validator_lambda returns
         if validation_results:
             processed_rows_count = len(validation_results.get('validation_results', {}))
-            update_run_status(session_id=session_id, status='PROCESSING', processed_rows=processed_rows_count)
+            run_type_processing = "Preview" if is_preview else "Validation"
+            update_run_status(session_id=session_id, status='PROCESSING', run_type=run_type_processing, processed_rows=processed_rows_count)
 
         has_results = (validation_results and 
                       'validation_results' in validation_results and 
@@ -1133,13 +1257,12 @@ def handle(event, context):
                 elif validator_processing_time > 0:
                     processing_time = validator_processing_time
                     if total_rows_processed > 0:
+                        # For full validation: actual time per row is total processing time / total rows processed
                         time_per_row = processing_time / total_rows_processed
                         time_per_batch = time_per_row * effective_batch_size  # Use actual batch size
                 
-                # Use already calculated projection values from earlier (lines 383-394)
-                # Scaling logic: (preview_run_estimated_cost * multiplier) / preview_rows * total_rows
-                # Variables available: quoted_full_cost, estimated_total_tokens, estimated_total_time_seconds,
-                # per_row_cost, per_row_tokens - all correctly scaled from preview run to full table quote
+                # For full validation, calculate per-row cost based on actual charged cost
+                per_row_cost_full = charged_cost / total_rows_processed if total_rows_processed > 0 else charged_cost
                 
                 # Calculate total batches for full validation using actual batch size
                 total_batches = math.ceil(total_rows / effective_batch_size) if total_rows > 0 else 0
@@ -1155,16 +1278,16 @@ def handle(event, context):
                     "total_processed_rows": total_rows_processed,
                     "preview_processing_time": processing_time,
                     "estimated_total_processing_time": estimated_total_time_seconds,
-                    "estimated_total_time_minutes": round(estimated_total_time_seconds / 60, 1),
+                    "estimated_validation_time_minutes": round(estimated_total_time_seconds / 60, 1),
                     "actual_batch_size": effective_batch_size,
-                    "estimated_total_batches": total_batches,
+                    "estimated_validation_batches": total_batches,
                     "enhanced_download_url": enhanced_download_url,  # Download link for enhanced Excel
                     "cost_estimates": {
                         "preview_cost": charged_cost,  # What user pays for preview (0)
                         "quoted_full_cost": quoted_full_cost,  # What user will pay for full validation
                         "preview_tokens": total_tokens,
                         "estimated_total_tokens": estimated_total_tokens,
-                        "per_row_cost": per_row_cost,
+                        "per_row_cost": per_row_cost_full,
                         "per_row_tokens": per_row_tokens,
                         "per_row_time": time_per_row
                     },
@@ -1501,11 +1624,22 @@ def handle(event, context):
                     logger.info(f"Sending completion WebSocket message with download URLs: enhanced={bool(enhanced_download_url)}, zip={bool(zip_download_url)}")
                     _send_websocket_message(session_id, completion_payload)
                     
+                    # Get enhanced results S3 key (points to enhanced validation results directory)
+                    enhanced_results_s3_key = results_key  # Default to ZIP file if enhanced path not found
+                    try:
+                        # Try to get the enhanced results directory path instead of ZIP file
+                        config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                        session_path = storage_manager.get_session_path(email, clean_session_id)
+                        enhanced_results_s3_key = f"{session_path}v{config_version}_results/validation_results_enhanced.xlsx"
+                        logger.info(f"Using enhanced results S3 key: {enhanced_results_s3_key}")
+                    except Exception as e:
+                        logger.warning(f"Could not determine enhanced results path, using ZIP path: {e}")
+                    
                     # Update status with both ZIP file and enhanced Excel download URLs
                     status_update_data = {
                         'session_id': session_id, 
                         'status': 'COMPLETED', 
-                        'results_s3_key': results_key
+                        'results_s3_key': enhanced_results_s3_key  # Points to enhanced validation results directory
                     }
                     if enhanced_download_url:
                         status_update_data['enhanced_download_url'] = enhanced_download_url
@@ -1531,7 +1665,7 @@ def handle(event, context):
                     # This ensures CSV exports have complete token metrics for both preview and full runs
                     full_run_data = {
                         "actual_batch_size": effective_batch_size,
-                        "estimated_total_batches": math.ceil(total_rows_in_file / effective_batch_size) if effective_batch_size > 0 else 0,
+                        "estimated_validation_batches": math.ceil(total_rows_in_file / effective_batch_size) if effective_batch_size > 0 else 0,
                         "cost_estimates": {
                             "per_row_cost": eliyahu_cost / processed_rows_count if processed_rows_count > 0 else 0,
                             "estimated_total_cost": charged_cost,
@@ -1549,10 +1683,75 @@ def handle(event, context):
                     }
                     status_update_data['preview_data'] = full_run_data
                     
+                    # Add account tracking fields
+                    status_update_data['account_current_balance'] = float(final_balance) if final_balance else 0
+                    status_update_data['account_sufficient_balance'] = "n/a"
+                    status_update_data['account_credits_needed'] = "n/a" 
+                    status_update_data['account_domain_multiplier'] = float(multiplier)
+                    
+                    # Create search group models tracking string
+                    search_groups_models = []
+                    by_provider = token_usage.get('by_provider', {})
+                    for provider, provider_data in by_provider.items():
+                        calls = provider_data.get('calls', 0)
+                        if calls > 0:
+                            if provider == 'perplexity':
+                                # Check if it's high context based on token usage patterns
+                                total_tokens = provider_data.get('total_tokens', 0)
+                                avg_tokens_per_call = total_tokens / calls if calls > 0 else 0
+                                if avg_tokens_per_call > 5000:  # Threshold for high context
+                                    search_groups_models.append(f"sonar-pro (high context) X {calls}")
+                                else:
+                                    search_groups_models.append(f"sonar-pro X {calls}")
+                            elif provider == 'anthropic':
+                                # Determine Claude model based on metadata if available
+                                models_used = provider_data.get('models_used', [])
+                                if models_used:
+                                    for model in models_used:
+                                        if 'opus' in model.lower():
+                                            search_groups_models.append(f"opus-4 X {calls}")
+                                        elif 'sonnet' in model.lower():
+                                            search_groups_models.append(f"sonnet-4 X {calls}")
+                                        else:
+                                            search_groups_models.append(f"{model} X {calls}")
+                                else:
+                                    search_groups_models.append(f"claude X {calls}")
+                    
+                    status_update_data['models'] = ", ".join(search_groups_models) if search_groups_models else "No API calls made"
+                    
+                    # Add input table name and configuration ID
+                    status_update_data['input_table_name'] = input_filename
+                    
+                    # Get configuration ID for tracking
+                    configuration_id = config_data.get('storage_metadata', {}).get('config_id', 'unknown')
+                    if not configuration_id or configuration_id == 'unknown':
+                        # Fallback to generation metadata
+                        configuration_id = config_data.get('generation_metadata', {}).get('config_id', 'unknown')
+                    status_update_data['configuration_id'] = configuration_id
+                    
+                    # Add total rows count
+                    status_update_data['total_rows'] = total_rows_in_file
+                    
+                    # Update verbose status to start with 'Validation' for full validations
+                    status_update_data['verbose_status'] = "Validation complete. Results should be in your inbox shortly."
+                    
+                    # Add consolidated fields according to new schema
+                    status_update_data['run_type'] = "Validation"
+                    status_update_data['eliyahu_cost'] = eliyahu_cost  # Actual cost incurred
+                    # For full validation, quoted_validation_cost is what the user was charged (same as charged_cost)
+                    status_update_data['quoted_validation_cost'] = charged_cost
+                    # For validation, estimated_validation_eliyahu_cost is the same as eliyahu_cost (raw cost without multiplier)
+                    status_update_data['estimated_validation_eliyahu_cost'] = eliyahu_cost  # Raw cost estimate = actual cost for validation
+                    status_update_data['time_per_row_seconds'] = eliyahu_cost / processed_rows_count / 0.001 if processed_rows_count > 0 else 0.0  # Rough estimate based on cost
+                    status_update_data['run_time_s'] = processing_time  # Actual validation run time in seconds
+                    # estimated_validation_time_minutes will be calculated from actual processing time automatically in update_run_status
+                    
                     update_run_status(**status_update_data)
                     
                     # Track enhanced user metrics for full validation
-                    track_user_request(
+                    logger.info(f"[USER_TRACKING] Tracking full validation request for email: {email}")
+                    try:
+                        track_result = track_user_request(
                         email=email,
                         request_type='full',
                         tokens_used=token_usage.get('total_tokens', 0),
@@ -1574,11 +1773,28 @@ def handle(event, context):
                         charged_cost=charged_cost,  # Full validation charges user the preview quoted cost
                         total_api_calls=token_usage.get('api_calls', 0),
                         total_cached_calls=token_usage.get('cached_calls', 0)
-                    )
+                        )
+                        logger.info(f"[USER_TRACKING] Full validation tracking result: {track_result}")
+                    except Exception as e:
+                        logger.error(f"[USER_TRACKING] Failed to track full validation request: {e}")
+                        import traceback
+                        logger.error(f"[USER_TRACKING] Traceback: {traceback.format_exc()}")
         
         else: # No results
              logger.warning(f"No validation results returned from validator for session {session_id}")
-             update_run_status(session_id=session_id, status='FAILED', error_message="No validation results returned", verbose_status="Failed to process results.", percent_complete=100)
+             run_type_for_failed = "Preview" if is_preview else "Validation"
+             update_run_status(
+                session_id=session_id, 
+                status='FAILED', 
+                run_type=run_type_for_failed,
+                error_message="No validation results returned", 
+                verbose_status="Failed to process results.", 
+                percent_complete=100,
+                processed_rows=0,
+                batch_size=10,  # Default batch size
+                eliyahu_cost=0.0,
+                time_per_row_seconds=0.0
+             )
              # Handle empty results case for preview if needed
              if is_preview:
                 # Even for empty results, store in versioned folder
@@ -1615,7 +1831,20 @@ def handle(event, context):
         import traceback
         traceback.print_exc()
         if DYNAMODB_AVAILABLE:
-            update_run_status(session_id=event.get('session_id'), status='FAILED', error_message=str(e))
+            # Determine run type from event or default to unknown
+            is_preview = event.get('preview_mode', False) or event.get('request_type') == 'preview'
+            is_config = event.get('request_type') == 'config_generation'
+            run_type_for_error = "Config Generation" if is_config else ("Preview" if is_preview else "Validation")
+            update_run_status(
+                session_id=event.get('session_id'), 
+                status='FAILED', 
+                run_type=run_type_for_error,
+                error_message=str(e),
+                processed_rows=0,
+                batch_size=1 if is_config else 10,
+                eliyahu_cost=0.0,
+                time_per_row_seconds=0.0
+            )
         return {'statusCode': 500, 'body': json.dumps({'status': 'background_failed', 'error': str(e)})}
 
 def handle_config_generation(event, context):
@@ -1625,6 +1854,43 @@ def handle_config_generation(event, context):
         execution_id = f"{context.aws_request_id if context else 'no-context'}_{int(time.time() * 1000)}"
         logger.info(f"[CONFIG_GEN_START] {execution_id} - Handling config generation request for session {event.get('session_id')}")
         session_id = event.get('session_id')
+        config_email = event.get('email', '').lower().strip()
+        
+        # Create initial config generation run record
+        if DYNAMODB_AVAILABLE and config_email and session_id:
+            try:
+                # Get input table name from event
+                input_table_name = "unknown_table"
+                if event.get('excel_s3_key'):
+                    input_table_name = event['excel_s3_key'].split('/')[-1]
+                elif event.get('table_name'):
+                    input_table_name = event.get('table_name')
+                
+                # Get total rows if available
+                total_rows = event.get('total_rows', 0)
+                
+                logger.info(f"[CONFIG_RUN_TRACKING] Creating config generation run record for session {session_id}")
+                create_run_record(session_id, config_email, total_rows, 1, "Config Generation")  # batch_size=1 for config generation
+                update_run_status(
+                    session_id=session_id,
+                    status='IN_PROGRESS',
+                    run_type="Config Generation",
+                    verbose_status="Configuration generation starting with AI analysis...",
+                    percent_complete=5,
+                    processed_rows=0,
+                    total_rows=total_rows,
+                    input_table_name=input_table_name,
+                    account_current_balance=0,  # Will be updated later
+                    account_sufficient_balance="n/a",
+                    account_credits_needed="n/a",
+                    account_domain_multiplier=1.0,  # Config generation typically doesn't use domain multiplier
+                    models="TBD",  # Will be updated after AI processing
+                    batch_size=1,  # Config generation batch size
+                    eliyahu_cost=0.0,  # Will be updated after completion
+                    time_per_row_seconds=0.0  # Will be updated after completion
+                )
+            except Exception as e:
+                logger.error(f"[CONFIG_RUN_TRACKING] Failed to create config run record: {e}")
         
         # Send initial progress update - interface setup (0-5% range)
         _send_websocket_message_deduplicated(session_id, {
@@ -1699,8 +1965,13 @@ def handle_config_generation(event, context):
             config_cost = response.get('cost_info', {}).get('total_cost', 0.0)
             config_tokens = response.get('cost_info', {}).get('total_tokens', 0)
             
-            track_user_request(
-                email=event.get('email', ''),
+            # Get and normalize email for tracking
+            config_email = event.get('email', '').lower().strip()
+            if config_email:  # Only track if email is not empty
+                logger.info(f"[USER_TRACKING] Tracking config generation for email: {config_email}")
+                try:
+                    track_result = track_user_request(
+                    email=config_email,
                 request_type='config',
                 tokens_used=config_tokens,
                 cost_usd=config_cost,  # Legacy field
@@ -1716,7 +1987,109 @@ def handle_config_generation(event, context):
                 charged_cost=0.0,  # Config generation is currently free
                 total_api_calls=response.get('cost_info', {}).get('api_calls', 0),
                 total_cached_calls=response.get('cost_info', {}).get('cached_calls', 0)
-            )
+                    )
+                    logger.info(f"[USER_TRACKING] Config tracking result: {track_result}")
+                except Exception as e:
+                    logger.error(f"[USER_TRACKING] Failed to track config generation: {e}")
+                    import traceback
+                    logger.error(f"[USER_TRACKING] Traceback: {traceback.format_exc()}")
+            else:
+                logger.warning("Config generation completed but no email provided for user tracking")
+            
+            # Update config generation run record with completion data
+            if DYNAMODB_AVAILABLE and config_email and session_id:
+                try:
+                    logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with completion data")
+                    
+                    # Determine which AI models were used
+                    models_used = []
+                    cost_info = response.get('cost_info', {})
+                    if cost_info.get('perplexity_tokens', 0) > 0:
+                        calls = cost_info.get('perplexity_calls', 1)
+                        models_used.append(f"sonar-pro X {calls}")
+                    if cost_info.get('anthropic_tokens', 0) > 0:
+                        calls = cost_info.get('anthropic_calls', 1)
+                        # Try to determine specific Claude model from response
+                        model_name = "claude-3.5-sonnet"  # Default assumption
+                        if 'claude-3-5-haiku' in str(response).lower():
+                            model_name = "claude-3.5-haiku"
+                        elif 'claude-3-opus' in str(response).lower():
+                            model_name = "claude-3-opus"
+                        models_used.append(f"{model_name} X {calls}")
+                    
+                    models = ", ".join(models_used) if models_used else "No AI models used"
+                    
+                    # Get configuration ID
+                    configuration_id = "unknown"
+                    if response.get('updated_config'):
+                        configuration_id = response['updated_config'].get('generation_metadata', {}).get('config_id', 'unknown')
+                    
+                    # Build preview_data for config generation
+                    config_data = {
+                        "config_type": "ai_generated",
+                        "ai_models_used": models_used,
+                        "processing_time_seconds": response.get('processing_time', 0),
+                        "cost_estimates": {
+                            "total_cost": config_cost,
+                            "per_generation_cost": config_cost
+                        },
+                        "token_usage": {
+                            "total_tokens": config_tokens,
+                            "by_provider": {
+                                "perplexity": {
+                                    "total_tokens": cost_info.get('perplexity_tokens', 0),
+                                    "total_cost": cost_info.get('perplexity_cost', 0.0),
+                                    "calls": cost_info.get('perplexity_calls', 0)
+                                },
+                                "anthropic": {
+                                    "total_tokens": cost_info.get('anthropic_tokens', 0),
+                                    "total_cost": cost_info.get('anthropic_cost', 0.0), 
+                                    "calls": cost_info.get('anthropic_calls', 0)
+                                }
+                            }
+                        },
+                        "generation_metadata": {
+                            "config_version": config_version,
+                            "config_s3_key": config_s3_key,
+                            "download_url": download_url,
+                            "ai_summary_length": len(ai_summary) if ai_summary else 0,
+                            "clarifying_questions_count": len(response.get('clarifying_questions', '').split('\n')) if response.get('clarifying_questions') else 0
+                        }
+                    }
+                    
+                    # Calculate timing metrics for config generation
+                    processing_time_seconds = response.get('processing_time', 0)
+                    time_per_config = processing_time_seconds  # For config generation, it's time per config
+                    processing_time_minutes = processing_time_seconds / 60.0
+                    
+                    update_run_status(
+                        session_id=session_id,
+                        status='COMPLETED',
+                        run_type="Config Generation",
+                        verbose_status="Configuration generation completed successfully.",
+                        percent_complete=100,
+                        processed_rows=1,  # One config generated
+                        preview_data=config_data,
+                        models=models,
+                        configuration_id=configuration_id,
+                        results_s3_key=config_s3_key,  # Points to generated config file
+                        account_current_balance=0,  # Config generation is free
+                        account_sufficient_balance="n/a",
+                        account_credits_needed="n/a",
+                        account_domain_multiplier=1.0,
+                        batch_size=1,  # Config generation batch size
+                        eliyahu_cost=config_cost,  # Actual cost for config generation
+                        quoted_validation_cost=0.0,  # Config generation is free to users
+                        estimated_validation_eliyahu_cost=None,  # Config generation doesn't use validation cost estimates
+                        time_per_row_seconds=None,  # Config generation doesn't use validation timing fields
+                        estimated_validation_time_minutes=None,  # Config generation doesn't use validation timing fields
+                        run_time_s=processing_time_seconds  # Actual config generation time in seconds
+                    )
+                    logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated config generation run record")
+                except Exception as e:
+                    logger.error(f"[CONFIG_RUN_TRACKING] Failed to update config run record: {e}")
+                    import traceback
+                    logger.error(f"[CONFIG_RUN_TRACKING] Traceback: {traceback.format_exc()}")
             
             # Extract version from the actual config
             config_version = 1
@@ -1745,7 +2118,7 @@ def handle_config_generation(event, context):
                 from ..core.unified_s3_manager import UnifiedS3Manager
                 
                 storage_manager = UnifiedS3Manager()
-                email = event.get('email')
+                email = event.get('email', '').lower().strip() if event.get('email') else ''
                 original_session_id = event.get('original_session_id') or session_id
                 
                 if email and original_session_id and response.get('updated_config'):
@@ -1783,6 +2156,32 @@ def handle_config_generation(event, context):
             except Exception as ws_error:
                 logger.error(f"Failed to send WebSocket message: {ws_error}")
         else:
+            # Update config generation run record with failure
+            if DYNAMODB_AVAILABLE and config_email and session_id:
+                try:
+                    logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with failure")
+                    update_run_status(
+                        session_id=session_id,
+                        status='FAILED',
+                        run_type="Config Generation",
+                        verbose_status=f"Configuration generation failed: {response.get('error', 'Unknown error')}",
+                        percent_complete=0,
+                        processed_rows=0,
+                        error_message=response.get('error', 'Config generation failed'),
+                        account_current_balance=0,
+                        account_sufficient_balance="n/a",
+                        account_credits_needed="n/a",
+                        account_domain_multiplier=1.0,
+                        models="Config generation failed",
+                        batch_size=1,
+                        eliyahu_cost=0.0,
+                        estimated_validation_eliyahu_cost=0.0,
+                        time_per_row_seconds=0.0
+                    )
+                    logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated config generation run record with failure")
+                except Exception as e:
+                    logger.error(f"[CONFIG_RUN_TRACKING] Failed to update config run record with failure: {e}")
+            
             # Send error message via WebSocket
             websocket_message = {
                 'type': 'config_generation_failed',
@@ -1809,6 +2208,35 @@ def handle_config_generation(event, context):
         logger.error(f"Config generation error for session {event.get('session_id')}: {str(e)}")
         import traceback
         traceback.print_exc()
+        
+        # Update config generation run record with exception failure
+        session_id = event.get('session_id')
+        config_email = event.get('email', '').lower().strip()
+        if DYNAMODB_AVAILABLE and config_email and session_id:
+            try:
+                logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with exception failure")
+                update_run_status(
+                    session_id=session_id,
+                    status='FAILED',
+                    run_type="Config Generation",
+                    verbose_status=f"Configuration generation failed with exception: {str(e)}",
+                    percent_complete=0,
+                    processed_rows=0,
+                    error_message=str(e),
+                    account_current_balance=0,
+                    account_sufficient_balance="n/a",
+                    account_credits_needed="n/a",
+                    account_domain_multiplier=1.0,
+                    models="Config generation exception",
+                    batch_size=1,
+                    eliyahu_cost=0.0,
+                    quoted_validation_cost=0.0,
+                    estimated_validation_eliyahu_cost=0.0,
+                    time_per_row_seconds=0.0
+                )
+                logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated config generation run record with exception failure")
+            except Exception as update_error:
+                logger.error(f"[CONFIG_RUN_TRACKING] Failed to update config run record with exception: {update_error}")
         
         # Send error via WebSocket
         try:
