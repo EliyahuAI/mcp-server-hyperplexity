@@ -67,7 +67,10 @@ LAMBDA_CONFIG = {
     },
     "TracingConfig": {
         "Mode": "Active"  # Enable X-Ray tracing for better debugging
-    }
+    },
+    "Layers": [
+        "arn:aws:lambda:us-east-1:770693421928:layer:Klayers-p39-pillow:2"  # Pre-compiled Pillow for Lambda
+    ]
 }
 
 # API Gateway configuration
@@ -338,15 +341,19 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
                     max_config_retries = 3
                     for retry in range(max_config_retries):
                         try:
-                            lambda_client.update_function_configuration(
-                                FunctionName=function_name,
-                                Runtime=LAMBDA_CONFIG["Runtime"],
-                                Handler=LAMBDA_CONFIG["Handler"],
-                                Timeout=LAMBDA_CONFIG["Timeout"],
-                                MemorySize=LAMBDA_CONFIG["MemorySize"],
-                                Environment={'Variables': merged_env_vars},
-                                TracingConfig=LAMBDA_CONFIG["TracingConfig"]
-                            )
+                            update_params = {
+                                'FunctionName': function_name,
+                                'Runtime': LAMBDA_CONFIG["Runtime"],
+                                'Handler': LAMBDA_CONFIG["Handler"],
+                                'Timeout': LAMBDA_CONFIG["Timeout"],
+                                'MemorySize': LAMBDA_CONFIG["MemorySize"],
+                                'Environment': {'Variables': merged_env_vars},
+                                'TracingConfig': LAMBDA_CONFIG["TracingConfig"]
+                            }
+                            if "Layers" in LAMBDA_CONFIG:
+                                update_params["Layers"] = LAMBDA_CONFIG["Layers"]
+                            
+                            lambda_client.update_function_configuration(**update_params)
                             logger.info("Function configuration updated")
                             if 'WEBSOCKET_API_URL' in merged_env_vars:
                                 logger.info(f"Preserved WEBSOCKET_API_URL: {merged_env_vars['WEBSOCKET_API_URL']}")
@@ -360,20 +367,24 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
                                 raise
                 else:
                     # Create new function
-                    response = lambda_client.create_function(
-                        FunctionName=function_name,
-                        Runtime=LAMBDA_CONFIG["Runtime"],
-                        Role=LAMBDA_CONFIG["Role"],
-                        Handler=LAMBDA_CONFIG["Handler"],
-                        Code={
+                    create_params = {
+                        'FunctionName': function_name,
+                        'Runtime': LAMBDA_CONFIG["Runtime"],
+                        'Role': LAMBDA_CONFIG["Role"],
+                        'Handler': LAMBDA_CONFIG["Handler"],
+                        'Code': {
                             'S3Bucket': bucket_name,
                             'S3Key': s3_key
                         },
-                        Timeout=LAMBDA_CONFIG["Timeout"],
-                        MemorySize=LAMBDA_CONFIG["MemorySize"],
-                        Environment=LAMBDA_CONFIG["Environment"],
-                        TracingConfig=LAMBDA_CONFIG["TracingConfig"]
-                    )
+                        'Timeout': LAMBDA_CONFIG["Timeout"],
+                        'MemorySize': LAMBDA_CONFIG["MemorySize"],
+                        'Environment': LAMBDA_CONFIG["Environment"],
+                        'TracingConfig': LAMBDA_CONFIG["TracingConfig"]
+                    }
+                    if "Layers" in LAMBDA_CONFIG:
+                        create_params["Layers"] = LAMBDA_CONFIG["Layers"]
+                    
+                    response = lambda_client.create_function(**create_params)
                     logger.info(f"Function created: {response['FunctionArn']}")
                 
                 # Clean up S3 package after deployment
@@ -447,15 +458,19 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
                 max_config_retries = 3
                 for retry in range(max_config_retries):
                     try:
-                        lambda_client.update_function_configuration(
-                            FunctionName=function_name,
-                            Runtime=LAMBDA_CONFIG["Runtime"],
-                            Handler=LAMBDA_CONFIG["Handler"],
-                            Timeout=LAMBDA_CONFIG["Timeout"],
-                            MemorySize=LAMBDA_CONFIG["MemorySize"],
-                            Environment={'Variables': merged_env_vars},
-                            TracingConfig=LAMBDA_CONFIG["TracingConfig"]
-                        )
+                        update_params = {
+                            'FunctionName': function_name,
+                            'Runtime': LAMBDA_CONFIG["Runtime"],
+                            'Handler': LAMBDA_CONFIG["Handler"],
+                            'Timeout': LAMBDA_CONFIG["Timeout"],
+                            'MemorySize': LAMBDA_CONFIG["MemorySize"],
+                            'Environment': {'Variables': merged_env_vars},
+                            'TracingConfig': LAMBDA_CONFIG["TracingConfig"]
+                        }
+                        if "Layers" in LAMBDA_CONFIG:
+                            update_params["Layers"] = LAMBDA_CONFIG["Layers"]
+                        
+                        lambda_client.update_function_configuration(**update_params)
                         logger.info("Function configuration updated")
                         if 'WEBSOCKET_API_URL' in merged_env_vars:
                             logger.info(f"Preserved WEBSOCKET_API_URL: {merged_env_vars['WEBSOCKET_API_URL']}")
@@ -469,17 +484,21 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
                             raise
             else:
                 # Create new function
-                response = lambda_client.create_function(
-                    FunctionName=function_name,
-                    Runtime=LAMBDA_CONFIG["Runtime"],
-                    Role=LAMBDA_CONFIG["Role"],
-                    Handler=LAMBDA_CONFIG["Handler"],
-                    Code={'ZipFile': zip_content},
-                    Timeout=LAMBDA_CONFIG["Timeout"],
-                    MemorySize=LAMBDA_CONFIG["MemorySize"],
-                    Environment=LAMBDA_CONFIG["Environment"],
-                    TracingConfig=LAMBDA_CONFIG["TracingConfig"]
-                )
+                create_params = {
+                    'FunctionName': function_name,
+                    'Runtime': LAMBDA_CONFIG["Runtime"],
+                    'Role': LAMBDA_CONFIG["Role"],
+                    'Handler': LAMBDA_CONFIG["Handler"],
+                    'Code': {'ZipFile': zip_content},
+                    'Timeout': LAMBDA_CONFIG["Timeout"],
+                    'MemorySize': LAMBDA_CONFIG["MemorySize"],
+                    'Environment': LAMBDA_CONFIG["Environment"],
+                    'TracingConfig': LAMBDA_CONFIG["TracingConfig"]
+                }
+                if "Layers" in LAMBDA_CONFIG:
+                    create_params["Layers"] = LAMBDA_CONFIG["Layers"]
+                
+                response = lambda_client.create_function(**create_params)
                 logger.info(f"Function created: {response['FunctionArn']}")
         
         # Deploy API Gateway if requested
