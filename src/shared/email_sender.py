@@ -46,7 +46,7 @@ def generate_simple_text_receipt(session_id: str, email: str, amount: float,
     
     # Extract transaction details with defaults
     rows_processed = transaction_details.get('rows_processed', 0)
-    fields_validated = transaction_details.get('fields_validated_count', 0)
+    fields_validated = transaction_details.get('columns_validated_count', 0)
     perplexity_calls = transaction_details.get('perplexity_api_calls', 0)
     claude_calls = transaction_details.get('anthropic_api_calls', 0)
     table_name = transaction_details.get('table_name', transaction_details.get('input_filename', 'N/A'))
@@ -71,7 +71,7 @@ Service:               Table Validation
 ----------------------------------------------------------------------
 
 Rows Processed:        {rows_processed:,}
-Fields Validated:      {fields_validated:,}
+Columns Validated:      {fields_validated:,}
 Perplexity API Calls:  {perplexity_calls:,}
 Claude API Calls:      {claude_calls:,}
 
@@ -218,12 +218,12 @@ def generate_receipt_pdf(session_id: str, email: str, amount: float,
         
         # Service details in requested order: Rows, Fields, Perplexity Calls, Claude Calls
         rows_processed = transaction_details.get('rows_processed', 0)
-        fields_validated = transaction_details.get('fields_validated_count', 0)
+        fields_validated = transaction_details.get('columns_validated_count', 0)
         perplexity_calls = transaction_details.get('perplexity_api_calls', 0)
         claude_calls = transaction_details.get('anthropic_api_calls', 0)
         
         y_position = draw_info_row("Rows Processed:", f"{rows_processed:,}", y_position)
-        y_position = draw_info_row("Fields Validated:", f"{fields_validated:,}", y_position)
+        y_position = draw_info_row("Columns Validated:", f"{fields_validated:,}", y_position)
         y_position = draw_info_row("Perplexity API Calls:", f"{perplexity_calls:,}", y_position)
         y_position = draw_info_row("Claude API Calls:", f"{claude_calls:,}", y_position)
         
@@ -652,7 +652,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
                     'session_id': session_id,
                     'perplexity_api_calls': billing_info.get('perplexity_api_calls', 0),
                     'anthropic_api_calls': billing_info.get('anthropic_api_calls', 0),
-                    'fields_validated_count': billing_info.get('fields_validated_count', 0),
+                    'columns_validated_count': billing_info.get('columns_validated_count', 0),
                     'table_name': billing_info.get('table_name', 'N/A'),
                     'input_filename': billing_info.get('table_name', 'N/A'),
                     'config_id': billing_info.get('config_id', 'N/A')
@@ -822,7 +822,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
         else:
             fields_html = ", ".join(fields_validated[:5]) + f" and {len(fields_validated) - 5} more"
     else:
-        fields_html = "No fields processed"
+        fields_html = "No columns processed"
     
     # Format confidence distribution with Original -> Updated format
     confidence_html = ""
@@ -873,9 +873,13 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
     
     # Cost info
     cost_info = ""
-    if token_usage and token_usage.get('total_cost'):
-        cost = token_usage.get('total_cost', 0)
-        cost_info = f"<p><b>Cost:</b> ${cost:.4f}</p>"
+    if token_usage:
+        # Try multiple possible cost field names
+        cost = (token_usage.get('total_cost') or 
+                token_usage.get('estimated_total_cost') or
+                token_usage.get('cost') or 0)
+        if cost > 0:
+            cost_info = f"<p><b>Cost:</b> ${cost:.4f}</p>"
     
     # Reference pin removed from display per requirements
     
@@ -1005,7 +1009,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             <div class="summary">
                 {preview_notice}
                 <p><b>Total rows processed:</b> {total_rows:,}</p>
-                <p><b>Fields validated:</b> {len(fields_validated)}</p>
+                <p><b>Columns validated:</b> {len(fields_validated)}</p>
                 <p><small>({fields_html})</small></p>
                 {api_calls_info}
                 {time_info}

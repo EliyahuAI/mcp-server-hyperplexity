@@ -1394,7 +1394,7 @@ def handle(event, context):
                         'anthropic_api_calls': anthropic_calls,
                         'rows_processed': processed_rows_count,
                         'table_name': original_table_name,
-                        'fields_validated_count': len(summary_data.get('fields_validated', []))
+                        'columns_validated_count': len(summary_data.get('fields_validated', []))
                     }
                     
                     # Store enhanced Excel in versioned results folder and create download link
