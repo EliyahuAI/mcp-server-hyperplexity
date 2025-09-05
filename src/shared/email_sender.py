@@ -79,7 +79,7 @@ Claude API Calls:      {claude_calls:,}
                                TOTAL
 ----------------------------------------------------------------------
 
-Total Charged:         ${amount:.4f}
+Total Charged:         ${amount:.2f}
 
 ======================================================================
 
@@ -90,7 +90,7 @@ This receipt is for your records.
 ======================================================================
     """.strip()
     
-    logger.info(f"Generated simple text receipt for session {session_id}: ${amount:.4f}")
+    logger.info(f"Generated simple text receipt for session {session_id}: ${amount:.2f}")
     return receipt_text.encode('utf-8')
 
 
@@ -236,7 +236,7 @@ def generate_receipt_pdf(session_id: str, email: str, amount: float,
         y_position -= 0.2 * inch
         c.setFont("Helvetica-Bold", 14)
         c.drawString(left_margin, y_position, "Total Charged:")
-        c.drawRightString(right_margin, y_position, f"${amount:.4f}")
+        c.drawRightString(right_margin, y_position, f"${amount:.2f}")
         
         # Footer
         y_position = 2 * inch
@@ -318,7 +318,7 @@ def generate_receipt_pdf(session_id: str, email: str, amount: float,
             y_position = draw_basic_row("Date:", receipt_date, y_position)
             y_position = draw_basic_row("Session:", session_id, y_position)
             y_position = draw_basic_row("Email:", email, y_position)
-            y_position = draw_basic_row("Total Charged:", f"${amount:.4f}", y_position)
+            y_position = draw_basic_row("Total Charged:", f"${amount:.2f}", y_position)
             
             c.save()
             buffer.seek(0)
@@ -385,7 +385,7 @@ def generate_receipt(session_id: str, email: str, amount: float, raw_cost: float
                     <h3 style="margin-top: 0; color: #333;">Cost Breakdown</h3>
                     <div class="cost-row">
                         <span>Raw Processing Cost:</span>
-                        <span>${raw_cost:.6f}</span>
+                        <span>${raw_cost:.2f}</span>
                     </div>
                     <div class="cost-row">
                         <span>Domain Multiplier:</span>
@@ -397,7 +397,7 @@ def generate_receipt(session_id: str, email: str, amount: float, raw_cost: float
                     </div>
                     <div class="cost-row total-row">
                         <span>Total Charged:</span>
-                        <span>${amount:.4f}</span>
+                        <span>${amount:.2f}</span>
                     </div>
                 </div>
                 
@@ -424,9 +424,9 @@ Date: {datetime.now().isoformat()}
 Email: {email}
 
 Service: Table Validation
-Raw Processing Cost: ${raw_cost:.6f}
+Raw Processing Cost: ${raw_cost:.2f}
 Domain Multiplier: {multiplier}x
-Total Charged: ${amount:.4f}
+Total Charged: ${amount:.2f}
 
 Thank you for using Hyperplexity!
         """.strip()
@@ -490,7 +490,7 @@ def send_credit_confirmation_email(email_address: str, amount_purchased: float, 
                     
                     <div class="balance-highlight">
                         <p style="margin: 0; color: #333;">Your Current Balance:</p>
-                        <div class="balance-amount">${new_balance:.4f}</div>
+                        <div class="balance-amount">${new_balance:.2f}</div>
                     </div>
                     
                     <p>Your credits are ready to use! You can now process table validations and the costs will be automatically deducted from your account balance.</p>
@@ -684,7 +684,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
                 message.attach(receipt_part)
                 
                 receipt_type = "PDF" if receipt_bytes.startswith(b'%PDF') else "text"
-                logger.info(f"{receipt_type} receipt attached to email for session {session_id}: ${billing_info.get('amount_charged', 0):.4f}")
+                logger.info(f"{receipt_type} receipt attached to email for session {session_id}: ${billing_info.get('amount_charged', 0):.2f}")
                 
             except Exception as e:
                 logger.error(f"Failed to generate/attach PDF receipt for session {session_id}: {e}")
@@ -878,7 +878,7 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
         # Get estimated_total_cost from billing_info (from DynamoDB runs table)
         cost = billing_info.get('estimated_total_cost', 0)
         if cost > 0:
-            cost_info = f"<p><b>Cost:</b> ${cost:.4f}</p>"
+            cost_info = f"<p><b>Cost:</b> ${cost:.2f}</p>"
     
     # Reference pin removed from display per requirements
     
