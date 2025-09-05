@@ -623,7 +623,8 @@ def send_validation_results_email(email_address, excel_content, config_content, 
             config_filename,
             preview_email,
             config_id,
-            original_confidence_distribution
+            original_confidence_distribution,
+            billing_info
         )
         
         # Attach HTML body
@@ -812,7 +813,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         }
 
 
-def create_validation_results_email_body(session_id, total_rows, fields_validated, confidence_distribution, processing_time=None, reference_pin=None, token_usage=None, enhanced_excel_filename=None, input_filename=None, config_filename=None, preview_email=False, config_id=None, original_confidence_distribution=None):
+def create_validation_results_email_body(session_id, total_rows, fields_validated, confidence_distribution, processing_time=None, reference_pin=None, token_usage=None, enhanced_excel_filename=None, input_filename=None, config_filename=None, preview_email=False, config_id=None, original_confidence_distribution=None, billing_info=None):
     """Create clean validation results email body following Eliyahu.AI style guide"""
     
     # Format fields list
@@ -871,13 +872,11 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
         if call_parts:
             api_calls_info = "\n".join(call_parts)
     
-    # Cost info
+    # Cost info - get from billing_info which comes from DynamoDB runs table
     cost_info = ""
-    if token_usage:
-        # Try multiple possible cost field names
-        cost = (token_usage.get('total_cost') or 
-                token_usage.get('estimated_total_cost') or
-                token_usage.get('cost') or 0)
+    if billing_info:
+        # Get estimated_total_cost from billing_info (from DynamoDB runs table)
+        cost = billing_info.get('estimated_total_cost', 0)
         if cost > 0:
             cost_info = f"<p><b>Cost:</b> ${cost:.4f}</p>"
     

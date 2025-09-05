@@ -1386,6 +1386,7 @@ def handle(event, context):
                     billing_info = {
                         'amount_charged': charged_amount,
                         'eliyahu_cost': eliyahu_cost,
+                        'estimated_total_cost': estimated_cost,  # Add estimated_total_cost from DynamoDB
                         'multiplier': multiplier,
                         'initial_balance': float(initial_balance) if initial_balance else 0,
                         'final_balance': float(final_balance) if final_balance else 0,
