@@ -100,7 +100,9 @@ def install_dependencies():
                 sys.executable, "-m", "pip", "install",
                 "-r", str(SCRIPT_DIR / "requirements-lambda.txt"),
                 "-t", str(PACKAGE_DIR),
-                "--no-cache-dir"
+                "--no-cache-dir",
+                "--platform", "manylinux2014_x86_64",
+                "--only-binary=:all:"
             ])
             logger.info("Dependencies installed successfully.")
             break
@@ -162,7 +164,9 @@ def verify_dependencies():
                     sys.executable, "-m", "pip", "install",
                     pkg_name,
                     "-t", str(PACKAGE_DIR),
-                    "--no-cache-dir"
+                    "--no-cache-dir",
+                    "--platform", "manylinux2014_x86_64",
+                    "--only-binary=:all:"
                 ])
     except Exception as e:
         logger.error(f"Error during dependency verification: {str(e)}")
@@ -174,7 +178,9 @@ def verify_dependencies():
                 sys.executable, "-m", "pip", "install",
                 pkg_name,
                 "-t", str(PACKAGE_DIR),
-                "--no-cache-dir"
+                "--no-cache-dir",
+                "--platform", "manylinux2014_x86_64",
+                "--only-binary=:all:"
             ])
     
     if verify_file.exists():
@@ -761,7 +767,9 @@ def main():
             sys.executable, "-m", "pip", "install",
             "boto3",
             "-t", str(PACKAGE_DIR),
-            "--no-cache-dir"
+            "--no-cache-dir",
+            "--platform", "manylinux2014_x86_64",
+            "--only-binary=:all:"
         ])
         
         # Copy diagnose_logs.py as lambda_function.py
