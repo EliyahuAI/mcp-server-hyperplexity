@@ -56,7 +56,8 @@ Refine the existing configuration by:
 - **Goal**: Small enough search groups, with enough context, sent to smarter models to solve identified issues, that are reliably talking about the right information. 
 - **Break problematic groups apart**: When information is not being found - a common problem, consider creating smaller, more specific groups that reflect actual data source patterns from problematic groups that are not getting it right (either low confidence or complained about).
 - **Increase context**: For perplexity models, high context searches can be used sparingly to find information that is not coming up, this is helpful if the groups are already small, or the information is really esoteric. 
-- **Use Claude**: When more careful synthesis of information, use Claude Sonnet (front line), or if deep synthesis with extended reasoning is need use Claude Opus. 
+- **Use Claude**: When more careful synthesis of information, use Claude Sonnet (front line), or if deep synthesis with extended reasoning is need use Claude Opus.
+- **Adjust web search intensity**: When Anthropic models are not finding results, gently raise the search group's `anthropic_max_web_searches` parameter (0-10). When costs are high, lower this parameter to reduce web search usage.
 - **Stabilization**: If the columns are not getting information about the right thing cosistently, use more columns as input 'ID' fields in Group 0 to make sure that the sequential searches focus on a single topic 
 
 

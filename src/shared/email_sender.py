@@ -124,6 +124,9 @@ def generate_receipt_pdf_html(session_id: str, email: str, amount: float,
             # New hyperplexity logo - current working directory
             "./hyperplexity-logo-2.png",
             "./frontend/hyperplexity-logo-2.png",
+            # Development paths for testing
+            "../deployment/package/hyperplexity-logo-2.png",
+            "../../deployment/package/hyperplexity-logo-2.png",
             # AWS Lambda layer paths for new logo
             "/opt/hyperplexity-logo-2.png",
             # Legacy logo paths for backward compatibility
@@ -131,6 +134,8 @@ def generate_receipt_pdf_html(session_id: str, email: str, amount: float,
             "./EliyahuLogo_NoText_Crop.png",
             "./src/lambdas/config/EliyahuLogo_NoText_Crop.png",
             "../config/EliyahuLogo_NoText_Crop.png",
+            "../EliyahuLogo_NoText_Crop.png",
+            "../../EliyahuLogo_NoText_Crop.png",
             # Temporary directory fallback
             "/tmp/hyperplexity-logo-2.png",
             "/tmp/EliyahuLogo_NoText_Crop.png"
@@ -157,8 +162,8 @@ def generate_receipt_pdf_html(session_id: str, email: str, amount: float,
         else:
             logger.info("Image support not available, generating PDF without logo")
         
-        # Company name and receipt title
-        y_position = height - 3.8 * inch
+        # Company name and receipt title  
+        y_position = height - 2.6 * inch
         c.setFont("Helvetica-Bold", 20)
         text_width = c.stringWidth("Hyperplexity.AI Table Research", "Helvetica-Bold", 20)
         c.drawString((width - text_width) / 2, y_position, "Hyperplexity.AI Table Research")

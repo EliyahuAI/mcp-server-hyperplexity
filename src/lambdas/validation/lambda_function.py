@@ -977,7 +977,7 @@ def calculate_token_costs(token_usage: Dict[str, Any], pricing_data: Dict[str, D
         'pricing_model': pricing.get('model_name', model)
     }
 
-async def call_claude_with_shared_client(prompt: str, model: str, tool_schema: Dict) -> Dict:
+async def call_claude_with_shared_client(prompt: str, model: str, tool_schema: Dict, max_web_searches: int = 3) -> Dict:
     """
     Call Claude using the shared AI client.
     Returns a response in the format expected by the validation lambda.
@@ -989,7 +989,8 @@ async def call_claude_with_shared_client(prompt: str, model: str, tool_schema: D
             schema=tool_schema,
             model=model,
             tool_name="validate_data",
-            use_cache=True  # Enable caching
+            use_cache=True,  # Enable caching
+            max_web_searches=max_web_searches
         )
         
         # Extract the structured response
@@ -1116,6 +1117,45 @@ def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List
         selected_model = validator.default_model
         logger.info(f"Search group using default model: {selected_model}")
         return selected_model, warnings
+
+def resolve_search_group_max_web_searches(targets: List[Any], validator) -> int:
+    """
+    Resolve max web searches for Anthropic within a search group.
+    
+    Rules (in priority order):
+    1. If search group definition exists and has anthropic_max_web_searches, use it (highest priority)
+    2. Otherwise, use validator's anthropic_max_web_searches_default if set
+    3. Finally, use global default of 3
+    
+    Returns:
+        Max web searches (0-10)
+    """
+    logger.debug(f"RESOLVE_MAX_WEB_SEARCHES: Called with {len(targets)} targets")
+    
+    # Check if we have search group definitions and this group has a defined max_web_searches
+    if targets and hasattr(targets[0], 'search_group'):
+        group_id = targets[0].search_group
+        logger.info(f"Checking search group {group_id} for anthropic_max_web_searches override")
+        
+        # Check if validator has search_groups defined
+        if hasattr(validator, 'search_groups') and validator.search_groups:
+            for group_def in validator.search_groups:
+                if isinstance(group_def, dict) and group_def.get('group_id') == group_id:
+                    if 'anthropic_max_web_searches' in group_def:
+                        max_searches = group_def['anthropic_max_web_searches']
+                        logger.info(f"Using search group {group_id} defined anthropic_max_web_searches: {max_searches}")
+                        return max_searches
+    
+    # Check for validator default
+    if hasattr(validator, 'config') and isinstance(validator.config, dict):
+        default_max_searches = validator.config.get('anthropic_max_web_searches_default')
+        if default_max_searches is not None:
+            logger.info(f"Using validator default anthropic_max_web_searches: {default_max_searches}")
+            return default_max_searches
+    
+    # Global default
+    logger.info("Using global default anthropic_max_web_searches: 3")
+    return 3
 
 def resolve_search_group_context_size(targets: List[Any], validator) -> str:
     """
@@ -2331,10 +2371,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Resolve search context size for this search group
             search_context_size = resolve_search_group_context_size(validation_targets, validator)
             
+            # Resolve max web searches for Anthropic models in this search group
+            max_web_searches = resolve_search_group_max_web_searches(validation_targets, validator)
+            
             # Generate multiplex prompt first - we need this for the cache key
             logger.info(f"Generating multiplex prompt for {len(validation_targets)} field(s) with context from previous groups")
             logger.info(f"Using resolved model for search group: {model}")
             logger.info(f"Using resolved search context size for search group: {search_context_size}")
+            logger.info(f"Using resolved max web searches for search group: {max_web_searches}")
             logger.info(f"Passing validation_history to generate_multiplex_prompt: {filtered_validation_history is not None}")
             prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history)
             
@@ -2498,7 +2542,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 # For Claude, we'll handle caching ourselves since we need specific cache key format
                 result = await retry_api_call_with_backoff(
-                    lambda: call_claude_with_shared_client(prompt, model, tool_schema),
+                    lambda: call_claude_with_shared_client(prompt, model, tool_schema, max_web_searches),
                     max_retries=5,  # 6 total attempts with specific delays
                     custom_delays=[1, 5, 10, 20, 30, 60],  # 1s, 5s, 10s, 20s, 30s, 60s
                     batch_manager=batch_manager,

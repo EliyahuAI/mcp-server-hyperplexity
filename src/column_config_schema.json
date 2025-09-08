@@ -17,6 +17,12 @@
       "enum": ["low", "high"],
       "description": "Default search context size for Perplexity models"
     },
+    "anthropic_max_web_searches_default": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10,
+      "description": "Default maximum web searches for Anthropic models (0-10). 0=no search, 1=obvious items, 3=complex items, 5=esoteric facts"
+    },
     "search_groups": {
       "type": "array",
       "description": "Required search group definitions for organizing columns - essential for building effective search strategy",
@@ -44,6 +50,12 @@
             "type": "string",
             "enum": ["low", "high"],
             "description": "Search context size for this group"
+          },
+          "anthropic_max_web_searches": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "description": "Override max web searches for Anthropic models in this search group (0-10)"
           }
         },
         "additionalProperties": false

@@ -744,33 +744,37 @@ def handle(event, context):
                     base_columns_per_group = 0
                     extra_columns = 0
                 
-                # Get exact Claude model used from token_usage
-                claude_model_name = "claude-3.5-sonnet"  # Default
-                by_provider = token_usage.get('by_provider', {})
-                anthropic_data = by_provider.get('anthropic', {})
-                models_used = anthropic_data.get('models_used', [])
-                if models_used:
-                    # Use the actual model name from the first model used
-                    claude_model_name = models_used[0]
+                # Build search group models by iterating through actual search groups in config
+                search_groups_list = config_data.get('search_groups', [])
+                anthropic_default_web_searches = config_data.get('anthropic_max_web_searches_default', 3)
                 
                 current_group = 0
                 
-                # Add regular perplexity search groups with column counts
-                for i in range(regular_perplexity_groups):
+                # Iterate through each search group to get exact models and settings
+                for search_group in search_groups_list:
+                    if current_group >= search_groups_count:
+                        break
+                        
                     columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
-                    search_groups_models.append(f"sonar-pro X {columns_for_this_group}")
-                    current_group += 1
-                
-                # Add high context perplexity search groups with column counts
-                for i in range(high_context_groups):
-                    columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
-                    search_groups_models.append(f"sonar-pro (high context) X {columns_for_this_group}")
-                    current_group += 1
-                
-                # Add Claude search groups with exact model and column counts
-                for i in range(claude_groups):
-                    columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
-                    search_groups_models.append(f"{claude_model_name} X {columns_for_this_group}")
+                    model = search_group.get('model', 'sonar-pro')
+                    search_context = search_group.get('search_context', 'low')
+                    
+                    # Build model display name
+                    if 'claude' in model.lower() or 'anthropic' in model.lower():
+                        # Get anthropic_max_web_searches from this specific search group, or fall back to default
+                        max_web_searches = search_group.get('anthropic_max_web_searches', anthropic_default_web_searches)
+                        if search_context == 'high':
+                            model_display = f"{model} ({max_web_searches}) (high context) X {columns_for_this_group}"
+                        else:
+                            model_display = f"{model} ({max_web_searches}) X {columns_for_this_group}"
+                    else:
+                        # Perplexity models
+                        if search_context == 'high':
+                            model_display = f"{model} (high context) X {columns_for_this_group}"
+                        else:
+                            model_display = f"{model} X {columns_for_this_group}"
+                    
+                    search_groups_models.append(model_display)
                     current_group += 1
                 
                 # Get configuration ID for tracking
@@ -1749,33 +1753,37 @@ def handle(event, context):
                         base_columns_per_group = 0
                         extra_columns = 0
                     
-                    # Get exact Claude model used from token_usage
-                    claude_model_name = "claude-3.5-sonnet"  # Default
-                    by_provider = token_usage.get('by_provider', {})
-                    anthropic_data = by_provider.get('anthropic', {})
-                    models_used = anthropic_data.get('models_used', [])
-                    if models_used:
-                        # Use the actual model name from the first model used
-                        claude_model_name = models_used[0]
+                    # Build search group models by iterating through actual search groups in config
+                    search_groups_list = config_data.get('search_groups', [])
+                    anthropic_default_web_searches = config_data.get('anthropic_max_web_searches_default', 3)
                     
                     current_group = 0
                     
-                    # Add regular perplexity search groups with column counts
-                    for i in range(regular_perplexity_groups):
+                    # Iterate through each search group to get exact models and settings
+                    for search_group in search_groups_list:
+                        if current_group >= search_groups_count:
+                            break
+                            
                         columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
-                        search_groups_models.append(f"sonar-pro X {columns_for_this_group}")
-                        current_group += 1
-                    
-                    # Add high context perplexity search groups with column counts
-                    for i in range(high_context_groups):
-                        columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
-                        search_groups_models.append(f"sonar-pro (high context) X {columns_for_this_group}")
-                        current_group += 1
-                    
-                    # Add Claude search groups with exact model and column counts
-                    for i in range(claude_groups):
-                        columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
-                        search_groups_models.append(f"{claude_model_name} X {columns_for_this_group}")
+                        model = search_group.get('model', 'sonar-pro')
+                        search_context = search_group.get('search_context', 'low')
+                        
+                        # Build model display name
+                        if 'claude' in model.lower() or 'anthropic' in model.lower():
+                            # Get anthropic_max_web_searches from this specific search group, or fall back to default
+                            max_web_searches = search_group.get('anthropic_max_web_searches', anthropic_default_web_searches)
+                            if search_context == 'high':
+                                model_display = f"{model} ({max_web_searches}) (high context) X {columns_for_this_group}"
+                            else:
+                                model_display = f"{model} ({max_web_searches}) X {columns_for_this_group}"
+                        else:
+                            # Perplexity models
+                            if search_context == 'high':
+                                model_display = f"{model} (high context) X {columns_for_this_group}"
+                            else:
+                                model_display = f"{model} X {columns_for_this_group}"
+                        
+                        search_groups_models.append(model_display)
                         current_group += 1
                     
                     status_update_data['models'] = ", ".join(search_groups_models) if search_groups_models else "No API calls made"
@@ -2066,22 +2074,22 @@ def handle_config_generation(event, context):
                     models_used = []
                     cost_info = response.get('cost_info', {})
                     
+                    # Get table configuration to extract actual model names
+                    table_config = event.get('table_config', {})
+                    perplexity_model = table_config.get('perplexity_model', 'sonar-pro')
+                    anthropic_model = table_config.get('anthropic_model', 'claude-3.5-sonnet')
+                    anthropic_max_web_searches = table_config.get('anthropic_max_web_searches', 3)
+                    
                     # Add perplexity calls with count
                     perplexity_calls = cost_info.get('perplexity_calls', 0)
                     if perplexity_calls > 0:
-                        models_used.append(f"sonar-pro X {perplexity_calls}")
+                        models_used.append(f"{perplexity_model} X {perplexity_calls}")
                     
                     # Add anthropic calls with exact model name and count
                     anthropic_calls = cost_info.get('anthropic_calls', 0)
                     if anthropic_calls > 0:
-                        # Try to determine specific Claude model from response
-                        model_name = "claude-3.5-sonnet"  # Default assumption
-                        if 'claude-3-5-haiku' in str(response).lower():
-                            model_name = "claude-3.5-haiku"
-                        elif 'claude-3-opus' in str(response).lower():
-                            model_name = "claude-3-opus"
-                        
-                        models_used.append(f"{model_name} X {anthropic_calls}")
+                        claude_model_display = f"{anthropic_model} ({anthropic_max_web_searches})"
+                        models_used.append(f"{claude_model_display} X {anthropic_calls}")
                     
                     models = ", ".join(models_used) if models_used else "No AI models used"
                     

@@ -154,10 +154,10 @@ class AIAPIClient:
             logger.warning(f"Model {primary_model} not in hierarchy, using default backups")
             return ["claude-opus-4-0", "claude-3-7-sonnet-latest"][:count]
     
-    def _get_cache_key(self, prompt: str, model: str, schema: Dict = None, context: str = "") -> str:
+    def _get_cache_key(self, prompt: str, model: str, schema: Dict = None, context: str = "", max_web_searches: int = 3) -> str:
         """Generate a unique cache key for the request."""
         schema_str = json.dumps(schema, sort_keys=True) if schema else ""
-        cache_input = f"{prompt}:{model}:{schema_str}:{context}"
+        cache_input = f"{prompt}:{model}:{schema_str}:{context}:{max_web_searches}"
         return hashlib.md5(cache_input.encode()).hexdigest()
     
     def _get_validation_cache_key(self, row_data: Dict, targets: List, model: str, search_context_size: str = "low", config_hash: str = "") -> str:
@@ -411,7 +411,7 @@ class AIAPIClient:
     
     async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-3-5-sonnet-20241022", 
                                  tool_name: str = "structured_response", use_cache: bool = True, 
-                                 context: str = "", max_tokens: int = None) -> Dict:
+                                 context: str = "", max_tokens: int = None, max_web_searches: int = 3) -> Dict:
         """
         Call AI API with structured output using JSON response format.
         
@@ -454,7 +454,7 @@ class AIAPIClient:
                 current_model_normalized = self._normalize_anthropic_model(current_model)
                 
                 # Generate cache key for this specific model
-                cache_key = self._get_cache_key(prompt, current_model_normalized, schema, context) if use_cache else None
+                cache_key = self._get_cache_key(prompt, current_model_normalized, schema, context, max_web_searches) if use_cache else None
                 
                 # Check cache for this specific model
                 if use_cache and cache_key:
@@ -502,7 +502,7 @@ class AIAPIClient:
                             {
                                 "type": "web_search_20250305",
                                 "name": "web_search",
-                                "max_uses": 10
+                                "max_uses": max_web_searches
                             },
                             {
                                 "name": tool_name,
@@ -560,7 +560,7 @@ class AIAPIClient:
             raise Exception("All models failed - no specific error captured")
     
     async def call_text_api(self, prompt: str, model: Union[str, List[str]] = "claude-3-5-sonnet-20241022", 
-                           use_cache: bool = True, context: str = "") -> Dict:
+                           use_cache: bool = True, context: str = "", max_web_searches: int = 3) -> Dict:
         """
         Call AI API for text response.
         
@@ -574,7 +574,7 @@ class AIAPIClient:
             Dict containing the text response and metadata
         """
         normalized_model = self._normalize_anthropic_model(model)
-        cache_key = self._get_cache_key(prompt, normalized_model, None, context) if use_cache else None
+        cache_key = self._get_cache_key(prompt, normalized_model, None, context, max_web_searches) if use_cache else None
         
         # Check cache first
         if use_cache and cache_key:
@@ -622,7 +622,7 @@ class AIAPIClient:
                 {
                     "type": "web_search_20250305",
                     "name": "web_search",
-                    "max_uses": 3
+                    "max_uses": max_web_searches
                 }
             ]
         }
@@ -698,7 +698,7 @@ class AIAPIClient:
         Returns:
             Dict containing the validation response and metadata
         """
-        cache_key = self._get_cache_key(prompt, model, None, f"{context}:{search_context_size}") if use_cache else None
+        cache_key = self._get_cache_key(prompt, model, None, f"{context}:{search_context_size}", max_web_searches=0) if use_cache else None
         
         # Check cache first
         if use_cache and cache_key:

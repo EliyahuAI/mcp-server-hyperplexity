@@ -33,6 +33,11 @@ def validate_config_structure(config_data: Dict) -> Tuple[bool, List[str], List[
         if config_data['default_search_context_size'] not in ['low', 'high']:
             errors.append("default_search_context_size must be 'low' or 'high'")
     
+    if 'anthropic_max_web_searches_default' in config_data:
+        val = config_data['anthropic_max_web_searches_default']
+        if not isinstance(val, int) or val < 0 or val > 10:
+            errors.append("anthropic_max_web_searches_default must be an integer between 0 and 10")
+    
     # Validate search_groups if present
     if 'search_groups' in config_data:
         if not isinstance(config_data['search_groups'], list):
@@ -67,6 +72,12 @@ def validate_config_structure(config_data: Dict) -> Tuple[bool, List[str], List[
                 for field in ['group_name', 'description', 'model']:
                     if field in group and (not isinstance(group[field], str) or not group[field].strip()):
                         errors.append(f"search_groups[{i}].{field} must be a non-empty string")
+                
+                # Validate optional anthropic_max_web_searches
+                if 'anthropic_max_web_searches' in group:
+                    val = group['anthropic_max_web_searches']
+                    if not isinstance(val, int) or val < 0 or val > 10:
+                        errors.append(f"search_groups[{i}].anthropic_max_web_searches must be an integer between 0 and 10")
     
     # Validate validation_targets
     if 'validation_targets' in config_data:

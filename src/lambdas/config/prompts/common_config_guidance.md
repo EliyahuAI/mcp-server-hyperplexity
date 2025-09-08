@@ -21,6 +21,16 @@ This document contains shared guidelines used by both new config creation and re
   - Use `"high"` when search results are critical and expected to be hard to find, or when it we are unhappy with previews or results
   - Avoid `"high"` unless necessary as it increases cost and latency
 
+## Anthropic Web Search Guidelines
+- **Global Default**: Set `anthropic_max_web_searches_default` at the root level (defaults to 3)
+- **Per-Search Group Override**: Use `anthropic_max_web_searches` field (0-10) for specific search groups  
+- **Recommended Values**:
+  - **0**: When web search is not desirable (cached knowledge sufficient)
+  - **1**: For obvious items that need minimal verification
+  - **3**: For more complex items requiring moderate research (default)
+  - **5**: For esoteric facts requiring extensive search
+- **Cost Control**: Lower values reduce API costs but may miss current information
+
 
 ## Importance Level Guidelines
 - **ID**: These define the rows - at least one column must be assigned 'ID', usually it is one or more columns to the left of the table. 

@@ -21,6 +21,12 @@
           "enum": ["low", "high"],
           "description": "Default search context size"
         },
+        "anthropic_max_web_searches_default": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Default maximum web searches for Anthropic models (0-10). 0=no search, 1=obvious items, 3=complex items, 5=esoteric facts"
+        },
         "search_groups": {
           "type": "array",
           "description": "Required search group definitions",
@@ -31,7 +37,13 @@
               "group_name": {"type": "string"},
               "description": {"type": "string"},
               "model": {"type": "string"},
-              "search_context": {"type": "string", "enum": ["low", "high"]}
+              "search_context": {"type": "string", "enum": ["low", "high"]},
+              "anthropic_max_web_searches": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10,
+                "description": "Override max web searches for Anthropic models in this search group (0-10)"
+              }
             },
             "required": ["group_id", "group_name", "description", "model", "search_context"]
           }
