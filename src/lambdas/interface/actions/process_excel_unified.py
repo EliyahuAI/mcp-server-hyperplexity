@@ -293,7 +293,8 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
             total_rows = -1
 
         # Create tracking records
-        create_run_record(session_id=session_id, email=email_address, total_rows=total_rows, batch_size=batch_size)
+        run_type = "Preview" if preview else "Validation"
+        create_run_record(session_id=session_id, email=email_address, total_rows=total_rows, batch_size=batch_size, run_type=run_type)
         reference_pin = session_id.split('_')[-1] if '_' in session_id else session_id[:6]
         track_validation_call(
             email=email_address,

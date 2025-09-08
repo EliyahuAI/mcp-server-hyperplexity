@@ -20,7 +20,7 @@ MULTIPLEX_RESPONSE_SCHEMA = {
                 "enum": ["HIGH", "MEDIUM", "LOW", None],
                 "description": "Confidence in the original value: HIGH=correct, MEDIUM=minor issues, LOW=wrong, None=blank stays blank"
             },
-            "reasoning": {"type": "string", "description": "Direct quote from provided source (preferred), general knowledge, or other supporting evidence"},
+            "reasoning": {"type": "string", "description": "MANDATORY: Direct quote from web search results, authoritative sources, or current data. You MUST perform web search to verify recent information when helpful for accuracy."},
             "sources": {"type": "array", "items": {"type": "string"}, "description": "List of source URLs that support the validation"},
             "explanation": {"type": "string", "description": "Explanation of the validation result, succinct reason you believe the provided answer is correct"},
             "consistent_with_model_knowledge": {"type": "string", "description": "Whether the answer is consistent with general knowledge outside of the provided sources"}

@@ -73,83 +73,87 @@ USER_TRACKING_COLUMNS = [
     'first_email_validation',
     'most_recent_email_validation',
     
-    # Usage Statistics
-    'total_preview_requests',
-    'total_full_requests',
+    # Request counts by type (using new field names)
+    'total_previews',
+    'total_validations',
+    'total_configurations',
     
-    # Token Usage
-    'total_tokens_used',
-    'perplexity_tokens',
-    'anthropic_tokens',
+    # Enhanced validation metrics
+    'total_rows_processed',
+    'total_rows_analyzed',
+    'total_columns_validated',
+    'total_search_groups',
+    'total_high_context_search_groups',
+    'total_claude_calls',
     
-    # Cost Tracking
-    'total_cost_usd',
-    'perplexity_cost',
-    'anthropic_cost'
+    # Cost tracking with consolidated nomenclature
+    'total_eliyahu_cost',
+    'total_quoted_validation_cost',
+    'total_validation_revenue',
+    'total_config_eliyahu_cost',
+    
+    # Request-type specific metrics
+    'preview_rows_processed',
+    'preview_eliyahu_cost',
+    'validation_rows_processed',
+    'validation_revenue',
+    'config_generation_eliyahu_cost',
+    
+    # API call tracking
+    'total_api_calls_made',
+    'total_cached_calls_made',
+    
+    # Account balance
+    'account_balance',
+    'balance_last_updated'
 ]
 
-# Enhanced column order for runs table with flattened preview_data
+# Column order for runs table with consolidated schema
 RUNS_TABLE_COLUMNS = [
-    # Session Identity & Timing (earliest first)
+    # Primary status info first
+    'run_type',
+    'run_time_s',
+    'status',
+    
+    # Session Identity & Timing
     'session_id',
     'email',
     'start_time',
     'end_time',
     'last_update',
     
-    # Status & Progress
-    'status',
+    # Progress tracking
     'verbose_status',
     'percent_complete',
     'processed_rows',
+    'validated_columns_count',
     'total_rows',
     
-    # Cost Estimates (from flattened preview_data)
-    'per_row_cost',
-    'estimated_total_cost',
-    'preview_cost',
-    'quoted_full_cost',
-    
-    # Token Usage Summary
-    'per_row_tokens',
-    'estimated_total_tokens',
-    'preview_tokens',
-    
-    # Perplexity API Details (from flattened preview_data)
-    'perplexity_total_tokens',
-    'perplexity_prompt_tokens',
-    'perplexity_completion_tokens',
-    'perplexity_total_cost',
+    # API call counts
     'perplexity_calls',
-    
-    # Anthropic API Details (from flattened preview_data)
-    'anthropic_total_tokens',
-    'anthropic_input_tokens',
-    'anthropic_output_tokens',
-    'anthropic_cache_creation_tokens',
-    'anthropic_cache_read_tokens',
-    'anthropic_total_cost',
     'anthropic_calls',
+    'batch_size',
     
-    # Validation Metrics (from flattened preview_data)
-    'search_groups_count',
-    'validated_columns_count',
-    'high_context_search_groups_count',
-    'claude_search_groups_count',
+    # CONSOLIDATED: Cost and timing fields (ordered by importance)
+    'eliyahu_cost',
+    'estimated_validation_eliyahu_cost',
+    'quoted_validation_cost',
+    'time_per_row_seconds',
+    'estimated_validation_time_minutes',
     
-    # Processing Times (from flattened preview_data)
-    'preview_processing_time_seconds',
-    'estimated_total_processing_time_seconds',
-    'estimated_total_time_minutes',
-    
-    # Account Info (from flattened preview_data)
+    # Account tracking
     'account_current_balance',
     'account_sufficient_balance',
-    'account_credits_needed',
+    'account_credits_needed', 
     'account_domain_multiplier',
     
-    # File & Results
+    # Model usage and input tracking
+    'models',
+    'input_table_name',
+    'configuration_id',
     'results_s3_key',
+    
+    # Error handling
     'error_message'
 ]
 
@@ -299,6 +303,44 @@ def decimal_default(obj):
     if isinstance(obj, Decimal):
         return float(obj)
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+def format_number_for_excel(value):
+    """Format numbers to prevent Excel from using scientific notation"""
+    if value is None or value == '':
+        return ''
+    
+    try:
+        # Convert to float if it's not already
+        num_value = float(value)
+        
+        # For very small numbers close to zero, just return 0
+        if abs(num_value) < 1e-10:
+            return '0'
+            
+        # For integers or numbers that can be represented as integers
+        if num_value == int(num_value):
+            return str(int(num_value))
+        
+        # For numbers with decimals, use a reasonable precision
+        # Excel shows scientific notation for numbers > 1e11 or < 1e-4
+        if abs(num_value) >= 1e11:
+            # For very large numbers, format with no decimal places if it's effectively an integer
+            if num_value == int(num_value):
+                return f"{int(num_value)}"
+            else:
+                return f"{num_value:.0f}"
+        elif abs(num_value) < 1e-4:
+            # For very small numbers, use scientific notation string to prevent Excel auto-conversion
+            return f"{num_value:.2e}"
+        else:
+            # For normal range numbers, use appropriate decimal places
+            if abs(num_value) >= 1000:
+                return f"{num_value:.2f}"
+            else:
+                return f"{num_value:.6f}".rstrip('0').rstrip('.')
+                
+    except (ValueError, TypeError):
+        return str(value)
 
 def get_ordered_columns(table_name, items):
     """Get logically ordered columns for a specific table"""
@@ -561,7 +603,64 @@ def clear_table(table_name):
         
     except Exception as e:
         print(f"Error clearing table {table_name}: {e}")
+
+def delete_table(table_name):
+    """Completely delete a DynamoDB table"""
+    try:
+        dynamodb = boto3.resource('dynamodb')
+        table = dynamodb.Table(table_name)
+        
+        print(f"[INFO] Deleting table {table_name}...")
+        table.delete()
+        
+        # Wait for table to be deleted
+        print(f"[INFO] Waiting for table {table_name} to be completely deleted...")
+        waiter = boto3.client('dynamodb').get_waiter('table_not_exists')
+        waiter.wait(TableName=table_name)
+        
+        print(f"[SUCCESS] Table {table_name} has been completely deleted")
+        return True
+        
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceNotFoundException':
+            print(f"[INFO] Table {table_name} does not exist")
+            return True
+        else:
+            print(f"[ERROR] Failed to delete table {table_name}: {e}")
+            return False
+    except Exception as e:
+        print(f"[ERROR] Error deleting table {table_name}: {e}")
         return False
+
+def delete_runs_and_user_tables():
+    """Delete both runs and user tracking tables"""
+    tables_to_delete = [
+        RUNS_TABLE,
+        USER_TRACKING_TABLE
+    ]
+    
+    print(f"[WARNING] This will COMPLETELY DELETE the following tables:")
+    for table_name in tables_to_delete:
+        print(f"  - {table_name}")
+    print()
+    
+    confirm = input("Are you absolutely sure you want to DELETE these tables? Type 'DELETE TABLES' to confirm: ")
+    if confirm != 'DELETE TABLES':
+        print("[CANCELLED] Table deletion cancelled")
+        return False
+    
+    success_count = 0
+    for table_name in tables_to_delete:
+        if delete_table(table_name):
+            success_count += 1
+    
+    if success_count == len(tables_to_delete):
+        print(f"\n[SUCCESS] All {len(tables_to_delete)} tables have been deleted")
+        print("You can recreate them using the schema functions in dynamodb_schemas.py")
+    else:
+        print(f"\n[WARNING] Only {success_count}/{len(tables_to_delete)} tables were successfully deleted")
+    
+    return success_count == len(tables_to_delete)
 
 def get_call_tracking_records(limit=10):
     """Get recent call tracking records"""
@@ -915,7 +1014,7 @@ def flatten_preview_data(item):
     flattened.update({
         'preview_processing_time_seconds': preview_data.get('preview_processing_time', 0),
         'estimated_total_processing_time_seconds': preview_data.get('estimated_total_processing_time', 0),
-        'estimated_total_time_minutes': preview_data.get('estimated_total_time_minutes', 0)
+        'estimated_validation_time_minutes': preview_data.get('estimated_validation_time_minutes', 0)
     })
     
     # Account info (if present)
@@ -1001,12 +1100,20 @@ def export_table_to_csv(table_name, output_dir="events", limit=None):
             writer.writeheader()
             
             for item in items:
-                # Convert Decimal objects to float for CSV compatibility
+                # Convert Decimal objects to float for CSV compatibility and prevent Excel scientific notation
                 csv_row = {}
                 for key in fieldnames:
                     value = item.get(key, '')
                     if isinstance(value, Decimal):
-                        csv_row[key] = float(value)
+                        # Convert to float first
+                        float_value = float(value)
+                        # Format large numbers to prevent Excel scientific notation
+                        csv_row[key] = format_number_for_excel(float_value)
+                    elif isinstance(value, (int, float)) and key in ['anthropic_input_tokens', 'anthropic_output_tokens', 'anthropic_total_tokens', 
+                                                                      'perplexity_prompt_tokens', 'perplexity_completion_tokens', 'perplexity_total_tokens',
+                                                                      'estimated_total_tokens', 'preview_tokens']:
+                        # Format token fields that are large numbers to prevent scientific notation
+                        csv_row[key] = format_number_for_excel(value)
                     elif isinstance(value, dict) or isinstance(value, list):
                         # Convert complex objects to JSON strings
                         csv_row[key] = json.dumps(value, default=decimal_default)
@@ -1388,6 +1495,8 @@ Usage:
     python manage_dynamodb_tables.py delete-validation <email>  # Delete validation record
     python manage_dynamodb_tables.py delete-tracking <email>    # Delete tracking record
     python manage_dynamodb_tables.py clear <table_name>      # Clear all items from table
+    python manage_dynamodb_tables.py delete-table <table_name>  # COMPLETELY DELETE a table
+    python manage_dynamodb_tables.py delete-runs-and-user-tables  # DELETE runs and user tracking tables
     python manage_dynamodb_tables.py calls                   # Show recent call tracking (legacy)
     python manage_dynamodb_tables.py recent [limit]          # Show recent validation runs (rich format)
     python manage_dynamodb_tables.py recent-calls [limit]    # Same as recent
@@ -1494,6 +1603,20 @@ Examples:
             clear_table(table_name)
         else:
             print("Operation cancelled.")
+    
+    elif command == "delete-table":
+        if len(sys.argv) < 3:
+            print("Usage: python manage_dynamodb_tables.py delete-table <table_name>")
+            return
+        table_name = sys.argv[2]
+        confirm = input(f"Are you sure you want to COMPLETELY DELETE table {table_name}? (yes/no): ")
+        if confirm.lower() == 'yes':
+            delete_table(table_name)
+        else:
+            print("Operation cancelled.")
+    
+    elif command == "delete-runs-and-user-tables":
+        delete_runs_and_user_tables()
     
     elif command == "calls":
         get_call_tracking_records()

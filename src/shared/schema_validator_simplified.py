@@ -256,16 +256,13 @@ class SimplifiedSchemaValidator:
     
     def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None, validation_history: Dict[str, List[Dict[str, Any]]] = None) -> str:
         """Generate a validation prompt for multiple targets (multiplex) using prompts.yml template."""
-        # LOG VALIDATION HISTORY DEBUG INFO
-        logger.info("=== GENERATE_MULTIPLEX_PROMPT DEBUG ===")
-        logger.info(f"Validation history received: {validation_history is not None}")
+        # Debug validation history
         if validation_history:
-            logger.info(f"Validation history has {len(validation_history)} fields")
-            for field_name, entries in validation_history.items():
-                logger.info(f"  Field '{field_name}': {len(entries)} entries")
+            # Validation history available
+            pass
         else:
-            logger.info("No validation history provided to generate_multiplex_prompt")
-        logger.info("=== END DEBUG ===")
+            # No validation history provided
+            pass
         
         # Load prompts from YAML file
         prompts_file = Path(__file__).parent / "prompts.yml"

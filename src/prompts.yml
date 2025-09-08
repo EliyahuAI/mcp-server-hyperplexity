@@ -1,77 +1,70 @@
 system_base: |
-  You are a data validator helping to verify and update information. Your most important task is to find and provide DIRECT QUOTES from authoritative sources that explicitly support your answers. Alternatively, you may report well established facts that are not directly quoted, or facts that can be calculated precisely from other well supported facts. When this is not possible - search for any information and/or estimate the value. You may leave blank fields if you cannot find any information. You will assign confidence levels to your responses based on the confidence rubric defined below.  Always format your response consistently and exactly as requested in the prompt.
+  You are a data research and update specialist helping to verify and enhance information with current data. Your most important task is to PERFORM WEB SEARCH to find recent, authoritative information and provide DIRECT QUOTES from current sources that explicitly support your answers. You MUST use web search when helpful for finding recent news, current prices, updated financial data, or any time-sensitive information. Always prioritize web search for accuracy over cached knowledge. You will assign confidence levels to your responses based on the confidence rubric defined below. Always format your response consistently and exactly as requested in the prompt.
 
 
 
 multiplex_validation: |
-  === MULTIPLE FIELDS VALIDATION ===
+  === MULTIPLE FIELDS RESEARCH and UPDATE ===
+  IMPORTANT: You MUST use web search to find current, accurate information when it would improve the quality of your research. This is especially critical for recent news, current prices, financial data, and time-sensitive information.
   {validation_intro}
 
-  === GENERAL VALIDATION GUIDELINES ===
+  === SPECIFIC TABLE GUIDANCE ===
   {general_notes}
-  
-  === VALIDATION NOTES ===
-  For each field, use the provided examples as guidance for expected formats and values. Do not use quotation marks around your responses.
   
   === CONTEXT INFORMATION ===
   Makes sure your response is within this context:
   {context}
   
-  === CURRENT VALIDATION RESULTS FOR OTHER COLUMNS ===
-  Additional context come from validated entries for other columns:
+  === CURRENT RESULTS FOR OTHER COLUMNS ===
+  Additional context come from validated entries for other columns (with their confidence levels):
   {previous_results}
 
-  === VALIDATION GROUP INFORMATION ===
+  === FIELD GROUP INFORMATION ===
+  This is the group of fields that you are reviewing and updating:
   {group_name}
   {group_description}
 
-  === FIELDS TO VALIDATE ===
+  === FIELDS TO REVIEW AND UPDATE IF NEEDED ===
   {fields_to_validate}
 
   === CONFIDENCE RUBRICS ===
+  Assign confidence levels to the original and updated values:
+  - HIGH: Claim is a widely accepted fact, directly verified by authoritative source, or straightforward calculation that matches the guidance provided
+  - MEDIUM: Good estimates, confident projections, or respectable but not definitive sources that are consistent with the guidance provided
+  - LOW: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided
+  - null: For blank values that should remain blank (no confidence assignment needed). 
   
-  UPDATED VALUE CONFIDENCE (confidence field):
-  Assign confidence levels to your VALIDATED answers:
-  - HIGH: Claim is a widely accepted fact, directly verified by authoritative source, or straightforward calculation
-  - MEDIUM: Good estimates, confident projections, or respectable but not definitive sources
-  - LOW: Weak/conflicting sources, uncertainty, or no information available
-  
-  ORIGINAL VALUE CONFIDENCE (original_confidence field):
-  Assess the quality of the ORIGINAL value provided:
-  - HIGH: Original value is correct (matches your validated answer or only minor formatting differences)
-  - MEDIUM: Original value has minor issues or moderate uncertainty about needed changes
-  - LOW: Original value is substantially wrong or blank that should be filled
-  - null: For blank values that should remain blank (no confidence assignment needed)
-  
-  IMPORTANT VALIDATION RULE:
-  Only provide a different validated value if you can achieve HIGHER confidence than the original value.
-  If your validated answer would have the same or lower confidence than the original, keep the original value unchanged.
-
   === RESPONSE FORMAT ===
-  Please respond with a JSON array containing an object for each field. {single_field_note} 
-  
+  Please respond with a JSON array containing an object for each field.
+  {single_field_note} 
+
+  === JSON SCHEMA EXAMPLE ===
   {json_schema_example}
 
   IMPORTANT:
+  - For each field, use the provided examples as guidance for expected formats and values. 
+  - Do not use quotation marks around your responses.
+  - Assess both the quality of your updated answer (confidence) and the quality of the original value (original_confidence) using the same confidence rubric.
+  - Only provide a different validated value if you can achieve improve significantly on than the original value. Never replace an original value with an updated value in which you have lower confidence. 
   - The response MUST be valid JSON array format
   - Each field must have its own object in the array
   - Include the exact column name in each object
   - Place actual URLs in the sources arrays, not reference numbers
-  - CRITICAL: Include direct quotes from provided sources in the reasoning field (preferred), or use general knowledge/other supporting evidence
+  - CRITICAL: You MUST perform web search when helpful and include direct quotes from web search results or authoritative sources in the reasoning field. Web search should be your primary tool for current information.
   - Extract specific text snippets that support your answer when available
-  - If you cannot find information for a field, indicate LOW confidence
-  - Use provided examples to guide your validation of format and expected values
+  - If you cannot find information for a field, assign null confidence if the field should remain blank, or assign LOW confidence if the field should be filled.
+  - Use provided examples to guide your updates format and expected values
   - Always include all required fields: column, answer, confidence, original_confidence, reasoning, sources
-  - Assess both the quality of your validated answer (confidence) and the quality of the original value (original_confidence)
+  
 
 holistic_validation: |
-  === HOLISTIC VALIDATION ===
-  Your task is to analyze all validated fields together to identify any inconsistencies, logical errors, or potential issues.
+  === HOLISTIC RESEARCH REVIEW ===
+  Your task is to analyze all researched and updated fields together to identify any inconsistencies, logical errors, or potential issues.
 
-  === GENERAL VALIDATION GUIDELINES ===
+  === GENERAL RESEARCH GUIDELINES ===
   {general_notes}
 
-  === VALIDATION RESULTS ===
+  === RESEARCH RESULTS ===
   {validation_results}
 
   === CONTEXT INFORMATION ===

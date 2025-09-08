@@ -205,6 +205,25 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                 row_key = "||".join([str(row_data.get(col, "")) for col in key_columns])
             row_keys.append(row_key)
         
+        # Debug validation_results structure
+        logger.info(f"[EXCEL_DEBUG] validation_results type: {type(validation_results)}")
+        if isinstance(validation_results, dict):
+            logger.info(f"[EXCEL_DEBUG] validation_results keys: {list(validation_results.keys())}")
+            if validation_results:
+                sample_key = list(validation_results.keys())[0]
+                sample_value = validation_results[sample_key]
+                logger.info(f"[EXCEL_DEBUG] Sample key: '{sample_key}', Value type: {type(sample_value)}")
+                if isinstance(sample_value, dict):
+                    logger.info(f"[EXCEL_DEBUG] Sample value keys: {list(sample_value.keys())}")
+                    for field_name, field_data in sample_value.items():
+                        if isinstance(field_data, dict):
+                            logger.info(f"[EXCEL_DEBUG] Field '{field_name}' structure: {list(field_data.keys())}")
+                        break
+        else:
+            logger.info(f"[EXCEL_DEBUG] validation_results is not dict: {validation_results}")
+        
+        logger.info(f"[EXCEL_DEBUG] Generated {len(row_keys)} row keys: {row_keys[:3]}...")
+        
         # Load existing Details entries from the original Excel (for history preservation)
         existing_details = []
         details_sheet_exists = False
@@ -320,7 +339,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 validated_value = field_data.get('value', '')
                                 reasoning = field_data.get('reasoning', '')
                                 
-                                # Create comment with original value and reasoning
+                                # Create comment with original value, reasoning, and citations
                                 if validated_value != original_value or reasoning:
                                     comment_parts = []
                                     if validated_value != original_value:
@@ -328,8 +347,25 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                     if reasoning:
                                         comment_parts.append(f'Supporting Information: {reasoning}')
                                     
+                                    # Add citations if available
+                                    citations = field_data.get('citations', [])
+                                    if citations:
+                                        citation_texts = []
+                                        for i, citation in enumerate(citations, 1):
+                                            cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
+                                            cite_url = citation.get('url', '')
+                                            cite_snippet = citation.get('cited_text', '')
+                                            if cite_url:
+                                                cite_text += f" ({cite_url})"
+                                            if cite_snippet:
+                                                cite_text += f": \"{cite_snippet}\""
+                                            citation_texts.append(cite_text)
+                                        
+                                        if citation_texts:
+                                            comment_parts.append(f"Sources:\n" + "\n".join(citation_texts))
+                                    
                                     if comment_parts:
-                                        comment_text = '\\n\\n'.join(comment_parts)
+                                        comment_text = '\n\n'.join(comment_parts)
                         
                         # Add comment if needed
                         if comment_text:
@@ -381,7 +417,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             # Apply original confidence color (only if confidence should be colored)
                             cell_format = get_confidence_format(original_confidence, original_confidence_formats)
                             
-                            # Create comment with updated value and reasoning
+                            # Create comment with updated value, reasoning, and citations
                             if validated_value != original_value or reasoning:
                                 comment_parts = []
                                 if validated_value != original_value:
@@ -389,8 +425,25 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 if reasoning:
                                     comment_parts.append(f'Supporting Information: {reasoning}')
                                 
+                                # Add citations if available
+                                citations = field_data.get('citations', [])
+                                if citations:
+                                    citation_texts = []
+                                    for i, citation in enumerate(citations, 1):
+                                        cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
+                                        cite_url = citation.get('url', '')
+                                        cite_snippet = citation.get('cited_text', '')
+                                        if cite_url:
+                                            cite_text += f" ({cite_url})"
+                                        if cite_snippet:
+                                            cite_text += f": \"{cite_snippet}\""
+                                        citation_texts.append(cite_text)
+                                    
+                                    if citation_texts:
+                                        comment_parts.append(f"Sources:\n" + "\n".join(citation_texts))
+                                
                                 if comment_parts:
-                                    comment_text = '\\n\\n'.join(comment_parts)
+                                    comment_text = '\n\n'.join(comment_parts)
                     
                     # Write original value
                     original_sheet.write(row_idx + 1, col_idx, safe_for_excel(original_value), cell_format)
@@ -415,7 +468,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
             
             # Add the rest of the standard columns (new order as requested)
             detail_headers.extend(["Column", "Original Value", "Original Confidence", "Validated Value", 
-                            "Validation Confidence", "Reasoning", "Sources", 
+                            "Validation Confidence", "Reasoning", "Sources", "Citations",
                             "Explanation", "Consistent with Model", "Model", "Timestamp", "New"])
             
             for col_idx, header in enumerate(detail_headers):
@@ -489,6 +542,26 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             sources_text = ', '.join(field_data.get('sources', []))
                             details_sheet.write(detail_row, col_idx, safe_for_excel(sources_text))  # Sources
                             col_idx += 1
+                            
+                            # Citations column - format citations nicely
+                            citations = field_data.get('citations', [])
+                            if citations:
+                                citation_texts = []
+                                for i, citation in enumerate(citations, 1):
+                                    cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
+                                    cite_url = citation.get('url', '')
+                                    if cite_url:
+                                        cite_text += f" ({cite_url})"
+                                    cite_snippet = citation.get('cited_text', '')
+                                    if cite_snippet:
+                                        cite_text += f": \"{cite_snippet[:100]}{'...' if len(cite_snippet) > 100 else ''}\""
+                                    citation_texts.append(cite_text)
+                                citations_text = '\n'.join(citation_texts)
+                            else:
+                                citations_text = ''
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(citations_text))  # Citations
+                            col_idx += 1
+                            
                             details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('explanation', ''))))  # Explanation
                             col_idx += 1
                             details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('consistent_with_model_knowledge', ''))))  # Consistent with Model
@@ -529,7 +602,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                     
                     # Standard columns (map old field names to new ones)
                     standard_columns = ['Column', 'Original Value', 'Validated Value', 'Validation Confidence', 
-                                      'Original Confidence', 'Reasoning', 'Sources', 'Explanation', 
+                                      'Original Confidence', 'Reasoning', 'Sources', 'Citations', 'Explanation', 
                                       'Consistent with Model', 'Model', 'Timestamp', 'New']
                     
                     # Handle field name mapping

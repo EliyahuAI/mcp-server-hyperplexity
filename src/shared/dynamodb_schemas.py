@@ -49,6 +49,7 @@ class DynamoDBSchemas:
     USER_TRACKING_TABLE = "perplexity-validator-user-tracking"
     ACCOUNT_TRANSACTIONS_TABLE = "perplexity-validator-account-transactions"
     DOMAIN_MULTIPLIERS_TABLE = "perplexity-validator-domain-multipliers"
+    VALIDATION_RUNS_TABLE = "perplexity-validator-runs"
     
     @classmethod
     def get_call_tracking_schema(cls) -> Dict[str, Any]:
@@ -356,6 +357,96 @@ class DynamoDBSchemas:
             'BillingMode': 'PAY_PER_REQUEST'
         }
 
+    @classmethod  
+    def get_validation_runs_schema(cls) -> Dict[str, Any]:
+        """Schema for the validation runs table with consolidated field structure."""
+        return {
+            'TableName': cls.VALIDATION_RUNS_TABLE,
+            'KeySchema': [
+                {
+                    'AttributeName': 'session_id',
+                    'KeyType': 'HASH'  # Partition key
+                }
+            ],
+            'AttributeDefinitions': [
+                {
+                    'AttributeName': 'session_id',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'email',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'status',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'start_time',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'last_update',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'run_type',
+                    'AttributeType': 'S'
+                }
+            ],
+            'GlobalSecondaryIndexes': [
+                {
+                    'IndexName': 'EmailStartTimeIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'email',
+                            'KeyType': 'HASH'
+                        },
+                        {
+                            'AttributeName': 'start_time',
+                            'KeyType': 'RANGE'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                },
+                {
+                    'IndexName': 'StatusLastUpdateIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'status',
+                            'KeyType': 'HASH'
+                        },
+                        {
+                            'AttributeName': 'last_update',
+                            'KeyType': 'RANGE'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                },
+                {
+                    'IndexName': 'RunTypeStartTimeIndex', 
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'run_type',
+                            'KeyType': 'HASH'
+                        },
+                        {
+                            'AttributeName': 'start_time',
+                            'KeyType': 'RANGE'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                }
+            ],
+            'BillingMode': 'PAY_PER_REQUEST'
+        }
+
 class CallTrackingRecord:
     """Enhanced helper class for comprehensive call tracking records."""
     
@@ -448,7 +539,7 @@ class CallTrackingRecord:
     def set_batch_timing_estimates(self, time_per_batch: float, total_batches: int):
         """Set batch-level timing estimates (costs and tokens remain per-row)."""
         self._data['time_per_batch_seconds'] = time_per_batch
-        self._data['estimated_total_batches'] = total_batches
+        self._data['estimated_validation_batches'] = total_batches
         
         # Update preview time estimates using batch calculations
         if total_batches > 0:
@@ -599,7 +690,7 @@ class CallTrackingRecord:
             'avg_tokens_per_row': 0.0,
             
             # Batch timing metrics (timing only - costs/tokens are per-row)
-            'estimated_total_batches': 0,
+            'estimated_validation_batches': 0,
             'time_per_batch_seconds': 0.0,
             
             # Validation structure metrics
@@ -1338,20 +1429,47 @@ def initialize_user_tracking(email: str, validated_at: str = None) -> bool:
             )
             return True
         
-        # Create new user tracking record
+        # Create new user tracking record with consolidated field structure
         user_record = {
             'email': email,
             'email_domain': email_domain,
             'created_at': current_time,
             'last_access': current_time,
-            'total_preview_requests': 0,
-            'total_full_requests': 0,
-            'total_tokens_used': 0,
-            'total_cost_usd': Decimal('0.0'),
-            'perplexity_tokens': 0,
-            'perplexity_cost': Decimal('0.0'),
-            'anthropic_tokens': 0,
-            'anthropic_cost': Decimal('0.0'),
+            
+            # Request counts by type (using new field names)
+            'total_previews': 0,
+            'total_validations': 0,
+            'total_configurations': 0,
+            
+            # Enhanced validation metrics
+            'total_rows_processed': 0,
+            'total_rows_analyzed': 0,
+            'total_columns_validated': 0,
+            'total_search_groups': 0,
+            'total_high_context_search_groups': 0,
+            'total_claude_calls': 0,
+            
+            # Cost tracking with consolidated nomenclature  
+            'total_eliyahu_cost': Decimal('0.0'),
+            'total_quoted_validation_cost': Decimal('0.0'),
+            'total_validation_revenue': Decimal('0.0'),
+            'total_config_eliyahu_cost': Decimal('0.0'),
+            
+            # Request-type specific metrics
+            'preview_rows_processed': 0,
+            'preview_eliyahu_cost': Decimal('0.0'),
+            'validation_rows_processed': 0,
+            'validation_revenue': Decimal('0.0'),
+            'config_generation_eliyahu_cost': Decimal('0.0'),
+            
+            # Processing parameters tracking (per-run values)
+            'batch_size': 50,  # Default batch size
+            'estimated_time': 0.0,
+            
+            # API call tracking
+            'total_api_calls_made': 0,
+            'total_cached_calls_made': 0,
+            
             # Account balance fields
             'account_balance': Decimal('0.0'),
             'balance_last_updated': current_time,
@@ -1381,7 +1499,7 @@ def track_user_request(email: str, request_type: str, tokens_used: int = 0,
                       columns_validated: int = 0, search_groups: int = 0,
                       high_context_search_groups: int = 0, claude_calls: int = 0,
                       eliyahu_cost: float = 0.0, estimated_cost: float = 0.0,
-                      quoted_full_cost: float = 0.0, charged_cost: float = 0.0,
+                      quoted_validation_cost: float = 0.0, charged_cost: float = 0.0,
                       config_cost: float = 0.0, batch_size: int = 0,
                       estimated_time: float = 0.0, total_api_calls: int = 0,
                       total_cached_calls: int = 0) -> bool:
@@ -1408,15 +1526,9 @@ def track_user_request(email: str, request_type: str, tokens_used: int = 0,
                 return float(val)
             return val
         
-        # Calculate updates - Legacy fields (keeping for backward compatibility)
+        # Calculate updates using new consolidated field structure
         updates = {
             'last_access': datetime.now(timezone.utc).isoformat(),
-            'total_tokens_used': to_num(current_data.get('total_tokens_used', 0)) + tokens_used,
-            'total_cost_usd': to_num(current_data.get('total_cost_usd', 0)) + cost_usd,
-            'perplexity_tokens': to_num(current_data.get('perplexity_tokens', 0)) + perplexity_tokens,
-            'perplexity_cost': to_num(current_data.get('perplexity_cost', 0)) + perplexity_cost,
-            'anthropic_tokens': to_num(current_data.get('anthropic_tokens', 0)) + anthropic_tokens,
-            'anthropic_cost': to_num(current_data.get('anthropic_cost', 0)) + anthropic_cost,
             
             # NEW: Enhanced tracking metrics
             'total_rows_processed': to_num(current_data.get('total_rows_processed', 0)) + rows_processed,
@@ -1426,12 +1538,11 @@ def track_user_request(email: str, request_type: str, tokens_used: int = 0,
             'total_high_context_search_groups': to_num(current_data.get('total_high_context_search_groups', 0)) + high_context_search_groups,
             'total_claude_calls': to_num(current_data.get('total_claude_calls', 0)) + claude_calls,
             
-            # NEW: Cost tracking with proper nomenclature
+            # Cost tracking with consolidated nomenclature
             'total_eliyahu_cost': to_num(current_data.get('total_eliyahu_cost', 0)) + eliyahu_cost,
-            'total_estimated_cost': to_num(current_data.get('total_estimated_cost', 0)) + estimated_cost,
-            'total_quoted_full_cost': to_num(current_data.get('total_quoted_full_cost', 0)) + quoted_full_cost,
-            'total_charged_cost': to_num(current_data.get('total_charged_cost', 0)) + charged_cost,
-            'total_config_cost': to_num(current_data.get('total_config_cost', 0)) + config_cost,
+            'total_quoted_validation_cost': to_num(current_data.get('total_quoted_validation_cost', 0)) + quoted_validation_cost,
+            'total_validation_revenue': to_num(current_data.get('total_validation_revenue', 0)) + charged_cost,
+            'total_config_eliyahu_cost': to_num(current_data.get('total_config_eliyahu_cost', 0)) + config_cost,
             
             # NEW: Processing parameters tracking (per-run values, not cumulative)
             'batch_size': batch_size,
@@ -1442,19 +1553,18 @@ def track_user_request(email: str, request_type: str, tokens_used: int = 0,
             'total_cached_calls_made': to_num(current_data.get('total_cached_calls_made', 0)) + total_cached_calls
         }
         
-        # Update request type count and type-specific metrics
+        # Update request type count and type-specific metrics (using new field names)
         if request_type == 'preview':
-            updates['total_preview_requests'] = to_num(current_data.get('total_preview_requests', 0)) + 1
+            updates['total_previews'] = to_num(current_data.get('total_previews', 0)) + 1
             updates['preview_rows_processed'] = to_num(current_data.get('preview_rows_processed', 0)) + rows_processed
             updates['preview_eliyahu_cost'] = to_num(current_data.get('preview_eliyahu_cost', 0)) + eliyahu_cost
-            updates['preview_estimated_cost'] = to_num(current_data.get('preview_estimated_cost', 0)) + estimated_cost
         elif request_type == 'full':
-            updates['total_full_requests'] = to_num(current_data.get('total_full_requests', 0)) + 1
-            updates['full_rows_processed'] = to_num(current_data.get('full_rows_processed', 0)) + rows_processed
-            updates['full_charged_cost'] = to_num(current_data.get('full_charged_cost', 0)) + charged_cost
+            updates['total_validations'] = to_num(current_data.get('total_validations', 0)) + 1
+            updates['validation_rows_processed'] = to_num(current_data.get('validation_rows_processed', 0)) + rows_processed
+            updates['validation_revenue'] = to_num(current_data.get('validation_revenue', 0)) + charged_cost
         elif request_type == 'config':
-            updates['total_config_requests'] = to_num(current_data.get('total_config_requests', 0)) + 1
-            updates['config_generation_cost'] = to_num(current_data.get('config_generation_cost', 0)) + config_cost
+            updates['total_configurations'] = to_num(current_data.get('total_configurations', 0)) + 1
+            updates['config_generation_eliyahu_cost'] = to_num(current_data.get('config_generation_eliyahu_cost', 0)) + config_cost
         
         # Build update expression
         update_parts = []
@@ -1675,8 +1785,7 @@ def initialize_user_account(email: str, initial_balance: Decimal = Decimal('0'))
         if 'Item' not in response:
             email_domain = email.split('@')[-1] if '@' in email else 'unknown'
             update_expr += ", email_domain = :domain, created_at = :created, last_access = :created"
-            update_expr += ", total_preview_requests = :zero, total_full_requests = :zero"
-            update_expr += ", total_tokens_used = :zero, total_cost_usd = :zero_decimal"
+            update_expr += ", total_previews = :zero, total_validations = :zero, total_configurations = :zero"
             expr_values.update({
                 ':domain': email_domain,
                 ':zero': 0,
@@ -1980,30 +2089,28 @@ def track_abandoned_session(session_id: str) -> bool:
 VALIDATION_RUNS_TABLE_NAME = "perplexity-validator-runs"
 
 def create_validation_runs_table():
-    """Creates the DynamoDB table for tracking validation runs."""
+    """Creates the DynamoDB table for tracking validation runs with proper schema and indexes."""
     try:
         # Use the client for operations like waiting
         dynamodb_client = boto3.client('dynamodb')
         
-        # Use the resource for higher-level table operations
-        dynamodb_resource = boto3.resource('dynamodb')
+        # Get the full schema definition
+        schemas = DynamoDBSchemas()
+        table_schema = schemas.get_validation_runs_schema()
         
-        dynamodb_resource.create_table(
-            TableName=VALIDATION_RUNS_TABLE_NAME,
-            KeySchema=[{'AttributeName': 'session_id', 'KeyType': 'HASH'}],
-            AttributeDefinitions=[{'AttributeName': 'session_id', 'AttributeType': 'S'}],
-            BillingMode='PAY_PER_REQUEST'
-        )
+        # Create table using the complete schema
+        dynamodb_client.create_table(**table_schema)
+        
         waiter = dynamodb_client.get_waiter('table_exists')
         waiter.wait(TableName=VALIDATION_RUNS_TABLE_NAME)
-        logger.info(f"Table {VALIDATION_RUNS_TABLE_NAME} created successfully.")
+        logger.info(f"Table {VALIDATION_RUNS_TABLE_NAME} created successfully with indexes.")
     except ClientError as e:
         if e.response['Error']['Code'] == 'ResourceInUseException':
             logger.info(f"Table {VALIDATION_RUNS_TABLE_NAME} already exists.")
         else:
             raise
 
-def create_run_record(session_id: str, email: str, total_rows: int, batch_size: int = None):
+def create_run_record(session_id: str, email: str, total_rows: int, batch_size: int = None, run_type: str = None):
     """Creates an initial record for a new validation run."""
     try:
         table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
@@ -2018,6 +2125,8 @@ def create_run_record(session_id: str, email: str, total_rows: int, batch_size: 
         }
         if batch_size is not None:
             item['batch_size'] = batch_size
+        if run_type is not None:
+            item['run_type'] = run_type
         
         table.put_item(Item=item)
     except ClientError as e:
@@ -2041,7 +2150,7 @@ def create_run_record(session_id: str, email: str, total_rows: int, batch_size: 
         else:
             raise
 
-def update_run_status(session_id: str, status: str, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None, batch_size: int = None, **kwargs):
+def update_run_status(session_id: str, status: str, run_type: str = None, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None, batch_size: int = None, account_current_balance: float = None, account_sufficient_balance: str = None, account_credits_needed: str = None, account_domain_multiplier: float = None, models: str = None, input_table_name: str = None, configuration_id: str = None, total_rows: int = None, eliyahu_cost: float = None, quoted_validation_cost: float = None, estimated_validation_eliyahu_cost: float = None, time_per_row_seconds: float = None, estimated_validation_time_minutes: float = None, run_time_s: float = None, **kwargs):
     """Updates the status and progress of a validation run."""
     table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
     
@@ -2074,6 +2183,51 @@ def update_run_status(session_id: str, status: str, processed_rows: int = None, 
     if batch_size is not None:
         update_expression += ", batch_size = :bs"
         expression_attribute_values[':bs'] = batch_size
+    if account_current_balance is not None:
+        update_expression += ", account_current_balance = :acb"
+        expression_attribute_values[':acb'] = convert_floats_to_decimal(account_current_balance)
+    if account_sufficient_balance is not None:
+        update_expression += ", account_sufficient_balance = :asb"
+        expression_attribute_values[':asb'] = account_sufficient_balance
+    if account_credits_needed is not None:
+        update_expression += ", account_credits_needed = :acn"
+        expression_attribute_values[':acn'] = account_credits_needed
+    if account_domain_multiplier is not None:
+        update_expression += ", account_domain_multiplier = :adm"
+        expression_attribute_values[':adm'] = convert_floats_to_decimal(account_domain_multiplier)
+    if models is not None:
+        update_expression += ", models = :models"
+        expression_attribute_values[':models'] = models
+    if input_table_name is not None:
+        update_expression += ", input_table_name = :itn"
+        expression_attribute_values[':itn'] = input_table_name
+    if configuration_id is not None:
+        update_expression += ", configuration_id = :cid"
+        expression_attribute_values[':cid'] = configuration_id
+    if total_rows is not None:
+        update_expression += ", total_rows = :tr"
+        expression_attribute_values[':tr'] = total_rows
+    if run_type is not None:
+        update_expression += ", run_type = :rt"
+        expression_attribute_values[':rt'] = run_type
+    if eliyahu_cost is not None:
+        update_expression += ", eliyahu_cost = :ec"
+        expression_attribute_values[':ec'] = convert_floats_to_decimal(eliyahu_cost)
+    if quoted_validation_cost is not None:
+        update_expression += ", quoted_validation_cost = :qvc"
+        expression_attribute_values[':qvc'] = convert_floats_to_decimal(quoted_validation_cost)
+    if estimated_validation_eliyahu_cost is not None:
+        update_expression += ", estimated_validation_eliyahu_cost = :evec"
+        expression_attribute_values[':evec'] = convert_floats_to_decimal(estimated_validation_eliyahu_cost)
+    if time_per_row_seconds is not None:
+        update_expression += ", time_per_row_seconds = :tprs"
+        expression_attribute_values[':tprs'] = convert_floats_to_decimal(time_per_row_seconds)
+    if estimated_validation_time_minutes is not None:
+        update_expression += ", estimated_validation_time_minutes = :evtm"
+        expression_attribute_values[':evtm'] = convert_floats_to_decimal(estimated_validation_time_minutes)
+    if run_time_s is not None:
+        update_expression += ", run_time_s = :rts"
+        expression_attribute_values[':rts'] = convert_floats_to_decimal(run_time_s)
     if status in ['COMPLETED', 'FAILED']:
         update_expression += ", end_time = :et"
         expression_attribute_values[':et'] = now
@@ -2096,16 +2250,22 @@ def update_run_status(session_id: str, status: str, processed_rows: int = None, 
                     
                     # Store actual timing metrics and replace estimated values with actual ones
                     update_expression += ", actual_processing_time_seconds = :apt"
-                    update_expression += ", actual_time_per_row_seconds = :atpr"
+                    # Only set time_per_row_seconds if it wasn't already set by parameter
+                    if time_per_row_seconds is None:
+                        update_expression += ", time_per_row_seconds = :tprs_calc"
+                        expression_attribute_values[':tprs_calc'] = convert_floats_to_decimal(time_per_row)
                     update_expression += ", actual_time_per_batch_seconds = :atpb"
-                    # Replace estimated times with actual times for CSV export
-                    update_expression += ", estimated_total_processing_time_seconds = :apt"
-                    update_expression += ", estimated_total_time_minutes = :atm"
+                    # Only set run_time_s if it wasn't already set by parameter
+                    if run_time_s is None:
+                        update_expression += ", run_time_s = :rts_calc"
+                        expression_attribute_values[':rts_calc'] = convert_floats_to_decimal(actual_duration_seconds)
+                    # Only set estimated_validation_time_minutes if it wasn't already set by parameter
+                    if estimated_validation_time_minutes is None:
+                        update_expression += ", estimated_validation_time_minutes = :evtm_calc"
+                        expression_attribute_values[':evtm_calc'] = convert_floats_to_decimal(actual_duration_seconds / 60)
                     
                     expression_attribute_values[':apt'] = convert_floats_to_decimal(actual_duration_seconds)
-                    expression_attribute_values[':atpr'] = convert_floats_to_decimal(time_per_row)
                     expression_attribute_values[':atpb'] = convert_floats_to_decimal(time_per_batch)
-                    expression_attribute_values[':atm'] = convert_floats_to_decimal(actual_duration_seconds / 60)
                     
                     logger.info(f"Calculated actual timing for {session_id}: {actual_duration_seconds:.2f}s total, {time_per_row:.2f}s/row, {time_per_batch:.2f}s/batch")
         except Exception as e:

@@ -19,15 +19,7 @@ from datetime import datetime
 import re
 import logging
 
-try:
-    from reportlab.lib.pagesizes import letter
-    from reportlab.pdfgen import canvas
-    from reportlab.lib.utils import ImageReader
-    from reportlab.lib.units import inch
-    REPORTLAB_AVAILABLE = True
-except ImportError as e:
-    print(f"WARNING: ReportLab not available during import: {e}")
-    REPORTLAB_AVAILABLE = False
+# Using ReportLab for PDF generation (text-only, no PIL dependencies)
 
 logger = logging.getLogger(__name__)
 
@@ -94,29 +86,28 @@ This receipt is for your records.
     return receipt_text.encode('utf-8')
 
 
-def generate_receipt_pdf(session_id: str, email: str, amount: float, 
+# Old ReportLab function removed - using generate_receipt_pdf_html() instead
+
+def generate_receipt_pdf_html(session_id: str, email: str, amount: float, 
                         transaction_details: dict) -> bytes:
-    """Generate PDF receipt for validation charges"""
-    # Try to import ReportLab directly in the function to avoid scope issues
+    """Generate PDF receipt using ReportLab - text-only, no PIL/image dependencies"""
     try:
         from reportlab.lib.pagesizes import letter
         from reportlab.pdfgen import canvas
         from reportlab.lib.units import inch
-        logger.info("ReportLab core imported successfully for PDF generation")
+        from reportlab.lib.colors import black, blue
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from datetime import datetime
+        logger.info("ReportLab imported successfully for PDF generation")
         
-        # Try to import image support - this might fail with PIL issues
-        try:
-            from reportlab.lib.utils import ImageReader
-            image_support = True
-            logger.info("ReportLab ImageReader imported successfully")
-        except ImportError as img_e:
-            logger.warning(f"ReportLab ImageReader not available: {img_e}. PDF will be generated without logo.")
-            image_support = False
+        # ReportLab supports basic PNG/JPG without PIL
+        image_support = True
+        logger.info("Using ReportLab PDF generation with logo support (no PIL dependencies)")
             
     except ImportError as import_e:
         logger.error(f"ReportLab core not available: {import_e}")
         logger.info("Falling back to simple text-based receipt")
-        # Return a simple text receipt as bytes when ReportLab is unavailable
         return generate_simple_text_receipt(session_id, email, amount, transaction_details)
     
     try:
@@ -328,6 +319,7 @@ def generate_receipt_pdf(session_id: str, email: str, amount: float,
             logger.error(f"Even basic PDF generation failed: {basic_e}")
             # Final fallback - raise the original exception
             raise Exception(f"All PDF generation attempts failed. Original error: {e}, Basic PDF error: {basic_e}")
+
 
 
 def generate_receipt(session_id: str, email: str, amount: float, raw_cost: float, 
@@ -660,7 +652,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
                 }
                 
                 # Generate receipt (PDF or text fallback)
-                receipt_bytes = generate_receipt_pdf(
+                receipt_bytes = generate_receipt_pdf_html(
                     session_id=session_id,
                     email=email_address,
                     amount=billing_info.get('amount_charged', 0),

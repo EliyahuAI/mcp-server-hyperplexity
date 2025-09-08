@@ -469,12 +469,19 @@ class AIAPIClient:
                             if 'output_tokens' not in token_usage and 'completion_tokens' in token_usage:
                                 token_usage['output_tokens'] = token_usage['completion_tokens']
                         
+                        # Extract citations based on API provider
+                        if api_provider == 'perplexity':
+                            citations = self.extract_citations_from_perplexity_response(cached_data['api_response'])
+                        else:
+                            citations = self.extract_citations_from_response(cached_data['api_response'])
+                        
                         return {
                             'response': cached_data['api_response'],
                             'token_usage': token_usage,
                             'processing_time': cached_data.get('processing_time', 0),
                             'is_cached': True,
-                            'model_used': current_model
+                            'model_used': current_model,
+                            'citations': citations
                         }
                 
                 # Make API call based on provider
@@ -491,12 +498,19 @@ class AIAPIClient:
                         "max_tokens": max_tokens or 8000,
                         "temperature": 0.1,
                         "messages": [{"role": "user", "content": prompt}],
-                        "tools": [{
-                            "name": tool_name,
-                            "description": f"Provide structured response using {tool_name}",
-                            "input_schema": schema
-                        }],
-                        "tool_choice": {"type": "tool", "name": tool_name}
+                        "tools": [
+                            {
+                                "type": "web_search_20250305",
+                                "name": "web_search",
+                                "max_uses": 10
+                            },
+                            {
+                                "name": tool_name,
+                                "description": f"Provide structured response using {tool_name}",
+                                "input_schema": schema
+                            }
+                        ],
+                        "tool_choice": {"type": "auto"}
                     }
                     
                     result = await self._make_single_anthropic_call("https://api.anthropic.com/v1/messages", 
@@ -515,6 +529,11 @@ class AIAPIClient:
                 if result:
                     result['model_used'] = current_model
                     result['used_backup_model'] = model_index > 0
+                    # Extract citations based on API provider
+                    if api_provider == 'perplexity':
+                        result['citations'] = self.extract_citations_from_perplexity_response(result.get('response', {}))
+                    else:
+                        result['citations'] = self.extract_citations_from_response(result.get('response', {}))
                     logger.info(f"[SUCCESS] Model {current_model} succeeded")
                     return result
                     
@@ -583,7 +602,8 @@ class AIAPIClient:
                     'response': cached_data['api_response'],
                     'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
-                    'is_cached': True
+                    'is_cached': True,
+                    'citations': self.extract_citations_from_response(cached_data['api_response'])
                 }
         
         # Make API call
@@ -597,7 +617,14 @@ class AIAPIClient:
             "model": normalized_model,
             "max_tokens": 4000,
             "temperature": 0.1,
-            "messages": [{"role": "user", "content": prompt}]
+            "messages": [{"role": "user", "content": prompt}],
+            "tools": [
+                {
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": 3
+                }
+            ]
         }
         
         start_time = datetime.now()
@@ -641,7 +668,8 @@ class AIAPIClient:
                     'response': cached_data['api_response'],
                     'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
-                    'is_cached': True
+                    'is_cached': True,
+                    'citations': self.extract_citations_from_perplexity_response(cached_data['api_response'])
                 }
         
         # Make API call using the standard method
@@ -698,7 +726,8 @@ class AIAPIClient:
                     'response': cached_data['api_response'],
                     'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
-                    'is_cached': True
+                    'is_cached': True,
+                    'citations': self.extract_citations_from_perplexity_response(cached_data['api_response'])
                 }
         
         # Make API call
@@ -763,7 +792,8 @@ class AIAPIClient:
                             'response': response_json,
                             'token_usage': token_usage,
                             'processing_time': processing_time,
-                            'is_cached': False
+                            'is_cached': False,
+                            'citations': self.extract_citations_from_perplexity_response(response_json)
                         }
                     else:
                         error_text = await response.text()
@@ -831,6 +861,92 @@ class AIAPIClient:
         except Exception as e:
             logger.error(f"Failed to extract text response: {str(e)}")
             raise
+    
+    def extract_citations_from_response(self, response: Dict) -> List[Dict]:
+        """Extract citations from Claude's web search response."""
+        citations = []
+        try:
+            # Look for web_search_tool_result blocks (new format)
+            for content_item in response.get('content', []):
+                if content_item.get('type') == 'web_search_tool_result':
+                    tool_content = content_item.get('content', [])
+                    for result_item in tool_content:
+                        if result_item.get('type') == 'web_search_result':
+                            citation = {
+                                'url': result_item.get('url', ''),
+                                'title': result_item.get('title', ''),
+                                'cited_text': result_item.get('encrypted_content', '')[:200] + '...' if result_item.get('encrypted_content') else '',  # Truncate encrypted content
+                                'encrypted_index': result_item.get('encrypted_content', '')
+                            }
+                            citations.append(citation)
+                
+                # Legacy format support - tool_use blocks with web_search
+                elif content_item.get('type') == 'tool_use' and content_item.get('name') == 'web_search':
+                    tool_result = content_item.get('input', {})
+                    if 'citations' in tool_result:
+                        for citation in tool_result['citations']:
+                            citations.append({
+                                'url': citation.get('url', ''),
+                                'title': citation.get('title', ''),
+                                'cited_text': citation.get('cited_text', ''),
+                                'encrypted_index': citation.get('encrypted_index', '')
+                            })
+                
+                # Legacy format support - tool_result blocks 
+                elif content_item.get('type') == 'tool_result':
+                    tool_content = content_item.get('content', [])
+                    for tool_item in tool_content:
+                        if isinstance(tool_item, dict) and 'citations' in tool_item:
+                            for citation in tool_item['citations']:
+                                citations.append({
+                                    'url': citation.get('url', ''),
+                                    'title': citation.get('title', ''),
+                                    'cited_text': citation.get('cited_text', ''),
+                                    'encrypted_index': citation.get('encrypted_index', '')
+                                })
+            
+            logger.info(f"Extracted {len(citations)} citations from Claude response")
+            return citations
+            
+        except Exception as e:
+            logger.error(f"Failed to extract citations from response: {str(e)}")
+            return []
+    
+    def extract_citations_from_perplexity_response(self, response: Dict) -> List[Dict]:
+        """Extract citations from Perplexity's search_results response."""
+        citations = []
+        try:
+            # Extract from search_results array (contains snippets/quotes)
+            search_results = response.get('search_results', [])
+            for result in search_results:
+                citation = {
+                    'url': result.get('url', ''),
+                    'title': result.get('title', ''),
+                    'cited_text': result.get('snippet', ''),  # This is the quote/snippet
+                    'date': result.get('date', ''),
+                    'last_updated': result.get('last_updated', '')
+                }
+                citations.append(citation)
+            
+            # Also extract from citations array (just URLs)
+            citation_urls = response.get('citations', [])
+            existing_urls = {c['url'] for c in citations}
+            for url in citation_urls:
+                if url not in existing_urls:
+                    citations.append({
+                        'url': url,
+                        'title': '',
+                        'cited_text': '',
+                        'date': '',
+                        'last_updated': ''
+                    })
+            
+            logger.info(f"Extracted {len(citations)} citations from Perplexity response ({len(search_results)} with snippets)")
+            return citations
+            
+        except Exception as e:
+            logger.error(f"Failed to extract citations from Perplexity response: {str(e)}")
+            return []
 
     async def _make_claude_api_call_with_retry(self, url: str, headers: Dict, data: Dict, 
                                              normalized_model: str, use_cache: bool, 
@@ -880,7 +996,8 @@ class AIAPIClient:
                                 'response': response_json,
                                 'token_usage': token_usage,
                                 'processing_time': processing_time,
-                                'is_cached': False
+                                'is_cached': False,
+                                'citations': self.extract_citations_from_response(response_json)
                             }
                         elif response.status == 529:
                             if attempt < max_retries:
@@ -956,7 +1073,8 @@ class AIAPIClient:
                             'response': response_json,
                             'token_usage': token_usage,
                             'processing_time': processing_time,
-                            'is_cached': False
+                            'is_cached': False,
+                            'citations': self.extract_citations_from_response(response_json)
                         }
                     else:
                         error = Exception(f"Anthropic API returned status {response.status}: {response_text}")
@@ -1029,7 +1147,8 @@ class AIAPIClient:
                             'response': response_json,
                             'token_usage': token_usage,
                             'processing_time': processing_time,
-                            'is_cached': False
+                            'is_cached': False,
+                            'citations': self.extract_citations_from_perplexity_response(response_json)
                         }
                     else:
                         error_text = await response.text()

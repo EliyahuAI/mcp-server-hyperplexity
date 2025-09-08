@@ -98,12 +98,7 @@ class DynamicBatchSizeManager:
         self.consecutive_failures_for_decrease = consecutive_failures_for_decrease
         self.total_batches = 0
         
-        logger.info(f"🔧 PER-MODEL BATCH MANAGER: Initialized with batch_size={initial_batch_size}, "
-                   f"range=[{min_batch_size}, {max_batch_size}], "
-                   f"increase_factor={success_increase_factor} (10%), "
-                   f"decrease_factor={failure_decrease_factor} (25%), "
-                   f"successes_for_increase={consecutive_successes_for_increase}, "
-                   f"failures_for_decrease={consecutive_failures_for_decrease}")
+        # Initialized per-model batch manager
     
     def register_model(self, model: str):
         """Register a new model if not already tracked."""
@@ -112,7 +107,7 @@ class DynamicBatchSizeManager:
             self.model_consecutive_successes[model] = 0
             self.model_consecutive_failures[model] = 0
             self.model_rate_limit_events[model] = 0
-            logger.info(f"📝 NEW MODEL REGISTERED: {model} with batch_size={self.initial_batch_size}")
+            # Registered new model
     
     def get_batch_size_for_models(self, models: set) -> int:
         """
@@ -138,7 +133,7 @@ class DynamicBatchSizeManager:
         
         if len(models) > 1:
             model_sizes_str = ", ".join([f"{model}={self.model_batch_sizes[model]}" for model in sorted(models)])
-            logger.info(f"🔀 MULTI-MODEL BATCH: Using minimum batch size {min_batch_size} ({model_sizes_str})")
+            # Using minimum batch size
         
         return min_batch_size
     
@@ -161,10 +156,10 @@ class DynamicBatchSizeManager:
         )
         
         if new_batch_size != self.model_batch_sizes[model]:
-            logger.warning(f"🚨 {model} RATE LIMIT: Reducing batch size from {self.model_batch_sizes[model]} to {new_batch_size}")
+            logger.warning(f"Rate limit hit for {model}")
             self.model_batch_sizes[model] = new_batch_size
         else:
-            logger.warning(f"🚨 {model} RATE LIMIT: Batch size already at minimum ({self.model_batch_sizes[model]})")
+            logger.warning(f"Rate limit hit for {model}, at minimum batch size")
     
     def on_success(self, models_used: set):
         """
@@ -221,8 +216,7 @@ class DynamicBatchSizeManager:
             )
             
             if new_batch_size != self.model_batch_sizes[model]:
-                logger.info(f"✅ {model} SUCCESS STREAK: Increasing batch size from {self.model_batch_sizes[model]} to {new_batch_size} "
-                           f"(consecutive successes: {self.model_consecutive_successes[model]})")
+                # Increasing batch size after success streak
                 self.model_batch_sizes[model] = new_batch_size
                 self.model_consecutive_successes[model] = 0
     
@@ -235,8 +229,7 @@ class DynamicBatchSizeManager:
             )
             
             if new_batch_size != self.model_batch_sizes[model]:
-                logger.warning(f"⚠️ {model} FAILURE STREAK: Reducing batch size from {self.model_batch_sizes[model]} to {new_batch_size} "
-                              f"(consecutive failures: {self.model_consecutive_failures[model]})")
+                logger.warning(f"Reducing batch size for {model} after consecutive failures")
                 self.model_batch_sizes[model] = new_batch_size
                 self.model_consecutive_failures[model] = 0
     
@@ -270,7 +263,7 @@ class DynamicBatchSizeManager:
     def log_status(self):
         """Log current status for monitoring."""
         if not self.model_batch_sizes:
-            logger.info("📊 PER-MODEL BATCH MANAGER STATUS: No models registered yet")
+            # No models registered
             return
         
         model_status = []
@@ -281,7 +274,7 @@ class DynamicBatchSizeManager:
                      f"rl={self.model_rate_limit_events[model]})")
             model_status.append(status)
         
-        logger.info(f"📊 PER-MODEL BATCH MANAGER STATUS: {'; '.join(model_status)}")
+        # Batch manager status updated
 
 def discover_batch_models(rows, validator):
     """
@@ -301,7 +294,7 @@ def discover_batch_models(rows, validator):
                         if t.importance.upper() not in ["ID", "IGNORED"]]
     
     if not validation_targets:
-        logger.info("🔍 No validation targets found for model discovery")
+        # No validation targets found
         return models
     
     # Group targets by search group
@@ -312,9 +305,9 @@ def discover_batch_models(rows, validator):
         if group_targets:
             model, _ = resolve_search_group_model(group_targets, validator)
             models.add(model)
-            logger.debug(f"🔍 Search group {group_id}: model {model}")
+            # Found model for search group
     
-    logger.info(f"🔍 BATCH MODEL DISCOVERY: Found models {sorted(models)}")
+    logger.info(f"Found models for batch: {sorted(models)}")
     return models
 
 def get_perplexity_api_key() -> str:
@@ -465,22 +458,27 @@ async def validate_with_anthropic(
     try:
         # Apply web search rate limiting before making the call
         try:
-            from shared.web_search_rate_limiter import apply_web_search_rate_limiting
+            # In lambda deployment, shared modules are copied to root level
+            try:
+                from web_search_rate_limiter import apply_web_search_rate_limiting
+            except ImportError:
+                # Fallback for local development
+                from shared.web_search_rate_limiter import apply_web_search_rate_limiting
             session_id = "validation_session"  # You might want to pass this as a parameter
             max_searches = data.get("tools", [{}])[0].get("max_uses", 10)
             await apply_web_search_rate_limiting(session_id, anthropic_model, max_searches)
-            logger.info(f"✅ Web search rate limiting applied for {anthropic_model}")
+            # Web search rate limiting applied
         except ImportError:
             logger.warning("Web search rate limiter not available, proceeding without rate limiting")
         except Exception as e:
             logger.warning(f"Web search rate limiting failed: {e}, proceeding without rate limiting")
         
-        logger.info(f"Sending request to Anthropic API with model: {anthropic_model}")
+        # Sending request to Anthropic API
         
         # Log the formatted prompt for better diagnostics
         prompt_lines = prompt.split('\n')
         formatted_prompt = "\n".join([f"  {line}" for line in prompt_lines])
-        logger.info(f"Formatted prompt:\n{formatted_prompt}")
+        # Formatted prompt for API request
         
         # Log simplified request data
         simplified_request = {
@@ -489,7 +487,7 @@ async def validate_with_anthropic(
             "max_tokens": data["max_tokens"],
             "tools": [{"type": "web_search_20250305", "max_uses": 10}]
         }
-        logger.info(f"Request config: {json.dumps(simplified_request, indent=2)}")
+        # Prepared API request
         
         # Make the direct Anthropic API call with increased timeout
         timeout = aiohttp.ClientTimeout(total=120)  # 2 minutes for web search operations
@@ -500,7 +498,7 @@ async def validate_with_anthropic(
             timeout=timeout
         ) as response:
             response_text = await response.text()
-            logger.info(f"Anthropic API Response status: {response.status}")
+            # Received API response
             
             if response.status == 429:
                 # Rate limit error - include more details for retry logic
@@ -522,42 +520,41 @@ async def validate_with_anthropic(
                 cache_read_tokens = usage.get('cache_read_tokens', 0)
                 total_tokens = input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens
                 
-                logger.info(f"Anthropic API Token Usage - Input: {input_tokens}, Output: {output_tokens}, Cache Creation: {cache_creation_tokens}, Cache Read: {cache_read_tokens}, Total: {total_tokens}")
+                # Token usage recorded
             else:
                 logger.warning("No usage information found in Anthropic API response")
             
             # Log the response for debugging
-            logger.info(f"Anthropic API Response: {json.dumps(response_json, indent=2)}")
+            # Full API response received
             
             # Convert Anthropic response format to match Perplexity format for compatibility
-            logger.debug(f"Processing Anthropic response - content field type: {type(response_json.get('content'))}")
-            logger.debug(f"Response keys: {list(response_json.keys())}")
+            # Processing response content
             
             if 'content' in response_json and response_json['content'] is not None and len(response_json['content']) > 0:
                 # Look for tool_use content (our structured validation data)
                 validation_data = None
                 text_content = ""
                 
-                logger.info(f"Found {len(response_json['content'])} content items in response")
+                # Processing response content items
                 
                 for i, content_item in enumerate(response_json['content']):
                     if content_item is None:
                         logger.warning(f"Content item {i} is None, skipping")
                         continue
                     
-                    logger.debug(f"Content item {i} type: {content_item.get('type', 'unknown')}")
+                    # Processing content item
                     
                     if content_item.get('type') == 'text':
                         text_content += content_item.get('text', '')
                     elif content_item.get('type') == 'tool_use' and content_item.get('name') == 'validate_data':
                         # Extract the structured validation data from the tool call
                         tool_input = content_item.get('input', {})
-                        logger.debug(f"Tool input keys: {list(tool_input.keys()) if isinstance(tool_input, dict) else 'Not a dict'}")
+                        # Processing tool input
                         
                         # Extract the validation_results array from the wrapper object
                         if 'validation_results' in tool_input:
                             validation_data = tool_input['validation_results']
-                            logger.info(f"Found structured validation data with {len(validation_data) if isinstance(validation_data, list) else 'unknown'} results")
+                            # Found validation data
                         else:
                             logger.warning("Tool input missing validation_results field")
                             validation_data = tool_input  # Fallback to raw input
@@ -631,12 +628,12 @@ async def validate_with_perplexity(
     
     try:
         # Log the formatted prompt for better diagnostics
-        logger.info(f"Sending request to Perplexity API with model: {model}")
+        # Sending request to Perplexity API
         
         # Log a readable version of the prompt for debugging
         prompt_lines = prompt.split('\n')
         formatted_prompt = "\n".join([f"  {line}" for line in prompt_lines])
-        logger.info(f"Formatted prompt:\n{formatted_prompt}")
+        # Formatted prompt for API request
         
         # Simplified request data log (without the full prompt)
         simplified_data = {
@@ -782,6 +779,24 @@ def extract_token_usage(result: Dict[str, Any], model: str, search_context_size:
             'model': model
         }
 
+def setup_shared_module_path():
+    """Ensure shared module is importable in lambda environment."""
+    import sys
+    import os
+    
+    # Add common paths where shared module might be located
+    possible_paths = [
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),  # src/ directory
+        os.path.dirname(os.path.dirname(__file__)),  # lambdas/ directory  
+        os.path.dirname(__file__),  # current directory
+        '/opt/python/lib/python3.9/site-packages',  # Lambda layer path
+        '/var/task',  # Lambda runtime path
+    ]
+    
+    for path in possible_paths:
+        if path and os.path.exists(path) and path not in sys.path:
+            sys.path.insert(0, path)
+
 def load_pricing_data() -> Dict[str, Dict[str, float]]:
     """Load pricing data from DynamoDB model config table, fallback to CSV."""
     pricing_data = {}
@@ -794,12 +809,23 @@ def load_pricing_data() -> Dict[str, Dict[str, float]]:
     
     try:
         # Try DynamoDB model config table first (preferred)
-        from shared.model_config_table import ModelConfigTable
+        try:
+            # In lambda deployment, shared modules are copied to root level
+            from model_config_table import ModelConfigTable
+        except ImportError:
+            try:
+                # Fallback to shared.module for local development
+                from shared.model_config_table import ModelConfigTable
+            except ImportError as ie:
+                # Last resort: try path setup
+                logger.warning(f"Both import methods failed: {ie}, attempting path setup")
+                setup_shared_module_path()
+                from shared.model_config_table import ModelConfigTable
         config_table = ModelConfigTable()
         configs = config_table.list_all_configs()
         
         if configs:
-            logger.info(f"Loading pricing from DynamoDB model config table ({len(configs)} configs)")
+            # Loading pricing from DynamoDB
             for config in configs:
                 if config.get('enabled', False):
                     model_pattern = config.get('model_pattern', '')
@@ -810,7 +836,10 @@ def load_pricing_data() -> Dict[str, Dict[str, float]]:
                         'notes': config.get('notes', ''),
                         'priority': config.get('priority', 999)
                     }
-            logger.info(f"Loaded {len(pricing_data)} model configurations from DynamoDB")
+            # Loaded pricing configurations
+            # Debug: List first few patterns
+            patterns = list(pricing_data.keys())[:5]
+            # Loaded pricing patterns
             return pricing_data
         else:
             logger.warning("No configurations found in DynamoDB model config table, falling back to CSV")
@@ -832,7 +861,7 @@ def load_pricing_data() -> Dict[str, Dict[str, float]]:
         for path in possible_paths:
             if os.path.exists(path):
                 csv_path = path
-                logger.info(f"Found pricing CSV at: {csv_path}")
+                # Found pricing CSV
                 break
         
         if csv_path and os.path.exists(csv_path):
@@ -846,7 +875,7 @@ def load_pricing_data() -> Dict[str, Dict[str, float]]:
                         'output_cost_per_million_tokens': float(row['output_cost_per_million_tokens']),
                         'notes': row.get('notes', '')
                     }
-            logger.info(f"Loaded {len(pricing_data)} model configurations from CSV fallback")
+            # Loaded pricing configurations from CSV
         else:
             logger.warning(f"Pricing CSV file not found in any of the expected locations, using defaults")
             
@@ -865,12 +894,15 @@ def calculate_token_costs(token_usage: Dict[str, Any], pricing_data: Dict[str, D
     
     # Try to find exact model match first
     pricing = None
+    # Looking for pricing data
+    
     if model in pricing_data:
         pricing = pricing_data[model]
-        logger.info(f"Using exact pricing match for model {model}")
+        # Using exact pricing match
     else:
         # Sort pricing patterns by priority (if available) and try pattern matching
         sorted_patterns = sorted(pricing_data.items(), key=lambda x: x[1].get('priority', 999))
+        # Testing pricing patterns
         
         # Try pattern matching (for DynamoDB configs with wildcards)
         import re
@@ -880,15 +912,19 @@ def calculate_token_costs(token_usage: Dict[str, Any], pricing_data: Dict[str, D
             regex_pattern = f"^{regex_pattern}$"
             
             try:
-                if re.match(regex_pattern, model, re.IGNORECASE):
+                match_result = re.match(regex_pattern, model, re.IGNORECASE)
+                # Testing pricing pattern
+                
+                if match_result:
                     pricing = pricing_config
-                    logger.info(f"Using pattern match '{pricing_pattern}' (priority {pricing_config.get('priority', 999)}) for model {model}")
+                    # Using pattern pricing match
                     break
-            except re.error:
+            except re.error as e:
+                logger.warning(f"Invalid pricing regex pattern: {e}")
                 # If pattern is invalid regex, try simple string matching
                 if pricing_pattern.lower() in model.lower() or model.lower() in pricing_pattern.lower():
                     pricing = pricing_config
-                    logger.info(f"Using simple string match '{pricing_pattern}' for model {model}")
+                    # Using string pricing match
                     break
     
     # Fallback to default pricing by provider
@@ -929,9 +965,8 @@ def calculate_token_costs(token_usage: Dict[str, Any], pricing_data: Dict[str, D
     
     # Debug logging for low cost investigation
     if input_tokens > 0 or output_tokens > 0:
-        logger.info(f"COST_CALC: {model} ({api_provider}) - Input: {input_tokens} tokens @ ${pricing['input_cost_per_million_tokens']}/M = ${input_cost:.6f}")
-        logger.info(f"COST_CALC: {model} ({api_provider}) - Output: {output_tokens} tokens @ ${pricing['output_cost_per_million_tokens']}/M = ${output_cost:.6f}")
-        logger.info(f"COST_CALC: {model} ({api_provider}) - TOTAL: ${total_cost:.6f}")
+        # Calculated costs for model usage
+        pass
     
     return {
         'input_cost': round(input_cost, 6),
@@ -1015,19 +1050,18 @@ def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List
     Returns:
         Tuple of (selected_model, list_of_warnings)
     """
-    logger.debug(f"RESOLVE_MODEL: Called with {len(targets)} targets")
+    # Resolving model for targets
     warnings = []
     
     # Check if we have search group definitions and this group has a defined model
     if targets and hasattr(targets[0], 'search_group'):
         group_id = targets[0].search_group
-        logger.info(f"Checking search group {group_id} for model override")
+        # Checking for model override
         
         # Check if validator has search_groups defined
         if hasattr(validator, 'search_groups') and validator.search_groups:
-            logger.info(f"Validator has {len(validator.search_groups)} search group definitions")
+            # Checking search group definitions
             for group_def in validator.search_groups:
-                logger.info(f"Checking group definition: {group_def}")
                 if isinstance(group_def, dict) and group_def.get('group_id') == group_id:
                     if 'model' in group_def:
                         logger.info(f"Using search group {group_id} defined model: {group_def['model']}")
@@ -1104,9 +1138,8 @@ def resolve_search_group_context_size(targets: List[Any], validator) -> str:
         
         # Check if validator has search_groups defined
         if hasattr(validator, 'search_groups') and validator.search_groups:
-            logger.info(f"Validator has {len(validator.search_groups)} search group definitions")
+            # Checking search group definitions
             for group_def in validator.search_groups:
-                logger.info(f"Checking group definition: {group_def}")
                 if isinstance(group_def, dict) and group_def.get('group_id') == group_id:
                     if 'search_context' in group_def:
                         logger.info(f"Using search group {group_id} defined context: {group_def['search_context']}")
@@ -1796,16 +1829,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Check if log group exists
             try:
-                logs_client.describe_log_groups(logGroupNamePrefix=log_group_name)
-                logger.info(f"Log group exists: {log_group_name}")
+                response = logs_client.describe_log_groups(logGroupNamePrefix=log_group_name)
+                log_groups = response.get('logGroups', [])
+                log_group_exists = any(lg['logGroupName'] == log_group_name for lg in log_groups)
+                
+                if log_group_exists:
+                    logger.info(f"Log group exists: {log_group_name}")
+                else:
+                    # Create log group if it doesn't exist
+                    try:
+                        logs_client.create_log_group(logGroupName=log_group_name)
+                        logger.info(f"Created log group: {log_group_name}")
+                    except Exception as create_e:
+                        logger.error(f"Failed to create log group: {str(create_e)}")
+                        logger.error("This may indicate a permissions issue with the Lambda execution role")
             except Exception as e:
-                # Create log group if it doesn't exist
-                try:
-                    logs_client.create_log_group(logGroupName=log_group_name)
-                    logger.info(f"Created log group: {log_group_name}")
-                except Exception as create_e:
-                    logger.error(f"Failed to create log group: {str(create_e)}")
-                    logger.error("This may indicate a permissions issue with the Lambda execution role")
+                logger.error(f"Failed to check log group existence: {str(e)}")
         except Exception as logs_e:
             logger.error(f"Error working with CloudWatch logs: {str(logs_e)}")
         
@@ -1911,8 +1950,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         search_groups_count = len(grouped_targets)
         total_expected_ai_calls = search_groups_count * len(rows)
         
-        logger.info(f"📊 AI CALL PROGRESS SETUP: Processing {len(rows)} total rows")
-        logger.info(f"📊   Expected AI calls: {search_groups_count} search groups × {len(rows)} rows = {total_expected_ai_calls} total calls")
+        # Processing progress setup completed
+        # Expected AI calls calculated
         
         # Track batch-level timing and API provider usage
         batch_timing_data = []
@@ -1988,7 +2027,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     actual_batch_size = len(batch)
                     batch_index = batch_num + 1
                     
-                    logger.info(f"🎯 Starting batch {batch_index} with {actual_batch_size} rows (current batch size: {current_batch_size})")
+                    logger.info(f"Starting batch {batch_index} with {actual_batch_size} rows")
                     
                     # Log batch manager status every 10 batches
                     if batch_index % 10 == 0:
@@ -2024,10 +2063,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         # Count batches with Claude vs without Claude (for backward compatibility)
                         if 'anthropic' in batch_api_providers:
                             batches_with_claude += 1
-                            logger.info(f"🔵 Batch {batch_index} used Claude models: {sorted([m for m in batch_models_used if determine_api_provider(m) == 'anthropic'])}")
+                            # Batch used Claude models
                         else:
                             batches_without_claude += 1
-                            logger.info(f"🟡 Batch {batch_index} used only Perplexity models: {sorted([m for m in batch_models_used if determine_api_provider(m) == 'perplexity'])}")
+                            # Batch used Perplexity models
                         
                         # Store batch timing data
                         batch_timing_info = {
@@ -2040,7 +2079,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         }
                         batch_timing_data.append(batch_timing_info)
                         
-                        logger.info(f"✅ Completed batch {batch_index} in {batch_processing_time:.2f}s (avg {batch_processing_time/actual_batch_size:.2f}s per row)")
+                        logger.info(f"Completed batch {batch_index} in {batch_processing_time:.2f}s")
                         
                         # Notify batch manager of success with models used
                         batch_manager.on_success(batch_models_used)
@@ -2100,20 +2139,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 # Log final batch manager statistics
                 final_stats = batch_manager.get_stats()
-                logger.info(f"📊 FINAL PER-MODEL BATCH STATS: Total batches={final_stats['total_batches']}, "
-                           f"Models registered={len(final_stats['registered_models'])}")
+                # Final batch statistics logged
                 
                 # Log detailed model statistics
                 for model in final_stats['registered_models']:
                     batch_size = final_stats['model_batch_sizes'][model]
                     rate_limits = final_stats['model_rate_limit_events'][model]
                     success_rate = final_stats['model_success_rates'][model]
-                    logger.info(f"  📈 {model}: batch_size={batch_size}, rate_limits={rate_limits}, success_rate={success_rate:.2%}")
+                    # Model statistics logged
                 
                 # Log batch API provider statistics
-                logger.info(f"🔵 BATCH API PROVIDER STATS: Batches with Claude={batches_with_claude}, "
-                           f"Batches without Claude={batches_without_claude}, "
-                           f"Total batches={batches_with_claude + batches_without_claude}")
+                # API provider statistics logged
                 
         
         async def process_row(session, row, row_idx, batch_manager=None):
@@ -2209,7 +2245,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 if not targets:
                     continue
                 
-                logger.info(f"Processing search group {group_id} with {len(targets)} columns")
+                # Processing search group
                 
                 # Always use multiplex validation regardless of number of fields
                 await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used)
@@ -2256,14 +2292,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # If there are no fields to validate after filtering, just return
             if not validation_targets:
                 logger.info("No non-ID/IGNORED fields to validate in this group")
-                return
+                return row_idx, row_results, row_models_used
                 
             # Log clear info about what we're processing
             if len(validation_targets) == 1:
                 logger.info(f"Processing field '{validation_targets[0].column}' using multiplex format")
                 if is_isolated_validation:
                     logger.info(f"This is an ISOLATED validation for field '{validation_targets[0].column}'")
-            else:
                 logger.info(f"Processing {len(validation_targets)} fields together using multiplex format")
             
             # Filter validation history to just the fields we're validating in this group
@@ -2344,7 +2379,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'model': model,  # Add model information
                     'token_usage': cached_token_usage,  # Add token usage tracking
                     'processing_time': cached_processing_time,  # Add cached processing time
-                    'cached_at': cached_at  # Add cache timestamp
+                    'cached_at': cached_at,  # Add cache timestamp
+                    'citations': []  # Cached responses won't have new citations, but maintain structure
                 }
                 
                 # Parse the cached API response
@@ -2354,7 +2390,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 expected_columns = [t.column for t in validation_targets]
                 actual_columns = list(parsed_results.keys())
                 
-                logger.info(f"🔍 CACHED SEARCH GROUP RESPONSE ANALYSIS:")
+                # Analyzing cached response
                 logger.info(f"  Expected columns: {expected_columns}")
                 logger.info(f"  Cached parsed columns: {actual_columns}")
                 logger.info(f"  Expected count: {len(expected_columns)}, Actual count: {len(actual_columns)}")
@@ -2402,18 +2438,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             if len(parsed_result) > 8:
                                 row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
                             
+                            # Add citations from raw API response
+                            if response_id in row_results.get('_raw_responses', {}):
+                                citations = row_results['_raw_responses'][response_id].get('citations', [])
+                                row_results[target.column]['citations'] = citations
+                            
                             # Keep quote for backward compatibility (map reasoning to quote)
                             row_results[target.column]['quote'] = parsed_result[4]
                             
                             cached_processed_count += 1
-                            logger.info(f"✅ Processed cached result for column: {target.column}")
+                            # Processed cached result
                         else:
                             logger.error(f"❌ CACHED COLUMN RESULT MISSING: {target.column} was expected but not found in cached parsed results")
                     
-                    logger.info(f"📊 CACHED PROCESSING SUMMARY: {cached_processed_count}/{len(validation_targets)} columns successfully processed from cache")
+                    # Cached processing completed
                     
                     # Cache was complete and used successfully
-                    return
+                    return row_idx, row_results, row_models_used
                 
                 # If we reach here, cache was incomplete - log the raw cached response for debugging
                 logger.error(f"🔍 RAW CACHED API RESPONSE DEBUG (due to missing columns):")
@@ -2505,7 +2546,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'fields': [t.column for t in validation_targets],
                 'model': model,  # Add model information
                 'token_usage': token_usage,  # Add token usage tracking
-                'processing_time': processing_time  # Add actual processing time
+                'processing_time': processing_time,  # Add actual processing time
+                'citations': shared_client_result.get('citations', []) if shared_client_result else []  # Add web search citations
             }
             
             # Cache the complete API response with metadata
@@ -2583,15 +2625,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if len(parsed_result) > 8:
                         row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
                     
+                    # Add citations from raw API response
+                    if response_id in row_results.get('_raw_responses', {}):
+                        citations = row_results['_raw_responses'][response_id].get('citations', [])
+                        row_results[target.column]['citations'] = citations
+                    
                     # Keep quote for backward compatibility (map reasoning to quote)
                     row_results[target.column]['quote'] = parsed_result[4]
                     
                     processed_count += 1
-                    logger.info(f"✅ Processed result for column: {target.column}")
+                    # Processed result
                 else:
                     logger.error(f"❌ COLUMN RESULT MISSING: {target.column} was expected but not found in parsed results")
             
-            logger.info(f"📊 PROCESSING SUMMARY: {processed_count}/{len(validation_targets)} columns successfully processed")
+            # Processing summary completed
             
             # If we have missing results, log the raw API response for debugging
             if missing_columns:
@@ -2608,6 +2655,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         asyncio.set_event_loop(loop)
         try:
             loop.run_until_complete(process_all_rows())
+            
+            # Wait for any remaining tasks to complete (don't cancel them)
+            pending = asyncio.all_tasks(loop)
+            if pending:
+                logger.info(f"Waiting for {len(pending)} remaining tasks to complete...")
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                
         finally:
             loop.close()
         
@@ -2677,10 +2731,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     is_cached = response_data.get('is_cached', False)
                     if is_cached:
                         total_token_usage['cached_calls'] += 1
-                        logger.info(f"DEBUG: Counting as cached call - response_id: {new_response_id}, is_cached: {is_cached}")
+                        # Counted cached call
                     else:
                         total_token_usage['api_calls'] += 1
-                        logger.info(f"DEBUG: Counting as API call - response_id: {new_response_id}, is_cached: {is_cached}")
+                        # Counted API call
                     
                     # Aggregate token usage
                     if 'token_usage' in response_data:
@@ -2897,11 +2951,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     claude_groups_count += 1
         
         # Log validation metrics summary
-        logger.info(f"🔍 VALIDATION STRUCTURE METRICS:")
-        logger.info(f"  📊 Validated columns: {validated_columns_count}")
-        logger.info(f"  🔗 Search groups: {search_groups_count}")
-        logger.info(f"  🎯 High context search groups: {high_context_groups_count}")
-        logger.info(f"  🤖 Claude search groups: {claude_groups_count}")
+        # Validation structure metrics:
+        # Logged validation metrics
         
         # Create a single response
         response = {

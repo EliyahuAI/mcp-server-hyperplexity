@@ -296,8 +296,23 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
                 'ZipFile': zip_content,
             }
             
-            response = lambda_client.update_function_code(**update_code_args)
-            logger.info(f"Function code updated successfully. Version: {response.get('Version')}")
+            # Retry logic for ResourceConflictException on code update
+            max_retries = 5
+            retry_delay = 10  # seconds
+            
+            for attempt in range(max_retries):
+                try:
+                    response = lambda_client.update_function_code(**update_code_args)
+                    logger.info(f"Function code updated successfully. Version: {response.get('Version')}")
+                    break
+                except lambda_client.exceptions.ResourceConflictException as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Lambda update in progress during code update (attempt {attempt + 1}/{max_retries}). Waiting {retry_delay}s before retry...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 1.5  # Exponential backoff
+                    else:
+                        logger.error(f"Failed to update function code after {max_retries} attempts")
+                        raise
             
             # Wait for the update to complete
             logger.info("Waiting for code update to complete...")
@@ -329,8 +344,24 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
             }
             
             logger.info(f"Updating function configuration with timeout={LAMBDA_CONFIG['Timeout']}s and memory={LAMBDA_CONFIG['MemorySize']}MB")
-            response = lambda_client.update_function_configuration(**update_config_args)
-            logger.info("Function configuration updated successfully.")
+            
+            # Retry logic for ResourceConflictException
+            max_retries = 5
+            retry_delay = 10  # seconds
+            
+            for attempt in range(max_retries):
+                try:
+                    response = lambda_client.update_function_configuration(**update_config_args)
+                    logger.info("Function configuration updated successfully.")
+                    break
+                except lambda_client.exceptions.ResourceConflictException as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Lambda update in progress (attempt {attempt + 1}/{max_retries}). Waiting {retry_delay}s before retry...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 1.5  # Exponential backoff
+                    else:
+                        logger.error(f"Failed to update function configuration after {max_retries} attempts")
+                        raise
         else:
             # Create new function
             create_function_args = {

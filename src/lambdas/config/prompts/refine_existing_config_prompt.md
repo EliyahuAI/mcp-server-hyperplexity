@@ -20,7 +20,7 @@ Refine the existing configuration by:
    - Understand current validation targets and their settings
    - **Carefully examine the config_change_log** to understand the evolution of this configuration
    - **Pay special attention to the most recent conversation entry** - this shows what was just discussed
-   - Look for patterns in user feedback and previous refinements
+   - Look for patterns in user feedback and previous refinements - their feedback is **critical**; we really dont want to be going in circles!
    - Use **exact column names** from the table analysis - never approximate or modify column names
 
 2. **Making targeted improvements**
@@ -50,7 +50,7 @@ Refine the existing configuration by:
 ## Primary Optimization Strategies
 
 ### 1. Low Confidence Analysis
-**CRITICAL**: When reviewing validation preview results, specifically identify fields returning low confidence that should be readily available online. What can we do to make sure we capture this information?
+**CRITICAL**: When reviewing preview results, specifically identify fields returning low confidence that should be readily available online. Would you be happy if someone gave you these results? What can we do to make sure we capture this information?
 
 ### 2. Search Group Restructuring
 - **Goal**: Small enough search groups, with enough context, sent to smarter models to solve identified issues, that are reliably talking about the right information. 

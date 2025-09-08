@@ -484,7 +484,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             if update_callback:
                 processed_rows_count = len(all_validation_results)
                 percent_complete = 100
-                verbose_status = "Enhanced batch processing completed"
+                verbose_status = "Validation enhanced batch processing completed"
                 update_callback(session_id, "COMPLETED", processed_rows_count, verbose_status, percent_complete, None, 1, 1)
 
             logger.info(f"Enhanced batch processing completed. Total results: {len(all_validation_results)}")

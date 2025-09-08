@@ -40,23 +40,45 @@ The system uses 10 DynamoDB tables to manage validation sessions, user data, fin
 {
   "session_id": "session_20250811_222303_bc5e4d25",
   "email": "user@domain.com",
-  "status": "COMPLETED|IN_PROGRESS|ERROR",
+  "status": "COMPLETED|IN_PROGRESS|FAILED",
+  "run_type": "Preview|Validation|Config Generation|Config Refinement",  // NEW: Clear run type identification
   "start_time": "2025-08-11T22:23:27.561528+00:00",
   "end_time": "2025-08-11T22:23:30.746079+00:00",
   "percent_complete": 100.0,
   "processed_rows": 3.0,
   "total_rows": 114.0,
-  "batch_size": 80,
+  "batch_size": 80,  // Now reported for all run types including previews
+  
+  // Account balance tracking at time of run
+  "account_current_balance": 42.50,        // Balance after the run completion
+  "account_sufficient_balance": "n/a",     // Whether balance was sufficient (set to n/a)
+  "account_credits_needed": "n/a",         // Credits needed if insufficient (set to n/a)
+  "account_domain_multiplier": 3.0,        // Domain multiplier applied to this run
+  
+  // Model usage tracking for transparency
+  "models": "sonar-pro X 3, sonnet-4 X 1, opus-4-1 X 1, sonar-pro (high context) X 2",
+  
+  // Input data tracking
+  "input_table_name": "my_data_table.xlsx",           // Original table filename
+  "configuration_id": "config_v1_ai_generated",       // Configuration ID used for validation
+  "results_s3_key": "enhanced_results/session_123/validation_results_enhanced.xlsx",  // Points to enhanced validation results directory
+  
+  // CONSOLIDATED: Cost and timing fields
+  "eliyahu_cost": 0.17357700,              // NEW: Actual cost incurred for this run (replaces preview_cost)
+  "quoted_validation_cost": 6.595926,      // NEW: What user will pay for full validation (replaces quoted_full_cost)
+  "estimated_validation_eliyahu_cost": 5.125, // NEW: Raw eliyahu cost estimate without multiplier or rounding
+  "time_per_row_seconds": 2.5,             // NEW: Time per row - estimated for preview, measured for validation (renamed from actual_time_per_row_seconds)
+  "estimated_validation_time_minutes": 12.3,    // Total estimated validation time in minutes only
+  "run_time_s": 135.8,                     // NEW: Actual run time in seconds for this specific run
+  
   "preview_data": {
     "actual_batch_size": 80,
-    "estimated_total_batches": 2,
+    "estimated_validation_batches": 2,
     "cost_estimates": {
-      "per_row_cost": 0.057859,
-      "estimated_total_cost": 6.595926,
-      "preview_cost": 0.17357700
+      "per_row_cost": 0.057859              // Per-row cost with multiplier applied (what user pays per row)
     },
     "token_usage": {
-      "total_tokens": 25695.0,
+      "total_tokens": 25695.0,              // REMOVED: per_row_tokens, estimated_total_tokens, preview_tokens
       "by_provider": {
         "perplexity": {
           "prompt_tokens": 17654.0,
@@ -66,7 +88,7 @@ The system uses 10 DynamoDB tables to manage validation sessions, user data, fin
         },
         "anthropic": {
           "total_cost": 0.0,
-          "calls": 0.0
+          "calls": 0.0                      // REMOVED: cache token fields - using own caching
         }
       }
     },
@@ -78,20 +100,86 @@ The system uses 10 DynamoDB tables to manage validation sessions, user data, fin
 }
 ```
 
-**Cost Tracking Types:**
-1. **`eliyahu_cost`**: What we actually paid (no cost for cached calls) - **PER CURRENT RUN**
-2. **`estimated_cost`**: What current run would cost without caching - **PER CURRENT RUN**  
-3. **`quoted_full_cost`**: Projected cost for full table validation = `(estimated_cost ÷ current_rows) × total_rows × multiplier` - **FULL TABLE QUOTE**
-4. **`charged_cost`**: What we actually collected (`quoted_full_cost` for full validation, `0` for preview) - **ACTUAL CHARGE**
+**Configuration Generation Example:**
+```json
+{
+  "session_id": "session_20250811_145623_ai_config",
+  "email": "user@domain.com",
+  "status": "COMPLETED",
+  "run_type": "Config Generation",     // NEW: Clear identification
+  "start_time": "2025-08-11T14:56:23.456789+00:00",
+  "end_time": "2025-08-11T14:57:45.123456+00:00",
+  "percent_complete": 100.0,
+  "processed_rows": 1.0,              // One config generated
+  "total_rows": 0.0,                  // No validation rows processed
+  "batch_size": 1,                    // Config generation batch size
+  
+  // Account balance tracking
+  "account_current_balance": 0.0,      // Config generation is currently free
+  "account_sufficient_balance": "n/a",
+  "account_credits_needed": "n/a", 
+  "account_domain_multiplier": 1.0,    // Config generation doesn't use domain multiplier
+  
+  // Model usage for config generation
+  "models": "sonar-pro X 1, claude-3.5-sonnet X 2",
+  
+  // Configuration tracking
+  "input_table_name": "sales_data.xlsx",
+  "configuration_id": "config_v2_ai_generated_20250811",
+  "results_s3_key": "unified/user@domain.com/session_20250811_145623/configs/config_v2.json",  // Points to generated config file
+  
+  // CONSOLIDATED: Cost and timing fields for config generation
+  "eliyahu_cost": 0.0425,              // Actual AI cost for config generation
+  "quoted_validation_cost": 0.0,       // Config generation is free to users
+  "estimated_validation_eliyahu_cost": null, // Not applicable for config generation
+  "time_per_row_seconds": null,       // Not applicable for config generation  
+  "estimated_validation_time_minutes": null, // Not applicable for config generation
+  "run_time_s": 82.67,                // Actual config generation time in seconds
+  
+  // Config generation does not have preview_data - metadata is tracked at top level
+}
+```
 
-**Cost Scaling Logic:** Only `quoted_full_cost` involves scaling. For preview runs: `(preview_estimated_cost × multiplier ÷ preview_rows) × total_rows`.
+**Consolidated Cost Tracking:**
+1. **`eliyahu_cost`**: What we actually paid for this specific run (includes caching savings) - **ACTUAL COST PER RUN**
+2. **`quoted_validation_cost`**: What user will pay/was charged for full validation - **USER CHARGE AMOUNT**
+   - For Preview: Estimated cost for full validation (what user would pay, with multiplier + rounding)
+   - For Validation: Amount actually charged to user (should match eliyahu_cost with multiplier)
+   - For Config Generation: 0 (free service)
+3. **`estimated_validation_eliyahu_cost`**: Raw eliyahu cost estimate without multiplier or rounding - **RAW COST ESTIMATE**
+   - For Preview: What full validation would cost us (no multiplier, no rounding, assumes no caching)
+   - For Validation: The estimate from the last preview (not actual cost - that's eliyahu_cost)
+   - For Config Generation: null (not applicable)
 
-**Business Logic:** Preview calculates and sends `quoted_full_cost` via websocket. Full validation charges exactly that `quoted_full_cost` from preview, ensuring users pay the promised amount regardless of actual full validation costs.
+**Field Consolidation:**
+- ❌ `preview_cost` → ✅ `eliyahu_cost` (unified actual cost field)
+- ❌ `estimated_full_cost` → ✅ `quoted_validation_cost` (what user pays)
+- ❌ `quoted_full_cost` → ✅ `quoted_validation_cost` (clearer name)
+- ❌ `charged_cost` → ✅ `quoted_validation_cost` (same concept, clearer name)
+- ➕ **NEW**: `estimated_validation_eliyahu_cost` (raw cost estimate without multiplier/rounding)
 
-**Batch Size Tracking:** Enhanced dynamic batch sizing with per-model configuration.
+**Cost Scaling Logic:** Only `quoted_validation_cost` involves scaling, multiplier, rounding, and $2 minimum. 
+- `estimated_validation_eliyahu_cost` = `(preview_estimated_cost ÷ preview_rows) × total_rows` (raw estimate, no caching)
+- `quoted_validation_cost` = `max(2.0, ceil((preview_estimated_cost × multiplier ÷ preview_rows) × total_rows))` (with multiplier, rounding, $2 minimum)
+
+**Business Logic:** Preview calculates and sends `quoted_validation_cost` via websocket. Full validation charges exactly that `quoted_validation_cost` from preview, ensuring users pay the promised amount regardless of actual full validation costs.
+
+**Run Type Classification:**
+- **`Preview`**: Fast validation of first few rows for cost estimation and result preview
+- **`Validation`**: Full table validation with complete processing and results delivery  
+- **`Config Generation`**: AI-powered configuration file generation from table analysis
+- **`Config Refinement`**: User-guided refinement of existing configuration files
+
+**Consolidated Timing Fields:**
+- **`time_per_row_seconds`**: Timing per row (estimated for preview, measured for validation, null for config generation)
+- **`estimated_validation_time_minutes`**: Total estimated validation time in minutes (null for config generation)
+- **`run_time_s`**: Actual run time in seconds for this specific run (all run types)
+- ❌ Removed: `preview_processing_time_seconds`, `actual_time_per_row_seconds`, `estimated_total_processing_time_seconds`
+
+**Batch Size Tracking:** Enhanced dynamic batch sizing with per-model configuration, now reported for all run types.
 - **`batch_size`**: Top-level field storing the actual batch size used for validation
 - **`preview_data.actual_batch_size`**: Batch size determined by enhanced batch manager
-- **`preview_data.estimated_total_batches`**: Total batches calculated with actual batch size
+- **`preview_data.estimated_validation_batches`**: Total batches calculated with actual batch size
 - **Dynamic sizing**: Uses minimum batch size across models for multi-model validations
 - **Pattern matching**: Configured via hierarchical model patterns (e.g., "claude-4*", "sonar-pro*")
 
@@ -113,18 +201,10 @@ The system uses 10 DynamoDB tables to manage validation sessions, user data, fin
   "created_at": "2025-07-02T07:52:05.380000+00:00",
   "last_access": "2025-08-11T22:23:30.746079+00:00",
   
-  // Request counts by type
-  "total_preview_requests": 15.0,
-  "total_full_requests": 8.0,
-  "total_config_requests": 3.0,
-  
-  // Legacy token/cost fields (kept for compatibility)
-  "total_tokens_used": 125000.0,
-  "perplexity_tokens": 85000.0,
-  "anthropic_tokens": 40000.0,
-  "total_cost_usd": 42.50,
-  "perplexity_cost": 28.75,
-  "anthropic_cost": 13.75,
+  // Request counts by type (explicit tracking)
+  "total_previews": 15,
+  "total_validations": 8,
+  "total_configurations": 3,
   
   // NEW: Enhanced validation metrics
   "total_rows_processed": 1250.0,
@@ -134,24 +214,18 @@ The system uses 10 DynamoDB tables to manage validation sessions, user data, fin
   "total_high_context_search_groups": 12.0,
   "total_claude_calls": 8.0,
   
-  // NEW: Cost tracking with proper nomenclature
-  "total_eliyahu_cost": 28.50,        // What we paid (actual costs)
-  "total_estimated_cost": 45.75,      // What it would cost without caching (sum of all runs)
-  "total_quoted_full_cost": 137.25,   // What we quoted users for full table validations
-  "total_charged_cost": 98.50,        // What we collected from users
-  "total_config_cost": 5.25,          // Config generation costs
+  // Cost tracking with consolidated nomenclature
+  "total_eliyahu_cost": 28.50,        // What we paid (actual costs across all runs)
+  "total_quoted_validation_cost": 137.25,   // What we quoted users for all validations
+  "total_validation_revenue": 98.50,        // What we collected from users for validations
+  "total_config_eliyahu_cost": 5.25,          // Config generation costs (eliyahu expense)
   
-  // NEW: Request-type specific metrics  
+  // Request-type specific metrics  
   "preview_rows_processed": 450.0,
   "preview_eliyahu_cost": 12.25,
-  "preview_estimated_cost": 18.50,
-  "full_rows_processed": 800.0,
-  "full_charged_cost": 98.50,
-  "config_generation_cost": 5.25,
-  
-  // NEW: Processing parameters tracking (per-run values)
-  "batch_size": 80,                    // Actual batch size from enhanced dynamic batch manager
-  "estimated_time": 2.5,               // Estimated processing time for current/latest run (hours)
+  "validation_rows_processed": 800.0,
+  "validation_revenue": 98.50,
+  "config_generation_eliyahu_cost": 5.25,
   
   // NEW: API call tracking
   "total_api_calls_made": 125,         // Total number of API calls made across all runs
@@ -382,7 +456,8 @@ graph TB
 
 ✅ **Activity Type Tracking**  
 - Preview vs. full validation (via session ID patterns)
-- Config generation workflows
+- Config generation workflows with complete AI model usage tracking
+- Unified tracking system across all request types
 
 ✅ **Token Usage (By Provider)**
 - Perplexity: prompt + completion tokens

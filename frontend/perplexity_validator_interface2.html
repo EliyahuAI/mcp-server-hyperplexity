@@ -1272,7 +1272,6 @@
                 return function(...args) {
                     // Check if already processing
                     if (globalState.isProcessingConfig) {
-                        console.log(`[DEBOUNCE] Config processing already in progress, ignoring ${key}`);
                         return;
                     }
                     
@@ -1289,7 +1288,6 @@
                         // Set a safety timeout to reset processing state after 10 minutes
                         setTimeout(() => {
                             if (globalState.isProcessingConfig) {
-                                console.warn('[DEBOUNCE] Safety timeout - resetting processing state after 10 minutes');
                                 globalState.isProcessingConfig = false;
                             }
                         }, 600000); // 10 minutes
@@ -1297,7 +1295,7 @@
                         // Execute the function and handle completion
                         Promise.resolve(func.apply(this, args))
                             .catch(error => {
-                                console.error(`[DEBOUNCE] Error in ${key}:`, error);
+                                console.error(`Error in ${key}:`, error);
                             })
                             .finally(() => {
                                 globalState.isProcessingConfig = false;
@@ -1432,7 +1430,6 @@
 
             function startDummyProgress(cardId, estimatedTime = 60000, messageType = 'processing') {
                 // DISABLED: Dummy progress disabled to see real WebSocket messages
-                console.log(`[DEBUG] startDummyProgress called for ${cardId} but disabled`);
                 return;
                 
                 // Original dummy progress code commented out:
@@ -1907,8 +1904,6 @@
                         const totalRows = previewData.total_rows || 0;
                         
                         // DEBUG: Log cost estimates to identify field name issue
-                        console.log('[COST_DEBUG] Full cost_estimates object:', previewData.cost_estimates);
-                        console.log('[COST_DEBUG] account_info object:', previewData.account_info);
                         
                         // Fix field name mismatch: backend uses quoted_validation_cost, frontend was looking for quoted_full_cost
                         const estimatedCost = previewData.cost_estimates.quoted_validation_cost || previewData.cost_estimates.quoted_full_cost || 0;
@@ -2124,7 +2119,6 @@
                 };
 
                 if (!useWebSocket) {
-                    console.log(`[DEBUG] createProgress auto-progress disabled`);
                     // startAutoProgress(); // DISABLED to see real progress
                 }
 
@@ -2217,7 +2211,6 @@
                     
                     try {
                         const data = JSON.parse(event.data);
-                        console.log(`[DEBUG] WebSocket message received for session ${sessionId}:`, data);
                         
                         // Validate data is not null/undefined before routing
                         if (data && typeof data === 'object') {
@@ -2226,10 +2219,9 @@
                             }
                             routeMessage(data, sessionId);
                         } else {
-                            console.warn(`[DEBUG] Invalid WebSocket data received:`, event.data);
                         }
                     } catch (error) {
-                        console.error(`[DEBUG] Failed to parse WebSocket message for session ${sessionId}:`, error, event.data);
+                        console.error(`Failed to parse WebSocket message for session ${sessionId}:`, error, event.data);
                     }
                 };
 
@@ -2265,7 +2257,6 @@
             function handleBalanceUpdate(data) {
                 // Safety check: ensure data is valid
                 if (!data || typeof data !== 'object') {
-                    console.warn(`[DEBUG] handleBalanceUpdate received invalid data:`, data);
                     return;
                 }
                 
@@ -2826,17 +2817,14 @@
             }
 
             function routeMessage(data, sessionId) {
-                console.log(`[DEBUG] routeMessage called with data:`, data);
                 
                 // Safety check: ensure data is valid
                 if (!data || typeof data !== 'object') {
-                    console.warn(`[DEBUG] routeMessage received invalid data:`, data);
                     return;
                 }
                 
                 // Handle balance updates from WebSocket
                 if (data.type === 'balance_update') {
-                    console.log(`[DEBUG] Routing balance update`);
                     handleBalanceUpdate(data);
                     return; // Balance updates don't need routing to card handlers
                 }
@@ -2844,7 +2832,6 @@
                 // Handle progress updates for any card with progress indicator
                 if ((data.type === 'progress' || data.type === 'config_generation_progress' || 
                      data.type === 'progress_update' || data.type === 'config_progress_update') && data.progress !== undefined) {
-                    console.log(`[DEBUG] Routing progress update: ${data.progress}%, message: ${data.status || data.message}`);
                     // Find the card with progress indicator and update it
                     for (const [cardId, handlerInfo] of cardHandlers) {
                         if (handlerInfo && cardId) {
@@ -2949,7 +2936,6 @@
             function registerCardHandler(cardId, messageTypes, handler) {
                 // Safety checks
                 if (!cardId || typeof handler !== 'function') {
-                    console.warn(`[DEBUG] Invalid parameters for registerCardHandler:`, { cardId, messageTypes, handler });
                     return;
                 }
                 
@@ -2974,7 +2960,6 @@
             function unregisterCardHandler(cardId) {
                 if (cardId && cardHandlers.has(cardId)) {
                     cardHandlers.delete(cardId);
-                    console.log(`[DEBUG] Unregistered handler for card ${cardId}, remaining handlers: ${cardHandlers.size}`);
                 }
             }
 
@@ -2983,7 +2968,6 @@
             // This is the old handler - will be removed since we have the updated one below
 
             function handleProcessingWebSocketMessage(data, cardId) {
-                console.log(`[DEBUG] handleProcessingWebSocketMessage called for ${cardId}:`, data);
 
                 if (data.status === 'PROCESSING') {
                     let message = data.verbose_status || 'Processing...';
@@ -3093,7 +3077,6 @@
             }
 
             async function handleConfigWebSocketMessage(data, cardId) {
-                console.log(`[DEBUG] handleConfigWebSocketMessage called for ${cardId}:`, data);
                 
                 if (data.type === 'config_generation_complete') {
                     completeThinkingInCard(cardId, 'Configuration generated!');
@@ -3715,8 +3698,6 @@
                     await uploadExcelFile(cardId, file);
                     // Create configuration card after successful upload
                     setTimeout(() => {
-                        console.log('[DEBUG] Configuration check after upload:');
-                        console.log('[DEBUG] globalState.matchingConfigs:', globalState.matchingConfigs);
                         
                         createConfigurationCard();
                     }, 500);
@@ -3750,12 +3731,9 @@
                     localStorage.setItem('sessionId', globalState.sessionId);
                     
                     // Store matching configs if found
-                    console.log('[DEBUG] Upload response data.matching_configs:', data.matching_configs);
                     if (data.matching_configs && data.matching_configs.success && data.matching_configs.matches) {
-                        console.log('[DEBUG] Setting globalState.matchingConfigs with', data.matching_configs.matches.length, 'matches');
                         globalState.matchingConfigs = data.matching_configs;
                     } else {
-                        console.log('[DEBUG] No matching configs in response or unsuccessful - setting to null');
                         globalState.matchingConfigs = null;
                     }
                     
@@ -3941,13 +3919,11 @@
             }
 
             function showCreateWithAIButton(cardId) {
-                console.log('[DEBUG] showCreateWithAIButton called with cardId:', cardId);
                 const optionsContainer = document.getElementById(`${cardId}-options`);
                 if (!optionsContainer) {
-                    console.error('[DEBUG] No options container found for cardId:', cardId);
+                    console.error('No options container found for cardId:', cardId);
                     return;
                 }
-                console.log('[DEBUG] Options container found, displaying single Create AI button');
                 
                 optionsContainer.innerHTML = `
                     <div style="margin: 20px 0; text-align: center;">
@@ -3960,35 +3936,28 @@
             }
 
             async function showRecentConfigOptions(cardId, matches, tableColumns) {
-                console.log('[DEBUG] showRecentConfigOptions called with cardId:', cardId, 'matches:', matches);
                 const optionsContainer = document.getElementById(`${cardId}-options`);
                 if (!optionsContainer) {
-                    console.error('[DEBUG] No options container found for cardId:', cardId);
+                    console.error('No options container found for cardId:', cardId);
                     return;
                 }
-                console.log('[DEBUG] Options container found, processing', matches.length, 'matches');
                 
                 // Clear existing content
                 optionsContainer.innerHTML = '';
                 
                 // Find most recent 100% match only
-                console.log('[DEBUG] Looking for perfect matches in:', matches);
                 const perfectMatch = matches.find(config => {
                     const matchScore = Math.round(config.match_score * 100);
-                    console.log('[DEBUG] Config match score:', matchScore, 'for config:', config);
                     return matchScore === 100;
                 });
                 
-                console.log('[DEBUG] Perfect match found:', perfectMatch);
 
                 if (!perfectMatch) {
-                    console.log('[DEBUG] No perfect match - showing Create with AI button');
                     // No perfect match - show only "Create with AI"
                     showCreateWithAIButton(cardId);
                     return;
                 }
 
-                console.log('[DEBUG] Showing side-by-side buttons for perfect match');
                 // Show side-by-side buttons: "Use Match" (left) and "Create with AI" (right)
                 showMatchAndCreateButtons(cardId, perfectMatch);
             }
@@ -4267,7 +4236,6 @@
                 
                 // Secret upload trigger - check if user typed "upload" (case insensitive)
                 if (configId.toLowerCase() === 'upload') {
-                    console.log('Secret upload trigger activated');
                     showMessage(`${cardId}-messages`, 'Opening file picker...', 'info');
                     
                     // Trigger the hidden file input for config upload
@@ -4747,7 +4715,6 @@
             
             function createConfigurationCard() {
                 const cardId = generateCardId();
-                console.log('[DEBUG] Creating configuration card with ID:', cardId);
                 
                 // Create the content structure with config input and messages
                 const content = `
@@ -4817,12 +4784,9 @@
                     const buttonContainer = document.getElementById(`${cardId}-button-container`);
                     if (buttonContainer) {
                         if (globalState.matchingConfigs && globalState.matchingConfigs.matches) {
-                            console.log('[DEBUG] Found matches:', globalState.matchingConfigs.matches);
                             const goodMatches = globalState.matchingConfigs.matches.filter(match => match.match_score >= 0.8);
-                            console.log('[DEBUG] Good matches (>=80%):', goodMatches);
                             
                             if (goodMatches.length > 0) {
-                                console.log('[DEBUG] Adding side-by-side buttons to container');
                                 // Check for perfect matches
                                 const perfectMatch = goodMatches.find(config => Math.round(config.match_score * 100) === 100);
                                 
@@ -4847,7 +4811,6 @@
                                     `;
                                 }
                             } else {
-                                console.log('[DEBUG] No good matches - showing Create with AI button');
                                 buttonContainer.innerHTML = `
                                     <div style="margin: 20px 0; text-align: center;">
                                         <button class="std-button secondary" onclick="createAIConfigCard(false)" style="background: #6b46c1; border-color: #6b46c1; color: white;">
@@ -4857,7 +4820,6 @@
                                 `;
                             }
                         } else {
-                            console.log('[DEBUG] No matching configs found - showing Create with AI button');
                             buttonContainer.innerHTML = `
                                 <div style="margin: 20px 0; text-align: center;">
                                     <button class="std-button secondary" onclick="createAIConfigCard(false)" style="background: #6b46c1; border-color: #6b46c1; color: white;">

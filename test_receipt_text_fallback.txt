@@ -1,0 +1,35 @@
+======================================================================
+                    HYPERPLEXITY.AI TABLE RESEARCH
+                           PAYMENT RECEIPT
+======================================================================
+
+Receipt Date:          September 04, 2025 at 05:09 PM UTC
+Session ID:            test_session_text_fallback
+Customer Email:        test@hyperplexity.ai
+Service:               Table Validation
+
+Input Table:            Text Fallback Test.xlsx
+Configuration Code:     CONFIG_TEXT_FALLBACK
+
+----------------------------------------------------------------------
+                            SERVICE DETAILS
+----------------------------------------------------------------------
+
+Rows Processed:        250
+Fields Validated:      15
+Perplexity API Calls:  50
+Claude API Calls:      35
+
+----------------------------------------------------------------------
+                               TOTAL
+----------------------------------------------------------------------
+
+Total Charged:         $42.1337
+
+======================================================================
+
+Thank you for using Hyperplexity!
+For support, contact: eliyahu@eliyahu.ai
+This receipt is for your records.
+
+======================================================================

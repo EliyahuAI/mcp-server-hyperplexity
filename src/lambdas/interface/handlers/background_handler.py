@@ -278,6 +278,9 @@ def handle(event, context):
         if email_address:
             email_address = email_address.lower().strip()
         
+        # Initialize processing_time early to prevent "referenced before assignment" error
+        processing_time = 0.0
+        
         # After a job starts
         run_type_initial = "Preview" if is_preview else "Validation"
         update_run_status(session_id=session_id, status='PROCESSING', run_type=run_type_initial)
@@ -380,6 +383,20 @@ def handle(event, context):
             if validation_results and validation_results.get('validation_results'):
                 # Extract metadata first
                 real_results = validation_results.get('validation_results', {})
+                logger.info(f"[EXCEL_DEBUG] validation_results keys: {list(validation_results.keys())}")
+                logger.info(f"[EXCEL_DEBUG] real_results type: {type(real_results)}, keys: {list(real_results.keys()) if isinstance(real_results, dict) else 'N/A'}")
+                if isinstance(real_results, dict) and real_results:
+                    sample_key = list(real_results.keys())[0]
+                    sample_value = real_results[sample_key]
+                    logger.info(f"[EXCEL_DEBUG] Sample validation entry - Key: {sample_key}, Value type: {type(sample_value)}")
+                    if isinstance(sample_value, dict):
+                        logger.info(f"[EXCEL_DEBUG] Sample validation entry - Value keys: {list(sample_value.keys())}")
+                        for field_name, field_data in sample_value.items():
+                            if isinstance(field_data, dict):
+                                logger.info(f"[EXCEL_DEBUG] Field '{field_name}' - keys: {list(field_data.keys())}")
+                                confidence = field_data.get('confidence') or field_data.get('confidence_level')
+                                logger.info(f"[EXCEL_DEBUG] Field '{field_name}' - confidence: {confidence}")
+                            break  # Just show one field sample
                 total_rows = validation_results.get('total_rows', 1)
                 metadata = validation_results.get('metadata', {})
                 token_usage = metadata.get('token_usage', {})
@@ -489,7 +506,6 @@ def handle(event, context):
                 # Use batch timing info from the validator if available, otherwise fallback
                 batch_timing = metadata.get('batch_timing', {})
                 validator_processing_time = metadata.get('processing_time', 0.0)
-                processing_time = 0.0
                 time_per_batch = 20.0 # Default fallback
                 
                 if batch_timing:
@@ -568,7 +584,7 @@ def handle(event, context):
                     "account_info": {
                         "current_balance": float(current_balance) if current_balance else 0,
                         "sufficient_balance": float(current_balance) >= quoted_full_cost if current_balance else False,
-                        "quoted_full_cost": quoted_full_cost,  # What user will be charged for full validation
+                        "quoted_validation_cost": quoted_full_cost,  # What user will be charged for full validation
                         "credits_needed": max(0, quoted_full_cost - (float(current_balance) if current_balance else 0)),
                         "domain_multiplier": float(multiplier),
                         "email_domain": email_domain
@@ -712,33 +728,50 @@ def handle(event, context):
                     current_balance = None
                     multiplier = 1.0
                 
-                # Create search group models tracking string for preview
+                # Create search group models tracking string for preview - one entry per search group with validated columns count
                 search_groups_models = []
+                search_groups_count = validation_metrics.get('search_groups_count', 0)
+                high_context_groups = validation_metrics.get('high_context_search_groups_count', 0)
+                claude_groups = validation_metrics.get('claude_search_groups_count', 0)
+                regular_perplexity_groups = search_groups_count - high_context_groups - claude_groups
+                validated_columns_count = validation_metrics.get('validated_columns_count', 0)
+                
+                # Calculate columns per search group (distribute evenly, remainder goes to first groups)
+                if search_groups_count > 0:
+                    base_columns_per_group = validated_columns_count // search_groups_count
+                    extra_columns = validated_columns_count % search_groups_count
+                else:
+                    base_columns_per_group = 0
+                    extra_columns = 0
+                
+                # Get exact Claude model used from token_usage
+                claude_model_name = "claude-3.5-sonnet"  # Default
                 by_provider = token_usage.get('by_provider', {})
-                for provider, provider_data in by_provider.items():
-                    calls = provider_data.get('calls', 0)
-                    if calls > 0:
-                        if provider == 'perplexity':
-                            # Check if it's high context based on token usage patterns
-                            total_tokens = provider_data.get('total_tokens', 0)
-                            avg_tokens_per_call = total_tokens / calls if calls > 0 else 0
-                            if avg_tokens_per_call > 5000:  # Threshold for high context
-                                search_groups_models.append(f"sonar-pro (high context) X {calls}")
-                            else:
-                                search_groups_models.append(f"sonar-pro X {calls}")
-                        elif provider == 'anthropic':
-                            # Determine Claude model based on metadata if available
-                            models_used = provider_data.get('models_used', [])
-                            if models_used:
-                                for model in models_used:
-                                    if 'opus' in model.lower():
-                                        search_groups_models.append(f"opus-4 X {calls}")
-                                    elif 'sonnet' in model.lower():
-                                        search_groups_models.append(f"sonnet-4 X {calls}")
-                                    else:
-                                        search_groups_models.append(f"{model} X {calls}")
-                            else:
-                                search_groups_models.append(f"claude X {calls}")
+                anthropic_data = by_provider.get('anthropic', {})
+                models_used = anthropic_data.get('models_used', [])
+                if models_used:
+                    # Use the actual model name from the first model used
+                    claude_model_name = models_used[0]
+                
+                current_group = 0
+                
+                # Add regular perplexity search groups with column counts
+                for i in range(regular_perplexity_groups):
+                    columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
+                    search_groups_models.append(f"sonar-pro X {columns_for_this_group}")
+                    current_group += 1
+                
+                # Add high context perplexity search groups with column counts
+                for i in range(high_context_groups):
+                    columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
+                    search_groups_models.append(f"sonar-pro (high context) X {columns_for_this_group}")
+                    current_group += 1
+                
+                # Add Claude search groups with exact model and column counts
+                for i in range(claude_groups):
+                    columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
+                    search_groups_models.append(f"{claude_model_name} X {columns_for_this_group}")
+                    current_group += 1
                 
                 # Get configuration ID for tracking
                 configuration_id = config_data.get('storage_metadata', {}).get('config_id', 'unknown')
@@ -800,7 +833,7 @@ def handle(event, context):
                     claude_calls=validation_metrics.get('claude_search_groups_count', 0),
                     eliyahu_cost=eliyahu_cost,
                     estimated_cost=estimated_cost,
-                    quoted_full_cost=quoted_full_cost,  # This is the scaled full table quote
+                    quoted_validation_cost=quoted_full_cost,  # This is the scaled full table quote
                     charged_cost=0.0,  # Preview doesn't charge
                     total_api_calls=total_api_calls,
                     total_cached_calls=total_cached_calls
@@ -1122,7 +1155,7 @@ def handle(event, context):
                     if not preview_data:
                         raise Exception("No preview results found in any config version")
                     
-                    preview_quoted_cost = preview_data.get('account_info', {}).get('quoted_full_cost')
+                    preview_quoted_cost = preview_data.get('account_info', {}).get('quoted_validation_cost')
                     if preview_quoted_cost:
                         charged_cost = float(preview_quoted_cost)
                         logger.info(f"Using preview quoted cost for full validation: ${charged_cost:.6f}")
@@ -1246,7 +1279,6 @@ def handle(event, context):
                 # Use batch timing info from the validator if available, otherwise fallback
                 batch_timing = metadata.get('batch_timing', {})
                 validator_processing_time = metadata.get('processing_time', 0.0)
-                processing_time = 0.0
                 time_per_batch = 20.0 # Default fallback
                 time_per_row = 4.0 # Default fallback
 
@@ -1284,7 +1316,7 @@ def handle(event, context):
                     "enhanced_download_url": enhanced_download_url,  # Download link for enhanced Excel
                     "cost_estimates": {
                         "preview_cost": charged_cost,  # What user pays for preview (0)
-                        "quoted_full_cost": quoted_full_cost,  # What user will pay for full validation
+                        "quoted_validation_cost": quoted_full_cost,  # What user will pay for full validation
                         "preview_tokens": total_tokens,
                         "estimated_total_tokens": estimated_total_tokens,
                         "per_row_cost": per_row_cost_full,
@@ -1416,33 +1448,44 @@ def handle(event, context):
 
                 if EMAIL_SENDER_AVAILABLE and email_address:
                     # Calculate summary data for the email
-                    all_fields = set()
+                    # First, determine which fields are ID fields (should not be counted as "validated")
+                    id_fields = set()
+                    if config_data and 'validation_targets' in config_data:
+                        for target in config_data['validation_targets']:
+                            if target.get('importance', '').upper() in ['ID', 'IGNORED']:
+                                id_fields.add(target.get('column'))
+                    
+                    validated_fields = set()  # Only count fields that were actually validated
                     confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
                     original_confidence_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
                     
                     for row_data in real_results.values():
                         for field_name, field_data in row_data.items():
                             if isinstance(field_data, dict):
-                                all_fields.add(field_name)
+                                # Only count as validated if it's not an ID/IGNORED field
+                                if field_name not in id_fields:
+                                    validated_fields.add(field_name)
                                 
-                                # Count updated confidence levels
-                                if 'confidence_level' in field_data:
+                                # Count updated confidence levels (only for validated fields)
+                                if 'confidence_level' in field_data and field_name not in id_fields:
                                     conf_level = field_data.get('confidence_level', 'UNKNOWN')
                                     if conf_level in confidence_counts:
                                         confidence_counts[conf_level] += 1
                                 
-                                # Count original confidence levels
-                                if 'original_confidence' in field_data:
+                                # Count original confidence levels (only for validated fields)
+                                if 'original_confidence' in field_data and field_name not in id_fields:
                                     original_conf = field_data.get('original_confidence')
                                     if original_conf and str(original_conf).upper() in original_confidence_counts:
                                         original_confidence_counts[str(original_conf).upper()] += 1
                     
                     summary_data = {
                         'total_rows': len(real_results) if real_results else 0,
-                        'fields_validated': list(all_fields),
+                        'fields_validated': list(validated_fields),  # Only count actually validated fields (exclude ID/IGNORED)
                         'confidence_distribution': confidence_counts,
                         'original_confidence_distribution': original_confidence_counts
                     }
+                    
+                    logger.info(f"Email summary: {len(validated_fields)} validated fields (excluding {len(id_fields)} ID/ignored fields): {sorted(validated_fields)}")
                     
                     enhanced_excel_content = None
                     logger.info(f"EXCEL_ENHANCEMENT_AVAILABLE: {EXCEL_ENHANCEMENT_AVAILABLE}")
@@ -1689,33 +1732,51 @@ def handle(event, context):
                     status_update_data['account_credits_needed'] = "n/a" 
                     status_update_data['account_domain_multiplier'] = float(multiplier)
                     
-                    # Create search group models tracking string
+                    # Create search group models tracking string - one entry per search group with validated columns count
                     search_groups_models = []
+                    # validation_metrics should already be defined from metadata.get('validation_metrics', {})
+                    search_groups_count = validation_metrics.get('search_groups_count', 0)
+                    high_context_groups = validation_metrics.get('high_context_search_groups_count', 0)
+                    claude_groups = validation_metrics.get('claude_search_groups_count', 0)
+                    regular_perplexity_groups = search_groups_count - high_context_groups - claude_groups
+                    validated_columns_count = validation_metrics.get('validated_columns_count', 0)
+                    
+                    # Calculate columns per search group (distribute evenly, remainder goes to first groups)
+                    if search_groups_count > 0:
+                        base_columns_per_group = validated_columns_count // search_groups_count
+                        extra_columns = validated_columns_count % search_groups_count
+                    else:
+                        base_columns_per_group = 0
+                        extra_columns = 0
+                    
+                    # Get exact Claude model used from token_usage
+                    claude_model_name = "claude-3.5-sonnet"  # Default
                     by_provider = token_usage.get('by_provider', {})
-                    for provider, provider_data in by_provider.items():
-                        calls = provider_data.get('calls', 0)
-                        if calls > 0:
-                            if provider == 'perplexity':
-                                # Check if it's high context based on token usage patterns
-                                total_tokens = provider_data.get('total_tokens', 0)
-                                avg_tokens_per_call = total_tokens / calls if calls > 0 else 0
-                                if avg_tokens_per_call > 5000:  # Threshold for high context
-                                    search_groups_models.append(f"sonar-pro (high context) X {calls}")
-                                else:
-                                    search_groups_models.append(f"sonar-pro X {calls}")
-                            elif provider == 'anthropic':
-                                # Determine Claude model based on metadata if available
-                                models_used = provider_data.get('models_used', [])
-                                if models_used:
-                                    for model in models_used:
-                                        if 'opus' in model.lower():
-                                            search_groups_models.append(f"opus-4 X {calls}")
-                                        elif 'sonnet' in model.lower():
-                                            search_groups_models.append(f"sonnet-4 X {calls}")
-                                        else:
-                                            search_groups_models.append(f"{model} X {calls}")
-                                else:
-                                    search_groups_models.append(f"claude X {calls}")
+                    anthropic_data = by_provider.get('anthropic', {})
+                    models_used = anthropic_data.get('models_used', [])
+                    if models_used:
+                        # Use the actual model name from the first model used
+                        claude_model_name = models_used[0]
+                    
+                    current_group = 0
+                    
+                    # Add regular perplexity search groups with column counts
+                    for i in range(regular_perplexity_groups):
+                        columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
+                        search_groups_models.append(f"sonar-pro X {columns_for_this_group}")
+                        current_group += 1
+                    
+                    # Add high context perplexity search groups with column counts
+                    for i in range(high_context_groups):
+                        columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
+                        search_groups_models.append(f"sonar-pro (high context) X {columns_for_this_group}")
+                        current_group += 1
+                    
+                    # Add Claude search groups with exact model and column counts
+                    for i in range(claude_groups):
+                        columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
+                        search_groups_models.append(f"{claude_model_name} X {columns_for_this_group}")
+                        current_group += 1
                     
                     status_update_data['models'] = ", ".join(search_groups_models) if search_groups_models else "No API calls made"
                     
@@ -1769,7 +1830,7 @@ def handle(event, context):
                         claude_calls=validation_metrics.get('claude_search_groups_count', 0),
                         eliyahu_cost=eliyahu_cost,
                         estimated_cost=estimated_cost,
-                        quoted_full_cost=charged_cost,  # This is the quoted cost from preview (what we're charging)
+                        quoted_validation_cost=charged_cost,  # This is the quoted cost from preview (what we're charging)
                         charged_cost=charged_cost,  # Full validation charges user the preview quoted cost
                         total_api_calls=token_usage.get('api_calls', 0),
                         total_cached_calls=token_usage.get('cached_calls', 0)
@@ -1983,7 +2044,7 @@ def handle_config_generation(event, context):
                 anthropic_cost=response.get('cost_info', {}).get('anthropic_cost', 0.0),
                 eliyahu_cost=config_cost,  # Config generation costs are our actual costs
                 estimated_cost=config_cost,
-                quoted_full_cost=0.0,  # Config generation is currently free
+                quoted_validation_cost=0.0,  # Config generation is currently free
                 charged_cost=0.0,  # Config generation is currently free
                 total_api_calls=response.get('cost_info', {}).get('api_calls', 0),
                 total_cached_calls=response.get('cost_info', {}).get('cached_calls', 0)
@@ -2001,21 +2062,26 @@ def handle_config_generation(event, context):
                 try:
                     logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with completion data")
                     
-                    # Determine which AI models were used
+                    # Determine which AI models were used - with call counts for config generation
                     models_used = []
                     cost_info = response.get('cost_info', {})
-                    if cost_info.get('perplexity_tokens', 0) > 0:
-                        calls = cost_info.get('perplexity_calls', 1)
-                        models_used.append(f"sonar-pro X {calls}")
-                    if cost_info.get('anthropic_tokens', 0) > 0:
-                        calls = cost_info.get('anthropic_calls', 1)
+                    
+                    # Add perplexity calls with count
+                    perplexity_calls = cost_info.get('perplexity_calls', 0)
+                    if perplexity_calls > 0:
+                        models_used.append(f"sonar-pro X {perplexity_calls}")
+                    
+                    # Add anthropic calls with exact model name and count
+                    anthropic_calls = cost_info.get('anthropic_calls', 0)
+                    if anthropic_calls > 0:
                         # Try to determine specific Claude model from response
                         model_name = "claude-3.5-sonnet"  # Default assumption
                         if 'claude-3-5-haiku' in str(response).lower():
                             model_name = "claude-3.5-haiku"
                         elif 'claude-3-opus' in str(response).lower():
                             model_name = "claude-3-opus"
-                        models_used.append(f"{model_name} X {calls}")
+                        
+                        models_used.append(f"{model_name} X {anthropic_calls}")
                     
                     models = ", ".join(models_used) if models_used else "No AI models used"
                     

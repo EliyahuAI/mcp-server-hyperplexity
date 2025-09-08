@@ -1,0 +1,64 @@
+amount,balance_after,balance_before,description,email,multiplier_applied,payment_id,raw_cost,session_id,timestamp,transaction_id,transaction_type
+25.5,51.0,25.5,Manual credit added by admin via CLI,eliyahu@eliyahu.ai,,,,,2025-08-13T13:59:43.475937+00:00,2bd1156e-e3bd-41c3-9d8d-f33b965af92a,admin_credit
+0.0,0.0,0.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a38b2816ca922f67e763a3,,,2025-08-18T20:52:04.041627+00:00,befb2f90-4ab0-42a1-8bb1-20ee76221c04,store_purchase
+8.0,8.0,0.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a38b2816ca922f67e763a3,,,2025-08-18T21:32:12.119109+00:00,9e9e02fc-3196-44c3-bcb4-45aa5c109e6d,store_purchase
+-8.0,0.0,8.0,Full validation - 34 rows processed,elliotgreenblatt@gmail.com,5.0,,0.0,session_20250819_052446_06a78d85,2025-08-19T05:25:15.629317+00:00,75f2b77e-0bf6-4544-ba1f-4dc2ac9c8357,validation
+9.0,9.0,0.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a493e5df4c3f0901c3316b,,,2025-08-19T15:10:50.052247+00:00,eae0ce22-8247-4fa4-bbd7-a46d64071fc3,store_purchase
+-8.0,1.0,9.0,Full validation - 34 rows processed,elliotgreenblatt@gmail.com,5.0,,0.0,session_20250819_152638_356643f1,2025-08-19T15:27:26.559984+00:00,de31a2a5-1479-4e3f-a6fc-48d9d910327d,validation
+4.0,5.0,1.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a49aa728722a725992ff33,,,2025-08-19T15:39:33.306065+00:00,4be4e6ce-47b6-40eb-8403-9796e282fd21,store_purchase
+1.0,6.0,5.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a4a09496129e6f3c93baeb,,,2025-08-19T16:04:45.654561+00:00,7d423b17-115b-47d2-bf7a-f276727e1e59,store_purchase
+1.0,7.0,6.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a4a871df4c3f0901c33811,,,2025-08-19T16:38:22.695761+00:00,0a059aba-a54c-4b2d-9515-a076d266e697,store_purchase
+1.0,8.0,7.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a4ad98df4c3f0901c339ce,,,2025-08-19T17:00:20.993825+00:00,94dbedf3-fa4a-45fa-b883-56cb3c74b70e,store_purchase
+-8.0,0.0,8.0,Full validation - 34 rows processed,elliotgreenblatt@gmail.com,5.0,,0.0,session_20250819_172513_727d8719,2025-08-19T17:25:55.172500+00:00,9f47910f-7d0f-4416-b789-9a138f1edb64,validation
+1.0,1.0,0.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a4b88928722a7259930972,,,2025-08-19T17:47:03.037462+00:00,57b76afe-cdaa-4e96-b2ce-d4b8405d91e2,store_purchase
+1.0,2.0,1.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a4bb58a091330c8de58cfa,,,2025-08-19T17:58:56.482354+00:00,9cfaecb9-2198-4593-aab0-73b732f4c52f,store_purchase
+1.0,3.0,2.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a4c3a14f2cdd73e0ae42fd,,,2025-08-19T18:34:23.681517+00:00,2ebdc52b-20b4-4e7c-a9b4-072ea4845b34,store_purchase
+1.0,4.0,3.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a4c67cdf4c3f0901c34202,,,2025-08-19T18:46:28.966233+00:00,7e4c63e1-9a21-4065-aa29-598932f06657,store_purchase
+1.0,5.0,4.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a4c97ca091330c8de59176,,,2025-08-19T18:59:23.115988+00:00,d0d5c1fb-01f7-4b7c-98d3-d0d493fec4ab,store_purchase
+1.0,6.0,5.0,Credits purchased via Squarespace,elliotgreenblatt@gmail.com,,68a4c9c04f2cdd73e0ae44f2,,,2025-08-19T19:00:22.907963+00:00,4b5cd78d-b67c-4427-af03-3a09d95771ec,store_purchase
+-1.0,50.0,51.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.029919,session_20250819_204004_dd6741ab,2025-08-19T20:48:06.391648+00:00,dc8e3b6a-81ba-4070-9ec8-2313db23b8ed,validation
+-1.0,49.0,50.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_173115_db8cf4b9,2025-08-20T17:33:18.057256+00:00,8906c3e9-4935-4584-a61f-ffbaf36c6334,validation
+-1.0,48.0,49.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_175043_8f289095,2025-08-20T17:53:38.316450+00:00,ded2776b-0bc0-48ec-9a35-8d3b6003dd3e,validation
+-1.0,47.0,48.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.18631499999999995,session_20250820_180312_99b3cde3,2025-08-20T18:05:23.036774+00:00,65292332-b056-4b1f-a70f-c9f455bec462,validation
+-1.0,46.0,47.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_181317_27c8bedb,2025-08-20T18:14:55.225721+00:00,e7d5a371-77b0-4461-8038-f6d32d86b73b,validation
+-1.0,45.0,46.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_181908_0689b42f,2025-08-20T18:19:42.378564+00:00,d1fa41f7-75b4-4acd-b603-118675edbb4c,validation
+-1.0,44.0,45.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_182303_8f42a9d2,2025-08-20T18:23:23.144786+00:00,00591276-cd80-4f8f-92b8-087d22a01782,validation
+-1.0,43.0,44.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_202521_dcc031e4,2025-08-20T20:25:41.103998+00:00,b34a06fe-8fc4-4bc7-afde-2fc43ed66f14,validation
+-1.0,42.0,43.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_202903_bbb6efcf,2025-08-20T20:29:21.399016+00:00,8cbfea52-e711-4f21-8866-9c515d863044,validation
+-1.0,41.0,42.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_203236_2b4132ed,2025-08-20T20:33:07.299914+00:00,298954f1-755d-4d80-a721-28e67439271d,validation
+-1.0,40.0,41.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_203557_d1e5c840,2025-08-20T20:36:15.731235+00:00,3f9236f1-bf7c-4878-98f5-7d070f3ecbfb,validation
+-1.0,39.0,40.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_204154_edeef471,2025-08-20T20:42:17.382704+00:00,b79fb2fd-596f-4dff-aa04-dcc273502bdb,validation
+-1.0,38.0,39.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_211141_2340d3ba,2025-08-20T21:12:25.141613+00:00,459cc94d-20aa-4d43-97f5-4e9fdd376db4,validation
+-1.0,37.0,38.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_211908_009a17f4,2025-08-20T21:23:38.042662+00:00,47f5c0c4-e7cc-4964-8b75-a1f0f484f5f6,validation
+-1.0,36.0,37.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250820_221308_b3e0ffc8,2025-08-20T22:13:36.947486+00:00,62a456b7-95b6-410a-a66d-a1001fc3241c,validation
+-1.0,35.0,36.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.027645,session_20250821_214152_9f322a07,2025-08-21T21:46:29.040805+00:00,f890a4d4-3e36-4ad2-86ab-f506398b7521,validation
+-21.0,14.0,35.0,Full validation - 114 rows processed,eliyahu@eliyahu.ai,3.0,,0.23759099999999997,session_20250821_214850_bb9cc8ec,2025-08-21T22:50:27.220448+00:00,e605acd3-3f03-4a7c-baf1-b1ab698559ec,validation
+7.0,21.0,14.0,Credits purchased via Squarespace (verified: verified_email),eliyahu@eliyahu.ai,,68a87f574015204ac4f32de7,,,2025-08-22T14:32:00.994776+00:00,87509839-2d6f-4858-a847-eafb3f4e26e8,store_purchase
+-21.0,0.0,21.0,Full validation - 114 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250822_142838_908cce16,2025-08-22T14:32:57.005060+00:00,e351d30c-0924-4450-9fd1-f814d0d5d721,validation
+100.0,100.0,0.0,Manual credit added by admin via CLI,eliyahu@eliyahu.ai,,,,,2025-08-22T15:12:15.938363+00:00,1bc70d14-ec67-46c4-8fed-8222a69baa31,admin_credit
+-20.0,80.0,100.0,Full validation - 114 rows processed,eliyahu@eliyahu.ai,3.0,,0.5641740000000001,session_20250822_154436_bf25ab12,2025-08-22T16:14:58.152747+00:00,d19a598f-44a5-4047-80fa-7dbf6677323e,validation
+-20.0,60.0,80.0,Full validation - 114 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250822_213655_1941bf0f,2025-08-22T21:42:19.726242+00:00,1997bf48-5bb0-4d9e-bb8b-b39faaca9841,validation
+-20.0,40.0,60.0,Full validation - 114 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250822_220541_0b2a9344,2025-08-22T22:11:12.632922+00:00,00782f75-7ac2-451d-8517-9091c5d824c3,validation
+-20.0,20.0,40.0,Full validation - 114 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250822_225425_13ef7204,2025-08-22T22:56:09.929287+00:00,1de5ca2f-de4b-4ee7-9d89-abd32078ec55,validation
+-20.0,0.0,20.0,Full validation - 114 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250823_004411_e61c3de7,2025-08-23T00:45:42.714991+00:00,5d915d20-f610-4d42-95bc-053a44089996,validation
+100.0,100.0,0.0,Manual credit added by admin via CLI,eliyahu@eliyahu.ai,,,,,2025-08-23T00:52:01.037964+00:00,76d2fe59-de7f-4bb9-a10e-9bf023b5869a,admin_credit
+-20.0,80.0,100.0,Full validation - 114 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250823_005245_e9746ef5,2025-08-23T00:54:02.066293+00:00,662a45df-12e0-4467-9c69-7fe36f03a4a8,validation
+-20.0,60.0,80.0,Full validation - 114 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250827_145240_5bba4b4f,2025-08-27T14:54:29.366996+00:00,0d0de3e0-35eb-4288-beab-0de5821045d2,validation
+-24.0,36.0,60.0,Full validation - 114 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250902_165257_5dd1fe28,2025-09-02T17:09:51.263356+00:00,06d3d8da-dc64-40da-857d-27d34ebc78cb,validation
+-24.0,12.0,36.0,Full validation - 114 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250902_203418_21da4ea2,2025-09-02T20:37:53.011716+00:00,ce7e424a-3eb8-4712-9270-bd32220fc38c,validation
+-1.0,11.0,12.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.087447,session_20250902_211059_ca1c9131,2025-09-02T21:11:49.353168+00:00,7f45ed4b-36ab-4f1b-a97b-b3dbc4fdc9c9,validation
+-2.0,9.0,11.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.4076580000000001,session_20250902_211059_ca1c9131,2025-09-02T21:18:06.671685+00:00,9d0a0459-f5f2-4b51-a936-ab36472709c2,validation
+-2.0,7.0,9.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.33739800000000003,session_20250904_185715_89746514,2025-09-04T18:58:41.819422+00:00,10776577-ad04-46cf-9432-01dbca89a3ef,validation
+-2.0,5.0,7.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250904_204104_cb384301,2025-09-04T20:41:30.660209+00:00,4b48fc8e-fc2d-49bd-899f-c8372be477af,validation
+-2.0,3.0,5.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250904_205818_65117e99,2025-09-04T20:58:35.456315+00:00,8ddb49fc-7ac5-40b1-a4f8-c8a03845f102,validation
+-2.0,1.0,3.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250904_210451_e42b04db,2025-09-04T21:05:11.759407+00:00,4affc70d-8564-45c6-9128-c7dc7f037703,validation
+100.0,101.0,1.0,Manual credit added by admin via CLI,eliyahu@eliyahu.ai,,,,,2025-09-04T21:06:07.545300+00:00,feb42b8a-c1a0-4ce4-9778-9ec0a7ee2418,admin_credit
+-2.0,99.0,101.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250904_210552_b6f94fb5,2025-09-04T21:06:26.078804+00:00,d450f510-b694-4402-b0a8-f055064de35a,validation
+-2.0,97.0,99.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250905_122250_1fd17076,2025-09-05T12:23:16.392561+00:00,9ae5477c-c635-442b-b30f-f6feb4d1d4d1,validation
+100.0,100.0,0.0,Manual credit added by admin via CLI,eliyahu@eliyahu.ai,,,,,2025-09-05T17:47:31.874907+00:00,a3be7056-5f7c-4017-be93-9e865a833a56,admin_credit
+-2.0,98.0,100.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250905_181507_50259c81,2025-09-05T18:15:33.913931+00:00,44dd8b6d-f917-4deb-b2ec-a9085860838b,validation
+-2.0,96.0,98.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.408033,session_20250905_182243_53120bdf,2025-09-05T18:24:14.537207+00:00,cfe4e57c-f05a-49c2-a9d8-6febc324bbd6,validation
+-2.0,94.0,96.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250905_182811_b742ee07,2025-09-05T18:41:23.421797+00:00,4dfff702-809f-4417-a864-6e6e36843b23,validation
+-5.0,89.0,94.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,1.066512,session_20250905_192224_d3295902,2025-09-05T19:37:36.466938+00:00,9d4a2bd5-d0d4-41e1-a828-7f5aa0b2a007,validation
+-13.0,76.0,89.0,Full validation - 34 rows processed,eliyahu@eliyahu.ai,3.0,,4.647569999999999,session_20250905_200027_16ace9ff,2025-09-05T20:16:58.066228+00:00,48ebf20e-662b-49ad-8da4-63d7415f0328,validation
+-5.0,71.0,76.0,Full validation - 10 rows processed,eliyahu@eliyahu.ai,3.0,,0.0,session_20250908_121424_1bd56c88,2025-09-08T12:14:58.547714+00:00,86c58347-fb14-4b91-9be8-24a312e742bb,validation

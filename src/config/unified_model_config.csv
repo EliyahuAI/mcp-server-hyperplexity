@@ -1,9 +1,11 @@
 model_pattern,api_provider,priority,enabled,min_batch_size,max_batch_size,initial_batch_size,weight,rate_limit_factor,success_threshold,failure_threshold,input_cost_per_million_tokens,output_cost_per_million_tokens,notes
 # TIER 2 OPTIMIZED: Claude 4 Opus (450k input TPM, 90k output TPM, WEB SEARCH OPTIMIZED)
 claude-4-opus*,anthropic,1,true,50,200,100,1.5,0.5,5,2,15.00,75.00,Tier 2: Opus 4.x - Most expensive but highest capability
+claude-opus-4*,anthropic,1,true,50,200,100,1.5,0.5,5,2,15.00,75.00,Tier 2: Opus 4.x - Most expensive but highest capability (alternate naming)
 # TIER 2 OPTIMIZED: Claude 4 Sonnet (450k input TPM, 90k output TPM, WEB SEARCH OPTIMIZED)  
 claude-4*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,Tier 2: Sonnet 4 - Balanced performance and cost
 claude-sonnet-4*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,Tier 2: Sonnet 4 - Balanced performance and cost
+claude-4-sonnet*,anthropic,2,true,50,200,100,1.5,0.5,5,2,3.00,15.00,Tier 2: Sonnet 4 - Balanced performance and cost (alternate naming)
 
 # TIER 2 OPTIMIZED: Claude 3.7 (40k input TPM - TOKEN CONSTRAINED)
 claude-3.7*,anthropic,2,true,15,50,30,1.0,0.6,5,2,3.00,15.00,Tier 2: Sonnet 3.7 - Limited by 40k input TPM

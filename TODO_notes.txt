@@ -93,15 +93,7 @@ Email validation still has Perplexity Validaor and mentions of the privacy notic
 ----
 Refine configuration is not bringing up the questions, 
 
----
-Limiting the number of search groups may not make sense. 	
----
 
-config code changing when reused can be confusing. 
-
----
-
-inconsequential columns like index or number should be listed as "Ignored"
 
 --- 
 For validation history, we should pass the reasoning for the last value as well, and the sources. 
@@ -112,8 +104,6 @@ Sources seem sparse, make sure getting all of the citation
 ----
 new vs historical is not working 
 
----
-blue selection of found config duplicated. 
 
 -----
 had a 94% match and a failed preview over websocket that was not handled. 
@@ -133,16 +123,9 @@ No 'Results' sheet found, using first sheet: 'Congresses Master List'
 ----
 I dont think the download rich results after refinement is downloading the right files - they seem to be older and have the older name.  These files need to be saved in results as well as in downloads.     
 
-----
-I tried to get copied configs to name match but they do not. 
 
-----
-The counting n/N AI calls bounces, presumabley these are different threads.
 
----
-processing time in email is not correct (40 minutes when it was estimated to take 3 and took 4), presumable old batch information - it should be actual, should check runs dynamodb
 
-We fixed dynamodb, but email is bad
 ----
 
 Remove session from email, add the number of perplexity and claude calls. Still messy. 
@@ -151,20 +134,14 @@ Remove session from email, add the number of perplexity and claude calls. Still 
 
 Should have auto demo that do cool things and use prebuilt configurations. 
 
------
 
-Need to keep processing down to less than 15 minutes or the interface lambda will crap out, need to see if the SQS can handle this with the caching.  We can also limit the number of rows..
-
------
-Enhanced validation is coming in as input after preview for full validation - we need to stop the latest excel from finding it. 
 
 ---
 
-[FIXED] Full runs are not capturing tokens/cost like previews in the runs dynamodb:
-- Fixed by adding token/cost data to update_run_status call in background_handler.py (lines 1480-1502)
-- Full runs now store token usage, cost estimates, and validation metrics in preview_data field like preview runs
-- This ensures CSV exports have complete token metrics for both preview and full runs
-- Uses same data structure as preview runs so existing CSV export logic works correctly
+Full runs are not capturing tokens/cost like previews in the runs dynamodb:
+session_id	email	start_time	end_time	last_update	status	verbose_status	percent_complete	processed_rows	total_rows	per_row_cost	estimated_total_cost	preview_cost	quoted_full_cost	per_row_tokens	estimated_total_tokens	preview_tokens	perplexity_total_tokens	perplexity_prompt_tokens	perplexity_completion_tokens	perplexity_total_cost	perplexity_calls	anthropic_total_tokens	anthropic_input_tokens	anthropic_output_tokens	anthropic_cache_creation_tokens	anthropic_cache_read_tokens	anthropic_total_cost	anthropic_calls	search_groups_count	validated_columns_count	high_context_search_groups_count	claude_search_groups_count	preview_processing_time_seconds	estimated_total_processing_time_seconds	estimated_total_time_minutes	account_current_balance	account_sufficient_balance	account_credits_needed	account_domain_multiplier	results_s3_key	error_message	actual_processing_time_seconds	actual_time_per_batch_seconds	actual_time_per_row_seconds	batch_size
+session_20250902_200015_a130df35	eliyahu@eliyahu.ai	2025-09-02T20:16:04.906381+00:00	2025-09-02T20:17:09.310474+00:00	2025-09-02T20:17:09.310474+00:00	COMPLETED	Preview complete. Results available.	100	3	-1	0.224127	0	0	26	12925.66667	1473526	38777	24061	17598	6463	0	15	14716	12196	2520	0	0	0	6	7	20	0	2	61.37216234	184.116487	3.1	36	TRUE	0	3			64.404093	214.68031	21.468031	
+session_20250902_203418_21da4ea2	eliyahu@eliyahu.ai	2025-09-02T20:34:56.301959+00:00	2025-09-02T20:37:59.387259+00:00	2025-09-02T20:37:59.387259+00:00	COMPLETED	Enhanced batch processing completed	100	114	-1																									176.29489	2.938248167					results/eliyahu.ai/eliyahu/session_20250902_203418_21da4ea2.zip		176.29489	15.46446404	1.546446404	50
 
 -----
 
@@ -184,11 +161,54 @@ Lets move to 2 buttons: Use match (only if match found) leave the configuration 
 ----
 
 Need to remove the debug console messages for message routing. 
+
+----
+add table wide memory if it comes across it should store by key, we should pass this info up to the validator. 
+
+--- 
+
+You should be able to revert configuration
+
 ---
-Working on
-- preview download
-- websockets real meassaging
-- deleted validation record for Eliyahu.ai and added 100
-- adaptive batch size
+After full validation, you should be able to specify specific rows for preview.  Perhaps ask this first then run a preview with refine triggered?
 
+----
+No getting sources off of claude. 
 
+----
+Using \n in cell comments does not work. 
+
+----
+Need beeter notice about enabling editing to see comments. 
+
+---
+
+WORKING ON
+----
+The counting n/N AI calls bounces, presumabley these are different threads.
+
+---
+processing time in email is not correct (40 minutes when it was estimated to take 3 and took 4), presumable old batch information - it should be actual, should check runs dynamodb
+
+We fixed dynamodb, but email is bad
+
+----
+I tried to get copied configs to name match but they do not. 
+
+-----
+
+Need to keep processing down to less than 15 minutes or the interface lambda will crap out, need to see if the SQS can handle this with the caching.  We can also limit the number of rows.
+
+---
+Limiting the number of search groups may not make sense. 	
+---
+
+config code changing when reused can be confusing. 
+
+---
+
+inconsequential columns like index or number should be listed as "Ignored"
+
+--- 
+
+Cleaning up Receipt

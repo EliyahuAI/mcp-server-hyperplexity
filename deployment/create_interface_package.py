@@ -67,10 +67,7 @@ LAMBDA_CONFIG = {
     },
     "TracingConfig": {
         "Mode": "Active"  # Enable X-Ray tracing for better debugging
-    },
-    "Layers": [
-        "arn:aws:lambda:us-east-1:770693421928:layer:Klayers-p39-pillow:2"  # Pre-compiled Pillow for Lambda
-    ]
+    }
 }
 
 # API Gateway configuration

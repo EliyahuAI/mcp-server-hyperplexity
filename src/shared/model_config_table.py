@@ -38,6 +38,7 @@ class ModelConfigTable:
     def load_config_from_csv(self, csv_file_path: str) -> int:
         """
         Load model configurations from CSV into DynamoDB.
+        Replaces existing configurations with the same pattern.
         
         Args:
             csv_file_path: Path to the unified model config CSV file
@@ -48,54 +49,67 @@ class ModelConfigTable:
         loaded_count = 0
         
         try:
+            # Read and parse the CSV
             with open(csv_file_path, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 # Skip comment lines and empty lines
                 rows = [row for row in reader if not row.get('model_pattern', '').startswith('#')]
+            
+            # Get all patterns that will be loaded
+            patterns_to_load = set()
+            for row in rows:
+                if row.get('model_pattern'):
+                    patterns_to_load.add(row['model_pattern'].strip())
+            
+            # Delete existing entries for these patterns to avoid duplicates
+            logger.info(f"Removing existing configurations for {len(patterns_to_load)} patterns")
+            for pattern in patterns_to_load:
+                self._delete_pattern_configs(pattern)
                 
-                for row in rows:
-                    if not row.get('model_pattern'):
-                        continue
+            # Load new configurations
+            for row in rows:
+                if not row.get('model_pattern'):
+                    continue
+                    
+                try:
+                    config_id = str(uuid.uuid4())
+                    timestamp = datetime.now(timezone.utc).isoformat()
+                    
+                    item = {
+                        'config_id': config_id,
+                        'model_pattern': row['model_pattern'].strip(),
+                        'api_provider': row.get('api_provider', 'unknown').strip(),
+                        'priority': int(row['priority']),
+                        'enabled': row['enabled'].lower() in ('true', '1', 'yes'),
+                        'last_updated': timestamp,
+                        'created_at': timestamp,
                         
-                    try:
-                        config_id = str(uuid.uuid4())
-                        timestamp = datetime.now(timezone.utc).isoformat()
+                        # Batch sizing configuration
+                        'min_batch_size': int(row['min_batch_size']),
+                        'max_batch_size': int(row['max_batch_size']),
+                        'initial_batch_size': int(row['initial_batch_size']),
+                        'weight': Decimal(str(float(row['weight']))),
+                        'rate_limit_factor': Decimal(str(float(row['rate_limit_factor']))),
+                        'success_threshold': int(row['success_threshold']),
+                        'failure_threshold': int(row['failure_threshold']),
                         
-                        item = {
-                            'config_id': config_id,
-                            'model_pattern': row['model_pattern'].strip(),
-                            'api_provider': row.get('api_provider', 'unknown').strip(),
-                            'priority': int(row['priority']),
-                            'enabled': row['enabled'].lower() in ('true', '1', 'yes'),
-                            'last_updated': timestamp,
-                            'created_at': timestamp,
-                            
-                            # Batch sizing configuration
-                            'min_batch_size': int(row['min_batch_size']),
-                            'max_batch_size': int(row['max_batch_size']),
-                            'initial_batch_size': int(row['initial_batch_size']),
-                            'weight': Decimal(str(float(row['weight']))),
-                            'rate_limit_factor': Decimal(str(float(row['rate_limit_factor']))),
-                            'success_threshold': int(row['success_threshold']),
-                            'failure_threshold': int(row['failure_threshold']),
-                            
-                            # Pricing configuration
-                            'input_cost_per_million_tokens': Decimal(str(float(row['input_cost_per_million_tokens']))),
-                            'output_cost_per_million_tokens': Decimal(str(float(row['output_cost_per_million_tokens']))),
-                            
-                            'notes': row.get('notes', '').strip(),
-                            
-                            # TTL: Keep configs for 1 year unless updated
-                            'ttl': int((datetime.now(timezone.utc).timestamp() + (365 * 24 * 60 * 60)))
-                        }
+                        # Pricing configuration
+                        'input_cost_per_million_tokens': Decimal(str(float(row['input_cost_per_million_tokens']))),
+                        'output_cost_per_million_tokens': Decimal(str(float(row['output_cost_per_million_tokens']))),
                         
-                        self.table.put_item(Item=item)
-                        loaded_count += 1
+                        'notes': row.get('notes', '').strip(),
                         
-                        logger.info(f"Loaded config: {item['model_pattern']} (priority {item['priority']})")
-                        
-                    except (ValueError, KeyError) as e:
-                        logger.error(f"Invalid config row: {row}. Error: {e}")
+                        # TTL: Keep configs for 1 year unless updated
+                        'ttl': int((datetime.now(timezone.utc).timestamp() + (365 * 24 * 60 * 60)))
+                    }
+                    
+                    self.table.put_item(Item=item)
+                    loaded_count += 1
+                    
+                    logger.info(f"Loaded config: {item['model_pattern']} (priority {item['priority']})")
+                    
+                except (ValueError, KeyError) as e:
+                    logger.error(f"Invalid config row: {row}. Error: {e}")
             
             logger.info(f"Successfully loaded {loaded_count} model configurations from {csv_file_path}")
             return loaded_count
@@ -103,6 +117,23 @@ class ModelConfigTable:
         except Exception as e:
             logger.error(f"Failed to load CSV file: {e}")
             return 0
+    
+    def _delete_pattern_configs(self, pattern: str):
+        """Delete all existing configurations for a specific pattern."""
+        try:
+            # Scan for existing configs with this pattern
+            response = self.table.scan(
+                FilterExpression='model_pattern = :pattern',
+                ExpressionAttributeValues={':pattern': pattern}
+            )
+            
+            # Delete each found item
+            for item in response.get('Items', []):
+                self.table.delete_item(Key={'config_id': item['config_id']})
+                logger.debug(f"Deleted existing config for pattern: {pattern}")
+                
+        except Exception as e:
+            logger.warning(f"Failed to delete existing configs for pattern {pattern}: {e}")
     
     def get_config_for_model(self, model_name: str) -> Optional[Dict[str, Any]]:
         """
