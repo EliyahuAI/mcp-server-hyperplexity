@@ -2729,23 +2729,63 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         all_enhanced_call_data = []
         
         # Extract enhanced data from all responses
+        logger.info(f"[AGG_DEBUG] Starting enhanced data extraction from {len(validation_results)} rows")
         for row_idx, row_result in validation_results.items():
             if '_raw_responses' in row_result:
+                logger.info(f"[AGG_DEBUG] Row {row_idx}: Found {len(row_result['_raw_responses'])} raw responses")
                 for response_id, response_data in row_result['_raw_responses'].items():
                     enhanced_data = response_data.get('enhanced_data')
                     if enhanced_data:
+                        # Debug: Check what enhanced data contains
+                        costs = enhanced_data.get('costs', {})
+                        actual_cost = costs.get('actual', {}).get('total_cost', 0.0)
+                        estimated_cost = costs.get('without_cache', {}).get('total_cost', 0.0)
+                        provider_metrics = enhanced_data.get('provider_metrics', {})
+                        
+                        logger.info(f"[AGG_DEBUG] Row {row_idx}, Response {response_id}: "
+                                  f"Actual cost: ${actual_cost:.6f}, Estimated cost: ${estimated_cost:.6f}, "
+                                  f"Provider metrics: {list(provider_metrics.keys())}")
+                        
                         # Add row context for tracking
                         enhanced_data_with_context = enhanced_data.copy()
                         enhanced_data_with_context['row_idx'] = row_idx
                         enhanced_data_with_context['response_id'] = response_id
                         all_enhanced_call_data.append(enhanced_data_with_context)
+                    else:
+                        logger.warning(f"[AGG_DEBUG] Row {row_idx}, Response {response_id}: No enhanced_data found")
+            else:
+                logger.warning(f"[AGG_DEBUG] Row {row_idx}: No _raw_responses found")
         
         # Use ai_client aggregation methods instead of manual calculations
         if all_enhanced_call_data:
-            logger.info(f"Aggregating enhanced data from {len(all_enhanced_call_data)} ai_client calls")
+            logger.info(f"[AGG_DEBUG] Collected {len(all_enhanced_call_data)} enhanced call data items for aggregation")
+            
+            # Debug: Summary of what we're about to aggregate
+            total_calls_to_aggregate = len(all_enhanced_call_data)
+            providers_found = set()
+            costs_preview = []
+            for item in all_enhanced_call_data:
+                provider_metrics = item.get('provider_metrics', {})
+                providers_found.update(provider_metrics.keys())
+                costs = item.get('costs', {})
+                actual_cost = costs.get('actual', {}).get('total_cost', 0.0)
+                costs_preview.append(f"${actual_cost:.6f}")
+            
+            logger.info(f"[AGG_DEBUG] About to aggregate: {total_calls_to_aggregate} calls, "
+                      f"Providers: {list(providers_found)}, "
+                      f"Sample costs: {costs_preview[:5]}...")
+            
             try:
                 # Use ai_client.aggregate_provider_metrics() to get comprehensive aggregated data
                 aggregated_metrics = ai_client.aggregate_provider_metrics(all_enhanced_call_data)
+                
+                # Debug: Check what came out of aggregation
+                providers = aggregated_metrics.get('providers', {})
+                totals = aggregated_metrics.get('totals', {})
+                logger.info(f"[AGG_DEBUG] Aggregation complete - Providers: {list(providers.keys())}, "
+                          f"Total calls: {totals.get('total_calls', 0)}, "
+                          f"Total actual cost: ${totals.get('total_cost_actual', 0.0):.6f}, "
+                          f"Total estimated cost: ${totals.get('total_cost_without_cache', 0.0):.6f}")
                 
                 # For preview operations, also calculate full validation estimates
                 if event.get('is_preview', False):

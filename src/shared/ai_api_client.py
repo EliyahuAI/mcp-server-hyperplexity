@@ -1029,7 +1029,10 @@ class AIAPIClient:
             Aggregated metrics by provider with comprehensive statistics
         """
         try:
+            logger.info(f"[AGGREGATE_DEBUG] Starting aggregation of {len(call_metrics_list)} call metrics")
+            
             if not call_metrics_list:
+                logger.warning("[AGGREGATE_DEBUG] No call metrics provided for aggregation")
                 return {'providers': {}, 'totals': {}, 'error': 'no_metrics_provided'}
             
             providers = {}
@@ -1045,11 +1048,20 @@ class AIAPIClient:
                 'overall_cache_efficiency': 0.0
             }
             
-            for call_metrics in call_metrics_list:
+            for i, call_metrics in enumerate(call_metrics_list):
                 if 'provider_metrics' not in call_metrics:
+                    logger.warning(f"[AGGREGATE_DEBUG] Call {i}: No provider_metrics found")
                     continue
+                
+                provider_metrics_dict = call_metrics['provider_metrics']
+                logger.debug(f"[AGGREGATE_DEBUG] Call {i}: Processing {len(provider_metrics_dict)} providers: {list(provider_metrics_dict.keys())}")
                     
-                for provider, metrics in call_metrics['provider_metrics'].items():
+                for provider, metrics in provider_metrics_dict.items():
+                    calls_count = metrics.get('calls', 0)
+                    cost_actual = metrics.get('cost_actual', 0.0)
+                    cost_without_cache = metrics.get('cost_without_cache', 0.0)
+                    logger.debug(f"[AGGREGATE_DEBUG] Call {i}, Provider {provider}: "
+                               f"calls={calls_count}, cost_actual=${cost_actual:.6f}, cost_without_cache=${cost_without_cache:.6f}")
                     if provider not in providers:
                         providers[provider] = {
                             'calls': 0,
@@ -1111,6 +1123,20 @@ class AIAPIClient:
             # Calculate overall efficiency
             if totals['total_cost_without_cache'] > 0:
                 totals['overall_cache_efficiency'] = (totals['total_cache_savings_cost'] / totals['total_cost_without_cache']) * 100
+            
+            # Debug: Final aggregation summary
+            logger.info(f"[AGGREGATE_DEBUG] Final aggregation results: "
+                      f"Providers: {list(providers.keys())}, "
+                      f"Total calls: {totals.get('total_calls', 0)}, "
+                      f"Total actual cost: ${totals.get('total_cost_actual', 0.0):.6f}, "
+                      f"Total estimated cost: ${totals.get('total_cost_without_cache', 0.0):.6f}")
+            
+            for provider, provider_data in providers.items():
+                logger.info(f"[AGGREGATE_DEBUG] Provider {provider}: "
+                          f"calls={provider_data.get('calls', 0)}, "
+                          f"tokens={provider_data.get('tokens', 0)}, "
+                          f"cost_actual=${provider_data.get('cost_actual', 0.0):.6f}, "
+                          f"cost_without_cache=${provider_data.get('cost_without_cache', 0.0):.6f}")
             
             return {
                 'providers': providers,
