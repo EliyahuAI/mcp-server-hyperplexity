@@ -797,7 +797,8 @@ def setup_shared_module_path():
         if path and os.path.exists(path) and path not in sys.path:
             sys.path.insert(0, path)
 
-def load_pricing_data() -> Dict[str, Dict[str, float]]:
+# REMOVED: load_pricing_data() function - moved to ai_api_client.py
+def load_pricing_data_REMOVED() -> Dict[str, Dict[str, float]]:
     """Load pricing data from DynamoDB model config table, fallback to CSV."""
     pricing_data = {}
     
@@ -884,7 +885,8 @@ def load_pricing_data() -> Dict[str, Dict[str, float]]:
     
     return pricing_data
 
-def calculate_token_costs(token_usage: Dict[str, Any], pricing_data: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+# REMOVED: calculate_token_costs() function - moved to ai_api_client.py  
+def calculate_token_costs_REMOVED(token_usage: Dict[str, Any], pricing_data: Dict[str, Dict[str, float]]) -> Dict[str, float]:
     """Calculate costs based on token usage and pricing data."""
     if not token_usage:
         return {'input_cost': 0.0, 'output_cost': 0.0, 'total_cost': 0.0}
@@ -2881,24 +2883,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             total_tokens = usage.get('total_tokens', 0)
                             total_token_usage['total_tokens'] += total_tokens
                             
-                            # Enhanced cost data should come from ai_client response, not manual calculation
-                            # Extract enhanced cost data from ai_client result
-                            enhanced_data = response_data.get('enhanced_data', {})
-                            costs_section = enhanced_data.get('costs', {})
-                            
-                            # Get actual costs (with cache benefits) for actual cost tracking
-                            actual_costs = costs_section.get('actual', {})
-                            # Get estimated costs (without cache) for projection/estimation
-                            estimated_costs = costs_section.get('without_cache', {})
-                            
-                            
-                            costs = {
-                                'input_cost': actual_costs.get('input_cost', 0.0),
-                                'output_cost': actual_costs.get('output_cost', 0.0),
-                                'total_cost': actual_costs.get('total_cost', 0.0),
-                                'estimated_total_cost': estimated_costs.get('total_cost', 0.0)
-                            }
-                            # total_token_usage['total_cost'] += costs['total_cost']
+                            # REMOVED: Manual cost extraction - all costs now handled by enhanced_data aggregation
+                            # No individual cost calculations should happen here
                     
                     # Aggregate processing time for this row
                     if 'processing_time' in response_data:
@@ -2925,22 +2911,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         if usage:  # Only process if token_usage is not empty
                             api_provider = usage.get('api_provider', 'unknown')
                             total_tokens = usage.get('total_tokens', 0)
-                            # Extract enhanced cost data from ai_client result
-                            enhanced_data = response_data.get('enhanced_data', {})
-                            costs_section = enhanced_data.get('costs', {})
-                            
-                            # Get actual costs (with cache benefits) for actual cost tracking
-                            actual_costs = costs_section.get('actual', {})
-                            # Get estimated costs (without cache) for projection/estimation
-                            estimated_costs = costs_section.get('without_cache', {})
-                            
-                            
-                            costs = {
-                                'input_cost': actual_costs.get('input_cost', 0.0),
-                                'output_cost': actual_costs.get('output_cost', 0.0),
-                                'total_cost': actual_costs.get('total_cost', 0.0),
-                                'estimated_total_cost': estimated_costs.get('total_cost', 0.0)
-                            }
+                            # REMOVED: Manual cost extraction - handled by enhanced_data aggregation
                             is_cached = response_data.get('is_cached', False)
                             # Aggregate by provider
                             if api_provider == 'perplexity':
@@ -2957,13 +2928,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 provider_usage['completion_tokens'] += output_tokens  # ai_api_client normalizes to output_tokens
                                 provider_usage['total_tokens'] += total_tokens
                                 provider_usage['calls'] += 1
-                                # Add to estimated cost (always) and actual cost (only if not cached)
-                                if not is_cached:
-                                    provider_usage['input_cost'] += costs['input_cost']
-                                    provider_usage['output_cost'] += costs['output_cost']
-                                    provider_usage['total_cost'] += costs['total_cost']
-                                # Always add to estimated totals for projection
-                                total_token_usage['estimated_total_cost'] += costs['estimated_total_cost']
+                                # REMOVED: Manual cost aggregation - handled by enhanced_data aggregation
                             elif api_provider == 'anthropic':
                                 provider_usage = total_token_usage['by_provider']['anthropic']
                                 provider_usage['input_tokens'] += usage.get('input_tokens', 0)
@@ -2972,13 +2937,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 provider_usage['cache_read_tokens'] += usage.get('cache_read_tokens', 0)
                                 provider_usage['total_tokens'] += total_tokens
                                 provider_usage['calls'] += 1
-                                # Add to estimated cost (always) and actual cost (only if not cached)
-                                if not is_cached:
-                                    provider_usage['input_cost'] += costs['input_cost']
-                                    provider_usage['output_cost'] += costs['output_cost']
-                                    provider_usage['total_cost'] += costs['total_cost']
-                                # Always add to estimated totals for projection
-                                total_token_usage['estimated_total_cost'] += costs['estimated_total_cost']
+                                # REMOVED: Manual cost aggregation - handled by enhanced_data aggregation
                             
                             # Track by model
                             model = response_data.get('model', 'unknown')
