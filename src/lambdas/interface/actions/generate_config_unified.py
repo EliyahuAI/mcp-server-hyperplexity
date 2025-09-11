@@ -19,7 +19,7 @@ from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 from interface_lambda.utils.helpers import create_response
 from shared_table_parser import s3_table_parser
 from interface_lambda.core.sqs_service import send_config_generation_request
-from dynamodb_schemas import update_run_status, get_connection_by_session, remove_websocket_connection
+from dynamodb_schemas import update_run_status, get_connection_by_session, remove_websocket_connection, create_run_record
 from interface_lambda.core.validator_invoker import invoke_validator_lambda
 from interface_lambda.reporting.zip_report import create_enhanced_result_zip
 from interface_lambda.reporting.markdown_report import create_markdown_table_from_results
@@ -29,6 +29,103 @@ from dynamodb_schemas import update_processing_metrics, track_email_delivery, tr
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+def _enhance_config_generation_costs(eliyahu_cost: float, token_usage: dict, processing_time: float, is_cached: bool) -> dict:
+    """
+    Enhance config generation cost tracking with three-tier cost analysis.
+    
+    Args:
+        eliyahu_cost: Actual cost paid for config generation
+        token_usage: Token usage data from config lambda
+        processing_time: Processing time in seconds
+        is_cached: Whether the response was cached
+        
+    Returns:
+        Enhanced cost data with efficiency metrics
+    """
+    try:
+        # Calculate estimated cost without cache benefit
+        if is_cached:
+            # For config generation, if cached, estimate what non-cached cost would be
+            # Use token-based estimation for cached responses
+            total_tokens = token_usage.get('total_tokens', 0)
+            if total_tokens > 0:
+                # Conservative estimate: $3 per million input tokens, $15 per million output tokens
+                input_tokens = token_usage.get('input_tokens', total_tokens // 2)
+                output_tokens = token_usage.get('output_tokens', total_tokens - input_tokens)
+                estimated_cost_without_cache = (input_tokens * 3.0 / 1_000_000) + (output_tokens * 15.0 / 1_000_000)
+            else:
+                # Fallback: assume cached saved 80% of cost
+                estimated_cost_without_cache = eliyahu_cost / 0.2 if eliyahu_cost > 0 else 0.01
+        else:
+            # If not cached, estimated cost equals actual cost
+            estimated_cost_without_cache = eliyahu_cost
+        
+        # Config generation is typically free to users, but track internal costs
+        internal_cost = eliyahu_cost
+        user_cost = 0.0  # Config generation is free
+        
+        # Calculate efficiency metrics
+        total_tokens = token_usage.get('total_tokens', 0)
+        cost_per_token = internal_cost / max(1, total_tokens)
+        tokens_per_second = total_tokens / max(0.001, processing_time)
+        cost_per_second = internal_cost / max(0.001, processing_time)
+        
+        # Config generation efficiency score (tokens per dollar per second)
+        efficiency_score = tokens_per_second / max(0.001, cost_per_second)
+        
+        # Calculate cache savings if applicable
+        cache_savings = estimated_cost_without_cache - eliyahu_cost if is_cached else 0.0
+        
+        enhanced_data = {
+            'eliyahu_cost': internal_cost,  # What we paid
+            'estimated_cost_without_cache': estimated_cost_without_cache,  # Estimated without caching
+            'user_cost': user_cost,  # What user pays (free for config)
+            'cache_savings': cache_savings,
+            'is_cached': is_cached,
+            'processing_time': processing_time,
+            'efficiency_metrics': {
+                'total_tokens': total_tokens,
+                'cost_per_token': cost_per_token,
+                'tokens_per_second': tokens_per_second,
+                'cost_per_second': cost_per_second,
+                'efficiency_score': efficiency_score
+            },
+            'operation_type': 'config_generation'
+        }
+        
+        # Validation
+        if internal_cost < 0 or estimated_cost_without_cache < 0:
+            logger.error(f"[CONFIG_COST_ERROR] Negative costs detected - Internal: ${internal_cost:.6f}, "
+                        f"Estimated: ${estimated_cost_without_cache:.6f}")
+            enhanced_data['eliyahu_cost'] = max(0.0, internal_cost)
+            enhanced_data['estimated_cost_without_cache'] = max(0.0, estimated_cost_without_cache)
+        
+        logger.info(f"[CONFIG_COST_ANALYSIS] Enhanced config cost data - "
+                   f"Internal: ${internal_cost:.6f}, Estimated: ${estimated_cost_without_cache:.6f}, "
+                   f"Cache savings: ${cache_savings:.6f}, Efficiency: {efficiency_score:.2f}")
+        
+        return enhanced_data
+        
+    except Exception as e:
+        logger.error(f"[CONFIG_COST_ERROR] Error enhancing config generation costs: {e}")
+        return {
+            'eliyahu_cost': eliyahu_cost,
+            'estimated_cost_without_cache': eliyahu_cost,
+            'user_cost': 0.0,
+            'cache_savings': 0.0,
+            'is_cached': is_cached,
+            'processing_time': processing_time,
+            'efficiency_metrics': {
+                'total_tokens': 0,
+                'cost_per_token': 0.0,
+                'tokens_per_second': 0.0,
+                'cost_per_second': 0.0,
+                'efficiency_score': 0.0
+            },
+            'operation_type': 'config_generation',
+            'error': str(e)
+        }
 
 def get_next_config_version(email: str, session_id: str) -> int:
     """Get the next version number for config files"""
@@ -178,6 +275,48 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
         
         if not email or not session_id:
             return {'success': False, 'error': 'Missing email or session_id'}
+        
+        # Get input table name early for runs table tracking
+        input_table_name = f"table_{session_id}"
+        try:
+            # Try to get the actual Excel filename from unified storage
+            storage_manager_temp = UnifiedS3Manager()
+            excel_content, excel_s3_key = storage_manager_temp.get_excel_file(email, session_id)
+            if excel_s3_key:
+                input_table_name = excel_s3_key.split('/')[-1]  # Get filename from S3 key
+        except Exception as e:
+            logger.warning(f"Could not get Excel filename for runs table: {e}")
+            
+        # Determine run type based on whether existing config is provided
+        is_refinement = existing_config is not None and existing_config.get('config_change_log')
+        run_type = "Config Refinement" if is_refinement else "Config Generation"
+        
+        # Create runs table record for config generation/refinement tracking
+        logger.info(f"[CONFIG_RUN_TRACKING] Creating {run_type.lower()} run record for session {session_id}")
+        try:
+            run_key = create_run_record(session_id=session_id, email=email, total_rows=0, batch_size=1, run_type=run_type)
+            logger.info(f"[CONFIG_RUN_TRACKING] Created run record with run_key: {run_key}")
+            update_run_status(
+                session_id=session_id,
+                run_key=run_key,
+                status='IN_PROGRESS',
+                run_type=run_type,
+                verbose_status=f"{run_type} starting with AI analysis...",
+                percent_complete=5,
+                processed_rows=0,
+                total_rows=0,  # Config generation doesn't process data rows
+                input_table_name=input_table_name,
+                account_current_balance=0,  # Will be updated later
+                account_sufficient_balance="n/a",
+                account_credits_needed="n/a", 
+                account_domain_multiplier=1.0,  # Config generation typically doesn't use domain multiplier
+                models="TBD",  # Will be updated after AI processing
+                batch_size=1,  # Config generation batch size
+                eliyahu_cost=0.0,  # Will be updated after completion
+                time_per_row_seconds=0.0  # Will be updated after completion
+            )
+        except Exception as e:
+            logger.warning(f"[CONFIG_RUN_TRACKING] Failed to create run record: {e}")
         
         # Initialize unified storage
         storage_manager = UnifiedS3Manager()
@@ -341,9 +480,10 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
             body = json.loads(result['body']) if isinstance(result.get('body'), str) else result.get('body', {})
             
             if not body.get('success'):
+                error_message = body.get('error', 'Unknown error')
                 error_response = {
                     'success': False, 
-                    'error': body.get('error', 'Unknown error'),
+                    'error': error_message,
                     'error_type': body.get('error_type', 'unknown')
                 }
                 
@@ -357,6 +497,22 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 # Include error details for debugging if available
                 if body.get('error_details'):
                     logger.error(f"Config generation error details: {body.get('error_details')}")
+                
+                # Update runs table with config lambda failure
+                try:
+                    logger.info(f"[CONFIG_RUN_TRACKING] Updating {run_type.lower()} run record with config lambda failure")
+                    update_run_status(
+                        session_id=session_id,
+                        run_key=run_key,
+                        status='FAILED',
+                        run_type=run_type,
+                        verbose_status=f"{run_type} failed in config lambda",
+                        percent_complete=0,
+                        error_message=error_message
+                    )
+                    logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated config generation run record with config lambda failure")
+                except Exception as run_error:
+                    logger.error(f"[CONFIG_RUN_TRACKING] Failed to update run record with config lambda failure: {run_error}")
                 
                 return error_response
             
@@ -426,6 +582,105 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
             
             logger.info(f"Config generation completed successfully for session {session_id}")
             
+            # ========== ENHANCED CONFIG GENERATION COST INTEGRATION ==========
+            # Extract cost and usage data from config lambda response (now uses centralized ai_api_client)
+            eliyahu_cost = body.get('eliyahu_cost', 0.0)  # Actual cost paid
+            token_usage = body.get('token_usage', {})
+            processing_time = body.get('processing_time', 0.0)
+            model_used = body.get('model_used', 'unknown')
+            is_cached = body.get('is_cached', False)
+            
+            # Calculate enhanced cost metrics for config generation
+            enhanced_config_cost_data = _enhance_config_generation_costs(
+                eliyahu_cost, token_usage, processing_time, is_cached
+            )
+            
+            # Update runs table with completion data
+            logger.info(f"[CONFIG_RUN_TRACKING] Updating {run_type.lower()} run record with completion data")
+            try:
+                # Determine which AI models were used - with call counts for config operation
+                models_text = f"{model_used} X 1"
+                if is_cached:
+                    models_text += " (cached)"
+                
+                # Use the input table name we got earlier (no need to fetch again)
+                
+                # ========== ENHANCED PREVIEW DATA WITH THREE-TIER COSTS ==========
+                # Build enhanced token usage summary for preview_data
+                preview_data = {
+                    "token_usage": {
+                        "total_tokens": token_usage.get('total_tokens', 0),
+                        "by_provider": {
+                            "anthropic" if 'claude' in model_used.lower() else "perplexity": {
+                                "prompt_tokens": token_usage.get('input_tokens', 0),
+                                "completion_tokens": token_usage.get('output_tokens', 0),
+                                "total_cost": eliyahu_cost,
+                                "calls": 1
+                            }
+                        }
+                    },
+                    "enhanced_cost_data": enhanced_config_cost_data,  # Full cost analysis
+                    "cost_summary": {
+                        "internal_cost": enhanced_config_cost_data.get('eliyahu_cost', 0.0),
+                        "estimated_cost_without_cache": enhanced_config_cost_data.get('estimated_cost_without_cache', 0.0),
+                        "user_cost": enhanced_config_cost_data.get('user_cost', 0.0),
+                        "cache_savings": enhanced_config_cost_data.get('cache_savings', 0.0),
+                        "efficiency_score": enhanced_config_cost_data.get('efficiency_metrics', {}).get('efficiency_score', 0.0)
+                    }
+                }
+                
+                # Calculate timing metrics for config operation
+                time_per_config = processing_time  # For config operation, it's time per config
+                
+                # Convert config token_usage data to enhanced provider metrics format
+                provider_metrics_for_db = {}
+                provider_name = "anthropic" if 'claude' in model_used.lower() else "perplexity"
+                
+                if eliyahu_cost > 0 or token_usage.get('total_tokens', 0) > 0:
+                    # Estimate cost without cache for config operations
+                    cache_multiplier = 1.2 if is_cached else 1.0  # Modest increase for cached configs
+                    estimated_cost_without_cache = eliyahu_cost * cache_multiplier
+                    
+                    provider_metrics_for_db[provider_name] = {
+                        'calls': 1,
+                        'tokens': token_usage.get('total_tokens', 0),
+                        'cost_actual': eliyahu_cost,
+                        'cost_without_cache': estimated_cost_without_cache,
+                        'processing_time': processing_time,
+                        'cache_hit_tokens': token_usage.get('total_tokens', 0) if is_cached else 0,
+                        'cost_per_row_actual': eliyahu_cost,  # For config, "per row" is per config
+                        'cost_per_row_without_cache': estimated_cost_without_cache,
+                        'time_per_row_actual': processing_time,
+                        'cache_efficiency_percent': ((estimated_cost_without_cache - eliyahu_cost) / max(estimated_cost_without_cache, 0.000001)) * 100 if is_cached else 0
+                    }
+                
+                # Update runs table with completion
+                update_run_status(
+                    session_id=session_id,
+                    run_key=run_key,
+                    status='COMPLETED',
+                    run_type=run_type,
+                    verbose_status=f"{run_type} completed successfully",
+                    percent_complete=100,
+                    processed_rows=1,  # One config generated
+                    total_rows=0,  # No validation rows processed
+                    input_table_name=input_table_name,
+                    models=models_text,
+                    preview_data=preview_data,
+                    # ========== THREE-TIER COST TRACKING FOR CONFIG OPERATIONS ==========
+                    eliyahu_cost=enhanced_config_cost_data.get('eliyahu_cost', 0.0),  # Actual internal cost paid
+                    quoted_validation_cost=enhanced_config_cost_data.get('user_cost', 0.0),  # What user pays (free for config)
+                    estimated_validation_eliyahu_cost=enhanced_config_cost_data.get('estimated_cost_without_cache', 0.0),  # Estimated cost without caching
+                    time_per_row_seconds=None,  # Not applicable for config operations
+                    estimated_validation_time_minutes=None,  # Not applicable for config operations
+                    run_time_s=processing_time,  # Actual config operation time in seconds
+                    provider_metrics=provider_metrics_for_db  # Enhanced provider-specific metrics
+                )
+                logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated {run_type.lower()} run record")
+                
+            except Exception as e:
+                logger.error(f"[CONFIG_RUN_TRACKING] Failed to update run record with completion: {e}")
+            
             # Get config filename from the config lambda response
             config_filename = body.get('config_filename')
             if config_filename:
@@ -435,6 +690,7 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 updated_config['generation_metadata']['config_lambda_filename'] = config_filename
                 logger.info(f"Config lambda filename: {config_filename}")
             
+            # ========== ENHANCED RESPONSE WITH COST ANALYSIS ==========
             return {
                 'success': True,
                 'updated_config': updated_config,
@@ -448,15 +704,64 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 'config_filename': config_filename,  # Include config lambda filename
                 'storage_path': storage_result['session_path'],
                 'download_url': download_url,
-                'session_id': session_id
+                'session_id': session_id,
+                # Enhanced cost tracking for config generation
+                'cost_analysis': {
+                    'internal_cost': enhanced_config_cost_data.get('eliyahu_cost', 0.0),
+                    'estimated_cost_without_cache': enhanced_config_cost_data.get('estimated_cost_without_cache', 0.0),
+                    'user_cost': enhanced_config_cost_data.get('user_cost', 0.0),
+                    'cache_savings': enhanced_config_cost_data.get('cache_savings', 0.0),
+                    'is_cached': is_cached,
+                    'processing_time': processing_time,
+                    'efficiency_score': enhanced_config_cost_data.get('efficiency_metrics', {}).get('efficiency_score', 0.0),
+                    'operation_type': 'config_generation'
+                }
             }
             
         except Exception as e:
             logger.error(f"Config lambda invocation failed: {str(e)}")
+            # Update runs table with failure
+            try:
+                logger.info(f"[CONFIG_RUN_TRACKING] Updating {run_type.lower()} run record with failure")
+                update_run_status(
+                    session_id=session_id,
+                    run_key=run_key,
+                    status='FAILED',
+                    run_type=run_type,
+                    verbose_status=f"{run_type} failed",
+                    percent_complete=0,
+                    error_message=str(e)
+                )
+                logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated {run_type.lower()} run record with failure")
+            except Exception as run_error:
+                logger.error(f"[CONFIG_RUN_TRACKING] Failed to update run record with failure: {run_error}")
+            
             return {'success': False, 'error': f'Config generation failed: {str(e)}'}
         
     except Exception as e:
         logger.error(f"Config generation error: {str(e)}")
+        # Update runs table with exception failure (use default run_type if not set)
+        try:
+            # Use session_id and existing_config to determine run_type if not already set
+            if 'run_type' not in locals():
+                is_refinement = existing_config is not None and existing_config.get('config_change_log')
+                run_type = "Config Refinement" if is_refinement else "Config Generation"
+            
+            logger.info(f"[CONFIG_RUN_TRACKING] Updating {run_type.lower()} run record with exception failure")
+            # Use run_key if available for composite key
+            update_run_status(
+                session_id=session_id,
+                run_key=run_key if 'run_key' in locals() else None,
+                status='FAILED',
+                run_type=run_type,
+                verbose_status=f"{run_type} failed with exception",
+                percent_complete=0,
+                error_message=str(e)
+            )
+            logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated {run_type.lower()} run record with exception failure")
+        except Exception as run_error:
+            logger.error(f"[CONFIG_RUN_TRACKING] Failed to update run record with exception failure: {run_error}")
+        
         return {'success': False, 'error': f'Config generation failed: {str(e)}'}
 
 def handle_generate_config_sync(request_data, context):

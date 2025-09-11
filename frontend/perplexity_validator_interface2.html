@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hyperplexity Table Validator - Powered by Eliyahu.AI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hyperplexity Table Validator - Mobile - Powered by Eliyahu.AI</title>
     
     <!-- Markdown renderer -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
@@ -37,6 +37,11 @@
     * {
         box-sizing: border-box;
     }
+    
+    /* Prevent horizontal scrolling issues */
+    html {
+        overflow-x: hidden;
+    }
 
     body {
         font-family: var(--font-family);
@@ -51,8 +56,17 @@
     /* Container */
     .validator-container {
         max-width: 1200px;
-        margin: 2rem auto;
-        padding: 0 2rem;
+        margin: 1rem auto;
+        padding: 0 1rem;
+    }
+    
+    /* Mobile-specific responsive styles */
+    @media (max-width: 768px) {
+        .validator-container {
+            margin: 0.5rem auto;
+            padding: 0 0.75rem;
+            max-width: 100%;
+        }
     }
 
     /* Header */
@@ -100,6 +114,16 @@
         transform-origin: center top;
         will-change: transform, opacity;
         color: #333333 !important;
+        /* Mobile responsive */
+        width: 100%;
+        box-sizing: border-box;
+    }
+    
+    @media (max-width: 768px) {
+        .card {
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
     }
 
 
@@ -252,6 +276,204 @@
         opacity: 0.6;
         cursor: not-allowed;
         transform: none;
+    }
+    
+    /* Comprehensive Mobile Styles */
+    @media (max-width: 768px) {
+        /* Buttons - full width on all mobile */
+        .std-button {
+            padding: 0.75rem 1.5rem;
+            width: 100% !important;
+            max-width: none !important;
+            font-size: var(--font-size-base);
+            box-sizing: border-box;
+        }
+        
+        /* Form inputs - aggressive full width alignment */
+        .form-input, .refinement-input {
+            width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+            font-size: 16px; /* Prevents zoom on iOS */
+            margin: 0 !important;
+            padding: 0.75rem 1rem !important;
+            display: block !important;
+            text-align: left !important;
+            float: none !important;
+            position: static !important;
+        }
+        
+        /* Force parent containers to not right-align - except progress elements */
+        .card, .card > *, .card div {
+            text-align: left !important;
+        }
+        
+        .card .progress-container, 
+        .card .progress-container *, 
+        .card .progress-container div {
+            text-align: center !important;
+        }
+        
+        /* Override any flexbox that might be pushing right */
+        .card > div, .card > * {
+            justify-content: flex-start !important;
+            align-items: flex-start !important;
+        }
+        
+        /* Fix form row flex alignment */
+        .form-row {
+            display: block !important;
+            width: 100% !important;
+        }
+        
+        .form-group {
+            width: 100% !important;
+            margin: 0 !important;
+        }
+        
+        /* Ensure form containers don't have right alignment */
+        .card .form-input, .card .refinement-input {
+            margin: 0 !important;
+            text-align: left !important;
+            justify-self: start !important;
+            align-self: start !important;
+            width: 100% !important;
+        }
+        
+        /* File input */
+        .file-input {
+            width: 100%;
+            max-width: 100%;
+        }
+        
+        /* Tables */
+        .markdown-content table {
+            width: 100% !important;
+            display: block;
+            overflow-x: auto;
+            white-space: nowrap;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .card .markdown-content table {
+            max-width: calc(100vw - 2rem) !important;
+        }
+        
+        /* Card headers for mobile - keep horizontal layout with smaller icons */
+        .card-header {
+            flex-direction: row;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .card-icon {
+            width: 30px;
+            height: 30px;
+            margin-right: 0;
+            flex-shrink: 0;
+        }
+        
+        /* Typography adjustments */
+        .validator-header h1 {
+            font-size: 1.5rem;
+        }
+        
+        /* Keep original sizes for landscape - only change in portrait */
+        
+        /* Status badges - keep inline for landscape */
+        
+        /* Reduce excessive whitespace */
+        .validator-header {
+            margin-bottom: 2rem;
+        }
+        
+        /* Progress indicators centering - override our earlier left alignment */
+        .progress-container {
+            text-align: center !important;
+        }
+        
+        .card .progress-container {
+            text-align: center !important;
+        }
+        
+        .card .progress-title, .card .progress-message, .card .progress-percentage {
+            text-align: center !important;
+        }
+        
+        .card div .progress-title, .card div .progress-message, .card div .progress-percentage {
+            text-align: center !important;
+        }
+        
+        .progress-bar-wrapper {
+            margin: 0 auto !important;
+        }
+        
+        /* Ensure all content respects viewport width - except logo */
+        * {
+            max-width: 100%;
+        }
+        
+        /* Logo exceptions - preserve logo structure */
+        #eliyahu-logo-container {
+            max-width: none !important;
+            width: 100px !important;
+        }
+        
+        .logo-wrapper {
+            max-width: none !important;
+            width: 100px !important;
+            height: 100px !important;
+        }
+        
+        .logo-outline {
+            max-width: none !important;
+            width: 100% !important;
+            height: 100% !important;
+        }
+        
+        .logo-square {
+            max-width: none !important;
+            width: 70% !important;
+            height: 70% !important;
+        }
+        
+        /* Logo text exceptions - prevent text wrapping only */
+        .logo-text,
+        .pronunciation {
+            max-width: none !important;
+            white-space: nowrap !important;
+            width: auto !important;
+        }
+        
+        /* Prevent horizontal scrolling */
+        body {
+            overflow-x: hidden;
+        }
+    }
+    
+    /* Portrait-specific mobile styles */
+    @media (max-width: 768px) and (orientation: portrait) {
+        .card-title {
+            font-size: 14px !important; /* 70% of 20px */
+            line-height: 1.2;
+        }
+        
+        .card-subtitle {
+            font-size: 11px !important; /* smaller subtitle */
+            line-height: 1.2;
+        }
+        
+        /* Status badges - stack below on mobile portrait only */
+        .card-header {
+            flex-wrap: wrap;
+        }
+        
+        .status-badge {
+            margin-left: 0;
+            margin-top: 0.5rem;
+            width: 100%;
+            order: 3;
+        }
     }
 
     .std-button.selected {
@@ -1256,6 +1478,39 @@
                 isProcessingConfig: false, // Track if config generation/refinement is in progress
                 debounceTimers: new Map() // Track debounce timers by function/card ID
             };
+
+            // ============================================
+            // MOBILE DETECTION
+            // ============================================
+            
+            function isMobileDevice() {
+                return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+                    || window.innerWidth < 768;
+            }
+            
+            function showMobileMessage() {
+                const cardContainer = document.getElementById('cardContainer');
+                cardContainer.innerHTML = `
+                    <div class="card" style="text-align: center; background: linear-gradient(135deg, #ff6b6b, #ee5a24); color: white;">
+                        <div style="padding: 3rem 2rem;">
+                            <div style="font-size: 4rem; margin-bottom: 1.5rem;">📱</div>
+                            <h1 style="color: white; margin-bottom: 1rem; font-size: 2rem;">You are on mobile</h1>
+                            <p style="font-size: 1.2rem; margin-bottom: 1rem; line-height: 1.6;">
+                                Who does spreadsheet work on a phone?!
+                            </p>
+                            <p style="font-size: 1.1rem; margin-bottom: 1rem; line-height: 1.6;">
+                                For now check out the gallery below.
+                            </p>
+                            <p style="font-size: 1.1rem; opacity: 0.9; line-height: 1.6;">
+                                Get to a computer soon, and we will get this going together.
+                            </p>
+                            <p style="font-size: 1rem; opacity: 0.8; font-style: italic; margin-top: 1.5rem;">
+                                -Management
+                            </p>
+                        </div>
+                    </div>
+                `;
+            }
 
             // ============================================
             // DEBOUNCING UTILITIES
@@ -6238,6 +6493,12 @@ Please answer these questions and then I'll generate your configuration and auto
         // ============================================
 
         document.addEventListener('DOMContentLoaded', function() {
+            // MOBILE VERSION: Skip mobile detection to allow mobile usage
+            // if (isMobileDevice()) {
+            //     showMobileMessage();
+            //     return;
+            // }
+            
             // Check for stored session first (no DOM access)
             const storedSessionId = localStorage.getItem('sessionId');
             if (storedSessionId) {

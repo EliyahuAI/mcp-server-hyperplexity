@@ -10,7 +10,7 @@
     },
     "default_model": {
       "type": "string",
-      "description": "Default model to use for validation (e.g., 'sonar-pro', 'claude-sonnet-4-20250514')"
+      "description": "Default model to use for validation (e.g., 'sonar', 'sonar-pro', 'claude-sonnet-4')"
     },
     "default_search_context_size": {
       "type": "string",
@@ -21,7 +21,7 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 10,
-      "description": "Default maximum web searches for Anthropic models (0-10). 0=no search, 1=obvious items, 3=complex items, 5=esoteric facts"
+      "description": "Default maximum web searches for Anthropic models (0-10). 0=disable web search entirely, 1=obvious items, 3=complex items, 5=esoteric facts.  Caution when increasing this number as it can get expensive, especially as the default."
     },
     "search_groups": {
       "type": "array",
@@ -48,14 +48,14 @@
           },
           "search_context": {
             "type": "string",
-            "enum": ["low", "high"],
+            "enum": ["low","medium", "high"],
             "description": "Search context size for this group"
           },
           "anthropic_max_web_searches": {
             "type": "integer",
             "minimum": 0,
             "maximum": 10,
-            "description": "Override max web searches for Anthropic models in this search group (0-10)"
+            "description": "Override max web searches for Anthropic models in this search group (0-10). 0=disable web search entirely, caution when increasing this number as it can get expensive"
           }
         },
         "additionalProperties": false
@@ -78,7 +78,7 @@
           },
           "importance": {
             "type": "string",
-            "enum": ["ID", "CRITICAL", "HIGH", "MEDIUM", "LOW", "IGNORED"],
+            "enum": ["ID", "CRITICAL","IGNORED"],
             "description": "Importance level of this column"
           },
           "format": {

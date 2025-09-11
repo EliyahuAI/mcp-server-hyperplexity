@@ -19,7 +19,7 @@ from datetime import datetime
 import re
 import logging
 
-# Using ReportLab for PDF generation (text-only, no PIL dependencies)
+# Using PyMuPDF for PDF generation (no PIL dependencies, works in Lambda)
 
 logger = logging.getLogger(__name__)
 
@@ -86,244 +86,210 @@ This receipt is for your records.
     return receipt_text.encode('utf-8')
 
 
-# Old ReportLab function removed - using generate_receipt_pdf_html() instead
+# Alias for backward compatibility with test files
+def generate_receipt_pdf(session_id: str, email: str, amount: float, transaction_details: dict) -> bytes:
+    """Alias for generate_receipt_pdf_html for backward compatibility with tests"""
+    return generate_receipt_pdf_html(session_id, email, amount, transaction_details)
 
-def generate_receipt_pdf_html(session_id: str, email: str, amount: float, 
-                        transaction_details: dict) -> bytes:
-    """Generate PDF receipt using ReportLab - text-only, no PIL/image dependencies"""
+def generate_receipt_pdf_html(session_id: str, email: str, amount: float,
+                              transaction_details: dict) -> bytes:
+    """Generate PDF receipt using PyMuPDF - works without PIL dependencies"""
     try:
-        from reportlab.lib.pagesizes import letter
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.units import inch
-        from reportlab.lib.colors import black, blue
-        from reportlab.lib.styles import getSampleStyleSheet
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-        from datetime import datetime
-        logger.info("ReportLab imported successfully for PDF generation")
-        
-        # ReportLab supports basic PNG/JPG without PIL
-        image_support = True
-        logger.info("Using ReportLab PDF generation with logo support (no PIL dependencies)")
-            
+        import fitz  # PyMuPDF
+        logger.info("PyMuPDF imported successfully for PDF generation")
     except ImportError as import_e:
-        logger.error(f"ReportLab core not available: {import_e}")
-        logger.info("Falling back to simple text-based receipt")
+        logger.error(f"PyMuPDF not available: {import_e}")
         return generate_simple_text_receipt(session_id, email, amount, transaction_details)
-    
+
     try:
+        # --- Page setup: US Letter, not A4 ---
+        inch = 72
+        page_width, page_height = 8.5 * inch, 11 * inch  # 612 × 792
+        doc = fitz.open()
+        page = doc.new_page(width=page_width, height=page_height)
+
+        # --- Margins & typography ---
+        left_margin   = 1.5 * inch
+        right_margin  = page_width - 1.5 * inch
+        top_margin    = 0.35 * inch  # Logo position: 0.25 + 0.1 = 0.35 inch from top
+        bottom_margin = 1.00 * inch
+
+        # Font names: use built-in Helvetica family
+        FN_REG = "helv"
+        FN_BOLD = "hebo"  # Helvetica Bold
+        FS_H1 = 18        # Reduced from 20
+        FS_H2 = 14        # Reduced from 16
+        FS_LABEL = 10     # Reduced from 11
+        FS_VALUE = 10     # Reduced from 11
+        FS_SECTION = 12   # Reduced from 14
+        FS_FOOTER = 9     # Reduced from 10
+
+        # helpers
+        def text_w(s: str, size: float, font: str = FN_REG) -> float:
+            return fitz.get_text_length(s, fontname=font, fontsize=size)
+
+        def center_line(y: float, text: str, size: float, font: str = FN_BOLD):
+            # Draw centered text using insert_text with proper centering
+            text_width = fitz.get_text_length(text, fontname=font, fontsize=size)
+            x_centered = (page_width - text_width) / 2
+            page.insert_text((x_centered, y), text, fontsize=size, fontname=font)
+
+        def wrap_long_text(text: str, max_width: float, fontsize: float) -> list:
+            """Break long text into multiple lines that fit within max_width"""
+            if not text:
+                return [text]
             
-        buffer = BytesIO()
-        c = canvas.Canvas(buffer, pagesize=letter)
-        width, height = letter
-        
-        # Logo at top center (1.5 inch square)
-        # Try multiple potential paths where the logo might be located
-        logo_fallback_paths = [
-            # New hyperplexity logo - Lambda function package root
-            "/var/task/hyperplexity-logo-2.png",
-            # New hyperplexity logo - current working directory
-            "./hyperplexity-logo-2.png",
-            "./frontend/hyperplexity-logo-2.png",
-            # Development paths for testing
-            "../deployment/package/hyperplexity-logo-2.png",
-            "../../deployment/package/hyperplexity-logo-2.png",
-            # AWS Lambda layer paths for new logo
-            "/opt/hyperplexity-logo-2.png",
-            # Legacy logo paths for backward compatibility
-            "/var/task/EliyahuLogo_NoText_Crop.png",
-            "./EliyahuLogo_NoText_Crop.png",
-            "./src/lambdas/config/EliyahuLogo_NoText_Crop.png",
-            "../config/EliyahuLogo_NoText_Crop.png",
-            "../EliyahuLogo_NoText_Crop.png",
-            "../../EliyahuLogo_NoText_Crop.png",
-            # Temporary directory fallback
-            "/tmp/hyperplexity-logo-2.png",
-            "/tmp/EliyahuLogo_NoText_Crop.png"
+            # Check if text fits on one line
+            text_width = fitz.get_text_length(text, fontname=FN_REG, fontsize=fontsize)
+            if text_width <= max_width:
+                return [text]
+            
+            # Split long text into multiple lines
+            words = text.split()
+            lines = []
+            current_line = ""
+            
+            for word in words:
+                test_line = current_line + (" " if current_line else "") + word
+                test_width = fitz.get_text_length(test_line, fontname=FN_REG, fontsize=fontsize)
+                
+                if test_width <= max_width:
+                    current_line = test_line
+                else:
+                    if current_line:
+                        lines.append(current_line)
+                        current_line = word
+                    else:
+                        # Single word is too long, break it
+                        lines.append(word)
+            
+            if current_line:
+                lines.append(current_line)
+            
+            return lines
+
+        def draw_label_value(y: float, label: str, value: str) -> float:
+            # Label at left margin (bold)
+            page.insert_text((left_margin, y), label, fontsize=FS_LABEL, fontname=FN_BOLD)
+            
+            # Calculate available width for value (from middle to right margin)
+            available_width = right_margin - (left_margin + 2.5 * inch)  # Leave space after label
+            
+            # Wrap long values into multiple lines
+            value_lines = wrap_long_text(value, available_width, FS_VALUE)
+            
+            # Draw each line of the value
+            line_y = y
+            for line in value_lines:
+                value_width = fitz.get_text_length(line, fontname=FN_REG, fontsize=FS_VALUE)
+                x_right = right_margin - value_width
+                page.insert_text((x_right, line_y), line, fontsize=FS_VALUE, fontname=FN_REG)
+                line_y += 0.15 * inch  # Smaller line spacing for wrapped text
+            
+            # Return position after all lines (add extra space if multi-line)
+            extra_space = 0.1 * inch if len(value_lines) > 1 else 0
+            return line_y + 0.25 * inch + extra_space
+
+        y = top_margin
+
+        # --- Logo (optional) ---
+        logo_paths = [
+            "/var/task/hyperplexity-logo-2.png", "./hyperplexity-logo-2.png",
+            "./frontend/hyperplexity-logo-2.png", "../deployment/package/hyperplexity-logo-2.png",
+            "../../deployment/package/hyperplexity-logo-2.png", "/opt/hyperplexity-logo-2.png",
+            "/var/task/EliyahuLogo_NoText_Crop.png", "./EliyahuLogo_NoText_Crop.png",
+            "./src/lambdas/config/EliyahuLogo_NoText_Crop.png", "../config/EliyahuLogo_NoText_Crop.png",
+            "../EliyahuLogo_NoText_Crop.png", "../../EliyahuLogo_NoText_Crop.png",
+            "/tmp/hyperplexity-logo-2.png", "/tmp/EliyahuLogo_NoText_Crop.png"
         ]
-        
-        logo_found = False
-        if image_support:
-            for path in logo_fallback_paths:
-                if os.path.exists(path):
-                    try:
-                        logo_size = 1.5 * inch
-                        logo_x = (width - logo_size) / 2
-                        logo_y = height - 2 * inch
-                        c.drawImage(path, logo_x, logo_y, width=logo_size, height=logo_size)
-                        logo_found = True
-                        logger.info(f"Logo loaded successfully from {path}")
-                        break
-                    except Exception as logo_e:
-                        logger.warning(f"Could not load logo from {path}: {logo_e}")
-                        continue
-            
-            if not logo_found:
-                logger.warning("Logo files exist but could not be loaded, proceeding without logo")
-        else:
-            logger.info("Image support not available, generating PDF without logo")
-        
-        # Company name and receipt title  
-        y_position = height - 2.6 * inch
-        c.setFont("Helvetica-Bold", 20)
-        text_width = c.stringWidth("Hyperplexity.AI Table Research", "Helvetica-Bold", 20)
-        c.drawString((width - text_width) / 2, y_position, "Hyperplexity.AI Table Research")
-        
-        y_position -= 0.4 * inch
-        c.setFont("Helvetica", 16)
-        text_width = c.stringWidth("Payment Receipt", "Helvetica", 16)
-        c.drawString((width - text_width) / 2, y_position, "Payment Receipt")
-        
-        # Receipt information
-        y_position -= 0.8 * inch
-        c.setFont("Helvetica", 11)
-        
+        logo_drawn = False
+        for p in logo_paths:
+            if os.path.exists(p):
+                try:
+                    with open(p, "rb") as f:
+                        data = f.read()
+                    size = 1.5 * inch
+                    x = (page_width - size) / 2
+                    rect = fitz.Rect(x, y, x + size, y + size)
+                    page.insert_image(rect, stream=data)
+                    y = rect.br.y + 0.4 * inch
+                    logo_drawn = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Logo load failed for {p}: {e}")
+        if not logo_drawn:
+            y += 0.5 * inch  # give some space if no logo
+
+        # --- Header / Title (centered) - final positioning ---
+        y += 0.1 * inch  # Move text up 0.1 inches: was +0.2, now +0.1
+        center_line(y, "Hyperplexity.AI Table Research", FS_H1, FN_BOLD)
+        y += 0.35 * inch
+        center_line(y, "Payment Receipt", FS_H2, FN_BOLD)
+        y += 0.80 * inch
+
+        # --- Info rows ---
         receipt_date = datetime.now().strftime("%B %d, %Y at %I:%M %p UTC")
-        
-        # Left column labels, right column values
-        left_margin = 1.5 * inch
-        right_margin = width - 1.5 * inch
-        
-        def draw_info_row(label, value, y_pos):
-            c.setFont("Helvetica-Bold", 11)
-            c.drawString(left_margin, y_pos, label)
-            c.setFont("Helvetica", 11)
-            c.drawRightString(right_margin, y_pos, str(value))
-            return y_pos - 0.25 * inch
-        
-        y_position = draw_info_row("Receipt Date:", receipt_date, y_position)
-        y_position = draw_info_row("Session ID:", session_id, y_position)
-        y_position = draw_info_row("Customer Email:", email, y_position)
-        y_position = draw_info_row("Service:", "Table Validation", y_position)
-        
-        # Add table name if available
-        table_name = transaction_details.get('table_name', transaction_details.get('input_filename', 'N/A'))
-        if table_name and table_name != 'N/A':
-            y_position = draw_info_row("Input Table:", table_name, y_position)
-        
-        # Add configuration code if available
-        config_id = transaction_details.get('config_id', 'N/A')
-        if config_id and config_id != 'N/A':
-            y_position = draw_info_row("Configuration Code:", config_id, y_position)
-        
-        # Service details section
-        y_position -= 0.4 * inch
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(left_margin, y_position, "Service Details")
-        
-        y_position -= 0.3 * inch
-        
-        # Service details in requested order: Rows, Fields, Perplexity Calls, Claude Calls
-        rows_processed = transaction_details.get('rows_processed', 0)
-        fields_validated = transaction_details.get('columns_validated_count', 0)
-        perplexity_calls = transaction_details.get('perplexity_api_calls', 0)
-        claude_calls = transaction_details.get('anthropic_api_calls', 0)
-        
-        y_position = draw_info_row("Rows Processed:", f"{rows_processed:,}", y_position)
-        y_position = draw_info_row("Columns Validated:", f"{fields_validated:,}", y_position)
-        y_position = draw_info_row("Perplexity API Calls:", f"{perplexity_calls:,}", y_position)
-        y_position = draw_info_row("Claude API Calls:", f"{claude_calls:,}", y_position)
-        
-        # Total section
-        y_position -= 0.4 * inch
-        
-        # Draw line
-        c.line(left_margin, y_position + 0.1 * inch, right_margin, y_position + 0.1 * inch)
-        
-        y_position -= 0.2 * inch
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(left_margin, y_position, "Total Charged:")
-        c.drawRightString(right_margin, y_position, f"${amount:.2f}")
-        
-        # Footer
-        y_position = 2 * inch
-        c.setFont("Helvetica", 10)
-        text_width = c.stringWidth("Thank you for using Hyperplexity!", "Helvetica", 10)
-        c.drawString((width - text_width) / 2, y_position, "Thank you for using Hyperplexity!")
-        
-        y_position -= 0.25 * inch
-        text_width = c.stringWidth("For support, contact: eliyahu@eliyahu.ai", "Helvetica", 10)
-        c.drawString((width - text_width) / 2, y_position, "For support, contact: eliyahu@eliyahu.ai")
-        
-        y_position -= 0.25 * inch
-        text_width = c.stringWidth("This receipt is for your records.", "Helvetica", 10)
-        c.drawString((width - text_width) / 2, y_position, "This receipt is for your records.")
-        
-        c.save()
-        buffer.seek(0)
-        return buffer.getvalue()
-        
+        y = draw_label_value(y, "Receipt Date:", receipt_date)
+        y = draw_label_value(y, "Session ID:", session_id)
+        y = draw_label_value(y, "Customer Email:", email)
+        y = draw_label_value(y, "Service:", "Table Validation")
+
+        table_name = transaction_details.get('table_name', transaction_details.get('input_filename', ''))
+        if table_name:
+            y = draw_label_value(y, "Input Table:", table_name)
+
+        config_id = transaction_details.get('config_id', '')
+        if config_id:
+            y = draw_label_value(y, "Configuration Code:", config_id)
+
+        # --- Service details ---
+        y += 0.4 * inch
+        page.insert_text((left_margin, y), "Service Details", fontsize=FS_SECTION, fontname=FN_BOLD)
+        y += 0.30 * inch
+
+        rp = transaction_details.get('rows_processed', 0)
+        cv = transaction_details.get('columns_validated_count', 0)
+        pa = transaction_details.get('perplexity_api_calls', 0)
+        ca = transaction_details.get('anthropic_api_calls', 0)
+
+        y = draw_label_value(y, "Rows Processed:", f"{rp:,}")
+        y = draw_label_value(y, "Columns Validated:", f"{cv:,}")
+        y = draw_label_value(y, "Perplexity API Calls:", f"{pa:,}")
+        y = draw_label_value(y, "Claude API Calls:", f"{ca:,}")
+
+        # --- Separator line ---
+        y += 0.2 * inch
+        page.draw_line(fitz.Point(left_margin, y), fitz.Point(right_margin, y), width=1)
+        y += 0.30 * inch
+
+        # --- Total ---
+        page.insert_text((left_margin, y), "Total Charged:", fontsize=FS_SECTION, fontname=FN_BOLD)
+        total_str = f"${amount:.2f}"
+        total_width = fitz.get_text_length(total_str, fontname=FN_BOLD, fontsize=FS_SECTION)
+        x_total_right = right_margin - total_width
+        page.insert_text((x_total_right, y), total_str, fontsize=FS_SECTION, fontname=FN_BOLD)
+
+        # --- Footer (centered, anchored by bottom margin) ---
+        footer_lines = [
+            "Thank you for using Hyperplexity!",
+            "For support, contact: eliyahu@eliyahu.ai",
+            "This receipt is for your records."
+        ]
+        fy = page_height - bottom_margin - (len(footer_lines) * 15)  # Start higher
+        for line in footer_lines:
+            line_width = fitz.get_text_length(line, fontname=FN_REG, fontsize=FS_FOOTER)
+            x_centered = (page_width - line_width) / 2
+            page.insert_text((x_centered, fy), line, fontsize=FS_FOOTER, fontname=FN_REG)
+            fy += 15  # Move down for next line
+
+        pdf_bytes = doc.tobytes()  # reliable across PyMuPDF versions
+        doc.close()
+        logger.info(f"PyMuPDF PDF generation successful! Size: {len(pdf_bytes):,} bytes")
+        return pdf_bytes
+
     except Exception as e:
-        logger.error(f"Error generating PDF receipt: {e}")
-        import traceback
-        logger.error(f"PDF generation traceback: {traceback.format_exc()}")
-        
-        # Check if ReportLab is available and log diagnostic info
-        try:
-            import reportlab
-            logger.info(f"ReportLab version: {reportlab.Version}")
-        except ImportError:
-            logger.error("ReportLab not available in Lambda environment")
-        
-        # Log current working directory and available files
-        logger.error(f"Current working directory: {os.getcwd()}")
-        logger.error(f"Files in current directory: {os.listdir('.')}")
-        
-        # Since PDF generation failed, try to create a basic PDF without logo
-        logger.warning("Attempting to create basic PDF receipt without logo")
-        try:
-            # Import ReportLab again for basic fallback
-            try:
-                from reportlab.lib.pagesizes import letter
-                from reportlab.pdfgen import canvas
-                from reportlab.lib.units import inch
-                logger.info("ReportLab available for basic PDF generation")
-            except ImportError as basic_import_e:
-                logger.error(f"ReportLab not available for basic PDF: {basic_import_e}")
-                raise ImportError("ReportLab not available even for basic PDF")
-            
-            buffer = BytesIO()
-            c = canvas.Canvas(buffer, pagesize=letter)
-            width, height = letter
-            
-            # Basic text-only receipt without logo
-            y_position = height - 2 * inch
-            c.setFont("Helvetica-Bold", 20)
-            text_width = c.stringWidth("Hyperplexity.AI Table Research", "Helvetica-Bold", 20)
-            c.drawString((width - text_width) / 2, y_position, "Hyperplexity.AI Table Research")
-            
-            y_position -= 0.4 * inch
-            c.setFont("Helvetica", 16)
-            text_width = c.stringWidth("Payment Receipt", "Helvetica", 16)
-            c.drawString((width - text_width) / 2, y_position, "Payment Receipt")
-            
-            # Basic receipt info
-            y_position -= 0.8 * inch
-            c.setFont("Helvetica", 11)
-            
-            receipt_date = datetime.now().strftime("%B %d, %Y at %I:%M %p UTC")
-            left_margin = 1.5 * inch
-            right_margin = width - 1.5 * inch
-            
-            def draw_basic_row(label, value, y_pos):
-                c.setFont("Helvetica-Bold", 11)
-                c.drawString(left_margin, y_pos, label)
-                c.setFont("Helvetica", 11)
-                c.drawRightString(right_margin, y_pos, str(value))
-                return y_pos - 0.25 * inch
-            
-            y_position = draw_basic_row("Date:", receipt_date, y_position)
-            y_position = draw_basic_row("Session:", session_id, y_position)
-            y_position = draw_basic_row("Email:", email, y_position)
-            y_position = draw_basic_row("Total Charged:", f"${amount:.2f}", y_position)
-            
-            c.save()
-            buffer.seek(0)
-            return buffer.getvalue()
-            
-        except Exception as basic_e:
-            logger.error(f"Even basic PDF generation failed: {basic_e}")
-            # Final fallback - raise the original exception
-            raise Exception(f"All PDF generation attempts failed. Original error: {e}, Basic PDF error: {basic_e}")
+        logger.error(f"Error generating PyMuPDF PDF receipt: {e}")
+        return generate_simple_text_receipt(session_id, email, amount, transaction_details)
 
 
 
@@ -872,8 +838,8 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
     # Cost info - get from billing_info which comes from DynamoDB runs table
     cost_info = ""
     if billing_info:
-        # Get estimated_total_cost from billing_info (from DynamoDB runs table)
-        cost = billing_info.get('estimated_total_cost', 0)
+        # Use amount_charged which is the actual customer charge, not estimated_total_cost (Eliyahu internal cost)
+        cost = billing_info.get('amount_charged', 0)
         if cost > 0:
             cost_info = f"<p><b>Cost:</b> ${cost:.2f}</p>"
     

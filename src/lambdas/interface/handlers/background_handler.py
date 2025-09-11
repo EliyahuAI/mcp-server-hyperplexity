@@ -48,6 +48,134 @@ except ImportError as e:
 # Global variable for the API Gateway Management client
 api_gateway_management_client = None
 
+def _calculate_estimated_cost_without_cache(token_usage: Dict, metadata: Dict) -> float:
+    """
+    Calculate estimated cost without caching benefits for projections.
+    This estimates what the cost would be if no caching were available.
+    
+    Args:
+        token_usage: Token usage data from validation lambda
+        metadata: Additional metadata from validation results
+        
+    Returns:
+        Estimated cost without caching benefits
+    """
+    try:
+        # Extract actual cost and cached call information
+        actual_cost = token_usage.get('total_cost', 0.0)
+        total_calls = token_usage.get('api_calls', 0)
+        cached_calls = token_usage.get('cached_calls', 0)
+        
+        # If no caching occurred, estimated cost equals actual cost
+        if cached_calls == 0 or total_calls == 0:
+            logger.debug(f"[COST_CALC] No caching detected - estimated cost equals actual: ${actual_cost:.6f}")
+            return actual_cost
+        
+        # Calculate cache hit rate
+        cache_hit_rate = cached_calls / max(1, total_calls)
+        non_cached_calls = total_calls - cached_calls
+        
+        # Estimate cost per non-cached call
+        if non_cached_calls > 0:
+            cost_per_non_cached_call = actual_cost / non_cached_calls
+            # Estimated cost if all calls were non-cached
+            estimated_cost = cost_per_non_cached_call * total_calls
+            
+            logger.debug(f"[COST_CALC] Cache analysis - Hit rate: {cache_hit_rate:.2%}, "
+                        f"Cost per call: ${cost_per_non_cached_call:.6f}, "
+                        f"Estimated without cache: ${estimated_cost:.6f}")
+            
+            return estimated_cost
+        else:
+            # All calls were cached - use average cost estimation
+            # This is a fallback case for when cached costs aren't tracked properly
+            logger.warning(f"[COST_CALC] All {total_calls} calls were cached - using fallback estimation")
+            
+            # Fallback: assume average cost per call based on token usage
+            total_tokens = token_usage.get('total_tokens', 0)
+            if total_tokens > 0:
+                # Use rough estimation based on tokens (typical cost per 1000 tokens)
+                estimated_cost_per_1k_tokens = 0.003  # Conservative estimate
+                estimated_cost = (total_tokens / 1000) * estimated_cost_per_1k_tokens
+                return max(actual_cost, estimated_cost)  # Use higher of actual or estimated
+            
+            return actual_cost  # Final fallback
+            
+    except Exception as e:
+        logger.error(f"[COST_CALC] Error calculating estimated cost without cache: {e}")
+        # Fallback to actual cost with small buffer for safety
+        return token_usage.get('total_cost', 0.0) * 1.2  # 20% buffer for estimation errors
+
+def _apply_domain_multiplier_with_validation(email: str, base_cost: float, session_id: str = None) -> Dict[str, float]:
+    """
+    Apply domain multiplier with comprehensive validation and audit logging.
+    
+    Args:
+        email: User email address
+        base_cost: Base cost before multiplier
+        session_id: Session ID for audit trail
+        
+    Returns:
+        Dictionary with multiplier details and final quoted cost
+    """
+    try:
+        from dynamodb_schemas import get_domain_multiplier
+        from decimal import Decimal, ROUND_UP
+        
+        # Extract domain with validation
+        if not email or '@' not in email:
+            logger.error(f"[MULTIPLIER_ERROR] Invalid email format: {email}")
+            return {
+                'multiplier': 1.0,
+                'domain': 'invalid',
+                'base_cost': base_cost,
+                'quoted_cost': max(2.0, math.ceil(base_cost)),  # $2 minimum, rounded up
+                'error': 'invalid_email'
+            }
+        
+        domain = email.split('@')[-1].lower().strip()
+        if not domain:
+            logger.error(f"[MULTIPLIER_ERROR] Empty domain extracted from email: {email}")
+            domain = 'unknown'
+        
+        # Get multiplier with validation
+        multiplier = float(get_domain_multiplier(domain))
+        
+        # Validate multiplier is reasonable
+        if multiplier <= 0 or multiplier > 100:  # Sanity check
+            logger.error(f"[MULTIPLIER_ERROR] Unreasonable multiplier {multiplier} for domain {domain}")
+            multiplier = 5.0  # Default fallback
+        
+        # Calculate quoted cost with multiplier, rounding, and minimum
+        cost_with_multiplier = base_cost * multiplier
+        quoted_cost = max(2.0, math.ceil(cost_with_multiplier))  # $2 minimum, rounded up to nearest dollar
+        
+        # Audit logging
+        logger.info(f"[MULTIPLIER_AUDIT] Domain: {domain}, Base: ${base_cost:.6f}, "
+                   f"Multiplier: {multiplier}x, With multiplier: ${cost_with_multiplier:.6f}, "
+                   f"Final quoted: ${quoted_cost:.2f}, Session: {session_id}")
+        
+        return {
+            'multiplier': multiplier,
+            'domain': domain,
+            'base_cost': base_cost,
+            'cost_with_multiplier': cost_with_multiplier,
+            'quoted_cost': quoted_cost,
+            'minimum_applied': quoted_cost == 2.0,
+            'rounding_applied': quoted_cost > cost_with_multiplier
+        }
+        
+    except Exception as e:
+        logger.error(f"[MULTIPLIER_ERROR] Failed to apply domain multiplier for {email}: {e}")
+        # Safe fallback
+        return {
+            'multiplier': 5.0,  # Default multiplier
+            'domain': 'error',
+            'base_cost': base_cost,
+            'quoted_cost': max(2.0, math.ceil(base_cost * 5.0)),
+            'error': str(e)
+        }
+
 def _create_fallback_preview_excel(validation_results, config_data, input_filename, is_full=False):
     """Create a basic Excel file using openpyxl when xlsxwriter is not available."""
     try:
@@ -162,14 +290,14 @@ def _send_balance_update(session_id: str, balance_data: dict):
 
 def _update_progress(session_id: str, status: str, processed_rows: int, verbose_status: str, percent_complete: int, total_rows: int = None, current_batch: int = None, total_batches: int = None):
     """Callback function to update DynamoDB and push WebSocket messages."""
-    from dynamodb_schemas import update_run_status, get_connection_by_session, remove_websocket_connection
+    from dynamodb_schemas import update_run_status, get_connection_by_session, remove_websocket_connection, find_existing_run_key
     
     # 1. Update DynamoDB
-    update_run_status(
-        session_id=session_id, status=status,
-        processed_rows=processed_rows, verbose_status=verbose_status,
-        percent_complete=percent_complete
-    )
+    run_key = find_existing_run_key(session_id)
+    if run_key:
+        update_run_status(session_id=session_id, run_key=run_key, status=status,
+            processed_rows=processed_rows, verbose_status=verbose_status,
+            percent_complete=percent_complete)
 
     # 2. Push update over WebSocket
     connection_id = get_connection_by_session(session_id)
@@ -253,15 +381,7 @@ def handle(event, context):
         config_s3_key = event['config_s3_key']
         email = event.get('email', 'unknown@example.com').lower().strip()
         preview_email = event.get('preview_email', False)
-        
-        # Always use a clean session ID format: session_YYYY-MM-DDTHH_MM_SS_XXXXXX
-        # Ensure session ID has proper prefix
-        clean_session_id = session_id
-        if not clean_session_id.startswith('session_'):
-            clean_session_id = f"session_{clean_session_id}"
-            
-        logger.info(f"Background handler called for session {session_id}, clean_session_id={clean_session_id}, is_preview={is_preview}")
-        
+        # Extract parameters early before using them
         try:
             max_rows_str = event.get('max_rows')
             max_rows = int(max_rows_str) if max_rows_str else 1000
@@ -273,6 +393,37 @@ def handle(event, context):
             max_rows = 1000
             batch_size = None  # Let enhanced batch manager determine optimal size
 
+        run_key = event.get('run_key')  # Extract run_key from SQS message
+        
+        # Handle case where run_key is missing (backward compatibility)
+        if not run_key:
+            logger.warning(f"No run_key found in SQS message for session {session_id}, attempting to find existing run")
+            # Try to find existing run record first to avoid duplicates
+            try:
+                from dynamodb_schemas import find_existing_run_key
+                run_key = find_existing_run_key(session_id)
+                
+                if run_key:
+                    logger.info(f"Found existing run_key for session {session_id}: {run_key}")
+                else:
+                    # Only create new run record if none exists
+                    run_type_initial = "Preview" if is_preview else "Validation"
+                    run_key = create_run_record(session_id=session_id, email=email, total_rows=0, batch_size=batch_size or 10, run_type=run_type_initial)
+                    logger.info(f"Created new run_key for backward compatibility: {run_key}")
+            except Exception as e:
+                logger.error(f"Failed to find/create run_key for backward compatibility: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                run_key = None
+        
+        # Always use a clean session ID format: session_YYYY-MM-DDTHH_MM_SS_XXXXXX
+        # Ensure session ID has proper prefix
+        clean_session_id = session_id
+        if not clean_session_id.startswith('session_'):
+            clean_session_id = f"session_{clean_session_id}"
+            
+        logger.info(f"Background handler called for session {session_id}, clean_session_id={clean_session_id}, is_preview={is_preview}")
+
         email_folder = event.get('email_folder', 'default')
         email_address = event.get('email_address')
         if email_address:
@@ -281,9 +432,22 @@ def handle(event, context):
         # Initialize processing_time early to prevent "referenced before assignment" error
         processing_time = 0.0
         
+        # Create a wrapper function for run status updates with this session's run_key
+        def update_run_status_for_session(**kwargs):
+            if run_key:
+                try:
+                    return update_run_status(session_id=session_id, run_key=run_key, **kwargs)
+                except Exception as e:
+                    logger.error(f"Failed to update run status for session {session_id}, run_key {run_key}: {e}")
+                    logger.error(f"Status update kwargs: {kwargs}")
+                    return None
+            else:
+                logger.warning(f"Skipping run status update due to missing run_key for session {session_id}: {kwargs}")
+                return None
+        
         # After a job starts
         run_type_initial = "Preview" if is_preview else "Validation"
-        update_run_status(session_id=session_id, status='PROCESSING', run_type=run_type_initial)
+        update_run_status_for_session(status='PROCESSING', run_type=run_type_initial)
 
         if is_preview:
             preview_max_rows = event.get('preview_max_rows', 5)
@@ -300,8 +464,8 @@ def handle(event, context):
             }, "preview_progress_start")
             
             # Initial status update for preview - use 0-5% range for interface setup
-            update_run_status(
-                session_id=session_id, status='PROCESSING', 
+            update_run_status_for_session(
+                status='PROCESSING', 
                 run_type="Preview",
                 verbose_status=f"Starting preview for {preview_max_rows} rows...",
                 percent_complete=2,  # Interface setup: 0-5% range
@@ -336,8 +500,8 @@ def handle(event, context):
                     'error': 'Files not found'
                 }, "preview_failed_files")
                 
-                update_run_status(
-                    session_id=session_id, status='FAILED',
+                update_run_status_for_session(
+                    status='FAILED',
                     run_type="Preview",
                     verbose_status="Failed to retrieve files for preview.",
                     percent_complete=100,
@@ -399,10 +563,90 @@ def handle(event, context):
                             break  # Just show one field sample
                 total_rows = validation_results.get('total_rows', 1)
                 metadata = validation_results.get('metadata', {})
-                token_usage = metadata.get('token_usage', {})
-                # Get both costs from validation lambda
-                eliyahu_cost = token_usage.get('total_cost', 0.0)  # What we actually paid for this preview run
-                estimated_cost = token_usage.get('estimated_total_cost', eliyahu_cost)  # What this preview run would cost without caching
+                # ========== ENHANCED AI_API_CLIENT INTEGRATION ==========
+                # Extract enhanced cost/time data from validation lambda's ai_client aggregation
+                enhanced_metrics = metadata.get('enhanced_metrics', {})
+                if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
+                    # Extract three-tier cost data from enhanced aggregation
+                    aggregated_data = enhanced_metrics['aggregated_metrics']
+                    totals = aggregated_data.get('totals', {})
+                    
+                    # Tier 1: Eliyahu Cost (actual cost paid with caching benefits)
+                    eliyahu_cost = totals.get('total_cost_actual', 0.0)
+                    
+                    # Tier 2: Estimated cost without cache (for full validation projections)
+                    estimated_cost_without_cache = totals.get('total_cost_without_cache', 0.0)
+                    
+                    # Extract provider-specific measures
+                    providers = aggregated_data.get('providers', {})
+                    perplexity_eliyahu_cost = providers.get('perplexity', {}).get('cost_actual', 0.0)
+                    anthropic_eliyahu_cost = providers.get('anthropic', {}).get('cost_actual', 0.0)
+                    
+                    # Extract API call counts
+                    perplexity_calls = providers.get('perplexity', {}).get('calls', 0)
+                    anthropic_calls = providers.get('anthropic', {}).get('calls', 0)
+                    
+                    # Extract token counts
+                    perplexity_tokens = providers.get('perplexity', {}).get('tokens', 0)
+                    anthropic_tokens = providers.get('anthropic', {}).get('tokens', 0)
+                    
+                    # Extract time estimates
+                    estimated_time_per_row = totals.get('total_processing_time', 0.0) / max(1, total_rows_processed)
+                    total_processing_time = totals.get('total_processing_time', 0.0)
+                    
+                    logger.info(f"[ENHANCED_COSTS] Using ai_client aggregated data - Actual: ${eliyahu_cost:.6f}, No cache: ${estimated_cost_without_cache:.6f}")
+                    logger.info(f"[ENHANCED_PROVIDERS] Perplexity: ${perplexity_eliyahu_cost:.6f} ({perplexity_calls} calls), Anthropic: ${anthropic_eliyahu_cost:.6f} ({anthropic_calls} calls)")
+                    logger.info(f"[ENHANCED_TIME] Time per row: {estimated_time_per_row:.3f}s, Total time: {total_processing_time:.3f}s")
+                else:
+                    # Fallback to legacy token_usage for backward compatibility
+                    token_usage = metadata.get('token_usage', {})
+                    eliyahu_cost = token_usage.get('total_cost', 0.0)
+                    estimated_cost_without_cache = _calculate_estimated_cost_without_cache(token_usage, metadata)
+                    
+                    # Extract legacy provider-specific data
+                    by_provider = token_usage.get('by_provider', {})
+                    perplexity_data = by_provider.get('perplexity', {})
+                    anthropic_data = by_provider.get('anthropic', {})
+                    
+                    perplexity_eliyahu_cost = perplexity_data.get('total_cost', 0.0)
+                    anthropic_eliyahu_cost = anthropic_data.get('total_cost', 0.0)
+                    perplexity_calls = perplexity_data.get('api_calls', 0)
+                    anthropic_calls = anthropic_data.get('api_calls', 0) 
+                    perplexity_tokens = perplexity_data.get('total_tokens', 0)
+                    anthropic_tokens = anthropic_data.get('total_tokens', 0)
+                    
+                    # Legacy time calculation
+                    total_processing_time = metadata.get('processing_time', 0.0)
+                    estimated_time_per_row = total_processing_time / max(1, total_rows_processed)
+                    
+                    logger.warning(f"[ENHANCED_COSTS] Falling back to legacy token_usage - enhanced_metrics not available")
+                
+                # ========== PREVIEW FULL VALIDATION ESTIMATES ==========
+                # For preview operations, use full validation estimates from enhanced data
+                if is_preview and enhanced_metrics and enhanced_metrics.get('full_validation_estimates'):
+                    estimates = enhanced_metrics['full_validation_estimates']
+                    total_estimates = estimates.get('total_estimates', {})
+                    
+                    # Override manual scaling with ai_client estimates
+                    estimated_total_cost_raw = total_estimates.get('estimated_total_cost_without_cache', estimated_cost_without_cache * total_rows / max(1, total_rows_processed))
+                    estimated_total_time_seconds = total_estimates.get('estimated_total_processing_time', 0.0)
+                    
+                    logger.info(f"[ENHANCED_ESTIMATES] Using ai_client full validation estimates - Cost: ${estimated_total_cost_raw:.6f}, Time: {estimated_total_time_seconds:.3f}s")
+                else:
+                    # Fallback to manual scaling calculations for non-preview or legacy data
+                    estimated_total_cost_raw = None  # Will be calculated later in manual scaling section
+                    estimated_total_time_seconds = None  # Will be calculated later in manual scaling section
+
+                # Validate cost calculations
+                if eliyahu_cost < 0 or estimated_cost_without_cache < 0:
+                    logger.error(f"[COST_ERROR] Invalid negative costs - Actual: ${eliyahu_cost:.6f}, Estimated: ${estimated_cost_without_cache:.6f}")
+                    eliyahu_cost = max(0.0, eliyahu_cost)
+                    estimated_cost_without_cache = max(0.0, estimated_cost_without_cache)
+                
+                if eliyahu_cost > estimated_cost_without_cache:
+                    logger.warning(f"[COST_WARNING] Actual cost ${eliyahu_cost:.6f} > estimated ${estimated_cost_without_cache:.6f} - possible pricing issue")
+                
+                logger.info(f"[COST_DEBUG] Three-tier costs - Actual: ${eliyahu_cost:.6f}, Estimated: ${estimated_cost_without_cache:.6f}")
                 total_tokens = token_usage.get('total_tokens', 0)
                 total_api_calls = token_usage.get('api_calls', 0)
                 total_cached_calls = token_usage.get('cached_calls', 0)
@@ -413,27 +657,35 @@ def handle(event, context):
                 initial_balance = 0
                 final_balance = 0
                 multiplier = 1.0
-                quoted_full_cost = math.ceil(estimated_cost)  # Will become full table quote after scaling and multiplier applied, rounded up
                 charged_cost = 0.0  # Preview is free
                 
-                # Apply domain multiplier to estimated cost (what user pays)
+                # ========== HARDENED DOMAIN MULTIPLIER SYSTEM ==========
+                # Apply domain multiplier with comprehensive validation and audit trail
                 try:
                     import sys
                     import os
                     sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
-                    from dynamodb_schemas import get_domain_multiplier, track_preview_cost, track_api_usage_detailed, check_user_balance
+                    from dynamodb_schemas import track_preview_cost, track_api_usage_detailed, check_user_balance
                     from decimal import Decimal
                     
-                    email_domain = email.split('@')[-1] if '@' in email else 'unknown'
-                    multiplier = float(get_domain_multiplier(email_domain))
+                    # Apply multiplier using hardened validation system
+                    multiplier_result = _apply_domain_multiplier_with_validation(email, estimated_cost_without_cache, session_id)
+                    multiplier = multiplier_result['multiplier']
+                    domain = multiplier_result['domain']
                     
-                    # Calculate preview cost with multiplier (this will be used for scaling to full table)
-                    preview_cost_with_multiplier = estimated_cost * multiplier
+                    # Preview cost with multiplier (this will be used for scaling to full table)
+                    preview_cost_with_multiplier = multiplier_result['cost_with_multiplier']
+                    quoted_full_cost = multiplier_result['quoted_cost']
                     
-                    logger.info(f"INTERFACE_COSTS: Processed {total_rows_processed} rows, Charged: ${charged_cost:.6f} (preview is free)")
-                    logger.debug(f"COST_DEBUG: Domain={email_domain}, Estimated: ${estimated_cost:.6f}, Preview with multiplier: ${preview_cost_with_multiplier:.6f}")
+                    # Validation and audit logging
+                    if 'error' in multiplier_result:
+                        logger.error(f"[MULTIPLIER_ERROR] Preview domain multiplier error: {multiplier_result['error']}")
                     
-                    # Get account balance for tracking (no charges for preview) - moved to just before calculations
+                    logger.info(f"[COST_AUDIT] Preview processed {total_rows_processed} rows - "
+                               f"Actual: ${eliyahu_cost:.6f}, Estimated: ${estimated_cost_without_cache:.6f}, "
+                               f"Domain: {domain}, Multiplier: {multiplier}x, Quoted: ${quoted_full_cost:.2f}")
+                    
+                    # Get account balance for tracking (no charges for preview)
                     initial_balance = check_user_balance(email)
                     final_balance = initial_balance  # No change for preview
                     balance_error_occurred = False  # Preview doesn't charge
@@ -442,33 +694,8 @@ def handle(event, context):
                     # Track preview cost (actual cost for your tracking, estimated cost for user display)
                     track_preview_cost(session_id, email, Decimal(str(estimated_cost)), Decimal(str(multiplier)), total_tokens)
                     
-                    # Track detailed API usage for each provider
-                    by_provider = token_usage.get('by_provider', {})
-                    for provider, provider_usage in by_provider.items():
-                        if provider_usage and isinstance(provider_usage, dict):
-                            usage_data = {
-                                'api_calls': provider_usage.get('api_calls', 0),
-                                'cached_calls': provider_usage.get('cached_calls', 0),
-                                'total_tokens': provider_usage.get('total_tokens', 0),
-                                'cost': provider_usage.get('total_cost', 0.0) * multiplier,  # Apply multiplier to actual cost
-                                'eliyahu_cost': provider_usage.get('total_cost', 0.0),  # Your actual expense
-                                'multiplier_applied': multiplier
-                            }
-                            
-                            # Add provider-specific token fields (AI client standardizes to input_tokens/output_tokens)
-                            if provider == 'perplexity':
-                                usage_data.update({
-                                    'prompt_tokens': provider_usage.get('input_tokens', 0),  # AI client maps prompt_tokens to input_tokens
-                                    'completion_tokens': provider_usage.get('output_tokens', 0)  # AI client maps completion_tokens to output_tokens
-                                })
-                            elif provider == 'anthropic':
-                                usage_data.update({
-                                    'input_tokens': provider_usage.get('input_tokens', 0),
-                                    'output_tokens': provider_usage.get('output_tokens', 0),
-                                    'cache_tokens': provider_usage.get('cache_creation_tokens', 0) + provider_usage.get('cache_read_tokens', 0)
-                                })
-                            
-                            # Track detailed usage for this provider
+                    # Provider tracking now handled by enhanced metrics from ai_client
+                    logger.info(f"[ENHANCED_METRICS] Preview provider metrics tracked in enhanced data structure")
                             
                     
                 except Exception as e:
@@ -477,79 +704,52 @@ def handle(event, context):
                     # Fallback if multiplier lookup fails
                     quoted_full_cost = math.ceil(estimated_cost)  # Will be recalculated with proper scaling, rounded up
                 
-                # --- Start of Complex Estimations Logic ---
+                # ========== SIMPLIFIED TIME/BATCH CALCULATIONS ==========
+                # Extract simple batch/timing info for backward compatibility
+                # All cost calculations now come from enhanced ai_client data
                 
-                # Get actual batch size used during validation
+                # Get basic processing time for backward compatibility
+                processing_time = total_processing_time if total_processing_time > 0 else metadata.get('processing_time', 0.0)
+                
+                # Simple batch size extraction for display purposes
+                effective_batch_size = batch_size or 50  # Use configured or default
                 per_model_batch_stats = metadata.get('per_model_batch_stats', {})
-                
-                # The validator uses a single effective batch size for the entire run
-                # Extract it from the batch stats or use the configured batch size
-                effective_batch_size = 50  # Default fallback (reasonable default from enhanced batch manager)
-                
                 if per_model_batch_stats:
-                    # Look for the actual batch size used in the validation run
                     actual_batch_sizes = per_model_batch_stats.get('model_batch_sizes', {})
                     if actual_batch_sizes:
-                        # For multi-model runs, the validator uses the minimum batch size
-                        # So we should use the minimum as that's what was actually used
                         effective_batch_size = min(actual_batch_sizes.values())
-                        logger.info(f"📊 Using actual batch size from validation: {effective_batch_size} (from models: {actual_batch_sizes})")
-                    else:
-                        logger.warning(f"📊 per_model_batch_stats available but no model_batch_sizes found")
-                elif batch_size and batch_size > 0:
-                    # Fallback to configured batch size if validation stats not available
-                    effective_batch_size = batch_size
-                    logger.info(f"📊 Using configured batch size: {effective_batch_size}")
-                else:
-                    logger.warning(f"📊 No batch size data available, using default: {effective_batch_size}")
                 
-                # Use batch timing info from the validator if available, otherwise fallback
-                batch_timing = metadata.get('batch_timing', {})
-                validator_processing_time = metadata.get('processing_time', 0.0)
-                time_per_batch = 20.0 # Default fallback
+                # Simple fallback time estimates if enhanced data not available
+                if estimated_total_time_seconds is None:
+                    # Use simple per-row calculation
+                    time_per_row_fallback = processing_time / max(1, total_rows_processed)
+                    estimated_total_time_seconds = time_per_row_fallback * total_rows
                 
-                if batch_timing:
-                    processing_time = batch_timing.get('total_batch_time_seconds', 0.0)
-                    time_per_batch = batch_timing.get('average_batch_time_seconds', time_per_batch)
-                elif validator_processing_time > 0:
-                    processing_time = validator_processing_time
-                    # For preview: Processing time is the actual time taken for the preview batch
-                    # We assume this represents the time for a full batch, even if only few rows were processed
-                    time_per_batch = processing_time  # Preview gives actual batch time
-                
-                # Calculate total batches needed for full table
+                # Simple batch count for display
                 total_batches = math.ceil(total_rows / effective_batch_size) if effective_batch_size > 0 else 1
                 
-                # Calculate estimated total processing time based on batches and total rows
-                estimated_total_time_seconds = total_batches * time_per_batch
+                logger.info(f"[SIMPLIFIED_TIMING] Processing time: {processing_time:.3f}s, Est. total: {estimated_total_time_seconds:.3f}s")
+                logger.info(f"[SIMPLIFIED_BATCH] Batch size: {effective_batch_size}, Total batches: {total_batches}")
                 
-                # Time per row for preview should be estimated based on full batch efficiency
-                # This gives an estimate of how long a row will take at full batch sizes
-                time_per_row = time_per_batch / effective_batch_size if effective_batch_size > 0 else (time_per_batch / max(1, total_rows_processed))
+                # All cost/time calculations now come from enhanced estimates - no manual scaling
+                if estimated_total_cost_raw is None:
+                    logger.warning(f"[ENHANCED_DATA] Missing estimated_total_cost_raw from enhanced estimates - using fallback")
+                    estimated_total_cost_raw = estimated_cost_without_cache * (total_rows / max(1, total_rows_processed))
                 
-                # Scale preview costs to full table estimates for user quotes
-                # CORRECTED FORMULA: Preview eliyahu_cost includes caching savings, validation assumes no caching
-                # So estimated_validation_eliyahu_cost should be based on estimated_cost (without caching)
-                per_row_eliyahu_cost = estimated_cost / total_rows_processed if total_rows_processed > 0 else 0.02
-                estimated_total_cost_raw = per_row_eliyahu_cost * total_rows  # Raw eliyahu cost estimate for full table (no multiplier, no caching)
+                # Quoted cost comes from enhanced estimates with business logic applied
+                if quoted_full_cost is None:
+                    logger.warning(f"[ENHANCED_DATA] Missing quoted_full_cost from enhanced estimates - applying business logic")
+                    raw_quoted_cost = estimated_cost * multiplier * (total_rows / max(1, total_rows_processed))
+                    quoted_full_cost = max(2.0, math.ceil(raw_quoted_cost))  # Add $2 minimum charge, rounded up
                 
-                # Apply multiplier for user pricing (use estimated_cost which doesn't include caching savings)
-                per_row_cost_with_multiplier = (estimated_cost * multiplier) / total_rows_processed if total_rows_processed > 0 else 0.02 * multiplier
-                per_row_tokens = total_tokens / total_rows_processed if total_rows_processed > 0 else 200
-
-                # Project to full table with multiplier, rounding, and $2 minimum (this becomes quoted_validation_cost)
-                raw_quoted_cost = per_row_cost_with_multiplier * total_rows
-                quoted_full_cost = max(2.0, math.ceil(raw_quoted_cost))  # Add $2 minimum charge, rounded up to next dollar
-                estimated_total_tokens = per_row_tokens * total_rows
+                estimated_total_tokens = total_tokens * (total_rows / max(1, total_rows_processed))
                 
-                # DEBUG: Log cost calculation details
-                logger.info(f"[COST_DEBUG] Cost calculation details:")
-                logger.info(f"[COST_DEBUG]   per_row_cost_with_multiplier: {per_row_cost_with_multiplier}")
-                logger.info(f"[COST_DEBUG]   total_rows: {total_rows}")
-                logger.info(f"[COST_DEBUG]   raw_quoted_cost: {raw_quoted_cost}")
-                logger.info(f"[COST_DEBUG]   quoted_full_cost (with $2 min): {quoted_full_cost}")
-                
-                # --- End of Complex Estimations Logic ---
+                # DEBUG: Log enhanced cost data
+                logger.info(f"[ENHANCED_COST] Final estimates:")
+                logger.info(f"[ENHANCED_COST]   eliyahu_cost: ${eliyahu_cost:.6f}")
+                logger.info(f"[ENHANCED_COST]   estimated_total_cost_raw: ${estimated_total_cost_raw:.6f}")
+                logger.info(f"[ENHANCED_COST]   quoted_full_cost (with business logic): ${quoted_full_cost:.2f}")
+                logger.info(f"[ENHANCED_COST]   estimated_total_time_seconds: {estimated_total_time_seconds:.3f}s")
 
                 # Get the most recent account balance right before calculating sufficient_balance
                 # This ensures we capture any recent credit additions from the frontend
@@ -571,12 +771,8 @@ def handle(event, context):
                     "estimated_validation_batches": total_batches,
                     "cost_estimates": {
                         "preview_cost": charged_cost,  # What user pays for preview (0)
-                        "quoted_validation_cost": quoted_full_cost,  # What user will pay for full validation (rounded up)
-                        "estimated_validation_eliyahu_cost": estimated_total_cost_raw,  # Raw eliyahu cost estimate for full table (no multiplier)
                         "preview_tokens": total_tokens,
                         "estimated_total_tokens": estimated_total_tokens,
-                        "per_row_cost": per_row_cost_with_multiplier,
-                        "per_row_tokens": per_row_tokens,
                         "per_row_time": time_per_row
                     },
                     "token_usage": token_usage,
@@ -584,12 +780,43 @@ def handle(event, context):
                     "account_info": {
                         "current_balance": float(current_balance) if current_balance else 0,
                         "sufficient_balance": float(current_balance) >= quoted_full_cost if current_balance else False,
-                        "quoted_validation_cost": quoted_full_cost,  # What user will be charged for full validation
                         "credits_needed": max(0, quoted_full_cost - (float(current_balance) if current_balance else 0)),
                         "domain_multiplier": float(multiplier),
                         "email_domain": email_domain
                     }
                 }
+                
+                # Extract per-row costs from enhanced provider metrics
+                perplexity_per_row_cost = 0
+                anthropic_per_row_cost = 0
+                if total_rows_processed > 0 and 'by_provider' in enhanced_metrics.get('aggregated_metrics', {}).get('totals', {}):
+                    provider_totals = enhanced_metrics['aggregated_metrics']['totals']['by_provider']
+                    perplexity_per_row_cost = provider_totals.get('perplexity', {}).get('total_cost_actual', 0) / total_rows_processed
+                    anthropic_per_row_cost = provider_totals.get('anthropic', {}).get('total_cost_actual', 0) / total_rows_processed
+                else:
+                    # Fallback to legacy token_usage if enhanced data not available
+                    by_provider = token_usage.get('by_provider', {})
+                    perplexity_data = by_provider.get('perplexity', {})
+                    anthropic_data = by_provider.get('anthropic', {})
+                    perplexity_per_row_cost = float(perplexity_data.get('total_cost', 0)) / total_rows_processed if total_rows_processed > 0 else 0
+                    anthropic_per_row_cost = float(anthropic_data.get('total_cost', 0)) / total_rows_processed if total_rows_processed > 0 else 0
+                
+                # Add per-row costs to cost_estimates
+                preview_payload['cost_estimates']['perplexity_per_row_estimated_cost'] = perplexity_per_row_cost
+                preview_payload['cost_estimates']['anthropic_per_row_estimated_cost'] = anthropic_per_row_cost
+                
+                # Add key frontend-expected fields to cost_estimates object (frontend looks for them here)
+                preview_payload['cost_estimates'].update({
+                    "quoted_validation_cost": quoted_full_cost,  # What user will pay for full validation (rounded up)
+                    "estimated_validation_eliyahu_cost": estimated_total_cost_raw,  # Raw eliyahu cost estimate for full table (no multiplier)
+                    "estimated_total_processing_time": estimated_total_time_seconds  # Frontend expects time in seconds here
+                })
+                
+                # Add fields at top level for backward compatibility and easy access
+                preview_payload.update({
+                    "quoted_validation_cost": quoted_full_cost,  # What user will pay for full validation (rounded up)
+                    "estimated_validation_eliyahu_cost": estimated_total_cost_raw  # Raw eliyahu cost estimate for full table (no multiplier)
+                })
                 
                 # Generate enhanced Excel download link and add to preview payload
                 enhanced_download_url = None
@@ -731,31 +958,33 @@ def handle(event, context):
                 # Create search group models tracking string for preview - one entry per search group with validated columns count
                 search_groups_models = []
                 search_groups_count = validation_metrics.get('search_groups_count', 0)
-                high_context_groups = validation_metrics.get('high_context_search_groups_count', 0)
+                enhanced_context_groups = validation_metrics.get('enhanced_context_search_groups_count', 0)
                 claude_groups = validation_metrics.get('claude_search_groups_count', 0)
-                regular_perplexity_groups = search_groups_count - high_context_groups - claude_groups
+                regular_perplexity_groups = search_groups_count - enhanced_context_groups - claude_groups
                 validated_columns_count = validation_metrics.get('validated_columns_count', 0)
                 
-                # Calculate columns per search group (distribute evenly, remainder goes to first groups)
-                if search_groups_count > 0:
-                    base_columns_per_group = validated_columns_count // search_groups_count
-                    extra_columns = validated_columns_count % search_groups_count
-                else:
-                    base_columns_per_group = 0
-                    extra_columns = 0
+                # Count actual validation targets per search group from config
+                validation_targets = config_data.get('validation_targets', [])
+                columns_per_search_group = {}
+                
+                # Count validation targets assigned to each search group (excluding ID and IGNORED)
+                for target in validation_targets:
+                    importance = target.get('importance', '').upper()
+                    if importance not in ["ID", "IGNORED"]:
+                        search_group_id = target.get('search_group', 0)
+                        columns_per_search_group[search_group_id] = columns_per_search_group.get(search_group_id, 0) + 1
                 
                 # Build search group models by iterating through actual search groups in config
                 search_groups_list = config_data.get('search_groups', [])
                 anthropic_default_web_searches = config_data.get('anthropic_max_web_searches_default', 3)
                 
-                current_group = 0
-                
                 # Iterate through each search group to get exact models and settings
                 for search_group in search_groups_list:
-                    if current_group >= search_groups_count:
-                        break
-                        
-                    columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
+                    # Process ALL search groups defined in config, not just those with validation targets
+                    # This ensures we capture models like claude-sonnet-4-0 even if they're in groups without validation targets
+                    
+                    search_group_id = search_group.get('group_id', 0)
+                    columns_for_this_group = columns_per_search_group.get(search_group_id, 0)
                     model = search_group.get('model', 'sonar-pro')
                     search_context = search_group.get('search_context', 'low')
                     
@@ -775,7 +1004,6 @@ def handle(event, context):
                             model_display = f"{model} X {columns_for_this_group}"
                     
                     search_groups_models.append(model_display)
-                    current_group += 1
                 
                 # Get configuration ID for tracking
                 configuration_id = config_data.get('storage_metadata', {}).get('config_id', 'unknown')
@@ -791,9 +1019,38 @@ def handle(event, context):
                 estimated_time_minutes = preview_payload.get('estimated_validation_time_minutes', 0.0)  # Total estimated time in minutes
                 batch_size_used = preview_payload.get('actual_batch_size', 10)  # Actual batch size used for preview
                 
+                # Convert existing token_usage data to enhanced provider metrics format
+                provider_metrics_for_db = {}
+                by_provider = token_usage.get('by_provider', {})
+                total_rows_processed = len(validation_results.get('validation_results', {})) if validation_results else 1
+                
+                for provider, provider_usage in by_provider.items():
+                    if provider_usage and isinstance(provider_usage, dict):
+                        # Extract metrics from existing token_usage structure
+                        actual_cost = provider_usage.get('total_cost', 0.0)
+                        total_tokens = provider_usage.get('total_tokens', 0)
+                        api_calls = provider_usage.get('api_calls', 0)
+                        cached_calls = provider_usage.get('cached_calls', 0)
+                        
+                        # Estimate cost without cache benefits (approximate 8x multiplier for time, varies for cost)
+                        cache_efficiency = cached_calls / max(api_calls, 1) if api_calls > 0 else 0
+                        estimated_cost_without_cache = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
+                        
+                        provider_metrics_for_db[provider] = {
+                            'calls': api_calls,
+                            'tokens': total_tokens,
+                            'cost_actual': actual_cost,
+                            'cost_without_cache': estimated_cost_without_cache,
+                            'processing_time': processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1)),
+                            'cache_hit_tokens': cached_calls * (total_tokens / max(api_calls, 1)) if api_calls > 0 else 0,
+                            'cost_per_row_actual': actual_cost / total_rows_processed if total_rows_processed > 0 else 0,
+                            'cost_per_row_without_cache': estimated_cost_without_cache / total_rows_processed if total_rows_processed > 0 else 0,
+                            'time_per_row_actual': (processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1))) / total_rows_processed if total_rows_processed > 0 else 0,
+                            'cache_efficiency_percent': (1 - (actual_cost / max(estimated_cost_without_cache, 0.000001))) * 100
+                        }
+                
                 # Update DynamoDB with the complete preview payload and account tracking
-                update_run_status(
-                    session_id=session_id, status='COMPLETED',
+                update_run_status_for_session(status='COMPLETED',
                     run_type="Preview",
                     verbose_status="Preview complete. Results available.",
                     percent_complete=100,
@@ -808,12 +1065,13 @@ def handle(event, context):
                     input_table_name=input_filename,
                     configuration_id=configuration_id,
                     batch_size=batch_size_used,
-                    eliyahu_cost=eliyahu_cost,
-                    quoted_validation_cost=quoted_validation_cost_value,
-                    estimated_validation_eliyahu_cost=estimated_validation_eliyahu_cost_value,
+                    eliyahu_cost=eliyahu_cost,  # Actual cost paid (with caching benefits)
+                    quoted_validation_cost=quoted_full_cost,  # What user will pay for full validation (with multiplier, rounding, $2 min)
+                    estimated_validation_eliyahu_cost=estimated_total_cost_raw,  # Raw cost estimate for full table without caching benefit
                     time_per_row_seconds=time_per_row,
                     estimated_validation_time_minutes=estimated_time_minutes,
-                    run_time_s=preview_payload.get('preview_processing_time', 0.0)  # Actual run time in seconds
+                    run_time_s=preview_payload.get('preview_processing_time', 0.0),  # Actual run time in seconds
+                    provider_metrics=provider_metrics_for_db  # Enhanced provider-specific metrics
                 )
                 
                 # Track enhanced user metrics for preview
@@ -833,10 +1091,10 @@ def handle(event, context):
                     total_rows=validation_results.get('total_rows', 0),
                     columns_validated=validation_metrics.get('validated_columns_count', 0),
                     search_groups=validation_metrics.get('search_groups_count', 0),
-                    high_context_search_groups=validation_metrics.get('high_context_search_groups_count', 0),
+                    high_context_search_groups=validation_metrics.get('enhanced_context_search_groups_count', 0),
                     claude_calls=validation_metrics.get('claude_search_groups_count', 0),
-                    eliyahu_cost=eliyahu_cost,
-                    estimated_cost=estimated_cost,
+                    eliyahu_cost=eliyahu_cost,  # Actual cost paid
+                    estimated_cost=estimated_cost_without_cache,  # Raw cost estimate without caching
                     quoted_validation_cost=quoted_full_cost,  # This is the scaled full table quote
                     charged_cost=0.0,  # Preview doesn't charge
                     total_api_calls=total_api_calls,
@@ -975,16 +1233,14 @@ def handle(event, context):
                 except Exception as e:
                     logger.error(f"Failed to update session info for failed preview: {e}")
                 
-                update_run_status(
-                    session_id=session_id, status='FAILED',
+                update_run_status_for_session(status='FAILED',
                     run_type="Preview",
                     verbose_status="Preview failed to generate results.",
                     percent_complete=100,
                     processed_rows=0,
                     batch_size=10,  # Default batch size
                     eliyahu_cost=0.0,
-                    time_per_row_seconds=0.0
-                )
+                    time_per_row_seconds=0.0)
             
             # Return early for preview mode to prevent fallthrough to normal processing
             return {'statusCode': 200, 'body': json.dumps({'status': 'preview_completed', 'session_id': session_id})}
@@ -1026,7 +1282,7 @@ def handle(event, context):
             processed_rows_count = 0
             total_batches = (rows_to_process + batch_size - 1) // batch_size
             
-            update_run_status(session_id=session_id, status='PROCESSING', run_type="Validation", verbose_status=f"Validation preparing to process {rows_to_process} rows in {total_batches} batches.", batch_size=batch_size)
+            update_run_status_for_session( status='PROCESSING', run_type="Validation", verbose_status=f"Validation preparing to process {rows_to_process} rows in {total_batches} batches.", batch_size=batch_size)
 
             # DISABLED: Fake simulation replaced with real validation lambda invocation
             logger.info(f"[DEBUG] Fake batch processing loop DISABLED for session {session_id}")
@@ -1036,13 +1292,10 @@ def handle(event, context):
             # This simulation was creating fake "first batch -> final batch" jumps
             
             # Interface setup for full validation - use 0-5% range
-            update_run_status(
-                session_id=session_id, 
-                status='PROCESSING',
+            update_run_status_for_session(status='PROCESSING',
                 processed_rows=0,
                 percent_complete=2,  # Interface setup: 0-5% range
-                verbose_status=f"Validation starting full processing for {rows_to_process} rows..."
-            )
+                verbose_status=f"Validation starting full processing for {rows_to_process} rows...")
             
             # The real processing should happen via validation lambda invocation
             # which will send proper WebSocket progress updates
@@ -1063,13 +1316,10 @@ def handle(event, context):
                 percent_complete = int((processed_rows_count / rows_to_process) * 100)
                 verbose_status = f"Processing batch {i + 1} of {total_batches} ({processed_rows_count}/{rows_to_process} rows)..."
                 
-                update_run_status(
-                    session_id=session_id, 
-                    status='PROCESSING',
+                update_run_status_for_session(status='PROCESSING',
                     processed_rows=processed_rows_count,
                     percent_complete=percent_complete,
-                    verbose_status=verbose_status
-                )
+                    verbose_status=verbose_status)
             """
             
             # After the loop, we would have the final results.
@@ -1086,7 +1336,7 @@ def handle(event, context):
         if validation_results:
             processed_rows_count = len(validation_results.get('validation_results', {}))
             run_type_processing = "Preview" if is_preview else "Validation"
-            update_run_status(session_id=session_id, status='PROCESSING', run_type=run_type_processing, processed_rows=processed_rows_count)
+            update_run_status_for_session( status='PROCESSING', run_type=run_type_processing, processed_rows=processed_rows_count)
 
         has_results = (validation_results and 
                       'validation_results' in validation_results and 
@@ -1110,15 +1360,31 @@ def handle(event, context):
                 email_domain = email.split('@')[-1] if '@' in email else 'unknown'
                 multiplier = float(get_domain_multiplier(email_domain))
                 
-                # Get both costs from validation lambda
-                eliyahu_cost = token_usage.get('total_cost', 0.0)  # What we actually paid for full validation
-                estimated_cost = token_usage.get('estimated_total_cost', eliyahu_cost)  # What this full validation would cost without caching
-                logger.debug(f"BILLING DEBUG: Raw costs from validation - eliyahu_cost={eliyahu_cost}, estimated_cost={estimated_cost}")
+                # ========== HARDENED THREE-TIER COST SYSTEM (FULL VALIDATION) ==========
+                # Extract cost data from validation lambda's centralized cost calculation
+                eliyahu_cost = token_usage.get('total_cost', 0.0)  # Actual cost paid (includes caching benefits)
+                
+                # Calculate estimated cost without caching benefit for consistency
+                estimated_cost_without_cache = _calculate_estimated_cost_without_cache(token_usage, metadata)
+                
+                # Validate cost calculations
+                if eliyahu_cost < 0 or estimated_cost_without_cache < 0:
+                    logger.error(f"[COST_ERROR] Full validation invalid negative costs - Actual: ${eliyahu_cost:.6f}, Estimated: ${estimated_cost_without_cache:.6f}")
+                    eliyahu_cost = max(0.0, eliyahu_cost)
+                    estimated_cost_without_cache = max(0.0, estimated_cost_without_cache)
+                
+                if eliyahu_cost > estimated_cost_without_cache:
+                    logger.warning(f"[COST_WARNING] Full validation actual cost ${eliyahu_cost:.6f} > estimated ${estimated_cost_without_cache:.6f}")
+                
+                # Apply hardened domain multiplier for fallback calculation
+                multiplier_result = _apply_domain_multiplier_with_validation(email, estimated_cost_without_cache, session_id)
+                multiplier = multiplier_result['multiplier']
                 
                 # For full validation, use the quoted_full_cost from preview (what user was promised to pay)
                 # This ensures users pay exactly what was quoted in preview, regardless of actual full validation costs
-                charged_cost = estimated_cost * multiplier  # Fallback if preview cost not found
-                logger.debug(f"BILLING DEBUG: Calculated fallback charged_cost = {estimated_cost} * {multiplier} = {charged_cost}")
+                charged_cost = multiplier_result['quoted_cost']  # Fallback if preview cost not found
+                logger.info(f"[COST_AUDIT] Full validation fallback - Actual: ${eliyahu_cost:.6f}, "
+                           f"Estimated: ${estimated_cost_without_cache:.6f}, Quoted fallback: ${charged_cost:.2f}")
                 
                 try:
                     # Try to get the quoted cost from preview results stored in S3
@@ -1169,7 +1435,7 @@ def handle(event, context):
                 except Exception as e:
                     logger.warning(f"Failed to retrieve preview quoted cost: {e}, using calculated cost")
                 
-                logger.info(f"Full validation costs - Eliyahu: ${eliyahu_cost:.6f}, Estimated: ${estimated_cost:.6f}, Multiplier: {multiplier}x, User Charged: ${charged_cost:.6f}")
+                logger.info(f"Full validation costs - Eliyahu: ${eliyahu_cost:.6f}, Estimated: ${estimated_cost_without_cache:.6f}, Multiplier: {multiplier}x, User Charged: ${charged_cost:.6f}")
                 logger.info(f"BILLING DEBUG: is_preview={is_preview}, charged_cost={charged_cost}, session_id={session_id}")
                 
                 # For full validation, deduct from account balance
@@ -1286,6 +1552,7 @@ def handle(event, context):
                 time_per_batch = 20.0 # Default fallback
                 time_per_row = 4.0 # Default fallback
 
+                # Extract timing data from enhanced metrics or use fallback
                 if batch_timing:
                     processing_time = batch_timing.get('total_batch_time_seconds', 0.0)
                     time_per_batch = batch_timing.get('average_batch_time_seconds', time_per_batch)
@@ -1293,17 +1560,14 @@ def handle(event, context):
                 elif validator_processing_time > 0:
                     processing_time = validator_processing_time
                     if total_rows_processed > 0:
-                        # For full validation: actual time per row is total processing time / total rows processed
                         time_per_row = processing_time / total_rows_processed
-                        time_per_batch = time_per_row * effective_batch_size  # Use actual batch size
+                        time_per_batch = time_per_row * effective_batch_size
                 
-                # For full validation, calculate per-row cost based on actual charged cost
-                per_row_cost_full = charged_cost / total_rows_processed if total_rows_processed > 0 else charged_cost
+                # Extract per-row cost from enhanced data (not manual calculation)
+                per_row_cost_full = eliyahu_cost / total_rows_processed if total_rows_processed > 0 else eliyahu_cost
                 
-                # Calculate total batches for full validation using actual batch size
+                # Simple batch count for display
                 total_batches = math.ceil(total_rows / effective_batch_size) if total_rows > 0 else 0
-                
-                # --- End of Complex Estimations Logic ---
 
                 preview_payload = {
                     "status": "preview_completed",
@@ -1320,11 +1584,8 @@ def handle(event, context):
                     "enhanced_download_url": enhanced_download_url,  # Download link for enhanced Excel
                     "cost_estimates": {
                         "preview_cost": charged_cost,  # What user pays for preview (0)
-                        "quoted_validation_cost": quoted_full_cost,  # What user will pay for full validation
                         "preview_tokens": total_tokens,
                         "estimated_total_tokens": estimated_total_tokens,
-                        "per_row_cost": per_row_cost_full,
-                        "per_row_tokens": per_row_tokens,
                         "per_row_time": time_per_row
                     },
                     "token_usage": token_usage,
@@ -1556,7 +1817,7 @@ def handle(event, context):
                     billing_info = {
                         'amount_charged': charged_amount,
                         'eliyahu_cost': eliyahu_cost,
-                        'estimated_total_cost': estimated_cost,  # Add estimated_total_cost from DynamoDB
+                        'actual_cost': estimated_cost,  # Add actual cost from DynamoDB
                         'multiplier': multiplier,
                         'initial_balance': float(initial_balance) if initial_balance else 0,
                         'final_balance': float(final_balance) if final_balance else 0,
@@ -1684,7 +1945,8 @@ def handle(event, context):
                     
                     # Update status with both ZIP file and enhanced Excel download URLs
                     status_update_data = {
-                        'session_id': session_id, 
+                        'session_id': session_id,
+                        'run_key': run_key,
                         'status': 'COMPLETED', 
                         'results_s3_key': enhanced_results_s3_key  # Points to enhanced validation results directory
                     }
@@ -1714,8 +1976,6 @@ def handle(event, context):
                         "actual_batch_size": effective_batch_size,
                         "estimated_validation_batches": math.ceil(total_rows_in_file / effective_batch_size) if effective_batch_size > 0 else 0,
                         "cost_estimates": {
-                            "per_row_cost": eliyahu_cost / processed_rows_count if processed_rows_count > 0 else 0,
-                            "estimated_total_cost": charged_cost,
                             "preview_cost": 0  # Full runs don't have preview cost
                         },
                         "token_usage": {
@@ -1723,8 +1983,7 @@ def handle(event, context):
                             "by_provider": token_usage.get('by_provider', {}),
                             "api_calls": token_usage.get('api_calls', 0),
                             "cached_calls": token_usage.get('cached_calls', 0),
-                            "total_cost": eliyahu_cost,
-                            "estimated_total_cost": estimated_cost
+                            "total_cost": eliyahu_cost
                         },
                         "validation_metrics": validation_metrics
                     }
@@ -1740,31 +1999,30 @@ def handle(event, context):
                     search_groups_models = []
                     # validation_metrics should already be defined from metadata.get('validation_metrics', {})
                     search_groups_count = validation_metrics.get('search_groups_count', 0)
-                    high_context_groups = validation_metrics.get('high_context_search_groups_count', 0)
+                    enhanced_context_groups = validation_metrics.get('enhanced_context_search_groups_count', 0)
                     claude_groups = validation_metrics.get('claude_search_groups_count', 0)
-                    regular_perplexity_groups = search_groups_count - high_context_groups - claude_groups
+                    regular_perplexity_groups = search_groups_count - enhanced_context_groups - claude_groups
                     validated_columns_count = validation_metrics.get('validated_columns_count', 0)
                     
-                    # Calculate columns per search group (distribute evenly, remainder goes to first groups)
-                    if search_groups_count > 0:
-                        base_columns_per_group = validated_columns_count // search_groups_count
-                        extra_columns = validated_columns_count % search_groups_count
-                    else:
-                        base_columns_per_group = 0
-                        extra_columns = 0
+                    # Count actual validation targets per search group from config
+                    validation_targets = config_data.get('validation_targets', [])
+                    columns_per_search_group = {}
+                    
+                    # Count validation targets assigned to each search group (excluding ID and IGNORED)
+                    for target in validation_targets:
+                        importance = target.get('importance', '').upper()
+                        if importance not in ["ID", "IGNORED"]:
+                            search_group_id = target.get('search_group', 0)
+                            columns_per_search_group[search_group_id] = columns_per_search_group.get(search_group_id, 0) + 1
                     
                     # Build search group models by iterating through actual search groups in config
                     search_groups_list = config_data.get('search_groups', [])
                     anthropic_default_web_searches = config_data.get('anthropic_max_web_searches_default', 3)
                     
-                    current_group = 0
-                    
                     # Iterate through each search group to get exact models and settings
                     for search_group in search_groups_list:
-                        if current_group >= search_groups_count:
-                            break
-                            
-                        columns_for_this_group = base_columns_per_group + (1 if current_group < extra_columns else 0)
+                        search_group_id = search_group.get('group_id', 0)
+                        columns_for_this_group = columns_per_search_group.get(search_group_id, 0)
                         model = search_group.get('model', 'sonar-pro')
                         search_context = search_group.get('search_context', 'low')
                         
@@ -1784,7 +2042,6 @@ def handle(event, context):
                                 model_display = f"{model} X {columns_for_this_group}"
                         
                         search_groups_models.append(model_display)
-                        current_group += 1
                     
                     status_update_data['models'] = ", ".join(search_groups_models) if search_groups_models else "No API calls made"
                     
@@ -1806,14 +2063,70 @@ def handle(event, context):
                     
                     # Add consolidated fields according to new schema
                     status_update_data['run_type'] = "Validation"
-                    status_update_data['eliyahu_cost'] = eliyahu_cost  # Actual cost incurred
-                    # For full validation, quoted_validation_cost is what the user was charged (same as charged_cost)
-                    status_update_data['quoted_validation_cost'] = charged_cost
-                    # For validation, estimated_validation_eliyahu_cost is the same as eliyahu_cost (raw cost without multiplier)
-                    status_update_data['estimated_validation_eliyahu_cost'] = eliyahu_cost  # Raw cost estimate = actual cost for validation
+                    # ========== HARDENED THREE-TIER COST FIELDS ==========
+                    status_update_data['eliyahu_cost'] = eliyahu_cost  # Actual cost paid for full validation (includes caching benefits)
+                    status_update_data['quoted_validation_cost'] = charged_cost  # What user was charged for full validation (with multiplier, rounding, $2 min)
+                    
+                    # NOTE: Do NOT overwrite estimated_validation_eliyahu_cost for full validations
+                    # This field should preserve the preview estimate for accuracy comparison
+                    # Log the comparison between preview estimate and actual full validation cost
+                    try:
+                        # Try to retrieve the preview estimate from the existing run record
+                        run_table = boto3.resource('dynamodb', region_name=os.environ.get('AWS_REGION', 'us-east-1')).Table('perplexity-validator-runs')
+                        existing_run = run_table.get_item(Key={'session_id': session_id, 'run_key': run_key})
+                        
+                        if 'Item' in existing_run and 'estimated_validation_eliyahu_cost' in existing_run['Item']:
+                            preview_estimate = float(existing_run['Item']['estimated_validation_eliyahu_cost'])
+                            actual_full_cost_without_cache = estimated_cost_without_cache
+                            estimate_accuracy = ((preview_estimate - actual_full_cost_without_cache) / preview_estimate * 100) if preview_estimate > 0 else 0
+                            
+                            logger.info(f"[COST_COMPARISON] Preview estimated: ${preview_estimate:.6f} | "
+                                      f"Actual full cost (no cache): ${actual_full_cost_without_cache:.6f} | "
+                                      f"Estimate accuracy: {estimate_accuracy:.1f}% | User charged: ${charged_cost:.2f}")
+                        else:
+                            logger.info(f"[COST_COMPARISON] No preview estimate found | "
+                                      f"Actual full cost (no cache): ${estimated_cost_without_cache:.6f} | "
+                                      f"User charged: ${charged_cost:.2f}")
+                    except Exception as e:
+                        logger.warning(f"[COST_COMPARISON] Could not retrieve preview estimate for comparison: {e}")
+                        logger.info(f"[COST_COMPARISON] Actual full cost (no cache): ${estimated_cost_without_cache:.6f} | "
+                                  f"User charged: ${charged_cost:.2f}")
+                    
+                    # Do NOT update estimated_validation_eliyahu_cost - preserve the preview estimate
                     status_update_data['time_per_row_seconds'] = eliyahu_cost / processed_rows_count / 0.001 if processed_rows_count > 0 else 0.0  # Rough estimate based on cost
                     status_update_data['run_time_s'] = processing_time  # Actual validation run time in seconds
                     # estimated_validation_time_minutes will be calculated from actual processing time automatically in update_run_status
+                    
+                    # Convert existing token_usage data to enhanced provider metrics format for full validation
+                    provider_metrics_for_db = {}
+                    by_provider = token_usage.get('by_provider', {})
+                    
+                    for provider, provider_usage in by_provider.items():
+                        if provider_usage and isinstance(provider_usage, dict):
+                            # Extract metrics from existing token_usage structure
+                            actual_cost = provider_usage.get('total_cost', 0.0)
+                            total_tokens = provider_usage.get('total_tokens', 0)
+                            api_calls = provider_usage.get('api_calls', 0)
+                            cached_calls = provider_usage.get('cached_calls', 0)
+                            
+                            # Estimate cost without cache benefits (approximate based on cache efficiency)
+                            cache_efficiency = cached_calls / max(api_calls, 1) if api_calls > 0 else 0
+                            estimated_cost_without_cache = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
+                            
+                            provider_metrics_for_db[provider] = {
+                                'calls': api_calls,
+                                'tokens': total_tokens,
+                                'cost_actual': actual_cost,
+                                'cost_without_cache': estimated_cost_without_cache,
+                                'processing_time': processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1)),
+                                'cache_hit_tokens': cached_calls * (total_tokens / max(api_calls, 1)) if api_calls > 0 else 0,
+                                'cost_per_row_actual': actual_cost / processed_rows_count if processed_rows_count > 0 else 0,
+                                'cost_per_row_without_cache': estimated_cost_without_cache / processed_rows_count if processed_rows_count > 0 else 0,
+                                'time_per_row_actual': (processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1))) / processed_rows_count if processed_rows_count > 0 else 0,
+                                'cache_efficiency_percent': (1 - (actual_cost / max(estimated_cost_without_cache, 0.000001))) * 100
+                            }
+                    
+                    status_update_data['provider_metrics'] = provider_metrics_for_db
                     
                     update_run_status(**status_update_data)
                     
@@ -1834,10 +2147,10 @@ def handle(event, context):
                         total_rows=total_rows_in_file,
                         columns_validated=validation_metrics.get('validated_columns_count', 0),
                         search_groups=validation_metrics.get('search_groups_count', 0),
-                        high_context_search_groups=validation_metrics.get('high_context_search_groups_count', 0),
+                        high_context_search_groups=validation_metrics.get('enhanced_context_search_groups_count', 0),
                         claude_calls=validation_metrics.get('claude_search_groups_count', 0),
-                        eliyahu_cost=eliyahu_cost,
-                        estimated_cost=estimated_cost,
+                        eliyahu_cost=eliyahu_cost,  # Actual cost paid
+                        estimated_cost=estimated_cost_without_cache,  # Raw cost estimate without caching
                         quoted_validation_cost=charged_cost,  # This is the quoted cost from preview (what we're charging)
                         charged_cost=charged_cost,  # Full validation charges user the preview quoted cost
                         total_api_calls=token_usage.get('api_calls', 0),
@@ -1852,9 +2165,7 @@ def handle(event, context):
         else: # No results
              logger.warning(f"No validation results returned from validator for session {session_id}")
              run_type_for_failed = "Preview" if is_preview else "Validation"
-             update_run_status(
-                session_id=session_id, 
-                status='FAILED', 
+             update_run_status_for_session(status='FAILED', 
                 run_type=run_type_for_failed,
                 error_message="No validation results returned", 
                 verbose_status="Failed to process results.", 
@@ -1862,8 +2173,7 @@ def handle(event, context):
                 processed_rows=0,
                 batch_size=10,  # Default batch size
                 eliyahu_cost=0.0,
-                time_per_row_seconds=0.0
-             )
+                time_per_row_seconds=0.0)
              # Handle empty results case for preview if needed
              if is_preview:
                 # Even for empty results, store in versioned folder
@@ -1904,16 +2214,39 @@ def handle(event, context):
             is_preview = event.get('preview_mode', False) or event.get('request_type') == 'preview'
             is_config = event.get('request_type') == 'config_generation'
             run_type_for_error = "Config Generation" if is_config else ("Preview" if is_preview else "Validation")
-            update_run_status(
-                session_id=event.get('session_id'), 
-                status='FAILED', 
-                run_type=run_type_for_error,
-                error_message=str(e),
-                processed_rows=0,
-                batch_size=1 if is_config else 10,
-                eliyahu_cost=0.0,
-                time_per_row_seconds=0.0
-            )
+            # Try to get run_key from event, if not available create one for error tracking
+            session_id_for_error = event.get('session_id')
+            run_key_for_error = event.get('run_key')
+            
+            if not run_key_for_error and session_id_for_error:
+                try:
+                    # Create a new run record for this error if one doesn't exist
+                    run_key_for_error = create_run_record(
+                        session_id=session_id_for_error, 
+                        email=event.get('email', 'unknown'), 
+                        total_rows=0, 
+                        batch_size=1, 
+                        run_type=run_type_for_error
+                    )
+                    logger.info(f"Created run_key for error tracking: {run_key_for_error}")
+                except Exception as create_error:
+                    logger.error(f"Failed to create run_key for error tracking: {create_error}")
+                    run_key_for_error = None
+            
+            if run_key_for_error:
+                update_run_status(
+                    session_id=session_id_for_error,
+                    run_key=run_key_for_error,
+                    status='FAILED', 
+                    run_type=run_type_for_error,
+                    error_message=str(e),
+                    processed_rows=0,
+                    batch_size=1 if is_config else 10,
+                    eliyahu_cost=0.0,
+                    time_per_row_seconds=0.0
+                )
+            else:
+                logger.warning(f"Cannot update run status for failed session {session_id_for_error} - no run_key available")
         return {'statusCode': 500, 'body': json.dumps({'status': 'background_failed', 'error': str(e)})}
 
 def handle_config_generation(event, context):
@@ -1940,9 +2273,7 @@ def handle_config_generation(event, context):
                 
                 logger.info(f"[CONFIG_RUN_TRACKING] Creating config generation run record for session {session_id}")
                 create_run_record(session_id, config_email, total_rows, 1, "Config Generation")  # batch_size=1 for config generation
-                update_run_status(
-                    session_id=session_id,
-                    status='IN_PROGRESS',
+                update_run_status_for_session(status='IN_PROGRESS',
                     run_type="Config Generation",
                     verbose_status="Configuration generation starting with AI analysis...",
                     percent_complete=5,
@@ -2136,9 +2467,35 @@ def handle_config_generation(event, context):
                     time_per_config = processing_time_seconds  # For config generation, it's time per config
                     processing_time_minutes = processing_time_seconds / 60.0
                     
-                    update_run_status(
-                        session_id=session_id,
-                        status='COMPLETED',
+                    # Convert config token_usage data to enhanced provider metrics format
+                    provider_metrics_for_db = {}
+                    token_usage_data = config_data.get('token_usage', {}).get('by_provider', {})
+                    
+                    for provider, provider_usage in token_usage_data.items():
+                        if provider_usage and isinstance(provider_usage, dict):
+                            # Extract metrics from config token_usage structure
+                            actual_cost = provider_usage.get('total_cost', 0.0)
+                            total_tokens = provider_usage.get('total_tokens', 0)
+                            api_calls = provider_usage.get('calls', 0)
+                            
+                            # For config generation, assume minimal caching benefit (conservative estimate)
+                            cache_multiplier = 1.1  # 10% increase for non-cached config operations
+                            estimated_cost_without_cache = actual_cost * cache_multiplier
+                            
+                            provider_metrics_for_db[provider] = {
+                                'calls': api_calls,
+                                'tokens': total_tokens,
+                                'cost_actual': actual_cost,
+                                'cost_without_cache': estimated_cost_without_cache,
+                                'processing_time': processing_time_seconds * (api_calls / max(sum(p.get('calls', 0) for p in token_usage_data.values()), 1)) if api_calls > 0 else 0,
+                                'cache_hit_tokens': 0,  # Config generation typically doesn't benefit from significant caching
+                                'cost_per_row_actual': actual_cost,  # For config, "per row" is per config
+                                'cost_per_row_without_cache': estimated_cost_without_cache,
+                                'time_per_row_actual': processing_time_seconds * (api_calls / max(sum(p.get('calls', 0) for p in token_usage_data.values()), 1)) if api_calls > 0 else processing_time_seconds,
+                                'cache_efficiency_percent': ((estimated_cost_without_cache - actual_cost) / max(estimated_cost_without_cache, 0.000001)) * 100
+                            }
+                    
+                    update_run_status_for_session(status='COMPLETED',
                         run_type="Config Generation",
                         verbose_status="Configuration generation completed successfully.",
                         percent_complete=100,
@@ -2157,7 +2514,8 @@ def handle_config_generation(event, context):
                         estimated_validation_eliyahu_cost=None,  # Config generation doesn't use validation cost estimates
                         time_per_row_seconds=None,  # Config generation doesn't use validation timing fields
                         estimated_validation_time_minutes=None,  # Config generation doesn't use validation timing fields
-                        run_time_s=processing_time_seconds  # Actual config generation time in seconds
+                        run_time_s=processing_time_seconds,  # Actual config generation time in seconds
+                        provider_metrics=provider_metrics_for_db  # Enhanced provider-specific metrics
                     )
                     logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated config generation run record")
                 except Exception as e:
@@ -2234,9 +2592,7 @@ def handle_config_generation(event, context):
             if DYNAMODB_AVAILABLE and config_email and session_id:
                 try:
                     logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with failure")
-                    update_run_status(
-                        session_id=session_id,
-                        status='FAILED',
+                    update_run_status_for_session(status='FAILED',
                         run_type="Config Generation",
                         verbose_status=f"Configuration generation failed: {response.get('error', 'Unknown error')}",
                         percent_complete=0,
@@ -2289,9 +2645,7 @@ def handle_config_generation(event, context):
         if DYNAMODB_AVAILABLE and config_email and session_id:
             try:
                 logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with exception failure")
-                update_run_status(
-                    session_id=session_id,
-                    status='FAILED',
+                update_run_status_for_session(status='FAILED',
                     run_type="Config Generation",
                     verbose_status=f"Configuration generation failed with exception: {str(e)}",
                     percent_complete=0,

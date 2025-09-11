@@ -40,7 +40,7 @@ def send_preview_request(session_id, excel_s3_key, config_s3_key, email, referen
     }
     return _send_sqs_message(PREVIEW_QUEUE_URL, message_body, is_fifo=True)
 
-def send_full_request(session_id, excel_s3_key, config_s3_key, email, reference_pin, results_key=None, max_rows=None, batch_size=None, email_folder=None, preview_email=False):
+def send_full_request(session_id, excel_s3_key, config_s3_key, email, reference_pin, results_key=None, max_rows=None, batch_size=None, email_folder=None, preview_email=False, run_key=None):
     """Send a full validation request to the standard SQS queue."""
     if not STANDARD_QUEUE_URL:
         logger.error("Standard SQS queue URL is not configured.")
@@ -66,6 +66,7 @@ def send_full_request(session_id, excel_s3_key, config_s3_key, email, reference_
         'batch_size': batch_size,
         'email_folder': email_folder,  # Keep for backward compatibility
         'preview_email': preview_email,
+        'run_key': run_key,
         'created_at': datetime.now(timezone.utc).isoformat(),
     }
     # Clean out None values so they don't get serialized

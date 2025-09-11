@@ -136,10 +136,22 @@ RUNS_TABLE_COLUMNS = [
     
     # CONSOLIDATED: Cost and timing fields (ordered by importance)
     'eliyahu_cost',
-    'estimated_validation_eliyahu_cost',
+    'estimated_validation_eliyahu_cost', 
     'quoted_validation_cost',
     'time_per_row_seconds',
     'estimated_validation_time_minutes',
+    'run_time_s',
+    
+    # ENHANCED PROVIDER-SPECIFIC METRICS
+    'total_provider_cost_actual',
+    'total_provider_cost_without_cache',
+    'total_provider_calls',
+    'total_provider_tokens',
+    'overall_cache_efficiency_percent',
+    
+    # Provider-specific eliyahu costs (extracted from provider_metrics)
+    'perplexity_eliyahu_cost',
+    'anthropic_eliyahu_cost',
     
     # Account tracking
     'account_current_balance',
@@ -152,6 +164,19 @@ RUNS_TABLE_COLUMNS = [
     'input_table_name',
     'configuration_id',
     'results_s3_key',
+    
+    # Token usage details from flattened preview_data
+    'perplexity_prompt_tokens',
+    'perplexity_completion_tokens',
+    'perplexity_per_row_estimated_cost',
+    'anthropic_input_tokens',
+    'anthropic_output_tokens',
+    'anthropic_cache_creation_tokens',
+    'anthropic_cache_read_tokens',
+    'anthropic_per_row_estimated_cost',
+    'search_groups_count',
+    'enhanced_context_search_groups_count',
+    'claude_search_groups_count',
     
     # Error handling
     'error_message'
@@ -753,7 +778,7 @@ def get_recent_runs_rich_table(limit=20):
             validation_metrics = preview_data.get('validation_metrics', {})
             
             # Cost and tokens
-            cost = cost_estimates.get('preview_cost', 0.0)
+            cost = 0.0  # Legacy preview_cost removed, use eliyahu_cost instead
             tokens = token_usage.get('total_tokens', 0)
             
             # Validation metrics
@@ -801,7 +826,7 @@ def get_recent_runs_rich_table(limit=20):
         # Summary stats
         completed_sessions = sum(1 for item in items if item.get('status') == 'COMPLETED')
         failed_sessions = sum(1 for item in items if item.get('status') == 'FAILED')
-        total_cost = sum(float(item.get('preview_data', {}).get('cost_estimates', {}).get('preview_cost', 0)) for item in items)
+        total_cost = sum(float(item.get('eliyahu_cost', 0)) for item in items)
         
         print(f"[STATS] Completed: {completed_sessions}, Failed: {failed_sessions}, Total Cost: ${total_cost:.3f}")
         
@@ -809,6 +834,176 @@ def get_recent_runs_rich_table(limit=20):
         
     except Exception as e:
         print(f"Error getting recent runs: {e}")
+        return []
+
+def display_enhanced_run_info(run_item):
+    """Display comprehensive run information including enhanced provider metrics."""
+    try:
+        print(f"\n[SUCCESS] === RUN DETAILS ===")
+        print(f"Session: {run_item.get('session_id', 'N/A')}")
+        print(f"Run Key: {run_item.get('run_key', 'N/A')}")
+        print(f"Type: {run_item.get('run_type', 'N/A')} | Status: {run_item.get('status', 'N/A')}")
+        
+        # Row processing info
+        processed_rows = int(run_item.get('processed_rows', 0))
+        total_rows = int(run_item.get('total_rows', 0))
+        print(f"Rows: {processed_rows:,} / {total_rows:,}")
+        
+        # Cost breakdown with enhanced three-tier display
+        eliyahu_cost = float(run_item.get('eliyahu_cost', 0))
+        quoted_cost = float(run_item.get('quoted_validation_cost', 0))
+        estimated_cost = float(run_item.get('estimated_validation_eliyahu_cost', 0))
+        
+        print(f"\n[COST BREAKDOWN]")
+        print(f"  Costs: ${eliyahu_cost:.6f} (actual) | ${estimated_cost:.6f} (estimated) | ${quoted_cost:.2f} (quoted)")
+        
+        # Enhanced Provider-specific breakdown
+        provider_metrics = run_item.get('provider_metrics', {})
+        if provider_metrics and isinstance(provider_metrics, dict):
+            print(f"\n[PROVIDER BREAKDOWN]")
+            for provider, metrics in provider_metrics.items():
+                if isinstance(metrics, dict):
+                    cost_actual = float(metrics.get('cost_actual', 0))
+                    cost_no_cache = float(metrics.get('cost_without_cache', 0))
+                    calls = int(metrics.get('calls', 0))
+                    tokens = int(metrics.get('tokens', 0))
+                    cache_eff = float(metrics.get('cache_efficiency_percent', 0))
+                    
+                    print(f"  {provider.upper()}:")
+                    print(f"    Cost: ${cost_actual:.6f} (actual) / ${cost_no_cache:.6f} (no cache)")
+                    print(f"    Usage: {calls} calls | {tokens:,} tokens")
+                    print(f"    Cache Efficiency: {cache_eff:.1f}%")
+                    
+                    # Per-row metrics if available
+                    cost_per_row_actual = metrics.get('cost_per_row_actual', 0)
+                    time_per_row = metrics.get('time_per_row_actual', 0)
+                    if cost_per_row_actual > 0:
+                        print(f"    Per Row: ${float(cost_per_row_actual):.6f}/row, {float(time_per_row):.3f}s/row")
+        else:
+            # Fallback to aggregate totals if provider_metrics not available
+            total_cost_actual = run_item.get('total_provider_cost_actual')
+            total_cost_without_cache = run_item.get('total_provider_cost_without_cache')
+            total_calls = run_item.get('total_provider_calls')
+            total_tokens = run_item.get('total_provider_tokens')
+            overall_cache_eff = run_item.get('overall_cache_efficiency_percent')
+            
+            if total_cost_actual is not None:
+                print(f"\n[PROVIDER TOTALS]")
+                print(f"  Total Cost: ${float(total_cost_actual):.6f} (actual) / ${float(total_cost_without_cache or 0):.6f} (no cache)")
+                print(f"  Total Usage: {int(total_calls or 0)} calls | {int(total_tokens or 0):,} tokens")
+                print(f"  Overall Cache Efficiency: {float(overall_cache_eff or 0):.1f}%")
+        
+        # Timing information
+        time_per_row = float(run_item.get('time_per_row_seconds', 0))
+        estimated_time = float(run_item.get('estimated_validation_time_minutes', 0))
+        run_time = float(run_item.get('run_time_s', 0))
+        
+        if time_per_row > 0 or estimated_time > 0 or run_time > 0:
+            print(f"\n[TIMING]")
+            if time_per_row > 0:
+                print(f"  Time per Row: {time_per_row:.3f} seconds")
+            if estimated_time > 0:
+                print(f"  Estimated Time: {estimated_time:.1f} minutes")
+            if run_time > 0:
+                print(f"  Actual Runtime: {run_time:.1f} seconds")
+        
+        # Model usage
+        models = run_item.get('models', '')
+        if models:
+            print(f"\n[MODELS USED]")
+            print(f"  {models}")
+        
+        # Account information
+        domain_multiplier = run_item.get('account_domain_multiplier')
+        if domain_multiplier:
+            print(f"\n[ACCOUNT INFO]")
+            print(f"  Domain Multiplier: {float(domain_multiplier):.1f}x")
+            
+        # Configuration info
+        config_id = run_item.get('configuration_id')
+        table_name = run_item.get('input_table_name')
+        if config_id or table_name:
+            print(f"\n[CONFIGURATION]")
+            if config_id:
+                print(f"  Config ID: {config_id}")
+            if table_name:
+                print(f"  Table: {table_name}")
+        
+        print(f"" + "="*80)
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to display run info: {e}")
+
+def list_runs_with_enhanced_sorting(limit=20, run_type_filter=None, status_filter=None):
+    """List runs with intelligent sorting and filtering, showing enhanced provider metrics."""
+    try:
+        dynamodb = get_dynamodb_resource()
+        table = dynamodb.Table(RUNS_TABLE)
+        
+        # Get runs (scan more than needed for good sorting)
+        scan_limit = max(limit * 3, 100) if limit else 100
+        response = table.scan(Limit=scan_limit)
+        runs = response.get('Items', [])
+        
+        # Continue scanning if there are more items
+        while 'LastEvaluatedKey' in response and len(runs) < scan_limit:
+            response = table.scan(
+                Limit=scan_limit - len(runs),
+                ExclusiveStartKey=response['LastEvaluatedKey']
+            )
+            runs.extend(response.get('Items', []))
+        
+        if not runs:
+            print(f"[ERROR] No runs found in {RUNS_TABLE}")
+            return []
+        
+        # Apply filters
+        if run_type_filter and run_type_filter.lower() not in ['all', '']:
+            runs = [r for r in runs if run_type_filter.lower() in r.get('run_type', '').lower()]
+            
+        if status_filter and status_filter.upper() not in ['ALL', '']:
+            runs = [r for r in runs if r.get('status', '').upper() == status_filter.upper()]
+        
+        # Sort runs: Most recent first, then by run type priority, then by cost
+        def sort_key(run):
+            # Primary: Most recent first (by last_update or start_time)
+            last_update = run.get('last_update', run.get('start_time', '1970-01-01T00:00:00'))
+            
+            # Secondary: Run type priority (Validation=1, Preview=2, Config=3)
+            run_type = run.get('run_type', 'Unknown')
+            type_priority = {
+                'Validation': 1, 
+                'Preview': 2, 
+                'Config Generation': 3, 
+                'Config Refinement': 4
+            }.get(run_type, 5)
+            
+            # Tertiary: Cost (highest first)
+            cost = float(run.get('quoted_validation_cost', 0))
+            
+            return (last_update, type_priority, -cost)
+        
+        sorted_runs = sorted(runs, key=sort_key, reverse=True)
+        
+        # Limit results
+        if limit:
+            sorted_runs = sorted_runs[:limit]
+        
+        print(f"\n[SUCCESS] Found {len(sorted_runs)} runs matching criteria:")
+        if run_type_filter:
+            print(f"  Run Type Filter: {run_type_filter}")
+        if status_filter:
+            print(f"  Status Filter: {status_filter}")
+        
+        # Display each run with enhanced info
+        for i, run in enumerate(sorted_runs, 1):
+            print(f"\n[{i}/{len(sorted_runs)}]", end=" ")
+            display_enhanced_run_info(run)
+        
+        return sorted_runs
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to list runs: {e}")
         return []
 
 def show_dashboard():
@@ -955,6 +1150,15 @@ def show_dashboard():
     except Exception as e:
         print(f"[ERROR] Dashboard failed to load: {e}")
 
+def extract_provider_cost(item, provider_name):
+    """Extract eliyahu_cost for a specific provider from provider_metrics."""
+    provider_metrics = item.get('provider_metrics', {})
+    if provider_metrics and isinstance(provider_metrics, dict):
+        provider_data = provider_metrics.get(provider_name, {})
+        if isinstance(provider_data, dict):
+            return float(provider_data.get('cost_actual', 0.0))
+    return 0.0
+
 def flatten_preview_data(item):
     """Extract and flatten rich data from preview_data field"""
     flattened = {}
@@ -963,41 +1167,35 @@ def flatten_preview_data(item):
     if not preview_data:
         return flattened
     
-    # Cost estimates
+    # Cost estimates (cleaned up - obsolete fields removed from backend)
     cost_estimates = preview_data.get('cost_estimates', {})
     flattened.update({
-        'per_row_cost': cost_estimates.get('per_row_cost', 0),
-        'estimated_total_cost': cost_estimates.get('estimated_total_cost', 0),
-        'preview_cost': cost_estimates.get('preview_cost', 0),
-        'quoted_full_cost': cost_estimates.get('quoted_full_cost', 0),
-        'per_row_tokens': cost_estimates.get('per_row_tokens', 0),
-        'estimated_total_tokens': cost_estimates.get('estimated_total_tokens', 0),
-        'preview_tokens': cost_estimates.get('preview_tokens', 0)
+        # Legacy preview_cost removed - use eliyahu_cost from top level
+        'perplexity_per_row_estimated_cost': cost_estimates.get('perplexity_per_row_estimated_cost', 0),
+        'anthropic_per_row_estimated_cost': cost_estimates.get('anthropic_per_row_estimated_cost', 0)
     })
     
     # Token usage by provider
     token_usage = preview_data.get('token_usage', {})
     by_provider = token_usage.get('by_provider', {})
     
-    # Perplexity metrics
+    # Perplexity metrics (renamed cost field, removed total_tokens)
     perplexity = by_provider.get('perplexity', {})
     flattened.update({
-        'perplexity_total_tokens': perplexity.get('total_tokens', 0),
         'perplexity_prompt_tokens': perplexity.get('prompt_tokens', 0),
         'perplexity_completion_tokens': perplexity.get('completion_tokens', 0),
-        'perplexity_total_cost': perplexity.get('total_cost', 0),
+        'perplexity_eliyahu_cost': extract_provider_cost(item, 'perplexity'),
         'perplexity_calls': perplexity.get('calls', 0)
     })
     
-    # Anthropic metrics
+    # Anthropic metrics (renamed cost field, removed total_tokens)
     anthropic = by_provider.get('anthropic', {})
     flattened.update({
-        'anthropic_total_tokens': anthropic.get('total_tokens', 0),
         'anthropic_input_tokens': anthropic.get('input_tokens', 0),
         'anthropic_output_tokens': anthropic.get('output_tokens', 0),
         'anthropic_cache_creation_tokens': anthropic.get('cache_creation_tokens', 0),
         'anthropic_cache_read_tokens': anthropic.get('cache_read_tokens', 0),
-        'anthropic_total_cost': anthropic.get('total_cost', 0),
+        'anthropic_eliyahu_cost': extract_provider_cost(item, 'anthropic'),
         'anthropic_calls': anthropic.get('calls', 0)
     })
     
@@ -1006,14 +1204,13 @@ def flatten_preview_data(item):
     flattened.update({
         'search_groups_count': validation_metrics.get('search_groups_count', 0),
         'validated_columns_count': validation_metrics.get('validated_columns_count', 0),
-        'high_context_search_groups_count': validation_metrics.get('high_context_search_groups_count', 0),
+        'enhanced_context_search_groups_count': validation_metrics.get('enhanced_context_search_groups_count', 0),
         'claude_search_groups_count': validation_metrics.get('claude_search_groups_count', 0)
     })
     
     # Processing times
     flattened.update({
-        'preview_processing_time_seconds': preview_data.get('preview_processing_time', 0),
-        'estimated_total_processing_time_seconds': preview_data.get('estimated_total_processing_time', 0),
+        # Legacy timing fields removed - use run_time_s and estimated_validation_time_minutes
         'estimated_validation_time_minutes': preview_data.get('estimated_validation_time_minutes', 0)
     })
     
@@ -1500,6 +1697,7 @@ Usage:
     python manage_dynamodb_tables.py calls                   # Show recent call tracking (legacy)
     python manage_dynamodb_tables.py recent [limit]          # Show recent validation runs (rich format)
     python manage_dynamodb_tables.py recent-calls [limit]    # Same as recent
+    python manage_dynamodb_tables.py enhanced-runs [limit] [run_type] [status]  # Show enhanced runs with provider metrics
     python manage_dynamodb_tables.py dashboard              # Show comprehensive dashboard
     python manage_dynamodb_tables.py summary                 # Show summary of all tables
     
@@ -1535,6 +1733,7 @@ Examples:
     python manage_dynamodb_tables.py export-csv perplexity-validator-user-tracking
     python manage_dynamodb_tables.py export-all-csv 100
     python manage_dynamodb_tables.py export-user-csv eliyahu@eliyahu.ai
+    python manage_dynamodb_tables.py enhanced-runs 10 validation completed
     
     python manage_dynamodb_tables.py check-balance eliyahu@eliyahu.ai
     python manage_dynamodb_tables.py add-balance eliyahu@eliyahu.ai 25.50
@@ -1624,6 +1823,12 @@ Examples:
     elif command == "recent" or command == "recent-calls":
         limit = int(sys.argv[2]) if len(sys.argv) > 2 else 20
         get_recent_runs_rich_table(limit)
+    
+    elif command == "enhanced-runs":
+        limit = int(sys.argv[2]) if len(sys.argv) > 2 else 20
+        run_type_filter = sys.argv[3] if len(sys.argv) > 3 else None
+        status_filter = sys.argv[4] if len(sys.argv) > 4 else None
+        list_runs_with_enhanced_sorting(limit, run_type_filter, status_filter)
     
     elif command == "dashboard":
         show_dashboard()

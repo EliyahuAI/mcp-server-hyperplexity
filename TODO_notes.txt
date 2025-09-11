@@ -176,39 +176,38 @@ After full validation, you should be able to specify specific rows for preview. 
 No getting sources off of claude. 
 
 ----
-Using \n in cell comments does not work. 
-
-----
 Need beeter notice about enabling editing to see comments. 
 
 ---
-
-WORKING ON
-----
-The counting n/N AI calls bounces, presumabley these are different threads.
+Need to set cache length for volatile information. 
 
 ---
-processing time in email is not correct (40 minutes when it was estimated to take 3 and took 4), presumable old batch information - it should be actual, should check runs dynamodb
+calculate profitability to prevent abuse of the previews. 
 
-We fixed dynamodb, but email is bad
+---
+
+What to do with tables that are3 rows or less?
 
 ----
-I tried to get copied configs to name match but they do not. 
+still getting encrypted content back from anthropic. 
+
+----
+Something is funny, getting 0.5s returns from tables that should be fully in the cache, with reported cache misses.  While occasionally, there is a miss even if there is a cache if it does not find what it expects, cluade has never returned in that amount of time for sonnet-4. Am I hitting anthropic cache? but I dont see cache tokens in the validator logs. 
+
+--- 
+I need a dev/prod versioning of the backend and front end. 
+-----
+
+Lingering problem with the wrong cost (now both the Eliyahu cost, being reported in the email and receipt). 
 
 -----
 
-Need to keep processing down to less than 15 minutes or the interface lambda will crap out, need to see if the SQS can handle this with the caching.  We can also limit the number of rows.
 
----
-Limiting the number of search groups may not make sense. 	
----
+WORKING ON
 
-config code changing when reused can be confusing. 
 
----
 
-inconsequential columns like index or number should be listed as "Ignored"
 
---- 
 
-Cleaning up Receipt
+
+

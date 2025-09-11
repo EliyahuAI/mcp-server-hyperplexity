@@ -5,39 +5,36 @@ This document contains shared guidelines used by both new config creation and re
 ## Model Selection Guidelines
 - **Default Model**: `sonar-pro` is the default for most use cases
 - **Alternative Models**: Available models include:
-  - Perplexity models: `sonar`, `sonar-pro` (recommended for most validation tasks)
-  - Anthropic models: `claude-opus-4-1` (latest Claude 4 opus for advanced reasoning, bring out the big guns only when really deep thought and synthesis is needed), `claude-sonnet-4-0` (latest Claude 4 - this is the first line of defense for reasoning solutions that require search, used mostly when pure reasoning is needed in response to a problem with sonar-pro), `claude-3.5-haiku-latest` (great for fast reasoning solutions that dont need much thought)
+  - Perplexity models: `sonar` (recommended for simple fact checking), `sonar-pro` (recommended for most research tasks)
+  - Anthropic models: `claude-opus-4-1` (latest Claude 4 opus for advanced reasoning - expensive!, bring out the big guns only when really deep thought and synthesis is needed - with ), `claude-sonnet-4-0` (latest Claude 4 - this is the first line of defense for advanced reasoning solutions that require search, and very helpful when pure reasoning is needed in response when anthropic_max_web_searches is set to 0, `claude-3.5-haiku-latest` (great for fast reasoning solutions that dont need much thought)
 - **Best Practices**:
-  - Use Perplexity models (`sonar-pro`) for standard web search and validation tasks
+  - Use Perplexity models (`sonar`,`sonar-pro`) for standard web search and validation tasks
   - Only use Anthropic models when deeper reasoning (sonnet-4 in most cases, opus when deep reasoning is called for)
   - Consider the validation complexity before choosing Anthropic models
 
-## Search Context Size Guidelines
+## Search Context Size Guidelines for Perplexity
 - **Values**: `"low"`, `"high"`, (Perplexity only)
 - **Global Default**: Set `default_search_context_size` at the root level (defaults to `"low"`)
-- **Per-Column Override**: Use `search_context_size` field for specific columns
+- **Per-Search Group Override**: Use `search_context_size` field for specific search groups
 - **Best Practices**:
   - Use `"low"` for most columns (faster, cheaper, usually sufficient)
-  - Use `"high"` when search results are critical and expected to be hard to find, or when it we are unhappy with previews or results
+  - Use `"medium"`, and `"high"` when search results are harder/esoteric and expected to be hard to find, or when it we are unhappy with previews or results. Note that increasing contrex
   - Avoid `"high"` unless necessary as it increases cost and latency
 
 ## Anthropic Web Search Guidelines
-- **Global Default**: Set `anthropic_max_web_searches_default` at the root level (defaults to 3)
+- **Global Default**: Set `anthropic_max_web_searches_default` at the root level (defaults to 2)
 - **Per-Search Group Override**: Use `anthropic_max_web_searches` field (0-10) for specific search groups  
 - **Recommended Values**:
-  - **0**: When web search is not desirable (cached knowledge sufficient)
-  - **1**: For obvious items that need minimal verification
-  - **3**: For more complex items requiring moderate research (default)
-  - **5**: For esoteric facts requiring extensive search
+  - **0**: Disable web search entirely (cached knowledge only), great for reasoning only tasks
+  - **1**: For obvious items that need minimal verification, but still benefit from anthropic models
+  - **3**: For more complex items requiring moderate research, this can get expensive fast
+  - **5**: For esoteric facts requiring extensive search - a bit of a last resort. 
 - **Cost Control**: Lower values reduce API costs but may miss current information
 
 
 ## Importance Level Guidelines
 - **ID**: These define the rows - at least one column must be assigned 'ID', usually it is one or more columns to the left of the table. 
-- **CRITICAL**: Core business data, status fields, key metrics
-- **HIGH**: Important descriptive or analytical fields
-- **MEDIUM**: Supporting information, secondary attributes
-- **LOW**: Optional or supplementary data
+- **CRITICAL**: ANy column requiring research that we can help with
 - **IGNORED**: Indices, metadata, internal fields, timestamps
 
 ## Search Group Strategy
@@ -51,14 +48,14 @@ When analyzing any table, follow this process:
 2. **Detect data types** from sample values (dates, time, numbers, strings, URLs, etc.) - be specific about the format in the notes is not evident in the examples. 
 3. **Identify likely ID columns** usually the first column(s), these are used to identify the row and are not used for research.
 5. **Group related columns** that would appear in same sources
-6. **Extract real examples** from the actual data (if possible, otherwise specify a consistent set), if the examples do not match other requirements (like out of date or other), update the examples to be in scope. 
-7. **Assign importance levels** based on column criticality, ignore columns that are not informational or on the internet, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose, and low, medium, high for supporting columns with less and less relevance to the primary function. 
+6. **Extract real examples** from the actual data (if possible, otherwise specify a consistent set), if the examples do not match other requirements (like out of date or other), update the examples to be in scope. Strongly prefer consistent formatting across the examples.  
+7. **Assign importance levels** based on column criticality, ignore columns that are not informational or on the internet, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose. 
 
 ## Analysis Presentation Format
 
 Show your assumptions clearly in this format:
 
-**MY ANALYSIS:**
+**Technical AI Summary:**
 
 **Table Purpose**: [Your inference from columns/data]
 **Unique Identifiers**: [Likely ID columns]
@@ -87,19 +84,19 @@ Show your assumptions clearly in this format:
 
 ## Targeted Questions Guidelines
 
-Only ask when genuinely unclear or need confirmation:
+Only ask when genuinely unclear or need confirmation that would likely impprove the quality of your search:
 
 ### Types of Questions to Ask:
+- **Cost/Accuracy Tradeoff**: "Are you OK with increasing the AI usage to achieve better accuracy? I can use more advanced models and or more searches - but this can amplify cost."
 - **Risky Assumptions**: "Is my understanding of [specific assumption] correct?"
-- **A/B Clarifications**: "For [ambiguous column], should this be: A) [option A] or B) [option B]?"
-- **Domain specifics**: "What specific sources should I prioritize for [domain-specific information]?"
+- **A/B Clarifications**: "For [ambiguous column], should this be: A) [option A] or B) [defaulted to B]?"
 
 ### Avoid Asking:
 - ❌ Obvious table purposes (clear from column names)
 - ❌ Clear data formats (evident from sample data)
 - ❌ Standard examples (use real data from table)
 - ❌ Basic groupings (infer from logical relationships)
-- ❌ Model preferences (default to sonar-pro unless complex reasoning needed)
+- ❌ Specific model preferences 
 
 ## Format Detection Guidelines
 
@@ -112,7 +109,7 @@ Auto-detect from sample data:
 
 ## Units and Measurements Guidelines
 
-**Units Consistency**: If a column contains values with units (e.g., $B for billions, °C for temperature, mg for dosage), make sure to specify in the notes that all values should consistently include the same units across all rows. This ensures validation results maintain proper unit formatting.
+**Units Consistency**: If a column contains values with units (e.g., $B for billions, °C for temperature, mg for dosage, etc), make sure to specify in the notes that all values should consistently include the same units across all rows. This ensures validation results maintain proper unit formatting. When you detect a potential variablity in units of response, make sure the examples include units.
 
 ## Search Group Requirements (MANDATORY)
 Search groups are **REQUIRED** for every configuration - they are essential for building an effective search strategy and cannot be omitted.

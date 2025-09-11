@@ -54,7 +54,8 @@ def handle(event, context):
                     "sequential_call": message_body.get('sequential_call'),
                     "email": message_body.get('email'),
                     "email_address": message_body.get('email'),  # For compatibility
-                    "preview_email": message_body.get('preview_email', False)
+                    "preview_email": message_body.get('preview_email', False),
+                    "run_key": message_body.get('run_key')
                 }
             
             # Process using the background handler

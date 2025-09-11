@@ -158,7 +158,12 @@ class AIAPIClient:
         """Generate a unique cache key for the request."""
         schema_str = json.dumps(schema, sort_keys=True) if schema else ""
         cache_input = f"{prompt}:{model}:{schema_str}:{context}:{max_web_searches}"
-        return hashlib.md5(cache_input.encode()).hexdigest()
+        cache_key = hashlib.md5(cache_input.encode()).hexdigest()
+        
+        # Log cache key components for debugging
+        logger.info(f"Using cache key based on prompt hash: {hashlib.md5(prompt.encode()).hexdigest()[:8]}...")
+        
+        return cache_key
     
     def _get_validation_cache_key(self, row_data: Dict, targets: List, model: str, search_context_size: str = "low", config_hash: str = "") -> str:
         """
@@ -181,54 +186,1060 @@ class AIAPIClient:
         return hashlib.md5(cache_input.encode()).hexdigest()
     
     def _extract_token_usage(self, response: Dict, model: str, search_context_size: str = None) -> Dict:
-        """Extract token usage information from API response, handling both Perplexity and Anthropic formats."""
+        """
+        Extract token usage information from API response with robust validation and error handling.
+        Centralized implementation used by both validation and config lambdas.
+        """
+        # Validate inputs
+        if not isinstance(response, dict):
+            logger.error(f"ai_api_client._extract_token_usage: Invalid response type {type(response)}, expected dict")
+            return self._get_empty_token_usage(model)
+        
+        if not isinstance(model, str) or not model.strip():
+            logger.error(f"ai_api_client._extract_token_usage: Invalid model '{model}', expected non-empty string")
+            return self._get_empty_token_usage('unknown')
+        
+        # Check for usage data in response
         if 'usage' not in response:
-            return {
-                'api_provider': self._determine_api_provider(model),
-                'input_tokens': 0,
-                'output_tokens': 0,
-                'cache_creation_tokens': 0,
-                'cache_read_tokens': 0,
-                'total_tokens': 0,
-                'model': model
-            }
+            logger.warning(f"ai_api_client._extract_token_usage: No usage data in API response for model {model}")
+            return self._get_empty_token_usage(model)
         
         usage = response['usage']
-        api_provider = self._determine_api_provider(model)
+        if not isinstance(usage, dict):
+            logger.error(f"ai_api_client._extract_token_usage: Invalid usage type {type(usage)}, expected dict")
+            return self._get_empty_token_usage(model)
         
-        if api_provider == 'anthropic':
-            # Anthropic format: input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
-            input_tokens = usage.get('input_tokens', 0)
-            output_tokens = usage.get('output_tokens', 0)
-            cache_creation_tokens = usage.get('cache_creation_tokens', 0)
-            cache_read_tokens = usage.get('cache_read_tokens', 0)
-            total_tokens = input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens
+        try:
+            api_provider = self._determine_api_provider(model)
+            logger.debug(f"ai_api_client._extract_token_usage: Processing {api_provider} response for model {model}")
+            
+            if api_provider == 'anthropic':
+                # Anthropic format: input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
+                input_tokens = max(0, int(usage.get('input_tokens', 0)))
+                output_tokens = max(0, int(usage.get('output_tokens', 0)))
+                cache_creation_tokens = max(0, int(usage.get('cache_creation_tokens', 0)))
+                cache_read_tokens = max(0, int(usage.get('cache_read_tokens', 0)))
+                total_tokens = input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens
+                
+                # Validate token counts are reasonable
+                if total_tokens > 10_000_000:  # 10M token sanity check
+                    logger.warning(f"ai_api_client._extract_token_usage: Unusually high token count {total_tokens} for model {model}")
+                
+                return {
+                    'api_provider': 'anthropic',
+                    'input_tokens': input_tokens,
+                    'output_tokens': output_tokens,
+                    'cache_creation_tokens': cache_creation_tokens,
+                    'cache_read_tokens': cache_read_tokens,
+                    'total_tokens': total_tokens,
+                    'model': model
+                }
+            else:
+                # Perplexity format: prompt_tokens, completion_tokens, total_tokens, search_context_size
+                prompt_tokens = max(0, int(usage.get('prompt_tokens', 0)))
+                completion_tokens = max(0, int(usage.get('completion_tokens', 0)))
+                reported_total = max(0, int(usage.get('total_tokens', 0)))
+                
+                # Calculate total tokens - use reported total if available, otherwise sum components
+                if reported_total > 0:
+                    total_tokens = reported_total
+                    # Validate components match total (within reasonable tolerance)
+                    calculated_total = prompt_tokens + completion_tokens
+                    if calculated_total > 0 and abs(calculated_total - reported_total) > (calculated_total * 0.1):
+                        logger.warning(f"ai_api_client._extract_token_usage: Token mismatch for {model}: reported={reported_total}, calculated={calculated_total}")
+                else:
+                    total_tokens = prompt_tokens + completion_tokens
+                
+                # Validate token counts are reasonable
+                if total_tokens > 10_000_000:  # 10M token sanity check
+                    logger.warning(f"ai_api_client._extract_token_usage: Unusually high token count {total_tokens} for model {model}")
+                
+                return {
+                    'api_provider': 'perplexity',
+                    'input_tokens': prompt_tokens,
+                    'output_tokens': completion_tokens,
+                    'cache_creation_tokens': 0,
+                    'cache_read_tokens': 0,
+                    'total_tokens': total_tokens,
+                    'model': model,
+                    'search_context_size': usage.get('search_context_size', search_context_size)
+                }
+                
+        except (ValueError, TypeError) as e:
+            logger.error(f"ai_api_client._extract_token_usage: Error parsing token data for model {model}: {e}")
+            return self._get_empty_token_usage(model)
+        except Exception as e:
+            logger.error(f"ai_api_client._extract_token_usage: Unexpected error for model {model}: {e}")
+            return self._get_empty_token_usage(model)
+    
+    def _get_empty_token_usage(self, model: str) -> Dict:
+        """Return empty token usage structure with safe defaults."""
+        try:
+            api_provider = self._determine_api_provider(model)
+        except:
+            api_provider = 'unknown'
+        
+        return {
+            'api_provider': api_provider,
+            'input_tokens': 0,
+            'output_tokens': 0,
+            'cache_creation_tokens': 0,
+            'cache_read_tokens': 0,
+            'total_tokens': 0,
+            'model': model,
+            'error': 'failed_token_extraction'
+        }
+    
+    # ========== CENTRALIZED COST AND TIME CALCULATION SYSTEM ==========
+    
+    def load_pricing_data(self) -> Dict[str, Dict[str, float]]:
+        """
+        Centralized pricing data loader used by both validation and config lambdas.
+        Load pricing data from DynamoDB model config table with robust fallbacks and validation.
+        
+        Returns:
+            Dict mapping model patterns to pricing configurations with validated data
+        """
+        import time
+        import csv
+        
+        pricing_data = {}
+        load_source = "none"
+        
+        # Robust default pricing for unknown models - production rates
+        default_pricing = {
+            'input_cost_per_million_tokens': 3.0,
+            'output_cost_per_million_tokens': 15.0,
+            'api_provider': 'unknown',
+            'priority': 999
+        }
+        
+        # Attempt to load from DynamoDB with multiple retry strategies
+        for attempt in range(3):  # Up to 3 attempts
+            try:
+                # Try multiple import strategies
+                config_table = None
+                import_error = None
+                
+                for import_strategy in ['direct', 'shared', 'path_setup']:
+                    try:
+                        if import_strategy == 'direct':
+                            from model_config_table import ModelConfigTable
+                        elif import_strategy == 'shared':
+                            from shared.model_config_table import ModelConfigTable
+                        else:  # path_setup
+                            import sys
+                            sys.path.append('/var/task/shared')
+                            from shared.model_config_table import ModelConfigTable
+                        
+                        config_table = ModelConfigTable()
+                        break
+                        
+                    except ImportError as ie:
+                        import_error = ie
+                        continue
+                
+                if not config_table:
+                    logger.warning(f"ai_api_client.load_pricing_data: Failed to import ModelConfigTable after all strategies: {import_error}")
+                    break
+                
+                # Retrieve configurations with validation
+                configs = config_table.list_all_configs()
+                
+                if configs and isinstance(configs, list):
+                    loaded_count = 0
+                    for config in configs:
+                        try:
+                            # Validate configuration data
+                            if not isinstance(config, dict):
+                                logger.warning(f"ai_api_client.load_pricing_data: Invalid config type {type(config)}, skipping")
+                                continue
+                                
+                            if not config.get('enabled', False):
+                                continue  # Skip disabled configurations
+                            
+                            model_pattern = config.get('model_pattern', '').strip()
+                            if not model_pattern:
+                                logger.warning(f"ai_api_client.load_pricing_data: Empty model_pattern in config, skipping")
+                                continue
+                            
+                            # Validate and sanitize pricing data
+                            try:
+                                input_cost = float(config.get('input_cost_per_million_tokens', 3.0))
+                                output_cost = float(config.get('output_cost_per_million_tokens', 15.0))
+                                
+                                # Sanity check pricing (reasonable bounds)
+                                if input_cost < 0 or input_cost > 1000:
+                                    logger.warning(f"ai_api_client.load_pricing_data: Suspicious input cost {input_cost} for {model_pattern}, using default")
+                                    input_cost = 3.0
+                                if output_cost < 0 or output_cost > 1000:
+                                    logger.warning(f"ai_api_client.load_pricing_data: Suspicious output cost {output_cost} for {model_pattern}, using default")
+                                    output_cost = 15.0
+                                    
+                            except (ValueError, TypeError) as e:
+                                logger.warning(f"ai_api_client.load_pricing_data: Invalid pricing data for {model_pattern}: {e}, using defaults")
+                                input_cost = 3.0
+                                output_cost = 15.0
+                            
+                            # Validate priority
+                            try:
+                                priority = int(config.get('priority', 999))
+                            except (ValueError, TypeError):
+                                priority = 999
+                            
+                            pricing_data[model_pattern] = {
+                                'api_provider': config.get('api_provider', 'unknown'),
+                                'input_cost_per_million_tokens': input_cost,
+                                'output_cost_per_million_tokens': output_cost,
+                                'notes': config.get('notes', ''),
+                                'priority': priority
+                            }
+                            loaded_count += 1
+                            
+                        except Exception as config_error:
+                            logger.warning(f"ai_api_client.load_pricing_data: Error processing config: {config_error}")
+                            continue
+                    
+                    if loaded_count > 0:
+                        load_source = f"dynamodb_{loaded_count}_configs"
+                        logger.info(f"ai_api_client.load_pricing_data: Successfully loaded {loaded_count} pricing configurations from DynamoDB")
+                        break
+                    else:
+                        logger.warning("ai_api_client.load_pricing_data: No valid configurations loaded from DynamoDB")
+                        
+                else:
+                    logger.warning("ai_api_client.load_pricing_data: DynamoDB returned no configurations or invalid format")
+                    
+            except Exception as db_error:
+                logger.warning(f"ai_api_client.load_pricing_data: DynamoDB attempt {attempt + 1} failed: {db_error}")
+                if attempt < 2:  # Don't sleep on last attempt
+                    time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                continue
+            
+            break  # Success - exit retry loop
+        
+        # Final fallback: ensure we have at least default pricing patterns
+        if not pricing_data:
+            logger.warning("ai_api_client.load_pricing_data: All sources failed, using hardcoded defaults")
+            pricing_data = {
+                'sonar*': {'api_provider': 'perplexity', 'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0, 'priority': 100},
+                'claude*': {'api_provider': 'anthropic', 'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0, 'priority': 100},
+                '*': {'api_provider': 'unknown', 'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0, 'priority': 999}
+            }
+            load_source = "hardcoded_defaults"
+        
+        # Always ensure fallback exists
+        if '*' not in pricing_data:
+            pricing_data['*'] = default_pricing
+        
+        # Log final status
+        logger.info(f"ai_api_client.load_pricing_data: Final result - {len(pricing_data)} patterns loaded from {load_source}")
+        
+        return pricing_data
+    
+    def calculate_token_costs(self, token_usage: Dict[str, Any], pricing_data: Dict[str, Dict[str, float]] = None) -> Dict[str, float]:
+        """
+        Centralized cost calculation used by both validation and config lambdas.
+        Calculate costs based on token usage and pricing data with robust validation and error handling.
+        
+        Args:
+            token_usage: Dictionary containing token usage data from API response
+            pricing_data: Optional pricing data dict (will load if not provided)
+            
+        Returns:
+            Dictionary with input_cost, output_cost, total_cost, and validation metadata
+        """
+        # Input validation
+        if not isinstance(token_usage, dict) or not token_usage:
+            logger.warning("ai_api_client.calculate_token_costs: Empty or invalid token_usage")
+            return {
+                'input_cost': 0.0, 
+                'output_cost': 0.0, 
+                'total_cost': 0.0,
+                'input_tokens': 0,
+                'output_tokens': 0,
+                'pricing_model': 'none',
+                'error': 'invalid_token_usage'
+            }
+        
+        # Load pricing data if not provided
+        if not pricing_data:
+            try:
+                pricing_data = self.load_pricing_data()
+            except Exception as e:
+                logger.error(f"ai_api_client.calculate_token_costs: Failed to load pricing data: {e}")
+                pricing_data = {}
+        
+        if not isinstance(pricing_data, dict) or not pricing_data:
+            logger.error("ai_api_client.calculate_token_costs: Empty or invalid pricing_data")
+            return {
+                'input_cost': 0.0, 
+                'output_cost': 0.0, 
+                'total_cost': 0.0,
+                'input_tokens': 0,
+                'output_tokens': 0,
+                'pricing_model': 'none',
+                'error': 'invalid_pricing_data'
+            }
+        
+        api_provider = token_usage.get('api_provider', 'unknown')
+        model = token_usage.get('model', 'unknown')
+        
+        if not model or model == 'unknown':
+            logger.warning("ai_api_client.calculate_token_costs: Missing or unknown model in token_usage")
+        
+        # Find pricing configuration with robust pattern matching
+        pricing = None
+        pricing_source = 'none'
+        
+        try:
+            # Attempt 1: Try exact model match first
+            if model in pricing_data:
+                pricing = pricing_data[model]
+                pricing_source = f'exact_match_{model}'
+                logger.debug(f"ai_api_client.calculate_token_costs: Using exact pricing match for {model}")
+            else:
+                # Attempt 2: Pattern matching with priority sorting
+                sorted_patterns = sorted(pricing_data.items(), key=lambda x: x[1].get('priority', 999))
+                logger.debug(f"ai_api_client.calculate_token_costs: Testing {len(sorted_patterns)} pricing patterns for {model}")
+                
+                # Try pattern matching (for DynamoDB configs with wildcards)
+                import re
+                for pricing_pattern, pricing_config in sorted_patterns:
+                    try:
+                        # Convert glob pattern to regex
+                        regex_pattern = pricing_pattern.replace('*', '.*')
+                        regex_pattern = f"^{regex_pattern}$"
+                        
+                        match_result = re.match(regex_pattern, model, re.IGNORECASE)
+                        
+                        if match_result:
+                            pricing = pricing_config
+                            pricing_source = f'pattern_match_{pricing_pattern}'
+                            logger.debug(f"ai_api_client.calculate_token_costs: Using pattern match '{pricing_pattern}' for {model}")
+                            break
+                            
+                    except re.error as regex_error:
+                        logger.warning(f"ai_api_client.calculate_token_costs: Invalid regex pattern '{pricing_pattern}': {regex_error}")
+                        # Fallback to simple string matching for invalid regex
+                        try:
+                            if (pricing_pattern.lower() in model.lower() or 
+                                model.lower() in pricing_pattern.lower()):
+                                pricing = pricing_config
+                                pricing_source = f'string_match_{pricing_pattern}'
+                                logger.debug(f"ai_api_client.calculate_token_costs: Using string match '{pricing_pattern}' for {model}")
+                                break
+                        except Exception as string_error:
+                            logger.warning(f"ai_api_client.calculate_token_costs: String matching failed for '{pricing_pattern}': {string_error}")
+                            continue
+                            
+                    except Exception as pattern_error:
+                        logger.warning(f"ai_api_client.calculate_token_costs: Pattern matching error for '{pricing_pattern}': {pattern_error}")
+                        continue
+                        
+        except Exception as matching_error:
+            logger.error(f"ai_api_client.calculate_token_costs: Critical error in pricing lookup: {matching_error}")
+            pricing = None
+        
+        # Fallback to robust default pricing by provider
+        if not pricing:
+            logger.warning(f"ai_api_client.calculate_token_costs: No pricing found for model {model}, using default {api_provider} pricing")
+            if api_provider == 'perplexity':
+                pricing = {'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0}  # sonar-pro rates
+                pricing_source = 'default_perplexity'
+            elif api_provider == 'anthropic':
+                pricing = {'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0}  # claude-4-sonnet rates
+                pricing_source = 'default_anthropic'
+            else:
+                pricing = {'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0}  # universal fallback
+                pricing_source = 'default_unknown'
+        
+        # Extract and validate token counts with robust error handling
+        input_tokens = 0
+        output_tokens = 0
+        
+        try:
+            if api_provider == 'perplexity':
+                # Primary: Use normalized tokens from ai_api_client
+                input_tokens = max(0, int(token_usage.get('input_tokens', 0)))
+                output_tokens = max(0, int(token_usage.get('output_tokens', 0)))
+                
+                # Fallback: Handle legacy format with prompt_tokens/completion_tokens
+                if input_tokens == 0 and output_tokens == 0:
+                    input_tokens = max(0, int(token_usage.get('prompt_tokens', 0)))
+                    output_tokens = max(0, int(token_usage.get('completion_tokens', 0)))
+                    
+            elif api_provider == 'anthropic':
+                input_tokens = max(0, int(token_usage.get('input_tokens', 0)))
+                output_tokens = max(0, int(token_usage.get('output_tokens', 0)))
+                # Note: cache tokens are typically free/discounted, not included in cost calculation
+                
+            else:
+                # Unknown provider: try multiple strategies
+                input_tokens = max(0, int(token_usage.get('input_tokens', 0)))
+                output_tokens = max(0, int(token_usage.get('output_tokens', 0)))
+                
+                if input_tokens == 0 and output_tokens == 0:
+                    # Fallback to legacy format
+                    input_tokens = max(0, int(token_usage.get('prompt_tokens', 0)))
+                    output_tokens = max(0, int(token_usage.get('completion_tokens', 0)))
+                    
+                if input_tokens == 0 and output_tokens == 0:
+                    # Last resort: split total tokens evenly
+                    total_tokens = max(0, int(token_usage.get('total_tokens', 0)))
+                    input_tokens = total_tokens // 2
+                    output_tokens = total_tokens - input_tokens  # Handle odd numbers
+                    logger.warning(f"ai_api_client.calculate_token_costs: Using total_tokens split for unknown provider {api_provider}")
+                    
+        except (ValueError, TypeError) as token_error:
+            logger.error(f"ai_api_client.calculate_token_costs: Error parsing token counts: {token_error}")
+            input_tokens = 0
+            output_tokens = 0
+        
+        # Validate extracted pricing configuration
+        try:
+            input_rate = float(pricing.get('input_cost_per_million_tokens', 3.0))
+            output_rate = float(pricing.get('output_cost_per_million_tokens', 15.0))
+            
+            # Sanity check pricing rates
+            if input_rate < 0 or input_rate > 1000:
+                logger.warning(f"ai_api_client.calculate_token_costs: Suspicious input rate {input_rate}, using default 3.0")
+                input_rate = 3.0
+            if output_rate < 0 or output_rate > 1000:
+                logger.warning(f"ai_api_client.calculate_token_costs: Suspicious output rate {output_rate}, using default 15.0")
+                output_rate = 15.0
+                
+        except (ValueError, TypeError) as pricing_error:
+            logger.error(f"ai_api_client.calculate_token_costs: Error parsing pricing rates: {pricing_error}")
+            input_rate = 3.0
+            output_rate = 15.0
+        
+        # Calculate costs with precision handling (pricing is per million tokens)
+        try:
+            # Use decimal arithmetic to avoid floating point precision issues
+            from decimal import Decimal, ROUND_HALF_UP
+            
+            input_cost_decimal = (Decimal(str(input_tokens)) / Decimal('1000000')) * Decimal(str(input_rate))
+            output_cost_decimal = (Decimal(str(output_tokens)) / Decimal('1000000')) * Decimal(str(output_rate))
+            total_cost_decimal = input_cost_decimal + output_cost_decimal
+            
+            # Convert back to float with controlled precision
+            input_cost = float(input_cost_decimal.quantize(Decimal('0.000001'), rounding=ROUND_HALF_UP))
+            output_cost = float(output_cost_decimal.quantize(Decimal('0.000001'), rounding=ROUND_HALF_UP))
+            total_cost = float(total_cost_decimal.quantize(Decimal('0.000001'), rounding=ROUND_HALF_UP))
+            
+        except Exception as calc_error:
+            logger.error(f"ai_api_client.calculate_token_costs: Error in cost calculation: {calc_error}")
+            # Fallback to basic calculation
+            input_cost = (input_tokens / 1_000_000) * input_rate
+            output_cost = (output_tokens / 1_000_000) * output_rate
+            total_cost = input_cost + output_cost
+            
+            # Round to 6 decimal places
+            input_cost = round(input_cost, 6)
+            output_cost = round(output_cost, 6)
+            total_cost = round(total_cost, 6)
+        
+        # Log calculation details for debugging high-cost scenarios
+        if total_cost > 1.0:  # Log expensive calls
+            logger.info(f"ai_api_client.calculate_token_costs: High cost calculation - Model: {model}, "
+                       f"Input: {input_tokens} tokens (${input_cost:.6f}), "
+                       f"Output: {output_tokens} tokens (${output_cost:.6f}), "
+                       f"Total: ${total_cost:.6f}, Source: {pricing_source}")
+        
+        return {
+            'input_cost': input_cost,
+            'output_cost': output_cost, 
+            'total_cost': total_cost,
+            'input_tokens': input_tokens,
+            'output_tokens': output_tokens,
+            'pricing_model': pricing.get('model_name', model),
+            'pricing_source': pricing_source,
+            'api_provider': api_provider
+        }
+    
+    def calculate_processing_time_estimate(self, token_usage: Dict[str, Any], processing_time: float) -> Dict[str, float]:
+        """
+        Calculate time estimates for validation processing based on token usage and actual processing time.
+        
+        Args:
+            token_usage: Dictionary containing token usage data
+            processing_time: Actual processing time for this request in seconds
+            
+        Returns:
+            Dictionary with time estimates and per-token timing data
+        """
+        try:
+            # Extract token counts
+            total_tokens = token_usage.get('total_tokens', 0)
+            input_tokens = token_usage.get('input_tokens', 0)
+            output_tokens = token_usage.get('output_tokens', 0)
+            
+            if total_tokens == 0:
+                logger.warning("ai_api_client.calculate_processing_time_estimate: No tokens found in usage data")
+                return {
+                    'time_per_token': 0.0,
+                    'time_per_input_token': 0.0,
+                    'time_per_output_token': 0.0,
+                    'estimated_time_per_1k_tokens': 0.0,
+                    'processing_time': processing_time,
+                    'error': 'no_tokens'
+                }
+            
+            # Calculate per-token timing
+            time_per_token = processing_time / total_tokens if total_tokens > 0 else 0.0
+            time_per_input_token = processing_time / input_tokens if input_tokens > 0 else 0.0
+            time_per_output_token = processing_time / output_tokens if output_tokens > 0 else 0.0
+            
+            # Useful metric: time per 1K tokens for scaling estimates
+            estimated_time_per_1k_tokens = time_per_token * 1000
             
             return {
-                'api_provider': 'anthropic',
-                'input_tokens': input_tokens,
-                'output_tokens': output_tokens,
-                'cache_creation_tokens': cache_creation_tokens,
+                'time_per_token': round(time_per_token, 6),
+                'time_per_input_token': round(time_per_input_token, 6),
+                'time_per_output_token': round(time_per_output_token, 6),
+                'estimated_time_per_1k_tokens': round(estimated_time_per_1k_tokens, 3),
+                'processing_time': round(processing_time, 3),
+                'total_tokens': total_tokens
+            }
+            
+        except Exception as e:
+            logger.error(f"ai_api_client.calculate_processing_time_estimate: Error calculating time estimates: {e}")
+            return {
+                'time_per_token': 0.0,
+                'time_per_input_token': 0.0,
+                'time_per_output_token': 0.0,
+                'estimated_time_per_1k_tokens': 0.0,
+                'processing_time': processing_time,
+                'error': str(e)
+            }
+    
+    def get_enhanced_call_metrics(self, response: Dict, model: str, processing_time: float, 
+                                  search_context_size: str = None, batch_info: Dict = None) -> Dict[str, Any]:
+        """
+        Enhanced elemental call tracking with comprehensive provider-specific metrics, 
+        caching analysis, and per-row cost calculations.
+        
+        Args:
+            response: API response dictionary
+            model: Model name used for the request
+            processing_time: Actual processing time in seconds
+            search_context_size: Context size for Perplexity API (optional)
+            batch_info: Information about batch size and rows processed (optional)
+            
+        Returns:
+            Comprehensive call metrics including provider breakdown, caching efficiency, and per-row costs
+        """
+        try:
+            # Extract basic token usage
+            token_usage = self._extract_token_usage(response, model, search_context_size)
+            api_provider = token_usage.get('api_provider', 'unknown')
+            
+            # Calculate costs with and without caching
+            cost_data = self.calculate_token_costs(token_usage)
+            cost_without_cache = self._calculate_cost_without_caching_benefits(token_usage, cost_data)
+            
+            # Extract caching metrics
+            caching_metrics = self._extract_caching_metrics(token_usage, response)
+            
+            # Calculate timing metrics (actual vs estimated without cache)
+            timing_metrics = self._calculate_comprehensive_timing_metrics(
+                token_usage, processing_time, caching_metrics
+            )
+            
+            # Calculate per-row metrics
+            per_row_metrics = self._calculate_per_row_metrics(
+                cost_data, cost_without_cache, timing_metrics, batch_info
+            )
+            
+            # Build comprehensive metrics structure
+            enhanced_metrics = {
+                # Basic call information
+                'call_info': {
+                    'model': model,
+                    'api_provider': api_provider,
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                    'search_context_size': search_context_size
+                },
+                
+                # Token usage breakdown
+                'tokens': {
+                    'input_tokens': token_usage.get('input_tokens', 0),
+                    'output_tokens': token_usage.get('output_tokens', 0),
+                    'total_tokens': token_usage.get('total_tokens', 0),
+                    'cache_creation_tokens': token_usage.get('cache_creation_tokens', 0),
+                    'cache_read_tokens': token_usage.get('cache_read_tokens', 0)
+                },
+                
+                # Cost breakdown with caching analysis
+                'costs': {
+                    # Actual costs (with caching benefits)
+                    'actual': {
+                        'input_cost': cost_data.get('input_cost', 0.0),
+                        'output_cost': cost_data.get('output_cost', 0.0),
+                        'total_cost': cost_data.get('total_cost', 0.0),
+                        'pricing_source': cost_data.get('pricing_source', 'unknown')
+                    },
+                    # Estimated costs without caching benefits
+                    'without_cache': {
+                        'input_cost': cost_without_cache.get('input_cost', 0.0),
+                        'output_cost': cost_without_cache.get('output_cost', 0.0),
+                        'total_cost': cost_without_cache.get('total_cost', 0.0)
+                    },
+                    # Cost efficiency from caching
+                    'cache_savings': {
+                        'absolute_savings': cost_without_cache.get('total_cost', 0.0) - cost_data.get('total_cost', 0.0),
+                        'percentage_savings': self._calculate_percentage_savings(cost_data.get('total_cost', 0.0), 
+                                                                               cost_without_cache.get('total_cost', 0.0))
+                    }
+                },
+                
+                # Timing breakdown
+                'timing': timing_metrics,
+                
+                # Caching efficiency metrics
+                'caching': caching_metrics,
+                
+                # Per-row calculations
+                'per_row': per_row_metrics,
+                
+                # Provider-specific metrics for aggregation
+                'provider_metrics': {
+                    api_provider: {
+                        'calls': 1,
+                        'tokens': token_usage.get('total_tokens', 0),
+                        'cost_actual': cost_data.get('total_cost', 0.0),
+                        'cost_without_cache': cost_without_cache.get('total_cost', 0.0),
+                        'processing_time': processing_time,
+                        'cache_hit_tokens': token_usage.get('cache_read_tokens', 0)
+                    }
+                }
+            }
+            
+            logger.debug(f"[ENHANCED_METRICS] {api_provider} call - Model: {model}, "
+                        f"Cost: ${cost_data.get('total_cost', 0):.6f} (actual) / "
+                        f"${cost_without_cache.get('total_cost', 0):.6f} (no cache), "
+                        f"Tokens: {token_usage.get('total_tokens', 0)}, "
+                        f"Time: {processing_time:.3f}s, "
+                        f"Cache savings: {enhanced_metrics['costs']['cache_savings']['percentage_savings']:.1f}%")
+            
+            return enhanced_metrics
+            
+        except Exception as e:
+            logger.error(f"get_enhanced_call_metrics: Error processing response data: {e}")
+            import traceback
+            logger.error(f"get_enhanced_call_metrics: Traceback: {traceback.format_exc()}")
+            return self._get_empty_enhanced_metrics(model, api_provider)
+    
+    # ========== HELPER METHODS FOR ENHANCED METRICS ==========
+    
+    def _calculate_cost_without_caching_benefits(self, token_usage: Dict, actual_cost_data: Dict) -> Dict[str, float]:
+        """
+        Calculate what the cost would be without any caching benefits.
+        This involves estimating what cache hits would have cost if they were fresh API calls.
+        """
+        try:
+            cache_read_tokens = token_usage.get('cache_read_tokens', 0)
+            if cache_read_tokens == 0:
+                # No caching benefits, return actual costs
+                return actual_cost_data
+            
+            # Estimate the cost of cache hits as if they were fresh API calls
+            # Cache reads are typically input tokens that were served from cache
+            api_provider = token_usage.get('api_provider', 'unknown')
+            
+            # Get pricing data to calculate cache cost
+            try:
+                pricing_data = self.load_pricing_data()
+                temp_token_usage = token_usage.copy()
+                temp_token_usage['cache_read_tokens'] = 0  # Remove cache benefit
+                temp_token_usage['input_tokens'] = token_usage.get('input_tokens', 0) + cache_read_tokens
+                
+                # Calculate cost without cache benefits
+                cost_without_cache = self.calculate_token_costs(temp_token_usage, pricing_data)
+                return cost_without_cache
+                
+            except Exception as e:
+                logger.warning(f"_calculate_cost_without_caching_benefits: Error calculating cache cost: {e}")
+                # Estimate cache cost as average input cost per token
+                input_cost_per_token = actual_cost_data.get('input_cost', 0.0) / max(1, token_usage.get('input_tokens', 1))
+                estimated_cache_cost = cache_read_tokens * input_cost_per_token
+                
+                return {
+                    'input_cost': actual_cost_data.get('input_cost', 0.0) + estimated_cache_cost,
+                    'output_cost': actual_cost_data.get('output_cost', 0.0),
+                    'total_cost': actual_cost_data.get('total_cost', 0.0) + estimated_cache_cost
+                }
+                
+        except Exception as e:
+            logger.error(f"_calculate_cost_without_caching_benefits: Critical error: {e}")
+            return actual_cost_data
+    
+    def _extract_caching_metrics(self, token_usage: Dict, response: Dict) -> Dict[str, Any]:
+        """Extract comprehensive caching efficiency metrics."""
+        try:
+            cache_read_tokens = token_usage.get('cache_read_tokens', 0)
+            cache_creation_tokens = token_usage.get('cache_creation_tokens', 0)
+            input_tokens = token_usage.get('input_tokens', 0)
+            total_tokens = token_usage.get('total_tokens', 0)
+            
+            cache_hit_rate = (cache_read_tokens / max(1, input_tokens)) * 100
+            cache_coverage = (cache_read_tokens / max(1, total_tokens)) * 100
+            
+            return {
                 'cache_read_tokens': cache_read_tokens,
-                'total_tokens': total_tokens,
-                'model': model
+                'cache_creation_tokens': cache_creation_tokens,
+                'cache_hit_rate_percent': cache_hit_rate,
+                'cache_coverage_percent': cache_coverage,
+                'has_cache_benefit': cache_read_tokens > 0,
+                'cache_efficiency_score': min(100, (cache_hit_rate * 1.2))  # Weighted score
             }
-        else:
-            # Perplexity format: prompt_tokens, completion_tokens, total_tokens
-            prompt_tokens = usage.get('prompt_tokens', 0)
-            completion_tokens = usage.get('completion_tokens', 0)
-            total_tokens = usage.get('total_tokens', prompt_tokens + completion_tokens)
+            
+        except Exception as e:
+            logger.error(f"_extract_caching_metrics: Error: {e}")
+            return {
+                'cache_read_tokens': 0, 'cache_creation_tokens': 0,
+                'cache_hit_rate_percent': 0.0, 'cache_coverage_percent': 0.0,
+                'has_cache_benefit': False, 'cache_efficiency_score': 0.0
+            }
+    
+    def _calculate_comprehensive_timing_metrics(self, token_usage: Dict, actual_time: float, caching_metrics: Dict) -> Dict[str, Any]:
+        """
+        Calculate comprehensive timing metrics including estimated time without cache benefits.
+        """
+        try:
+            # Base efficiency: tokens per second
+            total_tokens = token_usage.get('total_tokens', 0)
+            tokens_per_second = total_tokens / max(0.1, actual_time)
+            
+            # Estimate time without caching benefits
+            # Cache hits are much faster, so estimate what they would take as fresh calls
+            cache_read_tokens = caching_metrics.get('cache_read_tokens', 0)
+            
+            if cache_read_tokens > 0:
+                # Estimate cache processing time vs fresh call time
+                # Cache hits typically 5-10x faster than fresh calls
+                cache_speedup_factor = 8.0  # Conservative estimate
+                
+                # Estimate what cache hits would have taken as fresh calls
+                estimated_cache_time = (cache_read_tokens / tokens_per_second) * cache_speedup_factor
+                estimated_time_without_cache = actual_time + estimated_cache_time
+            else:
+                estimated_time_without_cache = actual_time
+            
+            # Time efficiency metrics
+            time_savings_seconds = estimated_time_without_cache - actual_time
+            time_savings_percent = (time_savings_seconds / max(0.1, estimated_time_without_cache)) * 100
             
             return {
-                'api_provider': 'perplexity',
-                'input_tokens': prompt_tokens,
-                'output_tokens': completion_tokens,
-                'cache_creation_tokens': 0,
-                'cache_read_tokens': 0,
-                'total_tokens': total_tokens,
-                'model': model,
-                'search_context_size': search_context_size
+                'actual_time': actual_time,
+                'estimated_time_without_cache': estimated_time_without_cache,
+                'time_savings_seconds': time_savings_seconds,
+                'time_savings_percent': time_savings_percent,
+                'tokens_per_second_actual': tokens_per_second,
+                'tokens_per_second_without_cache': total_tokens / max(0.1, estimated_time_without_cache)
             }
+            
+        except Exception as e:
+            logger.error(f"_calculate_comprehensive_timing_metrics: Error: {e}")
+            return {
+                'actual_time': actual_time, 'estimated_time_without_cache': actual_time,
+                'time_savings_seconds': 0.0, 'time_savings_percent': 0.0,
+                'tokens_per_second_actual': 0.0, 'tokens_per_second_without_cache': 0.0
+            }
+    
+    def _calculate_per_row_metrics(self, cost_actual: Dict, cost_without_cache: Dict, 
+                                  timing_metrics: Dict, batch_info: Dict = None) -> Dict[str, Any]:
+        """Calculate per-row cost and timing metrics."""
+        try:
+            batch_size = 1
+            if batch_info and isinstance(batch_info, dict):
+                batch_size = max(1, batch_info.get('batch_size', 1))
+            
+            per_row_cost_actual = cost_actual.get('total_cost', 0.0) / batch_size
+            per_row_cost_without_cache = cost_without_cache.get('total_cost', 0.0) / batch_size
+            per_row_time_actual = timing_metrics.get('actual_time', 0.0) / batch_size
+            per_row_time_without_cache = timing_metrics.get('estimated_time_without_cache', 0.0) / batch_size
+            
+            return {
+                'batch_size': batch_size,
+                'cost_per_row_actual': per_row_cost_actual,
+                'cost_per_row_without_cache': per_row_cost_without_cache,
+                'time_per_row_actual': per_row_time_actual,
+                'time_per_row_without_cache': per_row_time_without_cache,
+                'cost_savings_per_row': per_row_cost_without_cache - per_row_cost_actual,
+                'time_savings_per_row': per_row_time_without_cache - per_row_time_actual
+            }
+            
+        except Exception as e:
+            logger.error(f"_calculate_per_row_metrics: Error: {e}")
+            return {
+                'batch_size': 1, 'cost_per_row_actual': 0.0, 'cost_per_row_without_cache': 0.0,
+                'time_per_row_actual': 0.0, 'time_per_row_without_cache': 0.0,
+                'cost_savings_per_row': 0.0, 'time_savings_per_row': 0.0
+            }
+    
+    def _calculate_percentage_savings(self, actual_cost: float, cost_without_cache: float) -> float:
+        """Calculate percentage savings from caching."""
+        if cost_without_cache <= 0:
+            return 0.0
+        return ((cost_without_cache - actual_cost) / cost_without_cache) * 100
+    
+    def _get_empty_enhanced_metrics(self, model: str, api_provider: str) -> Dict[str, Any]:
+        """Return empty enhanced metrics structure for error cases."""
+        return {
+            'call_info': {'model': model, 'api_provider': api_provider, 'timestamp': datetime.now(timezone.utc).isoformat()},
+            'tokens': {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0, 'cache_creation_tokens': 0, 'cache_read_tokens': 0},
+            'costs': {
+                'actual': {'input_cost': 0.0, 'output_cost': 0.0, 'total_cost': 0.0, 'pricing_source': 'error'},
+                'without_cache': {'input_cost': 0.0, 'output_cost': 0.0, 'total_cost': 0.0},
+                'cache_savings': {'absolute_savings': 0.0, 'percentage_savings': 0.0}
+            },
+            'timing': {'actual_time': 0.0, 'estimated_time_without_cache': 0.0, 'time_savings_seconds': 0.0, 'time_savings_percent': 0.0, 'tokens_per_second_actual': 0.0, 'tokens_per_second_without_cache': 0.0},
+            'caching': {'cache_read_tokens': 0, 'cache_creation_tokens': 0, 'cache_hit_rate_percent': 0.0, 'cache_coverage_percent': 0.0, 'has_cache_benefit': False, 'cache_efficiency_score': 0.0},
+            'per_row': {'batch_size': 1, 'cost_per_row_actual': 0.0, 'cost_per_row_without_cache': 0.0, 'time_per_row_actual': 0.0, 'time_per_row_without_cache': 0.0, 'cost_savings_per_row': 0.0, 'time_savings_per_row': 0.0},
+            'provider_metrics': {api_provider: {'calls': 0, 'tokens': 0, 'cost_actual': 0.0, 'cost_without_cache': 0.0, 'processing_time': 0.0, 'cache_hit_tokens': 0}},
+            'error': True
+        }
+    
+    # ========== PROVIDER-SPECIFIC AGGREGATION METHODS ==========
+    
+    @staticmethod
+    def aggregate_provider_metrics(call_metrics_list: List[Dict]) -> Dict[str, Any]:
+        """
+        Aggregate enhanced call metrics by provider for comprehensive analysis.
+        
+        Args:
+            call_metrics_list: List of enhanced call metrics from get_enhanced_call_metrics()
+            
+        Returns:
+            Aggregated metrics by provider with comprehensive statistics
+        """
+        try:
+            if not call_metrics_list:
+                return {'providers': {}, 'totals': {}, 'error': 'no_metrics_provided'}
+            
+            providers = {}
+            totals = {
+                'total_calls': 0,
+                'total_tokens': 0,
+                'total_cost_actual': 0.0,
+                'total_cost_without_cache': 0.0,
+                'total_processing_time': 0.0,
+                'total_cache_savings_cost': 0.0,
+                'total_cache_savings_time': 0.0,
+                'overall_cache_efficiency': 0.0
+            }
+            
+            for call_metrics in call_metrics_list:
+                if 'provider_metrics' not in call_metrics:
+                    continue
+                    
+                for provider, metrics in call_metrics['provider_metrics'].items():
+                    if provider not in providers:
+                        providers[provider] = {
+                            'calls': 0,
+                            'tokens': 0,
+                            'cost_actual': 0.0,
+                            'cost_without_cache': 0.0,
+                            'processing_time': 0.0,
+                            'cache_hit_tokens': 0,
+                            'cache_savings_cost': 0.0,
+                            'cache_savings_time': 0.0,
+                            'average_cost_per_call': 0.0,
+                            'average_tokens_per_call': 0.0,
+                            'average_time_per_call': 0.0,
+                            'cost_per_row_actual': 0.0,
+                            'cost_per_row_without_cache': 0.0,
+                            'time_per_row_actual': 0.0,
+                            'time_per_row_without_cache': 0.0,
+                            'cache_efficiency_percent': 0.0
+                        }
+                    
+                    # Aggregate raw metrics
+                    providers[provider]['calls'] += metrics.get('calls', 0)
+                    providers[provider]['tokens'] += metrics.get('tokens', 0)
+                    providers[provider]['cost_actual'] += metrics.get('cost_actual', 0.0)
+                    providers[provider]['cost_without_cache'] += metrics.get('cost_without_cache', 0.0)
+                    providers[provider]['processing_time'] += metrics.get('processing_time', 0.0)
+                    providers[provider]['cache_hit_tokens'] += metrics.get('cache_hit_tokens', 0)
+                    
+                    # Calculate savings from the call
+                    call_cost_savings = call_metrics.get('costs', {}).get('cache_savings', {}).get('absolute_savings', 0.0)
+                    call_time_savings = call_metrics.get('timing', {}).get('time_savings_seconds', 0.0)
+                    
+                    providers[provider]['cache_savings_cost'] += call_cost_savings
+                    providers[provider]['cache_savings_time'] += call_time_savings
+            
+            # Calculate derived metrics for each provider
+            for provider, metrics in providers.items():
+                if metrics['calls'] > 0:
+                    metrics['average_cost_per_call'] = metrics['cost_actual'] / metrics['calls']
+                    metrics['average_tokens_per_call'] = metrics['tokens'] / metrics['calls']
+                    metrics['average_time_per_call'] = metrics['processing_time'] / metrics['calls']
+                
+                # Cache efficiency
+                if metrics['cost_without_cache'] > 0:
+                    metrics['cache_efficiency_percent'] = (metrics['cache_savings_cost'] / metrics['cost_without_cache']) * 100
+                
+                # Update totals
+                totals['total_calls'] += metrics['calls']
+                totals['total_tokens'] += metrics['tokens']
+                totals['total_cost_actual'] += metrics['cost_actual']
+                totals['total_cost_without_cache'] += metrics['cost_without_cache']
+                totals['total_processing_time'] += metrics['processing_time']
+                totals['total_cache_savings_cost'] += metrics['cache_savings_cost']
+                totals['total_cache_savings_time'] += metrics['cache_savings_time']
+            
+            # Calculate overall efficiency
+            if totals['total_cost_without_cache'] > 0:
+                totals['overall_cache_efficiency'] = (totals['total_cache_savings_cost'] / totals['total_cost_without_cache']) * 100
+            
+            return {
+                'providers': providers,
+                'totals': totals,
+                'summary': {
+                    'provider_count': len(providers),
+                    'dominant_provider': max(providers.keys(), key=lambda p: providers[p]['cost_actual']) if providers else None,
+                    'most_efficient_provider': max(providers.keys(), key=lambda p: providers[p]['cache_efficiency_percent']) if providers else None
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"aggregate_provider_metrics: Error: {e}")
+            import traceback
+            logger.error(f"aggregate_provider_metrics: Traceback: {traceback.format_exc()}")
+            return {'providers': {}, 'totals': {}, 'error': str(e)}
+    
+    @staticmethod
+    def calculate_full_validation_estimates(aggregated_metrics: Dict, total_rows_in_table: int, 
+                                          preview_rows_processed: int) -> Dict[str, Any]:
+        """
+        Calculate full validation estimates based on aggregated preview metrics.
+        
+        Args:
+            aggregated_metrics: Output from aggregate_provider_metrics()
+            total_rows_in_table: Total number of rows in the full table
+            preview_rows_processed: Number of rows processed in the preview
+            
+        Returns:
+            Comprehensive full validation estimates by provider and in total
+        """
+        try:
+            if preview_rows_processed <= 0 or total_rows_in_table <= 0:
+                logger.warning("calculate_full_validation_estimates: Invalid row counts")
+                return {'error': 'invalid_row_counts'}
+            
+            scaling_factor = total_rows_in_table / preview_rows_processed
+            
+            estimates = {
+                'scaling_info': {
+                    'total_rows_in_table': total_rows_in_table,
+                    'preview_rows_processed': preview_rows_processed,
+                    'scaling_factor': scaling_factor
+                },
+                'provider_estimates': {},
+                'total_estimates': {}
+            }
+            
+            # Calculate estimates by provider
+            for provider, metrics in aggregated_metrics.get('providers', {}).items():
+                estimates['provider_estimates'][provider] = {
+                    'estimated_calls': int(metrics['calls'] * scaling_factor),
+                    'estimated_tokens': int(metrics['tokens'] * scaling_factor),
+                    'estimated_cost_actual': metrics['cost_actual'] * scaling_factor,
+                    'estimated_cost_without_cache': metrics['cost_without_cache'] * scaling_factor,
+                    'estimated_processing_time': metrics['processing_time'] * scaling_factor,
+                    'estimated_cache_savings_cost': metrics['cache_savings_cost'] * scaling_factor,
+                    'estimated_cache_savings_time': metrics['cache_savings_time'] * scaling_factor
+                }
+            
+            # Calculate total estimates
+            totals = aggregated_metrics.get('totals', {})
+            estimates['total_estimates'] = {
+                'estimated_total_calls': int(totals.get('total_calls', 0) * scaling_factor),
+                'estimated_total_tokens': int(totals.get('total_tokens', 0) * scaling_factor),
+                'estimated_total_cost_actual': totals.get('total_cost_actual', 0.0) * scaling_factor,
+                'estimated_total_cost_without_cache': totals.get('total_cost_without_cache', 0.0) * scaling_factor,
+                'estimated_total_processing_time': totals.get('total_processing_time', 0.0) * scaling_factor,
+                'estimated_total_cache_savings_cost': totals.get('total_cache_savings_cost', 0.0) * scaling_factor,
+                'estimated_total_cache_savings_time': totals.get('total_cache_savings_time', 0.0) * scaling_factor,
+                'estimated_cache_efficiency_percent': totals.get('overall_cache_efficiency', 0.0)
+            }
+            
+            # Calculate batch estimates for different batch sizes
+            estimates['batch_estimates'] = {}
+            for batch_size in [10, 20, 50, 100]:
+                estimated_batches = max(1, total_rows_in_table // batch_size)
+                time_per_batch = estimates['total_estimates']['estimated_total_processing_time'] / estimated_batches
+                
+                estimates['batch_estimates'][f'batch_size_{batch_size}'] = {
+                    'estimated_batches': estimated_batches,
+                    'estimated_time_per_batch': time_per_batch,
+                    'estimated_total_time': time_per_batch * estimated_batches
+                }
+            
+            return estimates
+            
+        except Exception as e:
+            logger.error(f"calculate_full_validation_estimates: Error: {e}")
+            return {'error': str(e)}
+
+    def get_unified_cost_and_time_data(self, response: Dict, model: str, processing_time: float, search_context_size: str = None) -> Dict[str, Any]:
+        """
+        DEPRECATED: Use get_enhanced_call_metrics() for comprehensive tracking.
+        Maintained for backward compatibility.
+        """
+        try:
+            # Extract token usage with validation
+            token_usage = self._extract_token_usage(response, model, search_context_size)
+            
+            # Calculate costs
+            cost_data = self.calculate_token_costs(token_usage)
+            
+            # Calculate time estimates
+            time_data = self.calculate_processing_time_estimate(token_usage, processing_time)
+            
+            # Combine all data
+            unified_data = {
+                'token_usage': token_usage,
+                'cost_data': cost_data,
+                'time_data': time_data,
+                'summary': {
+                    'total_cost': cost_data.get('total_cost', 0.0),
+                    'total_tokens': token_usage.get('total_tokens', 0),
+                    'processing_time': processing_time,
+                    'cost_per_token': cost_data.get('total_cost', 0.0) / max(1, token_usage.get('total_tokens', 1)),
+                    'api_provider': token_usage.get('api_provider', 'unknown'),
+                    'model': model
+                }
+            }
+            
+            logger.debug(f"ai_api_client.get_unified_cost_and_time_data: "
+                        f"Model: {model}, Cost: ${cost_data.get('total_cost', 0):.6f}, "
+                        f"Tokens: {token_usage.get('total_tokens', 0)}, "
+                        f"Time: {processing_time:.3f}s")
+            
+            return unified_data
+            
+        except Exception as e:
+            logger.error(f"ai_api_client.get_unified_cost_and_time_data: Error processing response data: {e}")
+            return {
+                'token_usage': self._get_empty_token_usage(model),
+                'cost_data': {'input_cost': 0.0, 'output_cost': 0.0, 'total_cost': 0.0, 'error': str(e)},
+                'time_data': {'processing_time': processing_time, 'error': str(e)},
+                'summary': {
+                    'total_cost': 0.0,
+                    'total_tokens': 0,
+                    'processing_time': processing_time,
+                    'cost_per_token': 0.0,
+                    'api_provider': 'unknown',
+                    'model': model,
+                    'error': str(e)
+                }
+            }
+    
+    # ========== END CENTRALIZED COST AND TIME CALCULATION SYSTEM ==========
     
     def _get_cache_s3_key(self, cache_key: str, api_provider: str) -> str:
         """Generate S3 key for cache based on structure type."""
@@ -254,7 +1265,33 @@ class AIAPIClient:
                 Key=s3_key
             )
             
-            cached_data = json.loads(cache_response['Body'].read())
+            # Validate JSON before parsing
+            cache_body = cache_response['Body'].read()
+            if not cache_body:
+                logger.warning(f"CACHE_REJECT: Empty cache file for key: {cache_key[:8]}... - will make API call")
+                return None
+            
+            try:
+                cached_data = json.loads(cache_body)
+            except json.JSONDecodeError as e:
+                logger.warning(f"CACHE_REJECT: Invalid JSON in cache for key: {cache_key[:8]}... - Error: {str(e)} - will make API call")
+                return None
+            
+            # Validate cache structure
+            if not isinstance(cached_data, dict):
+                logger.warning(f"CACHE_REJECT: Cache data not a dict for key: {cache_key[:8]}... - Type: {type(cached_data)} - will make API call")
+                return None
+            
+            if 'api_response' not in cached_data:
+                logger.warning(f"CACHE_REJECT: Missing api_response in cache for key: {cache_key[:8]}... - Keys: {list(cached_data.keys())} - will make API call")
+                return None
+            
+            # Validate API response structure
+            api_response = cached_data['api_response']
+            if not isinstance(api_response, dict):
+                logger.warning(f"CACHE_REJECT: api_response not a dict for key: {cache_key[:8]}... - Type: {type(api_response)} - will make API call")
+                return None
+            
             cache_check_time = (datetime.now() - cache_check_start).total_seconds()
             
             # Fix legacy cached token usage format - ensure it has normalized fields
@@ -275,6 +1312,8 @@ class AIAPIClient:
                         token_usage['input_tokens'] = token_usage.get('input_tokens', 0)
                     if 'output_tokens' not in token_usage:
                         token_usage['output_tokens'] = token_usage.get('output_tokens', 0)
+            else:
+                logger.warning(f"CACHE_WARNING: Missing token_usage in cache for key: {cache_key[:8]}... - continuing anyway")
             
             # Log detailed cache hit information
             cached_at = cached_data.get('cached_at', 'Unknown')
@@ -292,6 +1331,20 @@ class AIAPIClient:
             logger.info(f"CACHE_HIT: Found cached response for key: {cache_key[:8]}... "
                        f"(cached {cache_age_hours:.1f}h ago, model: {cached_model}, "
                        f"check_time: {cache_check_time:.3f}s)")
+            
+            # ENHANCED LOGGING: Check for suspiciously fast cache processing times
+            cached_processing_time = cached_data.get('processing_time', 0)
+            if cached_processing_time < 1.0 and cached_processing_time > 0:
+                logger.info(f"[FAST_CACHED_RESPONSE] Original API call was unusually fast ({cached_processing_time:.3f}s) "
+                           f"for key: {cache_key[:8]}... This might indicate Anthropic cache was hit during original call.")
+                
+            # Log cache token information if available
+            cached_token_usage = cached_data.get('token_usage', {})
+            cache_read_tokens = cached_token_usage.get('cache_read_tokens', 0)
+            cache_creation_tokens = cached_token_usage.get('cache_creation_tokens', 0)
+            if cache_read_tokens > 0 or cache_creation_tokens > 0:
+                logger.info(f"[ANTHROPIC_CACHE_TOKENS] Cache tokens in original call: "
+                           f"read={cache_read_tokens}, creation={cache_creation_tokens} for key: {cache_key[:8]}...")
             
             return cached_data
             
@@ -484,6 +1537,9 @@ class AIAPIClient:
                             'citations': citations
                         }
                 
+                # Log that we're making an API call (no cache hit)
+                logger.info(f"API_CALL_PROCEEDING: Making {api_provider} API call for model {current_model} - cache_key: {cache_key[:8] if cache_key else 'N/A'}...")
+                
                 # Make API call based on provider
                 if api_provider == 'anthropic':
                     # Anthropic API call
@@ -493,23 +1549,27 @@ class AIAPIClient:
                         'anthropic-version': '2023-06-01'
                     }
                     
+                    # Build tools list - only include web search if max_web_searches > 0
+                    tools = []
+                    if max_web_searches > 0:
+                        tools.append({
+                            "type": "web_search_20250305",
+                            "name": "web_search",
+                            "max_uses": max_web_searches
+                        })
+                    
+                    tools.append({
+                        "name": tool_name,
+                        "description": f"Provide structured response using {tool_name}",
+                        "input_schema": schema
+                    })
+                    
                     data = {
                         "model": current_model_normalized,
                         "max_tokens": max_tokens or 8000,
                         "temperature": 0.1,
                         "messages": [{"role": "user", "content": prompt}],
-                        "tools": [
-                            {
-                                "type": "web_search_20250305",
-                                "name": "web_search",
-                                "max_uses": max_web_searches
-                            },
-                            {
-                                "name": tool_name,
-                                "description": f"Provide structured response using {tool_name}",
-                                "input_schema": schema
-                            }
-                        ],
+                        "tools": tools,
                         "tool_choice": {"type": "auto"}
                     }
                     
@@ -606,6 +1666,9 @@ class AIAPIClient:
                     'citations': self.extract_citations_from_response(cached_data['api_response'])
                 }
         
+        # Log that we're making an API call (no cache hit)
+        logger.info(f"API_CALL_PROCEEDING: Making anthropic text API call for model {normalized_model} - cache_key: {cache_key[:8] if cache_key else 'N/A'}...")
+        
         # Make API call
         headers = {
             'Content-Type': 'application/json',
@@ -613,18 +1676,21 @@ class AIAPIClient:
             'anthropic-version': '2023-06-01'
         }
         
+        # Build tools list - only include web search if max_web_searches > 0
+        tools = []
+        if max_web_searches > 0:
+            tools.append({
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": max_web_searches
+            })
+        
         data = {
             "model": normalized_model,
             "max_tokens": 4000,
             "temperature": 0.1,
             "messages": [{"role": "user", "content": prompt}],
-            "tools": [
-                {
-                    "type": "web_search_20250305",
-                    "name": "web_search",
-                    "max_uses": max_web_searches
-                }
-            ]
+            "tools": tools
         }
         
         start_time = datetime.now()
@@ -671,6 +1737,9 @@ class AIAPIClient:
                     'is_cached': True,
                     'citations': self.extract_citations_from_perplexity_response(cached_data['api_response'])
                 }
+        
+        # Log that we're making an API call (no cache hit)
+        logger.info(f"API_CALL_PROCEEDING: Making perplexity smart cache API call for model {model} - cache_key: {cache_key[:8] if cache_key else 'N/A'}...")
         
         # Make API call using the standard method
         result = await self.validate_with_perplexity(prompt, model, search_context_size, use_cache=False, context="")
@@ -729,6 +1798,9 @@ class AIAPIClient:
                     'is_cached': True,
                     'citations': self.extract_citations_from_perplexity_response(cached_data['api_response'])
                 }
+        
+        # Log that we're making an API call (no cache hit)
+        logger.info(f"API_CALL_PROCEEDING: Making perplexity API call for model {model} - cache_key: {cache_key[:8] if cache_key else 'N/A'}...")
         
         # Make API call
         headers = {
@@ -875,8 +1947,8 @@ class AIAPIClient:
                             citation = {
                                 'url': result_item.get('url', ''),
                                 'title': result_item.get('title', ''),
-                                'cited_text': result_item.get('encrypted_content', '')[:200] + '...' if result_item.get('encrypted_content') else '',  # Truncate encrypted content
-                                'encrypted_index': result_item.get('encrypted_content', '')
+                                'cited_text': '',  # Removed encrypted content to reduce costs
+                                'encrypted_index': ''  # Removed encrypted index to reduce costs
                             }
                             citations.append(citation)
                 

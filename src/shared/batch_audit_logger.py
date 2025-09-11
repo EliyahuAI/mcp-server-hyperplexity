@@ -250,8 +250,7 @@ def create_batch_audit_table():
                 ],
                 'Projection': {
                     'ProjectionType': 'ALL'
-                },
-                'BillingMode': 'PAY_PER_REQUEST'
+                }
             },
             {
                 'IndexName': 'TimestampIndex',
@@ -263,8 +262,7 @@ def create_batch_audit_table():
                 ],
                 'Projection': {
                     'ProjectionType': 'ALL'
-                },
-                'BillingMode': 'PAY_PER_REQUEST'
+                }
             },
             {
                 'IndexName': 'SessionIndex',
@@ -280,8 +278,7 @@ def create_batch_audit_table():
                 ],
                 'Projection': {
                     'ProjectionType': 'ALL'
-                },
-                'BillingMode': 'PAY_PER_REQUEST'
+                }
             }
         ],
         'BillingMode': 'PAY_PER_REQUEST'

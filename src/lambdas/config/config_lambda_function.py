@@ -60,6 +60,10 @@ def send_websocket_progress(session_id: str, message: str, progress: int = None)
         except Exception as e:
             logger.warning(f"Failed to send WebSocket config progress: {e}")
 
+# NOTE: Cost calculation functions moved to centralized ai_api_client.py
+# Use ai_client.calculate_token_costs() for cost calculations
+# Use ai_client.load_pricing_data() for pricing data loading
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for configuration generation requests."""
     try:
@@ -193,6 +197,23 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             # Context should be for search_context_size in validation calls
         )
         
+        # Extract enhanced data from AI client response (complete enhanced metrics)
+        enhanced_data = result.get('enhanced_data', {})
+        token_usage = result.get('token_usage', {})
+        processing_time = result.get('processing_time', 0)
+        model_used = result.get('model_used', config_settings.get('model', 'claude-opus-4-1'))
+        is_cached = result.get('is_cached', False)
+        
+        # Extract cost from enhanced data (proper chain of custody)
+        eliyahu_cost = enhanced_data.get('total_cost_actual', 0.0)
+        if eliyahu_cost == 0.0:
+            # Fallback to legacy cost calculation if enhanced data not available
+            cost_data = ai_client.calculate_token_costs(token_usage)
+            eliyahu_cost = cost_data.get('total_cost', 0.0)
+            logger.warning("[CONFIG_PRICING] Enhanced data not available, using legacy cost calculation")
+        else:
+            logger.info(f"[CONFIG_PRICING] Using enhanced cost data: ${eliyahu_cost:.6f}")
+        
         # Extract response data
         response_data = ai_client.extract_structured_response(result['response'], "generate_config_and_questions")
         
@@ -295,7 +316,14 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             'config_download_url': config_download_url,
             'config_filename': config_filename,
             'config_version': config_version,  # Add explicit version field
-            'session_id': session_id
+            'session_id': session_id,
+            # Add cost and usage tracking data (enhanced metrics)
+            'eliyahu_cost': eliyahu_cost,
+            'enhanced_data': enhanced_data,
+            'token_usage': token_usage,
+            'processing_time': processing_time,
+            'model_used': model_used,
+            'is_cached': is_cached
         }
         
     except Exception as e:
@@ -352,7 +380,7 @@ def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict 
 
 **File Information:**
 - File: {basic_info.get('filename', 'Unknown')}
-- Size: {basic_info.get('shape', [0, 0])[0]} rows × {basic_info.get('shape', [0, 0])[1]} columns
+- Size: {basic_info.get('shape', [0, 0])[0]} rows x {basic_info.get('shape', [0, 0])[1]} columns
 - Domain: {domain_info.get('likely_domain', 'general')} (confidence: {domain_info.get('confidence', 0)})
 
 **All Column Names ({len(basic_info.get('column_names', []))} total):**
@@ -494,7 +522,7 @@ This shows how the current configuration performed on the first few rows:"""
                                     base_prompt += f"""
 - **{col_name}**: "{display_value}" 
   - Confidence: {confidence:.2f}
-  - Level: {confidence_level}{"" if not update_required else " ⚠️ NEEDS UPDATE"}"""
+  - Level: {confidence_level}{"" if not update_required else " [WARNING] NEEDS UPDATE"}"""
                 
                 elif markdown_table:
                     # Use preview results markdown table (preview validation)
@@ -557,8 +585,8 @@ You must ALWAYS provide both:
 
 ## Validation Checklist
 Verify your response includes:
-- ✅ Exactly {len(basic_info.get('column_names', []))} validation_targets
-- ✅ Each column name appears once: {', '.join(basic_info.get('column_names', []))}
+- [SUCCESS] Exactly {len(basic_info.get('column_names', []))} validation_targets
+- [SUCCESS] Each column name appears once: {', '.join(basic_info.get('column_names', []))}
 
 ## Final Step
 Use the **generate_config_and_questions** tool to return both the configuration and questions."""

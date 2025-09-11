@@ -39,6 +39,201 @@ def convert_floats_to_decimal(obj):
     else:
         return obj
 
+def validate_cost_fields(eliyahu_cost: float = None, quoted_validation_cost: float = None, 
+                        estimated_validation_eliyahu_cost: float = None, operation_type: str = "validation") -> Dict[str, Any]:
+    """
+    Validate the three-tier cost system fields for consistency and business logic.
+    
+    Args:
+        eliyahu_cost: Actual cost paid (with caching benefits)
+        quoted_validation_cost: What user pays (with multiplier, rounding, $2 min)
+        estimated_validation_eliyahu_cost: Raw cost estimate without caching benefit
+        operation_type: Type of operation (validation, config, preview)
+        
+    Returns:
+        Dictionary with validation results and sanitized values
+    """
+    validation_result = {
+        'is_valid': True,
+        'warnings': [],
+        'errors': [],
+        'sanitized_values': {},
+        'audit_info': {
+            'validation_timestamp': datetime.now(timezone.utc).isoformat(),
+            'operation_type': operation_type
+        }
+    }
+    
+    # Sanitize and validate individual cost fields
+    costs = {
+        'eliyahu_cost': eliyahu_cost,
+        'quoted_validation_cost': quoted_validation_cost,
+        'estimated_validation_eliyahu_cost': estimated_validation_eliyahu_cost
+    }
+    
+    sanitized_costs = {}
+    
+    for cost_name, cost_value in costs.items():
+        if cost_value is not None:
+            try:
+                # Convert to float and validate
+                cost_float = float(cost_value)
+                
+                # Validate non-negative
+                if cost_float < 0:
+                    validation_result['errors'].append(f"{cost_name} cannot be negative: ${cost_float:.6f}")
+                    cost_float = 0.0
+                    validation_result['is_valid'] = False
+                
+                # Validate reasonable range (not more than $1000)
+                if cost_float > 1000.0:
+                    validation_result['warnings'].append(f"{cost_name} is unusually high: ${cost_float:.6f}")
+                
+                # Convert to Decimal with proper precision
+                sanitized_costs[cost_name] = Decimal(str(round(cost_float, 6)))
+                
+            except (ValueError, TypeError) as e:
+                validation_result['errors'].append(f"Invalid {cost_name} value: {cost_value} ({e})")
+                sanitized_costs[cost_name] = Decimal('0.0')
+                validation_result['is_valid'] = False
+    
+    # Business logic validation for three-tier cost relationships
+    if len(sanitized_costs) >= 2:
+        eliyahu = sanitized_costs.get('eliyahu_cost')
+        quoted = sanitized_costs.get('quoted_validation_cost') 
+        estimated = sanitized_costs.get('estimated_validation_eliyahu_cost')
+        
+        # Validation Rule 1: Estimated cost (without cache) >= Actual cost (with cache)
+        if eliyahu is not None and estimated is not None:
+            if estimated < eliyahu:
+                validation_result['warnings'].append(
+                    f"Estimated cost without cache (${estimated}) < actual cost with cache (${eliyahu}) - unusual but possible"
+                )
+        
+        # Validation Rule 2: For validation operations, quoted cost should be >= $2 (minimum)
+        if operation_type in ['validation', 'full_validation'] and quoted is not None:
+            if quoted > 0 and quoted < Decimal('2.0'):
+                validation_result['warnings'].append(
+                    f"Quoted validation cost ${quoted} is below $2 minimum - should be rounded up"
+                )
+        
+        # Validation Rule 3: Config operations should typically have quoted_cost = 0 (free to users)
+        if operation_type in ['config', 'config_generation'] and quoted is not None:
+            if quoted > 0:
+                validation_result['warnings'].append(
+                    f"Config operations should be free to users, but quoted_cost = ${quoted}"
+                )
+        
+        # Validation Rule 4: Consistency checks for extreme differences
+        if eliyahu is not None and quoted is not None and eliyahu > 0:
+            ratio = float(quoted / eliyahu) if eliyahu > 0 else 0
+            if ratio > 50:  # More than 50x markup is suspicious
+                validation_result['warnings'].append(
+                    f"Quoted cost ${quoted} is {ratio:.1f}x higher than internal cost ${eliyahu} - check domain multiplier"
+                )
+    
+    validation_result['sanitized_values'] = sanitized_costs
+    
+    # Log validation results for audit
+    if validation_result['errors']:
+        logger.error(f"[COST_VALIDATION] Errors in cost field validation: {validation_result['errors']}")
+    if validation_result['warnings']:
+        logger.warning(f"[COST_VALIDATION] Warnings in cost field validation: {validation_result['warnings']}")
+    
+    return validation_result
+
+def create_cost_update_transaction(session_id: str, run_key: str, validation_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Create an atomic DynamoDB transaction for cost field updates with audit trail.
+    
+    Args:
+        session_id: Session identifier
+        run_key: Run key for the record
+        validation_result: Result from validate_cost_fields
+        
+    Returns:
+        List of DynamoDB transaction items
+    """
+    try:
+        transaction_items = []
+        sanitized_costs = validation_result.get('sanitized_values', {})
+        
+        if not sanitized_costs:
+            return transaction_items
+        
+        # Main update to runs table
+        update_expression_parts = []
+        expression_attribute_values = {}
+        expression_attribute_names = {}
+        
+        # Add validated cost fields
+        for cost_name, cost_value in sanitized_costs.items():
+            if cost_value is not None:
+                attr_name = f"#{cost_name}"
+                attr_value = f":{cost_name}"
+                update_expression_parts.append(f"{attr_name} = {attr_value}")
+                expression_attribute_names[attr_name] = cost_name
+                expression_attribute_values[attr_value] = cost_value
+        
+        # Add validation metadata
+        update_expression_parts.append("#cost_validation_info = :cost_validation_info")
+        expression_attribute_names["#cost_validation_info"] = "cost_validation_info"
+        expression_attribute_values[":cost_validation_info"] = {
+            'validation_timestamp': validation_result['audit_info']['validation_timestamp'],
+            'is_valid': validation_result['is_valid'],
+            'warnings_count': len(validation_result['warnings']),
+            'errors_count': len(validation_result['errors']),
+            'operation_type': validation_result['audit_info']['operation_type']
+        }
+        
+        update_expression_parts.append("last_cost_update = :last_cost_update")
+        expression_attribute_values[":last_cost_update"] = datetime.now(timezone.utc).isoformat()
+        
+        main_update = {
+            'Update': {
+                'TableName': VALIDATION_RUNS_TABLE_NAME,
+                'Key': {
+                    'session_id': {'S': session_id},
+                    'run_key': {'S': run_key}
+                },
+                'UpdateExpression': f"SET {', '.join(update_expression_parts)}",
+                'ExpressionAttributeNames': {k: v for k, v in expression_attribute_names.items()},
+                'ExpressionAttributeValues': {
+                    k: {'N' if isinstance(v, Decimal) else 'S' if isinstance(v, str) else 'M': 
+                        str(v) if isinstance(v, Decimal) else v if isinstance(v, str) else convert_floats_to_decimal(v)}
+                    for k, v in expression_attribute_values.items()
+                },
+                'ConditionExpression': 'attribute_exists(session_id) AND attribute_exists(run_key)'
+            }
+        }
+        transaction_items.append(main_update)
+        
+        # Add audit trail entry if there were warnings or errors
+        if validation_result['warnings'] or validation_result['errors']:
+            audit_entry = {
+                'Put': {
+                    'TableName': 'perplexity-validator-cost-audit',  # Audit table
+                    'Item': {
+                        'audit_id': {'S': f"{session_id}#{run_key}#{int(time.time())}"},
+                        'session_id': {'S': session_id},
+                        'run_key': {'S': run_key},
+                        'timestamp': {'S': validation_result['audit_info']['validation_timestamp']},
+                        'operation_type': {'S': validation_result['audit_info']['operation_type']},
+                        'warnings': {'S': json.dumps(validation_result['warnings'])},
+                        'errors': {'S': json.dumps(validation_result['errors'])},
+                        'sanitized_values': {'S': json.dumps({k: str(v) for k, v in sanitized_costs.items()})},
+                        'ttl': {'N': str(int(time.time()) + (90 * 24 * 60 * 60))}  # 90 day TTL
+                    }
+                }
+            }
+            transaction_items.append(audit_entry)
+        
+        return transaction_items
+        
+    except Exception as e:
+        logger.error(f"[COST_TRANSACTION] Error creating cost update transaction: {e}")
+        return []
+
 class DynamoDBSchemas:
     """DynamoDB table schemas and operations for perplexity validator."""
     
@@ -359,18 +554,26 @@ class DynamoDBSchemas:
 
     @classmethod  
     def get_validation_runs_schema(cls) -> Dict[str, Any]:
-        """Schema for the validation runs table with consolidated field structure."""
+        """Schema for the validation runs table with composite primary key (session_id, run_type, timestamp)."""
         return {
             'TableName': cls.VALIDATION_RUNS_TABLE,
             'KeySchema': [
                 {
                     'AttributeName': 'session_id',
                     'KeyType': 'HASH'  # Partition key
+                },
+                {
+                    'AttributeName': 'run_key',  
+                    'KeyType': 'RANGE'  # Sort key: combines run_type and timestamp
                 }
             ],
             'AttributeDefinitions': [
                 {
                     'AttributeName': 'session_id',
+                    'AttributeType': 'S'
+                },
+                {
+                    'AttributeName': 'run_key',
                     'AttributeType': 'S'
                 },
                 {
@@ -531,7 +734,7 @@ class CallTrackingRecord:
         self._data['preview_per_row_tokens'] = per_row_tokens
         self._data['preview_per_row_time_seconds'] = per_row_time
         self._data['preview_per_row_time_without_cache_seconds'] = per_row_time_without_cache
-        self._data['preview_estimated_total_cost_usd'] = per_row_cost * total_rows
+        self._data['preview_estimated_validation_cost_usd'] = per_row_cost * total_rows
         self._data['preview_estimated_total_tokens'] = per_row_tokens * total_rows
         self._data['preview_estimated_total_time_hours'] = (per_row_time * total_rows) / 3600
         self._data['preview_estimated_total_time_without_cache_hours'] = (per_row_time_without_cache * total_rows) / 3600
@@ -546,11 +749,11 @@ class CallTrackingRecord:
             self._data['preview_estimated_total_time_hours'] = (time_per_batch * total_batches) / 3600
     
     def set_validation_metrics(self, validated_columns: int, search_groups: int, 
-                              high_context_groups: int, claude_groups: int):
+                              enhanced_context_groups: int, claude_groups: int):
         """Set validation structure metrics."""
         self._data['validated_columns_count'] = validated_columns
         self._data['search_groups_count'] = search_groups
-        self._data['high_context_search_groups_count'] = high_context_groups
+        self._data['enhanced_context_search_groups_count'] = enhanced_context_groups
         self._data['claude_search_groups_count'] = claude_groups
     
     def set_file_info(self, excel_s3_key: str = '', config_s3_key: str = '', results_s3_key: str = '', 
@@ -671,7 +874,7 @@ class CallTrackingRecord:
             'preview_per_row_tokens': 0,
             'preview_per_row_time_seconds': 0.0,
             'preview_per_row_time_without_cache_seconds': 0.0,
-            'preview_estimated_total_cost_usd': 0.0,
+            'preview_estimated_validation_cost_usd': 0.0,
             'preview_estimated_total_tokens': 0,
             'preview_estimated_total_time_hours': 0.0,
             'preview_estimated_total_time_without_cache_hours': 0.0,
@@ -696,7 +899,7 @@ class CallTrackingRecord:
             # Validation structure metrics
             'validated_columns_count': 0,
             'search_groups_count': 0,
-            'high_context_search_groups_count': 0,
+            'enhanced_context_search_groups_count': 0,
             'claude_search_groups_count': 0,
             
             # Quality metrics
@@ -1928,51 +2131,487 @@ def add_to_balance(email: str, amount: Decimal, transaction_type: str,
         return False
 
 
-def get_domain_multiplier(email_domain: str) -> Decimal:
-    """Get cost multiplier for a domain, falling back to global."""
+# ========== STRENGTHENED DOMAIN MULTIPLIER SYSTEM ==========
+
+# In-memory cache for domain multipliers to reduce DynamoDB hits
+_domain_multiplier_cache = {}
+_cache_last_updated = {}
+_cache_ttl_seconds = 300  # 5 minute cache TTL
+
+def validate_domain_format(domain: str) -> Dict[str, Any]:
+    """
+    Validate email domain format and return normalized domain.
+    
+    Args:
+        domain: Domain to validate
+        
+    Returns:
+        Dictionary with validation results and normalized domain
+    """
+    validation_result = {
+        'is_valid': True,
+        'normalized_domain': domain,
+        'warnings': [],
+        'errors': []
+    }
+    
     try:
-        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.DOMAIN_MULTIPLIERS_TABLE)
+        if not domain or not isinstance(domain, str):
+            validation_result['errors'].append(f"Domain must be a non-empty string, got: {type(domain)}")
+            validation_result['is_valid'] = False
+            validation_result['normalized_domain'] = 'unknown'
+            return validation_result
         
-        # Try domain-specific multiplier first
-        response = table.get_item(Key={'domain': email_domain})
-        if 'Item' in response:
-            return response['Item']['multiplier']
+        # Normalize domain (lowercase, strip whitespace)
+        normalized = domain.lower().strip()
         
-        # Fall back to global multiplier
-        response = table.get_item(Key={'domain': 'global'})
-        if 'Item' in response:
-            return response['Item']['multiplier']
+        # Validate basic domain format
+        if not normalized:
+            validation_result['errors'].append("Domain cannot be empty after normalization")
+            validation_result['is_valid'] = False
+            validation_result['normalized_domain'] = 'unknown'
+            return validation_result
         
-        # Default if nothing found
-        return Decimal('5.0')
+        # Special case: 'global' is valid
+        if normalized == 'global':
+            validation_result['normalized_domain'] = normalized
+            return validation_result
+        
+        # Basic domain validation
+        import re
+        domain_pattern = r'^[a-zA-Z0-9][a-zA-Z0-9\.-]*[a-zA-Z0-9]$'
+        if not re.match(domain_pattern, normalized):
+            validation_result['warnings'].append(f"Domain '{normalized}' has unusual format")
+        
+        # Check for suspicious patterns
+        if '..' in normalized:
+            validation_result['errors'].append(f"Domain '{normalized}' contains consecutive dots")
+            validation_result['is_valid'] = False
+        
+        if normalized.startswith('.') or normalized.endswith('.'):
+            validation_result['errors'].append(f"Domain '{normalized}' cannot start or end with dot")
+            validation_result['is_valid'] = False
+        
+        # Warn about very short or very long domains
+        if len(normalized) < 3:
+            validation_result['warnings'].append(f"Domain '{normalized}' is very short ({len(normalized)} chars)")
+        elif len(normalized) > 253:  # RFC limit
+            validation_result['errors'].append(f"Domain '{normalized}' exceeds 253 character limit")
+            validation_result['is_valid'] = False
+        
+        validation_result['normalized_domain'] = normalized
         
     except Exception as e:
-        logger.error(f"Error getting domain multiplier: {e}")
-        return Decimal('5.0')  # Default multiplier
+        validation_result['errors'].append(f"Error validating domain: {e}")
+        validation_result['is_valid'] = False
+        validation_result['normalized_domain'] = 'error'
+    
+    return validation_result
 
-
-def set_domain_multiplier(domain: str, multiplier: Decimal, admin_email: str, notes: str = '') -> bool:
-    """Set cost multiplier for a domain."""
+def validate_multiplier_value(multiplier: Any) -> Dict[str, Any]:
+    """
+    Validate domain multiplier value for business logic and security.
+    
+    Args:
+        multiplier: Multiplier value to validate
+        
+    Returns:
+        Dictionary with validation results and sanitized multiplier
+    """
+    validation_result = {
+        'is_valid': True,
+        'sanitized_multiplier': Decimal('5.0'),
+        'warnings': [],
+        'errors': []
+    }
+    
     try:
+        # Convert to Decimal
+        if isinstance(multiplier, str):
+            multiplier_decimal = Decimal(multiplier)
+        elif isinstance(multiplier, (int, float)):
+            multiplier_decimal = Decimal(str(multiplier))
+        elif isinstance(multiplier, Decimal):
+            multiplier_decimal = multiplier
+        else:
+            validation_result['errors'].append(f"Invalid multiplier type: {type(multiplier)}")
+            validation_result['is_valid'] = False
+            return validation_result
+        
+        # Validate range
+        if multiplier_decimal <= 0:
+            validation_result['errors'].append(f"Multiplier must be positive, got: {multiplier_decimal}")
+            validation_result['is_valid'] = False
+            multiplier_decimal = Decimal('5.0')  # Safe fallback
+        elif multiplier_decimal > 100:
+            validation_result['errors'].append(f"Multiplier {multiplier_decimal} exceeds maximum of 100x")
+            validation_result['is_valid'] = False
+            multiplier_decimal = Decimal('100.0')  # Cap at 100x
+        
+        # Business logic warnings
+        if multiplier_decimal < Decimal('0.1'):
+            validation_result['warnings'].append(f"Very low multiplier {multiplier_decimal} - pricing will be heavily discounted")
+        elif multiplier_decimal > 20:
+            validation_result['warnings'].append(f"High multiplier {multiplier_decimal} - pricing will be significantly marked up")
+        
+        # Validate precision (max 2 decimal places for pricing)
+        if multiplier_decimal.as_tuple().exponent < -2:
+            validation_result['warnings'].append(f"Multiplier {multiplier_decimal} has more than 2 decimal places - will be rounded")
+            multiplier_decimal = multiplier_decimal.quantize(Decimal('0.01'))
+        
+        validation_result['sanitized_multiplier'] = multiplier_decimal
+        
+    except Exception as e:
+        validation_result['errors'].append(f"Error validating multiplier: {e}")
+        validation_result['is_valid'] = False
+        validation_result['sanitized_multiplier'] = Decimal('5.0')
+    
+    return validation_result
+
+def get_domain_multiplier_with_audit(email_domain: str, session_id: str = None) -> Dict[str, Any]:
+    """
+    Get cost multiplier for a domain with comprehensive validation, caching, and audit trail.
+    
+    Args:
+        email_domain: Email domain to get multiplier for
+        session_id: Optional session ID for audit trail
+        
+    Returns:
+        Dictionary with multiplier value, validation info, and audit data
+    """
+    start_time = time.time()
+    audit_info = {
+        'domain_requested': email_domain,
+        'session_id': session_id,
+        'lookup_timestamp': datetime.now(timezone.utc).isoformat(),
+        'cache_hit': False,
+        'fallback_used': False,
+        'validation_warnings': [],
+        'validation_errors': []
+    }
+    
+    try:
+        # Validate and normalize domain
+        domain_validation = validate_domain_format(email_domain)
+        normalized_domain = domain_validation['normalized_domain']
+        audit_info['normalized_domain'] = normalized_domain
+        audit_info['validation_warnings'].extend(domain_validation['warnings'])
+        audit_info['validation_errors'].extend(domain_validation['errors'])
+        
+        if not domain_validation['is_valid']:
+            logger.error(f"[DOMAIN_MULTIPLIER] Invalid domain format: {email_domain}")
+            normalized_domain = 'unknown'
+        
+        # Check cache first
+        current_time = time.time()
+        cache_key = normalized_domain
+        
+        if (cache_key in _domain_multiplier_cache and 
+            cache_key in _cache_last_updated and 
+            current_time - _cache_last_updated[cache_key] < _cache_ttl_seconds):
+            
+            cached_result = _domain_multiplier_cache[cache_key]
+            audit_info['cache_hit'] = True
+            audit_info['lookup_duration_ms'] = round((time.time() - start_time) * 1000, 2)
+            
+            logger.debug(f"[DOMAIN_MULTIPLIER] Cache hit for domain {normalized_domain}: {cached_result['multiplier']}")
+            
+            return {
+                'multiplier': cached_result['multiplier'],
+                'source': f"cache_{cached_result['source']}",
+                'audit_info': audit_info
+            }
+        
+        # Fetch from DynamoDB with retries
+        multiplier = None
+        source = 'unknown'
+        
         table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.DOMAIN_MULTIPLIERS_TABLE)
+        
+        # Try domain-specific multiplier first (with retries)
+        for attempt in range(3):
+            try:
+                response = table.get_item(Key={'domain': normalized_domain})
+                if 'Item' in response:
+                    multiplier_validation = validate_multiplier_value(response['Item']['multiplier'])
+                    multiplier = multiplier_validation['sanitized_multiplier']
+                    source = f'domain_specific_{normalized_domain}'
+                    audit_info['validation_warnings'].extend(multiplier_validation['warnings'])
+                    audit_info['validation_errors'].extend(multiplier_validation['errors'])
+                    
+                    logger.info(f"[DOMAIN_MULTIPLIER] Found domain-specific multiplier for {normalized_domain}: {multiplier}")
+                    break
+                    
+            except Exception as e:
+                logger.warning(f"[DOMAIN_MULTIPLIER] Attempt {attempt + 1} failed for domain {normalized_domain}: {e}")
+                if attempt < 2:
+                    time.sleep(0.1 * (attempt + 1))  # Brief retry delay
+                continue
+        
+        # Fallback to global multiplier if domain-specific not found
+        if multiplier is None:
+            for attempt in range(3):
+                try:
+                    response = table.get_item(Key={'domain': 'global'})
+                    if 'Item' in response:
+                        multiplier_validation = validate_multiplier_value(response['Item']['multiplier'])
+                        multiplier = multiplier_validation['sanitized_multiplier']
+                        source = 'global_fallback'
+                        audit_info['fallback_used'] = True
+                        audit_info['validation_warnings'].extend(multiplier_validation['warnings'])
+                        audit_info['validation_errors'].extend(multiplier_validation['errors'])
+                        
+                        logger.info(f"[DOMAIN_MULTIPLIER] Using global fallback multiplier for {normalized_domain}: {multiplier}")
+                        break
+                        
+                except Exception as e:
+                    logger.warning(f"[DOMAIN_MULTIPLIER] Global fallback attempt {attempt + 1} failed: {e}")
+                    if attempt < 2:
+                        time.sleep(0.1 * (attempt + 1))
+                    continue
+        
+        # Final default fallback
+        if multiplier is None:
+            multiplier = Decimal('5.0')
+            source = 'hardcoded_default'
+            audit_info['fallback_used'] = True
+            audit_info['validation_warnings'].append("Using hardcoded default multiplier 5.0")
+            logger.warning(f"[DOMAIN_MULTIPLIER] Using hardcoded default for {normalized_domain}: {multiplier}")
+        
+        # Cache the result
+        _domain_multiplier_cache[cache_key] = {
+            'multiplier': multiplier,
+            'source': source,
+            'cached_at': current_time
+        }
+        _cache_last_updated[cache_key] = current_time
+        
+        audit_info['lookup_duration_ms'] = round((time.time() - start_time) * 1000, 2)
+        
+        # Log audit info for high multipliers or errors
+        if multiplier > 10 or audit_info['validation_errors']:
+            logger.warning(f"[DOMAIN_MULTIPLIER_AUDIT] High multiplier or errors for {normalized_domain}: "
+                          f"multiplier={multiplier}, errors={audit_info['validation_errors']}")
+        
+        return {
+            'multiplier': multiplier,
+            'source': source,
+            'audit_info': audit_info
+        }
+        
+    except Exception as e:
+        audit_info['lookup_duration_ms'] = round((time.time() - start_time) * 1000, 2)
+        audit_info['validation_errors'].append(f"Critical error in domain multiplier lookup: {e}")
+        
+        logger.error(f"[DOMAIN_MULTIPLIER] Critical error for {email_domain}: {e}")
+        
+        return {
+            'multiplier': Decimal('5.0'),
+            'source': 'emergency_fallback',
+            'audit_info': audit_info
+        }
+
+def get_domain_multiplier(email_domain: str) -> Decimal:
+    """
+    Get cost multiplier for a domain - backward compatible interface.
+    This is a simplified wrapper around get_domain_multiplier_with_audit for existing code.
+    """
+    result = get_domain_multiplier_with_audit(email_domain)
+    return result['multiplier']
+
+
+def set_domain_multiplier_with_audit(domain: str, multiplier: Any, admin_email: str, 
+                                   notes: str = '', session_id: str = None) -> Dict[str, Any]:
+    """
+    Set cost multiplier for a domain with comprehensive validation and audit trail.
+    
+    Args:
+        domain: Domain to set multiplier for
+        multiplier: Multiplier value to set
+        admin_email: Email of admin making the change
+        notes: Optional notes about the change
+        session_id: Optional session ID for audit trail
+        
+    Returns:
+        Dictionary with operation results and audit information
+    """
+    start_time = time.time()
+    operation_result = {
+        'success': False,
+        'domain': domain,
+        'multiplier_set': None,
+        'audit_info': {
+            'operation': 'set_domain_multiplier',
+            'admin_email': admin_email,
+            'session_id': session_id,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'notes': notes,
+            'validation_warnings': [],
+            'validation_errors': []
+        }
+    }
+    
+    try:
+        # Validate domain
+        domain_validation = validate_domain_format(domain)
+        normalized_domain = domain_validation['normalized_domain']
+        operation_result['audit_info']['normalized_domain'] = normalized_domain
+        operation_result['audit_info']['validation_warnings'].extend(domain_validation['warnings'])
+        operation_result['audit_info']['validation_errors'].extend(domain_validation['errors'])
+        
+        if not domain_validation['is_valid']:
+            operation_result['audit_info']['validation_errors'].append("Domain validation failed - cannot set multiplier")
+            logger.error(f"[SET_DOMAIN_MULTIPLIER] Cannot set multiplier for invalid domain: {domain}")
+            return operation_result
+        
+        # Validate multiplier
+        multiplier_validation = validate_multiplier_value(multiplier)
+        sanitized_multiplier = multiplier_validation['sanitized_multiplier']
+        operation_result['audit_info']['validation_warnings'].extend(multiplier_validation['warnings'])
+        operation_result['audit_info']['validation_errors'].extend(multiplier_validation['errors'])
+        
+        if not multiplier_validation['is_valid']:
+            operation_result['audit_info']['validation_errors'].append("Multiplier validation failed - using sanitized value")
+        
+        # Check if this is a significant change (audit high-impact changes)
+        current_multiplier_info = get_domain_multiplier_with_audit(normalized_domain, session_id)
+        current_multiplier = current_multiplier_info['multiplier']
+        
+        change_ratio = float(sanitized_multiplier / current_multiplier) if current_multiplier > 0 else float('inf')
+        if change_ratio > 2.0 or change_ratio < 0.5:
+            operation_result['audit_info']['validation_warnings'].append(
+                f"Significant multiplier change: {current_multiplier} -> {sanitized_multiplier} ({change_ratio:.1f}x change)"
+            )
+        
+        # Validate admin email
+        if not admin_email or '@' not in admin_email:
+            operation_result['audit_info']['validation_errors'].append(f"Invalid admin email: {admin_email}")
+            logger.error(f"[SET_DOMAIN_MULTIPLIER] Invalid admin email for domain {normalized_domain}: {admin_email}")
+            return operation_result
+        
+        # Get existing item for change tracking
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.DOMAIN_MULTIPLIERS_TABLE)
+        
+        existing_item = None
+        try:
+            response = table.get_item(Key={'domain': normalized_domain})
+            if 'Item' in response:
+                existing_item = response['Item']
+        except Exception as e:
+            logger.warning(f"[SET_DOMAIN_MULTIPLIER] Could not fetch existing item for {normalized_domain}: {e}")
         
         current_time = datetime.now(timezone.utc).isoformat()
         
-        table.put_item(Item={
-            'domain': domain,
-            'multiplier': multiplier,
-            'created_at': current_time,
+        # Prepare new item with full audit trail
+        new_item = {
+            'domain': normalized_domain,
+            'multiplier': sanitized_multiplier,
             'updated_at': current_time,
-            'created_by': admin_email,
-            'notes': notes
-        })
+            'updated_by': admin_email,
+            'notes': notes,
+            'change_history': []
+        }
         
-        logger.info(f"Set multiplier for {domain} to {multiplier}")
-        return True
+        # Preserve creation info if updating existing item
+        if existing_item:
+            new_item['created_at'] = existing_item.get('created_at', current_time)
+            new_item['created_by'] = existing_item.get('created_by', admin_email)
+            
+            # Add to change history
+            change_record = {
+                'timestamp': current_time,
+                'admin_email': admin_email,
+                'old_multiplier': str(existing_item.get('multiplier', '0.0')),
+                'new_multiplier': str(sanitized_multiplier),
+                'notes': notes,
+                'session_id': session_id
+            }
+            
+            # Preserve existing change history (limit to last 10 changes)
+            existing_history = existing_item.get('change_history', [])
+            if isinstance(existing_history, list):
+                new_item['change_history'] = existing_history[-9:] + [change_record]  # Keep last 9 + new = 10
+            else:
+                new_item['change_history'] = [change_record]
+        else:
+            new_item['created_at'] = current_time
+            new_item['created_by'] = admin_email
+            new_item['change_history'] = [{
+                'timestamp': current_time,
+                'admin_email': admin_email,
+                'old_multiplier': 'none',
+                'new_multiplier': str(sanitized_multiplier),
+                'notes': f"Initial creation: {notes}",
+                'session_id': session_id
+            }]
         
+        # Add validation metadata
+        new_item['validation_info'] = {
+            'validation_timestamp': current_time,
+            'warnings_count': len(operation_result['audit_info']['validation_warnings']),
+            'errors_count': len(operation_result['audit_info']['validation_errors']),
+            'sanitized': not multiplier_validation['is_valid']
+        }
+        
+        # Write to DynamoDB with conditional check for concurrent modifications
+        try:
+            # Use condition to prevent concurrent modifications
+            if existing_item:
+                condition_expression = 'updated_at = :expected_updated_at'
+                expression_attribute_values = {':expected_updated_at': existing_item.get('updated_at')}
+            else:
+                condition_expression = 'attribute_not_exists(domain)'
+                expression_attribute_values = {}
+            
+            table.put_item(
+                Item=new_item,
+                ConditionExpression=condition_expression,
+                **({'ExpressionAttributeValues': expression_attribute_values} if expression_attribute_values else {})
+            )
+            
+            # Clear cache for this domain
+            cache_key = normalized_domain
+            if cache_key in _domain_multiplier_cache:
+                del _domain_multiplier_cache[cache_key]
+            if cache_key in _cache_last_updated:
+                del _cache_last_updated[cache_key]
+            
+            operation_result['success'] = True
+            operation_result['multiplier_set'] = sanitized_multiplier
+            operation_result['audit_info']['operation_duration_ms'] = round((time.time() - start_time) * 1000, 2)
+            
+            logger.info(f"[SET_DOMAIN_MULTIPLIER] Successfully set multiplier for {normalized_domain}: "
+                       f"{sanitized_multiplier} (admin: {admin_email})")
+            
+            # Log significant changes for audit
+            if operation_result['audit_info']['validation_warnings']:
+                logger.warning(f"[SET_DOMAIN_MULTIPLIER_AUDIT] Warnings for {normalized_domain}: "
+                              f"{operation_result['audit_info']['validation_warnings']}")
+            
+            return operation_result
+            
+        except ClientError as e:
+            if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                operation_result['audit_info']['validation_errors'].append("Concurrent modification detected - please retry")
+                logger.error(f"[SET_DOMAIN_MULTIPLIER] Concurrent modification for {normalized_domain}")
+            else:
+                operation_result['audit_info']['validation_errors'].append(f"DynamoDB error: {e}")
+                logger.error(f"[SET_DOMAIN_MULTIPLIER] DynamoDB error for {normalized_domain}: {e}")
+            return operation_result
+            
     except Exception as e:
-        logger.error(f"Error setting domain multiplier: {e}")
-        return False
+        operation_result['audit_info']['operation_duration_ms'] = round((time.time() - start_time) * 1000, 2)
+        operation_result['audit_info']['validation_errors'].append(f"Critical error: {e}")
+        logger.error(f"[SET_DOMAIN_MULTIPLIER] Critical error for {domain}: {e}")
+        return operation_result
+
+def set_domain_multiplier(domain: str, multiplier: Decimal, admin_email: str, notes: str = '') -> bool:
+    """
+    Set cost multiplier for a domain - backward compatible interface.
+    This is a simplified wrapper around set_domain_multiplier_with_audit for existing code.
+    """
+    result = set_domain_multiplier_with_audit(domain, multiplier, admin_email, notes)
+    return result['success']
 
 
 def record_account_transaction(email: str, transaction_id: str, transaction_type: str,
@@ -2111,17 +2750,29 @@ def create_validation_runs_table():
             raise
 
 def create_run_record(session_id: str, email: str, total_rows: int, batch_size: int = None, run_type: str = None):
-    """Creates an initial record for a new validation run."""
+    """Creates an initial record for a new validation run with composite primary key."""
+    from datetime import datetime
+    import time
+    
+    # Create composite sort key: run_type + timestamp
+    current_time = datetime.now(timezone.utc)
+    timestamp = current_time.isoformat()
+    timestamp_ms = int(time.time() * 1000000)  # microseconds for uniqueness
+    
+    run_type_clean = (run_type or "Unknown").replace(" ", "")
+    run_key = f"{run_type_clean}#{timestamp_ms}"
+    
     try:
         table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
         item = {
             'session_id': session_id,
+            'run_key': run_key,
             'email': email,
             'status': 'PENDING',
             'total_rows': total_rows,
             'processed_rows': 0,
-            'start_time': datetime.now(timezone.utc).isoformat(),
-            'last_update': datetime.now(timezone.utc).isoformat()
+            'start_time': timestamp,
+            'last_update': timestamp
         }
         if batch_size is not None:
             item['batch_size'] = batch_size
@@ -2129,6 +2780,9 @@ def create_run_record(session_id: str, email: str, total_rows: int, batch_size: 
             item['run_type'] = run_type
         
         table.put_item(Item=item)
+        
+        # Return the run_key for subsequent update calls
+        return run_key
     except ClientError as e:
         if e.response['Error']['Code'] == 'ResourceNotFoundException':
             logger.warning(f"Table {VALIDATION_RUNS_TABLE_NAME} not found. Attempting to create it now.")
@@ -2136,22 +2790,26 @@ def create_run_record(session_id: str, email: str, total_rows: int, batch_size: 
             # Retry the operation once after creating the table
             item = {
                 'session_id': session_id,
+                'run_key': run_key,
                 'email': email,
                 'status': 'PENDING',
                 'total_rows': total_rows,
                 'processed_rows': 0,
-                'start_time': datetime.now(timezone.utc).isoformat(),
-                'last_update': datetime.now(timezone.utc).isoformat()
+                'start_time': timestamp,
+                'last_update': timestamp
             }
             if batch_size is not None:
                 item['batch_size'] = batch_size
+            if run_type is not None:
+                item['run_type'] = run_type
             
             table.put_item(Item=item)
+            return run_key
         else:
             raise
 
-def update_run_status(session_id: str, status: str, run_type: str = None, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None, batch_size: int = None, account_current_balance: float = None, account_sufficient_balance: str = None, account_credits_needed: str = None, account_domain_multiplier: float = None, models: str = None, input_table_name: str = None, configuration_id: str = None, total_rows: int = None, eliyahu_cost: float = None, quoted_validation_cost: float = None, estimated_validation_eliyahu_cost: float = None, time_per_row_seconds: float = None, estimated_validation_time_minutes: float = None, run_time_s: float = None, **kwargs):
-    """Updates the status and progress of a validation run."""
+def update_run_status(session_id: str, run_key: str, status: str, run_type: str = None, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None, batch_size: int = None, account_current_balance: float = None, account_sufficient_balance: str = None, account_credits_needed: str = None, account_domain_multiplier: float = None, models: str = None, input_table_name: str = None, configuration_id: str = None, total_rows: int = None, eliyahu_cost: float = None, quoted_validation_cost: float = None, estimated_validation_eliyahu_cost: float = None, time_per_row_seconds: float = None, estimated_validation_time_minutes: float = None, run_time_s: float = None, provider_metrics: dict = None, **kwargs):
+    """Updates the status and progress of a validation run using composite primary key."""
     table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
     
     now = datetime.now(timezone.utc).isoformat()
@@ -2210,15 +2868,145 @@ def update_run_status(session_id: str, status: str, run_type: str = None, proces
     if run_type is not None:
         update_expression += ", run_type = :rt"
         expression_attribute_values[':rt'] = run_type
-    if eliyahu_cost is not None:
-        update_expression += ", eliyahu_cost = :ec"
-        expression_attribute_values[':ec'] = convert_floats_to_decimal(eliyahu_cost)
-    if quoted_validation_cost is not None:
-        update_expression += ", quoted_validation_cost = :qvc"
-        expression_attribute_values[':qvc'] = convert_floats_to_decimal(quoted_validation_cost)
-    if estimated_validation_eliyahu_cost is not None:
-        update_expression += ", estimated_validation_eliyahu_cost = :evec"
-        expression_attribute_values[':evec'] = convert_floats_to_decimal(estimated_validation_eliyahu_cost)
+    # ========== HARDENED THREE-TIER COST FIELD HANDLING ==========
+    # Handle cost fields with validation and atomicity
+    cost_fields_provided = any([
+        eliyahu_cost is not None,
+        quoted_validation_cost is not None,
+        estimated_validation_eliyahu_cost is not None
+    ])
+    
+    if cost_fields_provided:
+        # Determine operation type for validation
+        operation_type = "validation"
+        if run_type:
+            if "config" in run_type.lower():
+                operation_type = "config_generation"
+            elif "preview" in run_type.lower():
+                operation_type = "preview"
+        
+        # Validate cost fields
+        validation_result = validate_cost_fields(
+            eliyahu_cost=eliyahu_cost,
+            quoted_validation_cost=quoted_validation_cost,
+            estimated_validation_eliyahu_cost=estimated_validation_eliyahu_cost,
+            operation_type=operation_type
+        )
+        
+        # Use atomic transaction for cost updates if validation is critical
+        if not validation_result['is_valid']:
+            logger.error(f"[COST_UPDATE] Cost validation failed for session {session_id}: {validation_result['errors']}")
+        
+        # Apply sanitized values
+        sanitized_costs = validation_result['sanitized_values']
+        
+        if 'eliyahu_cost' in sanitized_costs:
+            update_expression += ", eliyahu_cost = :ec"
+            expression_attribute_values[':ec'] = sanitized_costs['eliyahu_cost']
+        if 'quoted_validation_cost' in sanitized_costs:
+            update_expression += ", quoted_validation_cost = :qvc"
+            expression_attribute_values[':qvc'] = sanitized_costs['quoted_validation_cost']
+        if 'estimated_validation_eliyahu_cost' in sanitized_costs:
+            update_expression += ", estimated_validation_eliyahu_cost = :evec"
+            expression_attribute_values[':evec'] = sanitized_costs['estimated_validation_eliyahu_cost']
+        
+        # Add cost validation metadata
+        update_expression += ", cost_validation_info = :cost_validation_info"
+        expression_attribute_values[':cost_validation_info'] = convert_floats_to_decimal({
+            'validation_timestamp': validation_result['audit_info']['validation_timestamp'],
+            'is_valid': validation_result['is_valid'],
+            'warnings_count': len(validation_result['warnings']),
+            'errors_count': len(validation_result['errors']),
+            'operation_type': operation_type
+        })
+        
+        # Log audit information
+        if validation_result['warnings']:
+            logger.warning(f"[COST_AUDIT] Session {session_id} cost warnings: {validation_result['warnings']}")
+        if validation_result['errors']:
+            logger.error(f"[COST_AUDIT] Session {session_id} cost errors: {validation_result['errors']}")
+    else:
+        # No cost fields provided - legacy behavior
+        if eliyahu_cost is not None:
+            update_expression += ", eliyahu_cost = :ec"
+            expression_attribute_values[':ec'] = convert_floats_to_decimal(eliyahu_cost)
+        if quoted_validation_cost is not None:
+            update_expression += ", quoted_validation_cost = :qvc"
+            expression_attribute_values[':qvc'] = convert_floats_to_decimal(quoted_validation_cost)
+        if estimated_validation_eliyahu_cost is not None:
+            update_expression += ", estimated_validation_eliyahu_cost = :evec"
+            expression_attribute_values[':evec'] = convert_floats_to_decimal(estimated_validation_eliyahu_cost)
+    
+    # ========== ENHANCED PROVIDER-SPECIFIC METRICS ==========
+    if provider_metrics is not None and isinstance(provider_metrics, dict):
+        try:
+            # Validate and sanitize provider metrics before storage
+            sanitized_provider_metrics = {}
+            
+            # Extract provider-specific costs, tokens, and timing data
+            for provider, metrics in provider_metrics.items():
+                if isinstance(metrics, dict):
+                    sanitized_metrics = {}
+                    
+                    # Cost metrics by provider
+                    for cost_field in ['cost_actual', 'cost_without_cache', 'cache_savings_cost']:
+                        if cost_field in metrics and isinstance(metrics[cost_field], (int, float)):
+                            sanitized_metrics[cost_field] = convert_floats_to_decimal(metrics[cost_field])
+                    
+                    # Token and call metrics by provider
+                    for count_field in ['calls', 'tokens', 'cache_hit_tokens']:
+                        if count_field in metrics and isinstance(metrics[count_field], int):
+                            sanitized_metrics[count_field] = metrics[count_field]
+                    
+                    # Timing metrics by provider
+                    for time_field in ['processing_time', 'cache_savings_time']:
+                        if time_field in metrics and isinstance(metrics[time_field], (int, float)):
+                            sanitized_metrics[time_field] = convert_floats_to_decimal(metrics[time_field])
+                    
+                    # Per-row metrics by provider
+                    for per_row_field in ['cost_per_row_actual', 'cost_per_row_without_cache', 'time_per_row_actual', 'time_per_row_without_cache']:
+                        if per_row_field in metrics and isinstance(metrics[per_row_field], (int, float)):
+                            sanitized_metrics[per_row_field] = convert_floats_to_decimal(metrics[per_row_field])
+                    
+                    # Cache efficiency metrics
+                    for efficiency_field in ['cache_efficiency_percent', 'cache_hit_rate_percent']:
+                        if efficiency_field in metrics and isinstance(metrics[efficiency_field], (int, float)):
+                            sanitized_metrics[efficiency_field] = convert_floats_to_decimal(metrics[efficiency_field])
+                    
+                    if sanitized_metrics:  # Only add if we have valid metrics
+                        sanitized_provider_metrics[provider] = sanitized_metrics
+            
+            if sanitized_provider_metrics:
+                update_expression += ", provider_metrics = :pm"
+                expression_attribute_values[':pm'] = sanitized_provider_metrics
+                
+                # Also store aggregated totals for easy querying
+                total_cost_actual = sum(metrics.get('cost_actual', 0) for metrics in sanitized_provider_metrics.values())
+                total_cost_without_cache = sum(metrics.get('cost_without_cache', 0) for metrics in sanitized_provider_metrics.values())
+                total_calls = sum(metrics.get('calls', 0) for metrics in sanitized_provider_metrics.values())
+                total_tokens = sum(metrics.get('tokens', 0) for metrics in sanitized_provider_metrics.values())
+                
+                update_expression += ", total_provider_cost_actual = :tpca, total_provider_cost_without_cache = :tpcwc"
+                update_expression += ", total_provider_calls = :tpc, total_provider_tokens = :tpt"
+                expression_attribute_values[':tpca'] = total_cost_actual
+                expression_attribute_values[':tpcwc'] = total_cost_without_cache 
+                expression_attribute_values[':tpc'] = total_calls
+                expression_attribute_values[':tpt'] = total_tokens
+                
+                # Calculate overall cache efficiency
+                if total_cost_without_cache > 0:
+                    cache_efficiency = ((total_cost_without_cache - total_cost_actual) / total_cost_without_cache) * 100
+                    update_expression += ", overall_cache_efficiency_percent = :oce"
+                    expression_attribute_values[':oce'] = convert_floats_to_decimal(cache_efficiency)
+                
+                logger.info(f"[PROVIDER_METRICS] Session {session_id}: {len(sanitized_provider_metrics)} providers, "
+                           f"Total cost: ${float(total_cost_actual):.6f} (actual) / ${float(total_cost_without_cache):.6f} (no cache), "
+                           f"Total calls: {total_calls}, Total tokens: {total_tokens}")
+        
+        except Exception as e:
+            logger.error(f"[PROVIDER_METRICS] Failed to process provider metrics for session {session_id}: {e}")
+            # Continue execution - provider metrics are supplemental, not critical
+    
     if time_per_row_seconds is not None:
         update_expression += ", time_per_row_seconds = :tprs"
         expression_attribute_values[':tprs'] = convert_floats_to_decimal(time_per_row_seconds)
@@ -2271,12 +3059,24 @@ def update_run_status(session_id: str, status: str, run_type: str = None, proces
         except Exception as e:
             logger.warning(f"Could not calculate actual processing time for {session_id}: {e}")
 
-    table.update_item(
-        Key={'session_id': session_id},
-        UpdateExpression=update_expression,
-        ExpressionAttributeValues=expression_attribute_values,
-        ExpressionAttributeNames=expression_attribute_names
-    )
+    try:
+        table.update_item(
+            Key={'session_id': session_id, 'run_key': run_key},
+            UpdateExpression=update_expression,
+            ExpressionAttributeValues=expression_attribute_values,
+            ExpressionAttributeNames=expression_attribute_names
+        )
+        logger.info(f"Successfully updated run status for session {session_id}, run_key {run_key}, status: {status}")
+    except Exception as e:
+        logger.error(f"DynamoDB UPDATE FAILED for session {session_id}, run_key {run_key}")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error(f"Update expression: {update_expression}")
+        logger.error(f"Expression values: {expression_attribute_values}")
+        logger.error(f"Expression names: {expression_attribute_names}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        raise  # Re-raise the exception so calling code knows it failed
 
 def get_run_status(session_id: str) -> Optional[Dict]:
     """Retrieves the status of a validation run."""
@@ -2286,6 +3086,29 @@ def get_run_status(session_id: str) -> Optional[Dict]:
         return response.get('Item')
     except ClientError as e:
         logger.error(f"Error getting run status for {session_id}: {e}")
+        return None
+
+def find_existing_run_key(session_id: str) -> Optional[str]:
+    """Find existing run_key for a session_id by scanning the runs table."""
+    table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
+    try:
+        # Use query with session_id as partition key to find any existing runs  
+        from boto3.dynamodb.conditions import Key
+        response = table.query(
+            KeyConditionExpression=Key('session_id').eq(session_id),
+            Limit=1  # We only need one existing run
+        )
+        items = response.get('Items', [])
+        if items:
+            existing_run = items[0]
+            run_key = existing_run.get('run_key')
+            logger.info(f"Found existing run_key for session {session_id}: {run_key}")
+            return run_key
+        else:
+            logger.info(f"No existing run found for session {session_id}")
+            return None
+    except Exception as e:
+        logger.error(f"Error finding existing run_key for {session_id}: {e}")
         return None 
 
 # --- WebSocket Connection Tracking ---

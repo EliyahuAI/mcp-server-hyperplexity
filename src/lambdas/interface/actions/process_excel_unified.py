@@ -27,6 +27,188 @@ except ImportError:
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+def _calculate_intelligent_cost_estimate(email: str, session_id: str, storage_manager, multiplier: float) -> float:
+    """
+    Calculate intelligent cost estimate based on available preview data or table analysis.
+    
+    Args:
+        email: User email address
+        session_id: Current session ID
+        storage_manager: Unified storage manager instance
+        multiplier: Domain multiplier for cost calculation
+        
+    Returns:
+        Estimated minimum cost in USD (Decimal precision)
+    """
+    try:
+        from decimal import Decimal
+        
+        # Try to get cost estimate from existing preview results
+        try:
+            # Look for existing preview results in this session
+            session_path = storage_manager.get_session_path(email, session_id)
+            
+            # Try to find preview results in different config versions
+            for version in range(5, 0, -1):  # Check versions 5 down to 1
+                try:
+                    preview_key = f"{session_path}/results/v{version}/preview_results.json"
+                    response = storage_manager.s3_client.get_object(
+                        Bucket=storage_manager.bucket_name,
+                        Key=preview_key
+                    )
+                    preview_data = json.loads(response['Body'].read().decode('utf-8'))
+                    
+                    # Extract cost estimates from preview
+                    cost_estimates = preview_data.get('cost_estimates', {})
+                    preview_quoted_cost = cost_estimates.get('quoted_validation_cost', 0.0)
+                    
+                    if preview_quoted_cost > 0:
+                        logger.info(f"[COST_ESTIMATE] Using preview quoted cost: ${preview_quoted_cost:.2f} from v{version}")
+                        return Decimal(str(preview_quoted_cost))
+                        
+                except Exception:
+                    continue  # Try next version
+                    
+        except Exception as preview_error:
+            logger.debug(f"[COST_ESTIMATE] No preview data found: {preview_error}")
+        
+        # Fallback: Try to estimate based on Excel file analysis
+        try:
+            excel_keys = storage_manager.list_session_files(email, session_id, 'excel/')
+            if excel_keys:
+                # Get the most recent Excel file
+                latest_excel_key = sorted(excel_keys)[-1]
+                
+                # Estimate cost based on file size as rough approximation
+                try:
+                    head_response = storage_manager.s3_client.head_object(
+                        Bucket=storage_manager.bucket_name,
+                        Key=latest_excel_key
+                    )
+                    file_size = head_response.get('ContentLength', 0)
+                    
+                    # Rough estimation: $0.10 per MB of Excel file with multiplier
+                    # This is a conservative estimate that accounts for processing complexity
+                    size_mb = file_size / (1024 * 1024) if file_size > 0 else 0.1
+                    base_estimate = max(0.02, size_mb * 0.10)  # At least $0.02, $0.10 per MB
+                    estimated_with_multiplier = base_estimate * multiplier
+                    final_estimate = max(2.0, math.ceil(estimated_with_multiplier))  # $2 minimum, rounded up
+                    
+                    logger.info(f"[COST_ESTIMATE] File size estimation: {size_mb:.2f}MB -> "
+                               f"Base: ${base_estimate:.2f}, With {multiplier}x: ${estimated_with_multiplier:.2f}, "
+                               f"Final: ${final_estimate:.2f}")
+                    
+                    return Decimal(str(final_estimate))
+                    
+                except Exception as size_error:
+                    logger.warning(f"[COST_ESTIMATE] File size estimation failed: {size_error}")
+                    
+        except Exception as excel_error:
+            logger.debug(f"[COST_ESTIMATE] Excel analysis failed: {excel_error}")
+        
+        # Final fallback: Conservative default estimate
+        default_estimate = max(2.0, 0.05 * multiplier)  # $2 minimum or 5 cents * multiplier
+        logger.warning(f"[COST_ESTIMATE] Using fallback estimate: ${default_estimate:.2f} "
+                      f"(multiplier: {multiplier}x)")
+        
+        return Decimal(str(default_estimate))
+        
+    except Exception as e:
+        logger.error(f"[COST_ESTIMATE] Error calculating cost estimate: {e}")
+        # Emergency fallback
+        return Decimal('2.00')  # $2 minimum
+
+def _enhance_cost_aggregation(validation_results: dict, processing_time: float) -> dict:
+    """
+    Enhance cost aggregation with three-tier cost system and time estimation improvements.
+    
+    Args:
+        validation_results: Raw validation results from lambda
+        processing_time: Processing time in seconds
+        
+    Returns:
+        Enhanced cost data with three-tier system applied
+    """
+    try:
+        if not validation_results or not isinstance(validation_results, dict):
+            logger.warning("[COST_AGGREGATION] Invalid validation results")
+            return {
+                'eliyahu_cost': 0.0,
+                'estimated_cost_without_cache': 0.0,
+                'total_cost': 0.0,
+                'processing_time': processing_time,
+                'cost_per_second': 0.0,
+                'error': 'invalid_results'
+            }
+        
+        metadata = validation_results.get('metadata', {})
+        token_usage = metadata.get('token_usage', {})
+        
+        # Extract actual cost (with caching benefits)
+        eliyahu_cost = float(token_usage.get('total_cost', 0.0))
+        
+        # Calculate estimated cost without cache benefits
+        total_calls = token_usage.get('api_calls', 0)
+        cached_calls = token_usage.get('cached_calls', 0)
+        
+        if cached_calls > 0 and total_calls > cached_calls:
+            # Estimate cost if no caching were available
+            non_cached_calls = total_calls - cached_calls
+            cost_per_non_cached_call = eliyahu_cost / max(1, non_cached_calls)
+            estimated_cost_without_cache = cost_per_non_cached_call * total_calls
+        else:
+            estimated_cost_without_cache = eliyahu_cost
+        
+        # Calculate processing efficiency metrics
+        cost_per_second = eliyahu_cost / max(0.001, processing_time)  # Avoid division by zero
+        total_tokens = token_usage.get('total_tokens', 0)
+        tokens_per_second = total_tokens / max(0.001, processing_time)
+        cost_per_token = eliyahu_cost / max(1, total_tokens)
+        
+        # Validate calculations
+        if eliyahu_cost < 0 or estimated_cost_without_cache < 0:
+            logger.error(f"[COST_AGGREGATION] Negative costs detected - Actual: ${eliyahu_cost:.6f}, "
+                        f"Estimated: ${estimated_cost_without_cache:.6f}")
+            eliyahu_cost = max(0.0, eliyahu_cost)
+            estimated_cost_without_cache = max(0.0, estimated_cost_without_cache)
+        
+        enhanced_data = {
+            'eliyahu_cost': eliyahu_cost,
+            'estimated_cost_without_cache': estimated_cost_without_cache,
+            'total_cost': eliyahu_cost,  # For backwards compatibility
+            'processing_time': processing_time,
+            'cost_per_second': cost_per_second,
+            'cost_per_token': cost_per_token,
+            'tokens_per_second': tokens_per_second,
+            'cache_hit_rate': cached_calls / max(1, total_calls),
+            'cost_savings_from_cache': estimated_cost_without_cache - eliyahu_cost,
+            'efficiency_metrics': {
+                'total_calls': total_calls,
+                'cached_calls': cached_calls,
+                'non_cached_calls': max(0, total_calls - cached_calls),
+                'total_tokens': total_tokens,
+                'processing_efficiency_score': tokens_per_second / max(0.001, cost_per_second)  # Tokens per dollar per second
+            }
+        }
+        
+        logger.info(f"[COST_AGGREGATION] Enhanced cost data - Actual: ${eliyahu_cost:.6f}, "
+                   f"Estimated: ${estimated_cost_without_cache:.6f}, "
+                   f"Cache savings: ${enhanced_data['cost_savings_from_cache']:.6f}, "
+                   f"Efficiency: {enhanced_data['efficiency_metrics']['processing_efficiency_score']:.2f}")
+        
+        return enhanced_data
+        
+    except Exception as e:
+        logger.error(f"[COST_AGGREGATION] Error enhancing cost data: {e}")
+        return {
+            'eliyahu_cost': 0.0,
+            'estimated_cost_without_cache': 0.0,
+            'total_cost': 0.0,
+            'processing_time': processing_time,
+            'cost_per_second': 0.0,
+            'error': str(e)
+        }
+
 def handle_multipart_form(event, context):
     """Handles multipart/form-data requests for Excel processing with unified storage."""
     
@@ -294,7 +476,7 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
 
         # Create tracking records
         run_type = "Preview" if preview else "Validation"
-        create_run_record(session_id=session_id, email=email_address, total_rows=total_rows, batch_size=batch_size, run_type=run_type)
+        run_key = create_run_record(session_id=session_id, email=email_address, total_rows=total_rows, batch_size=batch_size, run_type=run_type)
         reference_pin = session_id.split('_')[-1] if '_' in session_id else session_id[:6]
         track_validation_call(
             email=email_address,
@@ -309,12 +491,12 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
         if preview:
             return _handle_preview_request(
                 storage_manager, email_address, session_id, excel_s3_key, config_s3_key,
-                preview_max_rows, async_mode, SQS_AVAILABLE, preview_email
+                preview_max_rows, async_mode, SQS_AVAILABLE, preview_email, run_key
             )
         else:
             return _handle_full_validation_request(
                 storage_manager, email_address, session_id, excel_s3_key, config_s3_key,
-                max_rows, batch_size, async_mode, SQS_AVAILABLE, preview_email
+                max_rows, batch_size, async_mode, SQS_AVAILABLE, preview_email, run_key
             )
 
     except Exception as e:
@@ -322,7 +504,7 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
         return create_response(500, {'error': f'File processing failed: {str(e)}'})
 
 def _handle_preview_request(storage_manager, email_address, session_id, excel_s3_key, 
-                          config_s3_key, preview_max_rows, async_mode, SQS_AVAILABLE, preview_email=False):
+                          config_s3_key, preview_max_rows, async_mode, SQS_AVAILABLE, preview_email=False, run_key=None):
     """Handle preview request using unified storage"""
     from ..utils.helpers import create_response
     
@@ -337,7 +519,8 @@ def _handle_preview_request(storage_manager, email_address, session_id, excel_s3
             session_id=session_id, excel_s3_key=excel_s3_key, 
             config_s3_key=config_s3_key, email=email_address, 
             reference_pin=session_id.split('_')[-1] if '_' in session_id else session_id[:6],
-            preview_max_rows=preview_max_rows, preview_email=preview_email
+            preview_max_rows=preview_max_rows, preview_email=preview_email,
+            run_key=run_key
         )
         logger.info(f"SQS preview request sent with MessageId: {message_id}")
         
@@ -355,7 +538,7 @@ def _handle_preview_request(storage_manager, email_address, session_id, excel_s3
         )
 
 def _handle_full_validation_request(storage_manager, email_address, session_id, excel_s3_key, 
-                                  config_s3_key, max_rows, batch_size, async_mode, SQS_AVAILABLE, preview_email=False):
+                                  config_s3_key, max_rows, batch_size, async_mode, SQS_AVAILABLE, preview_email=False, run_key=None):
     """Handle full validation request using unified storage"""
     from ..utils.helpers import create_response
     
@@ -371,13 +554,20 @@ def _handle_full_validation_request(storage_manager, email_address, session_id, 
                 'error_type': 'account_not_found'
             })
         
-        # Get domain multiplier to estimate costs
+        # ========== HARDENED COST ESTIMATION SYSTEM ==========
+        # Get domain multiplier with validation
         email_domain = email_address.split('@')[-1] if '@' in email_address else 'unknown'
         multiplier = get_domain_multiplier(email_domain)
         
-        # Estimate minimum cost (very conservative estimate - $0.01 per validation)
-        # In practice, this should be based on preview results if available
-        min_estimated_cost = Decimal('0.01')
+        # Validate multiplier
+        if multiplier <= 0 or multiplier > 100:
+            logger.error(f"[COST_ERROR] Invalid multiplier {multiplier} for domain {email_domain}")
+            multiplier = 5.0  # Safe fallback
+        
+        # Intelligent cost estimation based on available preview data
+        min_estimated_cost = _calculate_intelligent_cost_estimate(
+            email_address, session_id, storage_manager, multiplier
+        )
         
         if current_balance < min_estimated_cost:
             logger.warning(f"Insufficient balance for {email_address}: ${current_balance} < ${min_estimated_cost}")
@@ -407,7 +597,8 @@ def _handle_full_validation_request(storage_manager, email_address, session_id, 
             session_id=session_id, excel_s3_key=excel_s3_key, 
             config_s3_key=config_s3_key, email=email_address, 
             reference_pin=session_id.split('_')[-1] if '_' in session_id else session_id[:6],
-            max_rows=max_rows, batch_size=batch_size, preview_email=preview_email
+            max_rows=max_rows, batch_size=batch_size, preview_email=preview_email,
+            run_key=run_key
         )
         logger.info(f"SQS full validation request sent with MessageId: {message_id}")
         
@@ -451,12 +642,20 @@ def _process_preview_sync(storage_manager, email_address, session_id, excel_s3_k
             total_rows = validation_results.get('total_rows', 1)
             metadata = validation_results.get('metadata', {})
             token_usage = metadata.get('token_usage', {})
-            total_cost = token_usage.get('total_cost', 0.0)
             total_processed_rows = validation_results.get('total_processed_rows', 1)
+
+            # ========== ENHANCED COST AGGREGATION ==========
+            # Apply hardened cost aggregation with three-tier system
+            enhanced_cost_data = _enhance_cost_aggregation(validation_results, processing_time)
+            
+            # Extract costs for backwards compatibility
+            total_cost = enhanced_cost_data.get('total_cost', 0.0)
+            eliyahu_cost = enhanced_cost_data.get('eliyahu_cost', 0.0)
+            estimated_cost_without_cache = enhanced_cost_data.get('estimated_cost_without_cache', 0.0)
 
             markdown_table = create_markdown_table_from_results(real_results, 3, config_s3_key, storage_manager.bucket_name)
             
-            # Prepare preview results for storage
+            # Prepare enhanced preview results for storage with three-tier cost data
             preview_data = {
                 'session_id': session_id,
                 'results': real_results,
@@ -466,7 +665,8 @@ def _process_preview_sync(storage_manager, email_address, session_id, excel_s3_k
                     'total_processed_rows': total_processed_rows,
                     'processing_time': processing_time,
                     'token_usage': token_usage,
-                    'total_cost': total_cost
+                    'total_cost': total_cost,  # Backwards compatibility
+                    'enhanced_cost_data': enhanced_cost_data  # Full cost analysis
                 },
                 'excel_s3_key': excel_s3_key,
                 'config_s3_key': config_s3_key
@@ -486,6 +686,7 @@ def _process_preview_sync(storage_manager, email_address, session_id, excel_s3_k
             if result['success']:
                 logger.info(f"Preview results stored: {result['s3_key']}")
             
+            # ========== ENHANCED RESPONSE WITH THREE-TIER COST DATA ==========
             response_body = {
                 'success': True,
                 'session_id': session_id,
@@ -495,7 +696,14 @@ def _process_preview_sync(storage_manager, email_address, session_id, excel_s3_k
                 'total_processed_rows': total_processed_rows,
                 'processing_time': processing_time,
                 'token_usage': token_usage,
-                'total_cost': total_cost,
+                'total_cost': total_cost,  # Backwards compatibility
+                'enhanced_cost_data': enhanced_cost_data,  # Full three-tier cost analysis
+                'cost_summary': {
+                    'eliyahu_cost': eliyahu_cost,
+                    'estimated_cost_without_cache': estimated_cost_without_cache,
+                    'cache_savings': enhanced_cost_data.get('cost_savings_from_cache', 0.0),
+                    'efficiency_score': enhanced_cost_data.get('efficiency_metrics', {}).get('processing_efficiency_score', 0.0)
+                },
                 'storage_path': storage_manager.get_session_path(email_address, session_id)
             }
             return create_response(200, response_body)

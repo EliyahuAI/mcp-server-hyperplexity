@@ -1014,6 +1014,9 @@ async def call_claude_with_shared_client(prompt: str, model: str, tool_schema: D
         if 'token_usage' in result:
             formatted_response['usage'] = result['token_usage']
         
+        # Include enhanced data from ai_client result for cost/time tracking
+        formatted_response['enhanced_data'] = result
+        
         return formatted_response
         
     except Exception as e:
@@ -2578,10 +2581,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # For Perplexity, use the token usage from shared client
                 token_usage = shared_client_result['token_usage']
                 is_cached = shared_client_result.get('is_cached', False)
+                enhanced_data = shared_client_result  # Perplexity enhanced data
             else:
-                # For Anthropic or legacy responses, extract from the result
+                # For Anthropic/Claude, extract from the result
                 token_usage = extract_token_usage(result, model, search_context_size)
                 is_cached = False
+                enhanced_data = result.get('enhanced_data', None) if isinstance(result, dict) else None  # Claude enhanced data
             
             row_results['_raw_responses'][response_id] = {
                 'prompt': prompt,
@@ -2591,7 +2596,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'model': model,  # Add model information
                 'token_usage': token_usage,  # Add token usage tracking
                 'processing_time': processing_time,  # Add actual processing time
-                'citations': shared_client_result.get('citations', []) if shared_client_result else []  # Add web search citations
+                'citations': shared_client_result.get('citations', []) if shared_client_result else [],  # Add web search citations
+                'enhanced_data': enhanced_data  # Store complete enhanced ai_client data for both Perplexity and Claude
             }
             
             # Cache the complete API response with metadata
@@ -2715,9 +2721,56 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Ensure we're returning the complete validation results for each row
         logger.info(f"Returning full validation results for {len(validation_results)} rows")
         
-        # Load pricing data for cost calculations
-        pricing_data = load_pricing_data()
+        # Enhanced cost/time data will be extracted from ai_client responses
+        # No separate pricing lookup needed - data comes from ai_client.get_enhanced_call_metrics()
         
+        # ========== ENHANCED AI_API_CLIENT INTEGRATION ==========
+        # Collect all enhanced data from ai_client responses and use aggregation methods
+        all_enhanced_call_data = []
+        
+        # Extract enhanced data from all responses
+        for row_idx, row_result in validation_results.items():
+            if '_raw_responses' in row_result:
+                for response_id, response_data in row_result['_raw_responses'].items():
+                    enhanced_data = response_data.get('enhanced_data')
+                    if enhanced_data:
+                        # Add row context for tracking
+                        enhanced_data_with_context = enhanced_data.copy()
+                        enhanced_data_with_context['row_idx'] = row_idx
+                        enhanced_data_with_context['response_id'] = response_id
+                        all_enhanced_call_data.append(enhanced_data_with_context)
+        
+        # Use ai_client aggregation methods instead of manual calculations
+        if all_enhanced_call_data:
+            logger.info(f"Aggregating enhanced data from {len(all_enhanced_call_data)} ai_client calls")
+            try:
+                # Use ai_client.aggregate_provider_metrics() to get comprehensive aggregated data
+                aggregated_metrics = ai_client.aggregate_provider_metrics(all_enhanced_call_data)
+                
+                # For preview operations, also calculate full validation estimates
+                if event.get('is_preview', False):
+                    total_rows_in_table = event.get('total_rows', len(validation_results))
+                    preview_rows_processed = len(validation_results) 
+                    
+                    full_validation_estimates = ai_client.calculate_full_validation_estimates(
+                        aggregated_metrics=aggregated_metrics,
+                        total_rows_in_table=total_rows_in_table,
+                        preview_rows_processed=preview_rows_processed
+                    )
+                    logger.info(f"Generated full validation estimates: {full_validation_estimates['total_estimates']}")
+                else:
+                    full_validation_estimates = None
+                    
+            except Exception as e:
+                logger.error(f"Failed to use enhanced aggregation methods: {e}")
+                # Fall back to manual aggregation
+                aggregated_metrics = None
+                full_validation_estimates = None
+        else:
+            logger.warning("No enhanced data found in responses - falling back to manual aggregation")
+            aggregated_metrics = None
+            full_validation_estimates = None
+
         # Collect all raw responses from all rows and aggregate token usage and processing time
         all_raw_responses = {}
         total_processing_time = 0.0  # This will be the sum of all batch times (parallel processing)
@@ -2788,9 +2841,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             total_tokens = usage.get('total_tokens', 0)
                             total_token_usage['total_tokens'] += total_tokens
                             
-                            # Calculate costs for this usage
-                            costs = calculate_token_costs(usage, pricing_data)
-                            total_token_usage['total_cost'] += costs['total_cost']
+                            # Enhanced cost data should come from ai_client response, not manual calculation
+                            # TODO: Extract enhanced cost data from ai_client result instead
+                            # costs = calculate_token_costs(usage, pricing_data)
+                            # total_token_usage['total_cost'] += costs['total_cost']
                     
                     # Aggregate processing time for this row
                     if 'processing_time' in response_data:
@@ -2817,7 +2871,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         if usage:  # Only process if token_usage is not empty
                             api_provider = usage.get('api_provider', 'unknown')
                             total_tokens = usage.get('total_tokens', 0)
-                            costs = calculate_token_costs(usage, pricing_data)
+                            # TODO: Extract enhanced cost data from ai_client result instead
+                            # costs = calculate_token_costs(usage, pricing_data)
                             is_cached = response_data.get('is_cached', False)
                             # Aggregate by provider
                             if api_provider == 'perplexity':
@@ -3015,8 +3070,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     "cache_misses": total_cache_misses,
                     "multiplex_validations": total_multiplex_validations,
                     "single_validations": total_single_validations,
-                    "token_usage": total_token_usage,
+                    "token_usage": total_token_usage,  # Keep for backward compatibility
                     "processing_time": total_processing_time,  # Keep for backward compatibility
+                    
+                    # ========== ENHANCED AI_API_CLIENT MEASURES ==========
+                    "enhanced_metrics": {
+                        "aggregated_metrics": aggregated_metrics,  # Complete provider breakdown with costs/tokens/timing
+                        "full_validation_estimates": full_validation_estimates,  # Full validation projections for preview operations
+                        "preview_operation": event.get('is_preview', False),
+                        "ai_client_calls_count": len(all_enhanced_call_data)
+                    } if aggregated_metrics else None,
                     # NEW: Batch timing data
                     "batch_timing": {
                         "total_batches": len(batch_processing_times),
