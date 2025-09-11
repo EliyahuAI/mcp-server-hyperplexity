@@ -200,7 +200,12 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         # Extract enhanced data from AI client response (complete enhanced metrics)
         enhanced_data = result.get('enhanced_data', {})
         token_usage = result.get('token_usage', {})
-        processing_time = result.get('processing_time', 0)
+        
+        # Extract timing data from enhanced metrics (prefer enhanced over legacy)
+        totals = enhanced_data.get('totals', {})
+        estimated_processing_time = totals.get('total_estimated_processing_time', result.get('processing_time', 0))
+        actual_processing_time = totals.get('total_actual_processing_time', result.get('processing_time', 0))
+        
         model_used = result.get('model_used', config_settings.get('model', 'claude-opus-4-1'))
         is_cached = result.get('is_cached', False)
         
@@ -321,7 +326,8 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             'eliyahu_cost': eliyahu_cost,
             'enhanced_data': enhanced_data,
             'token_usage': token_usage,
-            'processing_time': processing_time,
+            'estimated_processing_time': estimated_processing_time,
+            'actual_processing_time': actual_processing_time,
             'model_used': model_used,
             'is_cached': is_cached
         }

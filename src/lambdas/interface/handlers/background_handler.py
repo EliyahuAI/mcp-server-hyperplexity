@@ -292,6 +292,7 @@ def _update_progress(session_id: str, status: str, processed_rows: int, verbose_
     """Callback function to update DynamoDB and push WebSocket messages."""
     from dynamodb_schemas import update_run_status, get_connection_by_session, remove_websocket_connection, find_existing_run_key
     
+    
     # 1. Update DynamoDB
     run_key = find_existing_run_key(session_id)
     if run_key:
@@ -563,6 +564,18 @@ def handle(event, context):
                             break  # Just show one field sample
                 total_rows = validation_results.get('total_rows', 1)
                 metadata = validation_results.get('metadata', {})
+                total_rows_processed = validation_results.get('total_processed_rows', 1)
+                token_usage = metadata.get('token_usage', {})
+                # Initialize variables early to avoid scope issues
+                quoted_full_cost = None
+                eliyahu_cost = 0.0
+                estimated_cost_without_cache = 0.0
+                multiplier = 1.0
+                estimated_time_per_row = 0.0
+                total_estimated_processing_time = 0.0
+                estimated_total_time_seconds = None
+                time_per_row = 0.0
+                email_domain = email.split('@')[-1] if '@' in email else 'unknown'
                 # ========== ENHANCED AI_API_CLIENT INTEGRATION ==========
                 # Extract enhanced cost/time data from validation lambda's ai_client aggregation
                 enhanced_metrics = metadata.get('enhanced_metrics', {})
@@ -590,16 +603,18 @@ def handle(event, context):
                     perplexity_tokens = providers.get('perplexity', {}).get('tokens', 0)
                     anthropic_tokens = providers.get('anthropic', {}).get('tokens', 0)
                     
-                    # Extract time estimates
-                    estimated_time_per_row = totals.get('total_processing_time', 0.0) / max(1, total_rows_processed)
-                    total_processing_time = totals.get('total_processing_time', 0.0)
+                    # Extract both actual and estimated time data
+                    # Actual time (with caching benefits) for reporting what actually happened
+                    total_processing_time = totals.get('total_actual_processing_time', 0.0)
+                    # Estimated time (without caching) for projecting onto non-cached rows
+                    estimated_time_per_row = totals.get('total_estimated_processing_time', 0.0) / max(1, total_rows_processed)
+                    total_estimated_time_without_cache = totals.get('total_estimated_processing_time', 0.0)
                     
                     logger.info(f"[ENHANCED_COSTS] Using ai_client aggregated data - Actual: ${eliyahu_cost:.6f}, No cache: ${estimated_cost_without_cache:.6f}")
                     logger.info(f"[ENHANCED_PROVIDERS] Perplexity: ${perplexity_eliyahu_cost:.6f} ({perplexity_calls} calls), Anthropic: ${anthropic_eliyahu_cost:.6f} ({anthropic_calls} calls)")
-                    logger.info(f"[ENHANCED_TIME] Time per row: {estimated_time_per_row:.3f}s, Total time: {total_processing_time:.3f}s")
+                    logger.info(f"[ENHANCED_TIME] Actual time: {total_processing_time:.3f}s, Estimated time per row: {estimated_time_per_row:.3f}s, Total estimated: {total_estimated_time_without_cache:.3f}s")
                 else:
                     # Fallback to legacy token_usage for backward compatibility
-                    token_usage = metadata.get('token_usage', {})
                     eliyahu_cost = token_usage.get('total_cost', 0.0)
                     estimated_cost_without_cache = _calculate_estimated_cost_without_cache(token_usage, metadata)
                     
@@ -615,9 +630,10 @@ def handle(event, context):
                     perplexity_tokens = perplexity_data.get('total_tokens', 0)
                     anthropic_tokens = anthropic_data.get('total_tokens', 0)
                     
-                    # Legacy time calculation
-                    total_processing_time = metadata.get('processing_time', 0.0)
-                    estimated_time_per_row = total_processing_time / max(1, total_rows_processed)
+                    # Legacy time calculation - assume processing_time is actual time with cache benefits
+                    total_processing_time = metadata.get('processing_time', 0.0)  # Actual time
+                    total_estimated_time_without_cache = total_processing_time * 1.2  # Rough estimate: 20% slower without cache
+                    estimated_time_per_row = total_estimated_time_without_cache / max(1, total_rows_processed)
                     
                     logger.warning(f"[ENHANCED_COSTS] Falling back to legacy token_usage - enhanced_metrics not available")
                 
@@ -650,7 +666,6 @@ def handle(event, context):
                 total_tokens = token_usage.get('total_tokens', 0)
                 total_api_calls = token_usage.get('api_calls', 0)
                 total_cached_calls = token_usage.get('cached_calls', 0)
-                total_rows_processed = validation_results.get('total_processed_rows', 1)
                 validation_metrics = metadata.get('validation_metrics', {})
                 
                 # Initialize balance variables (preview doesn't charge)
@@ -692,7 +707,7 @@ def handle(event, context):
                     charged_amount = 0  # No charges for preview
                     
                     # Track preview cost (actual cost for your tracking, estimated cost for user display)
-                    track_preview_cost(session_id, email, Decimal(str(estimated_cost)), Decimal(str(multiplier)), total_tokens)
+                    track_preview_cost(session_id, email, Decimal(str(estimated_cost_without_cache)), Decimal(str(multiplier)), total_tokens)
                     
                     # Provider tracking now handled by enhanced metrics from ai_client
                     logger.info(f"[ENHANCED_METRICS] Preview provider metrics tracked in enhanced data structure")
@@ -702,14 +717,14 @@ def handle(event, context):
                     logger.error(f"Error applying domain multiplier in preview: {e}")
                     multiplier = 1.0
                     # Fallback if multiplier lookup fails
-                    quoted_full_cost = math.ceil(estimated_cost)  # Will be recalculated with proper scaling, rounded up
+                    quoted_full_cost = math.ceil(estimated_cost_without_cache)  # Will be recalculated with proper scaling, rounded up
                 
                 # ========== SIMPLIFIED TIME/BATCH CALCULATIONS ==========
                 # Extract simple batch/timing info for backward compatibility
                 # All cost calculations now come from enhanced ai_client data
                 
                 # Get basic processing time for backward compatibility
-                processing_time = total_processing_time if total_processing_time > 0 else metadata.get('processing_time', 0.0)
+                processing_time = total_estimated_processing_time if total_estimated_processing_time > 0 else metadata.get('processing_time', 0.0)
                 
                 # Simple batch size extraction for display purposes
                 effective_batch_size = batch_size or 50  # Use configured or default
@@ -725,6 +740,9 @@ def handle(event, context):
                     time_per_row_fallback = processing_time / max(1, total_rows_processed)
                     estimated_total_time_seconds = time_per_row_fallback * total_rows
                 
+                # Calculate time per row for full validation (time_per_row_seconds field)
+                time_per_row = estimated_total_time_seconds / max(1, total_rows) if estimated_total_time_seconds and total_rows else 0.0
+                
                 # Simple batch count for display
                 total_batches = math.ceil(total_rows / effective_batch_size) if effective_batch_size > 0 else 1
                 
@@ -739,7 +757,7 @@ def handle(event, context):
                 # Quoted cost comes from enhanced estimates with business logic applied
                 if quoted_full_cost is None:
                     logger.warning(f"[ENHANCED_DATA] Missing quoted_full_cost from enhanced estimates - applying business logic")
-                    raw_quoted_cost = estimated_cost * multiplier * (total_rows / max(1, total_rows_processed))
+                    raw_quoted_cost = estimated_cost_without_cache * multiplier * (total_rows / max(1, total_rows_processed))
                     quoted_full_cost = max(2.0, math.ceil(raw_quoted_cost))  # Add $2 minimum charge, rounded up
                 
                 estimated_total_tokens = total_tokens * (total_rows / max(1, total_rows_processed))
@@ -856,31 +874,23 @@ def handle(event, context):
                         
                         # Create enhanced Excel if available
                         enhanced_excel_content = None
-                        logger.info(f"[DEBUG] EXCEL_ENHANCEMENT_AVAILABLE: {EXCEL_ENHANCEMENT_AVAILABLE}")
-                        logger.info(f"[DEBUG] About to create enhanced Excel for preview. real_results count: {len(real_results) if real_results and isinstance(real_results, (dict, list)) else 0}")
                         
                         if EXCEL_ENHANCEMENT_AVAILABLE:
                             try:
                                 # Use shared_table_parser to get structured data
                                 from shared_table_parser import S3TableParser
                                 table_parser = S3TableParser()
-                                logger.info(f"[DEBUG] Parsing S3 table: {S3_UNIFIED_BUCKET}/{excel_s3_key}")
                                 table_data = table_parser.parse_s3_table(S3_UNIFIED_BUCKET, excel_s3_key)
-                                logger.info(f"[DEBUG] Table data parsed. Type: {type(table_data)}, Keys: {list(table_data.keys()) if isinstance(table_data, dict) else 'N/A'}")
-                                
                                 validated_sheet = table_data.get('metadata', {}).get('sheet_name') if isinstance(table_data, dict) else None
-                                logger.info(f"[DEBUG] Validated sheet: {validated_sheet}")
                                 
                                 excel_buffer = create_enhanced_excel_with_validation(
                                     table_data, real_results, config_data, session_id, validated_sheet_name=validated_sheet
                                 )
-                                logger.info(f"[DEBUG] Excel buffer created. Type: {type(excel_buffer)}, Is None: {excel_buffer is None}")
                                 
                                 if excel_buffer:
                                     enhanced_excel_content = excel_buffer.getvalue()
-                                    logger.info(f"[DEBUG] Enhanced Excel content extracted. Size: {len(enhanced_excel_content)} bytes")
                                 else:
-                                    logger.error("[DEBUG] Excel buffer is None - enhanced Excel creation failed")
+                                    logger.error("Enhanced Excel creation failed - excel_buffer is None")
                             except Exception as e:
                                 logger.error(f"Error creating enhanced Excel for preview: {str(e)}")
                                 import traceback
@@ -1176,7 +1186,7 @@ def handle(event, context):
                     'amount_charged': 0,  # Previews are free
                     'domain_multiplier': float(multiplier),
                     'eliyahu_cost': float(eliyahu_cost),  # Your actual expense
-                    'estimated_cost': float(estimated_cost),  # What it would cost without caching
+                    'estimated_cost': float(estimated_cost_without_cache),  # What it would cost without caching
                     'preview_abandoned': False,  # Completed successfully
                     'insufficient_balance_encountered': False,  # Previews don't charge
                     'processing_type': 'preview'
@@ -1341,7 +1351,6 @@ def handle(event, context):
         has_results = (validation_results and 
                       'validation_results' in validation_results and 
                       validation_results['validation_results'] is not None)
-        
         if has_results:
             real_results = validation_results['validation_results']
             total_rows = validation_results.get('total_rows', 1)
@@ -1869,7 +1878,7 @@ def handle(event, context):
                     actual_processing_time = 0
                     try:
                         from dynamodb_schemas import get_run_status
-                        run_status = get_run_status(session_id)
+                        run_status = get_run_status(session_id, run_key)
                         if run_status:
                             # Use actual processing time if available, otherwise calculate from start/end times
                             if 'actual_processing_time_seconds' in run_status:
@@ -2163,8 +2172,10 @@ def handle(event, context):
                         logger.error(f"[USER_TRACKING] Traceback: {traceback.format_exc()}")
         
         else: # No results
-             logger.warning(f"No validation results returned from validator for session {session_id}")
+             logger.error(f"[DEBUG] No validation results returned from validator for session {session_id}")
+             logger.error(f"[DEBUG] is_preview = {is_preview}")
              run_type_for_failed = "Preview" if is_preview else "Validation"
+             logger.error(f"[DEBUG] About to update run status to FAILED for {run_type_for_failed}")
              update_run_status_for_session(status='FAILED', 
                 run_type=run_type_for_failed,
                 error_message="No validation results returned", 
@@ -2174,27 +2185,38 @@ def handle(event, context):
                 batch_size=10,  # Default batch size
                 eliyahu_cost=0.0,
                 time_per_row_seconds=0.0)
+             logger.error(f"[DEBUG] Completed run status update to FAILED")
              # Handle empty results case for preview if needed
+             logger.error(f"[DEBUG] Checking if is_preview: {is_preview}")
              if is_preview:
+                logger.error(f"[DEBUG] Entering preview handling for empty results")
                 # Even for empty results, store in versioned folder
                 config_version = 1
                 try:
+                    logger.info(f"[DEBUG] Getting latest config for email={email}, session={clean_session_id}")
                     _, latest_config_key = storage_manager.get_latest_config(email, clean_session_id)
+                    logger.info(f"[DEBUG] Got latest_config_key: {latest_config_key}")
                     if latest_config_key:
                         config_filename = latest_config_key.split('/')[-1]
                         if config_filename.startswith('v') and '_' in config_filename:
                             config_version = int(config_filename.split('_')[0][1:])
-                except:
+                    logger.info(f"[DEBUG] Determined config_version: {config_version}")
+                except Exception as e:
+                    logger.warning(f"[DEBUG] Exception getting config version: {e}")
                     pass
                 
+                logger.info(f"[DEBUG] About to store preview results with config_version={config_version}")
                 result = storage_manager.store_results(
                     email, clean_session_id, config_version, 
                     {"status": "preview_completed", "note": "No results"}, 'preview'
                 )
+                logger.info(f"[DEBUG] Store results completed: {result}")
                 
                 if result['success']:
                     preview_results_key = result['s3_key']
+                    logger.info(f"[DEBUG] Store results successful, s3_key: {preview_results_key}")
                 else:
+                    logger.warning(f"[DEBUG] Store results failed, using fallback")
                     # Fallback
                     preview_results_key = f"preview_results/{email_folder}/{session_id}.json"
                     s3_client.put_object(
@@ -2202,12 +2224,23 @@ def handle(event, context):
                         Body=json.dumps({"status": "preview_completed", "note": "No results"}),
                         ContentType='application/json'
                     )
+                logger.info(f"[DEBUG] About to return preview_completed response for session {session_id}")
+                return {'statusCode': 200, 'body': json.dumps({'status': 'preview_completed', 'session_id': session_id})}
+             else:
+                # Return error response for non-preview failures
+                logger.info(f"[DEBUG] About to return background_failed response for non-preview session {session_id}")
+                return {'statusCode': 500, 'body': json.dumps({
+                    'status': 'background_failed', 
+                    'error': 'No validation results returned',
+                    'session_id': session_id
+                })}
             
         return {'statusCode': 200, 'body': json.dumps({'status': 'background_completed', 'session_id': session_id})}
 
     except Exception as e:
         logger.error(f"Critical error in background processing for session {event.get('session_id', 'unknown')}: {str(e)}")
         import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         traceback.print_exc()
         if DYNAMODB_AVAILABLE:
             # Determine run type from event or default to unknown

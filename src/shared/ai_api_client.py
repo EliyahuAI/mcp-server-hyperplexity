@@ -462,6 +462,7 @@ class AIAPIClient:
                 'error': 'invalid_token_usage'
             }
         
+        
         # Load pricing data if not provided
         if not pricing_data:
             try:
@@ -554,6 +555,7 @@ class AIAPIClient:
                 pricing = {'input_cost_per_million_tokens': 3.0, 'output_cost_per_million_tokens': 15.0}  # universal fallback
                 pricing_source = 'default_unknown'
         
+        
         # Extract and validate token counts with robust error handling
         input_tokens = 0
         output_tokens = 0
@@ -596,6 +598,7 @@ class AIAPIClient:
             input_tokens = 0
             output_tokens = 0
         
+        
         # Validate extracted pricing configuration
         try:
             input_rate = float(pricing.get('input_cost_per_million_tokens', 3.0))
@@ -613,6 +616,7 @@ class AIAPIClient:
             logger.error(f"ai_api_client.calculate_token_costs: Error parsing pricing rates: {pricing_error}")
             input_rate = 3.0
             output_rate = 15.0
+        
         
         # Calculate costs with precision handling (pricing is per million tokens)
         try:
@@ -646,6 +650,7 @@ class AIAPIClient:
                        f"Input: {input_tokens} tokens (${input_cost:.6f}), "
                        f"Output: {output_tokens} tokens (${output_cost:.6f}), "
                        f"Total: ${total_cost:.6f}, Source: {pricing_source}")
+        
         
         return {
             'input_cost': input_cost,
@@ -715,7 +720,8 @@ class AIAPIClient:
             }
     
     def get_enhanced_call_metrics(self, response: Dict, model: str, processing_time: float, 
-                                  search_context_size: str = None, batch_info: Dict = None) -> Dict[str, Any]:
+                                  search_context_size: str = None, batch_info: Dict = None, 
+                                  pre_extracted_token_usage: Dict = None) -> Dict[str, Any]:
         """
         Enhanced elemental call tracking with comprehensive provider-specific metrics, 
         caching analysis, and per-row cost calculations.
@@ -726,13 +732,19 @@ class AIAPIClient:
             processing_time: Actual processing time in seconds
             search_context_size: Context size for Perplexity API (optional)
             batch_info: Information about batch size and rows processed (optional)
+            pre_extracted_token_usage: Pre-extracted token usage (for cached responses)
             
         Returns:
             Comprehensive call metrics including provider breakdown, caching efficiency, and per-row costs
         """
         try:
-            # Extract basic token usage
-            token_usage = self._extract_token_usage(response, model, search_context_size)
+            # Extract basic token usage - use pre-extracted if available (for cached responses)
+            if pre_extracted_token_usage:
+                token_usage = pre_extracted_token_usage
+                logger.debug(f"Using pre-extracted token usage for cached response: {token_usage.get('total_tokens', 0)} tokens")
+            else:
+                token_usage = self._extract_token_usage(response, model, search_context_size)
+                
             api_provider = token_usage.get('api_provider', 'unknown')
             
             # Calculate costs with and without caching
@@ -810,7 +822,8 @@ class AIAPIClient:
                         'tokens': token_usage.get('total_tokens', 0),
                         'cost_actual': cost_data.get('total_cost', 0.0),
                         'cost_without_cache': cost_without_cache.get('total_cost', 0.0),
-                        'processing_time': processing_time,
+                        'estimated_time': timing_metrics.get('estimated_time_without_cache', processing_time),  # Use estimated time without cache for scaling
+                        'actual_time': timing_metrics.get('actual_time', processing_time),  # Keep actual time for reference
                         'cache_hit_tokens': token_usage.get('cache_read_tokens', 0)
                     }
                 }
@@ -1025,7 +1038,8 @@ class AIAPIClient:
                 'total_tokens': 0,
                 'total_cost_actual': 0.0,
                 'total_cost_without_cache': 0.0,
-                'total_processing_time': 0.0,
+                'total_estimated_processing_time': 0.0,  # Renamed from total_processing_time
+                'total_actual_processing_time': 0.0,     # New field for actual times
                 'total_cache_savings_cost': 0.0,
                 'total_cache_savings_time': 0.0,
                 'overall_cache_efficiency': 0.0
@@ -1042,7 +1056,8 @@ class AIAPIClient:
                             'tokens': 0,
                             'cost_actual': 0.0,
                             'cost_without_cache': 0.0,
-                            'processing_time': 0.0,
+                            'estimated_processing_time': 0.0,  # Renamed from processing_time
+                            'actual_processing_time': 0.0,     # New field for actual times
                             'cache_hit_tokens': 0,
                             'cache_savings_cost': 0.0,
                             'cache_savings_time': 0.0,
@@ -1061,7 +1076,8 @@ class AIAPIClient:
                     providers[provider]['tokens'] += metrics.get('tokens', 0)
                     providers[provider]['cost_actual'] += metrics.get('cost_actual', 0.0)
                     providers[provider]['cost_without_cache'] += metrics.get('cost_without_cache', 0.0)
-                    providers[provider]['processing_time'] += metrics.get('processing_time', 0.0)
+                    providers[provider]['estimated_processing_time'] += metrics.get('estimated_time', 0.0)
+                    providers[provider]['actual_processing_time'] += metrics.get('actual_time', 0.0)
                     providers[provider]['cache_hit_tokens'] += metrics.get('cache_hit_tokens', 0)
                     
                     # Calculate savings from the call
@@ -1076,7 +1092,7 @@ class AIAPIClient:
                 if metrics['calls'] > 0:
                     metrics['average_cost_per_call'] = metrics['cost_actual'] / metrics['calls']
                     metrics['average_tokens_per_call'] = metrics['tokens'] / metrics['calls']
-                    metrics['average_time_per_call'] = metrics['processing_time'] / metrics['calls']
+                    metrics['average_time_per_call'] = metrics['actual_processing_time'] / metrics['calls']
                 
                 # Cache efficiency
                 if metrics['cost_without_cache'] > 0:
@@ -1087,7 +1103,8 @@ class AIAPIClient:
                 totals['total_tokens'] += metrics['tokens']
                 totals['total_cost_actual'] += metrics['cost_actual']
                 totals['total_cost_without_cache'] += metrics['cost_without_cache']
-                totals['total_processing_time'] += metrics['processing_time']
+                totals['total_estimated_processing_time'] += metrics['estimated_processing_time']
+                totals['total_actual_processing_time'] += metrics['actual_processing_time']
                 totals['total_cache_savings_cost'] += metrics['cache_savings_cost']
                 totals['total_cache_savings_time'] += metrics['cache_savings_time']
             
@@ -1161,7 +1178,8 @@ class AIAPIClient:
                 'estimated_total_tokens': int(totals.get('total_tokens', 0) * scaling_factor),
                 'estimated_total_cost_actual': totals.get('total_cost_actual', 0.0) * scaling_factor,
                 'estimated_total_cost_without_cache': totals.get('total_cost_without_cache', 0.0) * scaling_factor,
-                'estimated_total_processing_time': totals.get('total_processing_time', 0.0) * scaling_factor,
+                'estimated_total_processing_time': totals.get('total_estimated_processing_time', 0.0) * scaling_factor,  # Updated field name
+                'estimated_actual_processing_time': totals.get('total_actual_processing_time', 0.0) * scaling_factor,    # New field
                 'estimated_total_cache_savings_cost': totals.get('total_cache_savings_cost', 0.0) * scaling_factor,
                 'estimated_total_cache_savings_time': totals.get('total_cache_savings_time', 0.0) * scaling_factor,
                 'estimated_cache_efficiency_percent': totals.get('overall_cache_efficiency', 0.0)
@@ -1360,14 +1378,22 @@ class AIAPIClient:
             return None
     
     async def _save_to_cache(self, cache_key: str, response: Dict, token_usage: Dict, processing_time: float, model: str, api_provider: str = 'anthropic'):
-        """Save response to cache."""
+        """Save response to cache including enhanced metrics."""
         try:
+            # Generate enhanced metrics for caching
+            try:
+                enhanced_metrics = self.get_enhanced_call_metrics(response, model, processing_time)
+            except Exception as e:
+                logger.warning(f"Failed to generate enhanced metrics for cache: {e}")
+                enhanced_metrics = {}
+            
             cache_entry = {
                 'api_response': response,
                 'cached_at': datetime.now(timezone.utc).isoformat(),
                 'model': model,
                 'token_usage': token_usage,
-                'processing_time': processing_time
+                'processing_time': processing_time,
+                'enhanced_data': enhanced_metrics  # Add enhanced metrics to cache
             }
             
             s3_key = self._get_cache_s3_key(cache_key, api_provider)
@@ -1528,13 +1554,42 @@ class AIAPIClient:
                         else:
                             citations = self.extract_citations_from_response(cached_data['api_response'])
                         
+                        # Generate enhanced metrics for cached response
+                        try:
+                            enhanced_data = cached_data.get('enhanced_data')
+                            if not enhanced_data:
+                                # For cached responses, generate enhanced metrics with special timing handling
+                                original_processing_time = cached_data.get('processing_time', 0)
+                                cached_token_usage = cached_data.get('token_usage', {})
+                                enhanced_data = self.get_enhanced_call_metrics(
+                                    cached_data['api_response'], 
+                                    current_model, 
+                                    original_processing_time,
+                                    pre_extracted_token_usage=cached_token_usage
+                                )
+                                
+                                # Override timing metrics for cached response
+                                if 'timing' in enhanced_data:
+                                    enhanced_data['timing'].update({
+                                        'actual_time': 0.001,  # Near zero for cache hit
+                                        'estimated_time_without_cache': original_processing_time,  # Original processing time
+                                        'time_savings_seconds': original_processing_time - 0.001,
+                                        'time_savings_percent': ((original_processing_time - 0.001) / max(0.001, original_processing_time)) * 100
+                                    })
+                                
+                                logger.info(f"Generated enhanced metrics for cached response: cost=${enhanced_data.get('costs', {}).get('without_cache', {}).get('total_cost', 0.0):.6f}, original_time={original_processing_time:.3f}s")
+                        except Exception as e:
+                            logger.warning(f"Failed to generate enhanced metrics for cached response: {e}")
+                            enhanced_data = {}
+                        
                         return {
                             'response': cached_data['api_response'],
                             'token_usage': token_usage,
                             'processing_time': cached_data.get('processing_time', 0),
                             'is_cached': True,
                             'model_used': current_model,
-                            'citations': citations
+                            'citations': citations,
+                            'enhanced_data': enhanced_data
                         }
                 
                 # Log that we're making an API call (no cache hit)
@@ -1658,12 +1713,41 @@ class AIAPIClient:
                     
                     logger.info(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
                 
+                # Generate enhanced metrics for cached response
+                try:
+                    enhanced_data = cached_data.get('enhanced_data')
+                    if not enhanced_data:
+                        # For cached responses, generate enhanced metrics with special timing handling
+                        original_processing_time = cached_data.get('processing_time', 0)
+                        cached_token_usage = cached_data.get('token_usage', {})
+                        enhanced_data = self.get_enhanced_call_metrics(
+                            cached_data['api_response'], 
+                            normalized_model, 
+                            original_processing_time,
+                            pre_extracted_token_usage=cached_token_usage
+                        )
+                        
+                        # Override timing metrics for cached response
+                        if 'timing' in enhanced_data:
+                            enhanced_data['timing'].update({
+                                'actual_time': 0.001,  # Near zero for cache hit
+                                'estimated_time_without_cache': original_processing_time,  # Original processing time
+                                'time_savings_seconds': original_processing_time - 0.001,
+                                'time_savings_percent': ((original_processing_time - 0.001) / max(0.001, original_processing_time)) * 100
+                            })
+                        
+                        logger.info(f"Generated enhanced metrics for cached anthropic response: cost=${enhanced_data.get('costs', {}).get('without_cache', {}).get('total_cost', 0.0):.6f}, original_time={original_processing_time:.3f}s")
+                except Exception as e:
+                    logger.warning(f"Failed to generate enhanced metrics for cached anthropic response: {e}")
+                    enhanced_data = {}
+                
                 return {
                     'response': cached_data['api_response'],
                     'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
                     'is_cached': True,
-                    'citations': self.extract_citations_from_response(cached_data['api_response'])
+                    'citations': self.extract_citations_from_response(cached_data['api_response']),
+                    'enhanced_data': enhanced_data
                 }
         
         # Log that we're making an API call (no cache hit)
@@ -1730,12 +1814,41 @@ class AIAPIClient:
                     
                     logger.info(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
                 
+                # Generate enhanced metrics for cached response
+                try:
+                    enhanced_data = cached_data.get('enhanced_data')
+                    if not enhanced_data:
+                        # For cached responses, generate enhanced metrics with special timing handling
+                        original_processing_time = cached_data.get('processing_time', 0)
+                        cached_token_usage = cached_data.get('token_usage', {})
+                        enhanced_data = self.get_enhanced_call_metrics(
+                            cached_data['api_response'], 
+                            model, 
+                            original_processing_time,
+                            pre_extracted_token_usage=cached_token_usage
+                        )
+                        
+                        # Override timing metrics for cached response
+                        if 'timing' in enhanced_data:
+                            enhanced_data['timing'].update({
+                                'actual_time': 0.001,  # Near zero for cache hit
+                                'estimated_time_without_cache': original_processing_time,  # Original processing time
+                                'time_savings_seconds': original_processing_time - 0.001,
+                                'time_savings_percent': ((original_processing_time - 0.001) / max(0.001, original_processing_time)) * 100
+                            })
+                        
+                        logger.info(f"Generated enhanced metrics for cached perplexity smart cache response: cost=${enhanced_data.get('costs', {}).get('without_cache', {}).get('total_cost', 0.0):.6f}, original_time={original_processing_time:.3f}s")
+                except Exception as e:
+                    logger.warning(f"Failed to generate enhanced metrics for cached perplexity smart cache response: {e}")
+                    enhanced_data = {}
+                
                 return {
                     'response': cached_data['api_response'],
                     'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
                     'is_cached': True,
-                    'citations': self.extract_citations_from_perplexity_response(cached_data['api_response'])
+                    'citations': self.extract_citations_from_perplexity_response(cached_data['api_response']),
+                    'enhanced_data': enhanced_data
                 }
         
         # Log that we're making an API call (no cache hit)
@@ -1791,12 +1904,41 @@ class AIAPIClient:
                     
                     logger.info(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
                 
+                # Generate enhanced metrics for cached response
+                try:
+                    enhanced_data = cached_data.get('enhanced_data')
+                    if not enhanced_data:
+                        # For cached responses, generate enhanced metrics with special timing handling
+                        original_processing_time = cached_data.get('processing_time', 0)
+                        cached_token_usage = cached_data.get('token_usage', {})
+                        enhanced_data = self.get_enhanced_call_metrics(
+                            cached_data['api_response'], 
+                            model, 
+                            original_processing_time,
+                            pre_extracted_token_usage=cached_token_usage
+                        )
+                        
+                        # Override timing metrics for cached response
+                        if 'timing' in enhanced_data:
+                            enhanced_data['timing'].update({
+                                'actual_time': 0.001,  # Near zero for cache hit
+                                'estimated_time_without_cache': original_processing_time,  # Original processing time
+                                'time_savings_seconds': original_processing_time - 0.001,
+                                'time_savings_percent': ((original_processing_time - 0.001) / max(0.001, original_processing_time)) * 100
+                            })
+                        
+                        logger.info(f"Generated enhanced metrics for cached perplexity response: cost=${enhanced_data.get('costs', {}).get('without_cache', {}).get('total_cost', 0.0):.6f}, original_time={original_processing_time:.3f}s")
+                except Exception as e:
+                    logger.warning(f"Failed to generate enhanced metrics for cached perplexity response: {e}")
+                    enhanced_data = {}
+                
                 return {
                     'response': cached_data['api_response'],
                     'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
                     'is_cached': True,
-                    'citations': self.extract_citations_from_perplexity_response(cached_data['api_response'])
+                    'citations': self.extract_citations_from_perplexity_response(cached_data['api_response']),
+                    'enhanced_data': enhanced_data
                 }
         
         # Log that we're making an API call (no cache hit)
@@ -1860,12 +2002,27 @@ class AIAPIClient:
                         if use_cache and cache_key:
                             await self._save_to_cache(cache_key, response_json, token_usage, processing_time, model, 'perplexity')
                         
+                        # Generate enhanced metrics for non-cached response
+                        try:
+                            enhanced_data = self.get_enhanced_call_metrics(
+                                response_json, 
+                                model, 
+                                processing_time,
+                                search_context_size=search_context_size,
+                                pre_extracted_token_usage=token_usage
+                            )
+                            logger.info(f"Generated enhanced metrics for non-cached perplexity response: cost=${enhanced_data.get('costs', {}).get('without_cache', {}).get('total_cost', 0.0):.6f}, time={processing_time:.3f}s")
+                        except Exception as e:
+                            logger.warning(f"Failed to generate enhanced metrics for non-cached perplexity response: {e}")
+                            enhanced_data = {}
+                        
                         return {
                             'response': response_json,
                             'token_usage': token_usage,
                             'processing_time': processing_time,
                             'is_cached': False,
-                            'citations': self.extract_citations_from_perplexity_response(response_json)
+                            'citations': self.extract_citations_from_perplexity_response(response_json),
+                            'enhanced_data': enhanced_data
                         }
                     else:
                         error_text = await response.text()

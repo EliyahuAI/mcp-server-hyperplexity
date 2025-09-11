@@ -3022,7 +3022,7 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
         
         # Calculate and store actual processing time
         try:
-            response = table.get_item(Key={'session_id': session_id})
+            response = table.get_item(Key={'session_id': session_id, 'run_key': run_key})
             if 'Item' in response:
                 item = response['Item']
                 start_time_str = item.get('start_time')
@@ -3034,7 +3034,17 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
                     # Calculate per-row and per-batch timing metrics
                     time_per_row = actual_duration_seconds / processed_rows if processed_rows > 0 else 0
                     actual_batch_size = batch_size or item.get('batch_size', 10)  # fallback to default if none
-                    time_per_batch = time_per_row * actual_batch_size
+                    
+                    # For previews, calculate time_per_batch based on actual rows processed
+                    # For full validations, use configured batch size for projection
+                    run_type = item.get('run_type', '')
+                    if run_type == 'Preview':
+                        # For previews, time per batch should reflect the actual batch that was processed
+                        time_per_batch = actual_duration_seconds  # Total time = time for this one batch
+                        logger.info(f"Preview batch timing: {actual_duration_seconds:.3f}s for {processed_rows} rows")
+                    else:
+                        # For full validations, calculate theoretical time per batch
+                        time_per_batch = time_per_row * actual_batch_size
                     
                     # Store actual timing metrics and replace estimated values with actual ones
                     update_expression += ", actual_processing_time_seconds = :apt"
@@ -3078,14 +3088,36 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
         logger.error(f"Full traceback: {traceback.format_exc()}")
         raise  # Re-raise the exception so calling code knows it failed
 
-def get_run_status(session_id: str) -> Optional[Dict]:
-    """Retrieves the status of a validation run."""
+def get_run_status(session_id: str, run_key: str) -> Optional[Dict]:
+    """Retrieves the status of a specific validation run."""
     table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
     try:
-        response = table.get_item(Key={'session_id': session_id})
+        response = table.get_item(Key={'session_id': session_id, 'run_key': run_key})
         return response.get('Item')
     except ClientError as e:
-        logger.error(f"Error getting run status for {session_id}: {e}")
+        logger.error(f"Error getting run status for {session_id}/{run_key}: {e}")
+        return None
+
+def find_run_key_by_type(session_id: str, run_type: str) -> Optional[str]:
+    """Find run_key for a session_id by run_type (e.g., 'Preview' or 'Validation')."""
+    table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
+    try:
+        from boto3.dynamodb.conditions import Key
+        response = table.query(
+            KeyConditionExpression=Key('session_id').eq(session_id),
+            FilterExpression='begins_with(run_key, :run_type)',
+            ExpressionAttributeValues={':run_type': f'{run_type}#'},
+            ScanIndexForward=False,  # Get most recent first
+            Limit=1
+        )
+        items = response.get('Items', [])
+        if items:
+            run_key = items[0].get('run_key')
+            logger.info(f"Found run_key for session {session_id} type {run_type}: {run_key}")
+            return run_key
+        return None
+    except ClientError as e:
+        logger.error(f"Error finding run_key by type for {session_id}/{run_type}: {e}")
         return None
 
 def find_existing_run_key(session_id: str) -> Optional[str]:
