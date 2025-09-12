@@ -672,14 +672,14 @@ def handle(event, context):
                     
                     logger.warning(f"[ENHANCED_COSTS] Falling back to legacy token_usage - enhanced_metrics not available")
                 
-                # ========== PREVIEW FULL VALIDATION ESTIMATES ==========
-                # For preview operations, use full validation estimates from enhanced data
+                # ========== ENHANCED VALIDATION ESTIMATES ==========
+                # For both preview and validation operations, use enhanced estimates from ai_api_client
                 logger.info(f"[ESTIMATES_CHECK] is_preview: {is_preview}, enhanced_metrics available: {bool(enhanced_metrics)}")
                 if enhanced_metrics:
                     logger.info(f"[ESTIMATES_CHECK] enhanced_metrics keys: {list(enhanced_metrics.keys())}")
                     logger.info(f"[ESTIMATES_CHECK] full_validation_estimates available: {bool(enhanced_metrics.get('full_validation_estimates'))}")
                 
-                if is_preview and enhanced_metrics and enhanced_metrics.get('full_validation_estimates'):
+                if enhanced_metrics and enhanced_metrics.get('full_validation_estimates'):
                     estimates = enhanced_metrics['full_validation_estimates']
                     total_estimates = estimates.get('total_estimates', {})
 
@@ -688,6 +688,8 @@ def handle(event, context):
                     
                     # Extract batch timing analysis for proper time scaling
                     batch_timing = estimates.get('batch_timing_analysis', {})
+                    timing_estimates = estimates.get('timing_estimates', {})
+                    per_provider_estimates = estimates.get('per_provider_estimates', {})
                     
                     # Use properly scaled estimates from validation lambda calculations
                     # estimated_validation_eliyahu_cost: Raw eliyahu cost for full table (no multiplier, no cache)
@@ -696,8 +698,25 @@ def handle(event, context):
                     
                     # estimated_validation_time: Use batch-based scaling for accurate time projection
                     # The validation lambda calculates this using proper batch architecture
-                    estimated_total_time_seconds = batch_timing.get('estimated_total_time_for_full_validation', 
-                                                                  total_estimates.get('estimated_total_processing_time', 0.0))
+                    estimated_total_time_seconds = (timing_estimates.get('total_estimated_time_seconds') or 
+                                                   batch_timing.get('estimated_total_time_for_full_validation') or
+                                                   total_estimates.get('estimated_total_processing_time', 0.0))
+                    
+                    # Extract per-provider costs from new structure if available
+                    if per_provider_estimates:
+                        logger.info(f"[ENHANCED_PROVIDER_DATA] Found per-provider estimates: {list(per_provider_estimates.keys())}")
+                        
+                        # Override provider costs with enhanced data
+                        perplexity_data = per_provider_estimates.get('perplexity', {})
+                        anthropic_data = per_provider_estimates.get('anthropic', {})
+                        
+                        if perplexity_data:
+                            perplexity_per_row_estimated_cost = perplexity_data.get('per_row_estimated_cost', 0)
+                            perplexity_total_actual_cost = perplexity_data.get('total_cost_actual', 0)
+                        
+                        if anthropic_data:
+                            anthropic_per_row_estimated_cost = anthropic_data.get('per_row_estimated_cost', 0)
+                            anthropic_total_actual_cost = anthropic_data.get('total_cost_actual', 0)
                     
                     # Debug: Log what we actually received
                     logger.info(f"[ENHANCED_ESTIMATES_DEBUG] batch_timing keys: {list(batch_timing.keys())}")
@@ -816,7 +835,14 @@ def handle(event, context):
                     estimated_total_time_seconds = time_per_row_fallback * total_rows
                 
                 # Calculate time per row for full validation (time_per_row_seconds field)
-                time_per_row = estimated_total_time_seconds / max(1, total_rows) if estimated_total_time_seconds and total_rows else 0.0
+                # First try to get from enhanced timing estimates, then fall back to calculation
+                if enhanced_metrics and enhanced_metrics.get('full_validation_estimates'):
+                    timing_estimates = enhanced_metrics['full_validation_estimates'].get('timing_estimates', {})
+                    time_per_row = timing_estimates.get('time_per_row_seconds', 0.0)
+                    if time_per_row == 0.0:
+                        time_per_row = estimated_total_time_seconds / max(1, total_rows) if estimated_total_time_seconds and total_rows else 0.0
+                else:
+                    time_per_row = estimated_total_time_seconds / max(1, total_rows) if estimated_total_time_seconds and total_rows else 0.0
                 
                 # Simple batch count for display
                 total_batches = math.ceil(total_rows / effective_batch_size) if effective_batch_size > 0 else 1
@@ -924,6 +950,17 @@ def handle(event, context):
                 preview_payload['cost_estimates']['anthropic_per_row_estimated_cost'] = anthropic_per_row_estimated_cost  # Per-row cost without caching
                 preview_payload['cost_estimates']['perplexity_total_actual_cost'] = perplexity_total_actual_cost  # Total actual cost paid for entire run
                 preview_payload['cost_estimates']['anthropic_total_actual_cost'] = anthropic_total_actual_cost  # Total actual cost paid for entire run
+                
+                # Add enhanced timing data if available
+                if enhanced_metrics and enhanced_metrics.get('full_validation_estimates'):
+                    timing_estimates = enhanced_metrics['full_validation_estimates'].get('timing_estimates', {})
+                    
+                    # Add timing fields to cost_estimates for frontend
+                    preview_payload['cost_estimates']['actual_processing_time_seconds'] = timing_estimates.get('actual_processing_time_seconds', 0.0)
+                    preview_payload['cost_estimates']['actual_time_per_batch_seconds'] = timing_estimates.get('actual_time_per_batch_seconds', 0.0)
+                    
+                    logger.info(f"[ENHANCED_TIMING] Added timing data - processing: {timing_estimates.get('actual_processing_time_seconds', 0):.3f}s, "
+                               f"per batch: {timing_estimates.get('actual_time_per_batch_seconds', 0):.3f}s")
                 
                 # Add key frontend-expected fields to cost_estimates object (frontend looks for them here)
                 preview_payload['cost_estimates'].update({

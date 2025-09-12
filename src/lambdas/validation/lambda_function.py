@@ -1134,6 +1134,35 @@ def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Di
             'avg_estimated_row_processing_time': avg_row_estimated_time  # Direct average over all rows using estimated times (no scaling needed - already per-row)
         }
         
+        # Add per-provider cost calculations
+        providers = aggregated_metrics.get('providers', {})
+        estimates['per_provider_estimates'] = {}
+        
+        for provider_name, provider_data in providers.items():
+            provider_cost_estimated = provider_data.get('cost_estimated', 0.0)
+            provider_cost_actual = provider_data.get('cost_actual', 0.0)
+            
+            # Calculate per-row costs using estimated costs (no cache benefits)
+            per_row_estimated_cost = provider_cost_estimated / preview_rows_processed if preview_rows_processed > 0 else 0.0
+            per_row_actual_cost = provider_cost_actual / preview_rows_processed if preview_rows_processed > 0 else 0.0
+            
+            estimates['per_provider_estimates'][provider_name] = {
+                'total_cost_estimated': provider_cost_estimated * scaling_factor,
+                'total_cost_actual': provider_cost_actual * scaling_factor,
+                'per_row_estimated_cost': per_row_estimated_cost,
+                'per_row_actual_cost': per_row_actual_cost,
+                'calls': provider_data.get('calls', 0),
+                'tokens': provider_data.get('tokens', 0)
+            }
+        
+        # Add timing calculations
+        estimates['timing_estimates'] = {
+            'time_per_row_seconds': avg_row_estimated_time,  # Use estimated time without cache
+            'total_estimated_time_seconds': estimated_total_time_for_full_validation,
+            'actual_processing_time_seconds': sum(batch_processing_times.values()),
+            'actual_time_per_batch_seconds': avg_estimated_batch_time
+        }
+        
         # Debug logging
         logger.info(f"[BATCH_TIMING] Processed {len(batches)} batches with {len(all_enhanced_call_data)} total calls")
         logger.info(f"[BATCH_TIMING] Preview: {estimated_total_time_preview:.2f}s, Actual total time: {sum(batch_processing_times.values()):.2f}s")
@@ -1141,6 +1170,11 @@ def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Di
         logger.info(f"[BATCH_TIMING] Full validation: {total_rows_in_table} rows ÷ {target_full_validation_batch_size} target batch size = {estimated_batches_for_full_table} batches")
         logger.info(f"[BATCH_TIMING] Full validation estimate: {estimated_batches_for_full_table} batches × {avg_estimated_batch_time:.2f}s = {estimated_total_time_for_full_validation:.2f}s")
         logger.info(f"[BATCH_TIMING] Average estimated row processing time: {avg_row_estimated_time:.2f}s (direct calculation over {len(total_row_estimated_times)} rows)")
+        
+        # Log per-provider cost estimates
+        for provider_name, provider_estimates in estimates['per_provider_estimates'].items():
+            logger.info(f"[PROVIDER_COSTS] {provider_name}: ${provider_estimates['per_row_estimated_cost']:.6f} per row (estimated), "
+                       f"${provider_estimates['total_cost_estimated']:.6f} total estimated")
         
         return estimates
         
@@ -3155,47 +3189,54 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                           f"Total actual cost: ${totals.get('total_cost_actual', 0.0):.6f}, "
                           f"Total estimated cost: ${totals.get('total_cost_estimated', 0.0):.6f}")
                 
-                # For preview operations, also calculate full validation estimates
-                if event.get('is_preview', False):
+                # Calculate cost and timing estimates for both preview and validation modes
+                is_preview = event.get('is_preview', False)
+                
+                # For preview: calculate estimates for full table
+                # For validation: calculate estimates for actual processed rows 
+                if is_preview:
                     total_rows_in_table = event.get('total_rows', len(validation_results))
-                    preview_rows_processed = len(validation_results) 
-                    
-                    # Initialize batch processing times before use
-                    batch_processing_times_calculated = {}  # batch_number -> max_processing_time_in_that_batch
-                    
-                    # Get target batch size for full validation from batch manager
-                    if batch_manager:
-                        # For enhanced batch manager, get a representative batch size
-                        if hasattr(batch_manager, 'model_batch_sizes') and batch_manager.model_batch_sizes:
-                            # Use average of current model batch sizes
-                            target_batch_size = int(sum(batch_manager.model_batch_sizes.values()) / len(batch_manager.model_batch_sizes))
-                            logger.info(f"[BATCH_SIZE_DEBUG] Using average batch size from registered models: {target_batch_size}")
-                        else:
-                            # No models registered yet, use default approach
-                            target_batch_size = batch_manager.get_batch_size_for_models(set())
-                            logger.info(f"[BATCH_SIZE_DEBUG] Using default batch size from enhanced manager: {target_batch_size}")
-                    else:
-                        target_batch_size = 50
-                        logger.info(f"[BATCH_SIZE_DEBUG] No batch manager available, using fallback: {target_batch_size}")
-                    
-                    logger.info(f"[BATCH_SIZE_DEBUG] target_batch_size for full validation: {target_batch_size}")
-                    
-                    full_validation_estimates = calculate_full_validation_estimates_with_batch_timing(
-                        aggregated_metrics=aggregated_metrics,
-                        all_enhanced_call_data=all_enhanced_call_data,
-                        total_rows_in_table=total_rows_in_table,
-                        preview_rows_processed=preview_rows_processed,
-                        batch_processing_times=batch_processing_times_calculated,
-                        target_full_validation_batch_size=target_batch_size
-                    )
-                    if 'error' in full_validation_estimates:
-                        logger.error(f"[VALIDATOR_SIDE_ERROR] Full validation estimates calculation failed: {full_validation_estimates['error']}")
-                        full_validation_estimates = None
-                    else:
-                        logger.info(f"Generated full validation estimates: {full_validation_estimates.get('total_estimates', 'N/A')}")
-                        logger.info(f"[VALIDATOR_SIDE_DEBUG] Calculated full_validation_estimates object: {json.dumps(full_validation_estimates, indent=2)}")
+                    preview_rows_processed = len(validation_results)
                 else:
+                    # For validation mode, we're processing the actual rows
+                    total_rows_in_table = len(validation_results)
+                    preview_rows_processed = len(validation_results)
+                
+                # Initialize batch processing times before use
+                batch_processing_times_calculated = {}  # batch_number -> max_processing_time_in_that_batch
+                
+                # Get target batch size from batch manager
+                if batch_manager:
+                    # For enhanced batch manager, get a representative batch size
+                    if hasattr(batch_manager, 'model_batch_sizes') and batch_manager.model_batch_sizes:
+                        # Use average of current model batch sizes
+                        target_batch_size = int(sum(batch_manager.model_batch_sizes.values()) / len(batch_manager.model_batch_sizes))
+                        logger.info(f"[BATCH_SIZE_DEBUG] Using average batch size from registered models: {target_batch_size}")
+                    else:
+                        # No models registered yet, use default approach
+                        target_batch_size = batch_manager.get_batch_size_for_models(set())
+                        logger.info(f"[BATCH_SIZE_DEBUG] Using default batch size from enhanced manager: {target_batch_size}")
+                else:
+                    target_batch_size = 50
+                    logger.info(f"[BATCH_SIZE_DEBUG] No batch manager available, using fallback: {target_batch_size}")
+                
+                logger.info(f"[BATCH_SIZE_DEBUG] target_batch_size: {target_batch_size}, mode: {'preview' if is_preview else 'validation'}")
+                
+                full_validation_estimates = calculate_full_validation_estimates_with_batch_timing(
+                    aggregated_metrics=aggregated_metrics,
+                    all_enhanced_call_data=all_enhanced_call_data,
+                    total_rows_in_table=total_rows_in_table,
+                    preview_rows_processed=preview_rows_processed,
+                    batch_processing_times=batch_processing_times_calculated,
+                    target_full_validation_batch_size=target_batch_size
+                )
+                if 'error' in full_validation_estimates:
+                    logger.error(f"[VALIDATOR_SIDE_ERROR] Estimates calculation failed: {full_validation_estimates['error']}")
                     full_validation_estimates = None
+                else:
+                    mode_desc = "full validation estimates" if is_preview else "actual validation metrics"
+                    logger.info(f"Generated {mode_desc}: {full_validation_estimates.get('total_estimates', 'N/A')}")
+                    logger.info(f"[VALIDATOR_SIDE_DEBUG] Calculated estimates object: {json.dumps(full_validation_estimates, indent=2)}")
                     
             except Exception as e:
                 logger.error(f"Failed to use enhanced aggregation methods: {e}")
