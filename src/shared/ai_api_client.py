@@ -748,20 +748,34 @@ class AIAPIClient:
             api_provider = token_usage.get('api_provider', 'unknown')
             
             # Calculate costs with and without caching
-            cost_data = self.calculate_token_costs(token_usage)
-            cost_without_cache = self._calculate_cost_without_caching_benefits(token_usage, cost_data)
+            if pre_extracted_token_usage:
+                # For cached responses: actual cost is 0, estimated is what it would have cost
+                cost_estimated = self.calculate_token_costs(token_usage)  # Original cost
+                cost_data = {  # Actual cost is 0 for cache hits
+                    'input_cost': 0.0,
+                    'output_cost': 0.0,
+                    'total_cost': 0.0,
+                    'pricing_source': 'cached_response'
+                }
+                logger.debug(f"[CACHE_COST_DEBUG] Cached response detected - Actual: ${cost_data.get('total_cost', 0.0):.6f}, Estimated: ${cost_estimated.get('total_cost', 0.0):.6f}")
+            else:
+                # For fresh API calls: calculate normally
+                cost_data = self.calculate_token_costs(token_usage)
+                cost_estimated = self._calculate_cost_without_caching_benefits(token_usage, cost_data)
+                logger.debug(f"[CACHE_COST_DEBUG] Fresh API call - Actual: ${cost_data.get('total_cost', 0.0):.6f}, Estimated: ${cost_estimated.get('total_cost', 0.0):.6f}")
             
             # Extract caching metrics
             caching_metrics = self._extract_caching_metrics(token_usage, response)
             
             # Calculate timing metrics (actual vs estimated without cache)
+            # Pass internal cache detection flag to ensure proper timing calculation
             timing_metrics = self._calculate_comprehensive_timing_metrics(
-                token_usage, processing_time, caching_metrics
+                token_usage, processing_time, caching_metrics, is_internal_cache=(pre_extracted_token_usage is not None)
             )
             
             # Calculate per-row metrics
             per_row_metrics = self._calculate_per_row_metrics(
-                cost_data, cost_without_cache, timing_metrics, batch_info
+                cost_data, cost_estimated, timing_metrics, batch_info
             )
             
             # Build comprehensive metrics structure
@@ -793,16 +807,16 @@ class AIAPIClient:
                         'pricing_source': cost_data.get('pricing_source', 'unknown')
                     },
                     # Estimated costs without caching benefits
-                    'without_cache': {
-                        'input_cost': cost_without_cache.get('input_cost', 0.0),
-                        'output_cost': cost_without_cache.get('output_cost', 0.0),
-                        'total_cost': cost_without_cache.get('total_cost', 0.0)
+                    'estimated': {
+                        'input_cost': cost_estimated.get('input_cost', 0.0),
+                        'output_cost': cost_estimated.get('output_cost', 0.0),
+                        'total_cost': cost_estimated.get('total_cost', 0.0)
                     },
                     # Cost efficiency from caching
                     'cache_savings': {
-                        'absolute_savings': cost_without_cache.get('total_cost', 0.0) - cost_data.get('total_cost', 0.0),
+                        'absolute_savings': cost_estimated.get('total_cost', 0.0) - cost_data.get('total_cost', 0.0),
                         'percentage_savings': self._calculate_percentage_savings(cost_data.get('total_cost', 0.0), 
-                                                                               cost_without_cache.get('total_cost', 0.0))
+                                                                               cost_estimated.get('total_cost', 0.0))
                     }
                 },
                 
@@ -820,10 +834,10 @@ class AIAPIClient:
                     api_provider: {
                         'calls': 1,
                         'tokens': token_usage.get('total_tokens', 0),
-                        'cost_actual': cost_data.get('total_cost', 0.0),
-                        'cost_without_cache': cost_without_cache.get('total_cost', 0.0),
-                        'estimated_time': timing_metrics.get('estimated_time_without_cache', processing_time),  # Use estimated time without cache for scaling
-                        'actual_time': timing_metrics.get('actual_time', processing_time),  # Keep actual time for reference
+                        'cost_actual': cost_data.get('total_cost', 0.0),  # What was actually paid (with caching benefits)
+                        'cost_estimated': cost_estimated.get('total_cost', 0.0),  # What it would cost without caching benefits
+                        'time_estimated_seconds': timing_metrics.get('time_estimated_seconds', processing_time),  # Estimated time without cache for scaling
+                        'time_actual_seconds': timing_metrics.get('time_actual_seconds', processing_time),  # Actual time with cache benefits
                         'cache_hit_tokens': token_usage.get('cache_read_tokens', 0)
                     }
                 }
@@ -831,7 +845,7 @@ class AIAPIClient:
             
             logger.debug(f"[ENHANCED_METRICS] {api_provider} call - Model: {model}, "
                         f"Cost: ${cost_data.get('total_cost', 0):.6f} (actual) / "
-                        f"${cost_without_cache.get('total_cost', 0):.6f} (no cache), "
+                        f"${cost_estimated.get('total_cost', 0):.6f} (no cache), "
                         f"Tokens: {token_usage.get('total_tokens', 0)}, "
                         f"Time: {processing_time:.3f}s, "
                         f"Cache savings: {enhanced_metrics['costs']['cache_savings']['percentage_savings']:.1f}%")
@@ -869,8 +883,8 @@ class AIAPIClient:
                 temp_token_usage['input_tokens'] = token_usage.get('input_tokens', 0) + cache_read_tokens
                 
                 # Calculate cost without cache benefits
-                cost_without_cache = self.calculate_token_costs(temp_token_usage, pricing_data)
-                return cost_without_cache
+                cost_estimated = self.calculate_token_costs(temp_token_usage, pricing_data)
+                return cost_estimated
                 
             except Exception as e:
                 logger.warning(f"_calculate_cost_without_caching_benefits: Error calculating cache cost: {e}")
@@ -916,52 +930,56 @@ class AIAPIClient:
                 'has_cache_benefit': False, 'cache_efficiency_score': 0.0
             }
     
-    def _calculate_comprehensive_timing_metrics(self, token_usage: Dict, actual_time: float, caching_metrics: Dict) -> Dict[str, Any]:
+    def _calculate_comprehensive_timing_metrics(self, token_usage: Dict, time_actual_seconds: float, caching_metrics: Dict, is_internal_cache: bool = False) -> Dict[str, Any]:
         """
         Calculate comprehensive timing metrics including estimated time without cache benefits.
         """
         try:
             # Base efficiency: tokens per second
             total_tokens = token_usage.get('total_tokens', 0)
-            tokens_per_second = total_tokens / max(0.1, actual_time)
+            tokens_per_second = total_tokens / max(0.1, time_actual_seconds)
             
             # Estimate time without caching benefits
-            # Cache hits are much faster, so estimate what they would take as fresh calls
+            # Handle both Anthropic cache (cache_read_tokens) and our internal cache (is_internal_cache)
             cache_read_tokens = caching_metrics.get('cache_read_tokens', 0)
             
-            if cache_read_tokens > 0:
-                # Estimate cache processing time vs fresh call time
-                # Cache hits typically 5-10x faster than fresh calls
+            if is_internal_cache:
+                # For our internal cache: time_actual_seconds is the original processing time from cache
+                # We need to set actual time to near-zero and estimated time to the original time
+                time_estimated_seconds = time_actual_seconds  # Original processing time (~90s)
+                time_actual_seconds = 0.001  # Cache retrieval time (overwrite the passed value)
+                logger.debug(f"[TIMING_INTERNAL_CACHE] Internal cache detected - Actual: {time_actual_seconds:.3f}s, Estimated: {time_estimated_seconds:.3f}s")
+            elif cache_read_tokens > 0:
+                # Anthropic cache: estimate cache processing time vs fresh call time
                 cache_speedup_factor = 8.0  # Conservative estimate
-                
-                # Estimate what cache hits would have taken as fresh calls
                 estimated_cache_time = (cache_read_tokens / tokens_per_second) * cache_speedup_factor
-                estimated_time_without_cache = actual_time + estimated_cache_time
+                time_estimated_seconds = time_actual_seconds + estimated_cache_time
             else:
-                estimated_time_without_cache = actual_time
+                # Fresh API call: actual time = estimated time
+                time_estimated_seconds = time_actual_seconds
             
             # Time efficiency metrics
-            time_savings_seconds = estimated_time_without_cache - actual_time
-            time_savings_percent = (time_savings_seconds / max(0.1, estimated_time_without_cache)) * 100
+            time_savings_seconds = time_estimated_seconds - time_actual_seconds
+            time_savings_percent = (time_savings_seconds / max(0.1, time_estimated_seconds)) * 100
             
             return {
-                'actual_time': actual_time,
-                'estimated_time_without_cache': estimated_time_without_cache,
+                'time_actual_seconds': time_actual_seconds,
+                'time_estimated_seconds': time_estimated_seconds,
                 'time_savings_seconds': time_savings_seconds,
                 'time_savings_percent': time_savings_percent,
                 'tokens_per_second_actual': tokens_per_second,
-                'tokens_per_second_without_cache': total_tokens / max(0.1, estimated_time_without_cache)
+                'tokens_per_second_estimated': total_tokens / max(0.1, time_estimated_seconds)
             }
             
         except Exception as e:
             logger.error(f"_calculate_comprehensive_timing_metrics: Error: {e}")
             return {
-                'actual_time': actual_time, 'estimated_time_without_cache': actual_time,
+                'time_actual_seconds': time_actual_seconds, 'time_estimated_seconds': time_actual_seconds,
                 'time_savings_seconds': 0.0, 'time_savings_percent': 0.0,
-                'tokens_per_second_actual': 0.0, 'tokens_per_second_without_cache': 0.0
+                'tokens_per_second_actual': 0.0, 'tokens_per_second_estimated': 0.0
             }
     
-    def _calculate_per_row_metrics(self, cost_actual: Dict, cost_without_cache: Dict, 
+    def _calculate_per_row_metrics(self, cost_actual: Dict, cost_estimated: Dict, 
                                   timing_metrics: Dict, batch_info: Dict = None) -> Dict[str, Any]:
         """Calculate per-row cost and timing metrics."""
         try:
@@ -970,33 +988,33 @@ class AIAPIClient:
                 batch_size = max(1, batch_info.get('batch_size', 1))
             
             per_row_cost_actual = cost_actual.get('total_cost', 0.0) / batch_size
-            per_row_cost_without_cache = cost_without_cache.get('total_cost', 0.0) / batch_size
-            per_row_time_actual = timing_metrics.get('actual_time', 0.0) / batch_size
-            per_row_time_without_cache = timing_metrics.get('estimated_time_without_cache', 0.0) / batch_size
+            per_row_cost_estimated = cost_estimated.get('total_cost', 0.0) / batch_size
+            per_row_time_actual = timing_metrics.get('time_actual_seconds', 0.0) / batch_size
+            per_row_time_estimated = timing_metrics.get('time_estimated_seconds', 0.0) / batch_size
             
             return {
                 'batch_size': batch_size,
                 'cost_per_row_actual': per_row_cost_actual,
-                'cost_per_row_without_cache': per_row_cost_without_cache,
+                'cost_per_row_estimated': per_row_cost_estimated,
                 'time_per_row_actual': per_row_time_actual,
-                'time_per_row_without_cache': per_row_time_without_cache,
-                'cost_savings_per_row': per_row_cost_without_cache - per_row_cost_actual,
-                'time_savings_per_row': per_row_time_without_cache - per_row_time_actual
+                'time_per_row_estimated': per_row_time_estimated,
+                'cost_savings_per_row': per_row_cost_estimated - per_row_cost_actual,
+                'time_savings_per_row': per_row_time_estimated - per_row_time_actual
             }
             
         except Exception as e:
             logger.error(f"_calculate_per_row_metrics: Error: {e}")
             return {
-                'batch_size': 1, 'cost_per_row_actual': 0.0, 'cost_per_row_without_cache': 0.0,
-                'time_per_row_actual': 0.0, 'time_per_row_without_cache': 0.0,
+                'batch_size': 1, 'cost_per_row_actual': 0.0, 'cost_per_row_estimated': 0.0,
+                'time_per_row_actual': 0.0, 'time_per_row_estimated': 0.0,
                 'cost_savings_per_row': 0.0, 'time_savings_per_row': 0.0
             }
     
-    def _calculate_percentage_savings(self, actual_cost: float, cost_without_cache: float) -> float:
+    def _calculate_percentage_savings(self, actual_cost: float, cost_estimated: float) -> float:
         """Calculate percentage savings from caching."""
-        if cost_without_cache <= 0:
+        if cost_estimated <= 0:
             return 0.0
-        return ((cost_without_cache - actual_cost) / cost_without_cache) * 100
+        return ((cost_estimated - actual_cost) / cost_estimated) * 100
     
     def _get_empty_enhanced_metrics(self, model: str, api_provider: str) -> Dict[str, Any]:
         """Return empty enhanced metrics structure for error cases."""
@@ -1005,13 +1023,13 @@ class AIAPIClient:
             'tokens': {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0, 'cache_creation_tokens': 0, 'cache_read_tokens': 0},
             'costs': {
                 'actual': {'input_cost': 0.0, 'output_cost': 0.0, 'total_cost': 0.0, 'pricing_source': 'error'},
-                'without_cache': {'input_cost': 0.0, 'output_cost': 0.0, 'total_cost': 0.0},
+                'estimated': {'input_cost': 0.0, 'output_cost': 0.0, 'total_cost': 0.0},
                 'cache_savings': {'absolute_savings': 0.0, 'percentage_savings': 0.0}
             },
-            'timing': {'actual_time': 0.0, 'estimated_time_without_cache': 0.0, 'time_savings_seconds': 0.0, 'time_savings_percent': 0.0, 'tokens_per_second_actual': 0.0, 'tokens_per_second_without_cache': 0.0},
+            'timing': {'time_actual_seconds': 0.0, 'time_estimated_seconds': 0.0, 'time_savings_seconds': 0.0, 'time_savings_percent': 0.0, 'tokens_per_second_actual': 0.0, 'tokens_per_second_estimated': 0.0},
             'caching': {'cache_read_tokens': 0, 'cache_creation_tokens': 0, 'cache_hit_rate_percent': 0.0, 'cache_coverage_percent': 0.0, 'has_cache_benefit': False, 'cache_efficiency_score': 0.0},
-            'per_row': {'batch_size': 1, 'cost_per_row_actual': 0.0, 'cost_per_row_without_cache': 0.0, 'time_per_row_actual': 0.0, 'time_per_row_without_cache': 0.0, 'cost_savings_per_row': 0.0, 'time_savings_per_row': 0.0},
-            'provider_metrics': {api_provider: {'calls': 0, 'tokens': 0, 'cost_actual': 0.0, 'cost_without_cache': 0.0, 'processing_time': 0.0, 'cache_hit_tokens': 0}},
+            'per_row': {'batch_size': 1, 'cost_per_row_actual': 0.0, 'cost_per_row_estimated': 0.0, 'time_per_row_actual': 0.0, 'time_per_row_estimated': 0.0, 'cost_savings_per_row': 0.0, 'time_savings_per_row': 0.0},
+            'provider_metrics': {api_provider: {'calls': 0, 'tokens': 0, 'cost_actual': 0.0, 'cost_estimated': 0.0, 'processing_time': 0.0, 'cache_hit_tokens': 0}},
             'error': True
         }
     
@@ -1040,7 +1058,7 @@ class AIAPIClient:
                 'total_calls': 0,
                 'total_tokens': 0,
                 'total_cost_actual': 0.0,
-                'total_cost_without_cache': 0.0,
+                'total_cost_estimated': 0.0,
                 'total_estimated_processing_time': 0.0,  # Renamed from total_processing_time
                 'total_actual_processing_time': 0.0,     # New field for actual times
                 'total_cache_savings_cost': 0.0,
@@ -1059,15 +1077,15 @@ class AIAPIClient:
                 for provider, metrics in provider_metrics_dict.items():
                     calls_count = metrics.get('calls', 0)
                     cost_actual = metrics.get('cost_actual', 0.0)
-                    cost_without_cache = metrics.get('cost_without_cache', 0.0)
+                    cost_estimated = metrics.get('cost_estimated', 0.0)
                     logger.debug(f"[AGGREGATE_DEBUG] Call {i}, Provider {provider}: "
-                               f"calls={calls_count}, cost_actual=${cost_actual:.6f}, cost_without_cache=${cost_without_cache:.6f}")
+                               f"calls={calls_count}, cost_actual=${cost_actual:.6f}, cost_estimated=${cost_estimated:.6f}")
                     if provider not in providers:
                         providers[provider] = {
                             'calls': 0,
                             'tokens': 0,
                             'cost_actual': 0.0,
-                            'cost_without_cache': 0.0,
+                            'cost_estimated': 0.0,
                             'estimated_processing_time': 0.0,  # Renamed from processing_time
                             'actual_processing_time': 0.0,     # New field for actual times
                             'cache_hit_tokens': 0,
@@ -1077,9 +1095,9 @@ class AIAPIClient:
                             'average_tokens_per_call': 0.0,
                             'average_time_per_call': 0.0,
                             'cost_per_row_actual': 0.0,
-                            'cost_per_row_without_cache': 0.0,
+                            'cost_per_row_estimated': 0.0,
                             'time_per_row_actual': 0.0,
-                            'time_per_row_without_cache': 0.0,
+                            'time_per_row_estimated': 0.0,
                             'cache_efficiency_percent': 0.0
                         }
                     
@@ -1087,9 +1105,9 @@ class AIAPIClient:
                     providers[provider]['calls'] += metrics.get('calls', 0)
                     providers[provider]['tokens'] += metrics.get('tokens', 0)
                     providers[provider]['cost_actual'] += metrics.get('cost_actual', 0.0)
-                    providers[provider]['cost_without_cache'] += metrics.get('cost_without_cache', 0.0)
-                    providers[provider]['estimated_processing_time'] += metrics.get('estimated_time', 0.0)
-                    providers[provider]['actual_processing_time'] += metrics.get('actual_time', 0.0)
+                    providers[provider]['cost_estimated'] += metrics.get('cost_estimated', 0.0)
+                    providers[provider]['estimated_processing_time'] += metrics.get('time_estimated_seconds', 0.0)
+                    providers[provider]['actual_processing_time'] += metrics.get('time_actual_seconds', 0.0)
                     providers[provider]['cache_hit_tokens'] += metrics.get('cache_hit_tokens', 0)
                     
                     # Calculate savings from the call
@@ -1107,36 +1125,36 @@ class AIAPIClient:
                     metrics['average_time_per_call'] = metrics['actual_processing_time'] / metrics['calls']
                 
                 # Cache efficiency
-                if metrics['cost_without_cache'] > 0:
-                    metrics['cache_efficiency_percent'] = (metrics['cache_savings_cost'] / metrics['cost_without_cache']) * 100
+                if metrics['cost_estimated'] > 0:
+                    metrics['cache_efficiency_percent'] = (metrics['cache_savings_cost'] / metrics['cost_estimated']) * 100
                 
                 # Update totals
                 totals['total_calls'] += metrics['calls']
                 totals['total_tokens'] += metrics['tokens']
                 totals['total_cost_actual'] += metrics['cost_actual']
-                totals['total_cost_without_cache'] += metrics['cost_without_cache']
+                totals['total_cost_estimated'] += metrics['cost_estimated']
                 totals['total_estimated_processing_time'] += metrics['estimated_processing_time']
                 totals['total_actual_processing_time'] += metrics['actual_processing_time']
                 totals['total_cache_savings_cost'] += metrics['cache_savings_cost']
                 totals['total_cache_savings_time'] += metrics['cache_savings_time']
             
             # Calculate overall efficiency
-            if totals['total_cost_without_cache'] > 0:
-                totals['overall_cache_efficiency'] = (totals['total_cache_savings_cost'] / totals['total_cost_without_cache']) * 100
+            if totals['total_cost_estimated'] > 0:
+                totals['overall_cache_efficiency'] = (totals['total_cache_savings_cost'] / totals['total_cost_estimated']) * 100
             
             # Debug: Final aggregation summary
             logger.info(f"[AGGREGATE_DEBUG] Final aggregation results: "
                       f"Providers: {list(providers.keys())}, "
                       f"Total calls: {totals.get('total_calls', 0)}, "
                       f"Total actual cost: ${totals.get('total_cost_actual', 0.0):.6f}, "
-                      f"Total estimated cost: ${totals.get('total_cost_without_cache', 0.0):.6f}")
+                      f"Total estimated cost: ${totals.get('total_cost_estimated', 0.0):.6f}")
             
             for provider, provider_data in providers.items():
                 logger.info(f"[AGGREGATE_DEBUG] Provider {provider}: "
                           f"calls={provider_data.get('calls', 0)}, "
                           f"tokens={provider_data.get('tokens', 0)}, "
                           f"cost_actual=${provider_data.get('cost_actual', 0.0):.6f}, "
-                          f"cost_without_cache=${provider_data.get('cost_without_cache', 0.0):.6f}")
+                          f"cost_estimated=${provider_data.get('cost_estimated', 0.0):.6f}")
             
             return {
                 'providers': providers,
@@ -1155,79 +1173,9 @@ class AIAPIClient:
             return {'providers': {}, 'totals': {}, 'error': str(e)}
     
     @staticmethod
-    def calculate_full_validation_estimates(aggregated_metrics: Dict, total_rows_in_table: int, 
-                                          preview_rows_processed: int) -> Dict[str, Any]:
-        """
-        Calculate full validation estimates based on aggregated preview metrics.
-        
-        Args:
-            aggregated_metrics: Output from aggregate_provider_metrics()
-            total_rows_in_table: Total number of rows in the full table
-            preview_rows_processed: Number of rows processed in the preview
-            
-        Returns:
-            Comprehensive full validation estimates by provider and in total
-        """
-        try:
-            if preview_rows_processed <= 0 or total_rows_in_table <= 0:
-                logger.warning("calculate_full_validation_estimates: Invalid row counts")
-                return {'error': 'invalid_row_counts'}
-            
-            scaling_factor = total_rows_in_table / preview_rows_processed
-            
-            estimates = {
-                'scaling_info': {
-                    'total_rows_in_table': total_rows_in_table,
-                    'preview_rows_processed': preview_rows_processed,
-                    'scaling_factor': scaling_factor
-                },
-                'provider_estimates': {},
-                'total_estimates': {}
-            }
-            
-            # Calculate estimates by provider
-            for provider, metrics in aggregated_metrics.get('providers', {}).items():
-                estimates['provider_estimates'][provider] = {
-                    'estimated_calls': int(metrics['calls'] * scaling_factor),
-                    'estimated_tokens': int(metrics['tokens'] * scaling_factor),
-                    'estimated_cost_actual': metrics['cost_actual'] * scaling_factor,
-                    'estimated_cost_without_cache': metrics['cost_without_cache'] * scaling_factor,
-                    'estimated_processing_time': metrics['processing_time'] * scaling_factor,
-                    'estimated_cache_savings_cost': metrics['cache_savings_cost'] * scaling_factor,
-                    'estimated_cache_savings_time': metrics['cache_savings_time'] * scaling_factor
-                }
-            
-            # Calculate total estimates
-            totals = aggregated_metrics.get('totals', {})
-            estimates['total_estimates'] = {
-                'estimated_total_calls': int(totals.get('total_calls', 0) * scaling_factor),
-                'estimated_total_tokens': int(totals.get('total_tokens', 0) * scaling_factor),
-                'estimated_total_cost_actual': totals.get('total_cost_actual', 0.0) * scaling_factor,
-                'estimated_total_cost_without_cache': totals.get('total_cost_without_cache', 0.0) * scaling_factor,
-                'estimated_total_processing_time': totals.get('total_estimated_processing_time', 0.0) * scaling_factor,  # Updated field name
-                'estimated_actual_processing_time': totals.get('total_actual_processing_time', 0.0) * scaling_factor,    # New field
-                'estimated_total_cache_savings_cost': totals.get('total_cache_savings_cost', 0.0) * scaling_factor,
-                'estimated_total_cache_savings_time': totals.get('total_cache_savings_time', 0.0) * scaling_factor,
-                'estimated_cache_efficiency_percent': totals.get('overall_cache_efficiency', 0.0)
-            }
-            
-            # Calculate batch estimates for different batch sizes
-            estimates['batch_estimates'] = {}
-            for batch_size in [10, 20, 50, 100]:
-                estimated_batches = max(1, total_rows_in_table // batch_size)
-                time_per_batch = estimates['total_estimates']['estimated_total_processing_time'] / estimated_batches
-                
-                estimates['batch_estimates'][f'batch_size_{batch_size}'] = {
-                    'estimated_batches': estimated_batches,
-                    'estimated_time_per_batch': time_per_batch,
-                    'estimated_total_time': time_per_batch * estimated_batches
-                }
-            
-            return estimates
-            
-        except Exception as e:
-            logger.error(f"calculate_full_validation_estimates: Error: {e}")
-            return {'error': str(e)}
+    # NOTE: calculate_full_validation_estimates() function moved to validation lambda
+    # The validation lambda now handles batch timing calculations since it knows the batch architecture
+    # Use calculate_full_validation_estimates_with_batch_timing() in validation/lambda_function.py
 
     def get_unified_cost_and_time_data(self, response: Dict, model: str, processing_time: float, search_context_size: str = None) -> Dict[str, Any]:
         """
@@ -1597,13 +1545,15 @@ class AIAPIClient:
                                 # Override timing metrics for cached response
                                 if 'timing' in enhanced_data:
                                     enhanced_data['timing'].update({
-                                        'actual_time': 0.001,  # Near zero for cache hit
-                                        'estimated_time_without_cache': original_processing_time,  # Original processing time
+                                        'time_actual_seconds': 0.001,  # Near zero for cache hit
+                                        'time_estimated_seconds': original_processing_time,  # Original processing time
                                         'time_savings_seconds': original_processing_time - 0.001,
                                         'time_savings_percent': ((original_processing_time - 0.001) / max(0.001, original_processing_time)) * 100
                                     })
                                 
-                                logger.info(f"Generated enhanced metrics for cached response: cost=${enhanced_data.get('costs', {}).get('without_cache', {}).get('total_cost', 0.0):.6f}, original_time={original_processing_time:.3f}s")
+                                actual_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                                estimated_cost = enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0)
+                                logger.info(f"Generated enhanced metrics for cached response: actual=${actual_cost:.6f}, estimated=${estimated_cost:.6f}, original_time={original_processing_time:.3f}s")
                         except Exception as e:
                             logger.warning(f"Failed to generate enhanced metrics for cached response: {e}")
                             enhanced_data = {}
@@ -1756,13 +1706,20 @@ class AIAPIClient:
                         # Override timing metrics for cached response
                         if 'timing' in enhanced_data:
                             enhanced_data['timing'].update({
-                                'actual_time': 0.001,  # Near zero for cache hit
-                                'estimated_time_without_cache': original_processing_time,  # Original processing time
+                                'time_actual_seconds': 0.001,  # Near zero for cache hit
+                                'time_estimated_seconds': original_processing_time,  # Original processing time
                                 'time_savings_seconds': original_processing_time - 0.001,
                                 'time_savings_percent': ((original_processing_time - 0.001) / max(0.001, original_processing_time)) * 100
                             })
+                            # ALSO UPDATE THE PROVIDER METRICS TO MATCH
+                            if 'provider_metrics' in enhanced_data and enhanced_data['provider_metrics']:
+                                provider_name = list(enhanced_data['provider_metrics'].keys())[0]
+                                enhanced_data['provider_metrics'][provider_name]['time_actual_seconds'] = 0.001
+                                enhanced_data['provider_metrics'][provider_name]['time_estimated_seconds'] = original_processing_time
                         
-                        logger.info(f"Generated enhanced metrics for cached anthropic response: cost=${enhanced_data.get('costs', {}).get('without_cache', {}).get('total_cost', 0.0):.6f}, original_time={original_processing_time:.3f}s")
+                        actual_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                        estimated_cost = enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0)
+                        logger.info(f"Generated enhanced metrics for cached anthropic response: actual=${actual_cost:.6f}, estimated=${estimated_cost:.6f}, original_time={original_processing_time:.3f}s")
                 except Exception as e:
                     logger.warning(f"Failed to generate enhanced metrics for cached anthropic response: {e}")
                     enhanced_data = {}
@@ -1857,13 +1814,20 @@ class AIAPIClient:
                         # Override timing metrics for cached response
                         if 'timing' in enhanced_data:
                             enhanced_data['timing'].update({
-                                'actual_time': 0.001,  # Near zero for cache hit
-                                'estimated_time_without_cache': original_processing_time,  # Original processing time
+                                'time_actual_seconds': 0.001,  # Near zero for cache hit
+                                'time_estimated_seconds': original_processing_time,  # Original processing time
                                 'time_savings_seconds': original_processing_time - 0.001,
                                 'time_savings_percent': ((original_processing_time - 0.001) / max(0.001, original_processing_time)) * 100
                             })
+                            # ALSO UPDATE THE PROVIDER METRICS TO MATCH
+                            if 'provider_metrics' in enhanced_data and enhanced_data['provider_metrics']:
+                                provider_name = list(enhanced_data['provider_metrics'].keys())[0]
+                                enhanced_data['provider_metrics'][provider_name]['time_actual_seconds'] = 0.001
+                                enhanced_data['provider_metrics'][provider_name]['time_estimated_seconds'] = original_processing_time
                         
-                        logger.info(f"Generated enhanced metrics for cached perplexity smart cache response: cost=${enhanced_data.get('costs', {}).get('without_cache', {}).get('total_cost', 0.0):.6f}, original_time={original_processing_time:.3f}s")
+                        actual_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                        estimated_cost = enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0)
+                        logger.info(f"Generated enhanced metrics for cached perplexity smart cache response: actual=${actual_cost:.6f}, estimated=${estimated_cost:.6f}, original_time={original_processing_time:.3f}s")
                 except Exception as e:
                     logger.warning(f"Failed to generate enhanced metrics for cached perplexity smart cache response: {e}")
                     enhanced_data = {}
@@ -1947,13 +1911,20 @@ class AIAPIClient:
                         # Override timing metrics for cached response
                         if 'timing' in enhanced_data:
                             enhanced_data['timing'].update({
-                                'actual_time': 0.001,  # Near zero for cache hit
-                                'estimated_time_without_cache': original_processing_time,  # Original processing time
+                                'time_actual_seconds': 0.001,  # Near zero for cache hit
+                                'time_estimated_seconds': original_processing_time,  # Original processing time
                                 'time_savings_seconds': original_processing_time - 0.001,
                                 'time_savings_percent': ((original_processing_time - 0.001) / max(0.001, original_processing_time)) * 100
                             })
+                            # ALSO UPDATE THE PROVIDER METRICS TO MATCH
+                            if 'provider_metrics' in enhanced_data and enhanced_data['provider_metrics']:
+                                provider_name = list(enhanced_data['provider_metrics'].keys())[0]
+                                enhanced_data['provider_metrics'][provider_name]['time_actual_seconds'] = 0.001
+                                enhanced_data['provider_metrics'][provider_name]['time_estimated_seconds'] = original_processing_time
                         
-                        logger.info(f"Generated enhanced metrics for cached perplexity response: cost=${enhanced_data.get('costs', {}).get('without_cache', {}).get('total_cost', 0.0):.6f}, original_time={original_processing_time:.3f}s")
+                        actual_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                        estimated_cost = enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0)
+                        logger.info(f"Generated enhanced metrics for cached perplexity response: actual=${actual_cost:.6f}, estimated=${estimated_cost:.6f}, original_time={original_processing_time:.3f}s")
                 except Exception as e:
                     logger.warning(f"Failed to generate enhanced metrics for cached perplexity response: {e}")
                     enhanced_data = {}
@@ -2037,7 +2008,7 @@ class AIAPIClient:
                                 search_context_size=search_context_size,
                                 pre_extracted_token_usage=token_usage
                             )
-                            logger.info(f"Generated enhanced metrics for non-cached perplexity response: cost=${enhanced_data.get('costs', {}).get('without_cache', {}).get('total_cost', 0.0):.6f}, time={processing_time:.3f}s")
+                            logger.info(f"Generated enhanced metrics for non-cached perplexity response: cost=${enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0):.6f}, time={processing_time:.3f}s")
                         except Exception as e:
                             logger.warning(f"Failed to generate enhanced metrics for non-cached perplexity response: {e}")
                             enhanced_data = {}

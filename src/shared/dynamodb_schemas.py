@@ -2949,7 +2949,7 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
                     sanitized_metrics = {}
                     
                     # Cost metrics by provider
-                    for cost_field in ['cost_actual', 'cost_without_cache', 'cache_savings_cost']:
+                    for cost_field in ['cost_actual', 'cost_estimated', 'cache_savings_cost']:
                         if cost_field in metrics and isinstance(metrics[cost_field], (int, float)):
                             sanitized_metrics[cost_field] = convert_floats_to_decimal(metrics[cost_field])
                     
@@ -2964,7 +2964,7 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
                             sanitized_metrics[time_field] = convert_floats_to_decimal(metrics[time_field])
                     
                     # Per-row metrics by provider
-                    for per_row_field in ['cost_per_row_actual', 'cost_per_row_without_cache', 'time_per_row_actual', 'time_per_row_without_cache']:
+                    for per_row_field in ['cost_per_row_actual', 'cost_per_row_estimated', 'time_per_row_actual', 'time_per_row_estimated']:
                         if per_row_field in metrics and isinstance(metrics[per_row_field], (int, float)):
                             sanitized_metrics[per_row_field] = convert_floats_to_decimal(metrics[per_row_field])
                     
@@ -2982,25 +2982,25 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
                 
                 # Also store aggregated totals for easy querying
                 total_cost_actual = sum(metrics.get('cost_actual', 0) for metrics in sanitized_provider_metrics.values())
-                total_cost_without_cache = sum(metrics.get('cost_without_cache', 0) for metrics in sanitized_provider_metrics.values())
+                total_cost_estimated = sum(metrics.get('cost_estimated', 0) for metrics in sanitized_provider_metrics.values())
                 total_calls = sum(metrics.get('calls', 0) for metrics in sanitized_provider_metrics.values())
                 total_tokens = sum(metrics.get('tokens', 0) for metrics in sanitized_provider_metrics.values())
                 
-                update_expression += ", total_provider_cost_actual = :tpca, total_provider_cost_without_cache = :tpcwc"
+                update_expression += ", total_provider_cost_actual = :tpca, total_provider_cost_estimated = :tpce"
                 update_expression += ", total_provider_calls = :tpc, total_provider_tokens = :tpt"
                 expression_attribute_values[':tpca'] = total_cost_actual
-                expression_attribute_values[':tpcwc'] = total_cost_without_cache 
+                expression_attribute_values[':tpce'] = total_cost_estimated 
                 expression_attribute_values[':tpc'] = total_calls
                 expression_attribute_values[':tpt'] = total_tokens
                 
                 # Calculate overall cache efficiency
-                if total_cost_without_cache > 0:
-                    cache_efficiency = ((total_cost_without_cache - total_cost_actual) / total_cost_without_cache) * 100
+                if total_cost_estimated > 0:
+                    cache_efficiency = ((total_cost_estimated - total_cost_actual) / total_cost_estimated) * 100
                     update_expression += ", overall_cache_efficiency_percent = :oce"
                     expression_attribute_values[':oce'] = convert_floats_to_decimal(cache_efficiency)
                 
                 logger.info(f"[PROVIDER_METRICS] Session {session_id}: {len(sanitized_provider_metrics)} providers, "
-                           f"Total cost: ${float(total_cost_actual):.6f} (actual) / ${float(total_cost_without_cache):.6f} (no cache), "
+                           f"Total cost: ${float(total_cost_actual):.6f} (actual) / ${float(total_cost_estimated):.6f} (estimated), "
                            f"Total calls: {total_calls}, Total tokens: {total_tokens}")
         
         except Exception as e:

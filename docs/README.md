@@ -28,11 +28,9 @@ API Gateway → Interface Lambda → Validation Lambda
 
 ## Quick Start
 
-See [QUICK_START.md](docs/QUICK_START.md) for detailed setup and usage instructions.
+See [QUICK_START.md](QUICK_START.md) for detailed setup and usage instructions.
 
-## Codebase Cleanup
 
-For a proposal on how to clean up and restructure the codebase, please refer to the [Codebase Cleanup Proposal](cleanup_proposal.md) document.
 
 ## Project Structure
 

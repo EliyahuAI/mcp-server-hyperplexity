@@ -144,7 +144,7 @@ RUNS_TABLE_COLUMNS = [
     
     # ENHANCED PROVIDER-SPECIFIC METRICS
     'total_provider_cost_actual',
-    'total_provider_cost_without_cache',
+    'total_provider_cost_estimated',
     'total_provider_calls',
     'total_provider_tokens',
     'overall_cache_efficiency_percent',
@@ -864,7 +864,7 @@ def display_enhanced_run_info(run_item):
             for provider, metrics in provider_metrics.items():
                 if isinstance(metrics, dict):
                     cost_actual = float(metrics.get('cost_actual', 0))
-                    cost_no_cache = float(metrics.get('cost_without_cache', 0))
+                    cost_no_cache = float(metrics.get('cost_estimated', 0))
                     calls = int(metrics.get('calls', 0))
                     tokens = int(metrics.get('tokens', 0))
                     cache_eff = float(metrics.get('cache_efficiency_percent', 0))
@@ -882,14 +882,14 @@ def display_enhanced_run_info(run_item):
         else:
             # Fallback to aggregate totals if provider_metrics not available
             total_cost_actual = run_item.get('total_provider_cost_actual')
-            total_cost_without_cache = run_item.get('total_provider_cost_without_cache')
+            total_cost_estimated = run_item.get('total_provider_cost_estimated')
             total_calls = run_item.get('total_provider_calls')
             total_tokens = run_item.get('total_provider_tokens')
             overall_cache_eff = run_item.get('overall_cache_efficiency_percent')
             
             if total_cost_actual is not None:
                 print(f"\n[PROVIDER TOTALS]")
-                print(f"  Total Cost: ${float(total_cost_actual):.6f} (actual) / ${float(total_cost_without_cache or 0):.6f} (no cache)")
+                print(f"  Total Cost: ${float(total_cost_actual):.6f} (actual) / ${float(total_cost_estimated or 0):.6f} (estimated)")
                 print(f"  Total Usage: {int(total_calls or 0)} calls | {int(total_tokens or 0):,} tokens")
                 print(f"  Overall Cache Efficiency: {float(overall_cache_eff or 0):.1f}%")
         

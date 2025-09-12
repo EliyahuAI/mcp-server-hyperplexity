@@ -68,10 +68,21 @@ A single bucket organized as follows:
 - `cache/{service}/{hash}/`: Caches AI API responses to reduce cost and latency. (30-day retention)
 
 ### 4. DynamoDB Tables
-- **`perplexity-validator-call-tracking`**: Tracks all validation sessions.
-- **`perplexity-validator-token-usage`**: Detailed API usage tracking.
-- **`perplexity-validator-user-validation`**: Stores temporary email validation codes.
-- **`perplexity-validator-user-tracking`**: Comprehensive user activity tracking.
+The system uses several DynamoDB tables to manage validation sessions, user data, and more. For a detailed schema of each table, see `docs/DYNAMODB_TABLES.md`.
+
+**Core Tables:**
+- **`perplexity-validator-runs`**: Modern session tracking with real-time progress updates.
+- **`perplexity-validator-user-tracking`**: Aggregates user analytics and lifetime usage statistics.
+- **`perplexity-validator-user-validation`**: Manages the email verification workflow.
+- **`perplexity-validator-account-transactions`**: Provides a financial audit trail for credit purchases and deductions.
+- **`perplexity-validator-domain-multipliers`**: Stores domain-specific cost multipliers for pricing.
+- **`perplexity-validator-ws-connections`**: Manages WebSocket connections for real-time progress updates.
+- **`perplexity-validator-batch-audit`**: Audit log for dynamic batch size changes.
+- **`perplexity-validator-model-config`**: Centralized model configuration management.
+
+**Legacy Tables:**
+- **`perplexity-validator-call-tracking`**: Legacy session tracking (cleared and unused).
+- **`perplexity-validator-token-usage`**: Legacy token usage tracking (empty and unused).
 
 ## Setup Guide
 

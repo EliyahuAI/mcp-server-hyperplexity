@@ -979,6 +979,177 @@ def calculate_token_costs_REMOVED(token_usage: Dict[str, Any], pricing_data: Dic
         'pricing_model': pricing.get('model_name', model)
     }
 
+def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Dict, all_enhanced_call_data: List[Dict], 
+                                                         total_rows_in_table: int, preview_rows_processed: int, 
+                                                         batch_processing_times: Dict, 
+                                                         target_full_validation_batch_size: int = 50) -> Dict[str, Any]:
+    """
+    Calculate full validation estimates based on aggregated preview metrics and actual batch timing.
+    This function belongs in validation lambda because only it knows the batch architecture.
+    Uses actual batch/row/search group information from enhanced_data.
+    
+    Args:
+        aggregated_metrics: Output from aggregate_provider_metrics()
+        all_enhanced_call_data: All individual enhanced_data from AI client calls with batch_number, row_idx, search_group
+        total_rows_in_table: Total number of rows in the full table
+        preview_rows_processed: Number of rows processed in the preview
+        batch_processing_times: Actual batch timing measurements (batch_number -> actual_time)
+        target_full_validation_batch_size: Target batch size to use for full validation (default: 50)
+        
+    Returns:
+        Comprehensive full validation estimates with proper batch timing
+    """
+    try:
+        if preview_rows_processed <= 0 or total_rows_in_table <= 0:
+            logger.warning("calculate_full_validation_estimates: Invalid row counts")
+            return {'error': 'invalid_row_counts'}
+        
+        if target_full_validation_batch_size <= 0:
+            logger.warning(f"calculate_full_validation_estimates: Invalid target batch size: {target_full_validation_batch_size}, using default 50")
+            target_full_validation_batch_size = 50
+        
+        logger.info(f"[ESTIMATE_CALCULATION] Starting with {total_rows_in_table} total rows, {preview_rows_processed} preview rows, target batch size {target_full_validation_batch_size}")
+        
+        scaling_factor = total_rows_in_table / preview_rows_processed
+        
+        # Group enhanced data by batch and row to calculate proper batch timing
+        batches = {}  # batch_number -> {row_idx -> [enhanced_data_items]}
+        
+        if not all_enhanced_call_data:
+            logger.error("calculate_full_validation_estimates: No enhanced call data available")
+            return {'error': 'no_enhanced_call_data'}
+        
+        logger.info(f"[ESTIMATE_CALCULATION] Processing {len(all_enhanced_call_data)} enhanced call data items")
+        
+        for enhanced_data in all_enhanced_call_data:
+            batch_number = enhanced_data.get('batch_number')
+            row_idx = enhanced_data.get('row_idx')
+            
+            if batch_number is not None and row_idx is not None:
+                if batch_number not in batches:
+                    batches[batch_number] = {}
+                if row_idx not in batches[batch_number]:
+                    batches[batch_number][row_idx] = []
+                batches[batch_number][row_idx].append(enhanced_data)
+        
+        # Calculate estimated batch timing using estimated times (not actual times with cache)
+        estimated_batch_times = {}
+        
+        for batch_number, batch_rows in batches.items():
+            batch_estimated_times = []  # List of total estimated time per row in this batch
+            
+            for row_idx, row_calls in batch_rows.items():
+                # Sum estimated times for all calls in this row (calls per row are sequential)
+                row_estimated_time = 0.0
+                for enhanced_data in row_calls:
+                    timing = enhanced_data.get('timing', {})
+                    row_estimated_time += timing.get('time_estimated_seconds', 0.0)
+                
+                batch_estimated_times.append(row_estimated_time)
+            
+            # Batch time = max of all row times (rows in batch run in parallel)
+            estimated_batch_times[batch_number] = max(batch_estimated_times) if batch_estimated_times else 0.0
+        
+        # Total estimated time = sum of all batch times (batches run sequentially)
+        estimated_total_time_preview = sum(estimated_batch_times.values())
+        avg_estimated_batch_time = estimated_total_time_preview / len(estimated_batch_times) if estimated_batch_times else 0.0
+        
+        # Get actual batch size statistics for full validation projection
+        actual_batch_sizes = []
+        for batch_num, batch_rows in batches.items():
+            actual_batch_sizes.append(len(batch_rows))
+        avg_actual_batch_size = sum(actual_batch_sizes) / len(actual_batch_sizes) if actual_batch_sizes else 10
+        
+        # Calculate estimated batches and total time for full validation using target batch architecture
+        # Use the target batch size for full validation, not the preview's smaller batch size
+        # Use ceil because partial batches take as long as full batches (parallel processing within batch)
+        import math
+        estimated_batches_for_full_table = max(1, math.ceil(total_rows_in_table / target_full_validation_batch_size))
+        estimated_total_time_for_full_validation = estimated_batches_for_full_table * avg_estimated_batch_time
+        
+        estimates = {
+            'scaling_info': {
+                'total_rows_in_table': total_rows_in_table,
+                'preview_rows_processed': preview_rows_processed,
+                'scaling_factor': scaling_factor
+            },
+            'batch_timing_analysis': {
+                'preview_estimated_batch_times': estimated_batch_times,
+                'preview_estimated_total_time': estimated_total_time_preview,
+                'preview_avg_estimated_batch_time': avg_estimated_batch_time,
+                'actual_batches_processed': len(batches),
+                'preview_average_batch_size': avg_actual_batch_size,  # Actual batch size used in preview
+                'target_full_validation_batch_size': target_full_validation_batch_size,  # Target size for full validation
+                'estimated_batches_for_full_table': estimated_batches_for_full_table,
+                'estimated_time_per_batch': avg_estimated_batch_time,
+                'estimated_total_time_for_full_validation': estimated_total_time_for_full_validation
+            },
+            'provider_estimates': {},
+            'total_estimates': {}
+        }
+        
+        # Calculate estimates by provider from aggregated metrics
+        providers = aggregated_metrics.get('providers', {})
+        for provider, provider_data in providers.items():
+            estimates['provider_estimates'][provider] = {
+                'estimated_calls': int(provider_data.get('calls', 0) * scaling_factor),
+                'estimated_tokens': int(provider_data.get('tokens', 0) * scaling_factor),
+                'estimated_cost_actual': provider_data.get('cost_actual', 0.0) * scaling_factor,
+                'estimated_cost_estimated': provider_data.get('cost_estimated', 0.0) * scaling_factor,
+                'estimated_processing_time': provider_data.get('estimated_processing_time', 0.0) * scaling_factor
+            }
+        
+        # Calculate direct average row estimated processing time over all rows
+        # NOTE: This is different from existing fields:
+        #   - time_per_row_seconds: actual time with cache benefits
+        #   - avg_time_per_row_seconds: calculated from total/rows in DynamoDB
+        # This field: avg_estimated_row_processing_time = direct average of estimated times (no cache) across all individual rows
+        total_row_estimated_times = []
+        for enhanced_data in all_enhanced_call_data:
+            row_idx = enhanced_data.get('row_idx')
+            if row_idx is not None:
+                # Calculate total estimated time per row by summing all calls for that row
+                row_calls = [ed for ed in all_enhanced_call_data if ed.get('row_idx') == row_idx]
+                row_estimated_time = sum(
+                    ed.get('timing', {}).get('time_estimated_seconds', 0.0)
+                    for ed in row_calls
+                )
+                if row_idx not in [r[0] for r in total_row_estimated_times]:  # Avoid duplicates
+                    total_row_estimated_times.append((row_idx, row_estimated_time))
+        
+        # Calculate the direct average over all rows
+        avg_row_estimated_time = sum(time for _, time in total_row_estimated_times) / len(total_row_estimated_times) if total_row_estimated_times else 0.0
+        
+        # Calculate total estimates using proper timing
+        totals = aggregated_metrics.get('totals', {})
+        estimates['total_estimates'] = {
+            'estimated_total_calls': int(totals.get('total_calls', 0) * scaling_factor),
+            'estimated_total_tokens': int(totals.get('total_tokens', 0) * scaling_factor),
+            'estimated_total_cost_actual': totals.get('total_cost_actual', 0.0) * scaling_factor,
+            'estimated_total_cost_estimated': totals.get('total_cost_estimated', 0.0) * scaling_factor,
+            'estimated_total_processing_time': estimated_total_time_for_full_validation,  # Use proper batch-based scaling
+            'estimated_actual_processing_time': sum(batch_processing_times.values()) * scaling_factor,  # Actual timing with cache benefits
+            'estimated_total_cache_savings_cost': totals.get('total_cache_savings_cost', 0.0) * scaling_factor,
+            'estimated_cache_efficiency_percent': totals.get('overall_cache_efficiency', 0.0),
+            'avg_estimated_row_processing_time': avg_row_estimated_time  # Direct average over all rows using estimated times (no scaling needed - already per-row)
+        }
+        
+        # Debug logging
+        logger.info(f"[BATCH_TIMING] Processed {len(batches)} batches with {len(all_enhanced_call_data)} total calls")
+        logger.info(f"[BATCH_TIMING] Preview: {estimated_total_time_preview:.2f}s, Actual total time: {sum(batch_processing_times.values()):.2f}s")
+        logger.info(f"[BATCH_TIMING] Preview average batch size: {avg_actual_batch_size:.1f} rows, Average estimated batch time: {avg_estimated_batch_time:.2f}s")
+        logger.info(f"[BATCH_TIMING] Full validation: {total_rows_in_table} rows ÷ {target_full_validation_batch_size} target batch size = {estimated_batches_for_full_table} batches")
+        logger.info(f"[BATCH_TIMING] Full validation estimate: {estimated_batches_for_full_table} batches × {avg_estimated_batch_time:.2f}s = {estimated_total_time_for_full_validation:.2f}s")
+        logger.info(f"[BATCH_TIMING] Average estimated row processing time: {avg_row_estimated_time:.2f}s (direct calculation over {len(total_row_estimated_times)} rows)")
+        
+        return estimates
+        
+    except Exception as e:
+        logger.error(f"calculate_full_validation_estimates_with_batch_timing: Error: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {'error': str(e)}
+
 async def call_claude_with_shared_client(prompt: str, model: str, tool_schema: Dict, max_web_searches: int = 3) -> Dict:
     """
     Call Claude using the shared AI client.
@@ -1697,6 +1868,217 @@ def extract_config_from_text_response(text_response: str) -> Dict:
         logger.error(f"Failed to extract config from text: {str(e)}")
         return None
 
+def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[Dict], aggregated_metrics: Dict) -> Dict:
+    """
+    Construct enhanced models parameter JSON structure with detailed information per search group.
+    
+    Args:
+        validator: SimplifiedSchemaValidator instance with configuration
+        all_enhanced_call_data: List of enhanced call data from ai_api_client
+        aggregated_metrics: Aggregated metrics from ai_api_client
+    
+    Returns:
+        Dict: Enhanced models parameter with search group details
+    """
+    try:
+        enhanced_models = {}
+        
+        # Get validation targets and group by search group
+        validation_targets = getattr(validator, 'validation_targets', [])
+        if not validation_targets:
+            logger.warning("No validation targets found in validator")
+            return {}
+        
+        # Group targets by search group
+        grouped_targets = validator.group_columns_by_search_group(validation_targets)
+        
+        # Get overall aggregated metrics for cost/time calculations
+        providers_data = aggregated_metrics.get('providers', {}) if aggregated_metrics else {}
+        totals_data = aggregated_metrics.get('totals', {}) if aggregated_metrics else {}
+        
+        # Calculate total ESTIMATED costs and times (without caching benefits)
+        total_cost_estimated = totals_data.get('total_cost_estimated', 0.0)
+        total_estimated_time = totals_data.get('total_estimated_processing_time', 0.0)
+        
+        # If not found in totals, try providers for estimated values
+        if total_cost_estimated == 0.0 or total_estimated_time == 0.0:
+            for provider, provider_data in providers_data.items():
+                if total_cost_estimated == 0.0:
+                    total_cost_estimated += provider_data.get('cost_estimated', 0.0)
+                if total_estimated_time == 0.0:
+                    total_estimated_time += provider_data.get('total_estimated_processing_time', 0.0)
+        
+        # Map search groups from call data to actual search group IDs
+        # The search_group in call data is a counter (0, 1, 2...), need to map to actual IDs
+        sorted_group_ids = sorted(grouped_targets.keys())
+        
+        # Extract model usage stats per search group from enhanced call data (estimated values)
+        search_group_stats = {}
+        model_usage_stats = {}
+        
+        # Debug: Log structure of enhanced call data
+        if all_enhanced_call_data:
+            sample_call = all_enhanced_call_data[0]
+            logger.info(f"[ENHANCED_MODELS_DEBUG] Sample enhanced call data keys: {list(sample_call.keys())}")
+            logger.info(f"[ENHANCED_MODELS_DEBUG] Sample values - cost_estimated: {sample_call.get('cost_estimated')}, estimated_processing_time: {sample_call.get('estimated_processing_time')}, search_group: {sample_call.get('search_group')}")
+        
+        for call_data in all_enhanced_call_data:
+            # Extract model from call_info structure
+            call_info = call_data.get('call_info', {})
+            model_used = call_info.get('model', 'unknown')
+            
+            # Extract cost and timing from nested structures
+            costs = call_data.get('costs', {})
+            estimated_costs = costs.get('estimated', {})
+            cost_estimated = estimated_costs.get('total_cost', 0.0)
+            
+            timing = call_data.get('timing', {})
+            time_estimated = timing.get('time_estimated_seconds', 0.0)
+            
+            search_group_counter = call_data.get('search_group', 0)  # This is the counter (0, 1, 2...)
+            
+            # Map counter to actual search group ID
+            if search_group_counter < len(sorted_group_ids):
+                actual_search_group_id = sorted_group_ids[search_group_counter]
+            else:
+                actual_search_group_id = 'unknown'
+            
+            # Track per search group
+            if actual_search_group_id not in search_group_stats:
+                search_group_stats[actual_search_group_id] = {
+                    'models_used': set(),
+                    'cost_estimated': 0.0,
+                    'estimated_processing_time': 0.0,
+                    'call_count': 0
+                }
+            
+            search_group_stats[actual_search_group_id]['models_used'].add(model_used)
+            search_group_stats[actual_search_group_id]['cost_estimated'] += cost_estimated
+            search_group_stats[actual_search_group_id]['estimated_processing_time'] += time_estimated
+            search_group_stats[actual_search_group_id]['call_count'] += 1
+            
+            # Also track per model (for fallback)
+            if model_used not in model_usage_stats:
+                model_usage_stats[model_used] = {
+                    'cost_estimated': 0.0,
+                    'estimated_processing_time': 0.0,
+                    'call_count': 0
+                }
+            
+            model_usage_stats[model_used]['cost_estimated'] += cost_estimated
+            model_usage_stats[model_used]['estimated_processing_time'] += time_estimated
+            model_usage_stats[model_used]['call_count'] += 1
+        
+        # Build enhanced models structure for each search group
+        for search_group_id, targets in grouped_targets.items():
+            group_key = f"search_group_{search_group_id}"
+            
+            # Filter to only non-ignored targets
+            active_targets = [t for t in targets if t.importance not in ('ID', 'IGNORED')]
+            column_count = len(active_targets)
+            
+            if column_count == 0:
+                continue  # Skip groups with no active columns
+            
+            # Get column names for this search group
+            column_names = [target.column for target in active_targets if hasattr(target, 'column')]
+            
+            # Resolve model and settings for this search group
+            configured_model, _ = resolve_search_group_model(targets, validator)
+            search_context_level = resolve_search_group_context_size(targets, validator)
+            max_web_searches_value = resolve_search_group_max_web_searches(targets, validator)
+            
+            # Get full search group configuration information
+            search_group_config = {}
+            search_groups_config = getattr(validator, 'search_groups', [])
+            for group_config in search_groups_config:
+                if group_config.get('group_id') == search_group_id:
+                    search_group_config = group_config.copy()
+                    break
+            
+            # Determine models requested vs actually used
+            models_requested = [configured_model]
+            
+            # Get actual usage statistics for this search group
+            group_stats = search_group_stats.get(search_group_id, {
+                'models_used': set(),
+                'cost_estimated': 0.0,
+                'estimated_processing_time': 0.0,
+                'call_count': 0
+            })
+            
+            # Determine actual models used vs configured
+            models_actually_used = list(group_stats['models_used'])
+            if models_actually_used:
+                # Use most frequently used model as mode (for now, just use first)
+                mode_model_used = models_actually_used[0] if configured_model in models_actually_used else configured_model
+                other_models_used = [m for m in models_actually_used if m != mode_model_used]
+            else:
+                # No actual data, use configured model
+                mode_model_used = configured_model
+                other_models_used = []
+            
+            # Calculate per-group cost and time estimates
+            if group_stats['call_count'] > 0:
+                # Use actual search group data
+                average_estimated_cost = group_stats['cost_estimated'] / group_stats['call_count']
+                average_estimated_time = group_stats['estimated_processing_time'] / group_stats['call_count']
+            else:
+                # Fallback: use model-specific data if available
+                model_stats = model_usage_stats.get(configured_model, {
+                    'cost_estimated': 0.0,
+                    'estimated_processing_time': 0.0,
+                    'call_count': 0
+                })
+                
+                if model_stats['call_count'] > 0:
+                    average_estimated_cost = model_stats['cost_estimated'] / model_stats['call_count']
+                    average_estimated_time = model_stats['estimated_processing_time'] / model_stats['call_count']
+                else:
+                    # Final fallback: distribute total across active groups
+                    total_active_groups = len([sg for sg, tgts in grouped_targets.items() 
+                                             if len([t for t in tgts if t.importance not in ('ID', 'IGNORED')]) > 0])
+                    
+                    if total_active_groups > 0:
+                        average_estimated_cost = total_cost_estimated / total_active_groups
+                        average_estimated_time = total_estimated_time / total_active_groups
+                    else:
+                        average_estimated_cost = 0.0
+                        average_estimated_time = 0.0
+            
+            # Determine max_web_searches value for display
+            max_web_searches = None
+            if 'claude' in configured_model.lower() or 'anthropic' in configured_model.lower():
+                max_web_searches = max_web_searches_value
+            
+            # Build the enhanced structure
+            enhanced_models[group_key] = {
+                "models_requested": models_requested,
+                "mode_model_used": mode_model_used,
+                "other_models_used": other_models_used,
+                "column_count": column_count,
+                "column_names": column_names,
+                "average_estimated_cost": round(average_estimated_cost, 6),
+                "average_estimated_time": round(average_estimated_time, 2),
+                "search_context_level": search_context_level,
+                "max_web_searches": max_web_searches,
+                "search_group_config": search_group_config
+            }
+        
+        # Debug: Log what we constructed
+        logger.info(f"[ENHANCED_MODELS_DEBUG] Constructed enhanced models parameter with {len(enhanced_models)} search groups")
+        logger.info(f"[ENHANCED_MODELS_DEBUG] Search group stats found: {list(search_group_stats.keys())}")
+        for group_id, stats in search_group_stats.items():
+            logger.info(f"[ENHANCED_MODELS_DEBUG] Group {group_id}: calls={stats['call_count']}, cost={stats['cost_estimated']}, time={stats['estimated_processing_time']}")
+        
+        logger.info(f"Constructed enhanced models parameter with {len(enhanced_models)} search groups")
+        return enhanced_models
+        
+    except Exception as e:
+        logger.error(f"Error constructing enhanced models parameter: {str(e)}")
+        logger.error(traceback.format_exc())
+        return {}
+
 def extract_config_from_claude_response(response: Dict) -> Dict:
     """Extract configuration from Claude's structured response."""
     try:
@@ -2085,7 +2467,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     
                     row_tasks = []
                     for row_idx, row in enumerate(batch):
-                        task = asyncio.create_task(process_row(session, row, start_idx + row_idx, batch_manager))
+                        global_row_idx = start_idx + row_idx
+                        task = asyncio.create_task(process_row(session, row, global_row_idx, batch_manager, batch_index))
                         row_tasks.append(task)
                     
                     # Wait for all rows in the batch to complete
@@ -2099,7 +2482,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         # Track models used in this batch
                         batch_models_used = set()
                         batch_api_providers = set()
-                        for row_idx, row_results, row_models in batch_results:
+                        for row_idx, row_results, row_models, batch_num in batch_results:
                             batch_models_used.update(row_models)
                             # Also track providers for backward compatibility
                             for model in row_models:
@@ -2131,7 +2514,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         
                         # Store results
                         logger.info(f"Storing results for batch {batch_index}: {len(batch_results)} results")
-                        for idx, result, _ in batch_results:
+                        for idx, result, _, batch_num in batch_results:
                             validation_results[idx] = result
                             
                     except Exception as batch_error:
@@ -2149,7 +2532,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         for task in row_tasks:
                             if task.done() and not task.exception():
                                 try:
-                                    _, _, row_models = task.result()
+                                    _, _, row_models, _ = task.result()
                                     failed_batch_models.update(row_models)
                                 except Exception as e:
                                     logger.debug(f"Could not extract models from completed task: {e}")
@@ -2197,7 +2580,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # API provider statistics logged
                 
         
-        async def process_row(session, row, row_idx, batch_manager=None):
+        async def process_row(session, row, row_idx, batch_manager=None, batch_number=None):
             """Process a single row with progressive multiplexing."""
             nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls
             
@@ -2309,10 +2692,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             row_results['next_check'] = next_check.isoformat() if next_check else None
             row_results['reasons'] = reasons
             
-            return row_idx, row_results, row_models_used
+            return row_idx, row_results, row_models_used, batch_number
         
         async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False, row_models_used=None):
-            """Process a group of columns with a single multiplex API call, even if there's only one column."""
+            """Process a group of columns with a single multiplex AI API call using ai_api_client."""
             nonlocal total_cache_hits, total_cache_misses
             
             # Initialize row_models_used if not provided
@@ -2337,18 +2720,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # If there are no fields to validate after filtering, just return
             if not validation_targets:
                 logger.info("No non-ID/IGNORED fields to validate in this group")
-                return row_idx, row_results, row_models_used
-                
+                return
+            
             # Log clear info about what we're processing
             if len(validation_targets) == 1:
                 logger.info(f"Processing field '{validation_targets[0].column}' using multiplex format")
                 if is_isolated_validation:
                     logger.info(f"This is an ISOLATED validation for field '{validation_targets[0].column}'")
+            else:
                 logger.info(f"Processing {len(validation_targets)} fields together using multiplex format")
+            
+            # Get model configuration
+            model, warnings = resolve_search_group_model(validation_targets, validator)
+            search_context_size = resolve_search_group_context_size(validation_targets, validator)
+            max_web_searches = resolve_search_group_max_web_searches(validation_targets, validator)
+            api_provider = determine_api_provider(model)
+            
+            # Track which model is being used for this row
+            row_models_used.add(model)
+            row_api_providers.add(api_provider)
             
             # Filter validation history to just the fields we're validating in this group
             filtered_validation_history = None
-            if validation_history:
+            if validation_history and not is_isolated_validation:
                 filtered_validation_history = {}
                 for target in validation_targets:
                     if target.column in validation_history:
@@ -2362,347 +2756,289 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         if history_entries:
                             logger.info(f"    First entry: value='{history_entries[0].get('value', 'N/A')}', confidence={history_entries[0].get('confidence_level', 'N/A')}")
                 else:
-                    logger.info("No matching validation history for fields in this group")
-            else:
-                logger.info("No validation history provided to process_multiplex_group")
+                    logger.info("No relevant validation history found for this group")
             
-            # Resolve which model to use for this search group
-            model, model_warnings = resolve_search_group_model(validation_targets, validator)
-            
-            # Log any model conflict warnings
-            for warning in model_warnings:
-                logger.warning(f"Search group model conflict: {warning}")
-            
-            # Resolve search context size for this search group
-            search_context_size = resolve_search_group_context_size(validation_targets, validator)
-            
-            # Resolve max web searches for Anthropic models in this search group
-            max_web_searches = resolve_search_group_max_web_searches(validation_targets, validator)
-            
-            # Generate multiplex prompt first - we need this for the cache key
+            # Generate multiplex prompt
             logger.info(f"Generating multiplex prompt for {len(validation_targets)} field(s) with context from previous groups")
-            logger.info(f"Using resolved model for search group: {model}")
-            logger.info(f"Using resolved search context size for search group: {search_context_size}")
-            logger.info(f"Using resolved max web searches for search group: {max_web_searches}")
-            logger.info(f"Passing validation_history to generate_multiplex_prompt: {filtered_validation_history is not None}")
+            logger.info(f"Using resolved model: {model}")
+            logger.info(f"Using resolved search context size: {search_context_size}")
+            logger.info(f"Using resolved max web searches: {max_web_searches}")
+            
             prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history)
             
-            # Generate cache key based on the prompt, model, search context size, and search groups
-            cache_key = get_cache_key(prompt, model, search_context_size, validator.search_groups)
-            logger.info(f"Using cache key based on prompt hash: {cache_key[:8]}...")
-            
-            # Check if this exact prompt has been cached before
-            try:
-                cache_response = s3.get_object(
-                    Bucket=s3_bucket,
-                    Key=f"validation_cache/{cache_key}.json"
-                )
-                cached_data = json.loads(cache_response['Body'].read())
-                total_cache_hits += 1
-                logger.info(f"Cache hit for prompt with key: {cache_key[:8]}...")
-                
-                # Handle both old and new cache formats
-                if 'api_response' in cached_data:
-                    # New format with metadata
-                    cached_api_response = cached_data['api_response']
-                    cached_token_usage = cached_data.get('token_usage', {})
-                    cached_processing_time = cached_data.get('processing_time')
-                    cached_at = cached_data.get('cached_at')
-                else:
-                    # Legacy format - just the API response
-                    cached_api_response = cached_data
-                    cached_token_usage = extract_token_usage(cached_api_response, model, search_context_size)
-                    cached_processing_time = None
-                    cached_at = None
-                
-                # Store the raw API response for this prompt in row_results
-                response_id = f"response_{len(row_results.get('_raw_responses', {})) + 1}"
-                if '_raw_responses' not in row_results:
-                    row_results['_raw_responses'] = {}
-                
-                row_results['_raw_responses'][response_id] = {
-                    'prompt': prompt,
-                    'response': cached_api_response,
-                    'is_cached': True,
-                    'fields': [t.column for t in validation_targets],
-                    'model': model,  # Add model information
-                    'token_usage': cached_token_usage,  # Add token usage tracking
-                    'processing_time': cached_processing_time,  # Add cached processing time
-                    'cached_at': cached_at,  # Add cache timestamp
-                    'citations': []  # Cached responses won't have new citations, but maintain structure
-                }
-                
-                # Parse the cached API response
-                parsed_results = validator.parse_multiplex_result(cached_api_response, row)
-                
-                # ENHANCED LOGGING: Track expected vs actual cached results
-                expected_columns = [t.column for t in validation_targets]
-                actual_columns = list(parsed_results.keys())
-                
-                # Analyzing cached response
-                logger.info(f"  Expected columns: {expected_columns}")
-                logger.info(f"  Cached parsed columns: {actual_columns}")
-                logger.info(f"  Expected count: {len(expected_columns)}, Actual count: {len(actual_columns)}")
-                
-                # Check for missing columns in cached results
-                missing_columns = set(expected_columns) - set(actual_columns)
-                if missing_columns:
-                    logger.error(f"❌ MISSING COLUMNS IN CACHED RESULTS: {list(missing_columns)}")
-                    logger.error(f"  These columns were expected but not found in cached response")
-                    logger.error(f"🔄 CACHE REJECTED: Making fresh API call due to incomplete cached response")
-                    
-                    # CRITICAL FIX: Don't use incomplete cached response - make fresh API call instead
-                    total_cache_misses += 1  # Count this as a cache miss
-                    total_cache_hits -= 1    # Decrement the cache hit we counted earlier
-                    
-                    # Fall through to make fresh API call below
-                    
-                else:
-                    # Check for unexpected columns in cached results
-                    unexpected_columns = set(actual_columns) - set(expected_columns)
-                    if unexpected_columns:
-                        logger.warning(f"⚠️ UNEXPECTED COLUMNS IN CACHED RESULTS: {list(unexpected_columns)}")
-                        logger.warning(f"  These columns were found but not expected")
-                    
-                    # Process results as if we had just called the API
-                    cached_processed_count = 0
-                    for target in validation_targets:
-                        if target.column in parsed_results:
-                            parsed_result = parsed_results[target.column]
-                            # New tuple structure: (value, confidence_level, sources, confidence_level, reasoning, main_source, original_confidence, explanation, consistent_with_model_knowledge)
-                            row_results[target.column] = {
-                                'value': parsed_result[0],
-                                'confidence': parsed_result[1],  # String confidence now
-                                'sources': parsed_result[2],
-                                'confidence_level': parsed_result[3],
-                                'reasoning': parsed_result[4],  # Changed from quote
-                                'main_source': parsed_result[5],
-                                'original_confidence': parsed_result[6] if len(parsed_result) > 6 else None,  # New field
-                                'explanation': parsed_result[7] if len(parsed_result) > 7 else '',  # New field
-                                'response_id': response_id,  # Reference which API response this came from
-                                'model': model  # Add model information from our context
-                            }
-                            
-                            # Add consistent_with_model_knowledge if available
-                            if len(parsed_result) > 8:
-                                row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
-                            
-                            # Add citations from raw API response
-                            if response_id in row_results.get('_raw_responses', {}):
-                                citations = row_results['_raw_responses'][response_id].get('citations', [])
-                                row_results[target.column]['citations'] = citations
-                            
-                            # Keep quote for backward compatibility (map reasoning to quote)
-                            row_results[target.column]['quote'] = parsed_result[4]
-                            
-                            cached_processed_count += 1
-                            # Processed cached result
-                        else:
-                            logger.error(f"❌ CACHED COLUMN RESULT MISSING: {target.column} was expected but not found in cached parsed results")
-                    
-                    # Cached processing completed
-                    
-                    # Cache was complete and used successfully
-                    return row_idx, row_results, row_models_used
-                
-                # If we reach here, cache was incomplete - log the raw cached response for debugging
-                logger.error(f"🔍 RAW CACHED API RESPONSE DEBUG (due to missing columns):")
-                if 'choices' in cached_api_response and len(cached_api_response['choices']) > 0:
-                    content = cached_api_response['choices'][0].get('message', {}).get('content', '')
-                    logger.error(f"  Cached raw content length: {len(content)}")
-                    logger.error(f"  Cached raw content preview: {content[:500]}...")
-                else:
-                    logger.error(f"  Unexpected cached API response structure: {json.dumps(cached_api_response, indent=2)[:1000]}...")
-                
-            except Exception as e:
-                # Cache miss - need to call the API
-                total_cache_misses += 1
-                logger.info(f"Cache miss for prompt with key: {cache_key[:8]}..., will call API")
-            
-            # Route to appropriate API based on model
-            api_provider = determine_api_provider(model)
-            start_time = time.time()  # Track API call timing
-            
-            # Track which model is being used for this row
-            row_models_used.add(model)
-            
-            # Use shared AI client for all API calls
-            logger.info(f"Using shared AI client for {api_provider} API with model: {model}")
-            
-            # Variables to track the full result from shared client
+            # Set up shared result variable for wrapper functions
             shared_client_result = None
             
-            if api_provider == 'anthropic':
-                # For Claude models, we need to structure the call differently
-                schema = get_response_format_schema(is_multiplex=True)
+            # Call ai_api_client with retry logic and provider-specific handling
+            start_time = time.time()
+            
+            logger.info(f"Using ai_client for {api_provider} API with model: {model}")
+            
+            try:
+                if api_provider == 'anthropic':
+                    # For Claude models, we need to structure the call differently
+                    schema = get_response_format_schema(is_multiplex=True)
+                    
+                    # Wrap the array schema in an object for tool calling
+                    tool_schema = {
+                        "type": "object",
+                        "properties": {
+                            "validation_results": schema['json_schema']['schema']
+                        },
+                        "required": ["validation_results"]
+                    }
+                    
+                    # Call ai_client directly with retry logic
+                    async def call_claude_wrapper():
+                        nonlocal shared_client_result
+                        shared_client_result = await ai_client.call_structured_api(
+                            prompt=prompt,
+                            model=model, 
+                            schema=tool_schema,
+                            tool_name="validate_data",
+                            use_cache=True,
+                            max_web_searches=max_web_searches
+                        )
+                        
+                        # Convert Claude response to Perplexity format for unified parsing
+                        claude_response = shared_client_result['response']
+                        structured_data = ai_client.extract_structured_response(claude_response, "validate_data")
+                        validation_results = structured_data.get('validation_results', structured_data)
+                        
+                        # Convert to Perplexity format that parser expects
+                        normalized_response = {
+                            'choices': [{
+                                'message': {
+                                    'role': 'assistant',
+                                    'content': json.dumps(validation_results)
+                                }
+                            }]
+                        }
+                        return normalized_response
+                    
+                    # Use retry logic wrapper
+                    api_response = await retry_api_call_with_backoff(
+                        call_claude_wrapper,
+                        max_retries=5,  # 6 total attempts with specific delays
+                        custom_delays=[1, 5, 10, 20, 30, 60],  # 1s, 5s, 10s, 20s, 30s, 60s
+                        batch_manager=batch_manager,
+                        model=model
+                    )
+                    
+                    # Extract data from shared_client_result
+                    token_usage = shared_client_result.get('token_usage', {})
+                    enhanced_data = shared_client_result.get('enhanced_data', {})
+                    is_cached = shared_client_result.get('is_cached', False)
+                    citations = shared_client_result.get('citations', [])
+                    
+                else:
+                    # For Perplexity models
+                    logger.info(f"Using Perplexity with search_context_size: {search_context_size}")
+                    
+                    # The shared client returns a wrapper with response, token_usage, etc.
+                    async def call_perplexity_wrapper():
+                        nonlocal shared_client_result
+                        shared_client_result = await ai_client.validate_with_perplexity(prompt, model, search_context_size, use_cache=True)
+                        # Return just the API response part for compatibility with existing parsing
+                        return shared_client_result['response']
+                    
+                    api_response = await retry_api_call_with_backoff(
+                        call_perplexity_wrapper,
+                        max_retries=5,  # 6 total attempts with specific delays
+                        custom_delays=[1, 5, 10, 20, 30, 60],  # 1s, 5s, 10s, 20s, 30s, 60s
+                        batch_manager=batch_manager,
+                        model=model
+                    )
+                    
+                    # For Perplexity, enhanced_data comes from the enhanced_data field in shared_client_result
+                    token_usage = shared_client_result.get('token_usage', {})
+                    enhanced_data = shared_client_result.get('enhanced_data', {})
+                    is_cached = shared_client_result.get('is_cached', False)
+                    citations = shared_client_result.get('citations', [])
                 
-                # Wrap the array schema in an object for tool calling
-                tool_schema = {
-                    "type": "object",
-                    "properties": {
-                        "validation_results": schema['json_schema']['schema']
-                    },
-                    "required": ["validation_results"]
-                }
+                processing_time = time.time() - start_time
                 
-                # For Claude, we'll handle caching ourselves since we need specific cache key format
-                result = await retry_api_call_with_backoff(
-                    lambda: call_claude_with_shared_client(prompt, model, tool_schema, max_web_searches),
-                    max_retries=5,  # 6 total attempts with specific delays
-                    custom_delays=[1, 5, 10, 20, 30, 60],  # 1s, 5s, 10s, 20s, 30s, 60s
-                    batch_manager=batch_manager,
-                    model=model
-                )
-            else:
-                # For Perplexity, use the validate_with_perplexity method
-                logger.info(f"Using Perplexity with search_context_size: {search_context_size}")
+                # Update cache counters based on ai_client result
+                if is_cached:
+                    total_cache_hits += 1
+                    logger.info(f"AI client cache hit for model: {model}")
+                else:
+                    total_cache_misses += 1
+                    logger.info(f"AI client cache miss, made fresh API call for model: {model}")
                 
-                # The shared client returns a wrapper with response, token_usage, etc.
-                async def call_perplexity_wrapper():
-                    nonlocal shared_client_result
-                    shared_client_result = await ai_client.validate_with_perplexity(prompt, model, search_context_size, use_cache=True)
-                    # Return just the API response part for compatibility with existing parsing
-                    return shared_client_result['response']
-                
-                result = await retry_api_call_with_backoff(
-                    call_perplexity_wrapper,
-                    max_retries=5,  # 6 total attempts with specific delays
-                    custom_delays=[1, 5, 10, 20, 30, 60],  # 1s, 5s, 10s, 20s, 30s, 60s
-                    batch_manager=batch_manager,
-                    model=model
-                )
-            processing_time = time.time() - start_time
+            except Exception as e:
+                logger.error(f"AI client call failed: {str(e)}")
+                raise  # Re-raise the exception to be handled by caller
             
             # Store the raw API response for this prompt in row_results
             response_id = f"response_{len(row_results.get('_raw_responses', {})) + 1}"
             if '_raw_responses' not in row_results:
                 row_results['_raw_responses'] = {}
             
-            # Extract token usage information and cached status
-            if shared_client_result and 'token_usage' in shared_client_result:
-                # For Perplexity, use the token usage from shared client
-                token_usage = shared_client_result['token_usage']
-                is_cached = shared_client_result.get('is_cached', False)
-                enhanced_data = shared_client_result  # Perplexity enhanced data
-            else:
-                # For Anthropic/Claude, extract from the result
-                token_usage = extract_token_usage(result, model, search_context_size)
-                is_cached = False
-                enhanced_data = result.get('enhanced_data', None) if isinstance(result, dict) else None  # Claude enhanced data
-            
             row_results['_raw_responses'][response_id] = {
                 'prompt': prompt,
-                'response': result,
+                'response': api_response,
                 'is_cached': is_cached,
-                'fields': [t.column for t in validation_targets],
-                'model': model,  # Add model information
-                'token_usage': token_usage,  # Add token usage tracking
-                'processing_time': processing_time,  # Add actual processing time
-                'citations': shared_client_result.get('citations', []) if shared_client_result else [],  # Add web search citations
-                'enhanced_data': enhanced_data  # Store complete enhanced ai_client data for both Perplexity and Claude
+                'fields': [t.column for t in validation_targets],  # Use validation_targets, not targets
+                'model': model,
+                'token_usage': token_usage,
+                'processing_time': processing_time,
+                'citations': citations,
+                'enhanced_data': enhanced_data  # Always available from ai_client
             }
             
-            # Cache the complete API response with metadata
-            try:
-                # Add timing and cost metadata to the cached entry
-                cache_entry = {
-                    'api_response': result,
-                    'cached_at': datetime.now(timezone.utc).isoformat(),
-                    'model': model,
-                    'search_context_size': search_context_size,
-                    'token_usage': token_usage,
-                    'processing_time': processing_time
-                }
-                
-                s3.put_object(
-                    Bucket=s3_bucket,
-                    Key=f"validation_cache/{cache_key}.json",
-                    Body=json.dumps(cache_entry),
-                    ContentType='application/json'
-                )
-                logger.info(f"Cached API response with metadata, key: {cache_key[:8]}...")
-            except Exception as e:
-                logger.error(f"Failed to cache API response: {str(e)}")
+            # Parse the API response (now normalized to Perplexity format)
+            parsed_results = validator.parse_multiplex_result(api_response, row)
             
-            # Parse multiplex results
-            parsed_results = validator.parse_multiplex_result(result, row)
-            
-            # ENHANCED LOGGING: Track expected vs actual results
-            expected_columns = [t.column for t in validation_targets]
+            # CRITICAL CACHE VALIDATION LOGIC: Check that response contains all required columns
+            expected_columns = [t.column for t in validation_targets]  # Use validation_targets, not targets
             actual_columns = list(parsed_results.keys())
             
-            logger.info(f"🔍 SEARCH GROUP RESPONSE ANALYSIS:")
-            logger.info(f"  Expected columns: {expected_columns}")
-            logger.info(f"  Parsed columns: {actual_columns}")
-            logger.info(f"  Expected count: {len(expected_columns)}, Actual count: {len(actual_columns)}")
+            logger.info(f"🔍 RESPONSE ANALYSIS:")
+            logger.info(f"Expected columns: {expected_columns}")
+            logger.info(f"Parsed columns: {actual_columns}")
+            logger.info(f"Expected count: {len(expected_columns)}, Actual count: {len(actual_columns)}")
             
-            # Check for missing columns
+            # Check for missing columns - if cache was incomplete, make fresh API call
             missing_columns = set(expected_columns) - set(actual_columns)
             if missing_columns:
-                logger.error(f"❌ MISSING COLUMNS DETECTED: {list(missing_columns)}")
-                logger.error(f"  These columns were expected but not found in API response")
-                
-            # Check for unexpected columns
+                if is_cached:
+                    logger.error(f"❌ MISSING COLUMNS IN CACHED RESPONSE: {list(missing_columns)}")
+                    logger.error(f"🔄 CACHE REJECTED: Making fresh API call due to incomplete cached response")
+                    
+                    # Adjust cache counters - this is actually a cache miss
+                    total_cache_misses += 1
+                    total_cache_hits -= 1
+                    
+                    # Make fresh API call with cache disabled
+                    logger.info(f"Making fresh API call for {api_provider} with cache disabled")
+                    
+                    if api_provider == 'anthropic':
+                        # Fresh Claude call with cache disabled using call_structured_api for max_web_searches support
+                        shared_client_result = await ai_client.call_structured_api(
+                            prompt=prompt,
+                            model=model, 
+                            schema=tool_schema,
+                            tool_name="validate_data",
+                            use_cache=False,  # Disable cache for fresh call
+                            max_web_searches=max_web_searches  # Include max_web_searches
+                        )
+                        
+                        # Convert Claude response to Perplexity format for unified parsing
+                        claude_response = shared_client_result['response']
+                        structured_data = ai_client.extract_structured_response(claude_response, "validate_data")
+                        validation_results = structured_data.get('validation_results', structured_data)
+                        
+                        # Convert to Perplexity format that parser expects
+                        api_response = {
+                            'choices': [{
+                                'message': {
+                                    'role': 'assistant',
+                                    'content': json.dumps(validation_results)
+                                }
+                            }]
+                        }
+                        token_usage = shared_client_result.get('token_usage', {})
+                        enhanced_data = shared_client_result.get('enhanced_data', {})
+                        is_cached = False  # This is now a fresh call
+                        citations = shared_client_result.get('citations', [])
+                        
+                        # Recalculate processing time for fresh call
+                        processing_time = time.time() - start_time
+                        
+                    else:
+                        # Fresh Perplexity call with cache disabled
+                        shared_client_result = await ai_client.validate_with_perplexity(
+                            prompt=prompt,
+                            model=model,
+                            search_context_size=search_context_size,
+                            use_cache=False  # Disable cache for fresh call
+                        )
+                        
+                        api_response = shared_client_result['response']
+                        token_usage = shared_client_result.get('token_usage', {})
+                        enhanced_data = shared_client_result.get('enhanced_data', {})
+                        is_cached = False  # This is now a fresh call
+                        citations = shared_client_result.get('citations', [])
+                        
+                        # Recalculate processing time for fresh call
+                        processing_time = time.time() - start_time
+                    
+                    # Re-parse the fresh API response (now normalized to Perplexity format)
+                    parsed_results = validator.parse_multiplex_result(api_response, row)
+                    actual_columns = list(parsed_results.keys())
+                    
+                    # Check again for missing columns in fresh response
+                    missing_columns = set(expected_columns) - set(actual_columns)
+                    if missing_columns:
+                        logger.error(f"❌ MISSING COLUMNS EVEN IN FRESH API RESPONSE: {list(missing_columns)}")
+                        logger.error(f"This indicates a serious issue with the AI model or prompt generation")
+                        raise ValueError(f"Fresh API response still missing required columns: {missing_columns}")
+                    
+                    logger.info(f"✅ FRESH API CALL SUCCESS: All {len(expected_columns)} columns now present")
+                    
+                    # Update the raw response storage with the fresh response
+                    row_results['_raw_responses'][response_id].update({
+                        'response': api_response,
+                        'is_cached': is_cached,
+                        'token_usage': token_usage,
+                        'processing_time': processing_time,  # Updated timing
+                        'enhanced_data': enhanced_data,
+                        'citations': citations
+                    })
+                    
+                else:
+                    # This was already a fresh API call and still missing columns - serious issue
+                    logger.error(f"❌ MISSING COLUMNS IN FRESH API RESPONSE: {list(missing_columns)}")
+                    logger.error(f"This indicates a serious issue with the AI model or prompt generation")
+                    raise ValueError(f"Fresh API response missing required columns: {missing_columns}")
+            
+            # Check for unexpected columns (warning only)
             unexpected_columns = set(actual_columns) - set(expected_columns)
             if unexpected_columns:
-                logger.warning(f"⚠️ UNEXPECTED COLUMNS FOUND: {list(unexpected_columns)}")
-                logger.warning(f"  These columns were found but not expected")
+                logger.warning(f"⚠️ UNEXPECTED COLUMNS IN API RESPONSE: {list(unexpected_columns)}")
+                logger.warning(f"These columns were found but not expected")
             
-            # Log the parsed results for debugging
-            logger.info(f"Parsed {len(parsed_results)} results from API response")
-            for col, parsed_result in parsed_results.items():
-                quote_text = parsed_result[4] if len(parsed_result) > 4 else "N/A"
-                logger.info(f"  {col}: quote='{quote_text[:50]}{'...' if len(quote_text) > 50 else ''}'")
-            
-            # Process the API response results
+            # Process results - create proper result structure for each validation target column
             processed_count = 0
-            for target in validation_targets:
+            for target in validation_targets:  # Use validation_targets, not targets
                 if target.column in parsed_results:
                     parsed_result = parsed_results[target.column]
-                    # New tuple structure: (value, confidence_level, sources, confidence_level, reasoning, main_source, original_confidence, explanation, consistent_with_model_knowledge)
+                    
+                    # Create result structure matching expected format
+                    # Tuple structure: (value, confidence, sources, confidence_level, reasoning, main_source, original_confidence, explanation, consistent_with_model_knowledge)
                     row_results[target.column] = {
                         'value': parsed_result[0],
-                        'confidence': parsed_result[1],  # String confidence now
+                        'confidence': parsed_result[1],  # String confidence
                         'sources': parsed_result[2],
                         'confidence_level': parsed_result[3],
-                        'reasoning': parsed_result[4],  # Changed from quote
+                        'reasoning': parsed_result[4],
                         'main_source': parsed_result[5],
-                        'original_confidence': parsed_result[6] if len(parsed_result) > 6 else None,  # New field
-                        'explanation': parsed_result[7] if len(parsed_result) > 7 else '',  # New field
-                        'response_id': response_id,  # Reference which API response this came from
-                        'model': model  # Add model information from our context
+                        'original_confidence': parsed_result[6] if len(parsed_result) > 6 else None,
+                        'explanation': parsed_result[7] if len(parsed_result) > 7 else '',
+                        'response_id': response_id,
+                        'model': model
                     }
                     
-                    # Add consistent_with_model_knowledge if available
+                    # Add optional fields
                     if len(parsed_result) > 8:
                         row_results[target.column]['consistent_with_model_knowledge'] = parsed_result[8]
                     
-                    # Add citations from raw API response
-                    if response_id in row_results.get('_raw_responses', {}):
-                        citations = row_results['_raw_responses'][response_id].get('citations', [])
-                        row_results[target.column]['citations'] = citations
+                    # Add citations from API response
+                    row_results[target.column]['citations'] = citations
                     
-                    # Keep quote for backward compatibility (map reasoning to quote)
+                    # Keep quote for backward compatibility
                     row_results[target.column]['quote'] = parsed_result[4]
                     
                     processed_count += 1
-                    # Processed result
+                    
                 else:
                     logger.error(f"❌ COLUMN RESULT MISSING: {target.column} was expected but not found in parsed results")
             
-            # Processing summary completed
+            logger.info(f"✅ Processed {processed_count}/{len(validation_targets)} columns successfully")
             
-            # If we have missing results, log the raw API response for debugging
-            if missing_columns:
-                logger.error(f"🔍 RAW API RESPONSE DEBUG (due to missing columns):")
-                if 'choices' in result and len(result['choices']) > 0:
-                    content = result['choices'][0].get('message', {}).get('content', '')
-                    logger.error(f"  Raw content length: {len(content)}")
-                    logger.error(f"  Raw content preview: {content[:500]}...")
-                else:
-                    logger.error(f"  Unexpected API response structure: {json.dumps(result, indent=2)[:1000]}...")
-        
-        # Run the async function
+            # Function modifies row_results and row_models_used in place - no return needed  
+         # Run the async function
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
@@ -2730,29 +3066,53 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Collect all enhanced data from ai_client responses and use aggregation methods
         all_enhanced_call_data = []
         
+        # Create row to batch mapping from batch_timing_data collected during processing
+        # Due to dynamic batch sizing, we need to reconstruct which rows were in each batch
+        row_to_batch_mapping = {}
+        current_row = 0
+        for timing_info in batch_timing_data:
+            batch_number = timing_info['batch_number']
+            batch_size = timing_info['batch_size']
+            # Map the next batch_size rows to this batch
+            for i in range(batch_size):
+                if current_row < len(validation_results):
+                    row_to_batch_mapping[current_row] = batch_number
+                    current_row += 1
+                else:
+                    break
+        
         # Extract enhanced data from all responses
         logger.info(f"[AGG_DEBUG] Starting enhanced data extraction from {len(validation_results)} rows")
+        logger.info(f"[AGG_DEBUG] Row to batch mapping: {dict(list(row_to_batch_mapping.items())[:5])}...")  # Show first 5 for debug
+        
         for row_idx, row_result in validation_results.items():
             if '_raw_responses' in row_result:
                 logger.info(f"[AGG_DEBUG] Row {row_idx}: Found {len(row_result['_raw_responses'])} raw responses")
+                batch_number = row_to_batch_mapping.get(row_idx, row_idx // 10)  # Fallback to rough estimate
+                
+                search_group_counter = 0  # Track which search group (AI call sequence) in this row
                 for response_id, response_data in row_result['_raw_responses'].items():
                     enhanced_data = response_data.get('enhanced_data')
                     if enhanced_data:
                         # Debug: Check what enhanced data contains
                         costs = enhanced_data.get('costs', {})
                         actual_cost = costs.get('actual', {}).get('total_cost', 0.0)
-                        estimated_cost = costs.get('without_cache', {}).get('total_cost', 0.0)
+                        estimated_cost = costs.get('estimated', {}).get('total_cost', 0.0)
                         provider_metrics = enhanced_data.get('provider_metrics', {})
                         
                         logger.info(f"[AGG_DEBUG] Row {row_idx}, Response {response_id}: "
                                   f"Actual cost: ${actual_cost:.6f}, Estimated cost: ${estimated_cost:.6f}, "
                                   f"Provider metrics: {list(provider_metrics.keys())}")
                         
-                        # Add row context for tracking
+                        # Add row, batch, and search group context for tracking
                         enhanced_data_with_context = enhanced_data.copy()
                         enhanced_data_with_context['row_idx'] = row_idx
+                        enhanced_data_with_context['batch_number'] = batch_number
+                        enhanced_data_with_context['search_group'] = search_group_counter  # nth AI call in this row
                         enhanced_data_with_context['response_id'] = response_id
                         all_enhanced_call_data.append(enhanced_data_with_context)
+                        
+                        search_group_counter += 1
                     else:
                         logger.warning(f"[AGG_DEBUG] Row {row_idx}, Response {response_id}: No enhanced_data found")
             else:
@@ -2780,6 +3140,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             try:
                 # Use ai_client.aggregate_provider_metrics() to get comprehensive aggregated data
                 aggregated_metrics = ai_client.aggregate_provider_metrics(all_enhanced_call_data)
+
+                # Log the results of the final aggregation for debugging
+                if aggregated_metrics and 'totals' in aggregated_metrics:
+                    totals = aggregated_metrics['totals']
+                    logger.info(f"[AGGREGATION_DEBUG] Final Aggregated Times - Estimated (no cache): {totals.get('total_estimated_processing_time', 'N/A'):.3f}s, Actual (with cache): {totals.get('total_actual_processing_time', 'N/A'):.3f}s")
+                    logger.info(f"[AGGREGATION_DEBUG] Final Aggregated Costs - Estimated (no cache): ${totals.get('total_cost_estimated', 'N/A'):.6f}, Actual (with cache): ${totals.get('total_cost_actual', 'N/A'):.6f}")
                 
                 # Debug: Check what came out of aggregation
                 providers = aggregated_metrics.get('providers', {})
@@ -2787,19 +3153,47 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info(f"[AGG_DEBUG] Aggregation complete - Providers: {list(providers.keys())}, "
                           f"Total calls: {totals.get('total_calls', 0)}, "
                           f"Total actual cost: ${totals.get('total_cost_actual', 0.0):.6f}, "
-                          f"Total estimated cost: ${totals.get('total_cost_without_cache', 0.0):.6f}")
+                          f"Total estimated cost: ${totals.get('total_cost_estimated', 0.0):.6f}")
                 
                 # For preview operations, also calculate full validation estimates
                 if event.get('is_preview', False):
                     total_rows_in_table = event.get('total_rows', len(validation_results))
                     preview_rows_processed = len(validation_results) 
                     
-                    full_validation_estimates = ai_client.calculate_full_validation_estimates(
+                    # Initialize batch processing times before use
+                    batch_processing_times_calculated = {}  # batch_number -> max_processing_time_in_that_batch
+                    
+                    # Get target batch size for full validation from batch manager
+                    if batch_manager:
+                        # For enhanced batch manager, get a representative batch size
+                        if hasattr(batch_manager, 'model_batch_sizes') and batch_manager.model_batch_sizes:
+                            # Use average of current model batch sizes
+                            target_batch_size = int(sum(batch_manager.model_batch_sizes.values()) / len(batch_manager.model_batch_sizes))
+                            logger.info(f"[BATCH_SIZE_DEBUG] Using average batch size from registered models: {target_batch_size}")
+                        else:
+                            # No models registered yet, use default approach
+                            target_batch_size = batch_manager.get_batch_size_for_models(set())
+                            logger.info(f"[BATCH_SIZE_DEBUG] Using default batch size from enhanced manager: {target_batch_size}")
+                    else:
+                        target_batch_size = 50
+                        logger.info(f"[BATCH_SIZE_DEBUG] No batch manager available, using fallback: {target_batch_size}")
+                    
+                    logger.info(f"[BATCH_SIZE_DEBUG] target_batch_size for full validation: {target_batch_size}")
+                    
+                    full_validation_estimates = calculate_full_validation_estimates_with_batch_timing(
                         aggregated_metrics=aggregated_metrics,
+                        all_enhanced_call_data=all_enhanced_call_data,
                         total_rows_in_table=total_rows_in_table,
-                        preview_rows_processed=preview_rows_processed
+                        preview_rows_processed=preview_rows_processed,
+                        batch_processing_times=batch_processing_times_calculated,
+                        target_full_validation_batch_size=target_batch_size
                     )
-                    logger.info(f"Generated full validation estimates: {full_validation_estimates['total_estimates']}")
+                    if 'error' in full_validation_estimates:
+                        logger.error(f"[VALIDATOR_SIDE_ERROR] Full validation estimates calculation failed: {full_validation_estimates['error']}")
+                        full_validation_estimates = None
+                    else:
+                        logger.info(f"Generated full validation estimates: {full_validation_estimates.get('total_estimates', 'N/A')}")
+                        logger.info(f"[VALIDATOR_SIDE_DEBUG] Calculated full_validation_estimates object: {json.dumps(full_validation_estimates, indent=2)}")
                 else:
                     full_validation_estimates = None
                     
@@ -2820,17 +3214,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'total_tokens': 0,
             'api_calls': 0,
             'cached_calls': 0,
-            'total_cost': 0.0,  # Actual cost (only non-cached)
-            'estimated_total_cost': 0.0,  # Estimated cost (all calls as if not cached)
+            # Cost tracking now handled by enhanced_data aggregation
             'by_provider': {
                 'perplexity': {
                     'prompt_tokens': 0,
                     'completion_tokens': 0,
                     'total_tokens': 0,
-                    'calls': 0,
-                    'input_cost': 0.0,
-                    'output_cost': 0.0,
-                    'total_cost': 0.0
+                    'calls': 0
                 },
                 'anthropic': {
                     'input_tokens': 0,
@@ -2838,10 +3228,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'cache_creation_tokens': 0,
                     'cache_read_tokens': 0,
                     'total_tokens': 0,
-                    'calls': 0,
-                    'input_cost': 0.0,
-                    'output_cost': 0.0,
-                    'total_cost': 0.0
+                    'calls': 0
                 }
             },
             'by_model': {}
@@ -2849,14 +3236,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # First pass: collect all responses and calculate token usage
         # For timing, we need to calculate the maximum processing time per batch (parallel processing)
-        batch_processing_times = {}  # batch_number -> max_processing_time_in_that_batch
+        # Use the actual row-to-batch mapping we created above
+        if 'batch_processing_times_calculated' not in locals():
+            batch_processing_times_calculated = {}  # batch_number -> max_processing_time_in_that_batch
         
         for row_idx, row_result in validation_results.items():
             if '_raw_responses' in row_result:
-                # Calculate which batch this row was in (batch_size = 5)
-                batch_number = row_idx // 5
-                if batch_number not in batch_processing_times:
-                    batch_processing_times[batch_number] = 0.0
+                # Use actual batch mapping instead of hardcoded calculation
+                batch_number = row_to_batch_mapping.get(row_idx, row_idx // 10)  # Fallback to rough estimate
+                if batch_number not in batch_processing_times_calculated:
+                    batch_processing_times_calculated[batch_number] = 0.0
                 
                 # Track the total processing time for this row
                 row_processing_time = 0.0
@@ -2894,12 +3283,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 # For parallel processing, the batch time is the maximum time of any row in that batch
                 # (since all rows in a batch are processed in parallel)
-                batch_processing_times[batch_number] = max(batch_processing_times[batch_number], row_processing_time)
-                logger.info(f"Row {row_idx} (batch {batch_number}) total time: {row_processing_time:.3f}s, batch max now: {batch_processing_times[batch_number]:.3f}s")
+                batch_processing_times_calculated[batch_number] = max(batch_processing_times_calculated[batch_number], row_processing_time)
+                logger.info(f"Row {row_idx} (batch {batch_number}) total time: {row_processing_time:.3f}s, batch max now: {batch_processing_times_calculated[batch_number]:.3f}s")
         
         # Calculate total processing time as sum of all batch times (since batches are processed sequentially)
-        total_processing_time = sum(batch_processing_times.values())
-        logger.info(f"Calculated parallel processing time: {total_processing_time:.3f}s across {len(batch_processing_times)} batches")
+        total_processing_time = sum(batch_processing_times_calculated.values())
+        logger.info(f"Calculated parallel processing time: {total_processing_time:.3f}s across {len(batch_processing_times_calculated)} batches")
         
         # Second pass: aggregate provider-specific token usage
         for row_idx, row_result in validation_results.items():
@@ -2945,10 +3334,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 total_token_usage['by_model'][model] = {
                                     'api_provider': api_provider,
                                     'total_tokens': 0,
-                                    'calls': 0,
-                                    'input_cost': 0.0,
-                                    'output_cost': 0.0,
-                                    'total_cost': 0.0
+                                    'calls': 0
                                 }
                                 # Add provider-specific fields
                                 if api_provider == 'perplexity':
@@ -2968,11 +3354,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             model_usage = total_token_usage['by_model'][model]
                             model_usage['total_tokens'] += total_tokens
                             model_usage['calls'] += 1
-                            # Add to actual cost only if not cached
-                            if not is_cached:
-                                model_usage['input_cost'] += costs['input_cost']
-                                model_usage['output_cost'] += costs['output_cost']
-                                model_usage['total_cost'] += costs['total_cost']
+                            # REMOVED: Manual cost aggregation - handled by enhanced_data aggregation
                             
                             if api_provider == 'perplexity':
                                 model_usage['prompt_tokens'] += usage.get('input_tokens', 0)  # ai_api_client normalizes to input_tokens
@@ -2986,15 +3368,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Remove the raw responses from the row result to avoid duplication
                 del row_result['_raw_responses']
         
-        # Calculate total actual cost from providers
-        perplexity_actual_cost = total_token_usage['by_provider']['perplexity']['total_cost']
-        anthropic_actual_cost = total_token_usage['by_provider']['anthropic']['total_cost']
-        total_token_usage['total_cost'] = perplexity_actual_cost + anthropic_actual_cost
-        
-        # Log token usage and cost summary
+        # Log token usage summary (cost logging now handled by enhanced_data aggregation)
         logger.info(f"Token Usage Summary: {total_token_usage['total_tokens']} total tokens")
-        logger.info(f"Actual Cost: ${total_token_usage['total_cost']:.6f} (non-cached only)")
-        logger.info(f"Estimated Cost: ${total_token_usage['estimated_total_cost']:.6f} (if nothing cached)")
         logger.info(f"API Calls: {total_token_usage['api_calls']} new, {total_token_usage['cached_calls']} cached")
         logger.info(f"Total Processing Time: {total_processing_time:.3f}s")
         
@@ -3004,16 +3379,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         if perplexity_usage['calls'] > 0:
             logger.info(f"Perplexity API: {perplexity_usage['prompt_tokens']} prompt + {perplexity_usage['completion_tokens']} completion = {perplexity_usage['total_tokens']} total tokens across {perplexity_usage['calls']} calls")
-            logger.info(f"Perplexity Cost: ${perplexity_usage['input_cost']:.6f} input + ${perplexity_usage['output_cost']:.6f} output = ${perplexity_usage['total_cost']:.6f} total")
+            # Cost logging now handled by enhanced_data aggregation
         
         if anthropic_usage['calls'] > 0:
             logger.info(f"Anthropic API: {anthropic_usage['input_tokens']} input + {anthropic_usage['output_tokens']} output + {anthropic_usage['cache_creation_tokens']} cache_creation + {anthropic_usage['cache_read_tokens']} cache_read = {anthropic_usage['total_tokens']} total tokens across {anthropic_usage['calls']} calls")
-            logger.info(f"Anthropic Cost: ${anthropic_usage['input_cost']:.6f} input + ${anthropic_usage['output_cost']:.6f} output = ${anthropic_usage['total_cost']:.6f} total")
+            # Cost logging now handled by enhanced_data aggregation
         
         # Log by model
         for model, model_usage in total_token_usage['by_model'].items():
             api_provider = model_usage.get('api_provider', 'unknown')
-            logger.info(f"Model {model} ({api_provider}): {model_usage['total_tokens']} tokens across {model_usage['calls']} calls, cost: ${model_usage['total_cost']:.6f}")
+            logger.info(f"Model {model} ({api_provider}): {model_usage['total_tokens']} tokens across {model_usage['calls']} calls")
         
         # Log the size of the response data (approximately)
         response_json = json.dumps({
@@ -3035,7 +3410,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.info(f"Total estimated response size: {response_size_kb + raw_size_kb:.2f} KB")
         
         # Calculate batch timing statistics using parallel processing time calculation
-        num_batches = len(batch_processing_times)
+        num_batches = len(batch_processing_times_calculated)
         if num_batches > 0:
             avg_batch_time = total_processing_time / num_batches  # Parallel time per batch
             avg_time_per_row_across_batches = total_processing_time / len(validation_results) if validation_results else 0
@@ -3047,7 +3422,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Log batch timing summary
         logger.info(f"📊 BATCH TIMING SUMMARY:")
-        logger.info(f"  🚀 Total batches processed: {len(batch_processing_times)}")
+        logger.info(f"  🚀 Total batches processed: {len(batch_processing_times_calculated)}")
         logger.info(f"  ⏱️ Average time per batch: {avg_batch_time:.2f}s")
         logger.info(f"  → Average time per row across all batches: {avg_time_per_row_across_batches:.2f}s")
         logger.info(f"  ✅ Total batch processing time: {total_batch_time:.2f}s")
@@ -3080,6 +3455,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Validation structure metrics:
         # Logged validation metrics
         
+        # Construct enhanced models parameter
+        enhanced_models_parameter = construct_enhanced_models_parameter(
+            validator, all_enhanced_call_data, aggregated_metrics
+        )
+        
         # Create a single response
         response = {
             "statusCode": 200,
@@ -3105,16 +3485,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         "aggregated_metrics": aggregated_metrics,  # Complete provider breakdown with costs/tokens/timing
                         "full_validation_estimates": full_validation_estimates,  # Full validation projections for preview operations
                         "preview_operation": event.get('is_preview', False),
-                        "ai_client_calls_count": len(all_enhanced_call_data)
+                        "ai_client_calls_count": len(all_enhanced_call_data),
+                        "all_enhanced_call_data": all_enhanced_call_data  # Individual enhanced data from all AI calls for other calculations
                     } if aggregated_metrics else None,
                     # NEW: Batch timing data
                     "batch_timing": {
-                        "total_batches": len(batch_processing_times),
+                        "total_batches": len(batch_processing_times_calculated),
                         "dynamic_batch_sizing": True,  # Indicate that batch sizes were dynamic
                         "total_batch_time_seconds": total_batch_time,
                         "average_batch_time_seconds": avg_batch_time,
                         "average_time_per_row_seconds": avg_time_per_row_across_batches,
-                        "batch_details": list(batch_processing_times.items())  # Convert dict to list of (batch_num, time) pairs
+                        "batch_details": list(batch_processing_times_calculated.items())  # Convert dict to list of (batch_num, time) pairs
                     },
                     # NEW: Validation structure metrics
                     "validation_metrics": {
@@ -3123,6 +3504,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         "high_context_search_groups_count": high_context_groups_count,
                         "claude_search_groups_count": claude_groups_count
                     },
+                    # NEW: Enhanced models parameter with detailed search group information
+                    "enhanced_models_parameter": enhanced_models_parameter,
                     # NEW: Batch API provider statistics (backward compatibility)
                     "batch_provider_stats": {
                         "batches_with_claude": batches_with_claude,

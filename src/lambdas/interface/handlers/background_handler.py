@@ -48,7 +48,7 @@ except ImportError as e:
 # Global variable for the API Gateway Management client
 api_gateway_management_client = None
 
-def _calculate_estimated_cost_without_cache(token_usage: Dict, metadata: Dict) -> float:
+def _calculate_cost_estimated(token_usage: Dict, metadata: Dict) -> float:
     """
     Calculate estimated cost without caching benefits for projections.
     This estimates what the cost would be if no caching were available.
@@ -569,7 +569,7 @@ def handle(event, context):
                 # Initialize variables early to avoid scope issues
                 quoted_full_cost = None
                 eliyahu_cost = 0.0
-                estimated_cost_without_cache = 0.0
+                cost_estimated = 0.0
                 multiplier = 1.0
                 estimated_time_per_row = 0.0
                 total_estimated_processing_time = 0.0
@@ -579,6 +579,30 @@ def handle(event, context):
                 # ========== ENHANCED AI_API_CLIENT INTEGRATION ==========
                 # Extract enhanced cost/time data from validation lambda's ai_client aggregation
                 enhanced_metrics = metadata.get('enhanced_metrics', {})
+                
+                # Extract enhanced models parameter from validation response
+                enhanced_models_parameter = metadata.get('enhanced_models_parameter', {})
+
+                # DEBUG: Log the exact structure of the received enhanced_metrics
+                logger.info(f"[DATA_FLOW_DEBUG] Received enhanced_metrics structure: {json.dumps(enhanced_metrics, indent=2)}")
+                
+                # DEBUG: Log what we received from validation lambda
+                logger.info(f"[ENHANCED_DEBUG] enhanced_metrics available: {bool(enhanced_metrics)}")
+                if enhanced_metrics:
+                    logger.info(f"[ENHANCED_DEBUG] enhanced_metrics keys: {list(enhanced_metrics.keys())}")
+                    logger.info(f"[ENHANCED_DEBUG] aggregated_metrics available: {bool(enhanced_metrics.get('aggregated_metrics'))}")
+                    if enhanced_metrics.get('aggregated_metrics'):
+                        aggregated_data = enhanced_metrics['aggregated_metrics']
+                        logger.info(f"[ENHANCED_DEBUG] aggregated_data keys: {list(aggregated_data.keys())}")
+                        totals = aggregated_data.get('totals', {})
+                        logger.info(f"[ENHANCED_DEBUG] totals keys: {list(totals.keys())}")
+                        logger.info(f"[ENHANCED_DEBUG] total_cost_actual: {totals.get('total_cost_actual', 'NOT_FOUND')}")
+                        logger.info(f"[ENHANCED_DEBUG] total_cost_estimated: {totals.get('total_cost_estimated', 'NOT_FOUND')}")
+                        providers = aggregated_data.get('providers', {})
+                        logger.info(f"[ENHANCED_DEBUG] providers: {list(providers.keys())}")
+                else:
+                    logger.warning(f"[ENHANCED_DEBUG] No enhanced_metrics found in metadata. Metadata keys: {list(metadata.keys())}")
+                
                 if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
                     # Extract three-tier cost data from enhanced aggregation
                     aggregated_data = enhanced_metrics['aggregated_metrics']
@@ -588,7 +612,7 @@ def handle(event, context):
                     eliyahu_cost = totals.get('total_cost_actual', 0.0)
                     
                     # Tier 2: Estimated cost without cache (for full validation projections)
-                    estimated_cost_without_cache = totals.get('total_cost_without_cache', 0.0)
+                    cost_estimated = totals.get('total_cost_estimated', 0.0)
                     
                     # Extract provider-specific measures
                     providers = aggregated_data.get('providers', {})
@@ -607,16 +631,27 @@ def handle(event, context):
                     # Actual time (with caching benefits) for reporting what actually happened
                     total_processing_time = totals.get('total_actual_processing_time', 0.0)
                     # Estimated time (without caching) for projecting onto non-cached rows
-                    estimated_time_per_row = totals.get('total_estimated_processing_time', 0.0) / max(1, total_rows_processed)
-                    total_estimated_time_without_cache = totals.get('total_estimated_processing_time', 0.0)
+                    # Use direct calculation over all rows if available, otherwise divide total by rows
+                    if 'avg_estimated_row_processing_time' in totals:
+                        estimated_time_per_row = totals.get('avg_estimated_row_processing_time')
+                        time_calculation_method = "direct calculation over all rows"
+                    else:
+                        estimated_time_per_row = totals.get('total_estimated_processing_time', 0.0) / max(1, total_rows_processed)
+                        time_calculation_method = "total time divided by rows (fallback)"
+                    total_estimated_time_seconds = totals.get('total_estimated_processing_time', 0.0)
                     
-                    logger.info(f"[ENHANCED_COSTS] Using ai_client aggregated data - Actual: ${eliyahu_cost:.6f}, No cache: ${estimated_cost_without_cache:.6f}")
+                    logger.info(f"[ENHANCED_COSTS] Using ai_client aggregated data - Actual: ${eliyahu_cost:.6f}, No cache: ${cost_estimated:.6f}")
                     logger.info(f"[ENHANCED_PROVIDERS] Perplexity: ${perplexity_eliyahu_cost:.6f} ({perplexity_calls} calls), Anthropic: ${anthropic_eliyahu_cost:.6f} ({anthropic_calls} calls)")
-                    logger.info(f"[ENHANCED_TIME] Actual time: {total_processing_time:.3f}s, Estimated time per row: {estimated_time_per_row:.3f}s, Total estimated: {total_estimated_time_without_cache:.3f}s")
+                    logger.info(f"[ENHANCED_TIME] Actual time: {total_processing_time:.3f}s, Estimated time per row: {estimated_time_per_row:.3f}s ({time_calculation_method}), Total estimated: {total_estimated_time_seconds:.3f}s")
+                    
+                    # Debug timing extraction from totals
+                    logger.info(f"[TIME_DEBUG] totals timing keys: {[k for k in totals.keys() if 'time' in k.lower()]}")
+                    logger.info(f"[TIME_DEBUG] total_actual_processing_time from totals: {totals.get('total_actual_processing_time', 'NOT_FOUND')}")
+                    logger.info(f"[TIME_DEBUG] total_estimated_processing_time from totals: {totals.get('total_estimated_processing_time', 'NOT_FOUND')}")
                 else:
                     # Fallback to legacy token_usage for backward compatibility
                     eliyahu_cost = token_usage.get('total_cost', 0.0)
-                    estimated_cost_without_cache = _calculate_estimated_cost_without_cache(token_usage, metadata)
+                    cost_estimated = _calculate_cost_estimated(token_usage, metadata)
                     
                     # Extract legacy provider-specific data
                     by_provider = token_usage.get('by_provider', {})
@@ -632,37 +667,67 @@ def handle(event, context):
                     
                     # Legacy time calculation - assume processing_time is actual time with cache benefits
                     total_processing_time = metadata.get('processing_time', 0.0)  # Actual time
-                    total_estimated_time_without_cache = total_processing_time * 1.2  # Rough estimate: 20% slower without cache
-                    estimated_time_per_row = total_estimated_time_without_cache / max(1, total_rows_processed)
+                    total_estimated_time_seconds = total_processing_time * 1.2  # Rough estimate: 20% slower without cache
+                    estimated_time_per_row = total_estimated_time_seconds / max(1, total_rows_processed)
                     
                     logger.warning(f"[ENHANCED_COSTS] Falling back to legacy token_usage - enhanced_metrics not available")
                 
                 # ========== PREVIEW FULL VALIDATION ESTIMATES ==========
                 # For preview operations, use full validation estimates from enhanced data
+                logger.info(f"[ESTIMATES_CHECK] is_preview: {is_preview}, enhanced_metrics available: {bool(enhanced_metrics)}")
+                if enhanced_metrics:
+                    logger.info(f"[ESTIMATES_CHECK] enhanced_metrics keys: {list(enhanced_metrics.keys())}")
+                    logger.info(f"[ESTIMATES_CHECK] full_validation_estimates available: {bool(enhanced_metrics.get('full_validation_estimates'))}")
+                
                 if is_preview and enhanced_metrics and enhanced_metrics.get('full_validation_estimates'):
                     estimates = enhanced_metrics['full_validation_estimates']
                     total_estimates = estimates.get('total_estimates', {})
+
+                    # DEBUG: Log the entire estimates object to see what we're working with
+                    logger.info(f"[ESTIMATES_DEBUG] Full validation estimates object: {json.dumps(estimates, indent=2)}")
                     
-                    # Override manual scaling with ai_client estimates
-                    estimated_total_cost_raw = total_estimates.get('estimated_total_cost_without_cache', estimated_cost_without_cache * total_rows / max(1, total_rows_processed))
-                    estimated_total_time_seconds = total_estimates.get('estimated_total_processing_time', 0.0)
+                    # Extract batch timing analysis for proper time scaling
+                    batch_timing = estimates.get('batch_timing_analysis', {})
                     
-                    logger.info(f"[ENHANCED_ESTIMATES] Using ai_client full validation estimates - Cost: ${estimated_total_cost_raw:.6f}, Time: {estimated_total_time_seconds:.3f}s")
+                    # Use properly scaled estimates from validation lambda calculations
+                    # estimated_validation_eliyahu_cost: Raw eliyahu cost for full table (no multiplier, no cache)
+                    # This comes from the validation lambda's scaling: preview_cost * (total_rows / preview_rows)
+                    estimated_total_cost_raw = total_estimates.get('estimated_total_cost_estimated', cost_estimated * total_rows / max(1, total_rows_processed))
+                    
+                    # estimated_validation_time: Use batch-based scaling for accurate time projection
+                    # The validation lambda calculates this using proper batch architecture
+                    estimated_total_time_seconds = batch_timing.get('estimated_total_time_for_full_validation', 
+                                                                  total_estimates.get('estimated_total_processing_time', 0.0))
+                    
+                    # Debug: Log what we actually received
+                    logger.info(f"[ENHANCED_ESTIMATES_DEBUG] batch_timing keys: {list(batch_timing.keys())}")
+                    logger.info(f"[ENHANCED_ESTIMATES_DEBUG] total_estimates keys: {list(total_estimates.keys())}")
+                    logger.info(f"[ENHANCED_ESTIMATES_DEBUG] estimated_total_time_for_full_validation: {batch_timing.get('estimated_total_time_for_full_validation', 'NOT_FOUND')}")
+                    logger.info(f"[ENHANCED_ESTIMATES_DEBUG] estimated_total_cost_estimated: {total_estimates.get('estimated_total_cost_estimated', 'NOT_FOUND')}")
+                    
+                    logger.info(f"[ENHANCED_ESTIMATES] ✅ Using ai_client full validation estimates:")
+                    logger.info(f"  - Eliyahu cost (no cache, scaled): ${estimated_total_cost_raw:.6f}")
+                    logger.info(f"  - Validation time (batch-based): {estimated_total_time_seconds:.3f}s ({estimated_total_time_seconds/60:.1f} minutes)")
+                    logger.info(f"  - Batch analysis: {batch_timing.get('estimated_batches_for_full_table', 0)} estimated batches")
+                    logger.info(f"  - Preview batch size: {batch_timing.get('preview_average_batch_size', 'N/A')}")
+                    logger.info(f"  - Target batch size: {batch_timing.get('target_full_validation_batch_size', 'N/A')}")
+                    logger.info(f"  - Avg batch time: {batch_timing.get('estimated_time_per_batch', 0):.3f}s")
                 else:
                     # Fallback to manual scaling calculations for non-preview or legacy data
                     estimated_total_cost_raw = None  # Will be calculated later in manual scaling section
                     estimated_total_time_seconds = None  # Will be calculated later in manual scaling section
+                    logger.info(f"[ENHANCED_ESTIMATES] ❌ No enhanced estimates available - will use manual scaling")
 
                 # Validate cost calculations
-                if eliyahu_cost < 0 or estimated_cost_without_cache < 0:
-                    logger.error(f"[COST_ERROR] Invalid negative costs - Actual: ${eliyahu_cost:.6f}, Estimated: ${estimated_cost_without_cache:.6f}")
+                if eliyahu_cost < 0 or cost_estimated < 0:
+                    logger.error(f"[COST_ERROR] Invalid negative costs - Actual: ${eliyahu_cost:.6f}, Estimated: ${cost_estimated:.6f}")
                     eliyahu_cost = max(0.0, eliyahu_cost)
-                    estimated_cost_without_cache = max(0.0, estimated_cost_without_cache)
+                    cost_estimated = max(0.0, cost_estimated)
                 
-                if eliyahu_cost > estimated_cost_without_cache:
-                    logger.warning(f"[COST_WARNING] Actual cost ${eliyahu_cost:.6f} > estimated ${estimated_cost_without_cache:.6f} - possible pricing issue")
+                if eliyahu_cost > cost_estimated:
+                    logger.warning(f"[COST_WARNING] Actual cost ${eliyahu_cost:.6f} > estimated ${cost_estimated:.6f} - possible pricing issue")
                 
-                logger.info(f"[COST_DEBUG] Three-tier costs - Actual: ${eliyahu_cost:.6f}, Estimated: ${estimated_cost_without_cache:.6f}")
+                logger.info(f"[COST_DEBUG] Three-tier costs - Actual: ${eliyahu_cost:.6f}, Estimated: ${cost_estimated:.6f}")
                 total_tokens = token_usage.get('total_tokens', 0)
                 total_api_calls = token_usage.get('api_calls', 0)
                 total_cached_calls = token_usage.get('cached_calls', 0)
@@ -683,21 +748,29 @@ def handle(event, context):
                     from dynamodb_schemas import track_preview_cost, track_api_usage_detailed, check_user_balance
                     from decimal import Decimal
                     
-                    # Apply multiplier using hardened validation system
-                    multiplier_result = _apply_domain_multiplier_with_validation(email, estimated_cost_without_cache, session_id)
+                    # Use scaled eliyahu cost for multiplier calculation if available, otherwise preview cost
+                    cost_for_multiplier = estimated_total_cost_raw if estimated_total_cost_raw is not None else cost_estimated
+                    
+                    logger.info(f"[MULTIPLIER_DEBUG] Calling _apply_domain_multiplier_with_validation with cost: ${cost_for_multiplier:.6f}")
+                    logger.info(f"[MULTIPLIER_DEBUG] - Using {'scaled eliyahu cost' if estimated_total_cost_raw is not None else 'preview cost'}")
+                    multiplier_result = _apply_domain_multiplier_with_validation(email, cost_for_multiplier, session_id)
                     multiplier = multiplier_result['multiplier']
                     domain = multiplier_result['domain']
                     
-                    # Preview cost with multiplier (this will be used for scaling to full table)
-                    preview_cost_with_multiplier = multiplier_result['cost_with_multiplier']
+                    # Cost with multiplier and business logic applied (what user will pay)
+                    cost_with_multiplier = multiplier_result['cost_with_multiplier']
                     quoted_full_cost = multiplier_result['quoted_cost']
+                    
+                    logger.info(f"[MULTIPLIER_DEBUG] Domain multiplier result: domain={domain}, multiplier={multiplier}, "
+                              f"cost_with_multiplier=${cost_with_multiplier:.6f}, quoted_cost=${quoted_full_cost:.2f}")
                     
                     # Validation and audit logging
                     if 'error' in multiplier_result:
                         logger.error(f"[MULTIPLIER_ERROR] Preview domain multiplier error: {multiplier_result['error']}")
                     
                     logger.info(f"[COST_AUDIT] Preview processed {total_rows_processed} rows - "
-                               f"Actual: ${eliyahu_cost:.6f}, Estimated: ${estimated_cost_without_cache:.6f}, "
+                               f"Preview actual: ${eliyahu_cost:.6f}, Preview estimated: ${cost_estimated:.6f}, "
+                               f"Scaled eliyahu cost: ${cost_for_multiplier:.6f}, "
                                f"Domain: {domain}, Multiplier: {multiplier}x, Quoted: ${quoted_full_cost:.2f}")
                     
                     # Get account balance for tracking (no charges for preview)
@@ -707,7 +780,7 @@ def handle(event, context):
                     charged_amount = 0  # No charges for preview
                     
                     # Track preview cost (actual cost for your tracking, estimated cost for user display)
-                    track_preview_cost(session_id, email, Decimal(str(estimated_cost_without_cache)), Decimal(str(multiplier)), total_tokens)
+                    track_preview_cost(session_id, email, Decimal(str(cost_estimated)), Decimal(str(multiplier)), total_tokens)
                     
                     # Provider tracking now handled by enhanced metrics from ai_client
                     logger.info(f"[ENHANCED_METRICS] Preview provider metrics tracked in enhanced data structure")
@@ -716,8 +789,10 @@ def handle(event, context):
                 except Exception as e:
                     logger.error(f"Error applying domain multiplier in preview: {e}")
                     multiplier = 1.0
-                    # Fallback if multiplier lookup fails
-                    quoted_full_cost = math.ceil(estimated_cost_without_cache)  # Will be recalculated with proper scaling, rounded up
+                    # Fallback if multiplier lookup fails - apply default multiplier properly
+                    fallback_cost_with_multiplier = cost_estimated * multiplier
+                    quoted_full_cost = max(2.0, math.ceil(fallback_cost_with_multiplier))
+                    logger.warning(f"[MULTIPLIER_FALLBACK] Using fallback multiplier {multiplier} -> quoted_cost: ${quoted_full_cost:.2f}")
                 
                 # ========== SIMPLIFIED TIME/BATCH CALCULATIONS ==========
                 # Extract simple batch/timing info for backward compatibility
@@ -752,13 +827,16 @@ def handle(event, context):
                 # All cost/time calculations now come from enhanced estimates - no manual scaling
                 if estimated_total_cost_raw is None:
                     logger.warning(f"[ENHANCED_DATA] Missing estimated_total_cost_raw from enhanced estimates - using fallback")
-                    estimated_total_cost_raw = estimated_cost_without_cache * (total_rows / max(1, total_rows_processed))
+                    scaling_factor = total_rows / max(1, total_rows_processed)
+                    estimated_total_cost_raw = cost_estimated * scaling_factor
+                    logger.info(f"[SCALING_DEBUG] Manual scaling: ${cost_estimated:.6f} × ({total_rows}/{total_rows_processed}) = ${estimated_total_cost_raw:.6f}")
                 
                 # Quoted cost comes from enhanced estimates with business logic applied
                 if quoted_full_cost is None:
                     logger.warning(f"[ENHANCED_DATA] Missing quoted_full_cost from enhanced estimates - applying business logic")
-                    raw_quoted_cost = estimated_cost_without_cache * multiplier * (total_rows / max(1, total_rows_processed))
+                    raw_quoted_cost = cost_estimated * multiplier * (total_rows / max(1, total_rows_processed))
                     quoted_full_cost = max(2.0, math.ceil(raw_quoted_cost))  # Add $2 minimum charge, rounded up
+                    logger.info(f"[ENHANCED_DATA] Calculated fallback quoted_full_cost: ${quoted_full_cost:.2f} (base: ${cost_estimated:.6f}, multiplier: {multiplier}, scaling: {total_rows}/{total_rows_processed})")
                 
                 estimated_total_tokens = total_tokens * (total_rows / max(1, total_rows_processed))
                 
@@ -804,30 +882,57 @@ def handle(event, context):
                     }
                 }
                 
-                # Extract per-row costs from enhanced provider metrics
-                perplexity_per_row_cost = 0
-                anthropic_per_row_cost = 0
-                if total_rows_processed > 0 and 'by_provider' in enhanced_metrics.get('aggregated_metrics', {}).get('totals', {}):
-                    provider_totals = enhanced_metrics['aggregated_metrics']['totals']['by_provider']
-                    perplexity_per_row_cost = provider_totals.get('perplexity', {}).get('total_cost_actual', 0) / total_rows_processed
-                    anthropic_per_row_cost = provider_totals.get('anthropic', {}).get('total_cost_actual', 0) / total_rows_processed
+                # Extract provider costs and totals: per-row estimated costs and total run actual costs
+                perplexity_per_row_estimated_cost = 0
+                anthropic_per_row_estimated_cost = 0
+                perplexity_total_actual_cost = 0
+                anthropic_total_actual_cost = 0
+                totals = {}  # Initialize totals for use later
+                
+                if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
+                    providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
+                    totals = enhanced_metrics['aggregated_metrics'].get('totals', {})  # Extract totals here
+                    
+                    # Extract per-row ESTIMATED costs (what it would cost per row without caching)
+                    if total_rows_processed > 0:
+                        perplexity_per_row_estimated_cost = providers.get('perplexity', {}).get('cost_estimated', 0) / total_rows_processed
+                        anthropic_per_row_estimated_cost = providers.get('anthropic', {}).get('cost_estimated', 0) / total_rows_processed
+                    
+                    # Extract total run ACTUAL costs (what was actually paid for the entire run)
+                    perplexity_total_actual_cost = providers.get('perplexity', {}).get('cost_actual', 0)
+                    anthropic_total_actual_cost = providers.get('anthropic', {}).get('cost_actual', 0)
                 else:
                     # Fallback to legacy token_usage if enhanced data not available
                     by_provider = token_usage.get('by_provider', {})
                     perplexity_data = by_provider.get('perplexity', {})
                     anthropic_data = by_provider.get('anthropic', {})
-                    perplexity_per_row_cost = float(perplexity_data.get('total_cost', 0)) / total_rows_processed if total_rows_processed > 0 else 0
-                    anthropic_per_row_cost = float(anthropic_data.get('total_cost', 0)) / total_rows_processed if total_rows_processed > 0 else 0
+                    
+                    # Legacy calculation
+                    perplexity_total_actual_cost = float(perplexity_data.get('total_cost', 0))
+                    anthropic_total_actual_cost = float(anthropic_data.get('total_cost', 0))
+                    perplexity_per_row_estimated_cost = perplexity_total_actual_cost / total_rows_processed if total_rows_processed > 0 else 0
+                    anthropic_per_row_estimated_cost = anthropic_total_actual_cost / total_rows_processed if total_rows_processed > 0 else 0
+                    
+                    # Create fallback totals for legacy path
+                    totals = {
+                        'total_cost_estimated': perplexity_total_actual_cost + anthropic_total_actual_cost,
+                        'total_calls': perplexity_data.get('calls', 0) + anthropic_data.get('calls', 0)
+                    }
                 
-                # Add per-row costs to cost_estimates
-                preview_payload['cost_estimates']['perplexity_per_row_estimated_cost'] = perplexity_per_row_cost
-                preview_payload['cost_estimates']['anthropic_per_row_estimated_cost'] = anthropic_per_row_cost
+                # Add provider costs to cost_estimates
+                preview_payload['cost_estimates']['perplexity_per_row_estimated_cost'] = perplexity_per_row_estimated_cost  # Per-row cost without caching
+                preview_payload['cost_estimates']['anthropic_per_row_estimated_cost'] = anthropic_per_row_estimated_cost  # Per-row cost without caching
+                preview_payload['cost_estimates']['perplexity_total_actual_cost'] = perplexity_total_actual_cost  # Total actual cost paid for entire run
+                preview_payload['cost_estimates']['anthropic_total_actual_cost'] = anthropic_total_actual_cost  # Total actual cost paid for entire run
                 
                 # Add key frontend-expected fields to cost_estimates object (frontend looks for them here)
                 preview_payload['cost_estimates'].update({
                     "quoted_validation_cost": quoted_full_cost,  # What user will pay for full validation (rounded up)
                     "estimated_validation_eliyahu_cost": estimated_total_cost_raw,  # Raw eliyahu cost estimate for full table (no multiplier)
-                    "estimated_total_processing_time": estimated_total_time_seconds  # Frontend expects time in seconds here
+                    "estimated_total_processing_time": estimated_total_time_seconds,  # Keep for backward compatibility
+                    "estimated_validation_time": estimated_total_time_seconds, # Explicitly pass the full validation time estimate
+                    "total_provider_cost_estimated": totals.get('total_cost_estimated', 0.0),  # Total estimated cost across all providers
+                    "total_provider_calls": totals.get('total_calls', 0)  # Total calls across all providers
                 })
                 
                 # Add fields at top level for backward compatibility and easy access
@@ -1044,19 +1149,19 @@ def handle(event, context):
                         
                         # Estimate cost without cache benefits (approximate 8x multiplier for time, varies for cost)
                         cache_efficiency = cached_calls / max(api_calls, 1) if api_calls > 0 else 0
-                        estimated_cost_without_cache = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
+                        cost_estimated = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
                         
                         provider_metrics_for_db[provider] = {
                             'calls': api_calls,
                             'tokens': total_tokens,
                             'cost_actual': actual_cost,
-                            'cost_without_cache': estimated_cost_without_cache,
+                            'cost_estimated': cost_estimated,
                             'processing_time': processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1)),
                             'cache_hit_tokens': cached_calls * (total_tokens / max(api_calls, 1)) if api_calls > 0 else 0,
                             'cost_per_row_actual': actual_cost / total_rows_processed if total_rows_processed > 0 else 0,
-                            'cost_per_row_without_cache': estimated_cost_without_cache / total_rows_processed if total_rows_processed > 0 else 0,
+                            'cost_per_row_estimated': cost_estimated / total_rows_processed if total_rows_processed > 0 else 0,
                             'time_per_row_actual': (processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1))) / total_rows_processed if total_rows_processed > 0 else 0,
-                            'cache_efficiency_percent': (1 - (actual_cost / max(estimated_cost_without_cache, 0.000001))) * 100
+                            'cache_efficiency_percent': (1 - (actual_cost / max(cost_estimated, 0.000001))) * 100
                         }
                 
                 # Update DynamoDB with the complete preview payload and account tracking
@@ -1071,7 +1176,7 @@ def handle(event, context):
                     account_sufficient_balance="n/a",
                     account_credits_needed="n/a",
                     account_domain_multiplier=float(multiplier),
-                    models=", ".join(search_groups_models) if search_groups_models else "No API calls made",
+                    models=json.dumps(enhanced_models_parameter) if enhanced_models_parameter else json.dumps({}),
                     input_table_name=input_filename,
                     configuration_id=configuration_id,
                     batch_size=batch_size_used,
@@ -1104,7 +1209,7 @@ def handle(event, context):
                     high_context_search_groups=validation_metrics.get('enhanced_context_search_groups_count', 0),
                     claude_calls=validation_metrics.get('claude_search_groups_count', 0),
                     eliyahu_cost=eliyahu_cost,  # Actual cost paid
-                    estimated_cost=estimated_cost_without_cache,  # Raw cost estimate without caching
+                    estimated_cost=cost_estimated,  # Raw cost estimate without caching
                     quoted_validation_cost=quoted_full_cost,  # This is the scaled full table quote
                     charged_cost=0.0,  # Preview doesn't charge
                     total_api_calls=total_api_calls,
@@ -1186,7 +1291,7 @@ def handle(event, context):
                     'amount_charged': 0,  # Previews are free
                     'domain_multiplier': float(multiplier),
                     'eliyahu_cost': float(eliyahu_cost),  # Your actual expense
-                    'estimated_cost': float(estimated_cost_without_cache),  # What it would cost without caching
+                    'estimated_cost': float(cost_estimated),  # What it would cost without caching
                     'preview_abandoned': False,  # Completed successfully
                     'insufficient_balance_encountered': False,  # Previews don't charge
                     'processing_type': 'preview'
@@ -1358,6 +1463,9 @@ def handle(event, context):
             token_usage = metadata.get('token_usage', {})
             validation_metrics = metadata.get('validation_metrics', {})
             
+            # Extract enhanced models parameter from validation response
+            enhanced_models_parameter = metadata.get('enhanced_models_parameter', {})
+            
             # Apply domain multiplier to raw costs and handle billing
             try:
                 import sys
@@ -1374,26 +1482,27 @@ def handle(event, context):
                 eliyahu_cost = token_usage.get('total_cost', 0.0)  # Actual cost paid (includes caching benefits)
                 
                 # Calculate estimated cost without caching benefit for consistency
-                estimated_cost_without_cache = _calculate_estimated_cost_without_cache(token_usage, metadata)
+                cost_estimated = _calculate_cost_estimated(token_usage, metadata)
                 
                 # Validate cost calculations
-                if eliyahu_cost < 0 or estimated_cost_without_cache < 0:
-                    logger.error(f"[COST_ERROR] Full validation invalid negative costs - Actual: ${eliyahu_cost:.6f}, Estimated: ${estimated_cost_without_cache:.6f}")
+                if eliyahu_cost < 0 or cost_estimated < 0:
+                    logger.error(f"[COST_ERROR] Full validation invalid negative costs - Actual: ${eliyahu_cost:.6f}, Estimated: ${cost_estimated:.6f}")
                     eliyahu_cost = max(0.0, eliyahu_cost)
-                    estimated_cost_without_cache = max(0.0, estimated_cost_without_cache)
+                    cost_estimated = max(0.0, cost_estimated)
                 
-                if eliyahu_cost > estimated_cost_without_cache:
-                    logger.warning(f"[COST_WARNING] Full validation actual cost ${eliyahu_cost:.6f} > estimated ${estimated_cost_without_cache:.6f}")
+                if eliyahu_cost > cost_estimated:
+                    logger.warning(f"[COST_WARNING] Full validation actual cost ${eliyahu_cost:.6f} > estimated ${cost_estimated:.6f}")
                 
                 # Apply hardened domain multiplier for fallback calculation
-                multiplier_result = _apply_domain_multiplier_with_validation(email, estimated_cost_without_cache, session_id)
+                multiplier_result = _apply_domain_multiplier_with_validation(email, cost_estimated, session_id)
                 multiplier = multiplier_result['multiplier']
                 
                 # For full validation, use the quoted_full_cost from preview (what user was promised to pay)
                 # This ensures users pay exactly what was quoted in preview, regardless of actual full validation costs
                 charged_cost = multiplier_result['quoted_cost']  # Fallback if preview cost not found
                 logger.info(f"[COST_AUDIT] Full validation fallback - Actual: ${eliyahu_cost:.6f}, "
-                           f"Estimated: ${estimated_cost_without_cache:.6f}, Quoted fallback: ${charged_cost:.2f}")
+                           f"Estimated: ${cost_estimated:.6f}, Quoted fallback: ${charged_cost:.2f}")
+                logger.warning(f"[BILLING_PATH] Using FALLBACK calculation instead of preview quoted cost!")
                 
                 try:
                     # Try to get the quoted cost from preview results stored in S3
@@ -1434,17 +1543,34 @@ def handle(event, context):
                     if not preview_data:
                         raise Exception("No preview results found in any config version")
                     
-                    preview_quoted_cost = preview_data.get('account_info', {}).get('quoted_validation_cost')
+                    # Try both locations for preview quoted cost
+                    preview_quoted_cost = None
+                    if preview_data:
+                        # First try account_info (nested location)
+                        preview_quoted_cost = preview_data.get('account_info', {}).get('quoted_validation_cost')
+                        
+                        # If not found, try top level (direct location)  
+                        if not preview_quoted_cost:
+                            preview_quoted_cost = preview_data.get('quoted_validation_cost')
+                    
                     if preview_quoted_cost:
                         charged_cost = float(preview_quoted_cost)
-                        logger.info(f"Using preview quoted cost for full validation: ${charged_cost:.6f}")
+                        logger.info(f"[BILLING_PATH] ✅ Using preview quoted cost for full validation: ${charged_cost:.6f}")
                     else:
-                        logger.warning("Preview quoted cost not found in results, using calculated cost")
+                        logger.warning(f"[BILLING_PATH] ❌ Preview quoted cost not found in results - preview_data keys: {list(preview_data.keys()) if preview_data else 'None'}")
+                        if preview_data and 'account_info' in preview_data:
+                            logger.warning(f"[BILLING_PATH] account_info keys: {list(preview_data['account_info'].keys())}")
+                        logger.warning("[BILLING_PATH] Using calculated fallback cost")
                         
                 except Exception as e:
                     logger.warning(f"Failed to retrieve preview quoted cost: {e}, using calculated cost")
                 
-                logger.info(f"Full validation costs - Eliyahu: ${eliyahu_cost:.6f}, Estimated: ${estimated_cost_without_cache:.6f}, Multiplier: {multiplier}x, User Charged: ${charged_cost:.6f}")
+                logger.info(f"[BILLING_SUMMARY] Full validation costs:")
+                logger.info(f"  - Eliyahu (actual): ${eliyahu_cost:.6f}")
+                logger.info(f"  - Estimated (current): ${cost_estimated:.6f}")
+                logger.info(f"  - Multiplier: {multiplier}x")
+                logger.info(f"  - User Charged: ${charged_cost:.6f}")
+                logger.info(f"  - Fallback would be: ${multiplier_result['quoted_cost']:.2f}")
                 logger.info(f"BILLING DEBUG: is_preview={is_preview}, charged_cost={charged_cost}, session_id={session_id}")
                 
                 # For full validation, deduct from account balance
@@ -1826,7 +1952,7 @@ def handle(event, context):
                     billing_info = {
                         'amount_charged': charged_amount,
                         'eliyahu_cost': eliyahu_cost,
-                        'actual_cost': estimated_cost,  # Add actual cost from DynamoDB
+                        'actual_cost': eliyahu_cost,  # Add actual cost from DynamoDB
                         'multiplier': multiplier,
                         'initial_balance': float(initial_balance) if initial_balance else 0,
                         'final_balance': float(final_balance) if final_balance else 0,
@@ -2052,7 +2178,7 @@ def handle(event, context):
                         
                         search_groups_models.append(model_display)
                     
-                    status_update_data['models'] = ", ".join(search_groups_models) if search_groups_models else "No API calls made"
+                    status_update_data['models'] = json.dumps(enhanced_models_parameter) if enhanced_models_parameter else json.dumps({})
                     
                     # Add input table name and configuration ID
                     status_update_data['input_table_name'] = input_filename
@@ -2086,19 +2212,19 @@ def handle(event, context):
                         
                         if 'Item' in existing_run and 'estimated_validation_eliyahu_cost' in existing_run['Item']:
                             preview_estimate = float(existing_run['Item']['estimated_validation_eliyahu_cost'])
-                            actual_full_cost_without_cache = estimated_cost_without_cache
-                            estimate_accuracy = ((preview_estimate - actual_full_cost_without_cache) / preview_estimate * 100) if preview_estimate > 0 else 0
+                            actual_full_cost_estimated = cost_estimated
+                            estimate_accuracy = ((preview_estimate - actual_full_cost_estimated) / preview_estimate * 100) if preview_estimate > 0 else 0
                             
                             logger.info(f"[COST_COMPARISON] Preview estimated: ${preview_estimate:.6f} | "
-                                      f"Actual full cost (no cache): ${actual_full_cost_without_cache:.6f} | "
+                                      f"Actual full cost (no cache): ${actual_full_cost_estimated:.6f} | "
                                       f"Estimate accuracy: {estimate_accuracy:.1f}% | User charged: ${charged_cost:.2f}")
                         else:
                             logger.info(f"[COST_COMPARISON] No preview estimate found | "
-                                      f"Actual full cost (no cache): ${estimated_cost_without_cache:.6f} | "
+                                      f"Actual full cost (no cache): ${cost_estimated:.6f} | "
                                       f"User charged: ${charged_cost:.2f}")
                     except Exception as e:
                         logger.warning(f"[COST_COMPARISON] Could not retrieve preview estimate for comparison: {e}")
-                        logger.info(f"[COST_COMPARISON] Actual full cost (no cache): ${estimated_cost_without_cache:.6f} | "
+                        logger.info(f"[COST_COMPARISON] Actual full cost (no cache): ${cost_estimated:.6f} | "
                                   f"User charged: ${charged_cost:.2f}")
                     
                     # Do NOT update estimated_validation_eliyahu_cost - preserve the preview estimate
@@ -2120,19 +2246,19 @@ def handle(event, context):
                             
                             # Estimate cost without cache benefits (approximate based on cache efficiency)
                             cache_efficiency = cached_calls / max(api_calls, 1) if api_calls > 0 else 0
-                            estimated_cost_without_cache = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
+                            cost_estimated = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
                             
                             provider_metrics_for_db[provider] = {
                                 'calls': api_calls,
                                 'tokens': total_tokens,
                                 'cost_actual': actual_cost,
-                                'cost_without_cache': estimated_cost_without_cache,
+                                'cost_estimated': cost_estimated,
                                 'processing_time': processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1)),
                                 'cache_hit_tokens': cached_calls * (total_tokens / max(api_calls, 1)) if api_calls > 0 else 0,
                                 'cost_per_row_actual': actual_cost / processed_rows_count if processed_rows_count > 0 else 0,
-                                'cost_per_row_without_cache': estimated_cost_without_cache / processed_rows_count if processed_rows_count > 0 else 0,
+                                'cost_per_row_estimated': cost_estimated / processed_rows_count if processed_rows_count > 0 else 0,
                                 'time_per_row_actual': (processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1))) / processed_rows_count if processed_rows_count > 0 else 0,
-                                'cache_efficiency_percent': (1 - (actual_cost / max(estimated_cost_without_cache, 0.000001))) * 100
+                                'cache_efficiency_percent': (1 - (actual_cost / max(cost_estimated, 0.000001))) * 100
                             }
                     
                     status_update_data['provider_metrics'] = provider_metrics_for_db
@@ -2159,7 +2285,7 @@ def handle(event, context):
                         high_context_search_groups=validation_metrics.get('enhanced_context_search_groups_count', 0),
                         claude_calls=validation_metrics.get('claude_search_groups_count', 0),
                         eliyahu_cost=eliyahu_cost,  # Actual cost paid
-                        estimated_cost=estimated_cost_without_cache,  # Raw cost estimate without caching
+                        estimated_cost=cost_estimated,  # Raw cost estimate without caching
                         quoted_validation_cost=charged_cost,  # This is the quoted cost from preview (what we're charging)
                         charged_cost=charged_cost,  # Full validation charges user the preview quoted cost
                         total_api_calls=token_usage.get('api_calls', 0),
@@ -2513,19 +2639,19 @@ def handle_config_generation(event, context):
                             
                             # For config generation, assume minimal caching benefit (conservative estimate)
                             cache_multiplier = 1.1  # 10% increase for non-cached config operations
-                            estimated_cost_without_cache = actual_cost * cache_multiplier
+                            cost_estimated = actual_cost * cache_multiplier
                             
                             provider_metrics_for_db[provider] = {
                                 'calls': api_calls,
                                 'tokens': total_tokens,
                                 'cost_actual': actual_cost,
-                                'cost_without_cache': estimated_cost_without_cache,
+                                'cost_estimated': cost_estimated,
                                 'processing_time': processing_time_seconds * (api_calls / max(sum(p.get('calls', 0) for p in token_usage_data.values()), 1)) if api_calls > 0 else 0,
                                 'cache_hit_tokens': 0,  # Config generation typically doesn't benefit from significant caching
                                 'cost_per_row_actual': actual_cost,  # For config, "per row" is per config
-                                'cost_per_row_without_cache': estimated_cost_without_cache,
+                                'cost_per_row_estimated': cost_estimated,
                                 'time_per_row_actual': processing_time_seconds * (api_calls / max(sum(p.get('calls', 0) for p in token_usage_data.values()), 1)) if api_calls > 0 else processing_time_seconds,
-                                'cache_efficiency_percent': ((estimated_cost_without_cache - actual_cost) / max(estimated_cost_without_cache, 0.000001)) * 100
+                                'cache_efficiency_percent': ((cost_estimated - actual_cost) / max(cost_estimated, 0.000001)) * 100
                             }
                     
                     update_run_status_for_session(status='COMPLETED',

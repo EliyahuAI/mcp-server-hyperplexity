@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 from interface_lambda.utils.helpers import create_email_folder_path, create_response
-from dynamodb_schemas import get_run_status
+from dynamodb_schemas import get_run_status, find_run_key_by_type, find_existing_run_key
 from interface_lambda.core.s3_manager import generate_presigned_url, S3_RESULTS_BUCKET
 
 logger = logging.getLogger()
@@ -52,7 +52,19 @@ def _check_status(session_id, is_preview, email_param):
     # Use the same session ID for both preview and full validation
     lookup_session_id = session_id
     
-    status_record = get_run_status(lookup_session_id)
+    # Determine expected run type based on is_preview flag
+    expected_run_type = "Preview" if is_preview else "Validation"
+    
+    # Find run_key for this session and run type
+    run_key = find_run_key_by_type(lookup_session_id, expected_run_type)
+    if not run_key:
+        # Fallback to any existing run_key
+        run_key = find_existing_run_key(lookup_session_id)
+    
+    if not run_key:
+        return create_response(200, {'session_id': session_id, 'status': 'PROCESSING', 'message': 'Status record not yet available. The job is likely still being queued.'})
+    
+    status_record = get_run_status(lookup_session_id, run_key)
     
     if not status_record:
         # If no record is found, it's either still processing or an invalid ID

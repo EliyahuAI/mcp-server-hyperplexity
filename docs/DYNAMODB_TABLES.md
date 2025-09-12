@@ -513,3 +513,68 @@ python manage_dynamodb_tables.py test-model-config model_name
 - **Authentication**: user-validation
 
 This architecture supports comprehensive analytics while maintaining clean separation between operational data and business metrics.
+
+## Variable Cost & Time Calculation Reference
+
+This comprehensive table shows how each variable is calculated across different operation types and where it's used.
+
+### Variables Sent to Frontend & DynamoDB
+
+| **Variable Name** | **Preview** | **Full Validation** | **Configuration** | **Sent To** | **Source/Calculation** |
+|---|---|---|---|---|---|
+| **`eliyahu_cost`** | Actual cost paid for preview processing (with caching benefits) | Actual cost paid for full validation (with caching benefits) | Actual cost paid for AI config generation | DynamoDB | `totals.get('total_cost_actual', 0.0)` from enhanced_metrics |
+| **`quoted_validation_cost`** | **What user will pay for full validation** (estimated cost × multiplier × scaling + business logic) | **Amount actually charged to user** (from preview estimate, locked in) | 0.0 (config generation is free to users) | DynamoDB + Frontend | Preview: `max(2.0, math.ceil(cost_estimated × multiplier × scaling_factor))` <br/> Full: Fixed value from preview <br/> Config: 0.0 |
+| **`estimated_validation_eliyahu_cost`** | Raw cost estimate for full table without caching benefit (no multiplier, no rounding) | Previous preview estimate (for comparison with actual cost) | null (not applicable) | DynamoDB + Frontend | `total_estimates.get('estimated_total_cost_estimated')` from full validation estimates |
+| **`time_per_row_seconds`** | Estimated time per row for projecting to full validation | Measured time per row from actual processing | null (not applicable) | DynamoDB | Preview: `estimated_total_time_seconds / max(1, total_rows)` <br/> Full: `actual_processing_time / total_rows_processed` |
+| **`estimated_validation_time_minutes`** | Estimated total time for full validation in minutes | Actual measured full validation time in minutes | null (not applicable) | DynamoDB + Frontend | `round(estimated_total_time_seconds / 60, 1)` |
+| **`estimated_total_processing_time`** | **Batch-based projection**: `estimated_batches_for_full_table × avg_estimated_batch_time` | Actual processing time measured | null (not applicable) | Frontend | `total_estimates.get('estimated_total_processing_time')` using proper batch architecture with `math.ceil(total_rows / avg_batch_size)` |
+| **`run_time_s`** | Actual preview processing time in seconds | Actual full validation processing time in seconds | Actual config generation time in seconds | DynamoDB | Direct measurement during processing |
+| **`avg_estimated_row_processing_time`** | Direct average of estimated times (no cache) across all processed rows | Direct average of actual times across all processed rows | null (not applicable) | Internal/Frontend | `sum(row_estimated_times) / len(total_rows_processed)` - direct calculation, no scaling needed |
+| **`estimated_time_per_row`** | Uses direct calculation if available, otherwise division fallback | Uses actual measured time per row | null (not applicable) | Internal | `totals.get('avg_estimated_row_processing_time')` OR fallback: `total_estimated_time / total_rows_processed` |
+| **`perplexity_per_row_estimated_cost`** | **Per-row estimated cost** (what it would cost per row without caching) | Per-row estimated cost (what it would cost per row without caching) | Per-row estimated cost for config generation | Frontend | `providers.get('perplexity', {}).get('cost_estimated', 0.0) / total_rows_processed` |
+| **`anthropic_per_row_estimated_cost`** | **Per-row estimated cost** (what it would cost per row without caching) | Per-row estimated cost (what it would cost per row without caching) | Per-row estimated cost for config generation | Frontend | `providers.get('anthropic', {}).get('cost_estimated', 0.0) / total_rows_processed` |
+| **`perplexity_total_actual_cost`** | **Total actual cost paid** for Perplexity for entire preview run | Total actual cost paid for Perplexity for entire full validation | Total actual cost paid for Perplexity for config generation | Frontend | `providers.get('perplexity', {}).get('cost_actual', 0.0)` |
+| **`anthropic_total_actual_cost`** | **Total actual cost paid** for Anthropic for entire preview run | Total actual cost paid for Anthropic for entire full validation | Total actual cost paid for Anthropic for config generation | Frontend | `providers.get('anthropic', {}).get('cost_actual', 0.0)` |
+| **`processing_time`** | Actual processing time with cache benefits | Actual processing time with cache benefits | Actual processing time for config generation | Internal | `totals.get('total_actual_processing_time', 0.0)` from enhanced_metrics |
+| **`current_balance`** | User's current account balance (preview is free) | User's account balance before/after charge | User's current balance (config is free) | Frontend + DynamoDB | `check_user_balance(email)` |
+| **`domain_multiplier`** | Domain-based pricing multiplier for cost projection | Domain multiplier used for actual billing | 1.0 (config generation doesn't use multiplier) | Frontend + DynamoDB | `_apply_domain_multiplier_with_validation(email, cost)['multiplier']` |
+| **`provider_metrics`** | Complete provider breakdown with caching info | Complete provider breakdown with actual metrics | AI provider breakdown for config generation | DynamoDB | Enhanced metrics structure from ai_client with per-provider cost/token/time/cache data |
+
+### Key Scaling & Business Logic Formulas
+
+| **Formula Type** | **Formula** | **Used For** | **Notes** |
+|---|---|---|---|
+| **Cost Scaling (Simple)** | `preview_cost × (total_rows / preview_rows)` | Basic cost projection | Used for tokens, API calls, simple estimates |
+| **Time Scaling (Batch-Based)** | `math.ceil(total_rows / avg_actual_batch_size) × avg_estimated_batch_time` | Time projection | ✅ Accounts for partial batches and parallel processing within batches |
+| **Quoted Cost Business Logic** | `max(2.0, math.ceil(estimated_cost × multiplier))` | User billing | $2 minimum charge, rounded up to nearest dollar |
+| **Batch Count** | `math.ceil(total_rows / avg_actual_batch_size)` | Batch planning | ✅ Partial batches take as long as full batches |
+| **Average Row Time (Direct)** | `sum(row_estimated_times) / len(rows_processed)` | Per-row timing | Direct calculation over individual rows, not derived from totals |
+
+### Data Flow Chain
+
+```
+AI API Client → Enhanced Metrics → Validation Lambda → Full Validation Estimates → Interface Lambda → Frontend/DynamoDB
+     ↓              ↓                    ↓                       ↓                     ↓              ↓
+   Individual    Aggregated         Batch Timing            Scaling Applied       Business        Final
+   Call Data     Provider Data      Calculations            to Estimates          Logic           Storage
+```
+
+### Operation-Specific Behavior
+
+**Preview Operations:**
+- ✅ Calculate estimates for full validation using batch architecture
+- ✅ Apply domain multipliers and business logic for user cost projection
+- ✅ Lock in `quoted_validation_cost` that user will be charged later
+- ✅ Use estimated times (without cache) for projections
+
+**Full Validation Operations:**
+- ✅ Charge exactly the `quoted_validation_cost` from preview (promise kept)
+- ✅ Measure actual costs and times for comparison with estimates
+- ✅ Track cache efficiency and actual vs estimated performance
+
+**Configuration Operations:**
+- ✅ Track AI costs for configuration generation (internal accounting)
+- ✅ Free service to users (`quoted_validation_cost = 0`)
+- ✅ No validation-related time/cost projections (not applicable)
+
+This reference ensures consistent variable usage across all operation types and proper cost/time calculations throughout the system.

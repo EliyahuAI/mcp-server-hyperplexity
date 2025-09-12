@@ -129,7 +129,7 @@ The validator produces:
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.9+
 - AWS credentials configured (for direct AWS access)
 - Required packages: `requests`, `boto3`
 
@@ -213,23 +213,19 @@ print("Processing result:", response.json())
 
 ## Deployment (For Administrators)
 
-### Deploy Core Validator Lambda
+A unified deployment script has been created to simplify the deployment process.
 
 ```bash
-cd deployment
-python create_package.py --deploy --force-rebuild
+# Run the deployment script from the project root
+./deploy_all.sh
 ```
 
-### Deploy Interface Lambda with API Gateway
-
-```bash
-python create_interface_package.py --deploy --force-rebuild
-```
-
-This creates:
-- Interface Lambda function with SQS event source mappings
-- API Gateway with `/validate` and `/status` endpoints
-- DynamoDB tracking integration
+This script will:
+- Build the deployment package for each lambda (Interface, Config, and Validation).
+- Include the shared code from `src/shared` in each package.
+- Create or update the Lambda functions and their configurations.
+- Set up the API Gateway with `/validate` and `/status` endpoints.
+- Integrate with SQS and DynamoDB for asynchronous processing and tracking.
 
 ### Test Deployment
 

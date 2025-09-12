@@ -53,13 +53,13 @@ def _enhance_config_generation_costs(eliyahu_cost: float, token_usage: dict, pro
                 # Conservative estimate: $3 per million input tokens, $15 per million output tokens
                 input_tokens = token_usage.get('input_tokens', total_tokens // 2)
                 output_tokens = token_usage.get('output_tokens', total_tokens - input_tokens)
-                estimated_cost_without_cache = (input_tokens * 3.0 / 1_000_000) + (output_tokens * 15.0 / 1_000_000)
+                cost_estimated = (input_tokens * 3.0 / 1_000_000) + (output_tokens * 15.0 / 1_000_000)
             else:
                 # Fallback: assume cached saved 80% of cost
-                estimated_cost_without_cache = eliyahu_cost / 0.2 if eliyahu_cost > 0 else 0.01
+                cost_estimated = eliyahu_cost / 0.2 if eliyahu_cost > 0 else 0.01
         else:
             # If not cached, estimated cost equals actual cost
-            estimated_cost_without_cache = eliyahu_cost
+            cost_estimated = eliyahu_cost
         
         # Config generation is typically free to users, but track internal costs
         internal_cost = eliyahu_cost
@@ -75,11 +75,11 @@ def _enhance_config_generation_costs(eliyahu_cost: float, token_usage: dict, pro
         efficiency_score = tokens_per_second / max(0.001, cost_per_second)
         
         # Calculate cache savings if applicable
-        cache_savings = estimated_cost_without_cache - eliyahu_cost if is_cached else 0.0
+        cache_savings = cost_estimated - eliyahu_cost if is_cached else 0.0
         
         enhanced_data = {
             'eliyahu_cost': internal_cost,  # What we paid
-            'estimated_cost_without_cache': estimated_cost_without_cache,  # Estimated without caching
+            'cost_estimated': cost_estimated,  # Estimated without caching
             'user_cost': user_cost,  # What user pays (free for config)
             'cache_savings': cache_savings,
             'is_cached': is_cached,
@@ -95,14 +95,14 @@ def _enhance_config_generation_costs(eliyahu_cost: float, token_usage: dict, pro
         }
         
         # Validation
-        if internal_cost < 0 or estimated_cost_without_cache < 0:
+        if internal_cost < 0 or cost_estimated < 0:
             logger.error(f"[CONFIG_COST_ERROR] Negative costs detected - Internal: ${internal_cost:.6f}, "
-                        f"Estimated: ${estimated_cost_without_cache:.6f}")
+                        f"Estimated: ${cost_estimated:.6f}")
             enhanced_data['eliyahu_cost'] = max(0.0, internal_cost)
-            enhanced_data['estimated_cost_without_cache'] = max(0.0, estimated_cost_without_cache)
+            enhanced_data['cost_estimated'] = max(0.0, cost_estimated)
         
         logger.info(f"[CONFIG_COST_ANALYSIS] Enhanced config cost data - "
-                   f"Internal: ${internal_cost:.6f}, Estimated: ${estimated_cost_without_cache:.6f}, "
+                   f"Internal: ${internal_cost:.6f}, Estimated: ${cost_estimated:.6f}, "
                    f"Cache savings: ${cache_savings:.6f}, Efficiency: {efficiency_score:.2f}")
         
         return enhanced_data
@@ -111,7 +111,7 @@ def _enhance_config_generation_costs(eliyahu_cost: float, token_usage: dict, pro
         logger.error(f"[CONFIG_COST_ERROR] Error enhancing config generation costs: {e}")
         return {
             'eliyahu_cost': eliyahu_cost,
-            'estimated_cost_without_cache': eliyahu_cost,
+            'cost_estimated': eliyahu_cost,
             'user_cost': 0.0,
             'cache_savings': 0.0,
             'is_cached': is_cached,
@@ -622,7 +622,7 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                     "enhanced_cost_data": enhanced_config_cost_data,  # Full cost analysis
                     "cost_summary": {
                         "internal_cost": enhanced_config_cost_data.get('eliyahu_cost', 0.0),
-                        "estimated_cost_without_cache": enhanced_config_cost_data.get('estimated_cost_without_cache', 0.0),
+                        "cost_estimated": enhanced_config_cost_data.get('cost_estimated', 0.0),
                         "user_cost": enhanced_config_cost_data.get('user_cost', 0.0),
                         "cache_savings": enhanced_config_cost_data.get('cache_savings', 0.0),
                         "efficiency_score": enhanced_config_cost_data.get('efficiency_metrics', {}).get('efficiency_score', 0.0)
@@ -639,19 +639,19 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 if eliyahu_cost > 0 or token_usage.get('total_tokens', 0) > 0:
                     # Estimate cost without cache for config operations
                     cache_multiplier = 1.2 if is_cached else 1.0  # Modest increase for cached configs
-                    estimated_cost_without_cache = eliyahu_cost * cache_multiplier
+                    cost_estimated = eliyahu_cost * cache_multiplier
                     
                     provider_metrics_for_db[provider_name] = {
                         'calls': 1,
                         'tokens': token_usage.get('total_tokens', 0),
                         'cost_actual': eliyahu_cost,
-                        'cost_without_cache': estimated_cost_without_cache,
+                        'cost_estimated': cost_estimated,
                         'processing_time': processing_time,
                         'cache_hit_tokens': token_usage.get('total_tokens', 0) if is_cached else 0,
                         'cost_per_row_actual': eliyahu_cost,  # For config, "per row" is per config
-                        'cost_per_row_without_cache': estimated_cost_without_cache,
+                        'cost_per_row_estimated': cost_estimated,
                         'time_per_row_actual': processing_time,
-                        'cache_efficiency_percent': ((estimated_cost_without_cache - eliyahu_cost) / max(estimated_cost_without_cache, 0.000001)) * 100 if is_cached else 0
+                        'cache_efficiency_percent': ((cost_estimated - eliyahu_cost) / max(cost_estimated, 0.000001)) * 100 if is_cached else 0
                     }
                 
                 # Update runs table with completion
@@ -670,7 +670,7 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                     # ========== THREE-TIER COST TRACKING FOR CONFIG OPERATIONS ==========
                     eliyahu_cost=enhanced_config_cost_data.get('eliyahu_cost', 0.0),  # Actual internal cost paid
                     quoted_validation_cost=enhanced_config_cost_data.get('user_cost', 0.0),  # What user pays (free for config)
-                    estimated_validation_eliyahu_cost=enhanced_config_cost_data.get('estimated_cost_without_cache', 0.0),  # Estimated cost without caching
+                    estimated_validation_eliyahu_cost=enhanced_config_cost_data.get('cost_estimated', 0.0),  # Estimated cost without caching
                     time_per_row_seconds=None,  # Not applicable for config operations
                     estimated_validation_time_minutes=None,  # Not applicable for config operations
                     run_time_s=processing_time,  # Actual config operation time in seconds
@@ -708,7 +708,7 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 # Enhanced cost tracking for config generation
                 'cost_analysis': {
                     'internal_cost': enhanced_config_cost_data.get('eliyahu_cost', 0.0),
-                    'estimated_cost_without_cache': enhanced_config_cost_data.get('estimated_cost_without_cache', 0.0),
+                    'cost_estimated': enhanced_config_cost_data.get('cost_estimated', 0.0),
                     'user_cost': enhanced_config_cost_data.get('user_cost', 0.0),
                     'cache_savings': enhanced_config_cost_data.get('cache_savings', 0.0),
                     'is_cached': is_cached,

@@ -10,12 +10,16 @@ These documents are up-to-date and reflect the current state of the project.
 -   **`backend_architecture.md`**: A detailed explanation of the backend architecture, including the roles of the Interface, Config, and Validation Lambdas and the overall data flow.
 -   **`INFRASTRUCTURE_GUIDE.md`**: A comprehensive guide to the project's infrastructure, including AWS resources and deployment instructions.
 -   **`QUICK_START.md`**: A guide to getting the project set up and running quickly.
+-   **`COST_AND_TIMING_PROPAGATION_GUIDE.md`**: A guide to how cost and timing data flows through the system.
+-   **`DYNAMODB_TABLES.md`**: Detailed information about the DynamoDB tables.
+-   **`PRICING_SYSTEM_ANALYSIS.md`**: An analysis of the pricing system.
+-   **`PRICING_SYSTEM_ARCHITECTURE.md`**: A deep technical overview of the pricing system architecture.
+-   **`RATE_LIMITS_ANALYSIS.md`**: An analysis of the API rate limits and capacity planning.
 
 ## Archived Documentation
 
 These documents are older and may not reflect the current state of the project. They are kept for historical reference.
 
--   `cleanup_proposal.md`
 -   `detailed_cleanup_plan.md`
 -   `AI_CONFIG_GENERATOR_LAMBDA_INTEGRATION_PROMPT.md`
 -   `API_EXAMPLES.md`
@@ -35,4 +39,4 @@ These documents are older and may not reflect the current state of the project. 
 -   `style.md`
 -   `TROUBLESHOOTING_PERPLEXITY_VALIDATOR.md`
 -   `VALIDATION_METRICS_IMPLEMENTATION_SUMMARY.md`
--   `VALIDATION_OUTPUT_ENHANCEMENT_GUIDE.md` 
+-   `VALIDATION_OUTPUT_ENHANCEMENT_GUIDE.md`

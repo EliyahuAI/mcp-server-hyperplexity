@@ -134,7 +134,7 @@ def _enhance_cost_aggregation(validation_results: dict, processing_time: float) 
             logger.warning("[COST_AGGREGATION] Invalid validation results")
             return {
                 'eliyahu_cost': 0.0,
-                'estimated_cost_without_cache': 0.0,
+                'cost_estimated': 0.0,
                 'total_cost': 0.0,
                 'processing_time': processing_time,
                 'cost_per_second': 0.0,
@@ -155,9 +155,9 @@ def _enhance_cost_aggregation(validation_results: dict, processing_time: float) 
             # Estimate cost if no caching were available
             non_cached_calls = total_calls - cached_calls
             cost_per_non_cached_call = eliyahu_cost / max(1, non_cached_calls)
-            estimated_cost_without_cache = cost_per_non_cached_call * total_calls
+            cost_estimated = cost_per_non_cached_call * total_calls
         else:
-            estimated_cost_without_cache = eliyahu_cost
+            cost_estimated = eliyahu_cost
         
         # Calculate processing efficiency metrics
         cost_per_second = eliyahu_cost / max(0.001, processing_time)  # Avoid division by zero
@@ -166,22 +166,22 @@ def _enhance_cost_aggregation(validation_results: dict, processing_time: float) 
         cost_per_token = eliyahu_cost / max(1, total_tokens)
         
         # Validate calculations
-        if eliyahu_cost < 0 or estimated_cost_without_cache < 0:
+        if eliyahu_cost < 0 or cost_estimated < 0:
             logger.error(f"[COST_AGGREGATION] Negative costs detected - Actual: ${eliyahu_cost:.6f}, "
-                        f"Estimated: ${estimated_cost_without_cache:.6f}")
+                        f"Estimated: ${cost_estimated:.6f}")
             eliyahu_cost = max(0.0, eliyahu_cost)
-            estimated_cost_without_cache = max(0.0, estimated_cost_without_cache)
+            cost_estimated = max(0.0, cost_estimated)
         
         enhanced_data = {
             'eliyahu_cost': eliyahu_cost,
-            'estimated_cost_without_cache': estimated_cost_without_cache,
+            'cost_estimated': cost_estimated,
             'total_cost': eliyahu_cost,  # For backwards compatibility
             'processing_time': processing_time,
             'cost_per_second': cost_per_second,
             'cost_per_token': cost_per_token,
             'tokens_per_second': tokens_per_second,
             'cache_hit_rate': cached_calls / max(1, total_calls),
-            'cost_savings_from_cache': estimated_cost_without_cache - eliyahu_cost,
+            'cost_savings_from_cache': cost_estimated - eliyahu_cost,
             'efficiency_metrics': {
                 'total_calls': total_calls,
                 'cached_calls': cached_calls,
@@ -192,7 +192,7 @@ def _enhance_cost_aggregation(validation_results: dict, processing_time: float) 
         }
         
         logger.info(f"[COST_AGGREGATION] Enhanced cost data - Actual: ${eliyahu_cost:.6f}, "
-                   f"Estimated: ${estimated_cost_without_cache:.6f}, "
+                   f"Estimated: ${cost_estimated:.6f}, "
                    f"Cache savings: ${enhanced_data['cost_savings_from_cache']:.6f}, "
                    f"Efficiency: {enhanced_data['efficiency_metrics']['processing_efficiency_score']:.2f}")
         
@@ -202,7 +202,7 @@ def _enhance_cost_aggregation(validation_results: dict, processing_time: float) 
         logger.error(f"[COST_AGGREGATION] Error enhancing cost data: {e}")
         return {
             'eliyahu_cost': 0.0,
-            'estimated_cost_without_cache': 0.0,
+            'cost_estimated': 0.0,
             'total_cost': 0.0,
             'processing_time': processing_time,
             'cost_per_second': 0.0,
@@ -651,7 +651,7 @@ def _process_preview_sync(storage_manager, email_address, session_id, excel_s3_k
             # Extract costs for backwards compatibility
             total_cost = enhanced_cost_data.get('total_cost', 0.0)
             eliyahu_cost = enhanced_cost_data.get('eliyahu_cost', 0.0)
-            estimated_cost_without_cache = enhanced_cost_data.get('estimated_cost_without_cache', 0.0)
+            cost_estimated = enhanced_cost_data.get('cost_estimated', 0.0)
 
             markdown_table = create_markdown_table_from_results(real_results, 3, config_s3_key, storage_manager.bucket_name)
             
@@ -700,7 +700,7 @@ def _process_preview_sync(storage_manager, email_address, session_id, excel_s3_k
                 'enhanced_cost_data': enhanced_cost_data,  # Full three-tier cost analysis
                 'cost_summary': {
                     'eliyahu_cost': eliyahu_cost,
-                    'estimated_cost_without_cache': estimated_cost_without_cache,
+                    'cost_estimated': cost_estimated,
                     'cache_savings': enhanced_cost_data.get('cost_savings_from_cache', 0.0),
                     'efficiency_score': enhanced_cost_data.get('efficiency_metrics', {}).get('processing_efficiency_score', 0.0)
                 },

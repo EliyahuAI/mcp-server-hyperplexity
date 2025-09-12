@@ -7,7 +7,7 @@ This document outlines the backend architecture of the Hyperplexity Table Valida
 2.  **Config Lambda**: Manages the creation, modification, and validation of configuration files.
 3.  **Validation Lambda**: Performs the core data validation and enrichment tasks.
 
-## 1. Interface Lambda (`src/interface_lambda`)
+## 1. Interface Lambda (`src/lambdas/interface`)
 
 The Interface Lambda serves as the primary entry point for the frontend. It is responsible for handling user authentication, file uploads, and orchestrating the validation workflow.
 
@@ -19,7 +19,7 @@ The Interface Lambda serves as the primary entry point for the frontend. It is r
 *   **`reporting/`**: Handles the generation of reports and sending them to the user.
 *   **`utils/`**: Contains utility functions that are used across the lambda.
 
-## 2. Config Lambda (`config_lambda/`)
+## 2. Config Lambda (`src/lambdas/config`)
 
 The Config Lambda is responsible for managing the configuration files that define the validation rules for each table. It can generate a new configuration file based on the table structure, modify an existing one, or validate a configuration file against the table.
 
@@ -29,7 +29,7 @@ The Config Lambda is responsible for managing the configuration files that defin
 *   **`prompts/`**: Contains the prompts that are used to generate the configuration files.
 *   **`ai_generation_schema.json`**: Defines the schema for the AI-generated configuration files.
 
-## 3. Validation Lambda (`src/lambda_function.py`)
+## 3. Validation Lambda (`src/lambdas/validation`)
 
 The Validation Lambda is the workhorse of the application. It takes a table and a configuration file as input and performs the validation and enrichment tasks. It can be run in either synchronous or asynchronous mode. In asynchronous mode, it uses a WebSocket connection to send progress updates to the frontend.
 

@@ -489,7 +489,7 @@ class SimplifiedSchemaValidator:
         return prompt
     
     def parse_multiplex_result(self, result: Dict, row: Dict[str, Any]) -> Dict[str, Tuple[Any, None, List[str], str, str, str, bool, bool, Optional[str]]]:
-        """Parse the multiplex validation result from Perplexity API response."""
+        """Parse the multiplex validation result from API response (normalized to Perplexity format)."""
         try:
             # Extract content from API response
             if not isinstance(result, dict) or 'choices' not in result:
