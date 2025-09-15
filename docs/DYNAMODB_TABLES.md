@@ -522,7 +522,7 @@ This comprehensive table shows how each variable is calculated across different 
 
 | **Variable Name** | **Preview** | **Full Validation** | **Configuration** | **Sent To** | **Source/Calculation** |
 |---|---|---|---|---|---|
-| **`eliyahu_cost`** | Actual cost paid for preview processing (with caching benefits) | Actual cost paid for full validation (with caching benefits) | Actual cost paid for AI config generation | DynamoDB | `totals.get('total_cost_actual', 0.0)` from enhanced_metrics |
+| **`eliyahu_cost`** | Actual cost paid for preview processing (with caching benefits) | Actual cost paid for full validation (with caching benefits) | Actual cost paid for AI config generation | DynamoDB | `totals.get('total_cost_actual', 0.0)` from enhanced_metrics with provider sum fallback: `perplexity_eliyahu_cost + anthropic_eliyahu_cost` |
 | **`quoted_validation_cost`** | **What user will pay for full validation** (estimated cost × multiplier × scaling + business logic) | **Amount actually charged to user** (from preview estimate, locked in) | 0.0 (config generation is free to users) | DynamoDB + Frontend | Preview: `max(2.0, math.ceil(cost_estimated × multiplier × scaling_factor))` <br/> Full: Fixed value from preview <br/> Config: 0.0 |
 | **`estimated_validation_eliyahu_cost`** | Raw cost estimate for full table without caching benefit (no multiplier, no rounding) | Previous preview estimate (for comparison with actual cost) | null (not applicable) | DynamoDB + Frontend | `total_estimates.get('estimated_total_cost_estimated')` from full validation estimates |
 | **`time_per_row_seconds`** | Estimated time per row for projecting to full validation | Measured time per row from actual processing | null (not applicable) | DynamoDB | Preview: `estimated_total_time_seconds / max(1, total_rows)` <br/> Full: `actual_processing_time / total_rows_processed` |
@@ -578,3 +578,39 @@ AI API Client → Enhanced Metrics → Validation Lambda → Full Validation Est
 - ✅ No validation-related time/cost projections (not applicable)
 
 This reference ensures consistent variable usage across all operation types and proper cost/time calculations throughout the system.
+
+## Recent Fixes & Improvements (September 2025)
+
+### Cost Detection & Cache Handling Fixes
+
+**Issue**: Cached validation responses were incorrectly appearing as fresh API calls, causing `eliyahu_cost` to show actual costs instead of 0 for fully cached runs.
+
+**Root Cause**: When cached responses lacked stored `enhanced_data`, the system regenerated metrics using original processing time (~90s) instead of cache retrieval time (~0.001s), causing the cost calculation to treat them as fresh calls.
+
+**Fixes Applied**:
+1. **Cache Detection Logic**: Modified all cached response handling to use 0.001s cache retrieval time instead of original processing time when regenerating enhanced metrics
+2. **Fresh Call Parameters**: Removed incorrect `pre_extracted_token_usage` parameter from fresh API calls that was marking them as cached
+3. **Provider Cost Fallback**: Added fallback logic for `eliyahu_cost` calculation to sum `perplexity_eliyahu_cost + anthropic_eliyahu_cost` when `total_cost_actual` is incorrectly 0
+
+**Expected Results**:
+- Fully cached runs: `eliyahu_cost = 0`, `cache_efficiency_percent = 100%`
+- Mixed cache/fresh runs: `eliyahu_cost = actual_cost_paid`, provider_metrics shows correct breakdown
+- Fresh runs: `eliyahu_cost = full_actual_cost`, `cache_efficiency_percent = 0%`
+
+### Config Generation Error Fixes
+
+**Issues**: 
+- `NameError: 'models_used' is not defined` 
+- `NameError: 'cost_info' is not defined`
+
+**Fixes**: 
+- Fixed variable name mismatch (`models_used` → `models`)
+- Added missing `cost_info = response.get('cost_info', {})` extraction
+
+### Timing Field Population
+
+**Issue**: `actual_processing_time_seconds` and `actual_time_per_batch_seconds` were empty for validation runs.
+
+**Fix**: Added explicit population of these fields in validation completion status updates for DynamoDB compatibility.
+
+These fixes ensure accurate cost tracking, proper cache detection, and complete data population across all run types.
