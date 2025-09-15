@@ -632,6 +632,12 @@ def handle(event, context):
                     perplexity_eliyahu_cost = providers.get('perplexity', {}).get('cost_actual', 0.0)
                     anthropic_eliyahu_cost = providers.get('anthropic', {}).get('cost_actual', 0.0)
                     
+                    # Use provider sum as fallback if total is wrong (ensures consistency)
+                    provider_cost_sum = perplexity_eliyahu_cost + anthropic_eliyahu_cost
+                    if provider_cost_sum > 0 and eliyahu_cost == 0.0:
+                        logger.info(f"[COST_CORRECTION] Using provider sum ${provider_cost_sum:.6f} instead of total ${eliyahu_cost:.6f}")
+                        eliyahu_cost = provider_cost_sum
+                    
                     # Extract API call counts
                     perplexity_calls = providers.get('perplexity', {}).get('calls', 0)
                     anthropic_calls = providers.get('anthropic', {}).get('calls', 0)
