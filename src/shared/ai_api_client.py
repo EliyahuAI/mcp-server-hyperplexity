@@ -2005,8 +2005,7 @@ class AIAPIClient:
                                 response_json, 
                                 model, 
                                 processing_time,
-                                search_context_size=search_context_size,
-                                pre_extracted_token_usage=token_usage
+                                search_context_size=search_context_size
                             )
                             logger.info(f"Generated enhanced metrics for non-cached perplexity response: cost=${enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0):.6f}, time={processing_time:.3f}s")
                         except Exception as e:
@@ -2295,12 +2294,22 @@ class AIAPIClient:
                         if use_cache and cache_key:
                             await self._save_to_cache(cache_key, response_json, token_usage, processing_time, normalized_model, 'anthropic')
                         
+                        # Generate enhanced metrics for this call
+                        try:
+                            enhanced_data = self.get_enhanced_call_metrics(
+                                response_json, normalized_model, processing_time
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to generate enhanced metrics for call_structured_api: {e}")
+                            enhanced_data = {}
+                        
                         return {
                             'response': response_json,
                             'token_usage': token_usage,
                             'processing_time': processing_time,
                             'is_cached': False,
-                            'citations': self.extract_citations_from_response(response_json)
+                            'citations': self.extract_citations_from_response(response_json),
+                            'enhanced_data': enhanced_data
                         }
                     else:
                         error = Exception(f"Anthropic API returned status {response.status}: {response_text}")
@@ -2365,6 +2374,15 @@ class AIAPIClient:
                         
                         token_usage = self._extract_token_usage(response_json, model, "low")
                         
+                        # Generate enhanced metrics for this call
+                        try:
+                            enhanced_data = self.get_enhanced_call_metrics(
+                                response_json, model, processing_time
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to generate enhanced metrics for Perplexity call: {e}")
+                            enhanced_data = {}
+                        
                         # Cache the response
                         if use_cache and cache_key:
                             await self._save_to_cache(cache_key, response_json, token_usage, processing_time, model, 'perplexity')
@@ -2374,7 +2392,8 @@ class AIAPIClient:
                             'token_usage': token_usage,
                             'processing_time': processing_time,
                             'is_cached': False,
-                            'citations': self.extract_citations_from_perplexity_response(response_json)
+                            'citations': self.extract_citations_from_perplexity_response(response_json),
+                            'enhanced_data': enhanced_data
                         }
                     else:
                         error_text = await response.text()

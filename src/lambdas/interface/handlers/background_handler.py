@@ -2447,6 +2447,8 @@ def handle(event, context):
                     # Do NOT update estimated_validation_eliyahu_cost - preserve the preview estimate
                     status_update_data['time_per_row_seconds'] = validation_processing_time / processed_rows_count if processed_rows_count > 0 else 0.0  # Actual time per row
                     status_update_data['run_time_s'] = validation_processing_time  # Actual validation run time in seconds
+                    status_update_data['actual_processing_time_seconds'] = validation_processing_time  # Same as run_time_s for compatibility
+                    status_update_data['actual_time_per_batch_seconds'] = validation_processing_time  # For single batch validation, same as total time
                     status_update_data['percent_complete'] = 100  # Mark validation as 100% complete
                     # estimated_validation_time_minutes will be calculated from actual processing time automatically in update_run_status
                     
@@ -2839,7 +2841,7 @@ def handle_config_generation(event, context):
                     # Build preview_data for config generation
                     config_data = {
                         "config_type": "ai_generated",
-                        "ai_models_used": models_used,
+                        "ai_models_used": models,
                         "processing_time_seconds": response.get('processing_time', 0),
                         "cost_estimates": {
                             "total_cost": config_cost,
