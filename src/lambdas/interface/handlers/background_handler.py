@@ -1801,7 +1801,6 @@ def handle(event, context):
                     end_time_str = validation_results.get('end_time') 
                     if start_time_str and end_time_str:
                         try:
-                            from datetime import datetime
                             start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
                             end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
                             processing_time = (end_time - start_time).total_seconds()
@@ -2138,7 +2137,6 @@ def handle(event, context):
                             if 'actual_processing_time_seconds' in run_status:
                                 actual_processing_time = float(run_status['actual_processing_time_seconds'])
                             elif 'start_time' in run_status and 'end_time' in run_status:
-                                from datetime import datetime, timezone
                                 start_time = datetime.fromisoformat(run_status['start_time'].replace('Z', '+00:00'))
                                 end_time = datetime.fromisoformat(run_status['end_time'].replace('Z', '+00:00'))
                                 actual_processing_time = (end_time - start_time).total_seconds()
@@ -2387,7 +2385,6 @@ def handle(event, context):
                     # Get the current run's start time from DynamoDB
                     try:
                         from dynamodb_schemas import get_run_status
-                        from datetime import datetime, timezone
                         current_run = get_run_status(session_id, run_key)
                         if current_run and 'start_time' in current_run:
                             start_time_str = current_run['start_time']
@@ -2412,7 +2409,6 @@ def handle(event, context):
                         
                         if start_time_str and end_time_str:
                             try:
-                                from datetime import datetime
                                 start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
                                 end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
                                 validation_processing_time = (end_time - start_time).total_seconds()
@@ -2671,7 +2667,6 @@ def handle_config_generation(event, context):
     """Handle config generation requests by forwarding to config lambda."""
     try:
         import time
-        from datetime import datetime, timezone
         execution_id = f"{context.aws_request_id if context else 'no-context'}_{int(time.time() * 1000)}"
         logger.info(f"[CONFIG_GEN_START] {execution_id} - Handling config generation request for session {event.get('session_id')}")
         session_id = event.get('session_id')
