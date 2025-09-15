@@ -2838,6 +2838,9 @@ def handle_config_generation(event, context):
                         config_version = response['updated_config'].get('generation_metadata', {}).get('version', 1)
                         logger.info(f"Extracted config version {config_version} from generation_metadata")
                     
+                    # Extract cost_info from response
+                    cost_info = response.get('cost_info', {})
+                    
                     # Build preview_data for config generation
                     config_data = {
                         "config_type": "ai_generated",
