@@ -2468,7 +2468,8 @@ def handle_config_generation(event, context):
                 total_rows = event.get('total_rows', 0)
                 
                 logger.info(f"[CONFIG_RUN_TRACKING] Creating config generation run record for session {session_id}")
-                create_run_record(session_id, config_email, total_rows, 1, "Config Generation")  # batch_size=1 for config generation
+                run_key = create_run_record(session_id, config_email, total_rows, 1, "Config Generation")  # batch_size=1 for config generation
+                logger.info(f"[CONFIG_RUN_TRACKING] Config generation run_key: {run_key}")
                 update_run_status_for_session(status='IN_PROGRESS',
                     run_type="Config Generation",
                     verbose_status="Configuration generation starting with AI analysis...",
@@ -2693,6 +2694,7 @@ def handle_config_generation(event, context):
                     
                     update_run_status_for_session(status='COMPLETED',
                         run_type="Config Generation",
+                        run_key=run_key,
                         verbose_status="Configuration generation completed successfully.",
                         percent_complete=100,
                         processed_rows=1,  # One config generated
@@ -2790,6 +2792,7 @@ def handle_config_generation(event, context):
                     logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with failure")
                     update_run_status_for_session(status='FAILED',
                         run_type="Config Generation",
+                        run_key=run_key,
                         verbose_status=f"Configuration generation failed: {response.get('error', 'Unknown error')}",
                         percent_complete=0,
                         processed_rows=0,
@@ -2843,6 +2846,7 @@ def handle_config_generation(event, context):
                 logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with exception failure")
                 update_run_status_for_session(status='FAILED',
                     run_type="Config Generation",
+                    run_key=run_key,
                     verbose_status=f"Configuration generation failed with exception: {str(e)}",
                     percent_complete=0,
                     processed_rows=0,
