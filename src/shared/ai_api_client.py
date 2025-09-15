@@ -1538,7 +1538,7 @@ class AIAPIClient:
                                 enhanced_data = self.get_enhanced_call_metrics(
                                     cached_data['api_response'], 
                                     current_model, 
-                                    original_processing_time,
+                                    0.001,  # Use minimal cache retrieval time instead of original processing time
                                     pre_extracted_token_usage=cached_token_usage
                                 )
                                 
@@ -1699,7 +1699,7 @@ class AIAPIClient:
                         enhanced_data = self.get_enhanced_call_metrics(
                             cached_data['api_response'], 
                             normalized_model, 
-                            original_processing_time,
+                            0.001,  # Use minimal cache retrieval time instead of original processing time
                             pre_extracted_token_usage=cached_token_usage
                         )
                         
@@ -1807,7 +1807,7 @@ class AIAPIClient:
                         enhanced_data = self.get_enhanced_call_metrics(
                             cached_data['api_response'], 
                             model, 
-                            original_processing_time,
+                            0.001,  # Use minimal cache retrieval time instead of original processing time
                             pre_extracted_token_usage=cached_token_usage
                         )
                         
@@ -1904,7 +1904,7 @@ class AIAPIClient:
                         enhanced_data = self.get_enhanced_call_metrics(
                             cached_data['api_response'], 
                             model, 
-                            original_processing_time,
+                            0.001,  # Use minimal cache retrieval time instead of original processing time
                             pre_extracted_token_usage=cached_token_usage
                         )
                         
