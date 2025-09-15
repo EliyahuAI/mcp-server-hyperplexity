@@ -159,7 +159,7 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
                                  latest_validation_results: Dict = None) -> Dict:
     """Unified config generation - always returns both updated config and clarifying questions."""
     logger.info(f"Config generation started for session {session_id}")
-    send_websocket_progress(session_id, "Processing table data...", 60)
+    send_websocket_progress(session_id, "Generating new configuration... (~70s)", 55)
     
     # Debug logging for existing config
     if existing_config:
@@ -197,27 +197,36 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             # Context should be for search_context_size in validation calls
         )
         
-        # Extract enhanced data from AI client response (complete enhanced metrics)
+        # Extract enhanced data from AI client response (individual call enhanced metrics)
         enhanced_data = result.get('enhanced_data', {})
         token_usage = result.get('token_usage', {})
         
-        # Extract timing data from enhanced metrics (prefer enhanced over legacy)
-        totals = enhanced_data.get('totals', {})
-        estimated_processing_time = totals.get('total_estimated_processing_time', result.get('processing_time', 0))
-        actual_processing_time = totals.get('total_actual_processing_time', result.get('processing_time', 0))
+        # Extract timing data from enhanced metrics (individual call structure)
+        timing_data = enhanced_data.get('timing', {})
+        estimated_processing_time = timing_data.get('time_estimated_seconds', result.get('processing_time', 0))
+        actual_processing_time = timing_data.get('time_actual_seconds', result.get('processing_time', 0))
         
         model_used = result.get('model_used', config_settings.get('model', 'claude-opus-4-1'))
         is_cached = result.get('is_cached', False)
         
-        # Extract cost from enhanced data (proper chain of custody)
-        eliyahu_cost = enhanced_data.get('total_cost_actual', 0.0)
-        if eliyahu_cost == 0.0:
+        # Extract cost from enhanced data (individual call structure)
+        costs_data = enhanced_data.get('costs', {})
+        eliyahu_cost = costs_data.get('actual', {}).get('total_cost', 0.0)
+        estimated_cost = costs_data.get('estimated', {}).get('total_cost', 0.0)
+        
+        if eliyahu_cost == 0.0 and not enhanced_data:
             # Fallback to legacy cost calculation if enhanced data not available
             cost_data = ai_client.calculate_token_costs(token_usage)
             eliyahu_cost = cost_data.get('total_cost', 0.0)
+            estimated_cost = eliyahu_cost
             logger.warning("[CONFIG_PRICING] Enhanced data not available, using legacy cost calculation")
         else:
-            logger.info(f"[CONFIG_PRICING] Using enhanced cost data: ${eliyahu_cost:.6f}")
+            logger.info(f"[CONFIG_PRICING] Using enhanced cost data: actual=${eliyahu_cost:.6f}, estimated=${estimated_cost:.6f}")
+        
+        # Add total_cost to token_usage for backward compatibility with background handler
+        if not token_usage.get('total_cost'):
+            token_usage['total_cost'] = eliyahu_cost
+            logger.info(f"[CONFIG_COST_COMPATIBILITY] Added total_cost=${eliyahu_cost:.6f} to token_usage for background handler compatibility")
         
         # Extract response data
         response_data = ai_client.extract_structured_response(result['response'], "generate_config_and_questions")
@@ -324,12 +333,26 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             'session_id': session_id,
             # Add cost and usage tracking data (enhanced metrics)
             'eliyahu_cost': eliyahu_cost,
+            'estimated_cost': estimated_cost,
             'enhanced_data': enhanced_data,
             'token_usage': token_usage,
             'estimated_processing_time': estimated_processing_time,
             'actual_processing_time': actual_processing_time,
+            'processing_time': actual_processing_time,  # Legacy field for compatibility
             'model_used': model_used,
-            'is_cached': is_cached
+            'is_cached': is_cached,
+            # Add cost_info structure for background handler compatibility
+            'cost_info': {
+                'total_cost': eliyahu_cost,
+                'estimated_cost': estimated_cost,
+                'total_tokens': token_usage.get('total_tokens', 0),
+                'anthropic_tokens': token_usage.get('total_tokens', 0) if token_usage.get('api_provider') == 'anthropic' else 0,
+                'anthropic_cost': eliyahu_cost if token_usage.get('api_provider') == 'anthropic' else 0.0,
+                'anthropic_calls': 1 if token_usage.get('api_provider') == 'anthropic' else 0,
+                'perplexity_tokens': token_usage.get('total_tokens', 0) if token_usage.get('api_provider') == 'perplexity' else 0,
+                'perplexity_cost': eliyahu_cost if token_usage.get('api_provider') == 'perplexity' else 0.0,
+                'perplexity_calls': 1 if token_usage.get('api_provider') == 'perplexity' else 0
+            }
         }
         
     except Exception as e:
@@ -517,7 +540,13 @@ This shows how the current configuration performed on the first few rows:"""
                             # Show validation results for each column in this row
                             for col_name, col_result in row_data.items():
                                 if isinstance(col_result, dict) and 'confidence' in col_result:
-                                    confidence = col_result.get('confidence', 0)
+                                    confidence_raw = col_result.get('confidence', 0)
+                                    # Ensure confidence is a float for formatting
+                                    try:
+                                        confidence = float(confidence_raw) if confidence_raw is not None else 0.0
+                                    except (ValueError, TypeError):
+                                        confidence = 0.0
+                                    
                                     confidence_level = col_result.get('confidence_level', 'UNKNOWN')
                                     value = col_result.get('value', 'N/A')
                                     update_required = col_result.get('update_required', False)

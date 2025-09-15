@@ -359,6 +359,9 @@ def handle(event, context):
 
         logger.info("--- Background Handler Started ---")
         
+        # Record when background handler actually starts processing
+        background_start_time = datetime.now(timezone.utc).isoformat()
+        
         # Check if this is a config generation request
         if event.get('request_type') == 'config_generation':
             logger.info("Detected config generation request, forwarding to validation lambda")
@@ -522,6 +525,16 @@ def handle(event, context):
                 'status': f'🔍 Running AI validation on {preview_max_rows} sample rows...',
                 'session_id': session_id
             }, "preview_progress_validation")
+            
+            # Update start_time to when background handler actually begins validation processing
+            if run_key:
+                update_run_status_for_session(
+                    status='IN_PROGRESS',
+                    run_type="Preview",
+                    verbose_status=f"Running AI validation on {preview_max_rows} sample rows...",
+                    start_time=background_start_time,  # Use background handler start time
+                    percent_complete=5
+                )
             
             validation_results = invoke_validator_lambda(
                 actual_excel_s3_key, actual_config_s3_key, max_rows, batch_size, S3_UNIFIED_BUCKET, VALIDATOR_LAMBDA_NAME,
@@ -1110,7 +1123,7 @@ def handle(event, context):
                 # Create search group models tracking string for preview - one entry per search group with validated columns count
                 search_groups_models = []
                 search_groups_count = validation_metrics.get('search_groups_count', 0)
-                enhanced_context_groups = validation_metrics.get('enhanced_context_search_groups_count', 0)
+                enhanced_context_groups = validation_metrics.get('high_context_search_groups_count', 0)
                 claude_groups = validation_metrics.get('claude_search_groups_count', 0)
                 regular_perplexity_groups = search_groups_count - enhanced_context_groups - claude_groups
                 validated_columns_count = validation_metrics.get('validated_columns_count', 0)
@@ -1171,35 +1184,68 @@ def handle(event, context):
                 estimated_time_minutes = preview_payload.get('estimated_validation_time_minutes', 0.0)  # Total estimated time in minutes
                 batch_size_used = preview_payload.get('actual_batch_size', 10)  # Actual batch size used for preview
                 
-                # Convert existing token_usage data to enhanced provider metrics format
+                # Use enhanced provider metrics from ai_client aggregation if available
                 provider_metrics_for_db = {}
-                by_provider = token_usage.get('by_provider', {})
                 total_rows_processed = len(validation_results.get('validation_results', {})) if validation_results else 1
                 
-                for provider, provider_usage in by_provider.items():
-                    if provider_usage and isinstance(provider_usage, dict):
-                        # Extract metrics from existing token_usage structure
-                        actual_cost = provider_usage.get('total_cost', 0.0)
-                        total_tokens = provider_usage.get('total_tokens', 0)
-                        api_calls = provider_usage.get('api_calls', 0)
-                        cached_calls = provider_usage.get('cached_calls', 0)
-                        
-                        # Estimate cost without cache benefits (approximate 8x multiplier for time, varies for cost)
-                        cache_efficiency = cached_calls / max(api_calls, 1) if api_calls > 0 else 0
-                        cost_estimated = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
-                        
+                if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
+                    # Use properly aggregated enhanced metrics from validation lambda
+                    providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
+                    
+                    for provider, provider_data in providers.items():
                         provider_metrics_for_db[provider] = {
-                            'calls': api_calls,
-                            'tokens': total_tokens,
-                            'cost_actual': actual_cost,
-                            'cost_estimated': cost_estimated,
-                            'processing_time': processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1)),
-                            'cache_hit_tokens': cached_calls * (total_tokens / max(api_calls, 1)) if api_calls > 0 else 0,
-                            'cost_per_row_actual': actual_cost / total_rows_processed if total_rows_processed > 0 else 0,
-                            'cost_per_row_estimated': cost_estimated / total_rows_processed if total_rows_processed > 0 else 0,
-                            'time_per_row_actual': (processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1))) / total_rows_processed if total_rows_processed > 0 else 0,
-                            'cache_efficiency_percent': (1 - (actual_cost / max(cost_estimated, 0.000001))) * 100
+                            'calls': provider_data.get('calls', 0),
+                            'tokens': provider_data.get('tokens', 0),
+                            'cost_actual': provider_data.get('cost_actual', 0.0),
+                            'cost_estimated': provider_data.get('cost_estimated', 0.0),
+                            'processing_time': provider_data.get('time_actual_seconds', 0.0),
+                            'cache_hit_tokens': provider_data.get('cache_hit_tokens', 0),
+                            'cost_per_row_actual': provider_data.get('cost_actual', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
+                            'cost_per_row_estimated': provider_data.get('cost_estimated', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
+                            'time_per_row_actual': provider_data.get('time_actual_seconds', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
+                            'cache_efficiency_percent': provider_data.get('cache_efficiency_percent', 0.0)
                         }
+                    
+                    logger.info(f"[PROVIDER_METRICS] Using enhanced aggregated metrics for provider_metrics_for_db")
+                else:
+                    # Fallback to legacy token_usage conversion
+                    by_provider = token_usage.get('by_provider', {})
+                    
+                    for provider, provider_usage in by_provider.items():
+                        if provider_usage and isinstance(provider_usage, dict):
+                            # Extract metrics from existing token_usage structure
+                            actual_cost = provider_usage.get('total_cost', 0.0)
+                            total_tokens = provider_usage.get('total_tokens', 0)
+                            api_calls = provider_usage.get('api_calls', 0)
+                            cached_calls = provider_usage.get('cached_calls', 0)
+                            
+                            # Estimate cost without cache benefits (approximate 8x multiplier for time, varies for cost)
+                            cache_efficiency = cached_calls / max(api_calls, 1) if api_calls > 0 else 0
+                            cost_estimated = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
+                            
+                            provider_metrics_for_db[provider] = {
+                                'calls': api_calls,
+                                'tokens': total_tokens,
+                                'cost_actual': actual_cost,
+                                'cost_estimated': cost_estimated,
+                                'processing_time': processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1)),
+                                'cache_hit_tokens': cached_calls * (total_tokens / max(api_calls, 1)) if api_calls > 0 else 0,
+                                'cost_per_row_actual': actual_cost / total_rows_processed if total_rows_processed > 0 else 0,
+                                'cost_per_row_estimated': cost_estimated / total_rows_processed if total_rows_processed > 0 else 0,
+                                'time_per_row_actual': (processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1))) / total_rows_processed if total_rows_processed > 0 else 0,
+                                'cache_efficiency_percent': (1 - (actual_cost / max(cost_estimated, 0.000001))) * 100
+                            }
+                    
+                    logger.warning(f"[PROVIDER_METRICS] Falling back to legacy token_usage conversion for provider_metrics_for_db")
+                
+                # Record completion time for background handler
+                background_end_time = datetime.now(timezone.utc).isoformat()
+                
+                # Calculate actual background handler processing time
+                start_time = datetime.fromisoformat(background_start_time.replace('Z', '+00:00'))
+                end_time = datetime.fromisoformat(background_end_time.replace('Z', '+00:00'))
+                background_processing_time_seconds = (end_time - start_time).total_seconds()
+                logger.info(f"[PREVIEW_TIMING] Background handler processing time: {background_processing_time_seconds:.3f}s")
                 
                 # Update DynamoDB with the complete preview payload and account tracking
                 update_run_status_for_session(status='COMPLETED',
@@ -1222,7 +1268,8 @@ def handle(event, context):
                     estimated_validation_eliyahu_cost=estimated_total_cost_raw,  # Raw cost estimate for full table without caching benefit
                     time_per_row_seconds=time_per_row,
                     estimated_validation_time_minutes=estimated_time_minutes,
-                    run_time_s=preview_payload.get('preview_processing_time', 0.0),  # Actual run time in seconds
+                    end_time=background_end_time,  # Use background handler completion time
+                    run_time_s=background_processing_time_seconds,  # Actual background handler processing time
                     provider_metrics=provider_metrics_for_db  # Enhanced provider-specific metrics
                 )
                 
@@ -1443,11 +1490,14 @@ def handle(event, context):
             # TODO: Replace with actual validation lambda invocation
             # This simulation was creating fake "first batch -> final batch" jumps
             
-            # Interface setup for full validation - use 0-5% range
+            # Interface setup for full validation - use 0-5% range  
+            # Update start_time to when background handler actually begins validation processing
             update_run_status_for_session(status='PROCESSING',
                 processed_rows=0,
                 percent_complete=2,  # Interface setup: 0-5% range
-                verbose_status=f"Validation starting full processing for {rows_to_process} rows...")
+                verbose_status=f"Validation starting full processing for {rows_to_process} rows...",
+                start_time=background_start_time,  # Use background handler start time
+                run_type="Validation")
             
             # The real processing should happen via validation lambda invocation
             # which will send proper WebSocket progress updates
@@ -1502,6 +1552,9 @@ def handle(event, context):
             
             # Extract enhanced models parameter from validation response
             enhanced_models_parameter = metadata.get('enhanced_models_parameter', {})
+            
+            # Extract enhanced metrics from validation response
+            enhanced_metrics = metadata.get('enhanced_metrics', {})
             
             # Apply domain multiplier to raw costs and handle billing
             try:
@@ -1725,15 +1778,43 @@ def handle(event, context):
                 time_per_row = 4.0 # Default fallback
 
                 # Extract timing data from enhanced metrics or use fallback
+                processing_time = 0.0  # Initialize
+                
+                logger.info(f"[TIMING_DEBUG] batch_timing available: {bool(batch_timing)}, validator_processing_time: {validator_processing_time}")
                 if batch_timing:
+                    logger.info(f"[TIMING_DEBUG] batch_timing keys: {list(batch_timing.keys())}")
+                
+                if batch_timing and batch_timing.get('total_batch_time_seconds', 0.0) > 0:
                     processing_time = batch_timing.get('total_batch_time_seconds', 0.0)
                     time_per_batch = batch_timing.get('average_batch_time_seconds', time_per_batch)
                     time_per_row = batch_timing.get('average_time_per_row_seconds', time_per_row)
+                    logger.info(f"[TIMING_DEBUG] Using batch_timing: processing_time={processing_time:.3f}s")
                 elif validator_processing_time > 0:
                     processing_time = validator_processing_time
                     if total_rows_processed > 0:
                         time_per_row = processing_time / total_rows_processed
                         time_per_batch = time_per_row * effective_batch_size
+                    logger.info(f"[TIMING_DEBUG] Using validator_processing_time: processing_time={processing_time:.3f}s")
+                else:
+                    # Additional fallback - calculate from start/end times if available
+                    start_time_str = validation_results.get('start_time')
+                    end_time_str = validation_results.get('end_time') 
+                    if start_time_str and end_time_str:
+                        try:
+                            from datetime import datetime
+                            start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                            end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
+                            processing_time = (end_time - start_time).total_seconds()
+                            if total_rows_processed > 0:
+                                time_per_row = processing_time / total_rows_processed
+                                time_per_batch = time_per_row * effective_batch_size
+                            logger.info(f"[TIMING_DEBUG] Calculated from start/end times: processing_time={processing_time:.3f}s")
+                        except Exception as e:
+                            logger.warning(f"[TIMING_DEBUG] Failed to calculate from start/end times: {e}")
+                            processing_time = 0.0
+                    else:
+                        logger.warning(f"[TIMING_DEBUG] No valid timing data found - processing_time will be 0")
+                        processing_time = 0.0
                 
                 # Extract per-row cost from enhanced data (not manual calculation)
                 per_row_cost_full = eliyahu_cost / total_rows_processed if total_rows_processed > 0 else eliyahu_cost
@@ -1767,6 +1848,16 @@ def handle(event, context):
 
             else: # Full processing
                 logger.info(f"Got full validation results for {session_id}, creating enhanced ZIP.")
+                
+                # Send post-validation progress update - processing results (90-95% range)
+                _send_websocket_message_deduplicated(session_id, {
+                    'type': 'progress_update',
+                    'progress': 92,
+                    'message': '📊 Processing validation results and generating files...',
+                    'status': 'Processing validation results and generating files...',
+                    'session_id': session_id
+                }, "full_validation_processing")
+                
                 excel_response = s3_client.get_object(Bucket=storage_manager.bucket_name, Key=excel_s3_key)
                 excel_content = excel_response['Body'].read()
                 config_response = s3_client.get_object(Bucket=storage_manager.bucket_name, Key=config_s3_key)
@@ -2056,6 +2147,15 @@ def handle(event, context):
                         logger.warning(f"Could not get actual processing time for email, using metadata fallback: {e}")
                         actual_processing_time = metadata.get('processing_time', 0)
                     
+                    # Send email progress update - sending results (95-98% range)
+                    _send_websocket_message_deduplicated(session_id, {
+                        'type': 'progress_update',
+                        'progress': 96,
+                        'message': '📧 Sending validation results to your email...',
+                        'status': 'Sending validation results to your email...',
+                        'session_id': session_id
+                    }, "full_validation_email")
+                    
                     email_result = send_validation_results_email(
                         email_address=email_address, excel_content=excel_content, 
                         config_content=json.dumps(config_data, indent=2).encode('utf-8'),
@@ -2068,6 +2168,16 @@ def handle(event, context):
                         billing_info=billing_info,
                         config_id=config_id
                     )
+                    
+                    # Send final processing progress update - finalizing (98-100% range)
+                    _send_websocket_message_deduplicated(session_id, {
+                        'type': 'progress_update',
+                        'progress': 99,
+                        'message': '✅ Finalizing download links and completion...',
+                        'status': 'Finalizing download links and completion...',
+                        'session_id': session_id
+                    }, "full_validation_finalizing")
+                    
                     # Send final completion notification with download URLs
                     processed_rows_count = len(validation_results.get('validation_results', {}))
                     total_rows_in_file = validation_results.get('total_rows', processed_rows_count)
@@ -2171,7 +2281,7 @@ def handle(event, context):
                     search_groups_models = []
                     # validation_metrics should already be defined from metadata.get('validation_metrics', {})
                     search_groups_count = validation_metrics.get('search_groups_count', 0)
-                    enhanced_context_groups = validation_metrics.get('enhanced_context_search_groups_count', 0)
+                    enhanced_context_groups = validation_metrics.get('high_context_search_groups_count', 0)
                     claude_groups = validation_metrics.get('claude_search_groups_count', 0)
                     regular_perplexity_groups = search_groups_count - enhanced_context_groups - claude_groups
                     validated_columns_count = validation_metrics.get('validated_columns_count', 0)
@@ -2225,6 +2335,13 @@ def handle(event, context):
                     if not configuration_id or configuration_id == 'unknown':
                         # Fallback to generation metadata
                         configuration_id = config_data.get('generation_metadata', {}).get('config_id', 'unknown')
+                    
+                    # If still no config ID, generate one from session and version info
+                    if not configuration_id or configuration_id == 'unknown':
+                        version = config_data.get('storage_metadata', {}).get('version') or config_data.get('generation_metadata', {}).get('version', 'v1')
+                        configuration_id = f"{session_id}_{version}_config"
+                        logger.info(f"[CONFIG_ID] Generated configuration_id: {configuration_id}")
+                    
                     status_update_data['configuration_id'] = configuration_id
                     
                     # Add total rows count
@@ -2264,41 +2381,146 @@ def handle(event, context):
                         logger.info(f"[COST_COMPARISON] Actual full cost (no cache): ${cost_estimated:.6f} | "
                                   f"User charged: ${charged_cost:.2f}")
                     
+                    # Calculate actual validation processing time from DynamoDB record times
+                    validation_processing_time = 0.0
+                    
+                    # Get the current run's start time from DynamoDB
+                    try:
+                        from dynamodb_schemas import get_run_status
+                        from datetime import datetime, timezone
+                        current_run = get_run_status(session_id, run_key)
+                        if current_run and 'start_time' in current_run:
+                            start_time_str = current_run['start_time']
+                            end_time_str = datetime.now(timezone.utc).isoformat()  # Current time as end time
+                            
+                            logger.info(f"[VALIDATION_TIMING_DEBUG] DynamoDB start_time: {start_time_str}, end_time: {end_time_str}")
+                            
+                            start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                            end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
+                            validation_processing_time = (end_time - start_time).total_seconds()
+                            logger.info(f"[VALIDATION_TIMING_DEBUG] Calculated from DynamoDB times: validation_processing_time={validation_processing_time:.3f}s")
+                        else:
+                            logger.warning(f"[VALIDATION_TIMING_DEBUG] Could not get start_time from DynamoDB run record")
+                    except Exception as db_error:
+                        logger.warning(f"[VALIDATION_TIMING_DEBUG] Failed to get timing from DynamoDB: {db_error}")
+                        
+                        # Fallback to validation_results times if available
+                        start_time_str = validation_results.get('start_time')
+                        end_time_str = validation_results.get('end_time') 
+                        
+                        logger.info(f"[VALIDATION_TIMING_DEBUG] Fallback start_time: {start_time_str}, end_time: {end_time_str}")
+                        
+                        if start_time_str and end_time_str:
+                            try:
+                                from datetime import datetime
+                                start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                                end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
+                                validation_processing_time = (end_time - start_time).total_seconds()
+                                logger.info(f"[VALIDATION_TIMING_DEBUG] Calculated from start/end times: validation_processing_time={validation_processing_time:.3f}s")
+                            except Exception as e:
+                                logger.warning(f"[VALIDATION_TIMING_DEBUG] Failed to calculate from start/end times: {e}")
+                                # Fallback to other timing sources only if start/end calculation fails
+                                batch_timing = metadata.get('batch_timing', {})
+                                validator_processing_time = metadata.get('processing_time', 0.0)
+                                
+                                if batch_timing and batch_timing.get('total_batch_time_seconds', 0.0) > 0:
+                                    validation_processing_time = batch_timing.get('total_batch_time_seconds', 0.0)
+                                    logger.info(f"[VALIDATION_TIMING_DEBUG] Fallback to batch_timing: validation_processing_time={validation_processing_time:.3f}s")
+                                elif validator_processing_time > 0:
+                                    validation_processing_time = validator_processing_time
+                                    logger.info(f"[VALIDATION_TIMING_DEBUG] Fallback to validator_processing_time: validation_processing_time={validation_processing_time:.3f}s")
+                                else:
+                                    logger.warning(f"[VALIDATION_TIMING_DEBUG] No valid timing data found - validation_processing_time will be 0")
+                                    validation_processing_time = 0.0
+                        else:
+                            logger.warning(f"[VALIDATION_TIMING_DEBUG] No start/end times available - using fallback timing sources")
+                            # Fallback when start/end times are missing
+                            batch_timing = metadata.get('batch_timing', {})
+                            validator_processing_time = metadata.get('processing_time', 0.0)
+                            
+                            if batch_timing and batch_timing.get('total_batch_time_seconds', 0.0) > 0:
+                                validation_processing_time = batch_timing.get('total_batch_time_seconds', 0.0)
+                                logger.info(f"[VALIDATION_TIMING_DEBUG] Fallback to batch_timing: validation_processing_time={validation_processing_time:.3f}s")
+                            elif validator_processing_time > 0:
+                                validation_processing_time = validator_processing_time
+                                logger.info(f"[VALIDATION_TIMING_DEBUG] Fallback to validator_processing_time: validation_processing_time={validation_processing_time:.3f}s")
+                            else:
+                                logger.warning(f"[VALIDATION_TIMING_DEBUG] No valid timing data found - validation_processing_time will be 0")
+                                validation_processing_time = 0.0
+                    
                     # Do NOT update estimated_validation_eliyahu_cost - preserve the preview estimate
-                    status_update_data['time_per_row_seconds'] = eliyahu_cost / processed_rows_count / 0.001 if processed_rows_count > 0 else 0.0  # Rough estimate based on cost
-                    status_update_data['run_time_s'] = processing_time  # Actual validation run time in seconds
+                    status_update_data['time_per_row_seconds'] = validation_processing_time / processed_rows_count if processed_rows_count > 0 else 0.0  # Actual time per row
+                    status_update_data['run_time_s'] = validation_processing_time  # Actual validation run time in seconds
+                    status_update_data['percent_complete'] = 100  # Mark validation as 100% complete
                     # estimated_validation_time_minutes will be calculated from actual processing time automatically in update_run_status
                     
-                    # Convert existing token_usage data to enhanced provider metrics format for full validation
+                    # Use enhanced provider metrics from ai_client aggregation if available, otherwise fallback to token_usage
                     provider_metrics_for_db = {}
-                    by_provider = token_usage.get('by_provider', {})
                     
-                    for provider, provider_usage in by_provider.items():
-                        if provider_usage and isinstance(provider_usage, dict):
-                            # Extract metrics from existing token_usage structure
-                            actual_cost = provider_usage.get('total_cost', 0.0)
-                            total_tokens = provider_usage.get('total_tokens', 0)
-                            api_calls = provider_usage.get('api_calls', 0)
-                            cached_calls = provider_usage.get('cached_calls', 0)
-                            
-                            # Estimate cost without cache benefits (approximate based on cache efficiency)
-                            cache_efficiency = cached_calls / max(api_calls, 1) if api_calls > 0 else 0
-                            cost_estimated = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
-                            
+                    if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
+                        # Use properly aggregated enhanced metrics from validation lambda
+                        providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
+                        
+                        for provider, provider_data in providers.items():
                             provider_metrics_for_db[provider] = {
-                                'calls': api_calls,
-                                'tokens': total_tokens,
-                                'cost_actual': actual_cost,
-                                'cost_estimated': cost_estimated,
-                                'processing_time': processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1)),
-                                'cache_hit_tokens': cached_calls * (total_tokens / max(api_calls, 1)) if api_calls > 0 else 0,
-                                'cost_per_row_actual': actual_cost / processed_rows_count if processed_rows_count > 0 else 0,
-                                'cost_per_row_estimated': cost_estimated / processed_rows_count if processed_rows_count > 0 else 0,
-                                'time_per_row_actual': (processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1))) / processed_rows_count if processed_rows_count > 0 else 0,
-                                'cache_efficiency_percent': (1 - (actual_cost / max(cost_estimated, 0.000001))) * 100
+                                'calls': provider_data.get('calls', 0),
+                                'tokens': provider_data.get('tokens', 0),
+                                'cost_actual': provider_data.get('cost_actual', 0.0),
+                                'cost_estimated': provider_data.get('cost_estimated', 0.0),
+                                'processing_time': provider_data.get('time_actual_seconds', 0.0),
+                                'cache_hit_tokens': provider_data.get('cache_hit_tokens', 0),
+                                'cost_per_row_actual': provider_data.get('cost_actual', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
+                                'cost_per_row_estimated': provider_data.get('cost_estimated', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
+                                'time_per_row_actual': provider_data.get('time_actual_seconds', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
+                                'cache_efficiency_percent': provider_data.get('cache_efficiency_percent', 0.0)
                             }
+                        
+                        logger.info(f"[VALIDATION_PROVIDER_METRICS] Using enhanced aggregated metrics for provider_metrics_for_db")
+                    else:
+                        # Fallback to legacy token_usage conversion
+                        by_provider = token_usage.get('by_provider', {})
+                        
+                        for provider, provider_usage in by_provider.items():
+                            if provider_usage and isinstance(provider_usage, dict):
+                                # Extract metrics from existing token_usage structure
+                                actual_cost = provider_usage.get('total_cost', 0.0)
+                                total_tokens = provider_usage.get('total_tokens', 0)
+                                api_calls = provider_usage.get('api_calls', 0)
+                                cached_calls = provider_usage.get('cached_calls', 0)
+                                
+                                # Estimate cost without cache benefits (approximate based on cache efficiency)
+                                cache_efficiency = cached_calls / max(api_calls, 1) if api_calls > 0 else 0
+                                cost_estimated = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
+                                
+                                provider_metrics_for_db[provider] = {
+                                    'calls': api_calls,
+                                    'tokens': total_tokens,
+                                    'cost_actual': actual_cost,
+                                    'cost_estimated': cost_estimated,
+                                    'processing_time': processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1)),
+                                    'cache_hit_tokens': cached_calls * (total_tokens / max(api_calls, 1)) if api_calls > 0 else 0,
+                                    'cost_per_row_actual': actual_cost / processed_rows_count if processed_rows_count > 0 else 0,
+                                    'cost_per_row_estimated': cost_estimated / processed_rows_count if processed_rows_count > 0 else 0,
+                                    'time_per_row_actual': (processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1))) / processed_rows_count if processed_rows_count > 0 else 0,
+                                    'cache_efficiency_percent': (1 - (actual_cost / max(cost_estimated, 0.000001))) * 100
+                                }
+                        
+                        logger.warning(f"[VALIDATION_PROVIDER_METRICS] Falling back to legacy token_usage conversion for provider_metrics_for_db")
                     
                     status_update_data['provider_metrics'] = provider_metrics_for_db
+                    
+                    # Record completion time for background handler
+                    background_end_time = datetime.now(timezone.utc).isoformat()
+                    
+                    # Calculate actual background handler processing time
+                    start_time = datetime.fromisoformat(background_start_time.replace('Z', '+00:00'))
+                    end_time = datetime.fromisoformat(background_end_time.replace('Z', '+00:00'))
+                    background_processing_time_seconds = (end_time - start_time).total_seconds()
+                    logger.info(f"[VALIDATION_TIMING] Background handler processing time: {background_processing_time_seconds:.3f}s")
+                    
+                    # Override timing with actual background handler processing time
+                    status_update_data['end_time'] = background_end_time  # Use background handler completion time
+                    status_update_data['run_time_s'] = background_processing_time_seconds  # Actual background handler processing time
                     
                     update_run_status(**status_update_data)
                     
@@ -2449,10 +2671,14 @@ def handle_config_generation(event, context):
     """Handle config generation requests by forwarding to config lambda."""
     try:
         import time
+        from datetime import datetime, timezone
         execution_id = f"{context.aws_request_id if context else 'no-context'}_{int(time.time() * 1000)}"
         logger.info(f"[CONFIG_GEN_START] {execution_id} - Handling config generation request for session {event.get('session_id')}")
         session_id = event.get('session_id')
         config_email = event.get('email', '').lower().strip()
+        
+        # Record when background handler actually starts processing
+        background_start_time = datetime.now(timezone.utc).isoformat()
         
         # Create initial config generation run record
         if DYNAMODB_AVAILABLE and config_email and session_id:
@@ -2470,7 +2696,9 @@ def handle_config_generation(event, context):
                 logger.info(f"[CONFIG_RUN_TRACKING] Creating config generation run record for session {session_id}")
                 run_key = create_run_record(session_id, config_email, total_rows, 1, "Config Generation")  # batch_size=1 for config generation
                 logger.info(f"[CONFIG_RUN_TRACKING] Config generation run_key: {run_key}")
-                update_run_status_for_session(status='IN_PROGRESS',
+                
+                # Update start_time to when background handler actually begins processing
+                update_run_status(session_id=session_id, run_key=run_key, status='IN_PROGRESS',
                     run_type="Config Generation",
                     verbose_status="Configuration generation starting with AI analysis...",
                     percent_complete=5,
@@ -2479,6 +2707,7 @@ def handle_config_generation(event, context):
                     input_table_name=input_table_name,
                     account_current_balance=0,  # Will be updated later
                     account_sufficient_balance="n/a",
+                    start_time=background_start_time,  # Use background handler start time
                     account_credits_needed="n/a",
                     account_domain_multiplier=1.0,  # Config generation typically doesn't use domain multiplier
                     models="TBD",  # Will be updated after AI processing
@@ -2598,33 +2827,19 @@ def handle_config_generation(event, context):
                 try:
                     logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with completion data")
                     
-                    # Determine which AI models were used - with call counts for config generation
-                    models_used = []
-                    cost_info = response.get('cost_info', {})
+                    # Get the actual model used from config lambda response
+                    models = response.get('model_used', 'unknown')
                     
-                    # Get table configuration to extract actual model names
-                    table_config = event.get('table_config', {})
-                    perplexity_model = table_config.get('perplexity_model', 'sonar-pro')
-                    anthropic_model = table_config.get('anthropic_model', 'claude-3.5-sonnet')
-                    anthropic_max_web_searches = table_config.get('anthropic_max_web_searches', 3)
-                    
-                    # Add perplexity calls with count
-                    perplexity_calls = cost_info.get('perplexity_calls', 0)
-                    if perplexity_calls > 0:
-                        models_used.append(f"{perplexity_model} X {perplexity_calls}")
-                    
-                    # Add anthropic calls with exact model name and count
-                    anthropic_calls = cost_info.get('anthropic_calls', 0)
-                    if anthropic_calls > 0:
-                        claude_model_display = f"{anthropic_model} ({anthropic_max_web_searches})"
-                        models_used.append(f"{claude_model_display} X {anthropic_calls}")
-                    
-                    models = ", ".join(models_used) if models_used else "No AI models used"
-                    
-                    # Get configuration ID
+                    # Get configuration ID  
                     configuration_id = "unknown"
                     if response.get('updated_config'):
                         configuration_id = response['updated_config'].get('generation_metadata', {}).get('config_id', 'unknown')
+                    
+                    # Extract config version from response
+                    config_version = 1
+                    if response.get('updated_config'):
+                        config_version = response['updated_config'].get('generation_metadata', {}).get('version', 1)
+                        logger.info(f"Extracted config version {config_version} from generation_metadata")
                     
                     # Build preview_data for config generation
                     config_data = {
@@ -2659,42 +2874,75 @@ def handle_config_generation(event, context):
                         }
                     }
                     
-                    # Calculate timing metrics for config generation
-                    processing_time_seconds = response.get('processing_time', 0)
+                    # Calculate timing metrics for config generation from background handler processing time
+                    start_time = datetime.fromisoformat(background_start_time.replace('Z', '+00:00'))
+                    end_time = datetime.fromisoformat(background_end_time.replace('Z', '+00:00'))
+                    processing_time_seconds = (end_time - start_time).total_seconds()
+                    logger.info(f"[CONFIG_TIMING] Background handler processing time: {processing_time_seconds:.3f}s")
+                    
                     time_per_config = processing_time_seconds  # For config generation, it's time per config
                     processing_time_minutes = processing_time_seconds / 60.0
                     
-                    # Convert config token_usage data to enhanced provider metrics format
+                    # Use enhanced data from config lambda if available, otherwise fallback to token_usage
                     provider_metrics_for_db = {}
-                    token_usage_data = config_data.get('token_usage', {}).get('by_provider', {})
+                    config_enhanced_data = response.get('enhanced_data', {})
                     
-                    for provider, provider_usage in token_usage_data.items():
-                        if provider_usage and isinstance(provider_usage, dict):
-                            # Extract metrics from config token_usage structure
-                            actual_cost = provider_usage.get('total_cost', 0.0)
-                            total_tokens = provider_usage.get('total_tokens', 0)
-                            api_calls = provider_usage.get('calls', 0)
-                            
-                            # For config generation, assume minimal caching benefit (conservative estimate)
-                            cache_multiplier = 1.1  # 10% increase for non-cached config operations
-                            cost_estimated = actual_cost * cache_multiplier
-                            
+                    # Get actual costs from config response (more reliable than enhanced_data for config)
+                    config_cost_actual = response.get('eliyahu_cost', 0.0)
+                    config_cost_estimated = response.get('estimated_cost', config_cost_actual)
+                    
+                    if config_enhanced_data and config_enhanced_data.get('provider_metrics'):
+                        # Use enhanced data from config lambda (single call structure)
+                        for provider, provider_data in config_enhanced_data['provider_metrics'].items():
                             provider_metrics_for_db[provider] = {
-                                'calls': api_calls,
-                                'tokens': total_tokens,
-                                'cost_actual': actual_cost,
-                                'cost_estimated': cost_estimated,
-                                'processing_time': processing_time_seconds * (api_calls / max(sum(p.get('calls', 0) for p in token_usage_data.values()), 1)) if api_calls > 0 else 0,
-                                'cache_hit_tokens': 0,  # Config generation typically doesn't benefit from significant caching
-                                'cost_per_row_actual': actual_cost,  # For config, "per row" is per config
-                                'cost_per_row_estimated': cost_estimated,
-                                'time_per_row_actual': processing_time_seconds * (api_calls / max(sum(p.get('calls', 0) for p in token_usage_data.values()), 1)) if api_calls > 0 else processing_time_seconds,
-                                'cache_efficiency_percent': ((cost_estimated - actual_cost) / max(cost_estimated, 0.000001)) * 100
+                                'calls': provider_data.get('calls', 1),
+                                'tokens': provider_data.get('tokens', 0),
+                                'cost_actual': config_cost_actual,  # Use actual cost from response
+                                'cost_estimated': config_cost_estimated,  # Use estimated cost from response
+                                'processing_time': processing_time_seconds,  # Use actual processing time
+                                'cache_hit_tokens': provider_data.get('cache_hit_tokens', 0),
+                                'cost_per_row_actual': config_cost_actual,  # For config, "per row" is per config
+                                'cost_per_row_estimated': config_cost_estimated,
+                                'time_per_row_actual': processing_time_seconds,  # Use actual processing time
+                                'cache_efficiency_percent': provider_data.get('cache_efficiency_percent', 0.0)
                             }
+                        
+                        logger.info(f"[CONFIG_PROVIDER_METRICS] Using enhanced data from config lambda")
+                    else:
+                        # Fallback to legacy token_usage conversion
+                        token_usage_data = config_data.get('token_usage', {}).get('by_provider', {})
+                        
+                        for provider, provider_usage in token_usage_data.items():
+                            if provider_usage and isinstance(provider_usage, dict):
+                                # Extract metrics from config token_usage structure
+                                actual_cost = provider_usage.get('total_cost', 0.0)
+                                total_tokens = provider_usage.get('total_tokens', 0)
+                                api_calls = provider_usage.get('calls', 0)
+                                
+                                # For config generation, assume minimal caching benefit (conservative estimate)
+                                cache_multiplier = 1.1  # 10% increase for non-cached config operations
+                                cost_estimated = actual_cost * cache_multiplier
+                                
+                                provider_metrics_for_db[provider] = {
+                                    'calls': api_calls,
+                                    'tokens': total_tokens,
+                                    'cost_actual': actual_cost,
+                                    'cost_estimated': cost_estimated,
+                                    'processing_time': processing_time_seconds * (api_calls / max(sum(p.get('calls', 0) for p in token_usage_data.values()), 1)) if api_calls > 0 else 0,
+                                    'cache_hit_tokens': 0,  # Config generation typically doesn't benefit from significant caching
+                                    'cost_per_row_actual': actual_cost,  # For config, "per row" is per config
+                                    'cost_per_row_estimated': cost_estimated,
+                                    'time_per_row_actual': processing_time_seconds * (api_calls / max(sum(p.get('calls', 0) for p in token_usage_data.values()), 1)) if api_calls > 0 else processing_time_seconds,
+                                    'cache_efficiency_percent': ((cost_estimated - actual_cost) / max(cost_estimated, 0.000001)) * 100
+                                }
+                        
+                        logger.warning(f"[CONFIG_PROVIDER_METRICS] Falling back to legacy token_usage conversion")
                     
-                    update_run_status_for_session(status='COMPLETED',
+                    # Record completion time
+                    background_end_time = datetime.now(timezone.utc).isoformat()
+                    
+                    update_run_status(session_id=session_id, run_key=run_key, status='COMPLETED',
                         run_type="Config Generation",
-                        run_key=run_key,
                         verbose_status="Configuration generation completed successfully.",
                         percent_complete=100,
                         processed_rows=1,  # One config generated
@@ -2705,6 +2953,7 @@ def handle_config_generation(event, context):
                         account_current_balance=0,  # Config generation is free
                         account_sufficient_balance="n/a",
                         account_credits_needed="n/a",
+                        end_time=background_end_time,  # Use background handler completion time
                         account_domain_multiplier=1.0,
                         batch_size=1,  # Config generation batch size
                         eliyahu_cost=config_cost,  # Actual cost for config generation
@@ -2790,9 +3039,8 @@ def handle_config_generation(event, context):
             if DYNAMODB_AVAILABLE and config_email and session_id:
                 try:
                     logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with failure")
-                    update_run_status_for_session(status='FAILED',
+                    update_run_status(session_id=session_id, run_key=run_key, status='FAILED',
                         run_type="Config Generation",
-                        run_key=run_key,
                         verbose_status=f"Configuration generation failed: {response.get('error', 'Unknown error')}",
                         percent_complete=0,
                         processed_rows=0,
@@ -2844,9 +3092,8 @@ def handle_config_generation(event, context):
         if DYNAMODB_AVAILABLE and config_email and session_id:
             try:
                 logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with exception failure")
-                update_run_status_for_session(status='FAILED',
+                update_run_status(session_id=session_id, run_key=run_key, status='FAILED',
                     run_type="Config Generation",
-                    run_key=run_key,
                     verbose_status=f"Configuration generation failed with exception: {str(e)}",
                     percent_complete=0,
                     processed_rows=0,

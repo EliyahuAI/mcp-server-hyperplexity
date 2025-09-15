@@ -1821,7 +1821,7 @@ def get_config_generation_schema() -> Dict:
                         "examples": {"type": "array", "items": {"type": "string"}},
                         "search_group": {"type": "integer"},
                         "preferred_model": {"type": "string"},
-                        "search_context_size": {"type": "string", "enum": ["low", "high"]}
+                        "search_context_size": {"type": "string", "enum": ["low", "medium", "high"]}
                     },
                     "required": ["column", "description", "importance", "format", "examples", "search_group"]
                 }
@@ -3430,8 +3430,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Remove the raw responses from the row result to avoid duplication
                 del row_result['_raw_responses']
         
+        # Add total_cost back to token_usage for backward compatibility with background handler
+        if aggregated_metrics and aggregated_metrics.get('totals'):
+            total_cost_actual = aggregated_metrics['totals'].get('total_cost_actual', 0.0)
+            total_token_usage['total_cost'] = total_cost_actual
+            
+            # Add provider-specific costs for compatibility
+            providers = aggregated_metrics.get('providers', {})
+            for provider_name, provider_data in providers.items():
+                if provider_name in total_token_usage['by_provider']:
+                    total_token_usage['by_provider'][provider_name]['total_cost'] = provider_data.get('cost_actual', 0.0)
+            
+            logger.info(f"[COST_COMPATIBILITY] Added total_cost=${total_cost_actual:.6f} to token_usage for background handler compatibility")
+        else:
+            total_token_usage['total_cost'] = 0.0
+            # Add zero costs to providers for safety
+            for provider_name in total_token_usage['by_provider']:
+                total_token_usage['by_provider'][provider_name]['total_cost'] = 0.0
+            logger.warning(f"[COST_COMPATIBILITY] No aggregated_metrics available - setting total_cost=0.0 in token_usage")
+        
         # Log token usage summary (cost logging now handled by enhanced_data aggregation)
-        logger.info(f"Token Usage Summary: {total_token_usage['total_tokens']} total tokens")
+        logger.info(f"Token Usage Summary: {total_token_usage['total_tokens']} total tokens, ${total_token_usage['total_cost']:.6f} total cost")
         logger.info(f"API Calls: {total_token_usage['api_calls']} new, {total_token_usage['cached_calls']} cached")
         logger.info(f"Total Processing Time: {total_processing_time:.3f}s")
         
@@ -3440,12 +3459,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         anthropic_usage = total_token_usage['by_provider']['anthropic']
         
         if perplexity_usage['calls'] > 0:
-            logger.info(f"Perplexity API: {perplexity_usage['prompt_tokens']} prompt + {perplexity_usage['completion_tokens']} completion = {perplexity_usage['total_tokens']} total tokens across {perplexity_usage['calls']} calls")
-            # Cost logging now handled by enhanced_data aggregation
+            logger.info(f"Perplexity API: {perplexity_usage['prompt_tokens']} prompt + {perplexity_usage['completion_tokens']} completion = {perplexity_usage['total_tokens']} total tokens across {perplexity_usage['calls']} calls, ${perplexity_usage.get('total_cost', 0.0):.6f} cost")
         
         if anthropic_usage['calls'] > 0:
-            logger.info(f"Anthropic API: {anthropic_usage['input_tokens']} input + {anthropic_usage['output_tokens']} output + {anthropic_usage['cache_creation_tokens']} cache_creation + {anthropic_usage['cache_read_tokens']} cache_read = {anthropic_usage['total_tokens']} total tokens across {anthropic_usage['calls']} calls")
-            # Cost logging now handled by enhanced_data aggregation
+            logger.info(f"Anthropic API: {anthropic_usage['input_tokens']} input + {anthropic_usage['output_tokens']} output + {anthropic_usage['cache_creation_tokens']} cache_creation + {anthropic_usage['cache_read_tokens']} cache_read = {anthropic_usage['total_tokens']} total tokens across {anthropic_usage['calls']} calls, ${anthropic_usage.get('total_cost', 0.0):.6f} cost")
         
         # Log by model
         for model, model_usage in total_token_usage['by_model'].items():
@@ -3495,18 +3512,28 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         grouped_targets = validator.group_columns_by_search_group(validation_targets)
         search_groups_count = len(grouped_targets)
         
-        # Count high context and Claude search groups
-        high_context_groups_count = 0
+        # Count enhanced context (medium + high) and Claude search groups
+        enhanced_context_groups_count = 0
         claude_groups_count = 0
         for group_id, targets in grouped_targets.items():
             if targets:
-                # Check if any target in this group has high context
-                group_has_high_context = any(
-                    (getattr(target, 'search_context_size', '') or '').lower() == 'high'
+                # Check if any target in this group has enhanced context (medium or high)
+                group_has_enhanced_context = any(
+                    (getattr(target, 'search_context_size', '') or '').lower() in ['medium', 'high']
                     for target in targets
                 )
-                if group_has_high_context:
-                    high_context_groups_count += 1
+                
+                # If no explicit context found on targets, check the resolved context for this group
+                if not group_has_enhanced_context:
+                    try:
+                        resolved_context = resolve_search_group_context_size(targets, validator)
+                        group_has_enhanced_context = resolved_context and resolved_context.lower() in ['medium', 'high']
+                        logger.debug(f"Group {group_id} resolved context: {resolved_context}")
+                    except Exception as e:
+                        logger.warning(f"Failed to resolve context size for group {group_id}: {e}")
+                
+                if group_has_enhanced_context:
+                    enhanced_context_groups_count += 1
                 
                 # Check if any target in this group uses Claude/Anthropic model
                 group_model, _ = resolve_search_group_model(targets, validator)
@@ -3563,7 +3590,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     "validation_metrics": {
                         "validated_columns_count": validated_columns_count,
                         "search_groups_count": search_groups_count,
-                        "high_context_search_groups_count": high_context_groups_count,
+                        "enhanced_context_search_groups_count": enhanced_context_groups_count,
                         "claude_search_groups_count": claude_groups_count
                     },
                     # NEW: Enhanced models parameter with detailed search group information
