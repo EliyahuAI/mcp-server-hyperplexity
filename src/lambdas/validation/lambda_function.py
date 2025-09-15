@@ -1222,7 +1222,16 @@ async def call_claude_with_shared_client(prompt: str, model: str, tool_schema: D
             formatted_response['usage'] = result['token_usage']
         
         # Include enhanced data from ai_client result for cost/time tracking
-        formatted_response['enhanced_data'] = result
+        enhanced_data = result.get('enhanced_data', {})
+        formatted_response['enhanced_data'] = enhanced_data
+        
+        # Debug logging for enhanced data
+        if enhanced_data:
+            costs = enhanced_data.get('costs', {})
+            logger.info(f"[ENHANCED_DEBUG] Enhanced data found - actual: ${costs.get('total_cost', 0):.6f}, "
+                       f"estimated: ${costs.get('total_cost_without_cache', 0):.6f}")
+        else:
+            logger.warning(f"[ENHANCED_DEBUG] No enhanced_data found in result: {list(result.keys())}")
         
         return formatted_response
         
@@ -3127,6 +3136,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 search_group_counter = 0  # Track which search group (AI call sequence) in this row
                 for response_id, response_data in row_result['_raw_responses'].items():
                     enhanced_data = response_data.get('enhanced_data')
+                    
+                    # Debug enhanced data structure
+                    logger.info(f"[AGG_DEBUG] Row {row_idx}, Response {response_id}: enhanced_data type: {type(enhanced_data)}")
+                    if enhanced_data:
+                        if isinstance(enhanced_data, dict):
+                            costs = enhanced_data.get('costs', {})
+                            logger.info(f"[AGG_DEBUG] Enhanced data costs: actual=${costs.get('total_cost', 0):.6f}, estimated=${costs.get('total_cost_without_cache', 0):.6f}")
+                        else:
+                            logger.warning(f"[AGG_DEBUG] Enhanced data is not a dict: {enhanced_data}")
+                    else:
+                        logger.warning(f"[AGG_DEBUG] No enhanced_data found for response {response_id}")
+                    
                     if enhanced_data:
                         # Debug: Check what enhanced data contains
                         costs = enhanced_data.get('costs', {})
