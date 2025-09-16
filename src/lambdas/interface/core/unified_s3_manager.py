@@ -854,10 +854,12 @@ class UnifiedS3Manager:
             
             # Get the latest version
             latest_version, latest_folder = max(result_folders, key=lambda x: x[0])
+            logger.info(f"DEBUG_VALIDATION_RESULTS: Selected latest version {latest_version} with folder path: {latest_folder}")
             
             # Try to get validation results from the latest folder - check both full and preview results
             # First try full validation results
             results_key = f"{latest_folder}validation_results.json"
+            logger.info(f"DEBUG_VALIDATION_RESULTS: Trying to access validation results at: {results_key}")
             
             try:
                 response = self.s3_client.get_object(Bucket=self.bucket_name, Key=results_key)
@@ -916,7 +918,7 @@ class UnifiedS3Manager:
             
             # Note: auto_copied patterns have dynamic session IDs, will be found by S3 search below
             
-            # Also search for any config with this version
+            # Also search for any config with this version (including preserved filenames)
             response = self.s3_client.list_objects_v2(
                 Bucket=self.bucket_name,
                 Prefix=f"{session_path}config_v{version}_"
@@ -925,6 +927,19 @@ class UnifiedS3Manager:
             if 'Contents' in response:
                 for obj in response['Contents']:
                     potential_keys.insert(0, obj['Key'])
+            
+            # IMPORTANT: Also search for ALL files in session (to find preserved filenames)
+            # This catches configs with preserved original filenames that don't match the standard pattern
+            all_files_response = self.s3_client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=session_path
+            )
+            
+            if 'Contents' in all_files_response:
+                for obj in all_files_response['Contents']:
+                    # Only check .json files and avoid duplicates
+                    if obj['Key'].endswith('.json') and obj['Key'] not in potential_keys:
+                        potential_keys.append(obj['Key'])
             
             # Try to find and validate the config
             for key in potential_keys:
