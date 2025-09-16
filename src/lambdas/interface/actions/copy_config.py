@@ -49,6 +49,13 @@ def copy_config_to_session(email: str, session_id: str, config_data: Dict[str, A
                 # Generate filename from original_name
                 source_filename = f"{original_name}.json"
         
+        # Append source session to filename if not already present
+        if source_filename and source_session:
+            base_name = source_filename.replace('.json', '')
+            # Check if session is already in the filename
+            if source_session not in base_name:
+                source_filename = f"{source_session}_{base_name}.json"
+        
         # Keep all config data including metadata
         clean_config_data = config_data.copy()
         
@@ -158,6 +165,13 @@ def handle_copy_config(event_data, context=None):
             else:
                 # Generate filename from original_name
                 original_filename = f"{original_name}.json"
+        
+        # Append source session to filename if not already present
+        if original_filename and source_session:
+            base_name = original_filename.replace('.json', '')
+            # Check if session is already in the filename
+            if source_session not in base_name:
+                original_filename = f"{source_session}_{base_name}.json"
         
         # Keep all config data including metadata
         clean_config_data = source_config_data.copy()

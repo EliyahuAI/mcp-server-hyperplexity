@@ -197,7 +197,7 @@ def process_credit_order(order: Dict[str, Any]) -> Dict[str, Any]:
             
             # Send confirmation email
             try:
-                from shared.email_sender import send_credit_confirmation_email
+                from email_sender import send_credit_confirmation_email
                 send_credit_confirmation_email(
                     email_address=customer_email,
                     amount_purchased=float(amount),
@@ -428,29 +428,28 @@ def extract_alternative_email_from_order(order: Dict[str, Any]) -> Optional[str]
         return None
 
 def is_user_verified(email: str) -> bool:
-    """Check if user email is verified in DynamoDB user tracking table."""
+    """Check if user email is verified in DynamoDB user validation table."""
     try:
         import boto3
         from dynamodb_schemas import DynamoDBSchemas
         
         email = email.lower().strip()
         
-        table = boto3.resource('dynamodb', region_name='us-east-1').Table(
-            DynamoDBSchemas.USER_TRACKING_TABLE
+        # Check the user-validation table for validated status
+        validation_table = boto3.resource('dynamodb', region_name='us-east-1').Table(
+            DynamoDBSchemas.USER_VALIDATION_TABLE
         )
         
-        response = table.get_item(Key={'email': email})
+        response = validation_table.get_item(Key={'email': email})
         
         if 'Item' in response:
-            user_record = response['Item']
-            # Check if user has completed email validation
-            has_first_validation = 'first_email_validation' in user_record
-            has_recent_validation = 'most_recent_email_validation' in user_record
+            validation_record = response['Item']
+            is_validated = validation_record.get('validated', False)
             
-            logger.info(f"User {email} verification status: first_validation={has_first_validation}, recent_validation={has_recent_validation}")
-            return has_first_validation or has_recent_validation
+            logger.info(f"User {email} validation status: validated={is_validated}")
+            return is_validated
         
-        logger.info(f"User {email} not found in user tracking table")
+        logger.info(f"User {email} not found in user validation table")
         return False
         
     except Exception as e:
@@ -497,7 +496,7 @@ def mark_order_pending(order_id: str, order_data: Dict[str, Any], reason: str):
 def send_pending_order_notification(order_id: str, order_data: Dict[str, Any], reason: str):
     """Send notification about orders that couldn't be fulfilled due to email verification issues."""
     try:
-        from shared.email_sender import send_email
+        from email_sender import send_email
         
         # Extract order details
         customer_email = order_data.get('customerEmail', 'N/A')
@@ -696,7 +695,7 @@ def process_order_with_email(order_data: Dict[str, Any], email: str) -> Dict[str
             
             # Send confirmation email
             try:
-                from shared.email_sender import send_credit_confirmation_email
+                from email_sender import send_credit_confirmation_email
                 send_credit_confirmation_email(
                     email_address=email,
                     amount_purchased=float(amount),
@@ -772,7 +771,7 @@ def initiate_refund_process(order_id: str, reason: str = "Unable to verify custo
 def send_refund_notification(order_id: str, order_data: Dict[str, Any], reason: str):
     """Send notification about orders that need to be refunded."""
     try:
-        from shared.email_sender import send_email
+        from email_sender import send_email
         
         # Extract order details
         customer_email = order_data.get('order_data', {}).get('customerEmail', 'N/A')

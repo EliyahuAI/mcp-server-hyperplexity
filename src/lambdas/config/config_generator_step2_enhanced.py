@@ -119,7 +119,8 @@ Generate precise, actionable configurations that reflect deep domain knowledge a
                 prompt=full_prompt,
                 schema=tool_schema,
                 model=self.model,
-                tool_name="generate_config"
+                tool_name="generate_config",
+                max_web_searches=0
             )
             
             response_time = time.time() - start_time

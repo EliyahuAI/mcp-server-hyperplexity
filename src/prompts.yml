@@ -5,7 +5,6 @@ system_base: |
 
 multiplex_validation: |
   === MULTIPLE FIELDS RESEARCH and UPDATE ===
-  IMPORTANT: If web search is available, you should use it to find current, accurate information when it would improve the quality of your research. This is especially critical for recent news, current prices, financial data, and time-sensitive information. If web search is not available, use your training knowledge and clearly indicate any limitations due to knowledge cutoff dates.
   {validation_intro}
 
   === SPECIFIC TABLE GUIDANCE ===
@@ -31,8 +30,8 @@ multiplex_validation: |
   Assign confidence levels to the original and updated values:
   - HIGH: Claim is a widely accepted fact, directly verified by authoritative source, or straightforward calculation that matches the guidance provided
   - MEDIUM: Good estimates, confident projections, or respectable but not definitive sources that are consistent with the guidance provided
-  - LOW: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided
-  - null: For blank values that should remain blank (no confidence assignment needed). 
+  - LOW: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value it is low confidence
+  - null: For blank values that should remain blank (no confidence assignment needed). If the orignal valie is blank, and you have nothing to add, provied a null confidence.
   
   === RESPONSE FORMAT ===
   Please respond with a JSON array containing an object for each field.
@@ -51,12 +50,14 @@ multiplex_validation: |
   - Include the exact column name in each object
   - Place actual URLs in the sources arrays, not reference numbers
   - CRITICAL: When web search is available, perform web search when helpful and include direct quotes from web search results or authoritative sources in the reasoning field. When web search is not available, use your training knowledge and cite knowledge cutoff limitations where relevant.
-  - Extract specific text snippets that support your answer when available
-  - If you cannot find information for a field, assign null confidence if the field should remain blank, or assign LOW confidence if the field should be filled.
+  - Extract specific text snippets that support your answer when available, include the source page title if it is available for context.
+  - If you cannot find information for a field, assign null confidence if the field should remain blank
   - Use provided examples to guide your updates format and expected values
   - Always include all required fields: column, answer, confidence, original_confidence, reasoning, sources
+  - If web search is available, you should use it to find current, accurate information when it would improve the quality of your research. This is especially critical for recent news, current prices, financial data, and time-sensitive information. If web search is not available, use your training knowledge and clearly indicate any limitations due to knowledge cutoff dates.
+  - Store bulleted information in a way that will visualize correctly in an excel cell. 
+  - Double check your updated response - speak precisely, there is not room for error. 
   
-
 holistic_validation: |
   === HOLISTIC RESEARCH REVIEW ===
   Your task is to analyze all researched and updated fields together to identify any inconsistencies, logical errors, or potential issues.
@@ -70,19 +71,13 @@ holistic_validation: |
   === CONTEXT INFORMATION ===
   {context}
 
-  Please analyze the entire record and focus on finding:
-  1. Any inconsistencies between related fields
-  2. Logical contradictions in the data
-  3. Patterns of low confidence results that might indicate systematic issues
-  4. Fields with critical importance that have issues
-  5. Overall assessment of data quality and reliability
-
+  
   === RESPONSE FORMAT ===
   Please respond in the following JSON format:
   
   {
     "is_consistent": true/false,
-    "overall_confidence": "HIGH", "MEDIUM", or "LOW",
+    "overall_confidence": "HIGH", "MEDIUM", or "LOW", or "null" if the original value is blank and you have nothing to add.
     "concerns": [
       "list of specific concerns or issues identified"
     ],

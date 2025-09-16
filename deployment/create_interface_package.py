@@ -178,7 +178,8 @@ def copy_source_files():
         "perplexity_schema.py",
         "batch_audit_logger.py",
         "model_config_table.py",
-        "web_search_rate_limiter.py"
+        "web_search_rate_limiter.py",
+        "websocket_client.py"
     ]
     
     for file_name in shared_modules:

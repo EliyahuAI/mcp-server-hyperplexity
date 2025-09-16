@@ -109,7 +109,7 @@ def process_payment_completion(payment_data: Dict[str, Any]) -> Dict[str, Any]:
         # Import account management functions
         try:
             from dynamodb_schemas import add_to_balance, check_user_balance, get_domain_multiplier
-            from shared.websocket_client import send_balance_update_to_user
+            from websocket_client import send_balance_update_to_user
         except ImportError:
             logger.error("Failed to import account management functions")
             return {'success': False, 'error': 'Account management not available'}
@@ -288,7 +288,7 @@ def broadcast_balance_update_to_user(email: str, balance_data: Dict[str, Any]):
 def send_credit_purchase_confirmation_email(payment_data: Dict[str, Any], new_balance: Decimal):
     """Send confirmation email for credit purchase."""
     try:
-        from shared.email_sender import send_credit_confirmation_email
+        from email_sender import send_credit_confirmation_email
         
         # This function would need to be implemented in email_sender.py
         send_credit_confirmation_email(

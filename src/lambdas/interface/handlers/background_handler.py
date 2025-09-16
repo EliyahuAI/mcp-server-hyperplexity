@@ -634,7 +634,10 @@ def handle(event, context):
                     
                     # Use provider sum as fallback if total is wrong (ensures consistency)
                     provider_cost_sum = perplexity_eliyahu_cost + anthropic_eliyahu_cost
-                    if provider_cost_sum > 0 and eliyahu_cost == 0.0:
+                    logger.info(f"[COST_DEBUG] eliyahu_cost=${eliyahu_cost:.6f}, provider_sum=${provider_cost_sum:.6f}, perplexity=${perplexity_eliyahu_cost:.6f}, anthropic=${anthropic_eliyahu_cost:.6f}")
+                    
+                    # Use provider sum if it's different from the total (handles both 0 and other mismatches)
+                    if provider_cost_sum > 0 and abs(eliyahu_cost - provider_cost_sum) > 0.000001:
                         logger.info(f"[COST_CORRECTION] Using provider sum ${provider_cost_sum:.6f} instead of total ${eliyahu_cost:.6f}")
                         eliyahu_cost = provider_cost_sum
                     
@@ -2455,6 +2458,7 @@ def handle(event, context):
                     status_update_data['run_time_s'] = validation_processing_time  # Actual validation run time in seconds
                     status_update_data['actual_processing_time_seconds'] = validation_processing_time  # Same as run_time_s for compatibility
                     status_update_data['actual_time_per_batch_seconds'] = validation_processing_time  # For single batch validation, same as total time
+                    logger.info(f"[TIMING_DEBUG] Set actual_processing_time_seconds={validation_processing_time:.3f}, actual_time_per_batch_seconds={validation_processing_time:.3f}")
                     status_update_data['percent_complete'] = 100  # Mark validation as 100% complete
                     # estimated_validation_time_minutes will be calculated from actual processing time automatically in update_run_status
                     
@@ -2525,6 +2529,9 @@ def handle(event, context):
                     # Override timing with actual background handler processing time
                     status_update_data['end_time'] = background_end_time  # Use background handler completion time
                     status_update_data['run_time_s'] = background_processing_time_seconds  # Actual background handler processing time
+                    status_update_data['actual_processing_time_seconds'] = background_processing_time_seconds  # Override with background handler time
+                    status_update_data['actual_time_per_batch_seconds'] = background_processing_time_seconds  # Override with background handler time
+                    logger.info(f"[TIMING_OVERRIDE] Override timing fields with background handler time: {background_processing_time_seconds:.3f}s")
                     
                     update_run_status(**status_update_data)
                     

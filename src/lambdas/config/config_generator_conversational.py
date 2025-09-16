@@ -303,7 +303,8 @@ class ConversationalConfigSystem:
                 prompt=prompt,
                 schema=tool_schema,
                 model=self.model,
-                tool_name="optimize_config"
+                tool_name="optimize_config",
+                max_web_searches=0
             )
             
             return response

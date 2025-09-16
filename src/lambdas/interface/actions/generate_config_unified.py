@@ -144,16 +144,33 @@ def get_next_config_version(email: str, session_id: str) -> int:
         if 'Contents' not in response:
             return 1
         
-        # Extract version numbers and get max
+        # Extract version numbers from ALL .json files using multiple patterns
         versions = []
         for obj in response['Contents']:
             filename = obj['Key'].split('/')[-1]
-            if filename.startswith('config_v') and filename.endswith('.json'):
-                match = re.search(r'config_v(\d+)_', filename)
-                if match:
-                    versions.append(int(match.group(1)))
+            if filename.endswith('.json'):
+                # Multiple patterns for version detection
+                patterns = [
+                    r'config_v(\d+)_',      # config_v5_ai_generated.json
+                    r'_v(\d+)_',            # session_20250916_v5_something.json
+                    r'_v(\d+)\.json$',      # filename_v5.json
+                    r'config_v(\d+)\.json$' # config_v5.json
+                ]
+                
+                for pattern in patterns:
+                    match = re.search(pattern, filename)
+                    if match:
+                        try:
+                            version = int(match.group(1))
+                            versions.append(version)
+                            logger.debug(f"Found version {version} in {filename}")
+                            break  # Stop at first match
+                        except ValueError:
+                            continue
         
-        return max(versions, default=0) + 1
+        next_version = max(versions, default=0) + 1
+        logger.info(f"Detected versions: {sorted(set(versions))}, next version: {next_version}")
+        return next_version
     except Exception as e:
         logger.warning(f"Could not determine next version: {e}")
         return 1
@@ -552,6 +569,7 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                     email, session_id, updated_config, source='ai_generated'
                 )
                 version = storage_result.get('version', 1)
+                config_version = version  # Ensure config_version is always set
             
             if not storage_result['success']:
                 return {'success': False, 'error': f'Failed to store generated config: {storage_result["error"]}'}
@@ -689,6 +707,12 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                     updated_config['generation_metadata'] = {}
                 updated_config['generation_metadata']['config_lambda_filename'] = config_filename
                 logger.info(f"Config lambda filename: {config_filename}")
+                
+                # Also store actual filename in config_change_log entries
+                if 'config_change_log' in updated_config:
+                    for entry in updated_config['config_change_log']:
+                        if 'config_filename' not in entry:
+                            entry['config_filename'] = config_filename
             
             # ========== ENHANCED RESPONSE WITH COST ANALYSIS ==========
             return {

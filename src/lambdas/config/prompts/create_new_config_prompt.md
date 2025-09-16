@@ -6,7 +6,6 @@
 1. NEVER modify column names from table analysis
 2. Minimum 2 search groups (Group 0 + validation groups)
 3. Every column MUST be assigned to a search group
-4. Use urgency scale 0.4-0.8 for new configurations
 5. Return both technical_ai_summary AND ai_summary
 
 ## Context

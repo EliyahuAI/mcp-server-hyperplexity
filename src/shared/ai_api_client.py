@@ -721,7 +721,7 @@ class AIAPIClient:
     
     def get_enhanced_call_metrics(self, response: Dict, model: str, processing_time: float, 
                                   search_context_size: str = None, batch_info: Dict = None, 
-                                  pre_extracted_token_usage: Dict = None) -> Dict[str, Any]:
+                                  pre_extracted_token_usage: Dict = None, is_cached: bool = None) -> Dict[str, Any]:
         """
         Enhanced elemental call tracking with comprehensive provider-specific metrics, 
         caching analysis, and per-row cost calculations.
@@ -747,8 +747,12 @@ class AIAPIClient:
                 
             api_provider = token_usage.get('api_provider', 'unknown')
             
+            # Determine cache status using bulletproof single source of truth
+            # Priority: 1) Explicit is_cached flag, 2) pre_extracted_token_usage presence
+            cache_detected = is_cached if is_cached is not None else (pre_extracted_token_usage is not None)
+            
             # Calculate costs with and without caching
-            if pre_extracted_token_usage:
+            if cache_detected:
                 # For cached responses: actual cost is 0, estimated is what it would have cost
                 cost_estimated = self.calculate_token_costs(token_usage)  # Original cost
                 cost_data = {  # Actual cost is 0 for cache hits
@@ -757,7 +761,7 @@ class AIAPIClient:
                     'total_cost': 0.0,
                     'pricing_source': 'cached_response'
                 }
-                logger.debug(f"[CACHE_COST_DEBUG] Cached response detected - Actual: ${cost_data.get('total_cost', 0.0):.6f}, Estimated: ${cost_estimated.get('total_cost', 0.0):.6f}")
+                logger.debug(f"[CACHE_COST_DEBUG] Cached response detected (is_cached={is_cached}, pre_extracted={pre_extracted_token_usage is not None}) - Actual: ${cost_data.get('total_cost', 0.0):.6f}, Estimated: ${cost_estimated.get('total_cost', 0.0):.6f}")
             else:
                 # For fresh API calls: calculate normally
                 cost_data = self.calculate_token_costs(token_usage)
@@ -768,9 +772,9 @@ class AIAPIClient:
             caching_metrics = self._extract_caching_metrics(token_usage, response)
             
             # Calculate timing metrics (actual vs estimated without cache)
-            # Pass internal cache detection flag to ensure proper timing calculation
+            # Pass bulletproof cache detection flag to ensure proper timing calculation
             timing_metrics = self._calculate_comprehensive_timing_metrics(
-                token_usage, processing_time, caching_metrics, is_internal_cache=(pre_extracted_token_usage is not None)
+                token_usage, processing_time, caching_metrics, is_internal_cache=cache_detected
             )
             
             # Calculate per-row metrics
@@ -1356,7 +1360,7 @@ class AIAPIClient:
         try:
             # Generate enhanced metrics for caching
             try:
-                enhanced_metrics = self.get_enhanced_call_metrics(response, model, processing_time)
+                enhanced_metrics = self.get_enhanced_call_metrics(response, model, processing_time, is_cached=False)
             except Exception as e:
                 logger.warning(f"Failed to generate enhanced metrics for cache: {e}")
                 enhanced_metrics = {}
@@ -1368,6 +1372,7 @@ class AIAPIClient:
                 'token_usage': token_usage,
                 'processing_time': processing_time,
                 'enhanced_data': enhanced_metrics  # Add enhanced metrics to cache
+                # NOTE: Deliberately NOT storing 'is_cached' - it's determined at retrieval time
             }
             
             s3_key = self._get_cache_s3_key(cache_key, api_provider)
@@ -1539,7 +1544,8 @@ class AIAPIClient:
                                     cached_data['api_response'], 
                                     current_model, 
                                     0.001,  # Use minimal cache retrieval time instead of original processing time
-                                    pre_extracted_token_usage=cached_token_usage
+                                    pre_extracted_token_usage=cached_token_usage,
+                                    is_cached=True
                                 )
                                 
                                 # Override timing metrics for cached response
@@ -1562,7 +1568,7 @@ class AIAPIClient:
                             'response': cached_data['api_response'],
                             'token_usage': token_usage,
                             'processing_time': cached_data.get('processing_time', 0),
-                            'is_cached': True,
+                            'is_cached': True,  # BULLETPROOF: Always True for cache hits - never take from cached_data  # BULLETPROOF: Always True for cache hits - never take from cached_data
                             'model_used': current_model,
                             'citations': citations,
                             'enhanced_data': enhanced_data
@@ -1700,7 +1706,8 @@ class AIAPIClient:
                             cached_data['api_response'], 
                             normalized_model, 
                             0.001,  # Use minimal cache retrieval time instead of original processing time
-                            pre_extracted_token_usage=cached_token_usage
+                            pre_extracted_token_usage=cached_token_usage,
+                            is_cached=True
                         )
                         
                         # Override timing metrics for cached response
@@ -1728,7 +1735,7 @@ class AIAPIClient:
                     'response': cached_data['api_response'],
                     'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
-                    'is_cached': True,
+                    'is_cached': True,  # BULLETPROOF: Always True for cache hits - never take from cached_data  # BULLETPROOF: Always True for cache hits - never take from cached_data
                     'citations': self.extract_citations_from_response(cached_data['api_response']),
                     'enhanced_data': enhanced_data
                 }
@@ -1808,7 +1815,8 @@ class AIAPIClient:
                             cached_data['api_response'], 
                             model, 
                             0.001,  # Use minimal cache retrieval time instead of original processing time
-                            pre_extracted_token_usage=cached_token_usage
+                            pre_extracted_token_usage=cached_token_usage,
+                            is_cached=True
                         )
                         
                         # Override timing metrics for cached response
@@ -1836,7 +1844,7 @@ class AIAPIClient:
                     'response': cached_data['api_response'],
                     'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
-                    'is_cached': True,
+                    'is_cached': True,  # BULLETPROOF: Always True for cache hits - never take from cached_data
                     'citations': self.extract_citations_from_perplexity_response(cached_data['api_response']),
                     'enhanced_data': enhanced_data
                 }
@@ -1905,7 +1913,8 @@ class AIAPIClient:
                             cached_data['api_response'], 
                             model, 
                             0.001,  # Use minimal cache retrieval time instead of original processing time
-                            pre_extracted_token_usage=cached_token_usage
+                            pre_extracted_token_usage=cached_token_usage,
+                            is_cached=True
                         )
                         
                         # Override timing metrics for cached response
@@ -1933,7 +1942,7 @@ class AIAPIClient:
                     'response': cached_data['api_response'],
                     'token_usage': token_usage,
                     'processing_time': cached_data.get('processing_time', 0),
-                    'is_cached': True,
+                    'is_cached': True,  # BULLETPROOF: Always True for cache hits - never take from cached_data
                     'citations': self.extract_citations_from_perplexity_response(cached_data['api_response']),
                     'enhanced_data': enhanced_data
                 }
@@ -2005,7 +2014,8 @@ class AIAPIClient:
                                 response_json, 
                                 model, 
                                 processing_time,
-                                search_context_size=search_context_size
+                                search_context_size=search_context_size,
+                                is_cached=False
                             )
                             logger.info(f"Generated enhanced metrics for non-cached perplexity response: cost=${enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0):.6f}, time={processing_time:.3f}s")
                         except Exception as e:
@@ -2016,7 +2026,7 @@ class AIAPIClient:
                             'response': response_json,
                             'token_usage': token_usage,
                             'processing_time': processing_time,
-                            'is_cached': False,
+                            'is_cached': False,  # BULLETPROOF: Always False for fresh API calls
                             'citations': self.extract_citations_from_perplexity_response(response_json),
                             'enhanced_data': enhanced_data
                         }
@@ -2221,7 +2231,7 @@ class AIAPIClient:
                                 'response': response_json,
                                 'token_usage': token_usage,
                                 'processing_time': processing_time,
-                                'is_cached': False,
+                                'is_cached': False,  # BULLETPROOF: Always False for fresh API calls  # BULLETPROOF: Always False for fresh API calls
                                 'citations': self.extract_citations_from_response(response_json)
                             }
                         elif response.status == 529:
@@ -2297,7 +2307,7 @@ class AIAPIClient:
                         # Generate enhanced metrics for this call
                         try:
                             enhanced_data = self.get_enhanced_call_metrics(
-                                response_json, normalized_model, processing_time
+                                response_json, normalized_model, processing_time, is_cached=False
                             )
                         except Exception as e:
                             logger.warning(f"Failed to generate enhanced metrics for call_structured_api: {e}")
@@ -2307,7 +2317,7 @@ class AIAPIClient:
                             'response': response_json,
                             'token_usage': token_usage,
                             'processing_time': processing_time,
-                            'is_cached': False,
+                            'is_cached': False,  # BULLETPROOF: Always False for fresh API calls
                             'citations': self.extract_citations_from_response(response_json),
                             'enhanced_data': enhanced_data
                         }
@@ -2377,7 +2387,7 @@ class AIAPIClient:
                         # Generate enhanced metrics for this call
                         try:
                             enhanced_data = self.get_enhanced_call_metrics(
-                                response_json, model, processing_time
+                                response_json, model, processing_time, is_cached=False
                             )
                         except Exception as e:
                             logger.warning(f"Failed to generate enhanced metrics for Perplexity call: {e}")
@@ -2391,7 +2401,7 @@ class AIAPIClient:
                             'response': response_json,
                             'token_usage': token_usage,
                             'processing_time': processing_time,
-                            'is_cached': False,
+                            'is_cached': False,  # BULLETPROOF: Always False for fresh API calls
                             'citations': self.extract_citations_from_perplexity_response(response_json),
                             'enhanced_data': enhanced_data
                         }

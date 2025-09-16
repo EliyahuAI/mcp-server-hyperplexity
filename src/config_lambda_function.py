@@ -148,7 +148,8 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             model=config_settings.get('model', 'claude-opus-4-1'),
             tool_name="generate_config_and_questions",
             context="",
-            max_tokens=config_settings.get('max_tokens', 16000)
+            max_tokens=config_settings.get('max_tokens', 16000),
+            max_web_searches=0
         )
         
         # Debug logging

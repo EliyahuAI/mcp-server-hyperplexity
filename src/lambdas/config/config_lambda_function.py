@@ -192,7 +192,8 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             schema=schema,
             model=config_settings.get('model', 'claude-opus-4-1'),
             tool_name="generate_config_and_questions",
-            max_tokens=config_settings.get('max_tokens', 16000)
+            max_tokens=config_settings.get('max_tokens', 16000),
+            max_web_searches=0
             # Removed context parameter - it was incorrectly using session_id
             # Context should be for search_context_size in validation calls
         )

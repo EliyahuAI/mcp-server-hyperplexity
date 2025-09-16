@@ -43,6 +43,9 @@ def _calculate_intelligent_cost_estimate(email: str, session_id: str, storage_ma
     try:
         from decimal import Decimal
         
+        # Ensure multiplier is a float (DynamoDB may return Decimal)
+        multiplier = float(multiplier) if multiplier is not None else 1.0
+        
         # Try to get cost estimate from existing preview results
         try:
             # Look for existing preview results in this session

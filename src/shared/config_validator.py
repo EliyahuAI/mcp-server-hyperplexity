@@ -30,8 +30,8 @@ def validate_config_structure(config_data: Dict) -> Tuple[bool, List[str], List[
         errors.append("default_model must be a string")
     
     if 'default_search_context_size' in config_data:
-        if config_data['default_search_context_size'] not in ['low', 'high']:
-            errors.append("default_search_context_size must be 'low' or 'high'")
+        if config_data['default_search_context_size'] not in ['low', 'medium', 'high']:
+            errors.append("default_search_context_size must be 'low', 'medium', or 'high'")
     
     if 'anthropic_max_web_searches_default' in config_data:
         val = config_data['anthropic_max_web_searches_default']
@@ -50,7 +50,7 @@ def validate_config_structure(config_data: Dict) -> Tuple[bool, List[str], List[
                     continue
                 
                 # Required fields in search group
-                required_group_fields = ['group_id', 'group_name', 'description', 'model', 'search_context']
+                required_group_fields = ['group_id', 'group_name', 'description', 'model']
                 for field in required_group_fields:
                     if field not in group:
                         errors.append(f"search_groups[{i}] missing required field: {field}")
@@ -65,8 +65,8 @@ def validate_config_structure(config_data: Dict) -> Tuple[bool, List[str], List[
                         group_ids.add(group['group_id'])
                 
                 # Validate search_context
-                if 'search_context' in group and group['search_context'] not in ['low', 'high']:
-                    errors.append(f"search_groups[{i}].search_context must be 'low' or 'high'")
+                if 'search_context' in group and group['search_context'] not in ['low', 'medium', 'high']:
+                    errors.append(f"search_groups[{i}].search_context must be 'low', 'medium', or 'high'")
                 
                 # Validate string fields
                 for field in ['group_name', 'description', 'model']:
@@ -145,8 +145,8 @@ def validate_config_structure(config_data: Dict) -> Tuple[bool, List[str], List[
                         used_group_ids.add(target['search_group'])
                 
                 # Validate optional fields
-                if 'search_context_size' in target and target['search_context_size'] not in ['low', 'high']:
-                    errors.append(f"validation_targets[{i}].search_context_size must be 'low' or 'high'")
+                if 'search_context_size' in target and target['search_context_size'] not in ['low', 'medium', 'high']:
+                    errors.append(f"validation_targets[{i}].search_context_size must be 'low', 'medium', or 'high'")
                 
                 if 'preferred_model' in target and (not isinstance(target['preferred_model'], str) or not target['preferred_model'].strip()):
                     errors.append(f"validation_targets[{i}].preferred_model must be a non-empty string")

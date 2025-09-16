@@ -556,6 +556,34 @@ class UnifiedS3Manager:
                             obj['Key'].count('/') == session_path.count('/')):  # Ensure it's in main folder
                             config_files.append(obj)
             
+            # If still no configs found, search for ALL .json files in session (including copied configs with session prefix)
+            if not config_files:
+                logger.info("No standard config files found, searching for all JSON files in session")
+                response = self.s3_client.list_objects_v2(
+                    Bucket=self.bucket_name,
+                    Prefix=session_path,
+                    Delimiter='/'  # Don't recurse into subfolders
+                )
+                if 'Contents' in response:
+                    for obj in response['Contents']:
+                        filename = obj['Key'].split('/')[-1]
+                        # Include any .json file that might be a config, but exclude results files
+                        if (filename.endswith('.json') and 
+                            obj['Key'].count('/') == session_path.count('/') and
+                            not filename.startswith('session_info') and
+                            'results' not in filename and
+                            'receipt' not in filename):
+                            # Validate it's actually a config by checking if it has storage_metadata
+                            try:
+                                config_response = self.s3_client.get_object(Bucket=self.bucket_name, Key=obj['Key'])
+                                config_data = json.loads(config_response['Body'].read().decode('utf-8'))
+                                if 'storage_metadata' in config_data:
+                                    config_files.append(obj)
+                                    logger.info(f"Found config file: {filename}")
+                            except Exception as e:
+                                logger.debug(f"Skipping non-config file {filename}: {e}")
+                                continue
+            
             if not config_files:
                 logger.info(f"No config files found for session {session_id}")
                 return None, None
@@ -804,7 +832,7 @@ class UnifiedS3Manager:
             else:
                 logger.warning(f"DEBUG_VALIDATION_RESULTS: No objects found in session folder: {session_path}")
                 
-            # List all result folders in session folder
+            # Method 1: Try using CommonPrefixes approach for versioned result folders
             response = self.s3_client.list_objects_v2(
                 Bucket=self.bucket_name,
                 Prefix=f"{session_path}v",
@@ -830,6 +858,35 @@ class UnifiedS3Manager:
                             continue
             else:
                 logger.info(f"DEBUG_VALIDATION_RESULTS: No CommonPrefixes found with v prefix")
+            
+            # Method 2: If CommonPrefixes didn't work, scan all objects and identify result folders manually
+            if not result_folders:
+                logger.info(f"DEBUG_VALIDATION_RESULTS: CommonPrefixes approach failed, trying direct object scan...")
+                all_response = self.s3_client.list_objects_v2(
+                    Bucket=self.bucket_name,
+                    Prefix=session_path
+                )
+                
+                if 'Contents' in all_response:
+                    folder_versions = set()
+                    for obj in all_response['Contents']:
+                        key = obj['Key']
+                        # Look for pattern: session_path + v{number}_results/...
+                        relative_path = key[len(session_path):]
+                        if '/' in relative_path:
+                            folder_part = relative_path.split('/')[0]
+                            if folder_part.startswith('v') and folder_part.endswith('_results'):
+                                try:
+                                    version_str = folder_part.replace('_results', '').replace('v', '')
+                                    version = int(version_str)
+                                    folder_path = f"{session_path}{folder_part}/"
+                                    folder_versions.add((version, folder_path))
+                                    logger.info(f"DEBUG_VALIDATION_RESULTS: Found result folder via object scan: v{version} -> {folder_path}")
+                                except ValueError:
+                                    continue
+                    
+                    result_folders = list(folder_versions)
+                    logger.info(f"DEBUG_VALIDATION_RESULTS: Object scan found {len(result_folders)} result folders")
                 
             # Also check for validation results files directly in the session folder (alternative storage pattern)
             direct_results_patterns = [
@@ -886,7 +943,7 @@ class UnifiedS3Manager:
             return None
     
     def get_config_by_id(self, config_id: str, email: str) -> Tuple[Optional[Dict], Optional[str]]:
-        """Get config by config ID, restricted to user's email"""
+        """Get config by config ID with fallback search strategies"""
         try:
             # Parse config_id to extract session_id and version
             # Format: {session_id}_v{version}_{description}
@@ -907,29 +964,16 @@ class UnifiedS3Manager:
             # Get session path and construct config key
             session_path = self.get_session_path(email, session_id)
             
-            # Try different config filename patterns (expanded to cover all source types)
+            # STRATEGY 1: Try standard config filename patterns first
             potential_keys = [
                 f"{session_path}config_v{version}_user.json",
-                f"{session_path}config_v{version}_upload.json",
+                f"{session_path}config_v{version}_upload.json", 
                 f"{session_path}config_v{version}_ai_generated.json",
                 f"{session_path}config_v{version}_copied_from_previous.json",
                 f"{session_path}config_v{version}_used_by_id.json"
             ]
             
-            # Note: auto_copied patterns have dynamic session IDs, will be found by S3 search below
-            
-            # Also search for any config with this version (including preserved filenames)
-            response = self.s3_client.list_objects_v2(
-                Bucket=self.bucket_name,
-                Prefix=f"{session_path}config_v{version}_"
-            )
-            
-            if 'Contents' in response:
-                for obj in response['Contents']:
-                    potential_keys.insert(0, obj['Key'])
-            
-            # IMPORTANT: Also search for ALL files in session (to find preserved filenames)
-            # This catches configs with preserved original filenames that don't match the standard pattern
+            # STRATEGY 2: Search for session+name pattern (preserved filenames with session prefix)
             all_files_response = self.s3_client.list_objects_v2(
                 Bucket=self.bucket_name,
                 Prefix=session_path
@@ -937,9 +981,24 @@ class UnifiedS3Manager:
             
             if 'Contents' in all_files_response:
                 for obj in all_files_response['Contents']:
-                    # Only check .json files and avoid duplicates
-                    if obj['Key'].endswith('.json') and obj['Key'] not in potential_keys:
+                    filename = obj['Key'].split('/')[-1]
+                    # Look for files starting with session_id (session_filename.json pattern)
+                    if filename.startswith(session_id) and filename.endswith('.json'):
+                        potential_keys.insert(0, obj['Key'])  # Prioritize session+name files
+                    # Also add any .json files that might contain version info
+                    elif filename.endswith('.json') and obj['Key'] not in potential_keys:
                         potential_keys.append(obj['Key'])
+            
+            # STRATEGY 3: Search by version prefix for any remaining matches
+            version_search_response = self.s3_client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=f"{session_path}config_v{version}_"
+            )
+            
+            if 'Contents' in version_search_response:
+                for obj in version_search_response['Contents']:
+                    if obj['Key'] not in potential_keys:
+                        potential_keys.insert(0, obj['Key'])
             
             # Try to find and validate the config
             for key in potential_keys:
@@ -950,7 +1009,8 @@ class UnifiedS3Manager:
                     # Verify this config matches the requested ID
                     stored_config_id = config_data.get('storage_metadata', {}).get('config_id')
                     if stored_config_id == config_id:
-                        logger.info(f"Found config by ID: {config_id}")
+                        filename = key.split('/')[-1]
+                        logger.info(f"Found config by ID: {config_id} in file: {filename}")
                         return config_data, key
                         
                 except Exception as e:

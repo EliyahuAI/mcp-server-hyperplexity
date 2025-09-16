@@ -18,7 +18,7 @@
         },
         "default_search_context_size": {
           "type": "string",
-          "enum": ["low", "high"],
+          "enum": ["low", "medium", "high"],
           "description": "Default search context size"
         },
         "anthropic_max_web_searches_default": {
@@ -37,7 +37,7 @@
               "group_name": {"type": "string"},
               "description": {"type": "string"},
               "model": {"type": "string"},
-              "search_context": {"type": "string", "enum": ["low", "high"]},
+              "search_context": {"type": "string", "enum": ["low", "medium", "high"]},
               "anthropic_max_web_searches": {
                 "type": "integer",
                 "minimum": 0,
@@ -55,13 +55,11 @@
             "properties": {
               "column": {"type": "string"},
               "description": {"type": "string"},
-              "importance": {"type": "string", "enum": ["ID", "CRITICAL", "HIGH", "MEDIUM", "LOW"]},
+              "importance": {"type": "string", "enum": ["ID", "CRITICAL", "IGNORED"]},
               "format": {"type": "string"},
               "notes": {"type": "string"},
               "examples": {"type": "array", "items": {"type": "string"}},
-              "search_group": {"type": "integer"},
-              "preferred_model": {"type": "string"},
-              "search_context_size": {"type": "string", "enum": ["low", "high"]}
+              "search_group": {"type": "integer"}
             },
             "required": ["column", "description", "importance", "format", "examples", "search_group"]
           }

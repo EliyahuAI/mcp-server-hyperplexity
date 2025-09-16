@@ -1,6 +1,7 @@
 {
   "general_notes": "This table tracks radiopharmaceutical products (diagnostic, therapeutic and theranostic) in development that could compete with Ratio Therapeutics over the next 1–5 years. The list focuses on agents in pre-registration through Phase 1 and likely to reach market in 2024-2030. Your key goal is to monitor this competitive landscape. Please use the most recent information available from public sources, including clinicaltrials.gov, company press releases, and news articles.",
   "primary_key": ["Product Name", "Developer", "Target"],
+  "default_search_context_size": "high",
   "validation_targets": [
     {
       "column": "Product Name",

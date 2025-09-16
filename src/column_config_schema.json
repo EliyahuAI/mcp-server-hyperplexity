@@ -14,7 +14,7 @@
     },
     "default_search_context_size": {
       "type": "string",
-      "enum": ["low", "high"],
+      "enum": ["low", "medium", "high"],
       "description": "Default search context size for Perplexity models"
     },
     "anthropic_max_web_searches_default": {
@@ -28,7 +28,7 @@
       "description": "Required search group definitions for organizing columns - essential for building effective search strategy",
       "items": {
         "type": "object",
-        "required": ["group_id", "group_name", "description", "model", "search_context"],
+        "required": ["group_id", "group_name", "description", "model"],
         "properties": {
           "group_id": {
             "type": "integer",
@@ -106,7 +106,7 @@
           },
           "search_context_size": {
             "type": "string",
-            "enum": ["low", "high"],
+            "enum": ["low", "medium", "high"],
             "description": "Override search context size for this column"
           }
         },

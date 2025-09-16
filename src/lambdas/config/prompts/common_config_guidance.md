@@ -3,30 +3,29 @@
 This document contains shared guidelines used by both new config creation and refinement processes.
 
 ## Model Selection Guidelines
-- **Default Model**: `sonar-pro` is the default for most use cases
+- **Default Model**: `sonar` is the default for most use cases - particularly for new configurations
 - **Alternative Models**: Available models include:
-  - Perplexity models: `sonar` (recommended for simple fact checking), `sonar-pro` (recommended for most research tasks)
+  - Perplexity models: `sonar` (recommended for simple fact checking- default for new configurations), `sonar-pro` (recommended deeper synthesis of sources)
   - Anthropic models: `claude-opus-4-1` (latest Claude 4 opus for advanced reasoning - expensive!, bring out the big guns only when really deep thought and synthesis is needed - with ), `claude-sonnet-4-0` (latest Claude 4 - this is the first line of defense for advanced reasoning solutions that require search, and very helpful when pure reasoning is needed in response when anthropic_max_web_searches is set to 0, `claude-3.5-haiku-latest` (great for fast reasoning solutions that dont need much thought)
 - **Best Practices**:
-  - Use Perplexity models (`sonar`,`sonar-pro`) for standard web search and validation tasks
-  - Only use Anthropic models when deeper reasoning (sonnet-4 in most cases, opus when deep reasoning is called for)
+  - Use Perplexity models (`sonar` or`sonar-pro`) for standard web search and validation tasks
+  - Only use Anthropic models only when deeper reasoning (sonnet-4 in most cases, opus when deep reasoning is called for)
   - Consider the validation complexity before choosing Anthropic models
 
 ## Search Context Size Guidelines for Perplexity
-- **Values**: `"low"`, `"high"`, (Perplexity only)
-- **Global Default**: Set `default_search_context_size` at the root level (defaults to `"low"`)
-- **Per-Search Group Override**: Use `search_context_size` field for specific search groups
+- **Values**: `"low"`,  `"medium"`,`"high"` (default), (Perplexity only)
+- **Global Default**: Set `default_search_context_size` at the root level (defaults to `"high"`, unless you it is a simple fact lookup -> `"low"`). Setting search context to `"low"` results in the fastest results. 
+- **Per-Search Group Override**: You can use `search_context_size` field for specific search groups
 - **Best Practices**:
-  - Use `"low"` for most columns (faster, cheaper, usually sufficient)
-  - Use `"medium"`, and `"high"` when search results are harder/esoteric and expected to be hard to find, or when it we are unhappy with previews or results. Note that increasing contrex
-  - Avoid `"high"` unless necessary as it increases cost and latency
+  - Use `"high"` for most columns (cheap enough with sonar, takes time but worth it).
+  - Use `"medium"`, and `"low"` when search results are obvious.
 
 ## Anthropic Web Search Guidelines
-- **Global Default**: Set `anthropic_max_web_searches_default` at the root level (defaults to 2)
+- **Global Default**: Set `anthropic_max_web_searches_default` at the root level (defaults to 1)
 - **Per-Search Group Override**: Use `anthropic_max_web_searches` field (0-10) for specific search groups  
 - **Recommended Values**:
   - **0**: Disable web search entirely (cached knowledge only), great for reasoning only tasks
-  - **1**: For obvious items that need minimal verification, but still benefit from anthropic models
+  - **1**: For obvious items that need the internet, but still benefit from anthropic models (default)
   - **3**: For more complex items requiring moderate research, this can get expensive fast
   - **5**: For esoteric facts requiring extensive search - a bit of a last resort. 
 - **Cost Control**: Lower values reduce API costs but may miss current information
@@ -117,7 +116,7 @@ Search groups are **REQUIRED** for every configuration - they are essential for 
 **MANDATORY REQUIREMENTS:**
 - **You MUST define at least two search groups** in the `search_groups` array (Group 0/ID Group and another)
 - **Every validation target MUST be assigned to a search group** via the `search_group` field (except those that are Ignore)
-- **Group 0**: Always ID/identifier fields (not validated, used for context), you must provide an ID group and assign at least one validation target to this. Note - these usually come from the left-most column(s).  
+- **Group 0**: Always ID/identifier fields (not validated, used for context), you must provide an ID group and assign at least one,  validation target to this. Note - these usually come from the left-most column(s). No validated columns in this group! 
 - **Group 1+**: Columns whose information appears together in typical sources
 - **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or Ignore)/3)
 - **Upper limit**: Maximum 10
