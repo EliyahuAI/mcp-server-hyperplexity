@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import environment configuration helper
-from environment_config import apply_environment_to_lambda_config, print_environment_info
+from environment_config import apply_environment_to_lambda_config, apply_environment_to_api_gateway_config, print_environment_info
 
 # Directory setup
 SCRIPT_DIR = Path(__file__).parent.absolute()
@@ -1212,9 +1212,10 @@ def main():
     
     # Apply environment configuration
     print_environment_info(args.environment)
-    global LAMBDA_CONFIG, WEBSOCKET_LAMBDA_CONFIG
+    global LAMBDA_CONFIG, WEBSOCKET_LAMBDA_CONFIG, API_GATEWAY_CONFIG
     LAMBDA_CONFIG = apply_environment_to_lambda_config(LAMBDA_CONFIG, args.environment)
     WEBSOCKET_LAMBDA_CONFIG = apply_environment_to_lambda_config(WEBSOCKET_LAMBDA_CONFIG, args.environment)
+    API_GATEWAY_CONFIG = apply_environment_to_api_gateway_config(API_GATEWAY_CONFIG, args.environment)
     
     # Get Lambda function name
     function_name = args.function_name or LAMBDA_CONFIG["FunctionName"]

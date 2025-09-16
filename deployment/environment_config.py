@@ -73,6 +73,26 @@ def apply_environment_to_lambda_config(base_config: Dict[str, Any], environment:
     
     return config
 
+def apply_environment_to_api_gateway_config(base_config: Dict[str, Any], environment: str = "prod") -> Dict[str, Any]:
+    """
+    Apply environment-specific modifications to an API Gateway configuration
+    
+    Args:
+        base_config: Base API Gateway configuration dictionary
+        environment: Environment name (dev, test, staging, prod)
+        
+    Returns:
+        Modified API Gateway configuration with environment-specific values
+    """
+    env_config = load_environment_config(environment)
+    config = base_config.copy()
+    
+    # Apply resource suffix to API name
+    original_name = config.get("ApiName", "")
+    config["ApiName"] = original_name + env_config["resource_suffix"]
+    
+    return config
+
 def get_api_gateway_urls(environment: str = "prod") -> Dict[str, str]:
     """
     Get API Gateway URLs for the specified environment
@@ -85,20 +105,16 @@ def get_api_gateway_urls(environment: str = "prod") -> Dict[str, str]:
     """
     env_config = load_environment_config(environment)
     
-    # Base API Gateway IDs (these would need to be updated with actual values)
-    # For now, using placeholder logic - in practice, you'd have different gateway IDs per environment
-    if environment == "dev":
-        rest_api_id = "dev-api-id"  # Replace with actual dev API Gateway ID
-        websocket_api_id = "dev-ws-id"  # Replace with actual dev WebSocket API ID
-    elif environment == "test":
-        rest_api_id = "test-api-id"  # Replace with actual test API Gateway ID
-        websocket_api_id = "test-ws-id"  # Replace with actual test WebSocket API ID
-    elif environment == "staging":
-        rest_api_id = "staging-api-id"  # Replace with actual staging API Gateway ID
-        websocket_api_id = "staging-ws-id"  # Replace with actual staging WebSocket API ID
-    else:  # prod
+    # For now, return placeholder URLs that will be updated after deployment
+    # The actual URLs will be determined after the API Gateway is created
+    # These placeholders help with documentation and testing
+    if environment == "prod":
         rest_api_id = "a0tk95o95g"  # Current production REST API ID
         websocket_api_id = "xt6790qk9f"  # Current production WebSocket API ID
+    else:
+        # Placeholder IDs - will be replaced with actual values after deployment
+        rest_api_id = f"{environment}-api-placeholder"
+        websocket_api_id = f"{environment}-ws-placeholder"
     
     stage = env_config["api_gateway_stage"]
     
@@ -106,6 +122,31 @@ def get_api_gateway_urls(environment: str = "prod") -> Dict[str, str]:
         "rest_api_url": f"https://{rest_api_id}.execute-api.us-east-1.amazonaws.com/{stage}",
         "websocket_url": f"wss://{websocket_api_id}.execute-api.us-east-1.amazonaws.com/{stage}"
     }
+
+def update_frontend_with_api_urls(environment: str, rest_api_id: str, websocket_api_id: str = None) -> str:
+    """
+    Generate frontend configuration snippet with actual API Gateway URLs
+    
+    Args:
+        environment: Environment name (dev, test, staging, prod)
+        rest_api_id: Actual REST API Gateway ID
+        websocket_api_id: Actual WebSocket API Gateway ID (optional)
+        
+    Returns:
+        JavaScript configuration snippet to update frontend
+    """
+    env_config = load_environment_config(environment)
+    stage = env_config["api_gateway_stage"]
+    
+    rest_url = f"https://{rest_api_id}.execute-api.us-east-1.amazonaws.com/{stage}"
+    ws_url = f"wss://{websocket_api_id or 'xt6790qk9f'}.execute-api.us-east-1.amazonaws.com/{stage}"
+    
+    return f"""
+// Update frontend configuration for {environment} environment:
+// Replace in ENV_CONFIGS.{environment}:
+apiBase: '{rest_url}',
+websocketUrl: '{ws_url}',
+"""
 
 def print_environment_info(environment: str):
     """
