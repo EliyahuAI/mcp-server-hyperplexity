@@ -10,10 +10,8 @@ import time
 from datetime import datetime
 from botocore.exceptions import ClientError
 
-def create_downloads_bucket():
+def create_downloads_bucket(bucket_name='hyperplexity-downloads'):
     """Create separate public downloads bucket with 7-day lifecycle"""
-    
-    bucket_name = 'hyperplexity-downloads'
     
     # Create S3 client
     s3_client = boto3.client('s3')
@@ -120,10 +118,8 @@ def create_downloads_bucket():
         print(f"Error configuring downloads bucket: {e}")
         return None
 
-def create_unified_s3_bucket():
+def create_unified_s3_bucket(bucket_name='hyperplexity-storage'):
     """Create unified S3 bucket with proper folder structure and lifecycle policies"""
-    
-    bucket_name = 'hyperplexity-storage'
     
     # Create S3 client
     s3_client = boto3.client('s3')

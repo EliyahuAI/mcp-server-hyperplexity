@@ -1155,22 +1155,28 @@ def setup_unified_s3_bucket():
     try:
         from create_unified_s3_bucket import create_unified_s3_bucket, create_downloads_bucket, test_bucket_structure
         
-        logger.info("🗄️ Setting up S3 buckets...")
+        # Get environment-specific bucket names from Lambda config
+        unified_bucket_name = LAMBDA_CONFIG["Environment"]["Variables"]["S3_UNIFIED_BUCKET"]
+        downloads_bucket_name = LAMBDA_CONFIG["Environment"]["Variables"]["S3_DOWNLOAD_BUCKET"]
+        
+        logger.info(f"🗄️ Setting up S3 buckets for environment...")
+        logger.info(f"   Unified bucket: {unified_bucket_name}")
+        logger.info(f"   Downloads bucket: {downloads_bucket_name}")
         
         # Create downloads bucket first
-        downloads_bucket = create_downloads_bucket()
+        downloads_bucket = create_downloads_bucket(downloads_bucket_name)
         if downloads_bucket:
             logger.info("✅ Downloads bucket created successfully")
         else:
             logger.warning("⚠️ Downloads bucket creation failed")
         
         # Create unified bucket
-        unified_bucket = create_unified_s3_bucket()
+        unified_bucket = create_unified_s3_bucket(unified_bucket_name)
         if unified_bucket:
             logger.info("✅ Unified S3 bucket created successfully")
             
             # Test bucket structure
-            if test_bucket_structure(unified_bucket):
+            if test_bucket_structure(unified_bucket_name):
                 logger.info("✅ Bucket structure verified")
                 
                 # Note: Downloads bucket created for config lambda use only
