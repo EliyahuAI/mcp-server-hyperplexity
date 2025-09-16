@@ -37,6 +37,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Import environment configuration helper
+from environment_config import apply_environment_to_lambda_config, print_environment_info
+
 # Directory setup
 SCRIPT_DIR = Path(__file__).parent.absolute()
 PROJECT_DIR = SCRIPT_DIR.parent
@@ -1204,7 +1207,14 @@ def main():
     parser.add_argument('--skip-db-setup', action='store_true', help='Skip DynamoDB table setup during deployment')
     parser.add_argument('--setup-s3', action='store_true', help='Set up unified S3 bucket')
     parser.add_argument('--skip-s3-setup', action='store_true', help='Skip S3 bucket setup during deployment')
+    parser.add_argument('--environment', '-e', default='prod', choices=['dev', 'test', 'staging', 'prod'], help='Deployment environment (default: prod)')
     args = parser.parse_args()
+    
+    # Apply environment configuration
+    print_environment_info(args.environment)
+    global LAMBDA_CONFIG, WEBSOCKET_LAMBDA_CONFIG
+    LAMBDA_CONFIG = apply_environment_to_lambda_config(LAMBDA_CONFIG, args.environment)
+    WEBSOCKET_LAMBDA_CONFIG = apply_environment_to_lambda_config(WEBSOCKET_LAMBDA_CONFIG, args.environment)
     
     # Get Lambda function name
     function_name = args.function_name or LAMBDA_CONFIG["FunctionName"]

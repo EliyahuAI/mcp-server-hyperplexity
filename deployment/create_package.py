@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# Import environment configuration helper
+from environment_config import apply_environment_to_lambda_config, print_environment_info
+
 # Directory setup
 SCRIPT_DIR = Path(__file__).parent.absolute()
 PROJECT_DIR = SCRIPT_DIR.parent
@@ -781,7 +784,13 @@ def main():
     parser.add_argument('--logs-minutes', type=int, default=30, help='Number of minutes of logs to fetch (default: 30)')
     parser.add_argument('--timeout', type=int, default=300, help='Lambda invocation timeout in seconds (default: 300)')
     parser.add_argument('--diagnose-logs', action='store_true', help='Deploy and test a function to diagnose CloudWatch Logs permissions')
+    parser.add_argument('--environment', '-e', default='prod', choices=['dev', 'test', 'staging', 'prod'], help='Deployment environment (default: prod)')
     args = parser.parse_args()
+    
+    # Apply environment configuration
+    print_environment_info(args.environment)
+    global LAMBDA_CONFIG
+    LAMBDA_CONFIG = apply_environment_to_lambda_config(LAMBDA_CONFIG, args.environment)
     
     # Special handling for diagnose logs
     if args.diagnose_logs:

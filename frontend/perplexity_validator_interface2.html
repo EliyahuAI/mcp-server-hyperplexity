@@ -1429,6 +1429,34 @@
         opacity: 1;
     }
 
+    /* Environment indicator */
+    .environment-indicator {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background: rgba(76, 175, 80, 0.9);
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: bold;
+        z-index: 10000;
+        text-transform: uppercase;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .environment-indicator.dev {
+        background: rgba(255, 152, 0, 0.9);
+    }
+
+    .environment-indicator.test {
+        background: rgba(156, 39, 176, 0.9);
+    }
+
+    .environment-indicator.staging {
+        background: rgba(3, 169, 244, 0.9);
+    }
+
     /* Media Queries for Balance Notifications */
     @media (max-width: 768px) {
         .balance-notification {
@@ -1458,10 +1486,71 @@
     <script>
         (function() {
             // ============================================
+            // ENVIRONMENT CONFIGURATION
+            // ============================================
+            
+            // Environment configurations for different deployment targets
+            const ENV_CONFIGS = {
+                dev: {
+                    apiBase: 'https://dev-api-id.execute-api.us-east-1.amazonaws.com/dev',
+                    websocketUrl: 'wss://dev-ws-id.execute-api.us-east-1.amazonaws.com/dev',
+                    storeUrl: 'https://dev.eliyahu.ai/store/p/10-hyperplexity-credits',
+                    termsUrl: 'https://dev.eliyahu.ai/terms',
+                    privacyUrl: 'https://dev.eliyahu.ai/privacy-notice'
+                },
+                test: {
+                    apiBase: 'https://test-api-id.execute-api.us-east-1.amazonaws.com/test',
+                    websocketUrl: 'wss://test-ws-id.execute-api.us-east-1.amazonaws.com/test',
+                    storeUrl: 'https://test.eliyahu.ai/store/p/10-hyperplexity-credits',
+                    termsUrl: 'https://test.eliyahu.ai/terms',
+                    privacyUrl: 'https://test.eliyahu.ai/privacy-notice'
+                },
+                staging: {
+                    apiBase: 'https://staging-api-id.execute-api.us-east-1.amazonaws.com/staging',
+                    websocketUrl: 'wss://staging-ws-id.execute-api.us-east-1.amazonaws.com/staging',
+                    storeUrl: 'https://staging.eliyahu.ai/store/p/10-hyperplexity-credits',
+                    termsUrl: 'https://staging.eliyahu.ai/terms',
+                    privacyUrl: 'https://staging.eliyahu.ai/privacy-notice'
+                },
+                prod: {
+                    apiBase: 'https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod',
+                    websocketUrl: 'wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod',
+                    storeUrl: 'https://eliyahu.ai/store/p/10-hyperplexity-credits',
+                    termsUrl: 'https://eliyahu.ai/terms',
+                    privacyUrl: 'https://eliyahu.ai/privacy-notice'
+                }
+            };
+            
+            // Detect environment from URL parameters or default to prod
+            function detectEnvironment() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const envParam = urlParams.get('env') || urlParams.get('environment');
+                
+                // Validate environment parameter
+                if (envParam && ENV_CONFIGS[envParam]) {
+                    console.log(`[INFO] Environment detected from URL: ${envParam}`);
+                    return envParam;
+                }
+                
+                // Default to production
+                console.log('[INFO] Using default environment: prod');
+                return 'prod';
+            }
+            
+            // Get current environment configuration
+            const CURRENT_ENV = detectEnvironment();
+            const ENV_CONFIG = ENV_CONFIGS[CURRENT_ENV];
+            
+            // ============================================
             // CONFIGURATION
             // ============================================
-            const API_BASE = 'https://a0tk95o95g.execute-api.us-east-1.amazonaws.com/prod';
-            const WEBSOCKET_API_URL = 'wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod';
+            const API_BASE = ENV_CONFIG.apiBase;
+            const WEBSOCKET_API_URL = ENV_CONFIG.websocketUrl;
+            
+            // Display environment info in console
+            console.log(`[CONFIG] Environment: ${CURRENT_ENV}`);
+            console.log(`[CONFIG] API Base: ${API_BASE}`);
+            console.log(`[CONFIG] WebSocket URL: ${WEBSOCKET_API_URL}`);
 
             // ============================================
             // GLOBAL STATE (Minimal)
@@ -1478,6 +1567,19 @@
                 isProcessingConfig: false, // Track if config generation/refinement is in progress
                 debounceTimers: new Map() // Track debounce timers by function/card ID
             };
+
+            // ============================================
+            // ENVIRONMENT INDICATOR
+            // ============================================
+            
+            // Add environment indicator to page (only show if not prod)
+            if (CURRENT_ENV !== 'prod') {
+                const indicator = document.createElement('div');
+                indicator.className = `environment-indicator ${CURRENT_ENV}`;
+                indicator.textContent = CURRENT_ENV;
+                indicator.title = `Environment: ${CURRENT_ENV}\nAPI: ${API_BASE}`;
+                document.body.appendChild(indicator);
+            }
 
             // ============================================
             // MOBILE DETECTION
@@ -2662,8 +2764,8 @@
                 const creditsText = recommendedAmount ? `$${recommendedAmount.toFixed(2)}` : 'custom';
                 showMessage(messageContainer, `💳 You need ${creditsText} in credits. Opening store in new tab...`, 'info', false, 'store-opening');
                 
-                // Build store URL - use direct product link
-                const storeUrl = 'https://eliyahu.ai/store/p/10-hyperplexity-credits';
+                // Build store URL - use environment-specific URL
+                const storeUrl = ENV_CONFIG.storeUrl;
                 
                 // Add query parameters for tracking
                 const params = new URLSearchParams();
@@ -3573,13 +3675,13 @@
                             <div class="privacy-checkbox">
                                 <input type="checkbox" id="${cardId}-terms" required>
                                 <label for="${cardId}-terms">
-                                    I agree to the <a href="https://eliyahu.ai/terms" target="_blank" style="color: var(--primary-color); text-decoration: underline;">Terms and Conditions</a>
+                                    I agree to the <a href="${ENV_CONFIG.termsUrl}" target="_blank" style="color: var(--primary-color); text-decoration: underline;">Terms and Conditions</a>
                                 </label>
                             </div>
                             <div class="privacy-checkbox">
                                 <input type="checkbox" id="${cardId}-privacy">
                                 <label for="${cardId}-privacy">
-                                    I accept the <a href="https://eliyahu.ai/privacy-notice" target="_blank">Privacy Notice</a>
+                                    I accept the <a href="${ENV_CONFIG.privacyUrl}" target="_blank">Privacy Notice</a>
                                 </label>
                             </div>
                             <div class="form-row">

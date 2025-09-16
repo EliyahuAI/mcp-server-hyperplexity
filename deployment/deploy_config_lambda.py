@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# Import environment configuration helper
+from environment_config import apply_environment_to_lambda_config, print_environment_info
+
 # Directory setup
 SCRIPT_DIR = Path(__file__).parent.absolute()
 PROJECT_DIR = SCRIPT_DIR.parent
@@ -304,7 +307,13 @@ def main():
     parser.add_argument('--build-only', action='store_true', help='Only build package, do not deploy')
     parser.add_argument('--force-rebuild', action='store_true', help='Force rebuild package even if it exists')
     parser.add_argument('--deploy', action='store_true', help='Deploy the Lambda function (default behavior unless --build-only is specified)')
+    parser.add_argument('--environment', '-e', default='prod', choices=['dev', 'test', 'staging', 'prod'], help='Deployment environment (default: prod)')
     args = parser.parse_args()
+    
+    # Apply environment configuration
+    print_environment_info(args.environment)
+    global CONFIG_LAMBDA_CONFIG
+    CONFIG_LAMBDA_CONFIG = apply_environment_to_lambda_config(CONFIG_LAMBDA_CONFIG, args.environment)
     
     logger.info("=== Independent Config Lambda Deployment ===")
     
