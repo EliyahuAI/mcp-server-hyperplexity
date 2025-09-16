@@ -79,18 +79,45 @@ The frontend automatically detects the environment and uses the appropriate API 
 
 ### Access Different Environments
 
+The frontend automatically detects the environment in multiple ways:
+
+#### Method 1: Page Name Detection (Squarespace-friendly)
 ```
 # Production (default)
-https://your-domain.com/
+https://your-domain.com/validator
 
-# Development environment
-https://your-domain.com/?env=dev
+# Development environment  
+https://your-domain.com/validator-dev
 
-# Test environment  
-https://your-domain.com/?environment=test
+# Test environment
+https://your-domain.com/validator-test
 
 # Staging environment
-https://your-domain.com/?env=staging
+https://your-domain.com/validator-staging
+```
+
+#### Method 2: URL Parameters (for testing/overrides)
+```
+# Development environment
+https://your-domain.com/validator?env=dev
+
+# Test environment  
+https://your-domain.com/validator?environment=test
+
+# Staging environment
+https://your-domain.com/validator?env=staging
+```
+
+#### Method 3: Console Commands (persistent preference)
+```javascript
+// Set environment preference (saved in browser)
+hyperplexityEnv.set('dev')     // Switch to dev and save preference
+hyperplexityEnv.set('test')    // Switch to test and save preference
+hyperplexityEnv.clear()        // Clear saved preference
+
+// Check current environment
+hyperplexityEnv.current()      // Shows: 'dev', 'test', 'staging', or 'prod'
+hyperplexityEnv.available()    // Shows: ['dev', 'test', 'staging', 'prod']
 ```
 
 ### Environment Indicator
@@ -150,7 +177,7 @@ python.exe deployment/deploy_config_lambda.py --deploy --environment staging --f
 ```
 
 ### Access Development Frontend
-Visit: `https://your-domain.com/?env=dev`
+Visit: `https://your-domain.com/validator-dev` (or `https://your-domain.com/validator?env=dev`)
 
 ## Troubleshooting
 

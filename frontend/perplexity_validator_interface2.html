@@ -1521,21 +1521,118 @@
                 }
             };
             
-            // Detect environment from URL parameters or default to prod
-            function detectEnvironment() {
-                const urlParams = new URLSearchParams(window.location.search);
-                const envParam = urlParams.get('env') || urlParams.get('environment');
+            // ============================================
+            // FLEXIBLE ENVIRONMENT DETECTION
+            // ============================================
+            
+            // Method 1: Check localStorage for saved environment preference
+            function getStoredEnvironment() {
+                try {
+                    return localStorage.getItem('hyperplexity_environment');
+                } catch (e) {
+                    return null;
+                }
+            }
+            
+            // Method 2: Page name detection (for Squarespace)
+            function detectEnvironmentFromPageName() {
+                const pathname = window.location.pathname;
+                const pageName = pathname.split('/').pop() || pathname;
                 
-                // Validate environment parameter
-                if (envParam && ENV_CONFIGS[envParam]) {
-                    console.log(`[INFO] Environment detected from URL: ${envParam}`);
-                    return envParam;
+                if (pageName.endsWith('-dev')) {
+                    return 'dev';
+                } else if (pageName.endsWith('-test')) {
+                    return 'test';
+                } else if (pageName.endsWith('-staging')) {
+                    return 'staging';
+                }
+                return null;
+            }
+            
+            // Method 3: Check URL parameters
+            function getEnvironmentFromURL() {
+                const urlParams = new URLSearchParams(window.location.search);
+                return urlParams.get('env') || urlParams.get('environment');
+            }
+            
+            // Main environment detection with multiple fallbacks
+            function detectEnvironment() {
+                let environment = null;
+                let detectionMethod = 'default';
+                
+                // Priority 1: URL parameter (highest priority - for testing/overrides)
+                environment = getEnvironmentFromURL();
+                if (environment && ENV_CONFIGS[environment]) {
+                    detectionMethod = 'URL parameter';
+                    console.log(`[INFO] Environment detected from ${detectionMethod}: ${environment}`);
+                    
+                    // Save to localStorage for future visits
+                    try {
+                        localStorage.setItem('hyperplexity_environment', environment);
+                    } catch (e) {
+                        console.warn('[WARN] Could not save environment preference to localStorage');
+                    }
+                    
+                    return environment;
                 }
                 
-                // Default to production
+                // Priority 2: Page name detection (for Squarespace)
+                environment = detectEnvironmentFromPageName();
+                if (environment && ENV_CONFIGS[environment]) {
+                    detectionMethod = 'page name';
+                    console.log(`[INFO] Environment detected from ${detectionMethod}: ${environment}`);
+                    return environment;
+                }
+                
+                // Priority 3: Stored environment preference
+                environment = getStoredEnvironment();
+                if (environment && ENV_CONFIGS[environment]) {
+                    detectionMethod = 'stored preference';
+                    console.log(`[INFO] Environment detected from ${detectionMethod}: ${environment}`);
+                    return environment;
+                }
+                
+                // Default: Production
                 console.log('[INFO] Using default environment: prod');
                 return 'prod';
             }
+            
+            // Function to manually set environment (for programmatic use)
+            function setEnvironment(env) {
+                if (!ENV_CONFIGS[env]) {
+                    console.error(`[ERROR] Invalid environment: ${env}. Valid options:`, Object.keys(ENV_CONFIGS));
+                    return false;
+                }
+                
+                try {
+                    localStorage.setItem('hyperplexity_environment', env);
+                    console.log(`[INFO] Environment preference saved: ${env}`);
+                    console.log('[INFO] Reload the page to use the new environment');
+                    return true;
+                } catch (e) {
+                    console.error('[ERROR] Could not save environment preference:', e);
+                    return false;
+                }
+            }
+            
+            // Function to clear environment preference
+            function clearEnvironmentPreference() {
+                try {
+                    localStorage.removeItem('hyperplexity_environment');
+                    console.log('[INFO] Environment preference cleared. Reload to use default detection.');
+                } catch (e) {
+                    console.error('[ERROR] Could not clear environment preference:', e);
+                }
+            }
+            
+            // Expose environment control functions globally for console access
+            window.hyperplexityEnv = {
+                set: setEnvironment,
+                clear: clearEnvironmentPreference,
+                current: () => CURRENT_ENV,
+                available: () => Object.keys(ENV_CONFIGS),
+                config: () => ENV_CONFIG
+            };
             
             // Get current environment configuration
             const CURRENT_ENV = detectEnvironment();
