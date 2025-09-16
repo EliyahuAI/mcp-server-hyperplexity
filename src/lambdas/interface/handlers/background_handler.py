@@ -2880,6 +2880,9 @@ def handle_config_generation(event, context):
                         }
                     }
                     
+                    # Record completion time for background handler
+                    background_end_time = datetime.now(timezone.utc).isoformat()
+                    
                     # Calculate timing metrics for config generation from background handler processing time
                     start_time = datetime.fromisoformat(background_start_time.replace('Z', '+00:00'))
                     end_time = datetime.fromisoformat(background_end_time.replace('Z', '+00:00'))
@@ -2943,9 +2946,6 @@ def handle_config_generation(event, context):
                                 }
                         
                         logger.warning(f"[CONFIG_PROVIDER_METRICS] Falling back to legacy token_usage conversion")
-                    
-                    # Record completion time
-                    background_end_time = datetime.now(timezone.utc).isoformat()
                     
                     update_run_status(session_id=session_id, run_key=run_key, status='COMPLETED',
                         run_type="Config Generation",
