@@ -1492,7 +1492,7 @@
             // Environment configurations for different deployment targets
             const ENV_CONFIGS = {
                 dev: {
-                    apiBase: 'https://wqamcddvub.execute-api.us-east-1.amazonaws.com/prod',
+                    apiBase: 'https://wqamcddvub.execute-api.us-east-1.amazonaws.com/dev',
                     websocketUrl: 'wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod',
                     storeUrl: 'https://eliyahu.ai/store/p/10-hyperplexity-credits',
                     termsUrl: 'https://eliyahu.ai/terms',
@@ -3883,8 +3883,6 @@
                     }
                 } catch (error) {
                     console.error('Email validation error:', error);
-                    // Allow testing mode
-                    createTestingBypass(cardId);
                     throw error;
                 }
             }
@@ -3935,18 +3933,6 @@
                 }
             }
 
-            function createTestingBypass(cardId) {
-                const messagesEl = document.getElementById(`${cardId}-messages`);
-                const skipBtn = document.createElement('button');
-                skipBtn.textContent = 'Skip Email Validation (Testing)';
-                skipBtn.className = 'std-button secondary';
-                skipBtn.style.marginTop = '10px';
-                skipBtn.onclick = () => {
-                    handleEmailValidated(cardId);
-                    skipBtn.remove();
-                };
-                messagesEl.appendChild(skipBtn);
-            }
 
             function handleEmailValidated(cardId) {
                 localStorage.setItem('validatedEmail', globalState.email);

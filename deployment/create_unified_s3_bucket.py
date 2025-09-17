@@ -227,6 +227,19 @@ def create_unified_s3_bucket(bucket_name='hyperplexity-storage'):
                     'AbortIncompleteMultipartUpload': {
                         'DaysAfterInitiation': 3
                     }
+                },
+                {
+                    'ID': 'DebugCleanup',
+                    'Status': 'Enabled',
+                    'Filter': {
+                        'Prefix': 'debug/'
+                    },
+                    'Expiration': {
+                        'Days': 7  # 7 day retention
+                    },
+                    'AbortIncompleteMultipartUpload': {
+                        'DaysAfterInitiation': 1
+                    }
                 }
             ]
         }
@@ -239,6 +252,7 @@ def create_unified_s3_bucket(bucket_name='hyperplexity-storage'):
         print("  - Results: 1 year retention")
         print("  - Downloads: 7 day retention") 
         print("  - Cache: 30 day retention")
+        print("  - Debug: 7 day retention")
         
         # Enable versioning for data safety
         s3_client.put_bucket_versioning(

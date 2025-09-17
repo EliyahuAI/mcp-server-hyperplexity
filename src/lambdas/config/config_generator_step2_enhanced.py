@@ -360,7 +360,7 @@ Group {group['group_id']} - {group['group_name']}:
                         "properties": {
                             "column": {"type": "string"},
                             "description": {"type": "string"},
-                            "importance": {"type": "string", "enum": ["ID", "CRITICAL", "HIGH", "MEDIUM", "LOW", "IGNORED"]},
+                            "importance": {"type": "string", "enum": ["ID", "CRITICAL", "IGNORED"]},
                             "format": {"type": "string"},
                             "notes": {"type": "string", "description": "Detailed validation notes and formatting requirements"},
                             "examples": {"type": "array", "items": {"type": "string"}, "minItems": 1},

@@ -2,7 +2,7 @@
   "dev": {
     "resource_suffix": "-dev",
     "s3_unified_bucket": "hyperplexity-storage-dev",
-    "s3_download_bucket": "hyperplexity-downloads-dev",
+    "s3_download_bucket": "hyperplexity-downloads",
     "api_gateway_stage": "dev",
     "environment_tag": "development"
   },
