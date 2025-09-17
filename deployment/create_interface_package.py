@@ -242,7 +242,7 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, s
     # Get SQS Queue URLs and add them to the Lambda environment variables
     try:
         sqs_client = boto3.client('sqs', region_name=region)
-        preview_queue_url = sqs_client.get_queue_url(QueueName="perplexity-validator-preview-queue.fifo")['QueueUrl']
+        preview_queue_url = sqs_client.get_queue_url(QueueName="perplexity-validator-preview-queue")['QueueUrl']
         standard_queue_url = sqs_client.get_queue_url(QueueName="perplexity-validator-standard-queue")['QueueUrl']
         
         LAMBDA_CONFIG['Environment']['Variables']['PREVIEW_QUEUE_URL'] = preview_queue_url
@@ -844,7 +844,7 @@ def setup_sqs_triggers(lambda_client, function_name, region):
         function_arn = lambda_client.get_function(FunctionName=function_name)['Configuration']['FunctionArn']
 
         # Get queue ARNs
-        preview_queue_arn = f"arn:aws:sqs:{region}:{account_id}:perplexity-validator-preview-queue.fifo"
+        preview_queue_arn = f"arn:aws:sqs:{region}:{account_id}:perplexity-validator-preview-queue"
         standard_queue_arn = f"arn:aws:sqs:{region}:{account_id}:perplexity-validator-standard-queue"
         
         # Check existing mappings

@@ -38,7 +38,7 @@ def send_preview_request(session_id, excel_s3_key, config_s3_key, email, referen
         'created_at': datetime.now(timezone.utc).isoformat(),
         **kwargs
     }
-    return _send_sqs_message(PREVIEW_QUEUE_URL, message_body, is_fifo=True)
+    return _send_sqs_message(PREVIEW_QUEUE_URL, message_body, is_fifo=False)
 
 def send_full_request(session_id, excel_s3_key, config_s3_key, email, reference_pin, results_key=None, max_rows=None, batch_size=None, email_folder=None, preview_email=False, run_key=None):
     """Send a full validation request to the standard SQS queue."""
