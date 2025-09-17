@@ -6,6 +6,9 @@
 - SQS processor lambda (`perplexity-validator-sqs-processor`) is deprecated but queues still exist
 - Interface lambda still sends to SQS preview queue
 
+## Quick Fix Applied (2025-09-17)
+**TEMPORARY SOLUTION**: Updated `MessageGroupId` in `src/lambdas/interface/core/sqs_service.py:100` from `'perplexity-validator'` to `f"session-{message_body['session_id']}"`. This creates session-isolated message groups in the FIFO queue, preventing one session's failed/slow requests from jamming the queue for all users. This provides immediate relief while the full EventBridge migration is planned.
+
 ## Migration Overview
 Replace SQS-based preview processing with EventBridge for better reliability and priority handling.
 

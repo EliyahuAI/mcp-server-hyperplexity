@@ -97,7 +97,7 @@ def _send_sqs_message(queue_url, message_body, is_fifo=False):
             'MessageBody': json.dumps(message_body)
         }
         if is_fifo:
-            params['MessageGroupId'] = 'perplexity-validator'
+            params['MessageGroupId'] = f"session-{message_body['session_id']}"
             params['MessageDeduplicationId'] = f"{message_body['session_id']}-{message_body['created_at']}"
             
         response = sqs.send_message(**params)
