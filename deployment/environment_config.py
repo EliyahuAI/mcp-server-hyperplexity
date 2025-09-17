@@ -67,6 +67,37 @@ def apply_environment_to_lambda_config(base_config: Dict[str, Any], environment:
     config["Environment"]["Variables"]["S3_UNIFIED_BUCKET"] = env_config["s3_unified_bucket"]
     config["Environment"]["Variables"]["S3_DOWNLOAD_BUCKET"] = env_config["s3_download_bucket"]
     
+    # Update legacy S3 bucket variables to use unified bucket (for backward compatibility)
+    if "S3_RESULTS_BUCKET" in config["Environment"]["Variables"]:
+        config["Environment"]["Variables"]["S3_RESULTS_BUCKET"] = env_config["s3_unified_bucket"]
+    if "S3_CACHE_BUCKET" in config["Environment"]["Variables"]:
+        # Use shared production cache bucket for all environments (cache is shared for efficiency)
+        config["Environment"]["Variables"]["S3_CACHE_BUCKET"] = "hyperplexity-storage"
+    if "S3_CONFIG_BUCKET" in config["Environment"]["Variables"]:
+        config["Environment"]["Variables"]["S3_CONFIG_BUCKET"] = env_config["s3_download_bucket"]
+    
+    # Apply environment-specific validator lambda name (for interface lambda)
+    if "VALIDATOR_LAMBDA_NAME" in config["Environment"]["Variables"]:
+        base_validator_name = config["Environment"]["Variables"]["VALIDATOR_LAMBDA_NAME"]
+        config["Environment"]["Variables"]["VALIDATOR_LAMBDA_NAME"] = base_validator_name + env_config["resource_suffix"]
+    
+    # Apply environment-specific config lambda name (for interface lambda)
+    if "CONFIG_LAMBDA_NAME" in config["Environment"]["Variables"]:
+        base_config_name = config["Environment"]["Variables"]["CONFIG_LAMBDA_NAME"]
+        config["Environment"]["Variables"]["CONFIG_LAMBDA_NAME"] = base_config_name + env_config["resource_suffix"]
+    
+    # Keep WebSocket URL pointing to /prod stage (shared WebSocket infrastructure)
+    if "WEBSOCKET_API_URL" in config["Environment"]["Variables"]:
+        base_ws_url = config["Environment"]["Variables"]["WEBSOCKET_API_URL"]
+        # Ensure all environments use /prod stage for shared WebSocket infrastructure
+        if "/dev" in base_ws_url:
+            config["Environment"]["Variables"]["WEBSOCKET_API_URL"] = base_ws_url.replace("/dev", "/prod")
+        elif "/test" in base_ws_url:
+            config["Environment"]["Variables"]["WEBSOCKET_API_URL"] = base_ws_url.replace("/test", "/prod")
+        elif "/staging" in base_ws_url:
+            config["Environment"]["Variables"]["WEBSOCKET_API_URL"] = base_ws_url.replace("/staging", "/prod")
+        # /prod stays as /prod
+    
     # Add environment tag for identification
     config["Environment"]["Variables"]["DEPLOYMENT_ENVIRONMENT"] = environment
     config["Environment"]["Variables"]["ENVIRONMENT_TAG"] = env_config["environment_tag"]

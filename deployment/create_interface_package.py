@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import environment configuration helper
-from environment_config import apply_environment_to_lambda_config, apply_environment_to_api_gateway_config, print_environment_info
+from environment_config import apply_environment_to_lambda_config, apply_environment_to_api_gateway_config, print_environment_info, load_environment_config
 
 # Directory setup
 SCRIPT_DIR = Path(__file__).parent.absolute()
@@ -62,6 +62,7 @@ LAMBDA_CONFIG = {
             "S3_UNIFIED_BUCKET": "hyperplexity-storage",  # Unified bucket for all storage
             "S3_DOWNLOAD_BUCKET": "hyperplexity-storage", # Use downloads/ folder in unified bucket
             "VALIDATOR_LAMBDA_NAME": "perplexity-validator",
+            "CONFIG_LAMBDA_NAME": "perplexity-validator-config",
             # Legacy variables for compatibility during transition
             "S3_CACHE_BUCKET": "hyperplexity-storage", 
             "S3_RESULTS_BUCKET": "hyperplexity-storage",
@@ -233,7 +234,7 @@ def create_zip():
     
     logger.info(f"ZIP file created: {OUTPUT_ZIP}")
 
-def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
+def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, stage_name="prod"):
     """Deploy the Lambda function and optionally set up API Gateway."""
     function_name = function_name or LAMBDA_CONFIG["FunctionName"]
     region = region or "us-east-1"
@@ -504,7 +505,7 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True):
         
         # Deploy API Gateway if requested
         if deploy_api_gateway:
-            api_url = setup_api_gateway(lambda_client, function_name, region)
+            api_url = setup_api_gateway(lambda_client, function_name, region, stage_name)
             if api_url:
                 logger.info(f"API Gateway deployed successfully. Endpoint: {api_url}")
                 return True, api_url
@@ -548,7 +549,7 @@ def ensure_lambda_permission(lambda_client, function_name, statement_id, source_
         # Continue deployment but log the error clearly.
         pass
 
-def setup_api_gateway(lambda_client, function_name, region):
+def setup_api_gateway(lambda_client, function_name, region, stage_name="prod"):
     """Set up API Gateway for the Lambda function with simplified /validate and /status endpoints."""
     logger.info("Setting up simplified API Gateway with Lambda proxy integration...")
     
@@ -681,10 +682,10 @@ def setup_api_gateway(lambda_client, function_name, region):
             logger.warning(f"Could not attach S3 delete policy (may already be attached or permissions issue): {e}")
 
         # Deploy API
-        apigateway_client.create_deployment(restApiId=api_id, stageName='prod', description='Simplified deployment')
-        logger.info("Deployed API to 'prod' stage")
+        apigateway_client.create_deployment(restApiId=api_id, stageName=stage_name, description=f'Simplified deployment to {stage_name}')
+        logger.info(f"Deployed API to '{stage_name}' stage")
         
-        api_url = f"https://{api_id}.execute-api.{region}.amazonaws.com/prod/validate"
+        api_url = f"https://{api_id}.execute-api.{region}.amazonaws.com/{stage_name}/validate"
         logger.info(f"API Endpoint: {api_url}")
         return api_url
 
@@ -928,7 +929,7 @@ def deploy_websocket_lambda(zip_path, region):
             Publish=True
         )
 
-def setup_websocket_api(lambda_function_name, region):
+def setup_websocket_api(lambda_function_name, region, stage_name="prod"):
     """Creates and configures the WebSocket API in API Gateway."""
     logger.info("Setting up WebSocket API...")
     apigw_client = boto3.client('apigatewayv2', region_name=region)
@@ -959,23 +960,23 @@ def setup_websocket_api(lambda_function_name, region):
         if not any(r['RouteKey'] == route_key for r in routes):
             apigw_client.create_route(ApiId=api_id, RouteKey=route_key, Target=f'integrations/{integration_id}')
 
-    # Create the 'prod' stage before deploying to it
+    # Create the stage before deploying to it
     try:
-        apigw_client.get_stage(ApiId=api_id, StageName='prod')
-        logger.info("Stage 'prod' already exists.")
+        apigw_client.get_stage(ApiId=api_id, StageName=stage_name)
+        logger.info(f"Stage '{stage_name}' already exists.")
     except apigw_client.exceptions.NotFoundException:
-        apigw_client.create_stage(ApiId=api_id, StageName='prod')
-        logger.info("Created stage 'prod'.")
+        apigw_client.create_stage(ApiId=api_id, StageName=stage_name)
+        logger.info(f"Created stage '{stage_name}'.")
 
     # Deploy the API
-    apigw_client.create_deployment(ApiId=api_id, StageName='prod')
+    apigw_client.create_deployment(ApiId=api_id, StageName=stage_name)
 
     # Grant API Gateway permission to invoke the Lambda
     statement_id = f"apigw-ws-invoke-{lambda_function_name}"
     source_arn = f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*"
     ensure_lambda_permission(lambda_client, lambda_function_name, statement_id, source_arn)
             
-    return f"{api_endpoint}/prod", api_id
+    return f"{api_endpoint}/{stage_name}", api_id
 
 
 
@@ -1223,6 +1224,10 @@ def main():
     WEBSOCKET_LAMBDA_CONFIG = apply_environment_to_lambda_config(WEBSOCKET_LAMBDA_CONFIG, args.environment)
     API_GATEWAY_CONFIG = apply_environment_to_api_gateway_config(API_GATEWAY_CONFIG, args.environment)
     
+    # Get environment-specific stage name
+    env_config = load_environment_config(args.environment)
+    stage_name = env_config["api_gateway_stage"]
+    
     # Get Lambda function name
     function_name = args.function_name or LAMBDA_CONFIG["FunctionName"]
     
@@ -1323,7 +1328,8 @@ def main():
             success, api_url = deploy_to_lambda(
                 args.function_name,
                 args.region,
-                deploy_api_gateway
+                deploy_api_gateway,
+                stage_name
             )
             
             if not success:
@@ -1342,7 +1348,8 @@ def main():
             ws_package_zip = SCRIPT_DIR / "websocket_lambda_package.zip"
             create_websocket_lambda_package(ws_package_zip)
             deploy_websocket_lambda(ws_package_zip, args.region)
-            ws_api_url, ws_api_id = setup_websocket_api(WEBSOCKET_LAMBDA_CONFIG["FunctionName"], args.region)
+            # Use shared WebSocket infrastructure (always prod stage) regardless of environment
+            ws_api_url, ws_api_id = setup_websocket_api("perplexity-validator-ws-handler", args.region, "prod")
             
             if ws_api_url:
                 logger.info(f"WebSocket API deployed successfully. Endpoint: {ws_api_url}")
@@ -1372,16 +1379,18 @@ def main():
                 except Exception as e:
                      logger.warning(f"Could not attach WebSocket policy to role {main_lambda_role_name}: {e}")
 
-                # Update the main interface lambda's environment
+                # Update the main interface lambda's environment (preserve environment-configured WebSocket URL)
                 lambda_client = boto3.client('lambda', region_name=args.region)
                 try:
-                    logger.info(f"Updating interface lambda {function_name} with WebSocket API URL: {ws_api_url}")
+                    # Use the WebSocket URL from environment configuration, not the deployment-generated one
+                    configured_ws_url = LAMBDA_CONFIG['Environment']['Variables'].get('WEBSOCKET_API_URL', ws_api_url)
+                    logger.info(f"Updating interface lambda {function_name} with WebSocket API URL: {configured_ws_url}")
                     lambda_client.update_function_configuration(
                         FunctionName=function_name,
                         Environment={
                             'Variables': {
                                 **LAMBDA_CONFIG['Environment']['Variables'],
-                                'WEBSOCKET_API_URL': ws_api_url
+                                'WEBSOCKET_API_URL': configured_ws_url
                             }
                         }
                     )
@@ -1400,23 +1409,25 @@ def main():
                     logger.error(f"Failed to update interface lambda environment: {e}")
                     raise
                 
-                # Inject the WebSocket URL into the HTML file
-                try:
-                    html_path = PROJECT_DIR / "frontend" / "perplexity_validator_interface2.html"
-                    with open(html_path, 'r', encoding='utf-8') as f:
-                        html_content = f.read()
-                    
-                    # Replace the placeholder
-                    new_html_content = html_content.replace(
-                        'wss://<REPLACE_WITH_YOUR_WEBSOCKET_ID>.execute-api.us-east-1.amazonaws.com/prod',
-                        ws_api_url
-                    )
-                    
-                    with open(html_path, 'w', encoding='utf-8') as f:
-                        f.write(new_html_content)
-                    logger.info(f"Updated WebSocket URL in {html_path}")
-                except Exception as e:
-                    logger.error(f"Failed to inject WebSocket URL into HTML file: {e}")
+                # Frontend WebSocket URL is manually configured for shared infrastructure
+                # (commented out to preserve environment-specific configuration)
+                # try:
+                #     html_path = PROJECT_DIR / "frontend" / "perplexity_validator_interface2.html"
+                #     with open(html_path, 'r', encoding='utf-8') as f:
+                #         html_content = f.read()
+                #     
+                #     # Replace the placeholder
+                #     new_html_content = html_content.replace(
+                #         'wss://<REPLACE_WITH_YOUR_WEBSOCKET_ID>.execute-api.us-east-1.amazonaws.com/prod',
+                #         ws_api_url
+                #     )
+                #     
+                #     with open(html_path, 'w', encoding='utf-8') as f:
+                #         f.write(new_html_content)
+                #     logger.info(f"Updated WebSocket URL in {html_path}")
+                # except Exception as e:
+                #     logger.error(f"Failed to inject WebSocket URL into HTML file: {e}")
+                logger.info(f"Preserving manually configured frontend WebSocket URLs for shared infrastructure")
             else:
                 logger.error("Failed to deploy WebSocket API")
         except Exception as e:
@@ -1448,7 +1459,7 @@ def main():
             try:
                 # Get current WebSocket URL from Lambda env
                 lambda_client = boto3.client('lambda')
-                function_config = lambda_client.get_function_configuration(FunctionName='perplexity-validator-interface')
+                function_config = lambda_client.get_function_configuration(FunctionName=LAMBDA_CONFIG["FunctionName"])
                 ws_url = function_config.get('Environment', {}).get('Variables', {}).get('WEBSOCKET_API_URL')
                 
                 if ws_url:

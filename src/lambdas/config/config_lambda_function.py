@@ -99,7 +99,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if session_id:
                 send_websocket_progress(session_id, "Analyzing table structure...", 25)
             try:
-                bucket = os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
+                bucket = os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
                 
                 if excel_s3_key:
                     logger.info(f"Analyzing Excel from S3: {excel_s3_key}")
