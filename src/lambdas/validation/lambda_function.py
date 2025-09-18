@@ -2738,15 +2738,32 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 field_names = [t.column for t in validation_targets]
                 group_str = str(group_id) if group_id is not None else "unknown"
                 
+                # Get the search group name for better debug identification
+                group_name = None
+                if group_id is not None and hasattr(validator, 'search_groups') and validator.search_groups:
+                    for group_def in validator.search_groups:
+                        if isinstance(group_def, dict) and group_def.get('group_id') == group_id:
+                            group_name = group_def.get('group_name')
+                            break
+                
                 # Call ai_client with unified approach - format conversion handled internally
                 async def call_unified_wrapper():
                     nonlocal shared_client_result
-                    # Create descriptive debug name including group and field info
-                    debug_name = f"validation_group_{group_str}_fields_{len(field_names)}"
-                    if len(field_names) <= 3:
-                        # Include field names if not too many
-                        safe_fields = [field.replace(' ', '_')[:15] for field in field_names]
-                        debug_name = f"validation_group_{group_str}_{'-'.join(safe_fields)}"
+                    # Create descriptive debug name including group name and field info
+                    if group_name:
+                        # Use group name if available (e.g. "validation_Product_Identification_fields_3")
+                        safe_group_name = group_name.replace(' ', '_').replace('-', '_')[:20]
+                        debug_name = f"validation_{safe_group_name}_fields_{len(field_names)}"
+                        if len(field_names) <= 3:
+                            # Include field names if not too many
+                            safe_fields = [field.replace(' ', '_')[:15] for field in field_names]
+                            debug_name = f"validation_{safe_group_name}_{'-'.join(safe_fields)}"
+                    else:
+                        # Fallback to group ID if no name available
+                        debug_name = f"validation_group_{group_str}_fields_{len(field_names)}"
+                        if len(field_names) <= 3:
+                            safe_fields = [field.replace(' ', '_')[:15] for field in field_names]
+                            debug_name = f"validation_group_{group_str}_{'-'.join(safe_fields)}"
                     
                     shared_client_result = await ai_client.call_structured_api(
                         prompt=prompt,
@@ -2863,11 +2880,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Make fresh API call with cache disabled using unified approach
                     logger.info(f"Making fresh unified API call for {api_provider} with cache disabled")
                     
-                    # Use the same unified approach for fresh calls
-                    fresh_debug_name = f"validation_fresh_group_{group_str}_fields_{len(field_names)}"
-                    if len(field_names) <= 3:
-                        safe_fields = [field.replace(' ', '_')[:15] for field in field_names]
-                        fresh_debug_name = f"validation_fresh_group_{group_str}_{'-'.join(safe_fields)}"
+                    # Use the same unified approach for fresh calls with group name
+                    if group_name:
+                        safe_group_name = group_name.replace(' ', '_').replace('-', '_')[:20]
+                        fresh_debug_name = f"validation_fresh_{safe_group_name}_fields_{len(field_names)}"
+                        if len(field_names) <= 3:
+                            safe_fields = [field.replace(' ', '_')[:15] for field in field_names]
+                            fresh_debug_name = f"validation_fresh_{safe_group_name}_{'-'.join(safe_fields)}"
+                    else:
+                        fresh_debug_name = f"validation_fresh_group_{group_str}_fields_{len(field_names)}"
+                        if len(field_names) <= 3:
+                            safe_fields = [field.replace(' ', '_')[:15] for field in field_names]
+                            fresh_debug_name = f"validation_fresh_group_{group_str}_{'-'.join(safe_fields)}"
                     
                     shared_client_result = await ai_client.call_structured_api(
                         prompt=prompt,
