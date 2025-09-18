@@ -102,6 +102,12 @@ def apply_environment_to_lambda_config(base_config: Dict[str, Any], environment:
     config["Environment"]["Variables"]["DEPLOYMENT_ENVIRONMENT"] = environment
     config["Environment"]["Variables"]["ENVIRONMENT_TAG"] = env_config["environment_tag"]
     
+    # Apply environment-specific SQS queue names (will be converted to URLs during deployment)
+    if "sqs_preview_queue" in env_config:
+        config["Environment"]["Variables"]["SQS_PREVIEW_QUEUE_NAME"] = env_config["sqs_preview_queue"]
+    if "sqs_standard_queue" in env_config:
+        config["Environment"]["Variables"]["SQS_STANDARD_QUEUE_NAME"] = env_config["sqs_standard_queue"]
+    
     return config
 
 def apply_environment_to_api_gateway_config(base_config: Dict[str, Any], environment: str = "prod") -> Dict[str, Any]:

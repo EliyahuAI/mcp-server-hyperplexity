@@ -4,27 +4,35 @@
     "s3_unified_bucket": "hyperplexity-storage-dev",
     "s3_download_bucket": "hyperplexity-downloads",
     "api_gateway_stage": "dev",
-    "environment_tag": "development"
+    "environment_tag": "development",
+    "sqs_preview_queue": "perplexity-validator-preview-queue-dev",
+    "sqs_standard_queue": "perplexity-validator-standard-queue-dev"
   },
   "test": {
     "resource_suffix": "-test",
     "s3_unified_bucket": "hyperplexity-storage-test",
     "s3_download_bucket": "hyperplexity-downloads-test",
     "api_gateway_stage": "test",
-    "environment_tag": "testing"
+    "environment_tag": "testing",
+    "sqs_preview_queue": "perplexity-validator-preview-queue-test",
+    "sqs_standard_queue": "perplexity-validator-standard-queue-test"
   },
   "staging": {
     "resource_suffix": "-staging",
     "s3_unified_bucket": "hyperplexity-storage-staging",
     "s3_download_bucket": "hyperplexity-downloads-staging",
     "api_gateway_stage": "staging",
-    "environment_tag": "staging"
+    "environment_tag": "staging",
+    "sqs_preview_queue": "perplexity-validator-preview-queue-staging",
+    "sqs_standard_queue": "perplexity-validator-standard-queue-staging"
   },
   "prod": {
     "resource_suffix": "",
     "s3_unified_bucket": "hyperplexity-storage",
     "s3_download_bucket": "hyperplexity-downloads",
     "api_gateway_stage": "prod",
-    "environment_tag": "production"
+    "environment_tag": "production",
+    "sqs_preview_queue": "perplexity-validator-preview-queue",
+    "sqs_standard_queue": "perplexity-validator-standard-queue"
   }
 }
