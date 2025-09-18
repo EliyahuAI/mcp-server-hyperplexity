@@ -3107,7 +3107,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if enhanced_data:
                         if isinstance(enhanced_data, dict):
                             costs = enhanced_data.get('costs', {})
-                            logger.info(f"[AGG_DEBUG] Enhanced data costs: actual=${costs.get('total_cost', 0):.6f}, estimated=${costs.get('total_cost_without_cache', 0):.6f}")
+                            logger.info(f"[AGG_DEBUG] Enhanced data costs: actual=${costs.get('actual', {}).get('total_cost', 0):.6f}, estimated=${costs.get('estimated', {}).get('total_cost', 0):.6f}")
                         else:
                             logger.warning(f"[AGG_DEBUG] Enhanced data is not a dict: {enhanced_data}")
                     else:

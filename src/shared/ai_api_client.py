@@ -750,18 +750,22 @@ class AIAPIClient:
             # Determine cache status using bulletproof single source of truth
             # Priority: 1) Explicit is_cached flag, 2) pre_extracted_token_usage presence
             cache_detected = is_cached if is_cached is not None else (pre_extracted_token_usage is not None)
+            logger.info(f"[CACHE_DETECTION_DEBUG] is_cached={is_cached}, pre_extracted_present={pre_extracted_token_usage is not None}, cache_detected={cache_detected}")
             
             # Calculate costs with and without caching
             if cache_detected:
                 # For cached responses: actual cost is 0, estimated is what it would have cost
+                logger.info(f"[CACHE_COST_DEBUG] Cache detected - token_usage keys: {list(token_usage.keys())}, provider: {token_usage.get('api_provider')}")
+                logger.info(f"[CACHE_COST_DEBUG] Cache detected - input_tokens: {token_usage.get('input_tokens')}, output_tokens: {token_usage.get('output_tokens')}")
                 cost_estimated = self.calculate_token_costs(token_usage)  # Original cost
+                logger.info(f"[CACHE_COST_DEBUG] calculate_token_costs returned: {cost_estimated}")
                 cost_data = {  # Actual cost is 0 for cache hits
                     'input_cost': 0.0,
                     'output_cost': 0.0,
                     'total_cost': 0.0,
                     'pricing_source': 'cached_response'
                 }
-                logger.debug(f"[CACHE_COST_DEBUG] Cached response detected (is_cached={is_cached}, pre_extracted={pre_extracted_token_usage is not None}) - Actual: ${cost_data.get('total_cost', 0.0):.6f}, Estimated: ${cost_estimated.get('total_cost', 0.0):.6f}")
+                logger.info(f"[CACHE_COST_DEBUG] Cached response detected (is_cached={is_cached}, pre_extracted={pre_extracted_token_usage is not None}) - Actual: ${cost_data.get('total_cost', 0.0):.6f}, Estimated: ${cost_estimated.get('total_cost', 0.0):.6f}")
             else:
                 # For fresh API calls: calculate normally
                 cost_data = self.calculate_token_costs(token_usage)
@@ -1557,6 +1561,19 @@ class AIAPIClient:
                         # Generate enhanced metrics for cached response
                         try:
                             enhanced_data = cached_data.get('enhanced_data')
+                            logger.info(f"[CACHE_ENHANCED_DEBUG] Cached data has enhanced_data: {enhanced_data is not None}")
+                            if enhanced_data:
+                                # Check if the cached enhanced_data has correct cost structure
+                                cached_costs = enhanced_data.get('costs', {})
+                                cached_actual = cached_costs.get('actual', {}).get('total_cost', 0.0)
+                                cached_estimated = cached_costs.get('estimated', {}).get('total_cost', 0.0)
+                                logger.info(f"[CACHE_ENHANCED_DEBUG] Cached enhanced_data costs: actual=${cached_actual:.6f}, estimated=${cached_estimated:.6f}")
+                                
+                                # If cached enhanced_data has incorrect cost structure (actual == estimated), regenerate it
+                                if cached_actual == cached_estimated and cached_actual > 0:
+                                    logger.info(f"[CACHE_ENHANCED_DEBUG] Cached enhanced_data has incorrect costs (actual==estimated), regenerating...")
+                                    enhanced_data = None  # Force regeneration
+                            
                             if not enhanced_data:
                                 # For cached responses, generate enhanced metrics with special timing handling
                                 original_processing_time = cached_data.get('processing_time', 0)
