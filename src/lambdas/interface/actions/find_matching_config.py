@@ -867,6 +867,33 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
                 response = s3_client.get_object(Bucket=storage_manager.bucket_name, Key=config_file['key'])
                 config_data = json.loads(response['Body'].read().decode('utf-8'))
                 
+                # Extract source session and config ID FIRST for proper logging
+                path_parts = config_file['key'].split('/')
+                source_session = path_parts[-2] if len(path_parts) >= 2 else 'unknown'
+                
+                storage_metadata = config_data.get('storage_metadata', {})
+                config_id = storage_metadata.get('config_id')
+                logger.debug(f"Config file {config_file['key']}: storage_metadata.config_id = {config_id}")
+                
+                # Generate clean config_id from filename if not present (new format)
+                if not config_id:
+                    filename = config_file['key'].split('/')[-1]
+                    logger.debug(f"Extracting from filename: {filename}, source_session: {source_session}")
+                    if filename.endswith('.json'):
+                        filename_without_ext = filename[:-5]  # Remove .json
+                        config_id = f"{source_session}_{filename_without_ext}"
+                        logger.info(f"Generated config_id from filename: {config_id} (session: {source_session}, file: {filename})")
+                    else:
+                        # Fallback for legacy - ensure config_id is always set
+                        version = storage_metadata.get('version', 1)
+                        config_id = f"{source_session}_v{version}_legacy"
+                        logger.info(f"Generated legacy config_id: {config_id}")
+                
+                # Ensure config_id is never None
+                if not config_id:
+                    config_id = f"{source_session}_unknown_config"
+                    logger.warning(f"Final fallback config_id: {config_id}")
+                
                 # Extract validation targets
                 config_columns = extract_validation_targets(config_data)
                 if not config_columns:
@@ -876,7 +903,6 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
                 logger.debug(f"Checking config {config_file['filename']}: {len(config_columns)} columns")
                 
                 # Get content hash from stored metadata (calculated when config was stored)
-                storage_metadata = config_data.get('storage_metadata', {})
                 content_hash = storage_metadata.get('content_hash', '')
                 
                 # Fallback: calculate hash if not stored (for older configs)
@@ -910,30 +936,6 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
                 table_cols_lower = [col.lower().strip() for col in table_columns]
                 config_cols_lower = [col.lower().strip() for col in config_columns]
                 matching_columns = list(set(table_cols_lower) & set(config_cols_lower))
-                
-                # Extract source session from path
-                path_parts = config_file['key'].split('/')
-                source_session = path_parts[-2] if len(path_parts) >= 2 else 'unknown'
-                
-                # Extract config ID from storage metadata or generate from filename
-                storage_metadata = config_data.get('storage_metadata', {})
-                config_id = storage_metadata.get('config_id')
-                
-                # Generate clean config_id from filename if not present (new format)
-                if not config_id:
-                    filename = config_file['key'].split('/')[-1]
-                    if filename.endswith('.json'):
-                        filename_without_ext = filename[:-5]  # Remove .json
-                        config_id = f"{source_session}_{filename_without_ext}"
-                        logger.debug(f"Generated config_id from filename: {config_id} (session: {source_session}, file: {filename})")
-                    else:
-                        # Fallback for legacy - ensure config_id is always set
-                        version = storage_metadata.get('version', 1)
-                        config_id = f"{source_session}_v{version}_legacy"
-                
-                # Ensure config_id is never None
-                if not config_id:
-                    config_id = f"{source_session}_unknown_config"
                 
                 description = storage_metadata.get('description') or config_data.get('general_notes', 'No description available')
                 
