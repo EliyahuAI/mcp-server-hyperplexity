@@ -786,9 +786,179 @@ def find_last_used_date(content_hash: str, current_config_data: Dict, all_config
         # Return None as error fallback to indicate "never used"
         return None
 
+def extract_session_and_version_from_config_id(config_id: str) -> Tuple[str, int]:
+    """Extract session ID and version from config_id"""
+    try:
+        # Handle different config_id formats
+        if '_config_v' in config_id:
+            # New format: session_20250918_150921_ea332116_config_v1_ai_generated
+            session_part = config_id[:config_id.find('_config_v')]
+            version_part = config_id[config_id.find('_config_v') + 8:]  # Skip '_config_v'
+            version_str = version_part.split('_')[0]
+            return session_part, int(version_str)
+        elif '_v' in config_id:
+            # Legacy format: session_20250918_150921_ea332116_v1_Configuration_for_AIML_co
+            parts = config_id.split('_v')
+            if len(parts) >= 2:
+                session_part = parts[0]
+                version_str = parts[1].split('_')[0]
+                return session_part, int(version_str)
+        
+        # Fallback: assume version 1
+        return config_id, 1
+    except (ValueError, IndexError):
+        logger.warning(f"Could not parse config_id: {config_id}")
+        return config_id, 1
+
+def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2) -> Dict[str, Any]:
+    """
+    Optimized config matching that starts with successfully used configs and only loads the latest
+    version from each session. Much more efficient than loading all configs then filtering.
+    """
+    try:
+        storage_manager = UnifiedS3Manager()
+        
+        # Get columns from current table
+        table_columns = analyze_table_columns(email, session_id, storage_manager)
+        logger.info(f"Analyzed table columns for {email}/{session_id}: {table_columns}")
+        
+        if not table_columns:
+            return {
+                'success': True,
+                'matches': [],
+                'table_columns': [],
+                'total_configs_searched': 0,
+                'message': 'Could not analyze columns from uploaded table. Please ensure you have uploaded a valid Excel file.'
+            }
+        
+        # Get whitelist of successfully used configuration IDs
+        successfully_used_configs = get_successfully_used_config_ids(email)
+        logger.info(f"Found {len(successfully_used_configs)} successfully used configs for filtering")
+        if successfully_used_configs:
+            logger.info(f"Whitelist sample: {list(successfully_used_configs)[:3]}...")
+        
+        if not successfully_used_configs:
+            return {
+                'success': True,
+                'matches': [],
+                'table_columns': table_columns,
+                'total_configs_searched': 0,
+                'message': 'No successfully used configurations found for this user'
+            }
+        
+        # Group configs by session and keep only the latest version per session
+        session_latest = {}
+        for config_id in successfully_used_configs:
+            session_part, version = extract_session_and_version_from_config_id(config_id)
+            if session_part not in session_latest or version > session_latest[session_part]['version']:
+                session_latest[session_part] = {
+                    'config_id': config_id,
+                    'version': version,
+                    'session': session_part
+                }
+        
+        logger.info(f"Reduced to {len(session_latest)} latest configs from {len(successfully_used_configs)} total successful configs")
+        
+        # Load and analyze only the latest configs from successful sessions
+        matches = []
+        perfect_matches = []
+        configs_processed = 0
+        
+        for session_data in session_latest.values():
+            config_id = session_data['config_id']
+            try:
+                # Load config using the clean lookup system
+                config_data, config_key = storage_manager.find_config_by_id(config_id, email)
+                if not config_data:
+                    logger.warning(f"Could not load config: {config_id}")
+                    continue
+                
+                configs_processed += 1
+                
+                # Extract validation targets
+                config_columns = extract_validation_targets(config_data)
+                if not config_columns:
+                    logger.debug(f"No validation targets found in config: {config_id}")
+                    continue
+                
+                # Calculate match score
+                match_score = calculate_column_match_score(table_columns, config_columns)
+                logger.info(f"Config {config_id}: match_score={match_score:.3f}, table_cols={len(table_columns)}, config_cols={len(config_columns)}")
+                
+                if match_score >= 0.8:
+                    logger.info(f"High score config {config_id}: table={table_columns[:3]}..., config={config_columns[:3]}...")
+                
+                # Skip low matches
+                if match_score < 0.8:
+                    continue
+                
+                # Get metadata for match entry
+                storage_metadata = config_data.get('storage_metadata', {})
+                description = storage_metadata.get('description') or config_data.get('general_notes', 'No description available')
+                
+                # Create match data
+                match_data = {
+                    'config_id': config_id,
+                    'config_key': config_key,
+                    'match_score': match_score,
+                    'description': description,
+                    'created_date': storage_metadata.get('first_created') or storage_metadata.get('created_at', ''),
+                    'last_modified': storage_metadata.get('stored_at', ''),
+                    'column_count': len(config_columns),
+                    'matching_columns': len(set(table_columns) & set(config_columns))
+                }
+                
+                # Categorize matches
+                if match_score >= 1.0:
+                    perfect_matches.append(match_data)
+                    logger.info(f"PERFECT MATCH: {config_id} with score {match_score:.3f}")
+                else:
+                    matches.append(match_data)
+                
+            except Exception as e:
+                logger.error(f"Error processing config {config_id}: {e}")
+                continue
+        
+        # Sort and return results
+        if perfect_matches:
+            # Sort by created_date and return only the most recent
+            perfect_matches.sort(key=lambda x: x.get('created_date', ''), reverse=True)
+            final_matches = [perfect_matches[0]]
+            logger.info(f"Returning most recent perfect match: {perfect_matches[0]['config_id']}")
+        else:
+            final_matches = []
+            logger.info("No perfect matches found - returning empty list")
+        
+        return {
+            'success': True,
+            'matches': final_matches,
+            'table_columns': table_columns,
+            'total_configs_searched': configs_processed,
+            'perfect_matches_found': len(perfect_matches),
+            'regular_matches_found': len(matches),
+            'sessions_with_configs': len(session_latest)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in optimized config matching: {e}")
+        return {
+            'success': False,
+            'error': str(e),
+            'matches': [],
+            'table_columns': [],
+            'total_configs_searched': 0
+        }
+
 def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[str, Any]:
     """
-    Find config files that match the uploaded table's column structure
+    Find config files that match the uploaded table's column structure.
+    Uses optimized approach that starts with whitelist of successful configs.
+    """
+    return find_matching_configs_optimized(email, session_id, limit)
+
+def find_matching_configs_legacy(email: str, session_id: str, limit: int = 2) -> Dict[str, Any]:
+    """
+    LEGACY: Find config files that match the uploaded table's column structure
     
     Args:
         email: User email
