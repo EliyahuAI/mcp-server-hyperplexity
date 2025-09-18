@@ -1,16 +1,41 @@
 # EventBridge Migration Plan
 
-## Current State
-- Using SQS FIFO queues for preview processing
-- Preview requests jam when processor fails due to FIFO ordering constraints
+## Current State ✅ QUICK FIX COMPLETED
+- ~~Using SQS FIFO queues for preview processing~~ **FIXED: Now using standard queue**
+- ~~Preview requests jam when processor fails due to FIFO ordering constraints~~ **RESOLVED**
 - SQS processor lambda (`perplexity-validator-sqs-processor`) is deprecated but queues still exist
-- Interface lambda still sends to SQS preview queue
+- Interface lambda sends to SQS standard preview queue (no longer FIFO)
 
-## Quick Fix Applied (2025-09-17)
-**TEMPORARY SOLUTION**: Updated `MessageGroupId` in `src/lambdas/interface/core/sqs_service.py:100` from `'perplexity-validator'` to `f"session-{message_body['session_id']}"`. This creates session-isolated message groups in the FIFO queue, preventing one session's failed/slow requests from jamming the queue for all users. This provides immediate relief while the full EventBridge migration is planned.
+## Quick Fix Applied (2025-09-17) - **COMPLETED ✅**
+**SOLUTION IMPLEMENTED**: Migrated preview queue from FIFO to standard queue to eliminate cross-session blocking:
+
+### Changes Made:
+1. **Queue Migration**: 
+   - Deleted `perplexity-validator-preview-queue.fifo` 
+   - Created `perplexity-validator-preview-queue` (standard queue)
+   
+2. **Code Updates**:
+   - `src/lambdas/interface/core/sqs_service.py:42`: Changed `is_fifo=True` to `is_fifo=False`
+   - `deployment/create_interface_package.py`: Updated queue names and ARNs (removed `.fifo` suffix)
+   - Added environment filtering to prevent cross-environment message processing
+   
+3. **Deployment**:
+   - Updated dev environment: `perplexity-validator-interface-dev`
+   - Updated prod environment: `perplexity-validator-interface`
+   - Cleaned up old FIFO event source mappings
+
+### Benefits Achieved:
+- ✅ **No cross-session blocking**: Standard queues don't have FIFO message group constraints
+- ✅ **Faster recovery**: Failed messages don't block new sessions  
+- ✅ **Simplified processing**: No MessageGroupId/DeduplicationId complexity
+- ✅ **Environment isolation**: Messages filtered by deployment environment
 
 ## Migration Overview
-Replace SQS-based preview processing with EventBridge for better reliability and priority handling.
+**Status**: Preview blocking issue resolved with standard queue migration. EventBridge migration is now **OPTIONAL** for additional features like priority handling.
+
+**Current State**: Standard SQS queue provides reliable preview processing without blocking issues.
+
+**EventBridge Benefits**: If implemented, would add priority handling and better observability, but is no longer critical for basic functionality.
 
 ## Phase 1: EventBridge Infrastructure Setup
 
@@ -277,14 +302,17 @@ if args.deploy:
 - Remove SQS event source mappings
 - Delete preview queues (after confirming EventBridge works)
 
-### 4.2 Cleanup Commands
+### 4.2 Cleanup Commands ✅ PARTIALLY COMPLETED
 ```bash
-# Remove SQS processor lambda
+# Remove SQS processor lambda (if still exists)
 aws lambda delete-function --function-name perplexity-validator-sqs-processor
 
-# Delete SQS queues
-aws sqs delete-queue --queue-url https://queue.amazonaws.com/400232868802/perplexity-validator-preview-queue.fifo
-aws sqs delete-queue --queue-url https://queue.amazonaws.com/400232868802/perplexity-validator-preview-dlq.fifo
+# Delete old FIFO queues ✅ COMPLETED
+# aws sqs delete-queue --queue-url https://queue.amazonaws.com/400232868802/perplexity-validator-preview-queue.fifo
+# aws sqs delete-queue --queue-url https://queue.amazonaws.com/400232868802/perplexity-validator-preview-dlq.fifo
+
+# Current queue (keep this):
+# https://queue.amazonaws.com/400232868802/perplexity-validator-preview-queue (standard)
 ```
 
 ### 4.3 Remove SQS Environment Variables
