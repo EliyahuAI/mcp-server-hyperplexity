@@ -1405,34 +1405,12 @@ class AIAPIClient:
             # Create descriptive filename: YYYYMMDD_HHMMSS_provider_model_status_description.json
             debug_filename = f"{timestamp}_{api_provider}_{model_clean}_{status}_{content_description}.json"
             
-            # Extract and format input prompts for easier debugging
-            input_prompts = []
-            input_prompts_readable = []
-            try:
-                if 'data' in request_data and 'messages' in request_data['data']:
-                    for message in request_data['data']['messages']:
-                        if isinstance(message, dict) and 'content' in message:
-                            # Original format (with escaped newlines) - for parsing
-                            input_prompts.append({
-                                'role': message.get('role', 'unknown'),
-                                'content': message['content']
-                            })
-                            # Readable format (proper newlines, formatted) - for human reading
-                            input_prompts_readable.append({
-                                'role': message.get('role', 'unknown'),
-                                'content': self._format_readable_content(message['content'])
-                            })
-            except Exception as prompt_extract_error:
-                logger.warning(f"Failed to extract input prompts: {str(prompt_extract_error)}")
-            
             debug_entry = {
                 'timestamp': datetime.now(timezone.utc).isoformat(),
                 'api_provider': api_provider,
                 'model': model,
                 'status': status,
                 'context': context,
-                'input_prompts_readable': input_prompts_readable,  # NEW: Human-readable prompts first
-                'input_prompts': input_prompts,  # Original format for parsing (if needed)
                 'request': request_data,
                 'response': None,
                 'error': None,
@@ -1505,19 +1483,6 @@ class AIAPIClient:
         except Exception:
             return 'request'
     
-    def _format_readable_content(self, content: str) -> str:
-        """Format content to be human-readable by replacing escaped newlines."""
-        if not isinstance(content, str):
-            return str(content)
-        
-        # Replace escaped newlines with actual newlines for readability
-        readable = content.replace('\\n', '\n')
-        
-        # Clean up any double newlines that might result
-        while '\n\n\n' in readable:
-            readable = readable.replace('\n\n\n', '\n\n')
-            
-        return readable.strip()
     
     async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-3-5-sonnet-20241022", 
                                  tool_name: str = "structured_response", use_cache: bool = True, 
