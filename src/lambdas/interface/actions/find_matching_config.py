@@ -844,6 +844,8 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
         # Get whitelist of successfully used configuration IDs
         successfully_used_configs = get_successfully_used_config_ids(email)
         logger.info(f"Found {len(successfully_used_configs)} successfully used configs for filtering")
+        if successfully_used_configs:
+            logger.info(f"Whitelist sample: {list(successfully_used_configs)[:3]}...")
         
         # Sort config files by modification time (most recent first) for better performance
         config_files.sort(key=lambda x: x['last_modified'], reverse=True)
@@ -890,6 +892,9 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
                 
                 # Calculate match score
                 match_score = calculate_column_match_score(table_columns, config_columns)
+                logger.info(f"Config {config_id}: match_score={match_score:.3f}, table_cols={len(table_columns)}, config_cols={len(config_columns)}")
+                if match_score >= 0.8:
+                    logger.info(f"High score config {config_id}: table={table_columns[:3]}..., config={config_columns[:3]}...")
                 
                 # Skip matches that are too poor (below 80% threshold)
                 if match_score < 0.8:
