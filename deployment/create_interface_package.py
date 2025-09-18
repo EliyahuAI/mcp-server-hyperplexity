@@ -242,8 +242,15 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, s
     # Get SQS Queue URLs and add them to the Lambda environment variables
     try:
         sqs_client = boto3.client('sqs', region_name=region)
-        preview_queue_url = sqs_client.get_queue_url(QueueName="perplexity-validator-preview-queue")['QueueUrl']
-        standard_queue_url = sqs_client.get_queue_url(QueueName="perplexity-validator-standard-queue")['QueueUrl']
+        
+        # Use environment-specific queue names from Lambda config if available
+        preview_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_PREVIEW_QUEUE_NAME', 'perplexity-validator-preview-queue')
+        standard_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_STANDARD_QUEUE_NAME', 'perplexity-validator-standard-queue')
+        
+        logger.info(f"Looking up SQS queues: preview={preview_queue_name}, standard={standard_queue_name}")
+        
+        preview_queue_url = sqs_client.get_queue_url(QueueName=preview_queue_name)['QueueUrl']
+        standard_queue_url = sqs_client.get_queue_url(QueueName=standard_queue_name)['QueueUrl']
         
         LAMBDA_CONFIG['Environment']['Variables']['PREVIEW_QUEUE_URL'] = preview_queue_url
         LAMBDA_CONFIG['Environment']['Variables']['STANDARD_QUEUE_URL'] = standard_queue_url
@@ -833,6 +840,45 @@ def setup_dynamodb_tables(region="us-east-1"):
         logger.error(f"Error setting up DynamoDB tables: {e}")
         return False
 
+def setup_sqs_queues(region):
+    """Create SQS queues if they don't exist."""
+    logger.info("Setting up SQS queues...")
+    try:
+        sqs_client = boto3.client('sqs', region_name=region)
+        
+        # Get environment-specific queue names from Lambda configuration
+        preview_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_PREVIEW_QUEUE_NAME', 'perplexity-validator-preview-queue')
+        standard_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_STANDARD_QUEUE_NAME', 'perplexity-validator-standard-queue')
+        
+        queues_to_create = [
+            (preview_queue_name, {"VisibilityTimeout": "60", "MessageRetentionPeriod": "345600"}),
+            (standard_queue_name, {"VisibilityTimeout": "960", "MessageRetentionPeriod": "345600"})
+        ]
+        
+        for queue_name, attributes in queues_to_create:
+            try:
+                # Check if queue exists
+                sqs_client.get_queue_url(QueueName=queue_name)
+                logger.info(f"SQS queue already exists: {queue_name}")
+            except sqs_client.exceptions.QueueDoesNotExist:
+                # Create the queue
+                logger.info(f"Creating SQS queue: {queue_name}")
+                response = sqs_client.create_queue(
+                    QueueName=queue_name,
+                    Attributes=attributes
+                )
+                logger.info(f"Created SQS queue: {response['QueueUrl']}")
+            except Exception as e:
+                logger.error(f"Error checking/creating queue {queue_name}: {e}")
+                return False
+        
+        logger.info("✅ All SQS queues are ready!")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error setting up SQS queues: {e}")
+        return False
+
 def setup_sqs_triggers(lambda_client, function_name, region):
     """Create event source mappings to trigger the Lambda from SQS queues."""
     logger.info("Setting up SQS triggers for Lambda function...")
@@ -843,9 +889,15 @@ def setup_sqs_triggers(lambda_client, function_name, region):
         # Get function ARN
         function_arn = lambda_client.get_function(FunctionName=function_name)['Configuration']['FunctionArn']
 
+        # Get environment-specific queue names from Lambda configuration
+        preview_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_PREVIEW_QUEUE_NAME', 'perplexity-validator-preview-queue')
+        standard_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_STANDARD_QUEUE_NAME', 'perplexity-validator-standard-queue')
+        
         # Get queue ARNs
-        preview_queue_arn = f"arn:aws:sqs:{region}:{account_id}:perplexity-validator-preview-queue"
-        standard_queue_arn = f"arn:aws:sqs:{region}:{account_id}:perplexity-validator-standard-queue"
+        preview_queue_arn = f"arn:aws:sqs:{region}:{account_id}:{preview_queue_name}"
+        standard_queue_arn = f"arn:aws:sqs:{region}:{account_id}:{standard_queue_name}"
+        
+        logger.info(f"Setting up triggers for queues: {preview_queue_name}, {standard_queue_name}")
         
         # Check existing mappings
         existing_mappings = lambda_client.list_event_source_mappings(FunctionName=function_name).get('EventSourceMappings', [])
@@ -1320,6 +1372,14 @@ def main():
             logger.error("Failed to set up unified S3 bucket")
             if args.deploy:
                 logger.warning("Continuing with deployment despite S3 setup failure...")
+    
+    # Set up SQS queues if deploying
+    if args.deploy:
+        logger.info("Setting up SQS queues...")
+        sqs_success = setup_sqs_queues(args.region)
+        if not sqs_success:
+            logger.error("Failed to set up SQS queues")
+            logger.warning("Continuing with deployment despite SQS setup failure...")
     
     # Deploy if requested
     if args.deploy:

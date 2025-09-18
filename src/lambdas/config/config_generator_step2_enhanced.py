@@ -120,7 +120,8 @@ Generate precise, actionable configurations that reflect deep domain knowledge a
                 schema=tool_schema,
                 model=self.model,
                 tool_name="generate_config",
-                max_web_searches=0
+                max_web_searches=0,
+                debug_name="config_step2_enhanced_generation"
             )
             
             response_time = time.time() - start_time

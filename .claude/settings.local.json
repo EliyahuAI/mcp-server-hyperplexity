@@ -12,7 +12,9 @@
       "Bash(cp:*)",
       "Bash(rg:*)",
       "Bash(git rm:*)",
-      "Bash(aws lambda get-function-configuration:*)"
+      "Bash(aws lambda get-function-configuration:*)",
+      "Bash(aws sqs delete-queue:*)",
+      "Bash(aws sqs create-queue:*)"
     ],
     "deny": []
   }

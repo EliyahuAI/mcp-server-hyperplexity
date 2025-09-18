@@ -3,6 +3,7 @@ Handles SQS messages for background processing.
 """
 import json
 import logging
+import os
 from datetime import datetime
 
 from interface_lambda.handlers import background_handler
@@ -22,6 +23,14 @@ def handle(event, context):
     for record in event['Records']:
         try:
             message_body = json.loads(record['body'])
+            
+            # Environment filtering: only process messages from our deployment environment
+            message_environment = message_body.get('deployment_environment', 'prod')
+            current_environment = os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod')
+            
+            if message_environment != current_environment:
+                logger.info(f"Skipping message from {message_environment} environment (current: {current_environment})")
+                continue
             
             # Transform SQS message to the format expected by the background handler
             request_type = message_body.get('request_type', '')

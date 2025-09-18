@@ -8,10 +8,10 @@ and handling the message processing workflow.
 import boto3
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from botocore.exceptions import ClientError
-import os
 from pathlib import Path
 
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
@@ -36,6 +36,7 @@ def send_preview_request(session_id, excel_s3_key, config_s3_key, email, referen
         'reference_pin': reference_pin,
         'preview_email': preview_email,
         'created_at': datetime.now(timezone.utc).isoformat(),
+        'deployment_environment': os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod'),
         **kwargs
     }
     return _send_sqs_message(PREVIEW_QUEUE_URL, message_body, is_fifo=False)
@@ -68,6 +69,7 @@ def send_full_request(session_id, excel_s3_key, config_s3_key, email, reference_
         'preview_email': preview_email,
         'run_key': run_key,
         'created_at': datetime.now(timezone.utc).isoformat(),
+        'deployment_environment': os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod'),
     }
     # Clean out None values so they don't get serialized
     message_body_cleaned = {k: v for k, v in message_body.items() if v is not None}
@@ -82,6 +84,7 @@ def send_config_generation_request(message_data):
     message_body = {
         'request_type': 'config_generation',
         'created_at': datetime.now(timezone.utc).isoformat(),
+        'deployment_environment': os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod'),
         **message_data
     }
     

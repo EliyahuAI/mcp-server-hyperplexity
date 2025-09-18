@@ -15,11 +15,49 @@ import time
 import csv
 from io import StringIO
 from pathlib import Path
+import difflib
 
 from schema_validator_simplified import SimplifiedSchemaValidator
 from perplexity_schema import get_response_format_schema
 from row_key_utils import generate_row_key
 from ai_api_client import ai_client
+
+def find_similar_columns(expected_columns: List[str], actual_columns: List[str], similarity_threshold: float = 0.8) -> Dict[str, str]:
+    """
+    Find column mappings between expected and actual columns using string similarity.
+    
+    Args:
+        expected_columns: List of expected column names
+        actual_columns: List of actual column names from API response
+        similarity_threshold: Minimum similarity ratio (0.0 to 1.0) for a match
+        
+    Returns:
+        Dictionary mapping actual column names to expected column names
+        Only includes mappings above the similarity threshold
+    """
+    column_mappings = {}
+    used_actual_columns = set()
+    
+    for expected_col in expected_columns:
+        best_match = None
+        best_ratio = 0.0
+        
+        for actual_col in actual_columns:
+            if actual_col in used_actual_columns:
+                continue
+                
+            # Calculate similarity ratio using difflib
+            ratio = difflib.SequenceMatcher(None, expected_col.lower(), actual_col.lower()).ratio()
+            
+            if ratio > best_ratio and ratio >= similarity_threshold:
+                best_match = actual_col
+                best_ratio = ratio
+        
+        if best_match:
+            column_mappings[best_match] = expected_col
+            used_actual_columns.add(best_match)
+    
+    return column_mappings
 
 # Configure logging
 logger = logging.getLogger()
@@ -598,136 +636,6 @@ async def validate_with_anthropic(
         logger.error(f"Error calling Anthropic API: {str(e)}")
         raise
 
-async def validate_with_perplexity(
-    session: aiohttp.ClientSession,
-    prompt: str,
-    api_key: str,
-    model: str = "sonar-pro",
-    search_context_size: str = "low"
-) -> Dict[str, Any]:
-    """Validate a prompt using Perplexity API."""
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    # Use multiplex schema since we're always using multiplex format now
-    data = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": "You are a data validation expert. Return your answer in valid JSON format."},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.1,
-        "max_tokens": 3000,
-        "response_format": get_response_format_schema(is_multiplex=True),
-        "web_search_options": {
-            "search_context_size": search_context_size
-        }
-    }
-    
-    try:
-        # Log the formatted prompt for better diagnostics
-        # Sending request to Perplexity API
-        
-        # Log a readable version of the prompt for debugging
-        prompt_lines = prompt.split('\n')
-        formatted_prompt = "\n".join([f"  {line}" for line in prompt_lines])
-        # Formatted prompt for API request
-        
-        # Simplified request data log (without the full prompt)
-        simplified_data = {
-            "model": data["model"],
-            "temperature": data["temperature"],
-            "max_tokens": data["max_tokens"],
-            "response_format": data["response_format"]
-        }
-        logger.info(f"Request config: {json.dumps(simplified_data, indent=2)}")
-        
-        timeout = aiohttp.ClientTimeout(total=60)  # Increased timeout for Perplexity
-        async with session.post(
-            "https://api.perplexity.ai/chat/completions",
-            headers=headers,
-            json=data,
-            timeout=timeout
-        ) as response:
-            response_text = await response.text()
-            logger.info(f"API Response status: {response.status}")
-            
-            # Parse the JSON response and pretty print for CloudWatch logs
-            try:
-                response_json = json.loads(response_text)
-                
-                # Extract and format the content for better readability in logs
-                if 'choices' in response_json and len(response_json['choices']) > 0:
-                    message = response_json['choices'][0].get('message', {})
-                    content = message.get('content', '')
-                    
-                    # Try to parse and format the content as JSON
-                    try:
-                        # Properly parse JSON content, handling escaped newlines
-                        content_json = json.loads(content.replace("\\n", " "))
-                        # Create a cleaner version for logging by removing all newlines
-                        clean_content = json.dumps(content_json, indent=2)
-                        
-                        # Create a copy with formatted content for logging
-                        log_response = response_json.copy()
-                        if 'choices' in log_response and len(log_response['choices']) > 0:
-                            if 'message' in log_response['choices'][0]:
-                                log_response['choices'][0]['message'] = {
-                                    'role': message.get('role', 'assistant'),
-                                    'content': f"PARSED_JSON: {clean_content}"
-                                }
-                        
-                        # Log the formatted response with consistent JSON formatting
-                        logger.info(f"API Response body (formatted): {json.dumps(log_response, indent=2)}")
-                    except Exception as json_err:
-                        # If content isn't valid JSON or has formatting issues, log as is
-                        logger.info(f"API Response body (raw content, parse error: {str(json_err)}): {json.dumps(response_json, indent=2)}")
-                else:
-                    logger.info(f"API Response body: {json.dumps(response_json, indent=2)}")
-                    
-            except json.JSONDecodeError:
-                # If response isn't valid JSON, log as is
-                logger.info(f"API Response body (raw): {response_text}")
-            
-            if response.status == 429:
-                # Rate limit error
-                raise Exception(f"Perplexity API rate limit exceeded (429): {response_text}")
-            elif response.status == 499:
-                # Client disconnect - treat as timeout
-                raise Exception(f"Perplexity API client disconnected (499): {response_text}")
-            elif response.status != 200:
-                raise Exception(f"Perplexity API returned status {response.status}: {response_text}")
-            
-            parsed_response = json.loads(response_text)
-            
-            # Extract and log token usage information
-            if 'usage' in parsed_response:
-                usage = parsed_response['usage']
-                prompt_tokens = usage.get('prompt_tokens', 0)
-                completion_tokens = usage.get('completion_tokens', 0) 
-                total_tokens = usage.get('total_tokens', 0)
-                
-                logger.info(f"Perplexity API Token Usage - Prompt: {prompt_tokens}, Completion: {completion_tokens}, Total: {total_tokens}")
-                
-                # Add search_context_size to usage tracking if available
-                if 'search_context_size' in usage:
-                    search_context_from_response = usage.get('search_context_size', 'unknown')
-                    logger.info(f"API confirmed search_context_size: {search_context_from_response}")
-            else:
-                logger.warning("No usage information found in Perplexity API response")
-            
-            return parsed_response
-    except asyncio.TimeoutError as e:
-        logger.error(f"Perplexity API timeout error: {str(e)}")
-        raise Exception(f"Perplexity API timeout: {str(e)}")
-    except aiohttp.ClientError as e:
-        logger.error(f"Perplexity API client error: {str(e)}")
-        raise Exception(f"Perplexity API client error: {str(e)}")
-    except Exception as e:
-        logger.error(f"Error calling Perplexity API: {str(e)}")
-        raise
 
 def extract_token_usage(result: Dict[str, Any], model: str, search_context_size: str = None) -> Dict[str, Any]:
     """
@@ -2818,86 +2726,58 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info(f"Using ai_client for {api_provider} API with model: {model}")
             
             try:
-                if api_provider == 'anthropic':
-                    # For Claude models, we need to structure the call differently
-                    schema = get_response_format_schema(is_multiplex=True)
+                # For ALL models, use unified structured API call
+                logger.info(f"Using unified structured API for {api_provider} with search_context_size: {search_context_size}")
+                
+                # Create schema for structured output
+                schema = get_response_format_schema(is_multiplex=True)
+                
+                # Wrap the array schema in an object for tool calling (needed for Anthropic)
+                tool_schema = {
+                    "type": "object",
+                    "properties": {
+                        "validation_results": schema['json_schema']['schema']
+                    },
+                    "required": ["validation_results"]
+                }
+                
+                # Call ai_client with unified approach - format conversion handled internally
+                async def call_unified_wrapper():
+                    nonlocal shared_client_result
+                    # Create descriptive debug name including group and field info
+                    field_names = [t.column for t in validation_targets]
+                    debug_name = f"validation_group_{group_id}_fields_{len(field_names)}"
+                    if len(field_names) <= 3:
+                        # Include field names if not too many
+                        safe_fields = [field.replace(' ', '_')[:15] for field in field_names]
+                        debug_name = f"validation_group_{group_id}_{'-'.join(safe_fields)}"
                     
-                    # Wrap the array schema in an object for tool calling
-                    tool_schema = {
-                        "type": "object",
-                        "properties": {
-                            "validation_results": schema['json_schema']['schema']
-                        },
-                        "required": ["validation_results"]
-                    }
-                    
-                    # Call ai_client directly with retry logic
-                    async def call_claude_wrapper():
-                        nonlocal shared_client_result
-                        shared_client_result = await ai_client.call_structured_api(
-                            prompt=prompt,
-                            model=model, 
-                            schema=tool_schema,
-                            tool_name="validate_data",
-                            use_cache=True,
-                            max_web_searches=max_web_searches
-                        )
-                        
-                        # Convert Claude response to Perplexity format for unified parsing
-                        claude_response = shared_client_result['response']
-                        structured_data = ai_client.extract_structured_response(claude_response, "validate_data")
-                        validation_results = structured_data.get('validation_results', structured_data)
-                        
-                        # Convert to Perplexity format that parser expects
-                        normalized_response = {
-                            'choices': [{
-                                'message': {
-                                    'role': 'assistant',
-                                    'content': json.dumps(validation_results)
-                                }
-                            }]
-                        }
-                        return normalized_response
-                    
-                    # Use retry logic wrapper
-                    api_response = await retry_api_call_with_backoff(
-                        call_claude_wrapper,
-                        max_retries=5,  # 6 total attempts with specific delays
-                        custom_delays=[1, 5, 10, 20, 30, 60],  # 1s, 5s, 10s, 20s, 30s, 60s
-                        batch_manager=batch_manager,
-                        model=model
+                    shared_client_result = await ai_client.call_structured_api(
+                        prompt=prompt,
+                        model=model, 
+                        schema=tool_schema,
+                        tool_name="validate_data",
+                        use_cache=True,
+                        max_web_searches=max_web_searches,
+                        search_context_size=search_context_size,
+                        debug_name=debug_name
                     )
-                    
-                    # Extract data from shared_client_result
-                    token_usage = shared_client_result.get('token_usage', {})
-                    enhanced_data = shared_client_result.get('enhanced_data', {})
-                    is_cached = shared_client_result.get('is_cached', False)
-                    citations = shared_client_result.get('citations', [])
-                    
-                else:
-                    # For Perplexity models
-                    logger.info(f"Using Perplexity with search_context_size: {search_context_size}")
-                    
-                    # The shared client returns a wrapper with response, token_usage, etc.
-                    async def call_perplexity_wrapper():
-                        nonlocal shared_client_result
-                        shared_client_result = await ai_client.validate_with_perplexity(prompt, model, search_context_size, use_cache=True)
-                        # Return just the API response part for compatibility with existing parsing
-                        return shared_client_result['response']
-                    
-                    api_response = await retry_api_call_with_backoff(
-                        call_perplexity_wrapper,
-                        max_retries=5,  # 6 total attempts with specific delays
-                        custom_delays=[1, 5, 10, 20, 30, 60],  # 1s, 5s, 10s, 20s, 30s, 60s
-                        batch_manager=batch_manager,
-                        model=model
-                    )
-                    
-                    # For Perplexity, enhanced_data comes from the enhanced_data field in shared_client_result
-                    token_usage = shared_client_result.get('token_usage', {})
-                    enhanced_data = shared_client_result.get('enhanced_data', {})
-                    is_cached = shared_client_result.get('is_cached', False)
-                    citations = shared_client_result.get('citations', [])
+                    # Response is now unified Perplexity format from ai_client
+                    return shared_client_result['response']
+                
+                api_response = await retry_api_call_with_backoff(
+                    call_unified_wrapper,
+                    max_retries=5,  # 6 total attempts with specific delays
+                    custom_delays=[1, 5, 10, 20, 30, 60],  # 1s, 5s, 10s, 20s, 30s, 60s
+                    batch_manager=batch_manager,
+                    model=model
+                )
+                
+                # Enhanced data is consistent across all providers now
+                token_usage = shared_client_result.get('token_usage', {})
+                enhanced_data = shared_client_result.get('enhanced_data', {})
+                is_cached = shared_client_result.get('is_cached', False)
+                citations = shared_client_result.get('citations', [])
                 
                 processing_time = time.time() - start_time
                 
@@ -2942,8 +2822,39 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info(f"Parsed columns: {actual_columns}")
             logger.info(f"Expected count: {len(expected_columns)}, Actual count: {len(actual_columns)}")
             
-            # Check for missing columns - if cache was incomplete, make fresh API call
-            missing_columns = set(expected_columns) - set(actual_columns)
+            # Check for exact missing columns first
+            exact_missing_columns = set(expected_columns) - set(actual_columns)
+            
+            # If we have missing columns, try flexible column matching
+            column_corrections = {}
+            flexible_missing_columns = set()
+            
+            if exact_missing_columns:
+                # Attempt flexible column matching for missing columns
+                if len(actual_columns) == len(expected_columns):
+                    logger.info(f"🔄 COLUMN COUNT MATCHES: Attempting flexible column matching for similar names")
+                    column_mappings = find_similar_columns(expected_columns, actual_columns, similarity_threshold=0.8)
+                    
+                    for actual_col, expected_col in column_mappings.items():
+                        if expected_col in exact_missing_columns and actual_col != expected_col:
+                            column_corrections[actual_col] = expected_col
+                            logger.warning(f"⚠️ COLUMN NAME CORRECTION: '{actual_col}' -> '{expected_col}' (similarity matching)")
+                    
+                    # Update parsed_results with corrected column names
+                    for actual_col, expected_col in column_corrections.items():
+                        parsed_results[expected_col] = parsed_results.pop(actual_col)
+                    
+                    # Recalculate missing columns after corrections
+                    updated_actual_columns = list(parsed_results.keys())
+                    flexible_missing_columns = set(expected_columns) - set(updated_actual_columns)
+                    
+                    if not flexible_missing_columns:
+                        logger.info(f"✅ COLUMN MATCHING SUCCESS: All columns matched after similarity corrections")
+                else:
+                    flexible_missing_columns = exact_missing_columns
+            
+            # Check for missing columns after flexible matching attempt
+            missing_columns = flexible_missing_columns
             if missing_columns:
                 if is_cached:
                     logger.error(f"❌ MISSING COLUMNS IN CACHED RESPONSE: {list(missing_columns)}")
@@ -2953,68 +2864,69 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     total_cache_misses += 1
                     total_cache_hits -= 1
                     
-                    # Make fresh API call with cache disabled
-                    logger.info(f"Making fresh API call for {api_provider} with cache disabled")
+                    # Make fresh API call with cache disabled using unified approach
+                    logger.info(f"Making fresh unified API call for {api_provider} with cache disabled")
                     
-                    if api_provider == 'anthropic':
-                        # Fresh Claude call with cache disabled using call_structured_api for max_web_searches support
-                        shared_client_result = await ai_client.call_structured_api(
-                            prompt=prompt,
-                            model=model, 
-                            schema=tool_schema,
-                            tool_name="validate_data",
-                            use_cache=False,  # Disable cache for fresh call
-                            max_web_searches=max_web_searches  # Include max_web_searches
-                        )
-                        
-                        # Convert Claude response to Perplexity format for unified parsing
-                        claude_response = shared_client_result['response']
-                        structured_data = ai_client.extract_structured_response(claude_response, "validate_data")
-                        validation_results = structured_data.get('validation_results', structured_data)
-                        
-                        # Convert to Perplexity format that parser expects
-                        api_response = {
-                            'choices': [{
-                                'message': {
-                                    'role': 'assistant',
-                                    'content': json.dumps(validation_results)
-                                }
-                            }]
-                        }
-                        token_usage = shared_client_result.get('token_usage', {})
-                        enhanced_data = shared_client_result.get('enhanced_data', {})
-                        is_cached = False  # This is now a fresh call
-                        citations = shared_client_result.get('citations', [])
-                        
-                        # Recalculate processing time for fresh call
-                        processing_time = time.time() - start_time
-                        
-                    else:
-                        # Fresh Perplexity call with cache disabled
-                        shared_client_result = await ai_client.validate_with_perplexity(
-                            prompt=prompt,
-                            model=model,
-                            search_context_size=search_context_size,
-                            use_cache=False  # Disable cache for fresh call
-                        )
-                        
-                        api_response = shared_client_result['response']
-                        token_usage = shared_client_result.get('token_usage', {})
-                        enhanced_data = shared_client_result.get('enhanced_data', {})
-                        is_cached = False  # This is now a fresh call
-                        citations = shared_client_result.get('citations', [])
-                        
-                        # Recalculate processing time for fresh call
-                        processing_time = time.time() - start_time
+                    # Use the same unified approach for fresh calls
+                    fresh_debug_name = f"validation_fresh_group_{group_id}_fields_{len(field_names)}"
+                    if len(field_names) <= 3:
+                        safe_fields = [field.replace(' ', '_')[:15] for field in field_names]
+                        fresh_debug_name = f"validation_fresh_group_{group_id}_{'-'.join(safe_fields)}"
+                    
+                    shared_client_result = await ai_client.call_structured_api(
+                        prompt=prompt,
+                        model=model, 
+                        schema=tool_schema,
+                        tool_name="validate_data",
+                        use_cache=False,  # Disable cache for fresh call
+                        max_web_searches=max_web_searches,
+                        search_context_size=search_context_size,
+                        debug_name=fresh_debug_name
+                    )
+                    
+                    # Response is already in unified Perplexity format from ai_client
+                    api_response = shared_client_result['response']
+                    token_usage = shared_client_result.get('token_usage', {})
+                    enhanced_data = shared_client_result.get('enhanced_data', {})
+                    is_cached = False  # This is now a fresh call
+                    citations = shared_client_result.get('citations', [])
+                    
+                    # Recalculate processing time for fresh call
+                    processing_time = time.time() - start_time
                     
                     # Re-parse the fresh API response (now normalized to Perplexity format)
                     parsed_results = validator.parse_multiplex_result(api_response, row)
-                    actual_columns = list(parsed_results.keys())
+                    fresh_actual_columns = list(parsed_results.keys())
                     
-                    # Check again for missing columns in fresh response
-                    missing_columns = set(expected_columns) - set(actual_columns)
+                    # Check again for missing columns in fresh response with flexible matching
+                    exact_missing_fresh = set(expected_columns) - set(fresh_actual_columns)
+                    
+                    if exact_missing_fresh:
+                        # Try flexible column matching for fresh response as well
+                        if len(fresh_actual_columns) == len(expected_columns):
+                            logger.info(f"🔄 FRESH RESPONSE: Attempting flexible column matching")
+                            fresh_column_mappings = find_similar_columns(expected_columns, fresh_actual_columns, similarity_threshold=0.8)
+                            
+                            fresh_column_corrections = {}
+                            for actual_col, expected_col in fresh_column_mappings.items():
+                                if expected_col in exact_missing_fresh and actual_col != expected_col:
+                                    fresh_column_corrections[actual_col] = expected_col
+                                    logger.warning(f"⚠️ FRESH RESPONSE COLUMN CORRECTION: '{actual_col}' -> '{expected_col}' (similarity matching)")
+                            
+                            # Update parsed_results with corrected column names
+                            for actual_col, expected_col in fresh_column_corrections.items():
+                                parsed_results[expected_col] = parsed_results.pop(actual_col)
+                            
+                            # Recalculate missing columns after corrections
+                            updated_fresh_columns = list(parsed_results.keys())
+                            missing_columns = set(expected_columns) - set(updated_fresh_columns)
+                        else:
+                            missing_columns = exact_missing_fresh
+                    else:
+                        missing_columns = set()
+                    
                     if missing_columns:
-                        logger.error(f"❌ MISSING COLUMNS EVEN IN FRESH API RESPONSE: {list(missing_columns)}")
+                        logger.error(f"❌ MISSING COLUMNS EVEN IN FRESH API RESPONSE AFTER FLEXIBLE MATCHING: {list(missing_columns)}")
                         logger.error(f"This indicates a serious issue with the AI model or prompt generation")
                         raise ValueError(f"Fresh API response still missing required columns: {missing_columns}")
                     
@@ -3031,16 +2943,49 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     })
                     
                 else:
-                    # This was already a fresh API call and still missing columns - serious issue
-                    logger.error(f"❌ MISSING COLUMNS IN FRESH API RESPONSE: {list(missing_columns)}")
-                    logger.error(f"This indicates a serious issue with the AI model or prompt generation")
-                    raise ValueError(f"Fresh API response missing required columns: {missing_columns}")
+                    # This was already a fresh API call - try flexible matching one more time
+                    if len(actual_columns) == len(expected_columns):
+                        logger.info(f"🔄 FRESH API CALL: Attempting flexible column matching for remaining missing columns")
+                        column_mappings = find_similar_columns(expected_columns, actual_columns, similarity_threshold=0.8)
+                        
+                        final_column_corrections = {}
+                        for actual_col, expected_col in column_mappings.items():
+                            if expected_col in missing_columns and actual_col != expected_col:
+                                final_column_corrections[actual_col] = expected_col
+                                logger.warning(f"⚠️ FINAL COLUMN CORRECTION: '{actual_col}' -> '{expected_col}' (similarity matching)")
+                        
+                        # Update parsed_results with corrected column names
+                        for actual_col, expected_col in final_column_corrections.items():
+                            parsed_results[expected_col] = parsed_results.pop(actual_col)
+                        
+                        # Recalculate missing columns after final corrections
+                        final_actual_columns = list(parsed_results.keys())
+                        remaining_missing_columns = set(expected_columns) - set(final_actual_columns)
+                        
+                        if remaining_missing_columns:
+                            logger.error(f"❌ MISSING COLUMNS IN FRESH API RESPONSE AFTER FLEXIBLE MATCHING: {list(remaining_missing_columns)}")
+                            logger.error(f"This indicates a serious issue with the AI model or prompt generation")
+                            raise ValueError(f"Fresh API response missing required columns: {remaining_missing_columns}")
+                        else:
+                            logger.info(f"✅ FINAL FLEXIBLE MATCHING SUCCESS: All columns matched after similarity corrections")
+                    else:
+                        logger.error(f"❌ MISSING COLUMNS IN FRESH API RESPONSE: {list(missing_columns)}")
+                        logger.error(f"Column count mismatch: expected {len(expected_columns)}, got {len(actual_columns)}")
+                        logger.error(f"This indicates a serious issue with the AI model or prompt generation")
+                        raise ValueError(f"Fresh API response missing required columns: {missing_columns}")
             
-            # Check for unexpected columns (warning only)
-            unexpected_columns = set(actual_columns) - set(expected_columns)
+            # Check for unexpected columns (warning only) - use current parsed_results keys
+            current_actual_columns = list(parsed_results.keys())
+            unexpected_columns = set(current_actual_columns) - set(expected_columns)
             if unexpected_columns:
                 logger.warning(f"⚠️ UNEXPECTED COLUMNS IN API RESPONSE: {list(unexpected_columns)}")
                 logger.warning(f"These columns were found but not expected")
+            
+            # Log column corrections summary if any were made
+            if column_corrections:
+                logger.info(f"📋 COLUMN CORRECTIONS SUMMARY:")
+                for actual_col, expected_col in column_corrections.items():
+                    logger.info(f"  • '{actual_col}' -> '{expected_col}'")
             
             # Process results - create proper result structure for each validation target column
             processed_count = 0

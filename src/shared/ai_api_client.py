@@ -1387,25 +1387,40 @@ class AIAPIClient:
             logger.error(f"Failed to cache API response: {str(e)}")
     
     async def _save_debug_data(self, api_provider: str, model: str, request_data: Dict, 
-                              response_data: Any, error: Exception = None, context: str = ""):
+                              response_data: Any, error: Exception = None, context: str = "", debug_name: str = None):
         """Save debug data for API calls to help diagnose issues."""
         try:
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
             status = "ERROR" if error else "SUCCESS"
             model_clean = model.replace('/', '_').replace(':', '_')
             
-            # Create filename: YYYYMMDD_HHMMSS_provider_model_status.json
-            debug_filename = f"{timestamp}_{api_provider}_{model_clean}_{status}.json"
+            # Use debug_name if provided, otherwise extract content description
+            if debug_name:
+                # Clean debug_name for filename safety
+                name_clean = ''.join(c for c in debug_name if c.isalnum() or c in '_-').strip()[:30]
+                content_description = name_clean if name_clean else 'custom'
+            else:
+                content_description = self._extract_content_description(request_data)
             
-            # Extract input prompts for easier debugging
+            # Create descriptive filename: YYYYMMDD_HHMMSS_provider_model_status_description.json
+            debug_filename = f"{timestamp}_{api_provider}_{model_clean}_{status}_{content_description}.json"
+            
+            # Extract and format input prompts for easier debugging
             input_prompts = []
+            input_prompts_readable = []
             try:
                 if 'data' in request_data and 'messages' in request_data['data']:
                     for message in request_data['data']['messages']:
                         if isinstance(message, dict) and 'content' in message:
+                            # Original format (with escaped newlines) - for parsing
                             input_prompts.append({
                                 'role': message.get('role', 'unknown'),
                                 'content': message['content']
+                            })
+                            # Readable format (proper newlines, formatted) - for human reading
+                            input_prompts_readable.append({
+                                'role': message.get('role', 'unknown'),
+                                'content': self._format_readable_content(message['content'])
                             })
             except Exception as prompt_extract_error:
                 logger.warning(f"Failed to extract input prompts: {str(prompt_extract_error)}")
@@ -1416,7 +1431,8 @@ class AIAPIClient:
                 'model': model,
                 'status': status,
                 'context': context,
-                'input_prompts': input_prompts,  # NEW: Extracted prompts for easy access
+                'input_prompts_readable': input_prompts_readable,  # NEW: Human-readable prompts first
+                'input_prompts': input_prompts,  # Original format for parsing (if needed)
                 'request': request_data,
                 'response': None,
                 'error': None,
@@ -1467,9 +1483,46 @@ class AIAPIClient:
         except Exception as e:
             logger.error(f"[DEBUG] Failed to save debug data: {str(e)}")
     
+    def _extract_content_description(self, request_data: Dict) -> str:
+        """Extract a short description from the content for use in filename."""
+        try:
+            if 'data' in request_data and 'messages' in request_data['data']:
+                for message in request_data['data']['messages']:
+                    if isinstance(message, dict) and 'content' in message and message.get('role') == 'user':
+                        content = message['content']
+                        if isinstance(content, str) and content.strip():
+                            # Extract first meaningful words, clean for filename
+                            words = []
+                            for word in content.split():
+                                clean_word = ''.join(c for c in word if c.isalnum())
+                                if clean_word and len(clean_word) > 2:
+                                    words.append(clean_word)
+                                if len(words) >= 4:  # Use first 4 meaningful words
+                                    break
+                            if words:
+                                return '_'.join(words)[:50]  # Max 50 chars
+            return 'request'
+        except Exception:
+            return 'request'
+    
+    def _format_readable_content(self, content: str) -> str:
+        """Format content to be human-readable by replacing escaped newlines."""
+        if not isinstance(content, str):
+            return str(content)
+        
+        # Replace escaped newlines with actual newlines for readability
+        readable = content.replace('\\n', '\n')
+        
+        # Clean up any double newlines that might result
+        while '\n\n\n' in readable:
+            readable = readable.replace('\n\n\n', '\n\n')
+            
+        return readable.strip()
+    
     async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-3-5-sonnet-20241022", 
                                  tool_name: str = "structured_response", use_cache: bool = True, 
-                                 context: str = "", max_tokens: int = None, max_web_searches: int = 3) -> Dict:
+                                 context: str = "", max_tokens: int = None, max_web_searches: int = 3,
+                                 search_context_size: str = "low", debug_name: str = None) -> Dict:
         """
         Call AI API with structured output using JSON response format.
         
@@ -1480,6 +1533,9 @@ class AIAPIClient:
             tool_name: Name of the tool for structured output (legacy parameter, now ignored)
             use_cache: Whether to use caching
             context: Additional context for cache key generation
+            max_web_searches: Maximum web searches for Anthropic models
+            search_context_size: Search context size for Perplexity models ("low", "medium", or "high")
+            debug_name: Optional name to include in debug filenames for easier identification
             
         Returns:
             Dict containing the structured response and metadata
@@ -1617,21 +1673,39 @@ class AIAPIClient:
                 elif api_provider == 'perplexity':
                     # Perplexity API call for structured output
                     result = await self._make_single_perplexity_structured_call(prompt, schema, current_model,
-                                                                               use_cache, cache_key, call_start_time)
+                                                                               use_cache, cache_key, call_start_time, search_context_size, debug_name)
                 else:
                     logger.warning(f"[SKIP] Unknown provider for model {current_model}")
                     continue
                 
-                # If we got a result, add model info and return it
+                # If we got a result, add model info and normalize response format
                 if result:
                     result['model_used'] = current_model
                     result['used_backup_model'] = model_index > 0
-                    # Extract citations based on API provider
-                    if api_provider == 'perplexity':
-                        result['citations'] = self.extract_citations_from_perplexity_response(result.get('response', {}))
+                    
+                    # Normalize response format: Convert all responses to Perplexity format for unified parsing
+                    if api_provider == 'anthropic':
+                        # Convert Claude tool response to Perplexity format
+                        logger.info(f"Converting Claude response to unified Perplexity format")
+                        claude_response = result['response']
+                        structured_data = self.extract_structured_response(claude_response, tool_name)
+                        validation_results = structured_data.get('validation_results', structured_data)
+                        
+                        # Convert to Perplexity format that parser expects
+                        result['response'] = {
+                            'choices': [{
+                                'message': {
+                                    'role': 'assistant',
+                                    'content': json.dumps(validation_results)
+                                }
+                            }]
+                        }
+                        result['citations'] = self.extract_citations_from_response(claude_response)
                     else:
-                        result['citations'] = self.extract_citations_from_response(result.get('response', {}))
-                    logger.info(f"[SUCCESS] Model {current_model} succeeded")
+                        # Perplexity response is already in the correct format
+                        result['citations'] = self.extract_citations_from_perplexity_response(result.get('response', {}))
+                    
+                    logger.info(f"[SUCCESS] Model {current_model} succeeded with unified response format")
                     return result
                     
             except Exception as e:
@@ -2063,14 +2137,26 @@ class AIAPIClient:
             raise
     
     def extract_structured_response(self, response: Dict, tool_name: str = "structured_response") -> Dict:
-        """Extract structured data from Claude's tool use response."""
+        """Extract structured data from both Claude tool use format and unified Perplexity format."""
         try:
-            # For tool use, the structured data is in the tool_use content
+            # Check if this is unified Perplexity format (from call_structured_api)
+            if 'choices' in response and isinstance(response['choices'], list) and len(response['choices']) > 0:
+                message = response['choices'][0].get('message', {})
+                content = message.get('content', '')
+                if isinstance(content, str) and content.strip().startswith('{'):
+                    try:
+                        # Parse JSON content from unified format
+                        return json.loads(content)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse JSON from unified response: {e}")
+                        # Fall through to try other formats
+            
+            # Original Claude tool use format
             for content_item in response.get('content', []):
                 if content_item.get('type') == 'tool_use' and content_item.get('name') == tool_name:
                     return content_item.get('input', {})
             
-            # Fallback: extract from text
+            # Fallback: extract from text content (original Claude format)
             for content_item in response.get('content', []):
                 if content_item.get('type') == 'text':
                     text = content_item.get('text', '')
@@ -2079,10 +2165,11 @@ class AIAPIClient:
                         end = text.rfind('}') + 1
                         return json.loads(text[start:end])
             
-            raise ValueError("Could not extract structured response from Claude output")
+            raise ValueError("Could not extract structured response from response format")
             
         except Exception as e:
             logger.error(f"Failed to extract structured response: {str(e)}")
+            logger.error(f"Response format: {type(response)}, keys: {list(response.keys()) if isinstance(response, dict) else 'N/A'}")
             raise
     
     def extract_text_response(self, response: Dict) -> str:
@@ -2333,7 +2420,8 @@ class AIAPIClient:
             raise
     
     async def _make_single_perplexity_structured_call(self, prompt: str, schema: Dict, model: str,
-                                                     use_cache: bool, cache_key: str, start_time: datetime) -> Dict:
+                                                     use_cache: bool, cache_key: str, start_time: datetime, 
+                                                     search_context_size: str = "low", debug_name: str = None) -> Dict:
         """Make a single Perplexity API call for structured output."""
         # Perplexity supports structured output via response_format
         headers = {
@@ -2354,7 +2442,7 @@ class AIAPIClient:
                 "schema": schema
             },
             "web_search_options": {
-                "search_context_size": "low"  # Default to low for structured calls
+                "search_context_size": search_context_size
             }
         }
         
@@ -2380,7 +2468,7 @@ class AIAPIClient:
                         
                         # Save debug data for successful call
                         await self._save_debug_data('perplexity', model, debug_request, 
-                                                  response_json, context="structured_call_success")
+                                                  response_json, context="structured_call_success", debug_name=debug_name)
                         
                         token_usage = self._extract_token_usage(response_json, model, "low")
                         
@@ -2409,17 +2497,17 @@ class AIAPIClient:
                         error_text = await response.text()
                         error = Exception(f"Perplexity API returned status {response.status}: {error_text}")
                         await self._save_debug_data('perplexity', model, debug_request, 
-                                                  error_text, error=error, context=f"structured_call_status_{response.status}")
+                                                  error_text, error=error, context=f"structured_call_status_{response.status}", debug_name=debug_name)
                         raise error
                         
         except asyncio.TimeoutError as e:
             timeout_error = Exception(f"Perplexity API timeout: {str(e)}")
             await self._save_debug_data('perplexity', model, debug_request, 
-                                      None, error=timeout_error, context="structured_call_timeout")
+                                      None, error=timeout_error, context="structured_call_timeout", debug_name=debug_name)
             raise timeout_error
         except Exception as e:
             await self._save_debug_data('perplexity', model, debug_request, 
-                                      None, error=e, context="structured_call_exception")
+                                      None, error=e, context="structured_call_exception", debug_name=debug_name)
             raise
 
 # Global instance for easy import

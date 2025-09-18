@@ -304,7 +304,8 @@ class ConversationalConfigSystem:
                 schema=tool_schema,
                 model=self.model,
                 tool_name="optimize_config",
-                max_web_searches=0
+                max_web_searches=0,
+                debug_name="config_conversational_optimization"
             )
             
             return response

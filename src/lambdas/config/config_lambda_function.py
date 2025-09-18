@@ -187,13 +187,19 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         schema = get_unified_generation_schema()
         
         config_settings = load_config_settings()
+        
+        # Determine debug name based on whether this is generation or refinement
+        is_refinement = existing_config is not None and existing_config.get('config_change_log', [])
+        debug_name = "config_refinement" if is_refinement else "config_generation"
+        
         result = await ai_client.call_structured_api(
             prompt=prompt,
             schema=schema,
             model=config_settings.get('model', 'claude-opus-4-1'),
             tool_name="generate_config_and_questions",
             max_tokens=config_settings.get('max_tokens', 16000),
-            max_web_searches=0
+            max_web_searches=0,
+            debug_name=debug_name
             # Removed context parameter - it was incorrectly using session_id
             # Context should be for search_context_size in validation calls
         )
