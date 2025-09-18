@@ -2627,7 +2627,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Processing search group
                 
                 # Always use multiplex validation regardless of number of fields
-                await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id)
+                await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id, row_api_providers)
                 total_multiplex_validations += 1
                 
                 # Send AI call progress update via WebSocket using thread-safe counter
@@ -2645,7 +2645,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             return row_idx, row_results, row_models_used, batch_number
         
-        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False, row_models_used=None, group_id=None):
+        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False, row_models_used=None, group_id=None, row_api_providers=None):
             """Process a group of columns with a single multiplex AI API call using ai_api_client."""
             nonlocal total_cache_hits, total_cache_misses
             
@@ -2653,16 +2653,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if row_models_used is None:
                 row_models_used = set()
             
-            # Get access to row_api_providers from the calling function
-            import inspect
-            frame = inspect.currentframe()
-            while frame:
-                if 'row_api_providers' in frame.f_locals:
-                    row_api_providers = frame.f_locals['row_api_providers']
-                    break
-                frame = frame.f_back
-            else:
-                # Fallback if we can't find row_api_providers
+            # Initialize row_api_providers if not provided
+            if row_api_providers is None:
                 row_api_providers = set()
             
             # First, filter out any ID or IGNORED fields - we don't validate these
@@ -3247,8 +3239,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # First pass: collect all responses and calculate token usage
         # For timing, we need to calculate the maximum processing time per batch (parallel processing)
         # Use the actual row-to-batch mapping we created above
-        if 'batch_processing_times_calculated' not in locals():
-            batch_processing_times_calculated = {}  # batch_number -> max_processing_time_in_that_batch
+        # Note: batch_processing_times_calculated is already initialized above
         
         for row_idx, row_result in validation_results.items():
             if '_raw_responses' in row_result:
