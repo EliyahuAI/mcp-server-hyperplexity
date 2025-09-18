@@ -861,6 +861,7 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
         seen_content_hashes: Set[str] = set()  # For deduplication
         
         for i, config_file in enumerate(config_files):
+            config_id = "unknown"  # Initialize config_id for error handling
             try:
                 # Download and parse config
                 response = s3_client.get_object(Bucket=storage_manager.bucket_name, Key=config_file['key'])
@@ -926,9 +927,13 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
                         config_id = f"{source_session}_{filename_without_ext}"
                         logger.debug(f"Generated config_id from filename: {config_id} (session: {source_session}, file: {filename})")
                     else:
-                        # Fallback for legacy
+                        # Fallback for legacy - ensure config_id is always set
                         version = storage_metadata.get('version', 1)
                         config_id = f"{source_session}_v{version}_legacy"
+                
+                # Ensure config_id is never None
+                if not config_id:
+                    config_id = f"{source_session}_unknown_config"
                 
                 description = storage_metadata.get('description') or config_data.get('general_notes', 'No description available')
                 
@@ -1026,7 +1031,7 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
                     break
                 
             except Exception as e:
-                logger.error(f"Error processing config {config_file['key']}: {e}")
+                logger.error(f"Error processing config {config_file['key']} (config_id: {config_id}): {e}")
                 continue
         
         # Combine and sort matches: perfect matches first, then by score and recency
