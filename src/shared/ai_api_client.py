@@ -2429,6 +2429,18 @@ class AIAPIClient:
             "Content-Type": "application/json"
         }
         
+        # Extract the actual validation schema from the tool schema format
+        # The schema comes in as {"type": "object", "properties": {"validation_results": {...}}, "required": [...]}
+        # We need to extract the validation_results schema and use the proper Perplexity format
+        actual_schema = schema
+        if (isinstance(schema, dict) and 
+            schema.get('type') == 'object' and 
+            'properties' in schema and 
+            'validation_results' in schema['properties']):
+            # Extract the actual validation results schema
+            actual_schema = schema['properties']['validation_results']
+            logger.info(f"Extracted validation_results schema from tool format for Perplexity API")
+        
         data = {
             "model": model,
             "messages": [
@@ -2438,8 +2450,10 @@ class AIAPIClient:
             "temperature": 0.1,
             "max_tokens": 8000,
             "response_format": {
-                "type": "json_object",
-                "schema": schema
+                "type": "json_schema",
+                "json_schema": {
+                    "schema": actual_schema
+                }
             },
             "web_search_options": {
                 "search_context_size": search_context_size
