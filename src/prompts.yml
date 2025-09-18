@@ -28,35 +28,34 @@ multiplex_validation: |
 
   === CONFIDENCE RUBRICS ===
   Assign confidence levels to the original and updated values:
-  - HIGH: Claim is a widely accepted fact, directly verified by authoritative source, or straightforward calculation that matches the guidance provided
-  - MEDIUM: Good estimates, confident projections, or respectable but not definitive sources that are consistent with the guidance provided
-  - LOW: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value it is low confidence
-  - null: For blank values that should remain blank (no confidence assignment needed). If the orignal valie is blank, and you have nothing to add, provied a null confidence.
+  - HIGH: Claim is a widely accepted fact, directly verified by authoritative source, or straightforward calculation that matches the guidance provided, without cause for pause. Claim matches the guidance provided.
+  - MEDIUM: Good estimates, confident projections, or respectable but not definitive sources that are consistent with the guidance .provided.
+  - LOW: Weak/conflicting sources, uncertainty, no information available, or that does not match the guidance provided - if you cannot verify a value- it is low confidence
+  - None: For blank values that should remain blank (no confidence assignment needed). If the orignal valie is blank, and you have nothing to add, provied a null confidence.
   
   === RESPONSE FORMAT ===
   Please respond with a JSON array containing an object for each field.
-  {single_field_note} 
 
   === JSON SCHEMA EXAMPLE ===
   {json_schema_example}
 
   IMPORTANT:
-  - For each field, use the provided examples as guidance for expected formats and values. 
+  - For each field, use the provided examples as guidance for expected formats and values.
   - Do not use quotation marks around your responses.
   - Assess both the quality of your updated answer (confidence) and the quality of the original value (original_confidence) using the same confidence rubric.
-  - Only provide a different validated value if you can achieve improve significantly on than the original value. Never replace an original value with an updated value in which you have lower confidence. 
+  - Only provide a different validated value if you can achieve improve significantly on than the original value. 
+  - NEVER replace an original value with an updated value in which you have lower confidence. 
   - The response MUST be valid JSON array format
   - Each field must have its own object in the array
-  - Include the exact column name in each object
+  - Include the exact column name in each object - exactly as defined in the FIELD input
   - Place actual URLs in the sources arrays, not reference numbers
-  - CRITICAL: When web search is available, perform web search when helpful and include direct quotes from web search results or authoritative sources in the reasoning field. When web search is not available, use your training knowledge and cite knowledge cutoff limitations where relevant.
+  - When web search is available, perform web search only when helpful and include direct quotes from web search results or authoritative sources in the reasoning field. When web search is not available, or not helpful, use your training knowledge and cite knowledge cutoff limitations where relevant.
   - Extract specific text snippets that support your answer when available, include the source page title if it is available for context.
-  - If you cannot find information for a field, assign null confidence if the field should remain blank
+  - If you cannot find information for a field that was originally blank, assign None confidence if the field should remain blank
   - Use provided examples to guide your updates format and expected values
   - Always include all required fields: column, answer, confidence, original_confidence, reasoning, sources
-  - If web search is available, you should use it to find current, accurate information when it would improve the quality of your research. This is especially critical for recent news, current prices, financial data, and time-sensitive information. If web search is not available, use your training knowledge and clearly indicate any limitations due to knowledge cutoff dates.
-  - Store bulleted information in a way that will visualize correctly in an excel cell. 
-  - Double check your updated response - speak precisely, there is not room for error. 
+  - Use newline characters correctly in an excel cell, perticularly for bullets, lists, and other formatted text. 
+  - Double check your updated response and confidence - speak precisely, there is not room for error. 
   
 holistic_validation: |
   === HOLISTIC RESEARCH REVIEW ===

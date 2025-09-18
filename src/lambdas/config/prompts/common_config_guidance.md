@@ -47,7 +47,7 @@ When analyzing any table, follow this process:
 2. **Detect data types** from sample values (dates, time, numbers, strings, URLs, etc.) - be specific about the format in the notes is not evident in the examples. 
 3. **Identify likely ID columns** usually the first column(s), these are used to identify the row and are not used for research.
 5. **Group related columns** that would appear in same sources
-6. **Extract real examples** from the actual data (if possible, otherwise specify a consistent set), if the examples do not match other requirements (like out of date or other), update the examples to be in scope. Strongly prefer consistent formatting across the examples.  
+6. **Extract real examples** from the actual data if provided and consistent with the guidance, otherwise specify a new consistent set.  Examples must match the requirements, update the examples to be in scope. Strongly prefer consistent formatting across the examples.  
 7. **Assign importance levels** based on column criticality, ignore columns that are not informational or on the internet, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose. 
 
 ## Analysis Presentation Format
@@ -79,16 +79,16 @@ Show your assumptions clearly in this format:
 - 0.7-0.8 = HIGH (significant assumptions made)
 - 0.9-1.0 = CRITICAL (core columns will likely be wrong)
 
-**REFINEMENT RULE**: Always use LOWER urgency than new configurations (typically 0.1-0.3)
+**REFINEMENT RULE**: Always use LOWER urgency than the original configurations (typically 0.1-0.3)
 
 ## Targeted Questions Guidelines
 
 Only ask when genuinely unclear or need confirmation that would likely impprove the quality of your search:
 
 ### Types of Questions to Ask:
-- **Cost/Accuracy Tradeoff**: "Are you OK with increasing the AI usage to achieve better accuracy? I can use more advanced models and or more searches - but this can amplify cost."
 - **Risky Assumptions**: "Is my understanding of [specific assumption] correct?"
 - **A/B Clarifications**: "For [ambiguous column], should this be: A) [option A] or B) [defaulted to B]?"
+- **Cost/Accuracy Tradeoff**: "Are you OK with increasing the AI usage to achieve better accuracy? I can use more advanced models and or more searches - but this can amplify cost." This is a good question when items are missed, or require complex synthesis, and you have held back in your recommendations.  
 
 ### Avoid Asking:
 - ❌ Obvious table purposes (clear from column names)
@@ -108,7 +108,7 @@ Auto-detect from sample data:
 
 ## Units and Measurements Guidelines
 
-**Units Consistency**: If a column contains values with units (e.g., $B for billions, °C for temperature, mg for dosage, etc), make sure to specify in the notes that all values should consistently include the same units across all rows. This ensures validation results maintain proper unit formatting. When you detect a potential variablity in units of response, make sure the examples include units.
+**Units Consistency**: If a column contains values with units (e.g., $B for billions, °C for temperature, mg for dosage, etc), make sure to specify in the notes that all values should consistently include the same units across all rows. This ensures validation results maintain proper unit formatting. When you detect a potential variablity in units of response, make sure the examples include consistent units (dont mit $T with $B, etc.)
 
 ## Search Group Requirements (MANDATORY)
 Search groups are **REQUIRED** for every configuration - they are essential for building an effective search strategy and cannot be omitted.
@@ -118,7 +118,7 @@ Search groups are **REQUIRED** for every configuration - they are essential for 
 - **Every validation target MUST be assigned to a search group** via the `search_group` field (except those that are Ignore)
 - **Group 0**: Always ID/identifier fields (not validated, used for context), you must provide an ID group and assign at least one,  validation target to this. Note - these usually come from the left-most column(s). No validated columns in this group! 
 - **Group 1+**: Columns whose information appears together in typical sources
-- **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or Ignore)/3)
+- **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or Ignore)/2)
 - **Upper limit**: Maximum 10
 - **No ungrouped fields allowed**: Every column must belong to a search group for optimal performance
 

@@ -22,6 +22,7 @@ Create a comprehensive configuration that includes:
 2. **Validation Targets**
    - All important columns with proper importance levels
    - Realistic examples from the actual data (INCLUDING UNITS when applicable)
+   - If guidance no longer matches the provided examples, update the examples to a coherent set that matches the guidance
    - Appropriate format specifications with unit requirements for measurements
 
 3. **Technical AI Summary** (REQUIRED - goes in technical_ai_summary field)
@@ -43,7 +44,6 @@ Create a comprehensive configuration that includes:
 You MUST use the generate_config_and_questions tool with:
 - Complete updated_config with all required fields
 - Specific clarifying_questions (2-4 questions)
-- clarification_urgency score (0.4-0.8 for new configs per schema scale)
 - **technical_ai_summary** field with detailed technical reasoning explaining your configuration decisions
 - **ai_summary** field with simple business-friendly overview
 

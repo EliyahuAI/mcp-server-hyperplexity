@@ -8,12 +8,12 @@ MULTIPLEX_RESPONSE_SCHEMA = {
     "items": {
         "type": "object",
         "properties": {
-            "column": {"type": "string", "description": "The name of the field being validated"},
+            "column": {"type": "string", "description": "The name of the field being validated - exactly as defined in the FIELD input"},
             "answer": {"type": "string", "description": "The validated value that should be used"},
             "confidence": {
                 "type": "string", 
-                "enum": ["HIGH", "MEDIUM", "LOW"], 
-                "description": "Confidence level in the validation"
+                "enum": ["HIGH", "MEDIUM", "LOW", None], 
+                "description": "Confidence level in the validation, HIGH=correct, MEDIUM=minor issues, LOW=wrong, None=blank stays blank"
             },
             "original_confidence": {
                 "type": ["string", "null"],
