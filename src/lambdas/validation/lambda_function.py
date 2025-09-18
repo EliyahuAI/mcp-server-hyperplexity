@@ -2627,7 +2627,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Processing search group
                 
                 # Always use multiplex validation regardless of number of fields
-                await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used)
+                await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id)
                 total_multiplex_validations += 1
                 
                 # Send AI call progress update via WebSocket using thread-safe counter
@@ -2645,7 +2645,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             return row_idx, row_results, row_models_used, batch_number
         
-        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False, row_models_used=None):
+        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False, row_models_used=None, group_id=None):
             """Process a group of columns with a single multiplex AI API call using ai_api_client."""
             nonlocal total_cache_hits, total_cache_misses
             
@@ -2746,11 +2746,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     nonlocal shared_client_result
                     # Create descriptive debug name including group and field info
                     field_names = [t.column for t in validation_targets]
-                    debug_name = f"validation_group_{group_id}_fields_{len(field_names)}"
+                    group_str = str(group_id) if group_id is not None else "unknown"
+                    debug_name = f"validation_group_{group_str}_fields_{len(field_names)}"
                     if len(field_names) <= 3:
                         # Include field names if not too many
                         safe_fields = [field.replace(' ', '_')[:15] for field in field_names]
-                        debug_name = f"validation_group_{group_id}_{'-'.join(safe_fields)}"
+                        debug_name = f"validation_group_{group_str}_{'-'.join(safe_fields)}"
                     
                     shared_client_result = await ai_client.call_structured_api(
                         prompt=prompt,
@@ -2868,10 +2869,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.info(f"Making fresh unified API call for {api_provider} with cache disabled")
                     
                     # Use the same unified approach for fresh calls
-                    fresh_debug_name = f"validation_fresh_group_{group_id}_fields_{len(field_names)}"
+                    group_str = str(group_id) if group_id is not None else "unknown"
+                    fresh_debug_name = f"validation_fresh_group_{group_str}_fields_{len(field_names)}"
                     if len(field_names) <= 3:
                         safe_fields = [field.replace(' ', '_')[:15] for field in field_names]
-                        fresh_debug_name = f"validation_fresh_group_{group_id}_{'-'.join(safe_fields)}"
+                        fresh_debug_name = f"validation_fresh_group_{group_str}_{'-'.join(safe_fields)}"
                     
                     shared_client_result = await ai_client.call_structured_api(
                         prompt=prompt,
