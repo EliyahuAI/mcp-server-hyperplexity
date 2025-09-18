@@ -2535,8 +2535,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             """Process a single row with progressive multiplexing."""
             nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls
             
-            # Track which models were used for this row
+            # Track which models and API providers were used for this row
             row_models_used = set()
+            row_api_providers = set()
             
             row_results = {}
             accumulated_results = {}  # Store results to pass as context to later groups
