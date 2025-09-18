@@ -178,30 +178,14 @@ class UnifiedS3Manager:
             
             file_key = f"{session_path}{config_filename}"
             
-            # Generate human-friendly config ID and description with uniqueness guarantee
-            base_config_id = f"{session_id}_v{version}"
+            # Generate clean config ID that matches the filename structure
+            # New format: {session_id}_{filename_without_extension}
+            # Example: session_20250918_150921_ea332116_config_v1_ai_generated
+            # Maps to: session_20250918_150921_ea332116/config_v1_ai_generated.json
+            filename_without_ext = config_filename.replace('.json', '')
+            config_id = f"{session_id}_{filename_without_ext}"
             
-            # Create safe description
-            desc_suffix = ""
-            if description:
-                desc_suffix = ''.join(c for c in description.replace(' ', '_') if c.isalnum() or c == '_')[:25]
-            elif config_data.get('general_notes'):
-                notes = config_data['general_notes']
-                desc_suffix = ''.join(c for c in notes.replace(' ', '_') if c.isalnum() or c == '_')[:25]
-            else:
-                # Generate description based on validation targets
-                targets = config_data.get('validation_targets', [])
-                if targets and len(targets) > 0:
-                    target_name = targets[0].get('column_name') or targets[0].get('column') or targets[0].get('name', 'data')
-                    desc_suffix = ''.join(c for c in target_name.replace(' ', '_') if c.isalnum() or c == '_')[:20]
-                else:
-                    desc_suffix = "validation"
-            
-            # Ensure uniqueness by adding timestamp suffix if needed
-            if desc_suffix:
-                config_id = f"{base_config_id}_{desc_suffix}"
-            else:
-                config_id = f"{base_config_id}_{datetime.now().strftime('%H%M%S')}"
+            logger.info(f"Generated clean config ID: {config_id} for file: {config_filename}")
             
             # Calculate and store content hash directly in the config for easy access
             content_hash = self._calculate_config_content_hash(config_data)
@@ -942,8 +926,72 @@ class UnifiedS3Manager:
             logger.error(f"Failed to get latest validation results: {e}")
             return None
     
+    def find_config_by_id(self, config_id: str, email: str) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Clean config lookup function that handles both new and legacy config ID formats.
+        
+        New format: {session_id}_{filename_without_extension}
+        Example: session_20250918_150921_ea332116_config_v1_ai_generated
+        Maps to: session_20250918_150921_ea332116/config_v1_ai_generated.json
+        
+        Legacy format: {session_id}_v{version}_{description}
+        Example: session_20250918_150921_ea332116_v1_Configuration_for_AIML_co
+        Requires fallback search
+        """
+        try:
+            # STRATEGY 1: Try new clean format first (direct path construction)
+            session_id = None
+            filename = None
+            
+            # FIRST: Fixed-length session parsing (most common for copied configs)
+            if len(config_id) > 32 and config_id.startswith('session_'):
+                # Session format: session_YYYYMMDD_HHMMSS_XXXXXXXX (32 chars total)
+                # Common when configs are copied: session_20250918_150921_ea332116_session_20250915_143022_abc_MarketResearch_Config
+                session_id = config_id[:32]
+                remaining = config_id[32:]
+                if remaining.startswith('_'):
+                    filename = remaining[1:] + '.json'  # Remove leading underscore
+                    logger.debug(f"Parsed with fixed length (copied config): session={session_id}, filename={filename}")
+            
+            # SECOND: New format with _config_v marker
+            elif '_config_v' in config_id:
+                # Parse: {session_id}_config_v{version}_{source} -> {session_id}/config_v{version}_{source}.json
+                config_v_pos = config_id.find('_config_v')
+                if config_v_pos > 0:
+                    session_id = config_id[:config_v_pos]
+                    filename = config_id[config_v_pos + 1:] + '.json'  # Skip the leading underscore
+                    logger.debug(f"Parsed with _config_v marker: session={session_id}, filename={filename}")
+            
+            # Try direct lookup if we successfully parsed
+            if session_id and filename:
+                session_path = self.get_session_path(email, session_id)
+                config_key = f"{session_path}{filename}"
+                
+                logger.debug(f"Trying new format direct lookup: {config_id} -> {config_key}")
+                
+                try:
+                    config_response = self.s3_client.get_object(Bucket=self.bucket_name, Key=config_key)
+                    config_data = json.loads(config_response['Body'].read().decode('utf-8'))
+                    logger.info(f"Found config by new format: {config_id} -> {filename}")
+                    return config_data, config_key
+                except self.s3_client.exceptions.NoSuchKey:
+                    logger.debug(f"Config not found with new format, trying legacy lookup")
+                except Exception as e:
+                    logger.debug(f"Error with new format lookup: {e}")
+            
+            # STRATEGY 2: Legacy lookup (existing complex logic)
+            return self._legacy_get_config_by_id(config_id, email)
+            
+        except Exception as e:
+            logger.error(f"Failed to find config by ID: {e}")
+            return None, None
+
     def get_config_by_id(self, config_id: str, email: str) -> Tuple[Optional[Dict], Optional[str]]:
-        """Get config by config ID with fallback search strategies"""
+        """Get config by config ID - delegates to find_config_by_id for clean implementation"""
+        return self.find_config_by_id(config_id, email)
+
+    def _legacy_get_config_by_id(self, config_id: str, email: str) -> Tuple[Optional[Dict], Optional[str]]:
+        """Legacy config lookup with fallback search strategies"""
         try:
             # Parse config_id to extract session_id and version
             # Format: {session_id}_v{version}_{description}

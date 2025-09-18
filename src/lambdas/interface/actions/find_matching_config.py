@@ -327,6 +327,63 @@ def search_user_configs(email: str, storage_manager: UnifiedS3Manager) -> List[D
         logger.error(f"Failed to search user configs: {e}")
         return []
 
+def get_successfully_used_config_ids(email: str) -> Set[str]:
+    """
+    Get all configuration IDs that have been successfully used in Preview or Validation runs.
+    This provides a whitelist of configs that are proven to work.
+    """
+    try:
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
+        import boto3
+        from boto3.dynamodb.conditions import Key, Attr
+        
+        # Access runs table directly
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        table = dynamodb.Table('perplexity-validator-runs')
+        
+        successfully_used_configs = set()
+        
+        # Query for all runs by this user
+        response = table.scan(
+            FilterExpression=Attr('email').eq(email) & 
+                           Attr('run_type').is_in(['Preview', 'Validation']) &
+                           Attr('status').eq('COMPLETED') &
+                           Attr('configuration_id').exists()
+        )
+        
+        # Extract configuration_ids from successful runs
+        for item in response.get('Items', []):
+            config_id = item.get('configuration_id')
+            if config_id and config_id != 'unknown':
+                successfully_used_configs.add(config_id)
+                logger.debug(f"Found successfully used config: {config_id}")
+        
+        # Handle pagination if needed
+        while 'LastEvaluatedKey' in response:
+            response = table.scan(
+                FilterExpression=Attr('email').eq(email) & 
+                               Attr('run_type').is_in(['Preview', 'Validation']) &
+                               Attr('status').eq('COMPLETED') &
+                               Attr('configuration_id').exists(),
+                ExclusiveStartKey=response['LastEvaluatedKey']
+            )
+            
+            for item in response.get('Items', []):
+                config_id = item.get('configuration_id')
+                if config_id and config_id != 'unknown':
+                    successfully_used_configs.add(config_id)
+                    logger.debug(f"Found successfully used config: {config_id}")
+        
+        logger.info(f"Found {len(successfully_used_configs)} successfully used configs for {email}")
+        return successfully_used_configs
+        
+    except Exception as e:
+        logger.warning(f"Could not get successfully used config IDs for {email}: {e}")
+        # Return empty set to allow all configs (fallback behavior)
+        return set()
+
 def get_session_usage_info(email: str, source_session: str, storage_manager: UnifiedS3Manager) -> Dict[str, Any]:
     """
     Determine if a session was used for preview or full validation
@@ -784,6 +841,10 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
                 'message': 'No previous configurations found for this user'
             }
         
+        # Get whitelist of successfully used configuration IDs
+        successfully_used_configs = get_successfully_used_config_ids(email)
+        logger.info(f"Found {len(successfully_used_configs)} successfully used configs for filtering")
+        
         # Sort config files by modification time (most recent first) for better performance
         config_files.sort(key=lambda x: x['last_modified'], reverse=True)
         
@@ -848,24 +909,44 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
                 path_parts = config_file['key'].split('/')
                 source_session = path_parts[-2] if len(path_parts) >= 2 else 'unknown'
                 
-                # Extract config ID and description from storage metadata
+                # Extract config ID from storage metadata or generate from filename
                 storage_metadata = config_data.get('storage_metadata', {})
                 config_id = storage_metadata.get('config_id')
                 
-                # Generate fallback config_id if not present
+                # Generate clean config_id from filename if not present (new format)
                 if not config_id:
-                    version = storage_metadata.get('version', 1)
-                    config_id = f"{source_session}_v{version}_legacy"
+                    filename = config_file['key'].split('/')[-1]
+                    if filename.endswith('.json'):
+                        filename_without_ext = filename[:-5]  # Remove .json
+                        config_id = f"{source_session}_{filename_without_ext}"
+                        logger.debug(f"Generated config_id from filename: {config_id} (session: {source_session}, file: {filename})")
+                    else:
+                        # Fallback for legacy
+                        version = storage_metadata.get('version', 1)
+                        config_id = f"{source_session}_v{version}_legacy"
                 
                 description = storage_metadata.get('description') or config_data.get('general_notes', 'No description available')
                 
-                # Get usage information for this session
-                usage_info = get_session_usage_info(email, source_session, storage_manager)
-                
-                # FILTER OUT ERROR CONFIGURATIONS - don't offer configs from failed runs
-                if usage_info.get('is_error', False) or usage_info.get('type') == 'error':
-                    logger.debug(f"Skipping error config from session {source_session}: {usage_info.get('verbose_status', 'unknown error')}")
-                    continue
+                # FILTER TO ONLY SUCCESSFULLY USED CONFIGURATIONS
+                # Only include configs that have been successfully used in Preview or Validation runs
+                if successfully_used_configs:
+                    # Check exact match first
+                    config_allowed = config_id in successfully_used_configs
+                    
+                    # If no exact match, check for partial matches (in case of truncation)
+                    if not config_allowed:
+                        for used_config in successfully_used_configs:
+                            if config_id.startswith(used_config) or used_config.startswith(config_id):
+                                config_allowed = True
+                                logger.info(f"Config {config_id} matched truncated whitelist entry: {used_config}")
+                                break
+                    
+                    if not config_allowed:
+                        logger.info(f"Skipping config {config_id}: not in successfully used configs whitelist")
+                        logger.debug(f"Successfully used configs: {list(successfully_used_configs)[:5]}...")
+                        continue
+                    else:
+                        logger.info(f"Config {config_id} passed whitelist filter")
                 
                 # Use original creation date from metadata with proper timezone handling
                 storage_metadata = config_data.get('storage_metadata', {})
@@ -979,6 +1060,14 @@ def find_matching_configs(email: str, session_id: str, limit: int = 2) -> Dict[s
             final_matches = [perfect_matches[0]]  # Only most recent
             logger.info(f"Returning only most recent perfect match: {perfect_matches[0]['config_id']} created {perfect_matches[0].get('created_date')}")
         else:
+            # FALLBACK: If whitelist filtering is too aggressive and we have no perfect matches,
+            # but we searched configs, consider relaxing the filter for very high scores
+            if successfully_used_configs and matches:
+                high_score_matches = [m for m in matches if m.get('match_score', 0) >= 0.95]
+                if high_score_matches:
+                    logger.info(f"No perfect matches with whitelist, but found {len(high_score_matches)} high-score matches - considering fallback")
+                    # For now, still return empty list but log for investigation
+            
             # No perfect matches - return empty list (frontend will show only "Create with AI")
             final_matches = []
             logger.info("No perfect matches found - returning empty list")
