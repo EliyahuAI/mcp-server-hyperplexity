@@ -202,6 +202,42 @@ Lingering problem with the wrong cost (now both the Eliyahu cost, being reported
 
 -----
 
+Skip email testing\ Shows up if you wait. 
+
+---
+Should have a revert changes to configuration button that resets the original and runs a preview.
+
+----
+
+sonar, high -> context -> citations to better model when not certain is a move. Prevents high cost from antropic web search, starts with lowest cost. A bit slow 
+
+----
+
+Progress updates should have time estimates and interval updates 
+
+-----
+
+There is a problem with high original confidence and low updated confidence happening. This was not supposed to be possible need to check. 
+
+----
+
+Add original and updated confidence to the runs databased.  Added clarity to the prompt, need to check the processing to reinforce
+
+---
+Need to have the QC oversight working again. 
+
+----
+mess on the anthropic max tokens, didn't handle it right. 
+
+--- 
+download results takes a minute before the files is ready for download, you get an error if it is not ready. 
+
+----
+Remaining Balance shows as 0.00 before updating causing concern. 
+
+
+
+
 
 WORKING ON
 

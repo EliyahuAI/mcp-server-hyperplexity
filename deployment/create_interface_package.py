@@ -841,7 +841,7 @@ def setup_dynamodb_tables(region="us-east-1"):
         return False
 
 def setup_sqs_queues(region):
-    """Create SQS queues if they don't exist."""
+    """Create SQS queues if they don't exist, and ensure correct configuration."""
     logger.info("Setting up SQS queues...")
     try:
         sqs_client = boto3.client('sqs', region_name=region)
@@ -850,16 +850,29 @@ def setup_sqs_queues(region):
         preview_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_PREVIEW_QUEUE_NAME', 'perplexity-validator-preview-queue')
         standard_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_STANDARD_QUEUE_NAME', 'perplexity-validator-standard-queue')
         
+        # Use 960 seconds for both queues to match Lambda timeout (15 minutes)
         queues_to_create = [
-            (preview_queue_name, {"VisibilityTimeout": "60", "MessageRetentionPeriod": "345600"}),
+            (preview_queue_name, {"VisibilityTimeout": "960", "MessageRetentionPeriod": "345600"}),
             (standard_queue_name, {"VisibilityTimeout": "960", "MessageRetentionPeriod": "345600"})
         ]
         
         for queue_name, attributes in queues_to_create:
             try:
                 # Check if queue exists
-                sqs_client.get_queue_url(QueueName=queue_name)
+                queue_url_response = sqs_client.get_queue_url(QueueName=queue_name)
+                queue_url = queue_url_response['QueueUrl']
                 logger.info(f"SQS queue already exists: {queue_name}")
+                
+                # Update queue attributes to ensure correct configuration
+                try:
+                    sqs_client.set_queue_attributes(
+                        QueueUrl=queue_url,
+                        Attributes=attributes
+                    )
+                    logger.info(f"Updated queue attributes for: {queue_name}")
+                except Exception as attr_error:
+                    logger.warning(f"Could not update attributes for {queue_name}: {attr_error}")
+                    
             except sqs_client.exceptions.QueueDoesNotExist:
                 # Create the queue
                 logger.info(f"Creating SQS queue: {queue_name}")
@@ -880,7 +893,7 @@ def setup_sqs_queues(region):
         return False
 
 def setup_sqs_triggers(lambda_client, function_name, region):
-    """Create event source mappings to trigger the Lambda from SQS queues."""
+    """Create event source mappings to trigger the Lambda from SQS queues, cleaning up incorrect mappings."""
     logger.info("Setting up SQS triggers for Lambda function...")
     try:
         sqs_client = boto3.client('sqs', region_name=region)
@@ -902,27 +915,48 @@ def setup_sqs_triggers(lambda_client, function_name, region):
         # Check existing mappings
         existing_mappings = lambda_client.list_event_source_mappings(FunctionName=function_name).get('EventSourceMappings', [])
         
+        # Clean up incorrect/old mappings first
+        target_arns = {preview_queue_arn, standard_queue_arn}
+        for mapping in existing_mappings:
+            if mapping['EventSourceArn'] not in target_arns:
+                logger.info(f"Removing incorrect event source mapping: {mapping['EventSourceArn']}")
+                try:
+                    lambda_client.delete_event_source_mapping(UUID=mapping['UUID'])
+                    logger.info(f"Deleted mapping UUID: {mapping['UUID']}")
+                except Exception as delete_error:
+                    logger.warning(f"Could not delete mapping {mapping['UUID']}: {delete_error}")
+        
+        # Refresh mappings after cleanup
+        existing_mappings = lambda_client.list_event_source_mappings(FunctionName=function_name).get('EventSourceMappings', [])
+        existing_arns = {m['EventSourceArn'] for m in existing_mappings}
+        
         # Trigger for Standard Queue
-        if not any(m['EventSourceArn'] == standard_queue_arn for m in existing_mappings):
-            lambda_client.create_event_source_mapping(
-                EventSourceArn=standard_queue_arn,
-                FunctionName=function_name,
-                Enabled=True,
-                BatchSize=5
-            )
-            logger.info("Created SQS trigger for the standard queue.")
+        if standard_queue_arn not in existing_arns:
+            try:
+                lambda_client.create_event_source_mapping(
+                    EventSourceArn=standard_queue_arn,
+                    FunctionName=function_name,
+                    Enabled=True,
+                    BatchSize=5
+                )
+                logger.info("Created SQS trigger for the standard queue.")
+            except Exception as e:
+                logger.error(f"Failed to create standard queue trigger: {e}")
         else:
             logger.info("SQS trigger for the standard queue already exists.")
             
         # Trigger for Preview Queue
-        if not any(m['EventSourceArn'] == preview_queue_arn for m in existing_mappings):
-            lambda_client.create_event_source_mapping(
-                EventSourceArn=preview_queue_arn,
-                FunctionName=function_name,
-                Enabled=True,
-                BatchSize=1
-            )
-            logger.info("Created SQS trigger for the preview queue.")
+        if preview_queue_arn not in existing_arns:
+            try:
+                lambda_client.create_event_source_mapping(
+                    EventSourceArn=preview_queue_arn,
+                    FunctionName=function_name,
+                    Enabled=True,
+                    BatchSize=1
+                )
+                logger.info("Created SQS trigger for the preview queue.")
+            except Exception as e:
+                logger.error(f"Failed to create preview queue trigger: {e}")
         else:
             logger.info("SQS trigger for the preview queue already exists.")
         
