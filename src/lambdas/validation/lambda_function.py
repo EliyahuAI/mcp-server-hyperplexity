@@ -2741,12 +2741,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     "required": ["validation_results"]
                 }
                 
+                # Prepare field names and debug info for reuse
+                field_names = [t.column for t in validation_targets]
+                group_str = str(group_id) if group_id is not None else "unknown"
+                
                 # Call ai_client with unified approach - format conversion handled internally
                 async def call_unified_wrapper():
                     nonlocal shared_client_result
                     # Create descriptive debug name including group and field info
-                    field_names = [t.column for t in validation_targets]
-                    group_str = str(group_id) if group_id is not None else "unknown"
                     debug_name = f"validation_group_{group_str}_fields_{len(field_names)}"
                     if len(field_names) <= 3:
                         # Include field names if not too many
@@ -2869,7 +2871,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.info(f"Making fresh unified API call for {api_provider} with cache disabled")
                     
                     # Use the same unified approach for fresh calls
-                    group_str = str(group_id) if group_id is not None else "unknown"
                     fresh_debug_name = f"validation_fresh_group_{group_str}_fields_{len(field_names)}"
                     if len(field_names) <= 3:
                         safe_fields = [field.replace(' ', '_')[:15] for field in field_names]
