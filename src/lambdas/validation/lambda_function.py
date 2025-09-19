@@ -70,7 +70,7 @@ if not logger.handlers:
     logger.addHandler(handler)
     logger.info("Initialized logger with StreamHandler")
 else:
-    logger.info("Logger already has handlers, skipping handler setup")
+    pass  # logger.info("Logger already has handlers, skipping handler setup")
 
 # Import enhanced batch manager (after logger is configured)
 try:
@@ -405,7 +405,7 @@ def get_anthropic_api_key() -> str:
                 if params_response['Parameters']:
                     logger.info(f"Found parameters starting with 'Anthropic': {[p['Name'] for p in params_response['Parameters']]}")
                 else:
-                    logger.warning("No parameters found starting with 'Anthropic'")
+                    pass  # logger.warning("No parameters found starting with 'Anthropic'")
                     
             except Exception as list_error:
                 logger.error(f"Failed to list SSM parameters: {str(list_error)}")
@@ -916,7 +916,7 @@ def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Di
             logger.warning(f"calculate_full_validation_estimates: Invalid target batch size: {target_full_validation_batch_size}, using default 50")
             target_full_validation_batch_size = 50
         
-        logger.info(f"[ESTIMATE_CALCULATION] Starting with {total_rows_in_table} total rows, {preview_rows_processed} preview rows, target batch size {target_full_validation_batch_size}")
+        pass  # logger.info(f"[ESTIMATE_CALCULATION] Starting with {total_rows_in_table} total rows, {preview_rows_processed} preview rows, target batch size {target_full_validation_batch_size}")
         
         scaling_factor = total_rows_in_table / preview_rows_processed
         
@@ -927,7 +927,7 @@ def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Di
             logger.error("calculate_full_validation_estimates: No enhanced call data available")
             return {'error': 'no_enhanced_call_data'}
         
-        logger.info(f"[ESTIMATE_CALCULATION] Processing {len(all_enhanced_call_data)} enhanced call data items")
+        pass  # logger.info(f"[ESTIMATE_CALCULATION] Processing {len(all_enhanced_call_data)} enhanced call data items")
         
         for enhanced_data in all_enhanced_call_data:
             batch_number = enhanced_data.get('batch_number')
@@ -1072,17 +1072,17 @@ def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Di
         }
         
         # Debug logging
-        logger.info(f"[BATCH_TIMING] Processed {len(batches)} batches with {len(all_enhanced_call_data)} total calls")
-        logger.info(f"[BATCH_TIMING] Preview: {estimated_total_time_preview:.2f}s, Actual total time: {sum(batch_processing_times.values()):.2f}s")
-        logger.info(f"[BATCH_TIMING] Preview average batch size: {avg_actual_batch_size:.1f} rows, Average estimated batch time: {avg_estimated_batch_time:.2f}s")
-        logger.info(f"[BATCH_TIMING] Full validation: {total_rows_in_table} rows ÷ {target_full_validation_batch_size} target batch size = {estimated_batches_for_full_table} batches")
-        logger.info(f"[BATCH_TIMING] Full validation estimate: {estimated_batches_for_full_table} batches × {avg_estimated_batch_time:.2f}s = {estimated_total_time_for_full_validation:.2f}s")
-        logger.info(f"[BATCH_TIMING] Average estimated row processing time: {avg_row_estimated_time:.2f}s (direct calculation over {len(total_row_estimated_times)} rows)")
+        pass  # logger.info(f"[BATCH_TIMING] Processed {len(batches)} batches with {len(all_enhanced_call_data)} total calls")
+        pass  # logger.info(f"[BATCH_TIMING] Preview: {estimated_total_time_preview:.2f}s, Actual total time: {sum(batch_processing_times.values()):.2f}s")
+        pass  # logger.info(f"[BATCH_TIMING] Preview average batch size: {avg_actual_batch_size:.1f} rows, Average estimated batch time: {avg_estimated_batch_time:.2f}s")
+        pass  # logger.info(f"[BATCH_TIMING] Full validation: {total_rows_in_table} rows ÷ {target_full_validation_batch_size} target batch size = {estimated_batches_for_full_table} batches")
+        pass  # logger.info(f"[BATCH_TIMING] Full validation estimate: {estimated_batches_for_full_table} batches × {avg_estimated_batch_time:.2f}s = {estimated_total_time_for_full_validation:.2f}s")
+        pass  # logger.info(f"[BATCH_TIMING] Average estimated row processing time: {avg_row_estimated_time:.2f}s (direct calculation over {len(total_row_estimated_times)} rows)")
         
         # Log per-provider cost estimates
         for provider_name, provider_estimates in estimates['per_provider_estimates'].items():
-            logger.info(f"[PROVIDER_COSTS] {provider_name}: ${provider_estimates['per_row_estimated_cost']:.6f} per row (estimated), "
-                       f"${provider_estimates['total_cost_estimated']:.6f} total estimated")
+            pass  # logger.info(f"[PROVIDER_COSTS] {provider_name}: ${provider_estimates['per_row_estimated_cost']:.6f} per row (estimated), "
+                  # f"${provider_estimates['total_cost_estimated']:.6f} total estimated")
         
         return estimates
         
@@ -1136,10 +1136,10 @@ async def call_claude_with_shared_client(prompt: str, model: str, tool_schema: D
         # Debug logging for enhanced data
         if enhanced_data:
             costs = enhanced_data.get('costs', {})
-            logger.info(f"[ENHANCED_DEBUG] Enhanced data found - actual: ${costs.get('total_cost', 0):.6f}, "
-                       f"estimated: ${costs.get('total_cost_without_cache', 0):.6f}")
+            pass  # logger.info(f"[ENHANCED_DEBUG] Enhanced data found - actual: ${costs.get('total_cost', 0):.6f}, "
+                       # f"estimated: ${costs.get('total_cost_without_cache', 0):.6f}")
         else:
-            logger.warning(f"[ENHANCED_DEBUG] No enhanced_data found in result: {list(result.keys())}")
+            pass  # logger.warning(f"[ENHANCED_DEBUG] No enhanced_data found in result: {list(result.keys())}")
         
         return formatted_response
         
@@ -1257,7 +1257,7 @@ def resolve_search_group_max_web_searches(targets: List[Any], validator) -> int:
     Returns:
         Max web searches (0-10)
     """
-    logger.debug(f"RESOLVE_MAX_WEB_SEARCHES: Called with {len(targets)} targets")
+    pass  # logger.debug(f"RESOLVE_MAX_WEB_SEARCHES: Called with {len(targets)} targets")
     
     # Check if we have search group definitions and this group has a defined max_web_searches
     if targets and hasattr(targets[0], 'search_group'):
@@ -1297,7 +1297,7 @@ def resolve_search_group_context_size(targets: List[Any], validator) -> str:
     Returns:
         Selected search context size ("low", "medium", or "high")
     """
-    logger.debug(f"RESOLVE_CONTEXT: Called with {len(targets)} targets")
+    pass  # logger.debug(f"RESOLVE_CONTEXT: Called with {len(targets)} targets")
     # Check if we have search group definitions and this group has a defined context
     if targets and hasattr(targets[0], 'search_group'):
         group_id = targets[0].search_group
@@ -1870,8 +1870,8 @@ def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[
         # Debug: Log structure of enhanced call data
         if all_enhanced_call_data:
             sample_call = all_enhanced_call_data[0]
-            logger.info(f"[ENHANCED_MODELS_DEBUG] Sample enhanced call data keys: {list(sample_call.keys())}")
-            logger.info(f"[ENHANCED_MODELS_DEBUG] Sample values - cost_estimated: {sample_call.get('cost_estimated')}, estimated_processing_time: {sample_call.get('estimated_processing_time')}, search_group: {sample_call.get('search_group')}")
+            pass  # logger.info(f"[ENHANCED_MODELS_DEBUG] Sample enhanced call data keys: {list(sample_call.keys())}")
+            pass  # logger.info(f"[ENHANCED_MODELS_DEBUG] Sample values - cost_estimated: {sample_call.get('cost_estimated')}, estimated_processing_time: {sample_call.get('estimated_processing_time')}, search_group: {sample_call.get('search_group')}")
         
         for call_data in all_enhanced_call_data:
             # Extract model from call_info structure
@@ -2017,12 +2017,12 @@ def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[
             }
         
         # Debug: Log what we constructed
-        logger.info(f"[ENHANCED_MODELS_DEBUG] Constructed enhanced models parameter with {len(enhanced_models)} search groups")
-        logger.info(f"[ENHANCED_MODELS_DEBUG] Search group stats found: {list(search_group_stats.keys())}")
+        pass  # logger.info(f"[ENHANCED_MODELS_DEBUG] Constructed enhanced models parameter with {len(enhanced_models)} search groups")
+        pass  # logger.info(f"[ENHANCED_MODELS_DEBUG] Search group stats found: {list(search_group_stats.keys())}")
         for group_id, stats in search_group_stats.items():
-            logger.info(f"[ENHANCED_MODELS_DEBUG] Group {group_id}: calls={stats['call_count']}, cost={stats['cost_estimated']}, time={stats['estimated_processing_time']}")
+            pass  # logger.info(f"[ENHANCED_MODELS_DEBUG] Group {group_id}: calls={stats['call_count']}, cost={stats['cost_estimated']}, time={stats['estimated_processing_time']}")
         
-        logger.info(f"Constructed enhanced models parameter with {len(enhanced_models)} search groups")
+        pass  # logger.info(f"Constructed enhanced models parameter with {len(enhanced_models)} search groups")
         return enhanced_models
         
     except Exception as e:
@@ -2148,9 +2148,9 @@ def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, 
             progress_percent = min(90, int(ai_progress))  # Cap at 90%
             
             send_websocket_progress(session_id, f"AI call {current_count}/{total_expected} completed", progress_percent)
-            logger.info(f"[AI PROGRESS] Reported {current_count}/{total_expected} (was {completed_counter[0]-1})")
+            pass  # logger.info(f"[AI PROGRESS] Reported {current_count}/{total_expected} (was {completed_counter[0]-1})")
         else:
-            logger.debug(f"[AI PROGRESS] Skipped reporting {current_count}/{total_expected} (already reported)")
+            pass  # logger.debug(f"[AI PROGRESS] Skipped reporting {current_count}/{total_expected} (already reported)")
     
     return completed_counter[0], last_reported_counter[0]
 
@@ -2165,40 +2165,40 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Continue with normal validation logic
         # Test CloudWatch logging - with extreme verbosity for debugging
         print("==== LAMBDA FUNCTION STARTED - CONSOLE.LOG PRINT ====")
-        logger.error("==== LAMBDA FUNCTION STARTED - ERROR LEVEL LOG ====")  # Use ERROR level for visibility
-        logger.error(f"Request ID: {context.aws_request_id if context else 'unknown'}")
-        logger.error(f"Function name: {context.function_name if context else 'unknown'}")
-        logger.error(f"Log group: {'/aws/lambda/' + (context.function_name if context else 'perplexity-validator')}")
-        logger.error(f"Log stream: {context.log_stream_name if context else 'unknown'}")
+        pass  # logger.error("==== LAMBDA FUNCTION STARTED - ERROR LEVEL LOG ====")  # Use ERROR level for visibility
+        pass  # logger.error(f"Request ID: {context.aws_request_id if context else 'unknown'}")
+        pass  # logger.error(f"Function name: {context.function_name if context else 'unknown'}")
+        pass  # logger.error(f"Log group: {'/aws/lambda/' + (context.function_name if context else 'perplexity-validator')}")
+        pass  # logger.error(f"Log stream: {context.log_stream_name if context else 'unknown'}")
         
         # Debug validation history in event
-        logger.error("==== VALIDATION HISTORY DEBUG ====")
+        pass  # logger.error("==== VALIDATION HISTORY DEBUG ====")
         if 'validation_history' in event:
             vh = event['validation_history']
-            logger.error(f"Validation history present in event with {len(vh)} row keys")
+            pass  # logger.error(f"Validation history present in event with {len(vh)} row keys")
             if vh:
                 # Show first key
                 first_key = list(vh.keys())[0]
-                logger.error(f"First validation history key: {first_key}")
-                logger.error(f"Fields for first key: {list(vh[first_key].keys())}")
+                pass  # logger.error(f"First validation history key: {first_key}")
+                pass  # logger.error(f"Fields for first key: {list(vh[first_key].keys())}")
                 # Show sample history entry
                 if vh[first_key]:
                     sample_field = list(vh[first_key].keys())[0]
                     sample_history = vh[first_key][sample_field]
-                    logger.error(f"Sample history for {sample_field}: {len(sample_history)} entries")
+                    pass  # logger.error(f"Sample history for {sample_field}: {len(sample_history)} entries")
                     if sample_history:
-                        logger.error(f"First entry: {json.dumps(sample_history[0], indent=2)}")
+                        pass  # logger.error(f"First entry: {json.dumps(sample_history[0], indent=2)}")
         else:
-            logger.error("NO validation_history in event at all!")
+            pass  # logger.error("NO validation_history in event at all!")
         
         # Check if logging handlers are working
-        logger.error(f"Logger handlers: {logger.handlers}")
+        pass  # logger.error(f"Logger handlers: {logger.handlers}")
         
         # Flush any pending logs
         for handler in logger.handlers:
             if hasattr(handler, 'flush'):
                 handler.flush()
-                logger.error("Flushed log handler")
+                pass  # logger.error("Flushed log handler")
         
         # Explicitly create log group (testing permissions)
         try:
@@ -2219,7 +2219,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         logs_client.create_log_group(logGroupName=log_group_name)
                         logger.info(f"Created log group: {log_group_name}")
                     except Exception as create_e:
-                        logger.error(f"Failed to create log group: {str(create_e)}")
+                        pass  # logger.error(f"Failed to create log group: {str(create_e)}")
                         logger.error("This may indicate a permissions issue with the Lambda execution role")
             except Exception as e:
                 logger.error(f"Failed to check log group existence: {str(e)}")
@@ -2230,13 +2230,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         config = event.get('config', {})
         
         # Log the config for debugging
-        logger.error(f"Config received: {json.dumps({k: v for k, v in config.items() if k != 'validation_targets'})[:500]}...")
+        pass  # logger.error(f"Config received: {json.dumps({k: v for k, v in config.items() if k != 'validation_targets'})[:500]}...")
         
         # Check if general_notes is present
         if 'general_notes' in config:
             logger.error(f"General notes included: {config['general_notes'][:200]}...")
         else:
-            logger.error("WARNING: general_notes NOT found in config!")
+            pass  # logger.error("WARNING: general_notes NOT found in config!")
             
         # Debug check for validation_targets examples
         if 'validation_targets' in config:
@@ -2244,8 +2244,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             for target in config.get('validation_targets', []):
                 if 'examples' in target and target['examples']:
                     targets_with_examples += 1
-                    logger.error(f"Found examples for {target.get('column')}: {target['examples']}")
-            logger.error(f"Found {targets_with_examples} validation targets with examples")
+                    pass  # logger.error(f"Found examples for {target.get('column')}: {target['examples']}")
+            pass  # logger.error(f"Found {targets_with_examples} validation targets with examples")
             
         print(f"LAMBDA_HANDLER: Creating SimplifiedSchemaValidator with config keys: {list(config.keys())}")
         print(f"LAMBDA_HANDLER: Config has search_groups: {'search_groups' in config}")
@@ -2263,7 +2263,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         validator = SimplifiedSchemaValidator(config)
         
         print(f"LAMBDA_HANDLER: Validator created with {len(validator.search_groups)} search groups")
-        logger.error(f"LAMBDA_HANDLER: Validator created with {len(validator.search_groups)} search groups")
+        pass  # logger.error(f"LAMBDA_HANDLER: Validator created with {len(validator.search_groups)} search groups")
         
         # Get API keys and S3 bucket - get both keys if we might need mixed models
         perplexity_api_key = None
@@ -2382,7 +2382,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             total_batches = (len(rows) + current_batch_size - 1) // current_batch_size  # Calculate total number of batches
             
             logger.info(f"🚀 PER-MODEL BATCH PROCESSING: {len(rows)} rows in {total_batches} batches starting with {current_batch_size} rows each")
-            logger.info(f"🔍 Models that will be used: {sorted(all_models) if all_models else ['default']}")
+            pass  # logger.info(f"🔍 Models that will be used: {sorted(all_models) if all_models else ['default']}")
             
             async with aiohttp.ClientSession() as session:
                 processed_rows = 0
@@ -2486,7 +2486,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     _, _, row_models, _ = task.result()
                                     failed_batch_models.update(row_models)
                                 except Exception as e:
-                                    logger.debug(f"Could not extract models from completed task: {e}")
+                                    pass  # logger.debug(f"Could not extract models from completed task: {e}")
                         
                         # If no completed results, use the expected models for this batch
                         if not failed_batch_models:
@@ -2558,16 +2558,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             validation_history = {}
             if 'validation_history' in event and row_key in event['validation_history']:
                 validation_history = event['validation_history'][row_key]
-                logger.info(f"Found validation history for row key: {row_key}")
+                pass  # logger.info(f"Found validation history for row key: {row_key}")
                 logger.info(f"History contains data for {len(validation_history)} fields")
                 # Log sample history for debugging
                 if validation_history:
                     sample_field = list(validation_history.keys())[0]
-                    logger.info(f"Sample history field '{sample_field}': {validation_history[sample_field][:1]}")
+                    pass  # logger.info(f"Sample history field '{sample_field}': {validation_history[sample_field][:1]}")
             else:
                 logger.warning(f"No validation history found for row key: {row_key}")
                 if 'validation_history' in event:
-                    logger.warning(f"Available history keys: {list(event['validation_history'].keys())[:5]}")
+                    pass  # logger.warning(f"Available history keys: {list(event['validation_history'].keys())[:5]}")
                 else:
                     logger.warning("No validation_history in event at all")
             
@@ -2577,7 +2577,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Process IGNORED fields
             if ignored_fields:
-                logger.info(f"Adding {len(ignored_fields)} IGNORED fields without processing")
+                pass  # logger.info(f"Adding {len(ignored_fields)} IGNORED fields without processing")
                 for ignored_field in ignored_fields:
                     # Simply copy the original value to the result without validation
                     original_value = row_data.get(ignored_field.column, "")
@@ -2594,7 +2594,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Process ID fields - Include original values in results for preview table display
             if id_fields:
-                logger.info(f"Including {len(id_fields)} ID fields with original values for preview display")
+                pass  # logger.info(f"Including {len(id_fields)} ID fields with original values for preview display")
                 for id_field in id_fields:
                     # Simply copy the original value to the result without validation
                     original_value = row_data.get(id_field.column, "")
@@ -2668,9 +2668,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Log clear info about what we're processing
             if len(validation_targets) == 1:
-                logger.info(f"Processing field '{validation_targets[0].column}' using multiplex format")
+                pass  # logger.info(f"Processing field '{validation_targets[0].column}' using multiplex format")
                 if is_isolated_validation:
-                    logger.info(f"This is an ISOLATED validation for field '{validation_targets[0].column}'")
+                    pass  # logger.info(f"This is an ISOLATED validation for field '{validation_targets[0].column}'")
             else:
                 logger.info(f"Processing {len(validation_targets)} fields together using multiplex format")
             
@@ -2698,7 +2698,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     for field, history_entries in filtered_validation_history.items():
                         logger.info(f"  Field '{field}' has {len(history_entries)} history entries")
                         if history_entries:
-                            logger.info(f"    First entry: value='{history_entries[0].get('value', 'N/A')}', confidence={history_entries[0].get('confidence_level', 'N/A')}")
+                            pass  # logger.info(f"    First entry: value='{history_entries[0].get('value', 'N/A')}', confidence={history_entries[0].get('confidence_level', 'N/A')}")
                 else:
                     logger.info("No relevant validation history found for this group")
             
@@ -3090,12 +3090,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     break
         
         # Extract enhanced data from all responses
-        logger.info(f"[AGG_DEBUG] Starting enhanced data extraction from {len(validation_results)} rows")
-        logger.info(f"[AGG_DEBUG] Row to batch mapping: {dict(list(row_to_batch_mapping.items())[:5])}...")  # Show first 5 for debug
+        pass  # logger.info(f"[AGG_DEBUG] Starting enhanced data extraction from {len(validation_results)} rows")
+        pass  # logger.info(f"[AGG_DEBUG] Row to batch mapping: {dict(list(row_to_batch_mapping.items())[:5])}...")  # Show first 5 for debug
         
         for row_idx, row_result in validation_results.items():
             if '_raw_responses' in row_result:
-                logger.info(f"[AGG_DEBUG] Row {row_idx}: Found {len(row_result['_raw_responses'])} raw responses")
+                pass  # logger.info(f"[AGG_DEBUG] Row {row_idx}: Found {len(row_result['_raw_responses'])} raw responses")
                 batch_number = row_to_batch_mapping.get(row_idx, row_idx // 10)  # Fallback to rough estimate
                 
                 search_group_counter = 0  # Track which search group (AI call sequence) in this row
@@ -3103,11 +3103,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     enhanced_data = response_data.get('enhanced_data')
                     
                     # Debug enhanced data structure
-                    logger.info(f"[AGG_DEBUG] Row {row_idx}, Response {response_id}: enhanced_data type: {type(enhanced_data)}")
+                    pass  # logger.info(f"[AGG_DEBUG] Row {row_idx}, Response {response_id}: enhanced_data type: {type(enhanced_data)}")
                     if enhanced_data:
                         if isinstance(enhanced_data, dict):
                             costs = enhanced_data.get('costs', {})
-                            logger.info(f"[AGG_DEBUG] Enhanced data costs: actual=${costs.get('actual', {}).get('total_cost', 0):.6f}, estimated=${costs.get('estimated', {}).get('total_cost', 0):.6f}")
+                            pass  # logger.info(f"[AGG_DEBUG] Enhanced data costs: actual=${costs.get('actual', {}).get('total_cost', 0):.6f}, estimated=${costs.get('estimated', {}).get('total_cost', 0):.6f}")
                         else:
                             logger.warning(f"[AGG_DEBUG] Enhanced data is not a dict: {enhanced_data}")
                     else:
@@ -3120,9 +3120,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         estimated_cost = costs.get('estimated', {}).get('total_cost', 0.0)
                         provider_metrics = enhanced_data.get('provider_metrics', {})
                         
-                        logger.info(f"[AGG_DEBUG] Row {row_idx}, Response {response_id}: "
-                                  f"Actual cost: ${actual_cost:.6f}, Estimated cost: ${estimated_cost:.6f}, "
-                                  f"Provider metrics: {list(provider_metrics.keys())}")
+                        pass  # logger.info(f"[AGG_DEBUG] Row {row_idx}, Response {response_id}: "
+                              # f"Actual cost: ${actual_cost:.6f}, Estimated cost: ${estimated_cost:.6f}, "
+                              # f"Provider metrics: {list(provider_metrics.keys())}")
                         
                         # Add row, batch, and search group context for tracking
                         enhanced_data_with_context = enhanced_data.copy()
@@ -3140,7 +3140,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Use ai_client aggregation methods instead of manual calculations
         if all_enhanced_call_data:
-            logger.info(f"[AGG_DEBUG] Collected {len(all_enhanced_call_data)} enhanced call data items for aggregation")
+            pass  # logger.info(f"[AGG_DEBUG] Collected {len(all_enhanced_call_data)} enhanced call data items for aggregation")
             
             # Debug: Summary of what we're about to aggregate
             total_calls_to_aggregate = len(all_enhanced_call_data)
@@ -3153,9 +3153,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 actual_cost = costs.get('actual', {}).get('total_cost', 0.0)
                 costs_preview.append(f"${actual_cost:.6f}")
             
-            logger.info(f"[AGG_DEBUG] About to aggregate: {total_calls_to_aggregate} calls, "
-                      f"Providers: {list(providers_found)}, "
-                      f"Sample costs: {costs_preview[:5]}...")
+            pass  # logger.info(f"[AGG_DEBUG] About to aggregate: {total_calls_to_aggregate} calls, "
+                  # f"Providers: {list(providers_found)}, "
+                  # f"Sample costs: {costs_preview[:5]}...")
             
             try:
                 # Use ai_client.aggregate_provider_metrics() to get comprehensive aggregated data
@@ -3164,16 +3164,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Log the results of the final aggregation for debugging
                 if aggregated_metrics and 'totals' in aggregated_metrics:
                     totals = aggregated_metrics['totals']
-                    logger.info(f"[AGGREGATION_DEBUG] Final Aggregated Times - Estimated (no cache): {totals.get('total_estimated_processing_time', 'N/A'):.3f}s, Actual (with cache): {totals.get('total_actual_processing_time', 'N/A'):.3f}s")
-                    logger.info(f"[AGGREGATION_DEBUG] Final Aggregated Costs - Estimated (no cache): ${totals.get('total_cost_estimated', 'N/A'):.6f}, Actual (with cache): ${totals.get('total_cost_actual', 'N/A'):.6f}")
+                    pass  # logger.info(f"[AGGREGATION_DEBUG] Final Aggregated Times - Estimated (no cache): {totals.get('total_estimated_processing_time', 'N/A'):.3f}s, Actual (with cache): {totals.get('total_actual_processing_time', 'N/A'):.3f}s")
+                    pass  # logger.info(f"[AGGREGATION_DEBUG] Final Aggregated Costs - Estimated (no cache): ${totals.get('total_cost_estimated', 'N/A'):.6f}, Actual (with cache): ${totals.get('total_cost_actual', 'N/A'):.6f}")
                 
                 # Debug: Check what came out of aggregation
                 providers = aggregated_metrics.get('providers', {})
                 totals = aggregated_metrics.get('totals', {})
-                logger.info(f"[AGG_DEBUG] Aggregation complete - Providers: {list(providers.keys())}, "
-                          f"Total calls: {totals.get('total_calls', 0)}, "
-                          f"Total actual cost: ${totals.get('total_cost_actual', 0.0):.6f}, "
-                          f"Total estimated cost: ${totals.get('total_cost_estimated', 0.0):.6f}")
+                pass  # logger.info(f"[AGG_DEBUG] Aggregation complete - Providers: {list(providers.keys())}, "
+                      # f"Total calls: {totals.get('total_calls', 0)}, "
+                      # f"Total actual cost: ${totals.get('total_cost_actual', 0.0):.6f}, "
+                      # f"Total estimated cost: ${totals.get('total_cost_estimated', 0.0):.6f}")
                 
                 # Calculate cost and timing estimates for both preview and validation modes
                 is_preview = event.get('is_preview', False)
@@ -3197,16 +3197,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if hasattr(batch_manager, 'model_batch_sizes') and batch_manager.model_batch_sizes:
                         # Use average of current model batch sizes
                         target_batch_size = int(sum(batch_manager.model_batch_sizes.values()) / len(batch_manager.model_batch_sizes))
-                        logger.info(f"[BATCH_SIZE_DEBUG] Using average batch size from registered models: {target_batch_size}")
+                        pass  # logger.info(f"[BATCH_SIZE_DEBUG] Using average batch size from registered models: {target_batch_size}")
                     else:
                         # No models registered yet, use default approach
                         target_batch_size = batch_manager.get_batch_size_for_models(set())
-                        logger.info(f"[BATCH_SIZE_DEBUG] Using default batch size from enhanced manager: {target_batch_size}")
+                        pass  # logger.info(f"[BATCH_SIZE_DEBUG] Using default batch size from enhanced manager: {target_batch_size}")
                 else:
                     target_batch_size = 50
-                    logger.info(f"[BATCH_SIZE_DEBUG] No batch manager available, using fallback: {target_batch_size}")
+                    pass  # logger.info(f"[BATCH_SIZE_DEBUG] No batch manager available, using fallback: {target_batch_size}")
                 
-                logger.info(f"[BATCH_SIZE_DEBUG] target_batch_size: {target_batch_size}, mode: {'preview' if is_preview else 'validation'}")
+                pass  # logger.info(f"[BATCH_SIZE_DEBUG] target_batch_size: {target_batch_size}, mode: {'preview' if is_preview else 'validation'}")
                 
                 full_validation_estimates = calculate_full_validation_estimates_with_batch_timing(
                     aggregated_metrics=aggregated_metrics,
@@ -3222,7 +3222,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 else:
                     mode_desc = "full validation estimates" if is_preview else "actual validation metrics"
                     logger.info(f"Generated {mode_desc}: {full_validation_estimates.get('total_estimates', 'N/A')}")
-                    logger.info(f"[VALIDATOR_SIDE_DEBUG] Calculated estimates object: {json.dumps(full_validation_estimates, indent=2)}")
+                    pass  # logger.info(f"[VALIDATOR_SIDE_DEBUG] Calculated estimates object: {json.dumps(full_validation_estimates, indent=2)}")
                     
             except Exception as e:
                 logger.error(f"Failed to use enhanced aggregation methods: {e}")
@@ -3310,7 +3310,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # For parallel processing, the batch time is the maximum time of any row in that batch
                 # (since all rows in a batch are processed in parallel)
                 batch_processing_times_calculated[batch_number] = max(batch_processing_times_calculated[batch_number], row_processing_time)
-                logger.info(f"Row {row_idx} (batch {batch_number}) total time: {row_processing_time:.3f}s, batch max now: {batch_processing_times_calculated[batch_number]:.3f}s")
+                pass  # logger.info(f"Row {row_idx} (batch {batch_number}) total time: {row_processing_time:.3f}s, batch max now: {batch_processing_times_calculated[batch_number]:.3f}s")
         
         # Calculate total processing time as sum of all batch times (since batches are processed sequentially)
         total_processing_time = sum(batch_processing_times_calculated.values())
@@ -3405,7 +3405,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 if provider_name in total_token_usage['by_provider']:
                     total_token_usage['by_provider'][provider_name]['total_cost'] = provider_data.get('cost_actual', 0.0)
             
-            logger.info(f"[COST_COMPATIBILITY] Added total_cost=${total_cost_actual:.6f} to token_usage for background handler compatibility")
+            pass  # logger.info(f"[COST_COMPATIBILITY] Added total_cost=${total_cost_actual:.6f} to token_usage for background handler compatibility")
         else:
             total_token_usage['total_cost'] = 0.0
             # Add zero costs to providers for safety
@@ -3492,7 +3492,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     try:
                         resolved_context = resolve_search_group_context_size(targets, validator)
                         group_has_enhanced_context = resolved_context and resolved_context.lower() in ['medium', 'high']
-                        logger.debug(f"Group {group_id} resolved context: {resolved_context}")
+                        pass  # logger.debug(f"Group {group_id} resolved context: {resolved_context}")
                     except Exception as e:
                         logger.warning(f"Failed to resolve context size for group {group_id}: {e}")
                 
@@ -3572,8 +3572,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
         
         # DEBUG: Log what we're actually returning in metadata
-        logger.info(f"DEBUG: Metadata being returned: {list(response['body']['metadata'].keys())}")
-        logger.info(f"DEBUG: processing_time in metadata = {response['body']['metadata'].get('processing_time', 'NOT FOUND')}")
+        pass  # logger.info(f"DEBUG: Metadata being returned: {list(response['body']['metadata'].keys())}")
+        pass  # logger.info(f"DEBUG: processing_time in metadata = {response['body']['metadata'].get('processing_time', 'NOT FOUND')}")
         
         # Add the raw responses for debugging if in test_mode
         test_mode = event.get('test_mode', False)

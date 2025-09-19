@@ -49,21 +49,19 @@ def copy_config_to_session(email: str, session_id: str, config_data: Dict[str, A
                 # Generate filename from original_name
                 source_filename = f"{original_name}.json"
         
-        # Append source session to filename if not already present
+        # Append source session to filename if not already present AND filename doesn't start with session_
         if source_filename and source_session:
             base_name = source_filename.replace('.json', '')
-            # Check if session is already in the filename
-            if source_session not in base_name:
+            # Check if filename already starts with session_ pattern
+            if not base_name.startswith('session_') and source_session not in base_name:
                 source_filename = f"{source_session}_{base_name}.json"
         
         # Keep all config data including metadata
         clean_config_data = config_data.copy()
         
-        # Get current config version for the target session
-        existing_config, _ = storage_manager.get_latest_config(email, session_id)
-        version = 1
-        if existing_config and existing_config.get('storage_metadata', {}).get('version'):
-            version = existing_config['storage_metadata']['version'] + 1
+        # Use source config version to preserve evolutionary history
+        source_version = source_metadata.get('version', 1)
+        version = source_version  # Preserve source config version to track evolution
         
         # Store the copied config with preserved original_name chain and filename
         storage_result = storage_manager.store_config_file(
@@ -103,7 +101,8 @@ def handle_copy_config(event_data, context=None):
         event_data: {
             'email': 'user@example.com',
             'session_id': 'current_session_id',
-            'source_config_key': 's3_key_of_source_config',
+            'source_config_key': 's3_key_of_source_config',  # LEGACY: Direct S3 path
+            'source_config_id': 'session_20250918_170524_c4b7eba7_config_v1_ai_generated',  # NEW: Config ID lookup
             'source_session': 'source_session_id'
         }
     
@@ -124,30 +123,89 @@ def handle_copy_config(event_data, context=None):
         email = event_data.get('email')
         session_id = event_data.get('session_id')
         source_config_key = event_data.get('source_config_key')
+        source_config_id = event_data.get('source_config_id')  # New parameter for config ID
         source_session = event_data.get('source_session')
         
-        if not all([email, session_id, source_config_key]):
+        # Check for alternative parameter names that frontend might be using
+        if not source_config_id:
+            source_config_id = event_data.get('config_id')  # Check if using 'config_id' instead
+        if not source_config_key:
+            source_config_key = event_data.get('config_key')  # Check if using 'config_key' instead
+            
+        # Handle frontend sending string "undefined" instead of actual values
+        if source_config_key == "undefined":
+            source_config_key = None
+        if source_config_id == "undefined":
+            source_config_id = None
+        if source_session == "undefined":
+            source_session = None
+            
+        # DEBUG: Log received parameters to understand what frontend is sending
+        logger.info(f"Copy config parameters - email: {email}, session_id: {session_id}")
+        logger.info(f"Source parameters - config_key: {source_config_key}, config_id: {source_config_id}, session: {source_session}")
+        logger.info(f"Full event_data keys: {list(event_data.keys())}")
+        logger.info(f"Full event_data: {event_data}")
+        
+        # If no valid source provided, try to find the most recent matching config
+        if not (source_config_key or source_config_id):
+            logger.info("No source config specified - finding most recent matching config")
+            # Use the find_matching_configs to get the latest perfect match
+            from interface_lambda.actions.find_matching_config import find_matching_configs_optimized
+            
+            try:
+                matching_result = find_matching_configs_optimized(email, session_id, limit=1)
+                if matching_result.get('success') and matching_result.get('matches'):
+                    latest_match = matching_result['matches'][0]
+                    source_config_id = latest_match.get('config_id')
+                    source_config_key = latest_match.get('config_key')
+                    logger.info(f"Auto-found latest matching config: {source_config_id}")
+                else:
+                    return create_response(400, {
+                        'success': False,
+                        'error': 'No source config specified and no matching configs found for current session'
+                    })
+            except Exception as e:
+                logger.error(f"Failed to auto-find matching config: {e}")
+                return create_response(400, {
+                    'success': False,
+                    'error': 'No source config specified and failed to find matching configs'
+                })
+        
+        if not all([email, session_id]) or not (source_config_key or source_config_id):
             return create_response(400, {
                 'success': False,
-                'error': 'Missing required parameters: email, session_id, or source_config_key'
+                'error': 'Missing required parameters: email, session_id, and either source_config_key or source_config_id'
             })
         
         storage_manager = UnifiedS3Manager()
         
-        # Download the source config
-        try:
-            response = storage_manager.s3_client.get_object(
-                Bucket=storage_manager.bucket_name, 
-                Key=source_config_key
-            )
-            source_config_data = json.loads(response['Body'].read().decode('utf-8'))
-            logger.info(f"Successfully retrieved source config: {source_config_key}")
-        except Exception as e:
-            logger.error(f"Failed to retrieve source config {source_config_key}: {e}")
-            return create_response(404, {
-                'success': False,
-                'error': f'Source configuration not found: {str(e)}'
-            })
+        # Handle both config ID and direct S3 key approaches
+        if source_config_id:
+            # NEW: Lookup config by ID using optimized system
+            logger.info(f"Looking up config by ID: {source_config_id}")
+            source_config_data, source_config_key = storage_manager.find_config_by_id(source_config_id, email)
+            if not source_config_data or not source_config_key:
+                logger.error(f"Config ID not found: {source_config_id}")
+                return create_response(404, {
+                    'success': False,
+                    'error': f'Source configuration not found for ID: {source_config_id}'
+                })
+            logger.info(f"Successfully found config by ID: {source_config_id} -> {source_config_key}")
+        else:
+            # LEGACY: Direct S3 key approach
+            try:
+                response = storage_manager.s3_client.get_object(
+                    Bucket=storage_manager.bucket_name, 
+                    Key=source_config_key
+                )
+                source_config_data = json.loads(response['Body'].read().decode('utf-8'))
+                logger.info(f"Successfully retrieved source config by key: {source_config_key}")
+            except Exception as e:
+                logger.error(f"Failed to retrieve source config {source_config_key}: {e}")
+                return create_response(404, {
+                    'success': False,
+                    'error': f'Source configuration not found: {str(e)}'
+                })
         
         # Extract original metadata before cleaning
         source_metadata = source_config_data.get('storage_metadata', {})
@@ -166,21 +224,19 @@ def handle_copy_config(event_data, context=None):
                 # Generate filename from original_name
                 original_filename = f"{original_name}.json"
         
-        # Append source session to filename if not already present
+        # Append source session to filename if not already present AND filename doesn't start with session_
         if original_filename and source_session:
             base_name = original_filename.replace('.json', '')
-            # Check if session is already in the filename
-            if source_session not in base_name:
+            # Check if filename already starts with session_ pattern
+            if not base_name.startswith('session_') and source_session not in base_name:
                 original_filename = f"{source_session}_{base_name}.json"
         
         # Keep all config data including metadata
         clean_config_data = source_config_data.copy()
         
-        # Get current config version for the target session
-        existing_config, _ = storage_manager.get_latest_config(email, session_id)
-        version = 1
-        if existing_config and existing_config.get('storage_metadata', {}).get('version'):
-            version = existing_config['storage_metadata']['version'] + 1
+        # Use source config version to preserve evolutionary history
+        source_version = source_metadata.get('version', 1)
+        version = source_version  # Preserve source config version to track evolution
         
         # Store the copied config with preserved original_name chain and filename
         storage_result = storage_manager.store_config_file(
@@ -219,6 +275,30 @@ def handle_copy_config(event_data, context=None):
         except Exception as e:
             logger.warning(f"Failed to update session info: {e}")
         
+        # Update session_info.json with comprehensive tracking
+        try:
+            # Update session config tracking
+            update_success = storage_manager.update_session_config(
+                email=email,
+                session_id=session_id,
+                config_data=clean_config_data,
+                config_key=storage_result['s3_key'],
+                config_id=storage_result.get('config_id'),
+                version=version,
+                source='copied_from_previous',
+                description=source_description,
+                source_session=source_session,
+                source_config_path=source_config_key  # Include source config path
+            )
+            
+            if update_success:
+                logger.info(f"Updated session_info.json with copied config tracking")
+            else:
+                logger.warning(f"Failed to update session_info.json (will fall back to messy logic)")
+                
+        except Exception as e:
+            logger.warning(f"Failed to update session_info.json (will fall back to messy logic): {e}")
+        
         logger.info(f"Successfully copied config from {source_config_key} to session {session_id}")
         
         return create_response(200, {
@@ -227,6 +307,7 @@ def handle_copy_config(event_data, context=None):
             'config_version': version,
             'config_s3_key': storage_result['s3_key'],
             'config_id': storage_result.get('config_id'),
+            'session_tracking_updated': update_success,
             'source_info': {
                 'source_session': source_session,
                 'source_key': source_config_key,

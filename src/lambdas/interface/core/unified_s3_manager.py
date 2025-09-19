@@ -413,9 +413,28 @@ class UnifiedS3Manager:
                 'error': str(e)
             }
     
-    def get_excel_file(self, email: str, session_id: str) -> Tuple[Optional[bytes], Optional[str]]:
-        """Get Excel file from session folder"""
+    def get_excel_file(self, email: str, session_id: str, bypass_session_info: bool = False) -> Tuple[Optional[bytes], Optional[str]]:
+        """Get Excel file from session folder, preferring session_info.json lookup"""
         try:
+            # First try to get Excel path from session_info.json (unless bypassed)
+            if not bypass_session_info:
+                try:
+                    session_info = self.load_session_info(email, session_id)
+                    excel_path = session_info.get('table_path')
+                    
+                    if excel_path:
+                        logger.info(f"Found Excel path in session_info.json: {excel_path}")
+                        response = self.s3_client.get_object(
+                            Bucket=self.bucket_name,
+                            Key=excel_path
+                        )
+                        content = response['Body'].read()
+                        logger.debug(f"Successfully retrieved Excel file from session_info path: {excel_path}")
+                        return content, excel_path
+                except Exception as e:
+                    logger.info(f"Could not get Excel path from session_info.json, falling back to file scanning: {e}")
+            
+            # Fallback to file scanning if session_info.json doesn't have the path
             session_path = self.get_session_path(email, session_id)
             logger.debug(f"Looking for Excel file in session path: {session_path}")
             
@@ -499,8 +518,30 @@ class UnifiedS3Manager:
             return None, None
     
     def get_latest_config(self, email: str, session_id: str) -> Tuple[Optional[Dict], Optional[str]]:
-        """Get latest config file from session folder"""
+        """Get latest config file from session folder, preferring session_info.json lookup"""
         try:
+            # First try to get config path from session_info.json
+            try:
+                session_info = self.load_session_info(email, session_id)
+                current_version = session_info.get('current_version')
+                
+                if current_version and str(current_version) in session_info.get('versions', {}):
+                    version_data = session_info['versions'][str(current_version)]
+                    config_path = version_data.get('config', {}).get('config_path')
+                    
+                    if config_path:
+                        logger.info(f"Found config path in session_info.json: {config_path}")
+                        response = self.s3_client.get_object(
+                            Bucket=self.bucket_name,
+                            Key=config_path
+                        )
+                        config_data = json.loads(response['Body'].read().decode('utf-8'))
+                        logger.debug(f"Successfully retrieved config file from session_info path: {config_path}")
+                        return config_data, config_path
+            except Exception as e:
+                logger.info(f"Could not get config path from session_info.json, falling back to file scanning: {e}")
+            
+            # Fallback to file scanning if session_info.json doesn't have the path
             session_path = self.get_session_path(email, session_id)
             
             # List all config files in session folder (both new v{N}_ pattern and legacy config_ pattern)
@@ -798,8 +839,46 @@ class UnifiedS3Manager:
             }
     
     def get_latest_validation_results(self, email: str, session_id: str) -> Optional[Dict]:
-        """Get the latest validation results for a session"""
+        """Get the latest validation results for a session, preferring session_info.json lookup"""
         try:
+            # First try to get latest results path from session_info.json
+            try:
+                session_info = self.load_session_info(email, session_id)
+                
+                # Find the latest version with validation results
+                versions = session_info.get('versions', {})
+                latest_version = 0
+                latest_results_path = None
+                
+                for version_str, version_data in versions.items():
+                    try:
+                        version_num = int(version_str)
+                        validation = version_data.get('validation', {})
+                        
+                        if validation and version_num > latest_version:
+                            # Get the validation results from this version
+                            if validation.get('results_path'):
+                                latest_version = version_num
+                                latest_results_path = validation['results_path']
+                    except (ValueError, TypeError):
+                        continue
+                
+                if latest_results_path:
+                    logger.info(f"Found latest validation results in session_info.json: {latest_results_path}")
+                    response = self.s3_client.get_object(
+                        Bucket=self.bucket_name,
+                        Key=latest_results_path
+                    )
+                    results_data = json.loads(response['Body'].read().decode('utf-8'))
+                    logger.info(f"Successfully retrieved validation results from session_info path")
+                    return results_data
+                else:
+                    logger.info("No validation results paths found in session_info.json")
+                    
+            except Exception as e:
+                logger.info(f"Could not get validation results from session_info.json, falling back to file scanning: {e}")
+            
+            # Fallback to file scanning if session_info.json doesn't have the path
             session_path = self.get_session_path(email, session_id)
             logger.info(f"DEBUG_VALIDATION_RESULTS: Searching for validation results in session_path: {session_path}")
             
@@ -926,6 +1005,435 @@ class UnifiedS3Manager:
             logger.error(f"Failed to get latest validation results: {e}")
             return None
     
+    def get_latest_preview_results(self, email: str, session_id: str) -> Optional[Dict]:
+        """Get the latest preview results for a session, preferring session_info.json lookup"""
+        try:
+            # First try to get latest preview results path from session_info.json
+            try:
+                session_info = self.load_session_info(email, session_id)
+                
+                # Find the latest version with preview results
+                versions = session_info.get('versions', {})
+                latest_version = 0
+                latest_results_path = None
+                
+                for version_str, version_data in versions.items():
+                    try:
+                        version_num = int(version_str)
+                        preview = version_data.get('preview', {})
+                        
+                        if preview and version_num > latest_version:
+                            # Get the preview results from this version
+                            if preview.get('results_path'):
+                                latest_version = version_num
+                                latest_results_path = preview['results_path']
+                    except (ValueError, TypeError):
+                        continue
+                
+                if latest_results_path:
+                    logger.info(f"Found latest preview results in session_info.json: {latest_results_path}")
+                    response = self.s3_client.get_object(
+                        Bucket=self.bucket_name,
+                        Key=latest_results_path
+                    )
+                    results_data = json.loads(response['Body'].read().decode('utf-8'))
+                    logger.info(f"Successfully retrieved preview results from session_info path")
+                    return results_data
+                else:
+                    logger.info("No preview results paths found in session_info.json")
+                    
+            except Exception as e:
+                logger.info(f"Could not get preview results from session_info.json, falling back to file scanning: {e}")
+            
+            # Fallback: try to find preview results using similar logic to validation results
+            # (reuse the same file scanning approach but look for preview_results.json files)
+            session_path = self.get_session_path(email, session_id)
+            
+            # Check for preview results files directly in versioned folders
+            response = self.s3_client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=f"{session_path}v",
+                Delimiter='/'
+            )
+            
+            result_folders = []
+            if 'CommonPrefixes' in response:
+                for prefix_info in response['CommonPrefixes']:
+                    folder_path = prefix_info['Prefix']
+                    folder_name = folder_path.rstrip('/').split('/')[-1]
+                    if folder_name.endswith('_results'):
+                        try:
+                            version_str = folder_name.replace('_results', '').replace('v', '')
+                            version = int(version_str)
+                            result_folders.append((version, folder_path))
+                        except ValueError:
+                            continue
+            
+            # Sort by version descending and try to get preview results
+            result_folders.sort(reverse=True)
+            for version, folder_path in result_folders:
+                try:
+                    preview_key = f"{folder_path}preview_results.json"
+                    response = self.s3_client.get_object(Bucket=self.bucket_name, Key=preview_key)
+                    results_data = json.loads(response['Body'].read().decode('utf-8'))
+                    logger.info(f"Found preview results in versioned folder: {preview_key}")
+                    return results_data
+                except Exception:
+                    continue
+            
+            logger.info(f"No preview results found for session {session_id}")
+            return None
+                
+        except Exception as e:
+            logger.error(f"Failed to get latest preview results: {e}")
+            return None
+    
+    def get_latest_results_for_context(self, email: str, session_id: str) -> Optional[Dict]:
+        """Get latest results (validation or preview) for config refinement context.
+        Uses file scanning to avoid circular dependencies during config generation."""
+        try:
+            session_path = self.get_session_path(email, session_id)
+            logger.info(f"Getting latest results for config context from: {session_path}")
+            
+            # Use file scanning approach to avoid session_info.json dependency
+            # Look for versioned result folders
+            response = self.s3_client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=f"{session_path}v",
+                Delimiter='/'
+            )
+            
+            result_folders = []
+            if 'CommonPrefixes' in response:
+                for prefix_info in response['CommonPrefixes']:
+                    folder_path = prefix_info['Prefix']
+                    folder_name = folder_path.rstrip('/').split('/')[-1]
+                    if folder_name.endswith('_results'):
+                        try:
+                            version_str = folder_name.replace('_results', '').replace('v', '')
+                            version = int(version_str)
+                            result_folders.append((version, folder_path))
+                        except ValueError:
+                            continue
+            
+            # Sort by version descending (newest first)
+            result_folders.sort(reverse=True)
+            
+            # Try validation results first, then preview results
+            for version, folder_path in result_folders:
+                # Try validation results
+                try:
+                    validation_key = f"{folder_path}validation_results.json"
+                    response = self.s3_client.get_object(Bucket=self.bucket_name, Key=validation_key)
+                    results_data = json.loads(response['Body'].read().decode('utf-8'))
+                    logger.info(f"Found validation results for context: {validation_key}")
+                    return results_data
+                except Exception:
+                    pass
+                
+                # Try preview results if validation not found
+                try:
+                    preview_key = f"{folder_path}preview_results.json"
+                    response = self.s3_client.get_object(Bucket=self.bucket_name, Key=preview_key)
+                    results_data = json.loads(response['Body'].read().decode('utf-8'))
+                    logger.info(f"Found preview results for context: {preview_key}")
+                    return results_data
+                except Exception:
+                    continue
+            
+            logger.info(f"No results found for config context in session {session_id}")
+            return None
+                
+        except Exception as e:
+            logger.error(f"Failed to get latest results for context: {e}")
+            return None
+    
+    def load_session_info(self, email: str, session_id: str) -> Dict:
+        """Load session_info.json or create empty structure if it doesn't exist"""
+        try:
+            session_path = self.get_session_path(email, session_id)
+            session_info_key = f"{session_path}session_info.json"
+            
+            try:
+                response = self.s3_client.get_object(
+                    Bucket=self.bucket_name,
+                    Key=session_info_key
+                )
+                session_info = json.loads(response['Body'].read().decode('utf-8'))
+                logger.debug(f"Loaded existing session_info.json for {session_id}")
+                
+                # Ensure versions structure exists
+                if 'versions' not in session_info:
+                    session_info['versions'] = {}
+                
+                return session_info
+            except self.s3_client.exceptions.NoSuchKey:
+                # Create new session_info structure with clean version-based organization
+                logger.info(f"Creating new session_info.json for {session_id}")
+                return {
+                    "session_id": session_id,
+                    "created": datetime.now().isoformat(),
+                    "email": email,
+                    "table_name": f"table_{session_id.split('_')[-1]}",
+                    "current_version": 0,
+                    "last_updated": datetime.now().isoformat(),
+                    "versions": {}
+                }
+        except Exception as e:
+            logger.error(f"Failed to load session_info.json: {e}")
+            # Return minimal structure for fallback
+            return {
+                "session_id": session_id,
+                "created": datetime.now().isoformat(),
+                "email": email,
+                "table_name": f"table_{session_id.split('_')[-1]}",
+                "current_version": 0,
+                "last_updated": datetime.now().isoformat(),
+                "versions": {}
+            }
+    
+    def save_session_info(self, email: str, session_id: str, session_info: Dict) -> bool:
+        """Save updated session_info.json"""
+        try:
+            session_path = self.get_session_path(email, session_id)
+            session_info_key = f"{session_path}session_info.json"
+            
+            # Update timestamp (use existing field name)
+            session_info['last_updated'] = datetime.now().isoformat()
+            
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=session_info_key,
+                Body=json.dumps(session_info, indent=2),
+                ContentType='application/json'
+            )
+            logger.info(f"Saved session_info.json for {session_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save session_info.json: {e}")
+            return False
+    
+    def update_session_config(self, email: str, session_id: str, config_data: Dict, 
+                            config_key: str, config_id: str, version: int, 
+                            source: str, description: str = None, source_session: str = None,
+                            excel_s3_key: str = None, source_config_path: str = None) -> bool:
+        """Update session_info.json with new config information organized by version"""
+        try:
+            session_info = self.load_session_info(email, session_id)
+            
+            # Get Excel file path - prefer provided path, then from existing session_info, fallback to file scan
+            if not excel_s3_key:
+                # First try existing session_info (if we're updating an existing session)
+                excel_s3_key = session_info.get('table_path')
+                
+                # If still not found, do file scan as last resort
+                if not excel_s3_key:
+                    excel_content, excel_s3_key = self.get_excel_file(email, session_id, bypass_session_info=True)
+            
+            # Create clean version-based tracking structure
+            if "versions" not in session_info:
+                session_info["versions"] = {}
+            
+            # Create clean version entry
+            version_entry = {
+                "config": {
+                    "config_id": config_id,
+                    "config_path": config_key,
+                    "source": source,
+                    "created_at": datetime.now().isoformat(),
+                    "description": description or ""
+                }
+                # preview and validation will be added when operations complete
+            }
+            
+            if source_session:
+                version_entry["config"]["source_session"] = source_session
+            
+            if source_config_path:
+                version_entry["config"]["source_config_path"] = source_config_path
+            
+            # Store version entry
+            session_info["versions"][str(version)] = version_entry
+            
+            # Update session-level tracking (clean structure)
+            session_info["current_version"] = version
+            session_info["last_updated"] = datetime.now().isoformat()
+            
+            # Store table path at session level (doesn't change per version)
+            if excel_s3_key:
+                session_info["table_path"] = excel_s3_key
+            
+            return self.save_session_info(email, session_id, session_info)
+        except Exception as e:
+            logger.error(f"Failed to update session config: {e}")
+            return False
+    
+    def update_session_results(self, email: str, session_id: str, operation_type: str,
+                             config_id: str, version: int, run_key: str,
+                             results_path: str = None, enhanced_excel_path: str = None,
+                             status: str = "completed", completed_at: str = None) -> bool:
+        """Update session_info.json with minimal results lookup information and file paths"""
+        try:
+            logger.info(f"[SESSION_TRACKING] Updating {operation_type} results for session {session_id}, version {version}")
+            
+            session_info = self.load_session_info(email, session_id)
+            
+            # Ensure versions structure exists
+            if "versions" not in session_info:
+                session_info["versions"] = {}
+            
+            # Ensure version entry exists
+            version_key = str(version)
+            if version_key not in session_info["versions"]:
+                # Create minimal version entry if it doesn't exist
+                session_info["versions"][version_key] = {
+                    "version": version,
+                    "config": {"config_id": config_id}
+                }
+            
+            # Create results entry with essential file paths and run lookup
+            result_entry = {
+                "run_key": run_key,  # Key to lookup full details in runs database
+                "status": status,
+                "completed_at": completed_at or datetime.now().isoformat()
+            }
+            
+            # Add file paths if provided
+            if results_path:
+                result_entry["results_path"] = results_path  # Path to validation_results.json or preview_results.json
+            if enhanced_excel_path:
+                result_entry["enhanced_excel_path"] = enhanced_excel_path  # Path to enhanced Excel file
+            
+            # Set singular preview/validation object
+            if operation_type == "preview":
+                session_info["versions"][version_key]["preview"] = result_entry
+                logger.info(f"[SESSION_TRACKING] Set preview for version {version}")
+            elif operation_type == "validation":
+                session_info["versions"][version_key]["validation"] = result_entry
+                logger.info(f"[SESSION_TRACKING] Set validation for version {version}")
+            
+            return self.save_session_info(email, session_id, session_info)
+        except Exception as e:
+            logger.error(f"Failed to update session results: {e}")
+            return False
+    
+    def update_session_costs(self, email: str, session_id: str, version: int, operation_type: str,
+                           eliyahu_cost: float = None, quoted_cost: float = None, 
+                           estimated_cost: float = None, cost_details: dict = None, 
+                           run_id: str = None, run_key: str = None) -> bool:
+        """Update cost information for a specific version and operation type"""
+        try:
+            session_info = self.load_session_info(email, session_id)
+            
+            # Ensure versions structure exists
+            if "versions" not in session_info:
+                session_info["versions"] = {}
+            
+            version_key = str(version)
+            if version_key not in session_info["versions"]:
+                logger.warning(f"Version {version} not found in session_info, cannot update costs")
+                return False
+            
+            # Find the most recent operation of the specified type for this version
+            operations = session_info["versions"][version_key].get(f"{operation_type}s", [])
+            if not operations:
+                logger.warning(f"No {operation_type} operations found for version {version}")
+                return False
+            
+            # Update the most recent operation's cost info
+            latest_operation = operations[-1]
+            
+            # Build comprehensive cost info
+            cost_info = latest_operation.get("cost_info", {})
+            
+            if eliyahu_cost is not None:
+                cost_info["eliyahu_cost"] = eliyahu_cost
+            if quoted_cost is not None:
+                cost_info["quoted_cost"] = quoted_cost
+            if estimated_cost is not None:
+                cost_info["estimated_cost"] = estimated_cost
+            
+            cost_info["processing_type"] = operation_type
+            cost_info["cost_updated_at"] = datetime.now().isoformat()
+            
+            # Add run identifiers for runs table linkage
+            if run_id:
+                cost_info["run_id"] = run_id
+            if run_key:
+                cost_info["run_key"] = run_key
+            
+            # Add detailed cost breakdown if provided
+            if cost_details:
+                cost_info.update(cost_details)
+            
+            latest_operation["cost_info"] = cost_info
+            
+            # Update summary costs at session level
+            if operation_type == "preview":
+                if "latest_preview_cost" not in session_info:
+                    session_info["latest_preview_cost"] = {}
+                session_info["latest_preview_cost"] = cost_info.copy()
+            elif operation_type == "validation":
+                if "latest_validation_cost" not in session_info:
+                    session_info["latest_validation_cost"] = {}
+                session_info["latest_validation_cost"] = cost_info.copy()
+            
+            return self.save_session_info(email, session_id, session_info)
+        except Exception as e:
+            logger.error(f"Failed to update session costs: {e}")
+            return False
+    
+    def add_session_refinement(self, email: str, session_id: str, from_version: int,
+                             to_version: int, triggered_by: str, changes_made: list = None,
+                             context_used: dict = None) -> bool:
+        """Add refinement entry to session_info.json with full context paths"""
+        try:
+            session_info = self.load_session_info(email, session_id)
+            
+            refinement_entry = {
+                "from_version": from_version,
+                "to_version": to_version,
+                "triggered_by": triggered_by,
+                "refinement_timestamp": datetime.now().isoformat(),
+                "from_config_path": "",  # Will be populated from session_info
+                "to_config_path": ""     # Will be populated after new config is stored
+            }
+            
+            # Find the config path for the from_version using clean structure
+            versions = session_info.get("versions", {})
+            from_version_data = versions.get(str(from_version))
+            if from_version_data and from_version_data.get("config"):
+                refinement_entry["from_config_path"] = from_version_data["config"].get("config_path", "")
+            
+            # Add context file paths used for refinement
+            if context_used:
+                refinement_entry["context_used"] = context_used
+            else:
+                # Auto-populate context from version-based structure
+                context_used = {}
+                if from_version_data:
+                    # Get preview and validation results from the version being refined
+                    if from_version_data.get("preview", {}).get("results_path"):
+                        context_used["preview_results_path"] = from_version_data["preview"]["results_path"]
+                    if from_version_data.get("validation", {}).get("results_path"):
+                        context_used["validation_results_path"] = from_version_data["validation"]["results_path"]
+                    if from_version_data.get("validation", {}).get("enhanced_excel_path"):
+                        context_used["validation_enhanced_excel_path"] = from_version_data["validation"]["enhanced_excel_path"]
+                    
+                refinement_entry["context_used"] = context_used
+                
+            if changes_made:
+                refinement_entry["changes_made"] = changes_made
+                
+            # Skip refinements tracking - refinements generate new config versions instead
+            # This function is deprecated and should not be used
+            logger.warning("add_session_refinement is deprecated - refinements create new config versions")
+            
+            return self.save_session_info(email, session_id, session_info)
+        except Exception as e:
+            logger.error(f"Failed to add session refinement: {e}")
+            return False
+
     def find_config_by_id(self, config_id: str, email: str) -> Tuple[Optional[Dict], Optional[str]]:
         """
         Clean config lookup function that handles both new and legacy config ID formats.

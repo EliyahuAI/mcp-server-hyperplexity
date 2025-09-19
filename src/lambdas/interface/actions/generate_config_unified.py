@@ -154,7 +154,9 @@ def get_next_config_version(email: str, session_id: str) -> int:
                     r'config_v(\d+)_',      # config_v5_ai_generated.json
                     r'_v(\d+)_',            # session_20250916_v5_something.json
                     r'_v(\d+)\.json$',      # filename_v5.json
-                    r'config_v(\d+)\.json$' # config_v5.json
+                    r'config_v(\d+)\.json$', # config_v5.json
+                    r'session_\w+_v(\d+)_', # session_20250916_123456_v5_config.json
+                    r'session_\w+_v(\d+)\.json$' # session_20250916_123456_v5.json
                 ]
                 
                 for pattern in patterns:
@@ -177,7 +179,7 @@ def get_next_config_version(email: str, session_id: str) -> int:
 
 def store_config_with_versioning(email: str, session_id: str, config_data: dict, 
                                 source: str = 'refined') -> dict:
-    """Store config with automatic version increment"""
+    """Store config with automatic version increment and session tracking"""
     from ..core.unified_s3_manager import UnifiedS3Manager
     
     storage_manager = UnifiedS3Manager()
@@ -194,6 +196,26 @@ def store_config_with_versioning(email: str, session_id: str, config_data: dict,
     
     # Add version to result for caller
     result['version'] = next_version
+    
+    # Update session tracking if storage was successful
+    if result.get('success'):
+        try:
+            config_description = config_data.get('general_notes', f'{source.replace("_", " ").title()} configuration')
+            update_success = storage_manager.update_session_config(
+                email=email,
+                session_id=session_id,
+                config_data=config_data,
+                config_key=result['s3_key'],
+                config_id=result.get('config_id'),
+                version=next_version,
+                source=source,
+                description=config_description
+            )
+            result['session_tracking_updated'] = update_success
+            logger.info(f"Session tracking updated for {source} config v{next_version}: {update_success}")
+        except Exception as e:
+            logger.warning(f"Failed to update session tracking for {source} config: {e}")
+            result['session_tracking_updated'] = False
     
     return result
 
@@ -425,28 +447,26 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
             else:
                 logger.info("No existing conversation history found to preserve")
             
-            # Get latest validation results for refinement context
+            # Get latest validation or preview results for refinement context
             latest_validation_results = None
             if existing_config:  # Only for refinements
                 try:
-                    logger.error(f"🔍 VALIDATION_RETRIEVAL_TEST: This is a refinement - attempting to get latest validation results for email: {email}, session_id: {session_id}")
-                    latest_validation_results = storage_manager.get_latest_validation_results(email, session_id)
+                    logger.info(f"🔍 RESULTS_RETRIEVAL: This is a refinement - getting latest results for config context")
+                    
+                    # Use circular-dependency-free method for getting results during config generation
+                    latest_validation_results = storage_manager.get_latest_results_for_context(email, session_id)
                     if latest_validation_results:
-                        logger.error(f"✅ SUCCESS: Retrieved validation results! Type: {type(latest_validation_results)}")
-                        logger.error(f"✅ Keys: {list(latest_validation_results.keys()) if isinstance(latest_validation_results, dict) else 'N/A'}")
-                        if 'markdown_table' in latest_validation_results:
-                            logger.error(f"✅ markdown_table present, size: {len(latest_validation_results['markdown_table'])}")
-                        if 'validation_results' in latest_validation_results:
-                            logger.error(f"✅ validation_results present, type: {type(latest_validation_results['validation_results'])}")
+                        logger.info(f"✅ SUCCESS: Retrieved results for config refinement context")
                     else:
-                        logger.error("❌ FAILURE: No validation results found - latest_validation_results is None or empty")
+                        logger.info("❌ No validation or preview results found for context")
+                            
                 except Exception as e:
-                    logger.error(f"DEBUG_CONFIG_UNIFIED: EXCEPTION - Could not retrieve validation results for context: {e}")
+                    logger.error(f"DEBUG_CONFIG_UNIFIED: EXCEPTION - Could not retrieve results for context: {e}")
                     import traceback
                     logger.error(f"DEBUG_CONFIG_UNIFIED: Traceback: {traceback.format_exc()}")
                     latest_validation_results = None
             else:
-                logger.info("DEBUG_CONFIG_UNIFIED: This is a new config generation (no existing_config) - skipping validation results retrieval")
+                logger.info("DEBUG_CONFIG_UNIFIED: This is a new config generation (no existing_config) - skipping results retrieval")
             
             payload = {
                 'table_analysis': table_analysis,
@@ -574,7 +594,30 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
             if not storage_result['success']:
                 return {'success': False, 'error': f'Failed to store generated config: {storage_result["error"]}'}
             
-            # Update session info with new config version
+            # Update comprehensive session tracking
+            try:
+                # Update session config tracking with comprehensive data
+                config_description = updated_config.get('general_notes', 'AI generated configuration')
+                update_success = storage_manager.update_session_config(
+                    email=email,
+                    session_id=session_id,
+                    config_data=updated_config,
+                    config_key=storage_result['s3_key'],
+                    config_id=storage_result.get('config_id'),
+                    version=version,
+                    source='ai_generated',
+                    description=config_description
+                )
+                
+                if update_success:
+                    logger.info(f"Updated session_info.json with AI generated config v{version}")
+                else:
+                    logger.warning(f"Failed to update session_info.json (will fall back to legacy tracking)")
+                    
+            except Exception as e:
+                logger.warning(f"Failed to update session_info.json: {e}")
+            
+            # Legacy session info update (fallback)
             try:
                 # Get table name from session or use default
                 table_name = f"table_{session_id.split('_')[-1]}"
@@ -583,9 +626,9 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                     config_source='ai_generated'
                 )
                 if session_info_result['success']:
-                    logger.info(f"Session info updated with config version {version}")
+                    logger.info(f"Legacy session info updated with config version {version}")
             except Exception as e:
-                logger.warning(f"Failed to update session info: {e}")
+                logger.warning(f"Failed to update legacy session info: {e}")
             
             # Create download link for the config (separate bucket)
             download_url = storage_manager.create_public_download_link(updated_config, f"config_v{version}_{session_id}.json")
