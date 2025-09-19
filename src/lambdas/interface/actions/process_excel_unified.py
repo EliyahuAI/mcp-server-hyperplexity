@@ -368,13 +368,20 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
                 return create_response(500, {'error': f"Failed to store Excel file: {excel_result['error']}"})
             excel_s3_key = excel_result['s3_key']
             
-            # Create session info for tracking
-            session_info_result = storage_manager.create_session_info(
-                email_address, base_session_id, table_name, current_config_version=1,
-                config_source='user_uploaded'
-            )
-            if session_info_result['success']:
-                logger.info(f"Session info created: {session_info_result['s3_key']}")
+            # Initialize session info with Excel path (clean structure)
+            session_info = storage_manager.load_session_info(email_address, base_session_id)
+            session_info.update({
+                'table_name': table_name,
+                'table_path': excel_s3_key,
+                'current_version': 0,  # No config uploaded yet
+                'last_updated': datetime.now().isoformat()
+            })
+            
+            session_info_saved = storage_manager.save_session_info(email_address, base_session_id, session_info)
+            if session_info_saved:
+                logger.info(f"Session info initialized with Excel path: {excel_s3_key}")
+            else:
+                logger.warning("Failed to save session info with Excel path")
             
             # Update session_id to match base_session_id for consistency
             session_id = base_session_id
@@ -678,16 +685,43 @@ def _process_preview_sync(storage_manager, email_address, session_id, excel_s3_k
             # Store preview results in unified storage using versioned results structure
             # Get config version from config_s3_key or default to 1
             config_version = 1
+            config_id = ""
             try:
                 existing_config, _ = storage_manager.get_latest_config(email_address, session_id)
-                if existing_config and existing_config.get('storage_metadata', {}).get('version'):
-                    config_version = existing_config['storage_metadata']['version']
+                if existing_config and existing_config.get('storage_metadata', {}):
+                    config_version = existing_config['storage_metadata'].get('version', 1)
+                    config_id = existing_config['storage_metadata'].get('config_id', '')
             except:
                 pass
             
             result = storage_manager.store_results(email_address, session_id, config_version, preview_data, 'preview')
             if result['success']:
                 logger.info(f"Preview results stored: {result['s3_key']}")
+                
+                # Update session tracking with minimal lookup info and file paths
+                try:
+                    logger.error(f"🔥 PROCESS_EXCEL_PREVIEW: About to call update_session_results for preview")
+                    logger.error(f"🔥 PROCESS_EXCEL_PREVIEW: Parameters - email={email_address}, session_id={session_id}, config_id={config_id}, version={config_version}, run_key={run_key}")
+                    
+                    success = storage_manager.update_session_results(
+                        email=email_address,
+                        session_id=session_id,
+                        operation_type="preview",
+                        config_id=config_id,
+                        version=config_version,
+                        run_key=run_key,
+                        results_path=result['s3_key']  # Path to preview results JSON
+                    )
+                    logger.error(f"🔥 PROCESS_EXCEL_PREVIEW: update_session_results returned: {success}")
+                    
+                    if success:
+                        logger.info(f"✅ Updated session_info.json with preview completion")
+                    else:
+                        logger.error(f"❌ Failed to update session_info.json with preview completion")
+                except Exception as e:
+                    logger.error(f"💥 EXCEPTION in process_excel preview session tracking: {e}")
+                    import traceback
+                    logger.error(f"💥 TRACEBACK: {traceback.format_exc()}")
             
             # ========== ENHANCED RESPONSE WITH THREE-TIER COST DATA ==========
             response_body = {
@@ -746,16 +780,43 @@ def _process_validation_sync(storage_manager, email_address, session_id, excel_s
             # Store validation results in unified storage using versioned results structure
             # Get config version from config_s3_key or default to 1
             config_version = 1
+            config_id = ""
             try:
                 existing_config, _ = storage_manager.get_latest_config(email_address, session_id)
-                if existing_config and existing_config.get('storage_metadata', {}).get('version'):
-                    config_version = existing_config['storage_metadata']['version']
+                if existing_config and existing_config.get('storage_metadata', {}):
+                    config_version = existing_config['storage_metadata'].get('version', 1)
+                    config_id = existing_config['storage_metadata'].get('config_id', '')
             except:
                 pass
             
             result = storage_manager.store_results(email_address, session_id, config_version, validation_results, 'validation')
             if result['success']:
                 logger.info(f"Validation results stored: {result['s3_key']}")
+                
+                # Update session tracking with minimal lookup info and file paths
+                try:
+                    logger.error(f"🔥 PROCESS_EXCEL_VALIDATION: About to call update_session_results for validation")
+                    logger.error(f"🔥 PROCESS_EXCEL_VALIDATION: Parameters - email={email_address}, session_id={session_id}, config_id={config_id}, version={config_version}, run_key={run_key}")
+                    
+                    success = storage_manager.update_session_results(
+                        email=email_address,
+                        session_id=session_id,
+                        operation_type="validation",
+                        config_id=config_id,
+                        version=config_version,
+                        run_key=run_key,
+                        results_path=result['s3_key']  # Path to validation results JSON
+                    )
+                    logger.error(f"🔥 PROCESS_EXCEL_VALIDATION: update_session_results returned: {success}")
+                    
+                    if success:
+                        logger.info(f"✅ Updated session_info.json with validation completion")
+                    else:
+                        logger.error(f"❌ Failed to update session_info.json with validation completion")
+                except Exception as e:
+                    logger.error(f"💥 EXCEPTION in process_excel validation session tracking: {e}")
+                    import traceback
+                    logger.error(f"💥 TRACEBACK: {traceback.format_exc()}")
             
             # Email the results (since we have unified storage, email final config with results)
             try:

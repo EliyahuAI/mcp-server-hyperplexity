@@ -2,27 +2,29 @@
 
 ## Overview
 
-The Perplexity Validator uses a sophisticated configuration and version management system that ensures data integrity, traceability, and seamless user experience across all operations.
+The Perplexity Validator uses a sophisticated configuration and version management system that ensures data integrity, traceability, and seamless user experience across all operations. The system has been optimized for performance with whitelist-based filtering and early termination on perfect matches.
 
 ## Configuration ID System
 
-### Format
-Configuration IDs follow the pattern: `{session_id}_v{version}_{description}`
+### Clean Format (Current)
+Configuration IDs now follow the simplified pattern: `{session_id}_{filename_without_extension}`
+
+**Example**: `session_20250918_150921_ea332116_config_v1_ai_generated`
+
+- `session_20250918_150921_ea332116`: Session identifier with timestamp (32 chars)
+- `config_v1_ai_generated`: Original filename without .json extension
+
+### Legacy Format (Deprecated)
+Old configuration IDs followed: `{session_id}_v{version}_{description}`
 
 **Example**: `session_20250916_122220_ae6db4b8_v5_Financial_portfolio_analy`
 
-- `session_20250916_122220_ae6db4b8`: Session identifier with timestamp
-- `v5`: Version number
-- `Financial_portfolio_analy`: Truncated description (max 25 chars)
+The system maintains backward compatibility with legacy formats for existing configurations.
 
 ### Generation Process
-1. **Session ID**: Created when user starts new session
-2. **Version**: Auto-incremented based on existing configs in session
-3. **Description**: Derived from:
-   - User-provided `description` parameter
-   - Config's `general_notes` field
-   - First validation target column name
-   - Fallback: "validation" + timestamp
+1. **Session ID**: Created when user starts new session (fixed 32-character format)
+2. **Direct Path Construction**: Config ID directly maps to S3 path for efficient lookup
+3. **No Complex Parsing**: Eliminates multi-strategy searches and version parsing
 
 ## File Naming Conventions
 
@@ -63,39 +65,41 @@ This ensures version continuity regardless of filename format.
 
 ## Configuration Lookup System
 
-### Multi-Strategy Lookup
-When looking up configs by ID, the system uses a three-tier strategy:
+### Optimized Direct Lookup (Current)
+The system now uses a clean, direct lookup approach:
 
-#### Strategy 1: Standard Patterns
-Try predefined filename patterns first:
-- `config_v{version}_user.json`
-- `config_v{version}_ai_generated.json`
-- `config_v{version}_copied_from_previous.json`
-- etc.
+1. **Parse Config ID**: Extract session ID (first 32 chars) and filename from config ID
+2. **Direct Path Construction**: Build S3 path directly: `results/{domain}/{email_prefix}/{session_id}/{filename}.json`
+3. **Single S3 Call**: No complex searches or multiple strategies needed
+4. **Fallback for Copied Configs**: Uses `_config_v` marker for version parsing when needed
 
-#### Strategy 2: Session+Name Pattern  
-Search for preserved filenames with session prefix:
-- Files starting with `session_id` are prioritized
-- Handles copied configs with original names
+**Example**:
+```
+Config ID: session_20250918_150921_ea332116_config_v1_ai_generated
+S3 Path:   results/company.com/john/session_20250918_150921_ea332116/config_v1_ai_generated.json
+```
 
-#### Strategy 3: Comprehensive Search
-Fallback to searching all .json files in session:
-- Validates each file's `storage_metadata.config_id`
-- Ensures no config is missed regardless of filename
+### Legacy Multi-Strategy Lookup (Deprecated)
+The old system used a three-tier fallback strategy that has been replaced for performance:
+
+- Strategy 1: Standard filename patterns
+- Strategy 2: Session+name pattern searches  
+- Strategy 3: Comprehensive file scanning
+
+Legacy config IDs are still supported but use the optimized lookup where possible.
 
 ### Validation
 Every config file contains:
 ```json
 {
   "storage_metadata": {
-    "config_id": "session_20250916_122220_ae6db4b8_v5_Financial_portfolio_analy",
-    "version": 5,
-    "session_id": "session_20250916_122220_ae6db4b8",
+    "config_id": "session_20250918_150921_ea332116_config_v1_ai_generated",
+    "version": 1,
+    "session_id": "session_20250918_150921_ea332116",
     "email": "user@example.com",
-    "stored_at": "2025-09-16T12:24:20.266539",
+    "stored_at": "2025-09-18T15:09:21.266539",
     "source": "ai_generated",
-    "original_name": "MarketResearch_Config",
-    "source_session": "session_20250915_143022_abc"
+    "content_hash": "a1b2c3d4e5f6..."
   }
 }
 ```
@@ -120,7 +124,39 @@ if stored_config_id == config_id:
     return config_data, key
 ```
 
-**Result**: Config IDs sent in emails are guaranteed to be findable by the lookup system.
+**Result**: Config IDs sent in emails are guaranteed to be findable by the optimized direct lookup system.
+
+## Config Matching System
+
+### Whitelist-Based Filtering
+The system now uses an optimized approach for finding matching configurations:
+
+1. **Query Runs Table**: Get all successfully used config IDs from completed Preview/Validation runs
+2. **Chronological Ordering**: Sort configs by `start_time` from runs table (most recent first)
+3. **Whitelist-First Processing**: Only load configs that have been proven to work
+4. **Early Termination**: Stop immediately when first perfect match (100% score) is found
+
+### Performance Optimization
+- **Typical Load**: 1-2 configs instead of 10+ for most scenarios
+- **Direct S3 Access**: No complex file scanning or pattern matching
+- **Smart Filtering**: Only considers configs with successful track record
+- **Immediate Response**: Stops on first perfect match instead of checking all configs
+
+### Matching Logic
+```python
+# Get whitelist ordered by recency
+successfully_used_configs = get_successfully_used_config_ids(email)
+
+# Process in chronological order
+for config_id in successfully_used_configs:
+    config_data = storage_manager.find_config_by_id(config_id, email)
+    match_score = calculate_column_match_score(table_columns, config_columns)
+    
+    if match_score >= 1.0:  # Perfect match
+        return [config]  # Early termination
+```
+
+This ensures users see only tested configurations and get instant results for perfect matches.
 
 ## Results Versioning
 
@@ -232,24 +268,33 @@ Config ID: session_20250916_122220_ae6db4b8_v5_Financial_portfolio_analy
 - **email_sender.py**: Config ID distribution
 
 ### Key Functions
-- `store_config_file()`: Stores configs with metadata
-- `get_config_by_id()`: Multi-strategy lookup
-- `get_next_config_version()`: Version increment logic
-- `copy_config_to_session()`: Preserved copying
+- `store_config_file()`: Stores configs with metadata and clean IDs
+- `find_config_by_id()`: Optimized direct lookup with session parsing
+- `get_successfully_used_config_ids()`: Whitelist generation from runs table
+- `find_matching_configs_optimized()`: Performance-optimized config matching with early termination
+- `calculate_column_match_score()`: Column matching algorithm with perfect match detection
 
 ## Monitoring and Debugging
 
 ### Log Patterns
 ```
-[SUCCESS] Config stored: session_20250916_v5_ai_generated.json
-[INFO] Found config by ID: session_20250916_v5_desc in file: session_20250915_original.json
-[DEBUG] Detected versions: [1, 3, 5], next version: 6
+[INFO] Found 15 successfully used configs for filtering
+[INFO] Checking configs in order of recency, starting with: session_20250918_150921_ea332116_config_v1_ai_generated
+[INFO] Config session_20250918_150921_ea332116_config_v1_ai_generated: match_score=1.000, table_cols=18, config_cols=18
+[INFO] PERFECT MATCH: session_20250918_150921_ea332116_config_v1_ai_generated with score 1.000
+[INFO] Stopping search after finding perfect match - processed 1 configs
 ```
 
 ### Health Indicators
-- Config ID format validation
-- Version increment continuity  
-- Successful email→lookup roundtrips
-- Results version alignment
+- **Whitelist Performance**: Number of successfully used configs available
+- **Early Termination**: Configs processed before finding perfect match (ideal: 1-2)
+- **Direct Lookup Success**: Config IDs resolved without fallback strategies
+- **Match Quality**: Percentage of perfect matches vs. partial matches
 
-This system ensures robust, traceable configuration management that scales with user needs while maintaining data integrity and user experience quality.
+### Performance Metrics
+- **Config Load Efficiency**: Typical 1-2 configs loaded vs. legacy 10+ configs
+- **Response Time**: Sub-second config matching due to early termination
+- **Memory Usage**: Reduced due to whitelist-first approach
+- **S3 API Calls**: Minimized through direct path construction
+
+This optimized system ensures robust, traceable configuration management that scales efficiently with user needs while maintaining data integrity and delivering instant results for perfect matches.

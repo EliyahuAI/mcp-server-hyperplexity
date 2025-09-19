@@ -1,16 +1,9 @@
 
---- The mixed dummy and real messages are problemtatic, particularly for long waits like submission. Lets turn these off for submission. 
- 
-please answer question needs to go away when answer provided, we really should not have it. 
+
 
 --- 
-When using stored config file no questions available for refine. 
+When using stored config file no questions available for refine. (hit or miss, needs debugging) 
 
---- 
-should be able to download results after preview and after full results. 
-
---- 
-need to make it clear that preview is the updated table
 
 ---
 Need to work on the money
@@ -23,8 +16,7 @@ Need ads, strategy.
 Targeted outreach? 
 
 ---
-refine webpage. 
-Add graphic. 
+refine case studies and examples, currently a mix with the Eliyahu.ai case studies
 ----
 
 
@@ -34,65 +26,31 @@ Should be able to update table by responding to email.
 --- 
 tables in preview that were not completed should get notices by email to complete
 
-----
-configs are still attached to emails 
+
 
 ----
 
-Hit Error: Config generation failed: Claude API overloaded after 3 retries (529): {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"},"request_id":null}
+The batch handling for claude 4,0 opus still crashed a call even with the advanced batch handling. 
 ----
-
-Preview rich download empty.
-
-----
-The auto configuration response s problematic, the ID is shortened and wont work. The notices about saving the ID, Re-using, and security are distraction. I dont need the COnfiguration accepted automatically, generating preview notice at the end. THe green box should be outside of the chat and the last thing on the card. Currently:
-✓
-Configuration generated, code for reuse: bb9cc8ec_v1, running preview now
-💾 Save this ID - it will be included in your validation results email
-🔄 Reuse anywhere - enter this ID to apply the same configuration to future validations
-🔒 Secure - share this ID safely without exposing configuration details
-Configuration accepted automatically. Generating preview...
-
-For refining, we should also end in the same way and launch directly inro preview. 
+The config generations are not printing the config ids. 
 ----
 during processing, we should turn off the phony updates. 
 ----
-We can probably make the batch sizes larger than 10 now that we have more throughput. 
 
----
-Store image, update text about adding to be in the cart, notify about pushing the shopping cart to checkout. 
+Update text about adding to be in the cart, notify about pushing the shopping cart to checkout. 
 
---- 
-Receipt it htmp (needs to be pdf, on Eliyahu stationary, should not have multiplier, should have the name of the table, the number of columns validated, the number of rows, should not have the raw processing cost. 
 
 --- 
 The use of dummy collumns to get a better answer - these are background questions that will help guide an answer that are added and removed that aid in the search. 
 
----
-Better description of the formatiing, for example time with or without hours, particularly for examples. 
 
---- 
-last use preview/full not working, and last use should have a timestamp if the same day (in local time or relative time (2 hours ago). 
-
----
-Need to change the confidence to have more levels (add orange), and change requirement to whether update is an improvement and to never go back on confidence, probably need confidence defined better and not independently for Original and Updated.  
-
---- 
-should lose _input from the Validated filename. 
 
 ----
-Should add an iterate option after a full run. Perhaps asking for specific problematic rows for preview
+Should add an iterate option after a full run. 
 
 ---
 
-Prview of table when asking questions at the beginning of generate config with AI. The original questions should make it to the config
-
-----
-Email validation still has Perplexity Validaor and mentions of the privacy notice, should use the green box emoji at the beginning of the sentence
-
-----
-Refine configuration is not bringing up the questions, 
-
+Preview of table when asking questions at the beginning of generate config with AI. The original questions should make it to the config
 
 
 --- 
@@ -112,57 +70,15 @@ had a 94% match and a failed preview over websocket that was not handled.
 
 failed preview just gets stuck, need to gracefully handle. 
 
-----
-Generating config progress bar jumps too high for 'Processing Table Data', gets to 100% for config complete then gets stuck, then a bunch of messages all come through at the same time.  It seems to go back to [DEBUG] routeMessage called with data: {type: 'config_progress_update', message: 'Processing table data...', session_id: 'session_20250827_201154_2524bec3', timestamp: '2025-08-27T20:21:55.141327', progress: 60}, is it processing twice? Do we need a debounce on the button?. The loop (confirmed in logs) resulted in a problem: ✗
-Error: Failed to invoke config lambda: Read timeout on endpoint URL: "https://lambda.us-east-1.amazonaws.com/2015-03-31/functions/perplexity-validator-config/invocations"
+
 ----
 Need to make sure Updated sheet is being looked for with priority (I see this in the config l;ambda logs: 
 	
 No 'Results' sheet found, using first sheet: 'Congresses Master List'
 
-----
-I dont think the download rich results after refinement is downloading the right files - they seem to be older and have the older name.  These files need to be saved in results as well as in downloads.     
-
-
-
-
-----
-
-Remove session from email, add the number of perplexity and claude calls. Still messy. 
 
 -----
 
-Should have auto demo that do cool things and use prebuilt configurations. 
-
-
-
----
-
-Full runs are not capturing tokens/cost like previews in the runs dynamodb:
-session_id	email	start_time	end_time	last_update	status	verbose_status	percent_complete	processed_rows	total_rows	per_row_cost	estimated_total_cost	preview_cost	quoted_full_cost	per_row_tokens	estimated_total_tokens	preview_tokens	perplexity_total_tokens	perplexity_prompt_tokens	perplexity_completion_tokens	perplexity_total_cost	perplexity_calls	anthropic_total_tokens	anthropic_input_tokens	anthropic_output_tokens	anthropic_cache_creation_tokens	anthropic_cache_read_tokens	anthropic_total_cost	anthropic_calls	search_groups_count	validated_columns_count	high_context_search_groups_count	claude_search_groups_count	preview_processing_time_seconds	estimated_total_processing_time_seconds	estimated_total_time_minutes	account_current_balance	account_sufficient_balance	account_credits_needed	account_domain_multiplier	results_s3_key	error_message	actual_processing_time_seconds	actual_time_per_batch_seconds	actual_time_per_row_seconds	batch_size
-session_20250902_200015_a130df35	eliyahu@eliyahu.ai	2025-09-02T20:16:04.906381+00:00	2025-09-02T20:17:09.310474+00:00	2025-09-02T20:17:09.310474+00:00	COMPLETED	Preview complete. Results available.	100	3	-1	0.224127	0	0	26	12925.66667	1473526	38777	24061	17598	6463	0	15	14716	12196	2520	0	0	0	6	7	20	0	2	61.37216234	184.116487	3.1	36	TRUE	0	3			64.404093	214.68031	21.468031	
-session_20250902_203418_21da4ea2	eliyahu@eliyahu.ai	2025-09-02T20:34:56.301959+00:00	2025-09-02T20:37:59.387259+00:00	2025-09-02T20:37:59.387259+00:00	COMPLETED	Enhanced batch processing completed	100	114	-1																									176.29489	2.938248167					results/eliyahu.ai/eliyahu/session_20250902_203418_21da4ea2.zip		176.29489	15.46446404	1.546446404	50
-
------
-
-Configuration times are still wrong, and we should only show the best match. The last/used never used is also not working:
-
-⚙️
-Configuration
-Recent matching config found - choose an option below
-
-
-100% Match • Created: Sep 2, 2025, 9:16 PM • Last Used: Never used
- 
-100% Match • Created: Sep 2, 2025, 9:04 PM • Last Used: Sep 2, 2025, 9:04 PM
-
-
-Lets move to 2 buttons: Use match (only if match found) leave the configuration code option. 
-----
-
-Need to remove the debug console messages for message routing. 
-
-----
 add table wide memory if it comes across it should store by key, we should pass this info up to the validator. 
 
 --- 
@@ -176,52 +92,33 @@ After full validation, you should be able to specify specific rows for preview. 
 No getting sources off of claude. 
 
 ----
-Need beeter notice about enabling editing to see comments. 
+Need better notice about enabling editing to see comments. 
 
 ---
 Need to set cache length for volatile information. 
 
 ---
-calculate profitability to prevent abuse of the previews. 
+calculate profitability to prevent abuse of the previews. Also, expensive previews with no history should be filtered
 
 ---
 
 What to do with tables that are3 rows or less?
 
-----
-still getting encrypted content back from anthropic. 
-
-----
-Something is funny, getting 0.5s returns from tables that should be fully in the cache, with reported cache misses.  While occasionally, there is a miss even if there is a cache if it does not find what it expects, cluade has never returned in that amount of time for sonnet-4. Am I hitting anthropic cache? but I dont see cache tokens in the validator logs. 
-
---- 
-I need a dev/prod versioning of the backend and front end. 
------
-
-Lingering problem with the wrong cost (now both the Eliyahu cost, being reported in the email and receipt). 
-
------
-
-Skip email testing\ Shows up if you wait. 
-
----
-Should have a revert changes to configuration button that resets the original and runs a preview.
 
 ----
 
 sonar, high -> context -> citations to better model when not certain is a move. Prevents high cost from antropic web search, starts with lowest cost. A bit slow 
 
+This is baked in to the QA review
+
 ----
 
-Progress updates should have time estimates and interval updates 
+Progress updates should have time estimates and interval updates (this will take 70s, use this array 5s - this, 10s that
 
 -----
 
-There is a problem with high original confidence and low updated confidence happening. This was not supposed to be possible need to check. 
 
-----
-
-Add original and updated confidence to the runs databased.  Added clarity to the prompt, need to check the processing to reinforce
+Add original and updated confidence distributions to the runs databased.  Added clarity to the prompt, need to check the processing to reinforce
 
 ---
 Need to have the QC oversight working again. 
@@ -232,8 +129,24 @@ mess on the anthropic max tokens, didn't handle it right.
 --- 
 download results takes a minute before the files is ready for download, you get an error if it is not ready. 
 
-----
++
 Remaining Balance shows as 0.00 before updating causing concern. 
+ Need to add delay
+---
+ Should read in any excel formulas and work with them. 
+
+----
+ we need to turn off the try our prompt generator (certyainly must open in a new page) , and potentially the header. 
+
+--- 
+
+QA row by row
+
+----
+
+Overall QA
++ Track quality. 
+----
 
 
 

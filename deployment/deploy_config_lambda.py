@@ -306,9 +306,14 @@ def main():
     parser.add_argument('--test', action='store_true', help='Test deployment after creation')
     parser.add_argument('--build-only', action='store_true', help='Only build package, do not deploy')
     parser.add_argument('--force-rebuild', action='store_true', help='Force rebuild package even if it exists')
+    parser.add_argument('--no-rebuild', action='store_true', help='Skip rebuilding package if it exists')
     parser.add_argument('--deploy', action='store_true', help='Deploy the Lambda function (default behavior unless --build-only is specified)')
     parser.add_argument('--environment', '-e', default='prod', choices=['dev', 'test', 'staging', 'prod'], help='Deployment environment (default: prod)')
     args = parser.parse_args()
+    
+    # Validate mutually exclusive options
+    if args.force_rebuild and args.no_rebuild:
+        parser.error("--force-rebuild and --no-rebuild are mutually exclusive")
     
     # Apply environment configuration
     print_environment_info(args.environment)
@@ -319,7 +324,7 @@ def main():
     
     try:
         # Check if package exists and if we should rebuild
-        should_build = args.force_rebuild or not OUTPUT_ZIP.exists()
+        should_build = args.force_rebuild or (not args.no_rebuild and not OUTPUT_ZIP.exists())
         
         if should_build:
             logger.info("Building deployment package...")

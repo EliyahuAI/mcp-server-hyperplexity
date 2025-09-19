@@ -257,27 +257,20 @@ def handle_copy_config(event_data, context=None):
                 'error': f'Failed to store copied config: {storage_result["error"]}'
             })
         
-        # Update session info with source tracking
-        try:
-            table_name = f"table_{session_id.split('_')[-1]}"
-            session_info_result = storage_manager.create_session_info(
-                email=email,
-                session_id=session_id,
-                table_name=table_name,
-                current_config_version=version,
-                config_source='copied_from_previous',
-                source_session=source_session,
-                config_id=storage_result.get('config_id'),
-                config_description=source_description
-            )
-            if session_info_result['success']:
-                logger.info(f"Session info updated with copied config tracking")
-        except Exception as e:
-            logger.warning(f"Failed to update session info: {e}")
+        # Skip old session info creation - use clean structure only
+        table_name = f"table_{session_id.split('_')[-1]}"
         
         # Update session_info.json with comprehensive tracking
         try:
             # Update session config tracking
+            # Ensure session has table_name set by adding it to session_info first
+            existing_session_info = storage_manager.load_session_info(email, session_id)
+            if "table_name" not in existing_session_info:
+                existing_session_info["table_name"] = table_name
+                existing_session_info["session_id"] = session_id
+                existing_session_info["email"] = email
+                storage_manager.save_session_info(email, session_id, existing_session_info)
+            
             update_success = storage_manager.update_session_config(
                 email=email,
                 session_id=session_id,

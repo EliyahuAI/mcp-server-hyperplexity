@@ -327,7 +327,7 @@ def search_user_configs(email: str, storage_manager: UnifiedS3Manager) -> List[D
         logger.error(f"Failed to search user configs: {e}")
         return []
 
-def get_successfully_used_config_ids(email: str) -> Set[str]:
+def get_successfully_used_config_ids(email: str) -> List[str]:
     """
     Get all configuration IDs that have been successfully used in Preview or Validation runs.
     This provides a whitelist of configs that are proven to work.
@@ -353,12 +353,14 @@ def get_successfully_used_config_ids(email: str) -> Set[str]:
                            Attr('configuration_id').exists()
         )
         
-        # Extract configuration_ids from successful runs
+        # Collect configs with their start_time for sorting
+        config_with_times = []
         for item in response.get('Items', []):
             config_id = item.get('configuration_id')
+            start_time = item.get('start_time', '')
             if config_id and config_id != 'unknown':
-                successfully_used_configs.add(config_id)
-                logger.debug(f"Found successfully used config: {config_id}")
+                config_with_times.append((config_id, start_time))
+                logger.debug(f"Found successfully used config: {config_id} at {start_time}")
         
         # Handle pagination if needed
         while 'LastEvaluatedKey' in response:
@@ -372,17 +374,28 @@ def get_successfully_used_config_ids(email: str) -> Set[str]:
             
             for item in response.get('Items', []):
                 config_id = item.get('configuration_id')
+                start_time = item.get('start_time', '')
                 if config_id and config_id != 'unknown':
-                    successfully_used_configs.add(config_id)
-                    logger.debug(f"Found successfully used config: {config_id}")
+                    config_with_times.append((config_id, start_time))
+                    logger.debug(f"Found successfully used config: {config_id} at {start_time}")
         
-        logger.info(f"Found {len(successfully_used_configs)} successfully used configs for {email}")
+        # Sort by start_time (most recent first) and extract unique config_ids
+        config_with_times.sort(key=lambda x: x[1], reverse=True)
+        successfully_used_configs = []
+        seen_configs = set()
+        
+        for config_id, start_time in config_with_times:
+            if config_id not in seen_configs:
+                successfully_used_configs.append(config_id)
+                seen_configs.add(config_id)
+        
+        logger.info(f"Found {len(successfully_used_configs)} successfully used configs for {email}, ordered by recency")
         return successfully_used_configs
         
     except Exception as e:
         logger.warning(f"Could not get successfully used config IDs for {email}: {e}")
-        # Return empty set to allow all configs (fallback behavior)
-        return set()
+        # Return empty list to allow all configs (fallback behavior)
+        return []
 
 def get_session_usage_info(email: str, source_session: str, storage_manager: UnifiedS3Manager) -> Dict[str, Any]:
     """
@@ -831,11 +844,11 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
                 'message': 'Could not analyze columns from uploaded table. Please ensure you have uploaded a valid Excel file.'
             }
         
-        # Get whitelist of successfully used configuration IDs
+        # Get whitelist of successfully used configuration IDs (ordered by recency)
         successfully_used_configs = get_successfully_used_config_ids(email)
         logger.info(f"Found {len(successfully_used_configs)} successfully used configs for filtering")
         if successfully_used_configs:
-            logger.info(f"Whitelist sample: {list(successfully_used_configs)[:3]}...")
+            logger.info(f"Whitelist sample: {successfully_used_configs[:3]}...")
         
         if not successfully_used_configs:
             return {
@@ -846,26 +859,14 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
                 'message': 'No successfully used configurations found for this user'
             }
         
-        # Group configs by session and keep only the latest version per session
-        session_latest = {}
-        for config_id in successfully_used_configs:
-            session_part, version = extract_session_and_version_from_config_id(config_id)
-            if session_part not in session_latest or version > session_latest[session_part]['version']:
-                session_latest[session_part] = {
-                    'config_id': config_id,
-                    'version': version,
-                    'session': session_part
-                }
+        logger.info(f"Checking configs in order of recency, starting with: {successfully_used_configs[0] if successfully_used_configs else 'none'}")
         
-        logger.info(f"Reduced to {len(session_latest)} latest configs from {len(successfully_used_configs)} total successful configs")
-        
-        # Load and analyze only the latest configs from successful sessions
         matches = []
         perfect_matches = []
         configs_processed = 0
         
-        for session_data in session_latest.values():
-            config_id = session_data['config_id']
+        # Process configs in order of recency - STOP on first perfect match
+        for config_id in successfully_used_configs:
             try:
                 # Load config using the clean lookup system
                 config_data, config_key = storage_manager.find_config_by_id(config_id, email)
@@ -912,6 +913,9 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
                 if match_score >= 1.0:
                     perfect_matches.append(match_data)
                     logger.info(f"PERFECT MATCH: {config_id} with score {match_score:.3f}")
+                    # EARLY TERMINATION: Stop immediately when we find the first perfect match
+                    logger.info(f"Stopping search after finding perfect match - processed {configs_processed} configs")
+                    break
                 else:
                     matches.append(match_data)
                 
@@ -936,7 +940,7 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
             'total_configs_searched': configs_processed,
             'perfect_matches_found': len(perfect_matches),
             'regular_matches_found': len(matches),
-            'sessions_with_configs': len(session_latest)
+            'total_available_configs': len(successfully_used_configs)
         }
         
     except Exception as e:
