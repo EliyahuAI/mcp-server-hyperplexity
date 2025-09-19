@@ -1192,7 +1192,7 @@ def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List
             for group_def in validator.search_groups:
                 if isinstance(group_def, dict) and group_def.get('group_id') == group_id:
                     if 'model' in group_def:
-                        logger.info(f"Using search group {group_id} defined model: {group_def['model']}")
+                        logger.debug(f"Using search group {group_id} defined model: {group_def['model']}")
                         return group_def['model'], warnings
                     else:
                         logger.warning(f"Search group {group_id} found but no model defined")
@@ -1262,7 +1262,7 @@ def resolve_search_group_max_web_searches(targets: List[Any], validator) -> int:
     # Check if we have search group definitions and this group has a defined max_web_searches
     if targets and hasattr(targets[0], 'search_group'):
         group_id = targets[0].search_group
-        logger.info(f"Checking search group {group_id} for anthropic_max_web_searches override")
+        logger.debug(f"Checking search group {group_id} for anthropic_max_web_searches override")
         
         # Check if validator has search_groups defined
         if hasattr(validator, 'search_groups') and validator.search_groups:
@@ -1270,14 +1270,14 @@ def resolve_search_group_max_web_searches(targets: List[Any], validator) -> int:
                 if isinstance(group_def, dict) and group_def.get('group_id') == group_id:
                     if 'anthropic_max_web_searches' in group_def:
                         max_searches = group_def['anthropic_max_web_searches']
-                        logger.info(f"Using search group {group_id} defined anthropic_max_web_searches: {max_searches}")
+                        logger.debug(f"Using search group {group_id} defined anthropic_max_web_searches: {max_searches}")
                         return max_searches
     
     # Check for validator default
     if hasattr(validator, 'config') and isinstance(validator.config, dict):
         default_max_searches = validator.config.get('anthropic_max_web_searches_default')
         if default_max_searches is not None:
-            logger.info(f"Using validator default anthropic_max_web_searches: {default_max_searches}")
+            logger.debug(f"Using validator default anthropic_max_web_searches: {default_max_searches}")
             return default_max_searches
     
     # Global default
@@ -1301,7 +1301,7 @@ def resolve_search_group_context_size(targets: List[Any], validator) -> str:
     # Check if we have search group definitions and this group has a defined context
     if targets and hasattr(targets[0], 'search_group'):
         group_id = targets[0].search_group
-        logger.info(f"Checking search group {group_id} for context override")
+        logger.debug(f"Checking search group {group_id} for context override")
         
         # Check if validator has search_groups defined
         if hasattr(validator, 'search_groups') and validator.search_groups:
@@ -1309,7 +1309,7 @@ def resolve_search_group_context_size(targets: List[Any], validator) -> str:
             for group_def in validator.search_groups:
                 if isinstance(group_def, dict) and group_def.get('group_id') == group_id:
                     if 'search_context' in group_def:
-                        logger.info(f"Using search group {group_id} defined context: {group_def['search_context']}")
+                        logger.debug(f"Using search group {group_id} defined context: {group_def['search_context']}")
                         return group_def['search_context']
                     else:
                         logger.warning(f"Search group {group_id} found but no search_context defined")
@@ -2126,7 +2126,7 @@ def send_websocket_progress(session_id: str, message: str, progress: int = None)
                 update_data['progress'] = progress
             
             websocket_client.send_to_session(session_id, update_data)
-            logger.info(f"Sent WebSocket progress: {message} to session {session_id}")
+            logger.debug(f"Sent WebSocket progress: {message} to session {session_id}")
         except Exception as e:
             logger.warning(f"Failed to send WebSocket progress: {e}")
 
@@ -2458,13 +2458,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         }
                         batch_timing_data.append(batch_timing_info)
                         
-                        logger.info(f"Completed batch {batch_index} in {batch_processing_time:.2f}s")
+                        logger.debug(f"Completed batch {batch_index} in {batch_processing_time:.2f}s")
                         
                         # Notify batch manager of success with models used
                         batch_manager.on_success(batch_models_used)
                         
                         # Store results
-                        logger.info(f"Storing results for batch {batch_index}: {len(batch_results)} results")
+                        logger.debug(f"Storing results for batch {batch_index}: {len(batch_results)} results")
                         for idx, result, _, batch_num in batch_results:
                             validation_results[idx] = result
                             
@@ -2672,7 +2672,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 if is_isolated_validation:
                     pass  # logger.info(f"This is an ISOLATED validation for field '{validation_targets[0].column}'")
             else:
-                logger.info(f"Processing {len(validation_targets)} fields together using multiplex format")
+                logger.debug(f"Processing {len(validation_targets)} fields together using multiplex format")
             
             # Get model configuration
             model, warnings = resolve_search_group_model(validation_targets, validator)
@@ -2703,10 +2703,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.info("No relevant validation history found for this group")
             
             # Generate multiplex prompt
-            logger.info(f"Generating multiplex prompt for {len(validation_targets)} field(s) with context from previous groups")
-            logger.info(f"Using resolved model: {model}")
-            logger.info(f"Using resolved search context size: {search_context_size}")
-            logger.info(f"Using resolved max web searches: {max_web_searches}")
+            logger.debug(f"Generating multiplex prompt for {len(validation_targets)} field(s) with context from previous groups")
+            logger.debug(f"Using resolved model: {model}")
+            logger.debug(f"Using resolved search context size: {search_context_size}")
+            logger.debug(f"Using resolved max web searches: {max_web_searches}")
             
             prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history)
             
@@ -2716,11 +2716,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Call ai_api_client with retry logic and provider-specific handling
             start_time = time.time()
             
-            logger.info(f"Using ai_client for {api_provider} API with model: {model}")
+            logger.debug(f"Using ai_client for {api_provider} API with model: {model}")
             
             try:
                 # For ALL models, use unified structured API call
-                logger.info(f"Using unified structured API for {api_provider} with search_context_size: {search_context_size}")
+                logger.debug(f"Using unified structured API for {api_provider} with search_context_size: {search_context_size}")
                 
                 # Create schema for structured output
                 schema = get_response_format_schema(is_multiplex=True)
@@ -2797,7 +2797,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Update cache counters based on ai_client result
                 if is_cached:
                     total_cache_hits += 1
-                    logger.info(f"AI client cache hit for model: {model}")
+                    logger.debug(f"AI client cache hit for model: {model}")
                 else:
                     total_cache_misses += 1
                     logger.info(f"AI client cache miss, made fresh API call for model: {model}")
@@ -2830,10 +2830,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             expected_columns = [t.column for t in validation_targets]  # Use validation_targets, not targets
             actual_columns = list(parsed_results.keys())
             
-            logger.info(f"🔍 RESPONSE ANALYSIS:")
+            logger.debug(f"🔍 RESPONSE ANALYSIS:")
             logger.info(f"Expected columns: {expected_columns}")
             logger.info(f"Parsed columns: {actual_columns}")
-            logger.info(f"Expected count: {len(expected_columns)}, Actual count: {len(actual_columns)}")
+            logger.debug(f"Expected count: {len(expected_columns)}, Actual count: {len(actual_columns)}")
             
             # Check for exact missing columns first
             exact_missing_columns = set(expected_columns) - set(actual_columns)
@@ -2845,7 +2845,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if exact_missing_columns:
                 # Attempt flexible column matching for missing columns
                 if len(actual_columns) == len(expected_columns):
-                    logger.info(f"🔄 COLUMN COUNT MATCHES: Attempting flexible column matching for similar names")
+                    logger.debug(f"🔄 COLUMN COUNT MATCHES: Attempting flexible column matching for similar names")
                     column_mappings = find_similar_columns(expected_columns, actual_columns, similarity_threshold=0.8)
                     
                     for actual_col, expected_col in column_mappings.items():
@@ -2862,7 +2862,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     flexible_missing_columns = set(expected_columns) - set(updated_actual_columns)
                     
                     if not flexible_missing_columns:
-                        logger.info(f"✅ COLUMN MATCHING SUCCESS: All columns matched after similarity corrections")
+                        logger.debug(f"✅ COLUMN MATCHING SUCCESS: All columns matched after similarity corrections")
                 else:
                     flexible_missing_columns = exact_missing_columns
             
@@ -3003,7 +3003,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Log column corrections summary if any were made
             if column_corrections:
-                logger.info(f"📋 COLUMN CORRECTIONS SUMMARY:")
+                logger.debug(f"📋 COLUMN CORRECTIONS SUMMARY:")
                 for actual_col, expected_col in column_corrections.items():
                     logger.info(f"  • '{actual_col}' -> '{expected_col}'")
             
@@ -3314,7 +3314,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Calculate total processing time as sum of all batch times (since batches are processed sequentially)
         total_processing_time = sum(batch_processing_times_calculated.values())
-        logger.info(f"Calculated parallel processing time: {total_processing_time:.3f}s across {len(batch_processing_times_calculated)} batches")
+        logger.debug(f"Calculated parallel processing time: {total_processing_time:.3f}s across {len(batch_processing_times_calculated)} batches")
         
         # Second pass: aggregate provider-specific token usage
         for row_idx, row_result in validation_results.items():
@@ -3414,8 +3414,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.warning(f"[COST_COMPATIBILITY] No aggregated_metrics available - setting total_cost=0.0 in token_usage")
         
         # Log token usage summary (cost logging now handled by enhanced_data aggregation)
-        logger.info(f"Token Usage Summary: {total_token_usage['total_tokens']} total tokens, ${total_token_usage['total_cost']:.6f} total cost")
-        logger.info(f"API Calls: {total_token_usage['api_calls']} new, {total_token_usage['cached_calls']} cached")
+        logger.debug(f"Token Usage Summary: {total_token_usage['total_tokens']} total tokens, ${total_token_usage['total_cost']:.6f} total cost")
+        logger.debug(f"API Calls: {total_token_usage['api_calls']} new, {total_token_usage['cached_calls']} cached")
         logger.info(f"Total Processing Time: {total_processing_time:.3f}s")
         
         # Log by provider
@@ -3431,7 +3431,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Log by model
         for model, model_usage in total_token_usage['by_model'].items():
             api_provider = model_usage.get('api_provider', 'unknown')
-            logger.info(f"Model {model} ({api_provider}): {model_usage['total_tokens']} tokens across {model_usage['calls']} calls")
+            logger.debug(f"Model {model} ({api_provider}): {model_usage['total_tokens']} tokens across {model_usage['calls']} calls")
         
         # Log the size of the response data (approximately)
         response_json = json.dumps({
@@ -3444,13 +3444,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
         })
         response_size_kb = len(response_json) / 1024
-        logger.info(f"Response size without raw responses: approximately {response_size_kb:.2f} KB")
+        logger.debug(f"Response size without raw responses: approximately {response_size_kb:.2f} KB")
         
         # Estimate size with raw responses
         raw_responses_json = json.dumps(all_raw_responses)
         raw_size_kb = len(raw_responses_json) / 1024
-        logger.info(f"Raw responses size: approximately {raw_size_kb:.2f} KB")
-        logger.info(f"Total estimated response size: {response_size_kb + raw_size_kb:.2f} KB")
+        logger.debug(f"Raw responses size: approximately {raw_size_kb:.2f} KB")
+        logger.debug(f"Total estimated response size: {response_size_kb + raw_size_kb:.2f} KB")
         
         # Calculate batch timing statistics using parallel processing time calculation
         num_batches = len(batch_processing_times_calculated)
@@ -3464,11 +3464,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             total_batch_time = 0
         
         # Log batch timing summary
-        logger.info(f"📊 BATCH TIMING SUMMARY:")
-        logger.info(f"  🚀 Total batches processed: {len(batch_processing_times_calculated)}")
-        logger.info(f"  ⏱️ Average time per batch: {avg_batch_time:.2f}s")
-        logger.info(f"  → Average time per row across all batches: {avg_time_per_row_across_batches:.2f}s")
-        logger.info(f"  ✅ Total batch processing time: {total_batch_time:.2f}s")
+        logger.debug(f"📊 BATCH TIMING SUMMARY:")
+        logger.debug(f"  🚀 Total batches processed: {len(batch_processing_times_calculated)}")
+        logger.debug(f"  ⏱️ Average time per batch: {avg_batch_time:.2f}s")
+        logger.debug(f"  → Average time per row across all batches: {avg_time_per_row_across_batches:.2f}s")
+        logger.debug(f"  ✅ Total batch processing time: {total_batch_time:.2f}s")
         
         # Calculate validation structure metrics
         validation_targets = [t for t in validator.validation_targets if t.importance.upper() not in ["ID", "IGNORED"]]
