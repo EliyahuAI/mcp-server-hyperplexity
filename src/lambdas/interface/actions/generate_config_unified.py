@@ -178,7 +178,7 @@ def get_next_config_version(email: str, session_id: str) -> int:
         return 1
 
 def store_config_with_versioning(email: str, session_id: str, config_data: dict, 
-                                source: str = 'refined') -> dict:
+                                source: str = 'refined', run_key: str = None) -> dict:
     """Store config with automatic version increment and session tracking"""
     from ..core.unified_s3_manager import UnifiedS3Manager
     
@@ -209,7 +209,8 @@ def store_config_with_versioning(email: str, session_id: str, config_data: dict,
                 config_id=result.get('config_id'),
                 version=next_version,
                 source=source,
-                description=config_description
+                description=config_description,
+                run_key=run_key
             )
             result['session_tracking_updated'] = update_success
             logger.info(f"Session tracking updated for {source} config v{next_version}: {update_success}")
@@ -586,7 +587,7 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 logger.warning("Config lambda didn't set version, falling back to interface lambda versioning")
                 # Fallback to interface lambda versioning system
                 storage_result = store_config_with_versioning(
-                    email, session_id, updated_config, source='ai_generated'
+                    email, session_id, updated_config, source='ai_generated', run_key=run_key
                 )
                 version = storage_result.get('version', 1)
                 config_version = version  # Ensure config_version is always set

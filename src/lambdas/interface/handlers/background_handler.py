@@ -1256,14 +1256,35 @@ def handle(event, context):
                 background_processing_time_seconds = (end_time - start_time).total_seconds()
                 logger.info(f"[PREVIEW_TIMING] Background handler processing time: {background_processing_time_seconds:.3f}s")
                 
-                # Update DynamoDB with the complete preview payload and account tracking
+                # Create minimal frontend payload with only consumed fields
+                frontend_payload = {
+                    "markdown_table": preview_payload.get("markdown_table", ""),
+                    "enhanced_download_url": preview_payload.get("enhanced_download_url"),
+                    "total_rows": preview_payload.get("total_rows", 0),
+                    "cost_estimates": {
+                        "quoted_validation_cost": quoted_full_cost,
+                        "estimated_validation_time": estimated_total_time_seconds
+                    },
+                    "validation_metrics": {
+                        "validated_columns_count": validation_metrics.get('validated_columns_count', 0),
+                        "search_groups_count": validation_metrics.get('search_groups_count', 0), 
+                        "claude_search_groups_count": validation_metrics.get('claude_search_groups_count', 0)
+                    },
+                    "account_info": {
+                        "current_balance": float(current_balance) if current_balance else 0,
+                        "sufficient_balance": float(current_balance) >= quoted_full_cost if current_balance else False,
+                        "credits_needed": max(0, quoted_full_cost - (float(current_balance) if current_balance else 0))
+                    }
+                }
+                
+                # Update DynamoDB with the minimal frontend payload
                 update_run_status_for_session(status='COMPLETED',
                     run_type="Preview",
                     verbose_status="Preview complete. Results available.",
                     percent_complete=100,
                     processed_rows=len(validation_results.get('validation_results', {})) if validation_results else 0,
                     total_rows=total_rows,  # Actual total rows in the table
-                    preview_data=preview_payload,
+                    preview_data=frontend_payload,  # Send minimal frontend payload
                     account_current_balance=float(current_balance) if current_balance else 0,
                     account_sufficient_balance="n/a",
                     account_credits_needed="n/a",
@@ -1387,13 +1408,14 @@ def handle(event, context):
                     'domain_multiplier': float(multiplier),
                     'eliyahu_cost': float(eliyahu_cost),  # Your actual expense
                     'estimated_cost': float(cost_estimated),  # What it would cost without caching
-                    'preview_abandoned': False,  # Completed successfully
-                    'insufficient_balance_encountered': False,  # Previews don't charge
+                    # Removed preview_abandoned and insufficient_balance_encountered - unnecessary fields
                     'processing_type': 'preview'
                 }
                 _update_session_info_with_account_data(email, clean_session_id, account_info)
                 
-                # Store preview results in unified storage
+                # Frontend payload already created above for DynamoDB
+                
+                # Store preview results in unified storage (full payload for processing)
                 result = storage_manager.store_results(
                     email, clean_session_id, config_version, preview_payload, 'preview'
                 )
@@ -1401,7 +1423,7 @@ def handle(event, context):
                 if result['success']:
                     logger.info(f"Preview results stored in versioned folder: {result['s3_key']}")
                     
-                    # Update session tracking with minimal lookup info and file paths
+                    # Update session tracking with minimal frontend payload for UX analysis
                     try:
                         success = storage_manager.update_session_results(
                             email=email,
@@ -1410,7 +1432,8 @@ def handle(event, context):
                             config_id=config_id,
                             version=config_version,
                             run_key=run_key,
-                            results_path=result['s3_key']  # Path to preview results JSON
+                            results_path=result['s3_key'],  # Path to preview results JSON
+                            frontend_payload=frontend_payload  # Minimal frontend payload for UX tracking
                         )
                         
                         if success:
@@ -1454,8 +1477,7 @@ def handle(event, context):
                         'amount_charged': 0,  # Previews are free
                         'domain_multiplier': float(multiplier),
                         'raw_cost': 0,  # No processing happened
-                        'preview_abandoned': True,  # Failed to complete
-                        'insufficient_balance_encountered': False,  # Previews don't charge
+                        # Removed preview_abandoned and insufficient_balance_encountered - unnecessary fields
                         'processing_type': 'preview_failed'
                     }
                     _update_session_info_with_account_data(email, clean_session_id, account_info)
@@ -1963,8 +1985,7 @@ def handle(event, context):
                     'amount_charged': float(charged_amount),
                     'domain_multiplier': float(multiplier),
                     'eliyahu_cost': float(eliyahu_cost),
-                    'preview_abandoned': False,  # This is full validation
-                    'insufficient_balance_encountered': balance_error_occurred,
+                    # Removed preview_abandoned and insufficient_balance_encountered - unnecessary fields
                     'processing_type': 'full_validation'
                 }
                 _update_session_info_with_account_data(email, clean_session_id, account_info)

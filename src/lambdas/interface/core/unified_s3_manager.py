@@ -1162,6 +1162,13 @@ class UnifiedS3Manager:
                 session_info = json.loads(response['Body'].read().decode('utf-8'))
                 logger.debug(f"Loaded existing session_info.json for {session_id}")
                 
+                # Clean up old structure fields to ensure clean format
+                old_fields_to_remove = ['config_history', 'current_config_version', 'total_configs']
+                for field in old_fields_to_remove:
+                    if field in session_info:
+                        logger.debug(f"Removing old session field: {field}")
+                        del session_info[field]
+                
                 # Ensure versions structure exists
                 if 'versions' not in session_info:
                     session_info['versions'] = {}
@@ -1216,7 +1223,7 @@ class UnifiedS3Manager:
     def update_session_config(self, email: str, session_id: str, config_data: Dict, 
                             config_key: str, config_id: str, version: int, 
                             source: str, description: str = None, source_session: str = None,
-                            excel_s3_key: str = None, source_config_path: str = None) -> bool:
+                            excel_s3_key: str = None, source_config_path: str = None, run_key: str = None) -> bool:
         """Update session_info.json with new config information organized by version"""
         try:
             session_info = self.load_session_info(email, session_id)
@@ -1252,12 +1259,24 @@ class UnifiedS3Manager:
             if source_config_path:
                 version_entry["config"]["source_config_path"] = source_config_path
             
+            if run_key:
+                version_entry["config"]["run_key"] = run_key
+            
             # Store version entry
             session_info["versions"][str(version)] = version_entry
             
             # Update session-level tracking (clean structure)
             session_info["current_version"] = version
             session_info["last_updated"] = datetime.now().isoformat()
+            
+            # Ensure basic session info fields are set
+            if "session_id" not in session_info:
+                session_info["session_id"] = session_id
+            if "email" not in session_info:
+                session_info["email"] = email
+            if "table_name" not in session_info:
+                # Generate table name from session ID if not set
+                session_info["table_name"] = f"table_{session_id.split('_')[-1]}"
             
             # Store table path at session level (doesn't change per version)
             if excel_s3_key:
@@ -1271,8 +1290,9 @@ class UnifiedS3Manager:
     def update_session_results(self, email: str, session_id: str, operation_type: str,
                              config_id: str, version: int, run_key: str,
                              results_path: str = None, enhanced_excel_path: str = None,
-                             status: str = "completed", completed_at: str = None) -> bool:
-        """Update session_info.json with minimal results lookup information and file paths"""
+                             status: str = "completed", completed_at: str = None,
+                             frontend_payload: Dict = None) -> bool:
+        """Update session_info.json with results information and complete frontend payload for UX analysis"""
         try:
             logger.info(f"[SESSION_TRACKING] Updating {operation_type} results for session {session_id}, version {version}")
             
@@ -1303,6 +1323,8 @@ class UnifiedS3Manager:
                 result_entry["results_path"] = results_path  # Path to validation_results.json or preview_results.json
             if enhanced_excel_path:
                 result_entry["enhanced_excel_path"] = enhanced_excel_path  # Path to enhanced Excel file
+            if frontend_payload:
+                result_entry["frontend_payload"] = frontend_payload  # Complete payload sent to frontend for UX analysis
             
             # Set singular preview/validation object
             if operation_type == "preview":
