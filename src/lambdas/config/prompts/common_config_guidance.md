@@ -110,13 +110,30 @@ Auto-detect from sample data:
 
 **Units Consistency**: If a column contains values with units (e.g., $B for billions, °C for temperature, mg for dosage, etc), make sure to specify in the notes that all values should consistently include the same units across all rows. This ensures validation results maintain proper unit formatting. When you detect a potential variablity in units of response, make sure the examples include consistent units (dont mit $T with $B, etc.)
 
+## Quality Control (QC) Settings Guidelines
+
+QC provides automated review of validation outputs to improve accuracy and consistency.
+
+### QC Configuration Options
+- **Enable QC**: Set `enable_qc: true` to enable automated quality control review
+- **QC Models**: Default models are `claude-sonnet-4-0` for cost-efficiency, can use `claude-opus-4-1` for complex cases
+- **Token Allocation**: Default 8K base + 4K per validated column (excluding ID fields)
+- **Web Searches**: Default 0 (disabled) for cost efficiency, increase when getting it right is critical, or when the model already used claude with web searches. 
+
+### When to Configure QC
+- **Enable QC (Recommended)**: For most validation tasks where accuracy is important
+- **Advanced QC Models**: Use `claude-opus-4-1` for complex scientific/technical data requiring deeper reasoning
+- **Increase QC Web Searches**: When you need to get everything right, or when claude web search is already being used. 
+- **Disable QC**: Only for simple fact-checking tasks or when speed is more important than accuracy
+
+
 ## Search Group Requirements (MANDATORY)
 Search groups are **REQUIRED** for every configuration - they are essential for building an effective search strategy and cannot be omitted.
 
 **MANDATORY REQUIREMENTS:**
 - **You MUST define at least two search groups** in the `search_groups` array (Group 0/ID Group and another)
 - **Every validation target MUST be assigned to a search group** via the `search_group` field (except those that are Ignore)
-- **Group 0**: Always ID/identifier fields (not validated, used for context), you must provide an ID group and assign at least one,  validation target to this. Note - these usually come from the left-most column(s). No validated columns in this group! 
+- **Group 0**: Always ID/identifier fields (not validated, used for context), you must provide an ID group and assign at least one,  validation target to this. Note - these usually come from the left-most column(s). No validated columns in this group!
 - **Group 1+**: Columns whose information appears together in typical sources
 - **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or Ignore)/2)
 - **Upper limit**: Maximum 10

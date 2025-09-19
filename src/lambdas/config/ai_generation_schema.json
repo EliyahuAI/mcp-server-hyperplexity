@@ -27,6 +27,43 @@
           "maximum": 10,
           "description": "Default maximum web searches for Anthropic models (0-10). 0=disable web search entirely, 1=obvious items, 3=complex items, 5=esoteric facts"
         },
+        "qc_settings": {
+          "type": "object",
+          "description": "Quality Control settings for automated review of validation outputs",
+          "properties": {
+            "enable_qc": {
+              "type": "boolean",
+              "description": "Enable or disable Quality Control review"
+            },
+            "max_tokens_default": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 50000,
+              "description": "Default maximum tokens for QC processing"
+            },
+            "tokens_per_validated_column_default": {
+              "type": "integer",
+              "minimum": 500,
+              "maximum": 10000,
+              "description": "Additional tokens per validated column for QC"
+            },
+            "model": {
+              "oneOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}}
+              ],
+              "description": "QC model(s) to use. Can be string or array of models for fallback"
+            },
+            "anthropic_max_web_searches": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10,
+              "description": "Maximum web searches for QC (0-10). 0=disable web search entirely (default for cost efficiency)"
+            }
+          },
+          "required": ["enable_qc"],
+          "additionalProperties": false
+        },
         "search_groups": {
           "type": "array",
           "description": "Required search group definitions",
