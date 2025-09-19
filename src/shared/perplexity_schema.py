@@ -44,4 +44,41 @@ def get_response_format_schema(is_multiplex=True):
         "json_schema": {
             "schema": MULTIPLEX_RESPONSE_SCHEMA
         }
+    }
+
+# Additional fields for QC responses that extend the multiplex response schema
+ADDITIONAL_QC_FIELDS = {
+    "qc_action_taken": {
+        "type": "string",
+        "enum": ["confidence_lowered", "value_replaced", "no_change"],
+        "description": "The QC action taken: confidence_lowered (only confidence changed), value_replaced (answer and/or confidence changed), no_change (should not appear in QC output)"
+    },
+    "qc_reasoning": {
+        "type": "string",
+        "description": "Detailed explanation of why QC revision was necessary and what specific issue was addressed"
+    }
+}
+
+def get_qc_response_format_schema():
+    """
+    Get the QC schema that extends the multiplex schema with additional QC fields.
+
+    Returns:
+        The JSON schema for QC response formatting
+    """
+    # Deep copy the multiplex schema and add QC fields
+    import copy
+    qc_schema = copy.deepcopy(MULTIPLEX_RESPONSE_SCHEMA)
+
+    # Add QC-specific fields to the properties
+    qc_schema["items"]["properties"].update(ADDITIONAL_QC_FIELDS)
+
+    # Update required fields to include QC fields
+    qc_schema["items"]["required"].extend(["qc_action_taken", "qc_reasoning"])
+
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "schema": qc_schema
+        }
     } 
