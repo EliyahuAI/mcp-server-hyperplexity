@@ -3464,16 +3464,17 @@
                     // Show success message in the same card instead of creating new one
                     const messagesContainer = document.getElementById(`${cardId}-messages`);
                     if (messagesContainer) {
-                        // Include balance information in final message
-                        const currentBalance = globalState.accountBalance;
-                        const balanceText = currentBalance !== undefined ? ` • Remaining balance: $${currentBalance.toFixed(2)}` : '';
+                        // Show full results interface immediately, but with disabled download button
+                        const balanceText = globalState.accountBalance !== undefined ? 
+                            `• Remaining balance: $${globalState.accountBalance.toFixed(2)}` : 
+                            `• Balance updating...`;
                         
                         messagesContainer.innerHTML = `
                             <div class="message message-success" style="margin-bottom: 1rem;">
                                 <span class="message-icon">🎉</span>
                                 <div style="line-height: 1.6;">
                                     <div style="margin-bottom: 8px;">
-                                        • Your validation has been completed successfully and emailed to you and available at the button below
+                                        • Your validation has been completed successfully and emailed to you
                                     </div>
                                     <div style="margin-bottom: 8px;">
                                         • Notice the Updated and Original sheets, color coded by confidence with green/yellow/red meaning high/medium/low confidence
@@ -3481,14 +3482,14 @@
                                     <div style="margin-bottom: 8px;">
                                         • If you want to change anything, refine the configuration and check out the preview
                                     </div>
-                                    <div>
-                                        • Remaining balance: $${(globalState.accountBalance || 0).toFixed(2)}
+                                    <div id="${cardId}-balance-info">
+                                        ${balanceText}
                                     </div>
                                 </div>
                             </div>
                             <div style="display: flex; gap: 10px; margin-top: 1rem;">
-                                <button class="std-button primary" id="${cardId}-download-btn" style="flex: 1;">
-                                    <span class="button-text">📥 Download Results</span>
+                                <button class="std-button primary" id="${cardId}-download-btn" style="flex: 1;" disabled>
+                                    <span class="button-text">📥 Preparing Download...</span>
                                 </button>
                                 <button class="std-button secondary" id="${cardId}-refine-btn" style="flex: 1;">
                                     <span class="button-text">🔧 Refine Configuration</span>
@@ -3505,16 +3506,7 @@
                         setTimeout(() => {
                             const downloadBtn = document.getElementById(`${cardId}-download-btn`);
                             const refineBtn = document.getElementById(`${cardId}-refine-btn`);
-                            
-                            if (downloadBtn) {
-                                downloadBtn.addEventListener('click', async () => {
-                                    try {
-                                        await window.downloadValidationResults();
-                                    } catch (error) {
-                                        console.error('Download error:', error);
-                                    }
-                                });
-                            }
+                            const balanceInfo = document.getElementById(`${cardId}-balance-info`);
                             
                             if (refineBtn) {
                                 refineBtn.addEventListener('click', debounceConfigAction('refine-config-2', async () => {
@@ -3525,6 +3517,26 @@
                                     }
                                 }));
                             }
+                            
+                            // Enable download button and update balance after delay
+                            setTimeout(() => {
+                                if (downloadBtn) {
+                                    downloadBtn.disabled = false;
+                                    downloadBtn.querySelector('.button-text').textContent = '📥 Download Results';
+                                    downloadBtn.addEventListener('click', async () => {
+                                        try {
+                                            await window.downloadValidationResults();
+                                        } catch (error) {
+                                            console.error('Download error:', error);
+                                        }
+                                    });
+                                }
+                                
+                                // Update balance display
+                                if (balanceInfo && globalState.accountBalance !== undefined) {
+                                    balanceInfo.textContent = `• Remaining balance: $${globalState.accountBalance.toFixed(2)}`;
+                                }
+                            }, 5000); // 5 second delay for download to be ready
                         }, 100);
                     }
                 }
@@ -6587,16 +6599,17 @@ Please answer these questions and then I'll generate your configuration and auto
                     }
                 ];
             } else {
-                // Include balance information in final message
-                const currentBalance = globalState.accountBalance;
-                const balanceText = currentBalance !== undefined ? ` • Remaining balance: $${currentBalance.toFixed(2)}` : '';
+                // Show full content immediately with disabled download button
+                const balanceText = globalState.accountBalance !== undefined ? 
+                    `• Remaining balance: $${globalState.accountBalance.toFixed(2)}` : 
+                    `• Balance updating...`;
                 
                 content = `
                     <div class="message message-success" style="margin-bottom: 1rem;">
                         <span class="message-icon">🎉</span>
                         <div style="line-height: 1.6;">
                             <div style="margin-bottom: 8px;">
-                                • Your validation has been completed successfully and emailed to you and available at the button below
+                                • Your validation has been completed successfully and emailed to you
                             </div>
                             <div style="margin-bottom: 8px;">
                                 • Notice the Updated and Original sheets, color coded by confidence with green/yellow/red meaning high/medium/low confidence
@@ -6604,8 +6617,8 @@ Please answer these questions and then I'll generate your configuration and auto
                             <div style="margin-bottom: 8px;">
                                 • If you want to change anything, refine the configuration and check out the preview
                             </div>
-                            <div>
-                                • Remaining balance: $${(globalState.accountBalance || 0).toFixed(2)}
+                            <div id="${cardId}-balance-info">
+                                ${balanceText}
                             </div>
                         </div>
                     </div>
@@ -6613,18 +6626,12 @@ Please answer these questions and then I'll generate your configuration and auto
 
                 buttons = [
                     {
-                        text: 'Download Results',
+                        text: 'Preparing Download...',
                         icon: '📥',
                         variant: 'primary',
                         width: 'half',
-                        callback: async function() {
-                            try {
-                                await window.downloadValidationResults();
-                            } catch (error) {
-                                console.error('Download error:', error);
-                                alert('Download failed: ' + error.message);
-                            }
-                        }
+                        disabled: true,
+                        callback: async function() {} // Will be replaced when enabled
                     },
                     {
                         text: 'Refine Configuration',
@@ -6650,13 +6657,42 @@ Please answer these questions and then I'll generate your configuration and auto
                 ];
             }
 
-            createCard({
+            const card = createCard({
                 icon: isPartial ? '📈' : '🎉',
                 title: isPartial ? 'Continue Validation' : 'Process',
                 subtitle: isPartial ? 'Process more of your table' : 'Ready to start a new validation',
                 content,
                 buttons
             });
+            
+            // If this is a completion (not partial), add delayed update to enable download and update balance
+            if (!isPartial) {
+                setTimeout(() => {
+                    // Find and enable the download button
+                    const downloadButton = card.querySelector('button[disabled]');
+                    const balanceElement = card.querySelector(`#${card.id}-balance-info`);
+                    
+                    if (downloadButton) {
+                        downloadButton.disabled = false;
+                        downloadButton.querySelector('.button-text').textContent = '📥 Download Results';
+                        
+                        // Add the click handler
+                        downloadButton.addEventListener('click', async function() {
+                            try {
+                                await window.downloadValidationResults();
+                            } catch (error) {
+                                console.error('Download error:', error);
+                                alert('Download failed: ' + error.message);
+                            }
+                        });
+                    }
+                    
+                    // Update balance display if we have it
+                    if (balanceElement && globalState.accountBalance !== undefined) {
+                        balanceElement.textContent = `• Remaining balance: $${globalState.accountBalance.toFixed(2)}`;
+                    }
+                }, 5000); // 5 second delay for download to be ready
+            }
         }
 
         async function continueProcessing(cardId, maxRows) {
