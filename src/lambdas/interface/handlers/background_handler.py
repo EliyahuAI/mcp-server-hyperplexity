@@ -40,7 +40,7 @@ try:
     sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
     from dynamodb_schemas import update_processing_metrics, track_email_delivery, track_user_request, update_run_status, create_run_record
     DYNAMODB_AVAILABLE = True
-    logger.info("DynamoDB functions imported successfully at module level")
+    logger.debug("DynamoDB functions imported successfully at module level")
 except ImportError as e:
     logger.error(f"Failed to import dynamodb_schemas at module level: {e}")
     # Dummy functions are already defined above
@@ -151,7 +151,7 @@ def _apply_domain_multiplier_with_validation(email: str, base_cost: float, sessi
         quoted_cost = max(2.0, math.ceil(cost_with_multiplier))  # $2 minimum, rounded up to nearest dollar
         
         # Audit logging
-        logger.info(f"[MULTIPLIER_AUDIT] Domain: {domain}, Base: ${base_cost:.6f}, "
+        logger.debug(f"[MULTIPLIER_AUDIT] Domain: {domain}, Base: ${base_cost:.6f}, "
                    f"Multiplier: {multiplier}x, With multiplier: ${cost_with_multiplier:.6f}, "
                    f"Final quoted: ${quoted_cost:.2f}, Session: {session_id}")
         
@@ -258,12 +258,12 @@ def _get_api_gateway_management_client(context):
         # Convert WebSocket URL (wss://) to HTTPS endpoint for API Gateway Management
         if endpoint_url.startswith('wss://'):
             endpoint_url = endpoint_url.replace('wss://', 'https://')
-            logger.info(f"Converted WebSocket URL to HTTPS endpoint: {endpoint_url}")
+            logger.debug(f"Converted WebSocket URL to HTTPS endpoint: {endpoint_url}")
         
         # Ensure the endpoint URL includes the stage (prod)
         if not endpoint_url.endswith('/prod'):
             endpoint_url = endpoint_url.rstrip('/') + '/prod'
-            logger.info(f"Added /prod stage to endpoint URL: {endpoint_url}")
+            logger.debug(f"Added /prod stage to endpoint URL: {endpoint_url}")
         
         api_gateway_management_client = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
     return api_gateway_management_client
@@ -281,7 +281,7 @@ def _send_balance_update(session_id: str, balance_data: dict):
                     ConnectionId=connection_id,
                     Data=json.dumps(balance_data).encode('utf-8')
                 )
-                logger.info(f"Balance update sent to WebSocket {connection_id}")
+                logger.debug(f"Balance update sent to WebSocket {connection_id}")
         except client.exceptions.GoneException:
             logger.warning(f"WebSocket connection {connection_id} is stale. Removing from DB.")
             remove_websocket_connection(connection_id)
@@ -408,12 +408,12 @@ def handle(event, context):
                 run_key = find_existing_run_key(session_id)
                 
                 if run_key:
-                    logger.info(f"Found existing run_key for session {session_id}: {run_key}")
+                    logger.debug(f"Found existing run_key for session {session_id}: {run_key}")
                 else:
                     # Only create new run record if none exists
                     run_type_initial = "Preview" if is_preview else "Validation"
                     run_key = create_run_record(session_id=session_id, email=email, total_rows=0, batch_size=batch_size or 10, run_type=run_type_initial)
-                    logger.info(f"Created new run_key for backward compatibility: {run_key}")
+                    logger.debug(f"Created new run_key for backward compatibility: {run_key}")
             except Exception as e:
                 logger.error(f"Failed to find/create run_key for backward compatibility: {e}")
                 import traceback
@@ -426,7 +426,7 @@ def handle(event, context):
         if not clean_session_id.startswith('session_'):
             clean_session_id = f"session_{clean_session_id}"
             
-        logger.info(f"Background handler called for session {session_id}, clean_session_id={clean_session_id}, is_preview={is_preview}")
+        logger.debug(f"Background handler called for session {session_id}, clean_session_id={clean_session_id}, is_preview={is_preview}")
 
         email_folder = event.get('email_folder', 'default')
         email_address = event.get('email_address')
@@ -456,7 +456,7 @@ def handle(event, context):
         if is_preview:
             preview_max_rows = event.get('preview_max_rows', 5)
             sequential_call_num = event.get('sequential_call')
-            logger.info(f"Background preview processing for session {session_id}")
+            logger.debug(f"Background preview processing for session {session_id}")
             
             # Send initial WebSocket progress update - interface setup range 0-5%
             _send_websocket_message_deduplicated(session_id, {
@@ -561,19 +561,19 @@ def handle(event, context):
             if validation_results and validation_results.get('validation_results'):
                 # Extract metadata first
                 real_results = validation_results.get('validation_results', {})
-                logger.info(f"[EXCEL_DEBUG] validation_results keys: {list(validation_results.keys())}")
-                logger.info(f"[EXCEL_DEBUG] real_results type: {type(real_results)}, keys: {list(real_results.keys()) if isinstance(real_results, dict) else 'N/A'}")
+                logger.debug(f"[EXCEL_DEBUG] validation_results keys: {list(validation_results.keys())}")
+                logger.debug(f"[EXCEL_DEBUG] real_results type: {type(real_results)}, keys: {list(real_results.keys()) if isinstance(real_results, dict) else 'N/A'}")
                 if isinstance(real_results, dict) and real_results:
                     sample_key = list(real_results.keys())[0]
                     sample_value = real_results[sample_key]
-                    logger.info(f"[EXCEL_DEBUG] Sample validation entry - Key: {sample_key}, Value type: {type(sample_value)}")
+                    logger.debug(f"[EXCEL_DEBUG] Sample validation entry - Key: {sample_key}, Value type: {type(sample_value)}")
                     if isinstance(sample_value, dict):
-                        logger.info(f"[EXCEL_DEBUG] Sample validation entry - Value keys: {list(sample_value.keys())}")
+                        logger.debug(f"[EXCEL_DEBUG] Sample validation entry - Value keys: {list(sample_value.keys())}")
                         for field_name, field_data in sample_value.items():
                             if isinstance(field_data, dict):
-                                logger.info(f"[EXCEL_DEBUG] Field '{field_name}' - keys: {list(field_data.keys())}")
+                                logger.debug(f"[EXCEL_DEBUG] Field '{field_name}' - keys: {list(field_data.keys())}")
                                 confidence = field_data.get('confidence') or field_data.get('confidence_level')
-                                logger.info(f"[EXCEL_DEBUG] Field '{field_name}' - confidence: {confidence}")
+                                logger.debug(f"[EXCEL_DEBUG] Field '{field_name}' - confidence: {confidence}")
                             break  # Just show one field sample
                 total_rows = validation_results.get('total_rows', 1)
                 metadata = validation_results.get('metadata', {})
@@ -597,22 +597,22 @@ def handle(event, context):
                 enhanced_models_parameter = metadata.get('enhanced_models_parameter', {})
 
                 # DEBUG: Log the exact structure of the received enhanced_metrics
-                logger.info(f"[DATA_FLOW_DEBUG] Received enhanced_metrics structure: {json.dumps(enhanced_metrics, indent=2)}")
+                logger.debug(f"[DATA_FLOW_DEBUG] Received enhanced_metrics structure: {json.dumps(enhanced_metrics, indent=2)}")
                 
                 # DEBUG: Log what we received from validation lambda
-                logger.info(f"[ENHANCED_DEBUG] enhanced_metrics available: {bool(enhanced_metrics)}")
+                logger.debug(f"[ENHANCED_DEBUG] enhanced_metrics available: {bool(enhanced_metrics)}")
                 if enhanced_metrics:
-                    logger.info(f"[ENHANCED_DEBUG] enhanced_metrics keys: {list(enhanced_metrics.keys())}")
-                    logger.info(f"[ENHANCED_DEBUG] aggregated_metrics available: {bool(enhanced_metrics.get('aggregated_metrics'))}")
+                    logger.debug(f"[ENHANCED_DEBUG] enhanced_metrics keys: {list(enhanced_metrics.keys())}")
+                    logger.debug(f"[ENHANCED_DEBUG] aggregated_metrics available: {bool(enhanced_metrics.get('aggregated_metrics'))}")
                     if enhanced_metrics.get('aggregated_metrics'):
                         aggregated_data = enhanced_metrics['aggregated_metrics']
-                        logger.info(f"[ENHANCED_DEBUG] aggregated_data keys: {list(aggregated_data.keys())}")
+                        logger.debug(f"[ENHANCED_DEBUG] aggregated_data keys: {list(aggregated_data.keys())}")
                         totals = aggregated_data.get('totals', {})
-                        logger.info(f"[ENHANCED_DEBUG] totals keys: {list(totals.keys())}")
-                        logger.info(f"[ENHANCED_DEBUG] total_cost_actual: {totals.get('total_cost_actual', 'NOT_FOUND')}")
-                        logger.info(f"[ENHANCED_DEBUG] total_cost_estimated: {totals.get('total_cost_estimated', 'NOT_FOUND')}")
+                        logger.debug(f"[ENHANCED_DEBUG] totals keys: {list(totals.keys())}")
+                        logger.debug(f"[ENHANCED_DEBUG] total_cost_actual: {totals.get('total_cost_actual', 'NOT_FOUND')}")
+                        logger.debug(f"[ENHANCED_DEBUG] total_cost_estimated: {totals.get('total_cost_estimated', 'NOT_FOUND')}")
                         providers = aggregated_data.get('providers', {})
-                        logger.info(f"[ENHANCED_DEBUG] providers: {list(providers.keys())}")
+                        logger.debug(f"[ENHANCED_DEBUG] providers: {list(providers.keys())}")
                 else:
                     logger.warning(f"[ENHANCED_DEBUG] No enhanced_metrics found in metadata. Metadata keys: {list(metadata.keys())}")
                 
@@ -634,7 +634,7 @@ def handle(event, context):
                     
                     # Use provider sum as fallback if total is wrong (ensures consistency)
                     provider_cost_sum = perplexity_eliyahu_cost + anthropic_eliyahu_cost
-                    logger.info(f"[COST_DEBUG] eliyahu_cost=${eliyahu_cost:.6f}, provider_sum=${provider_cost_sum:.6f}, perplexity=${perplexity_eliyahu_cost:.6f}, anthropic=${anthropic_eliyahu_cost:.6f}")
+                    logger.debug(f"[COST_DEBUG] eliyahu_cost=${eliyahu_cost:.6f}, provider_sum=${provider_cost_sum:.6f}, perplexity=${perplexity_eliyahu_cost:.6f}, anthropic=${anthropic_eliyahu_cost:.6f}")
                     
                     # Use provider sum if it's different from the total (handles both 0 and other mismatches)
                     if provider_cost_sum > 0 and abs(eliyahu_cost - provider_cost_sum) > 0.000001:
@@ -667,9 +667,9 @@ def handle(event, context):
                     logger.info(f"[ENHANCED_TIME] Actual time: {total_processing_time:.3f}s, Estimated time per row: {estimated_time_per_row:.3f}s ({time_calculation_method}), Total estimated: {total_estimated_time_seconds:.3f}s")
                     
                     # Debug timing extraction from totals
-                    logger.info(f"[TIME_DEBUG] totals timing keys: {[k for k in totals.keys() if 'time' in k.lower()]}")
-                    logger.info(f"[TIME_DEBUG] total_actual_processing_time from totals: {totals.get('total_actual_processing_time', 'NOT_FOUND')}")
-                    logger.info(f"[TIME_DEBUG] total_estimated_processing_time from totals: {totals.get('total_estimated_processing_time', 'NOT_FOUND')}")
+                    logger.debug(f"[TIME_DEBUG] totals timing keys: {[k for k in totals.keys() if 'time' in k.lower()]}")
+                    logger.debug(f"[TIME_DEBUG] total_actual_processing_time from totals: {totals.get('total_actual_processing_time', 'NOT_FOUND')}")
+                    logger.debug(f"[TIME_DEBUG] total_estimated_processing_time from totals: {totals.get('total_estimated_processing_time', 'NOT_FOUND')}")
                 else:
                     # Fallback to legacy token_usage for backward compatibility
                     eliyahu_cost = token_usage.get('total_cost', 0.0)
@@ -706,7 +706,7 @@ def handle(event, context):
                     total_estimates = estimates.get('total_estimates', {})
 
                     # DEBUG: Log the entire estimates object to see what we're working with
-                    logger.info(f"[ESTIMATES_DEBUG] Full validation estimates object: {json.dumps(estimates, indent=2)}")
+                    logger.debug(f"[ESTIMATES_DEBUG] Full validation estimates object: {json.dumps(estimates, indent=2)}")
                     
                     # Extract batch timing analysis for proper time scaling
                     batch_timing = estimates.get('batch_timing_analysis', {})
@@ -741,10 +741,10 @@ def handle(event, context):
                             anthropic_total_actual_cost = anthropic_data.get('total_cost_actual', 0)
                     
                     # Debug: Log what we actually received
-                    logger.info(f"[ENHANCED_ESTIMATES_DEBUG] batch_timing keys: {list(batch_timing.keys())}")
-                    logger.info(f"[ENHANCED_ESTIMATES_DEBUG] total_estimates keys: {list(total_estimates.keys())}")
-                    logger.info(f"[ENHANCED_ESTIMATES_DEBUG] estimated_total_time_for_full_validation: {batch_timing.get('estimated_total_time_for_full_validation', 'NOT_FOUND')}")
-                    logger.info(f"[ENHANCED_ESTIMATES_DEBUG] estimated_total_cost_estimated: {total_estimates.get('estimated_total_cost_estimated', 'NOT_FOUND')}")
+                    logger.debug(f"[ENHANCED_ESTIMATES_DEBUG] batch_timing keys: {list(batch_timing.keys())}")
+                    logger.debug(f"[ENHANCED_ESTIMATES_DEBUG] total_estimates keys: {list(total_estimates.keys())}")
+                    logger.debug(f"[ENHANCED_ESTIMATES_DEBUG] estimated_total_time_for_full_validation: {batch_timing.get('estimated_total_time_for_full_validation', 'NOT_FOUND')}")
+                    logger.debug(f"[ENHANCED_ESTIMATES_DEBUG] estimated_total_cost_estimated: {total_estimates.get('estimated_total_cost_estimated', 'NOT_FOUND')}")
                     
                     logger.info(f"[ENHANCED_ESTIMATES] ✅ Using ai_client full validation estimates:")
                     logger.info(f"  - Eliyahu cost (no cache, scaled): ${estimated_total_cost_raw:.6f}")
@@ -768,7 +768,7 @@ def handle(event, context):
                 if eliyahu_cost > cost_estimated:
                     logger.warning(f"[COST_WARNING] Actual cost ${eliyahu_cost:.6f} > estimated ${cost_estimated:.6f} - possible pricing issue")
                 
-                logger.info(f"[COST_DEBUG] Three-tier costs - Actual: ${eliyahu_cost:.6f}, Estimated: ${cost_estimated:.6f}")
+                logger.debug(f"[COST_DEBUG] Three-tier costs - Actual: ${eliyahu_cost:.6f}, Estimated: ${cost_estimated:.6f}")
                 total_tokens = token_usage.get('total_tokens', 0)
                 total_api_calls = token_usage.get('api_calls', 0)
                 total_cached_calls = token_usage.get('cached_calls', 0)
@@ -792,8 +792,8 @@ def handle(event, context):
                     # Use scaled eliyahu cost for multiplier calculation if available, otherwise preview cost
                     cost_for_multiplier = estimated_total_cost_raw if estimated_total_cost_raw is not None else cost_estimated
                     
-                    logger.info(f"[MULTIPLIER_DEBUG] Calling _apply_domain_multiplier_with_validation with cost: ${cost_for_multiplier:.6f}")
-                    logger.info(f"[MULTIPLIER_DEBUG] - Using {'scaled eliyahu cost' if estimated_total_cost_raw is not None else 'preview cost'}")
+                    logger.debug(f"[MULTIPLIER_DEBUG] Calling _apply_domain_multiplier_with_validation with cost: ${cost_for_multiplier:.6f}")
+                    logger.debug(f"[MULTIPLIER_DEBUG] - Using {'scaled eliyahu cost' if estimated_total_cost_raw is not None else 'preview cost'}")
                     multiplier_result = _apply_domain_multiplier_with_validation(email, cost_for_multiplier, session_id)
                     multiplier = multiplier_result['multiplier']
                     domain = multiplier_result['domain']
@@ -802,14 +802,14 @@ def handle(event, context):
                     cost_with_multiplier = multiplier_result['cost_with_multiplier']
                     quoted_full_cost = multiplier_result['quoted_cost']
                     
-                    logger.info(f"[MULTIPLIER_DEBUG] Domain multiplier result: domain={domain}, multiplier={multiplier}, "
+                    logger.debug(f"[MULTIPLIER_DEBUG] Domain multiplier result: domain={domain}, multiplier={multiplier}, "
                               f"cost_with_multiplier=${cost_with_multiplier:.6f}, quoted_cost=${quoted_full_cost:.2f}")
                     
                     # Validation and audit logging
                     if 'error' in multiplier_result:
                         logger.error(f"[MULTIPLIER_ERROR] Preview domain multiplier error: {multiplier_result['error']}")
                     
-                    logger.info(f"[COST_AUDIT] Preview processed {total_rows_processed} rows - "
+                    logger.debug(f"[COST_AUDIT] Preview processed {total_rows_processed} rows - "
                                f"Preview actual: ${eliyahu_cost:.6f}, Preview estimated: ${cost_estimated:.6f}, "
                                f"Scaled eliyahu cost: ${cost_for_multiplier:.6f}, "
                                f"Domain: {domain}, Multiplier: {multiplier}x, Quoted: ${quoted_full_cost:.2f}")
@@ -877,7 +877,7 @@ def handle(event, context):
                     logger.warning(f"[ENHANCED_DATA] Missing estimated_total_cost_raw from enhanced estimates - using fallback")
                     scaling_factor = total_rows / max(1, total_rows_processed)
                     estimated_total_cost_raw = cost_estimated * scaling_factor
-                    logger.info(f"[SCALING_DEBUG] Manual scaling: ${cost_estimated:.6f} × ({total_rows}/{total_rows_processed}) = ${estimated_total_cost_raw:.6f}")
+                    logger.debug(f"[SCALING_DEBUG] Manual scaling: ${cost_estimated:.6f} × ({total_rows}/{total_rows_processed}) = ${estimated_total_cost_raw:.6f}")
                 
                 # Quoted cost comes from enhanced estimates with business logic applied
                 if quoted_full_cost is None:
@@ -1062,22 +1062,22 @@ def handle(event, context):
                         else:
                             # Fallback: Create basic Excel using openpyxl when xlsxwriter is not available
                             try:
-                                logger.info("[DEBUG] xlsxwriter not available, creating fallback Excel using openpyxl")
+                                logger.debug("[DEBUG] xlsxwriter not available, creating fallback Excel using openpyxl")
                                 enhanced_excel_content = _create_fallback_preview_excel(real_results, config_data, input_filename)
-                                logger.info(f"[DEBUG] Fallback Excel created. Size: {len(enhanced_excel_content) if enhanced_excel_content else 0} bytes")
+                                logger.debug(f"[DEBUG] Fallback Excel created. Size: {len(enhanced_excel_content) if enhanced_excel_content else 0} bytes")
                             except Exception as e:
                                 logger.error(f"Error creating fallback Excel for preview: {str(e)}")
                                 import traceback
                                 logger.error(traceback.format_exc())
                         
                         # Store enhanced Excel in versioned results folder and create download link
-                        logger.info(f"[DEBUG] About to store enhanced Excel. enhanced_excel_content size: {len(enhanced_excel_content) if enhanced_excel_content else 0}")
+                        logger.debug(f"[DEBUG] About to store enhanced Excel. enhanced_excel_content size: {len(enhanced_excel_content) if enhanced_excel_content else 0}")
                         if enhanced_excel_content:
                             try:
                                 # Get version from config
                                 config_version = config_data.get('storage_metadata', {}).get('version', 1)
                                 enhanced_filename = f"{os.path.splitext(input_filename)[0]}_v{config_version}_preview_enhanced.xlsx"
-                                logger.info(f"[DEBUG] Storing enhanced Excel with filename: {enhanced_filename}")
+                                logger.debug(f"[DEBUG] Storing enhanced Excel with filename: {enhanced_filename}")
                                 
                                 # Store enhanced Excel in versioned results folder
                                 enhanced_result = storage_manager.store_enhanced_files(
@@ -1086,7 +1086,7 @@ def handle(event, context):
                                 )
                                 
                                 if enhanced_result['success']:
-                                    logger.info(f"[DEBUG] Enhanced Excel stored in results folder: {enhanced_result['stored_files']}")
+                                    logger.debug(f"[DEBUG] Enhanced Excel stored in results folder: {enhanced_result['stored_files']}")
                                     
                                     # Also create public download link for immediate download
                                     enhanced_download_url = storage_manager.create_public_download_link(
@@ -1094,7 +1094,7 @@ def handle(event, context):
                                         enhanced_filename,
                                         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                                     )
-                                    logger.info(f"[DEBUG] Enhanced Excel download link created successfully: {enhanced_download_url}")
+                                    logger.debug(f"[DEBUG] Enhanced Excel download link created successfully: {enhanced_download_url}")
                                 else:
                                     logger.error(f"[DEBUG] Failed to store enhanced Excel in results folder: {enhanced_result.get('error')}")
                                     enhanced_download_url = None
@@ -1112,7 +1112,7 @@ def handle(event, context):
 
                 # Add enhanced Excel download URL to preview payload
                 preview_payload["enhanced_download_url"] = enhanced_download_url
-                logger.info(f"[DEBUG] Added enhanced_download_url to preview_payload: {enhanced_download_url}")
+                logger.debug(f"[DEBUG] Added enhanced_download_url to preview_payload: {enhanced_download_url}")
                 
                 # Get account balance and multiplier for preview tracking
                 try:
@@ -1335,8 +1335,8 @@ def handle(event, context):
                             
                             # DEBUG: Log the cost estimates being sent to frontend
                             cost_estimates = preview_payload.get('cost_estimates', {})
-                            logger.info(f"[COST_DEBUG] WebSocket payload cost_estimates: {cost_estimates}")
-                            logger.info(f"[COST_DEBUG] quoted_validation_cost: {cost_estimates.get('quoted_validation_cost')}")
+                            logger.debug(f"[COST_DEBUG] WebSocket payload cost_estimates: {cost_estimates}")
+                            logger.debug(f"[COST_DEBUG] quoted_validation_cost: {cost_estimates.get('quoted_validation_cost')}")
                             
                             logger.info(f"Sending WebSocket payload to connection {connection_id}: {len(json.dumps(websocket_payload))} bytes")
                             
@@ -1362,10 +1362,12 @@ def handle(event, context):
                 
                 # Store preview results in versioned results folder using unified storage
                 config_version = 1
+                config_id = "unknown"
                 try:
                     existing_config, latest_config_key = storage_manager.get_latest_config(email, clean_session_id)
-                    if existing_config and existing_config.get('storage_metadata', {}).get('version'):
-                        config_version = existing_config['storage_metadata']['version']
+                    if existing_config and existing_config.get('storage_metadata', {}):
+                        config_version = existing_config['storage_metadata'].get('version', 1)
+                        config_id = existing_config['storage_metadata'].get('config_id', 'unknown')
                 except Exception as e:
                     logger.warning(f"Could not determine config version for preview: {e}")
                 
@@ -1398,6 +1400,25 @@ def handle(event, context):
                 
                 if result['success']:
                     logger.info(f"Preview results stored in versioned folder: {result['s3_key']}")
+                    
+                    # Update session tracking with minimal lookup info and file paths
+                    try:
+                        success = storage_manager.update_session_results(
+                            email=email,
+                            session_id=clean_session_id,
+                            operation_type="preview",
+                            config_id=config_id,
+                            version=config_version,
+                            run_key=run_key,
+                            results_path=result['s3_key']  # Path to preview results JSON
+                        )
+                        
+                        if success:
+                            logger.info(f"✅ Updated session_info.json with preview completion")
+                        else:
+                            logger.error(f"❌ Failed to update session_info.json with preview completion")
+                    except Exception as e:
+                        logger.error(f"Failed to update preview session tracking: {e}")
                 else:
                     logger.error(f"Failed to store preview results: {result.get('error')}")
                 
@@ -1456,7 +1477,7 @@ def handle(event, context):
         else:
             # Normal mode processing
             results_key = event['results_key']
-            logger.info(f"Background normal processing for session {session_id}")
+            logger.debug(f"Background normal processing for session {session_id}")
             
             # Use unified storage to get Excel and config files
             from ..core.unified_s3_manager import UnifiedS3Manager
@@ -1493,8 +1514,8 @@ def handle(event, context):
             update_run_status_for_session( status='PROCESSING', run_type="Validation", verbose_status=f"Validation preparing to process {rows_to_process} rows in {total_batches} batches.", batch_size=batch_size)
 
             # DISABLED: Fake simulation replaced with real validation lambda invocation
-            logger.info(f"[DEBUG] Fake batch processing loop DISABLED for session {session_id}")
-            logger.info(f"[DEBUG] Should invoke validation lambda with {rows_to_process} rows in {total_batches} batches")
+            logger.debug(f"[DEBUG] Fake batch processing loop DISABLED for session {session_id}")
+            logger.debug(f"[DEBUG] Should invoke validation lambda with {rows_to_process} rows in {total_batches} batches")
             
             # TODO: Replace with actual validation lambda invocation
             # This simulation was creating fake "first batch -> final batch" jumps
@@ -1599,7 +1620,7 @@ def handle(event, context):
                 # For full validation, use the quoted_full_cost from preview (what user was promised to pay)
                 # This ensures users pay exactly what was quoted in preview, regardless of actual full validation costs
                 charged_cost = multiplier_result['quoted_cost']  # Fallback if preview cost not found
-                logger.info(f"[COST_AUDIT] Full validation fallback - Actual: ${eliyahu_cost:.6f}, "
+                logger.debug(f"[COST_AUDIT] Full validation fallback - Actual: ${eliyahu_cost:.6f}, "
                            f"Estimated: ${cost_estimated:.6f}, Quoted fallback: ${charged_cost:.2f}")
                 logger.warning(f"[BILLING_PATH] Using FALLBACK calculation instead of preview quoted cost!")
                 
@@ -1789,21 +1810,21 @@ def handle(event, context):
                 # Extract timing data from enhanced metrics or use fallback
                 processing_time = 0.0  # Initialize
                 
-                logger.info(f"[TIMING_DEBUG] batch_timing available: {bool(batch_timing)}, validator_processing_time: {validator_processing_time}")
+                logger.debug(f"[TIMING_DEBUG] batch_timing available: {bool(batch_timing)}, validator_processing_time: {validator_processing_time}")
                 if batch_timing:
-                    logger.info(f"[TIMING_DEBUG] batch_timing keys: {list(batch_timing.keys())}")
+                    logger.debug(f"[TIMING_DEBUG] batch_timing keys: {list(batch_timing.keys())}")
                 
                 if batch_timing and batch_timing.get('total_batch_time_seconds', 0.0) > 0:
                     processing_time = batch_timing.get('total_batch_time_seconds', 0.0)
                     time_per_batch = batch_timing.get('average_batch_time_seconds', time_per_batch)
                     time_per_row = batch_timing.get('average_time_per_row_seconds', time_per_row)
-                    logger.info(f"[TIMING_DEBUG] Using batch_timing: processing_time={processing_time:.3f}s")
+                    logger.debug(f"[TIMING_DEBUG] Using batch_timing: processing_time={processing_time:.3f}s")
                 elif validator_processing_time > 0:
                     processing_time = validator_processing_time
                     if total_rows_processed > 0:
                         time_per_row = processing_time / total_rows_processed
                         time_per_batch = time_per_row * effective_batch_size
-                    logger.info(f"[TIMING_DEBUG] Using validator_processing_time: processing_time={processing_time:.3f}s")
+                    logger.debug(f"[TIMING_DEBUG] Using validator_processing_time: processing_time={processing_time:.3f}s")
                 else:
                     # Additional fallback - calculate from start/end times if available
                     start_time_str = validation_results.get('start_time')
@@ -1816,7 +1837,7 @@ def handle(event, context):
                             if total_rows_processed > 0:
                                 time_per_row = processing_time / total_rows_processed
                                 time_per_batch = time_per_row * effective_batch_size
-                            logger.info(f"[TIMING_DEBUG] Calculated from start/end times: processing_time={processing_time:.3f}s")
+                            logger.debug(f"[TIMING_DEBUG] Calculated from start/end times: processing_time={processing_time:.3f}s")
                         except Exception as e:
                             logger.warning(f"[TIMING_DEBUG] Failed to calculate from start/end times: {e}")
                             processing_time = 0.0
@@ -1904,11 +1925,16 @@ def handle(event, context):
                 s3_client.put_object(Bucket=S3_RESULTS_BUCKET, Key=results_key, Body=enhanced_zip, ContentType='application/zip')
                 logger.info(f"Enhanced results for {session_id} uploaded to {results_key}")
                 
-                # Determine config version for versioned storage
+                # Determine config version and ID for versioned storage
                 config_version = 1
+                config_id = "unknown"
                 try:
-                    _, latest_config_key = storage_manager.get_latest_config(email, clean_session_id)
-                    if latest_config_key:
+                    existing_config, latest_config_key = storage_manager.get_latest_config(email, clean_session_id)
+                    if existing_config and existing_config.get('storage_metadata', {}):
+                        config_version = existing_config['storage_metadata'].get('version', 1)
+                        config_id = existing_config['storage_metadata'].get('config_id', 'unknown')
+                    elif latest_config_key:
+                        # Fallback: try to extract version from filename
                         config_filename = latest_config_key.split('/')[-1]
                         if config_filename.startswith('config_v') and '_' in config_filename:
                             version_part = config_filename.split('_')[1]  # config_v{N}_{source}.json
@@ -1945,10 +1971,13 @@ def handle(event, context):
                 
                 if result['success']:
                     logger.info(f"Full validation results stored in versioned folder: {result['s3_key']}")
+                    validation_results_path = result['s3_key']
                 else:
                     logger.error(f"Failed to store full validation results: {result.get('error')}")
+                    validation_results_path = None
                 
                 # Extract and store enhanced files from ZIP
+                enhanced_excel_path = None
                 try:
                     import zipfile
                     import io
@@ -1976,11 +2005,40 @@ def handle(event, context):
                         
                         if enhanced_result['success']:
                             logger.info(f"Stored enhanced files: {enhanced_result['stored_files']}")
+                            # Extract enhanced Excel path if available
+                            if enhanced_result.get('stored_files'):
+                                for file_path in enhanced_result['stored_files']:
+                                    if 'enhanced.xlsx' in file_path:
+                                        enhanced_excel_path = file_path
+                                        break
                         else:
                             logger.error(f"Failed to store enhanced files: {enhanced_result.get('error')}")
                 
                 except Exception as e:
                     logger.error(f"Failed to extract enhanced files from ZIP: {e}")
+                
+                # Update session tracking with validation results and enhanced Excel paths
+                if validation_results_path:
+                    try:
+                        success = storage_manager.update_session_results(
+                            email=email,
+                            session_id=clean_session_id,
+                            operation_type="validation",
+                            config_id=config_id,
+                            version=config_version,
+                            run_key=run_key,
+                            results_path=validation_results_path,
+                            enhanced_excel_path=enhanced_excel_path
+                        )
+                        
+                        if success:
+                            logger.info(f"✅ Updated session_info.json with validation completion")
+                        else:
+                            logger.error(f"❌ Failed to update session_info.json with validation completion")
+                    except Exception as e:
+                        logger.error(f"Failed to update validation session tracking: {e}")
+                else:
+                    logger.warning(f"No validation results path available, skipping session tracking")
 
                 if EMAIL_SENDER_AVAILABLE and email_address:
                     # Calculate summary data for the email
@@ -2399,12 +2457,12 @@ def handle(event, context):
                             start_time_str = current_run['start_time']
                             end_time_str = datetime.now(timezone.utc).isoformat()  # Current time as end time
                             
-                            logger.info(f"[VALIDATION_TIMING_DEBUG] DynamoDB start_time: {start_time_str}, end_time: {end_time_str}")
+                            logger.debug(f"[VALIDATION_TIMING_DEBUG] DynamoDB start_time: {start_time_str}, end_time: {end_time_str}")
                             
                             start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
                             end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
                             validation_processing_time = (end_time - start_time).total_seconds()
-                            logger.info(f"[VALIDATION_TIMING_DEBUG] Calculated from DynamoDB times: validation_processing_time={validation_processing_time:.3f}s")
+                            logger.debug(f"[VALIDATION_TIMING_DEBUG] Calculated from DynamoDB times: validation_processing_time={validation_processing_time:.3f}s")
                         else:
                             logger.warning(f"[VALIDATION_TIMING_DEBUG] Could not get start_time from DynamoDB run record")
                     except Exception as db_error:
@@ -2414,14 +2472,14 @@ def handle(event, context):
                         start_time_str = validation_results.get('start_time')
                         end_time_str = validation_results.get('end_time') 
                         
-                        logger.info(f"[VALIDATION_TIMING_DEBUG] Fallback start_time: {start_time_str}, end_time: {end_time_str}")
+                        logger.debug(f"[VALIDATION_TIMING_DEBUG] Fallback start_time: {start_time_str}, end_time: {end_time_str}")
                         
                         if start_time_str and end_time_str:
                             try:
                                 start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
                                 end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
                                 validation_processing_time = (end_time - start_time).total_seconds()
-                                logger.info(f"[VALIDATION_TIMING_DEBUG] Calculated from start/end times: validation_processing_time={validation_processing_time:.3f}s")
+                                logger.debug(f"[VALIDATION_TIMING_DEBUG] Calculated from start/end times: validation_processing_time={validation_processing_time:.3f}s")
                             except Exception as e:
                                 logger.warning(f"[VALIDATION_TIMING_DEBUG] Failed to calculate from start/end times: {e}")
                                 # Fallback to other timing sources only if start/end calculation fails
@@ -2430,10 +2488,10 @@ def handle(event, context):
                                 
                                 if batch_timing and batch_timing.get('total_batch_time_seconds', 0.0) > 0:
                                     validation_processing_time = batch_timing.get('total_batch_time_seconds', 0.0)
-                                    logger.info(f"[VALIDATION_TIMING_DEBUG] Fallback to batch_timing: validation_processing_time={validation_processing_time:.3f}s")
+                                    logger.debug(f"[VALIDATION_TIMING_DEBUG] Fallback to batch_timing: validation_processing_time={validation_processing_time:.3f}s")
                                 elif validator_processing_time > 0:
                                     validation_processing_time = validator_processing_time
-                                    logger.info(f"[VALIDATION_TIMING_DEBUG] Fallback to validator_processing_time: validation_processing_time={validation_processing_time:.3f}s")
+                                    logger.debug(f"[VALIDATION_TIMING_DEBUG] Fallback to validator_processing_time: validation_processing_time={validation_processing_time:.3f}s")
                                 else:
                                     logger.warning(f"[VALIDATION_TIMING_DEBUG] No valid timing data found - validation_processing_time will be 0")
                                     validation_processing_time = 0.0
@@ -2445,10 +2503,10 @@ def handle(event, context):
                             
                             if batch_timing and batch_timing.get('total_batch_time_seconds', 0.0) > 0:
                                 validation_processing_time = batch_timing.get('total_batch_time_seconds', 0.0)
-                                logger.info(f"[VALIDATION_TIMING_DEBUG] Fallback to batch_timing: validation_processing_time={validation_processing_time:.3f}s")
+                                logger.debug(f"[VALIDATION_TIMING_DEBUG] Fallback to batch_timing: validation_processing_time={validation_processing_time:.3f}s")
                             elif validator_processing_time > 0:
                                 validation_processing_time = validator_processing_time
-                                logger.info(f"[VALIDATION_TIMING_DEBUG] Fallback to validator_processing_time: validation_processing_time={validation_processing_time:.3f}s")
+                                logger.debug(f"[VALIDATION_TIMING_DEBUG] Fallback to validator_processing_time: validation_processing_time={validation_processing_time:.3f}s")
                             else:
                                 logger.warning(f"[VALIDATION_TIMING_DEBUG] No valid timing data found - validation_processing_time will be 0")
                                 validation_processing_time = 0.0
@@ -2458,7 +2516,7 @@ def handle(event, context):
                     status_update_data['run_time_s'] = validation_processing_time  # Actual validation run time in seconds
                     status_update_data['actual_processing_time_seconds'] = validation_processing_time  # Same as run_time_s for compatibility
                     status_update_data['actual_time_per_batch_seconds'] = validation_processing_time  # For single batch validation, same as total time
-                    logger.info(f"[TIMING_DEBUG] Set actual_processing_time_seconds={validation_processing_time:.3f}, actual_time_per_batch_seconds={validation_processing_time:.3f}")
+                    logger.debug(f"[TIMING_DEBUG] Set actual_processing_time_seconds={validation_processing_time:.3f}, actual_time_per_batch_seconds={validation_processing_time:.3f}")
                     status_update_data['percent_complete'] = 100  # Mark validation as 100% complete
                     # estimated_validation_time_minutes will be calculated from actual processing time automatically in update_run_status
                     
@@ -2589,28 +2647,28 @@ def handle(event, context):
                 # Even for empty results, store in versioned folder
                 config_version = 1
                 try:
-                    logger.info(f"[DEBUG] Getting latest config for email={email}, session={clean_session_id}")
+                    logger.debug(f"[DEBUG] Getting latest config for email={email}, session={clean_session_id}")
                     _, latest_config_key = storage_manager.get_latest_config(email, clean_session_id)
-                    logger.info(f"[DEBUG] Got latest_config_key: {latest_config_key}")
+                    logger.debug(f"[DEBUG] Got latest_config_key: {latest_config_key}")
                     if latest_config_key:
                         config_filename = latest_config_key.split('/')[-1]
                         if config_filename.startswith('v') and '_' in config_filename:
                             config_version = int(config_filename.split('_')[0][1:])
-                    logger.info(f"[DEBUG] Determined config_version: {config_version}")
+                    logger.debug(f"[DEBUG] Determined config_version: {config_version}")
                 except Exception as e:
                     logger.warning(f"[DEBUG] Exception getting config version: {e}")
                     pass
                 
-                logger.info(f"[DEBUG] About to store preview results with config_version={config_version}")
+                logger.debug(f"[DEBUG] About to store preview results with config_version={config_version}")
                 result = storage_manager.store_results(
                     email, clean_session_id, config_version, 
                     {"status": "preview_completed", "note": "No results"}, 'preview'
                 )
-                logger.info(f"[DEBUG] Store results completed: {result}")
+                logger.debug(f"[DEBUG] Store results completed: {result}")
                 
                 if result['success']:
                     preview_results_key = result['s3_key']
-                    logger.info(f"[DEBUG] Store results successful, s3_key: {preview_results_key}")
+                    logger.debug(f"[DEBUG] Store results successful, s3_key: {preview_results_key}")
                 else:
                     logger.warning(f"[DEBUG] Store results failed, using fallback")
                     # Fallback
@@ -2620,11 +2678,11 @@ def handle(event, context):
                         Body=json.dumps({"status": "preview_completed", "note": "No results"}),
                         ContentType='application/json'
                     )
-                logger.info(f"[DEBUG] About to return preview_completed response for session {session_id}")
+                logger.debug(f"[DEBUG] About to return preview_completed response for session {session_id}")
                 return {'statusCode': 200, 'body': json.dumps({'status': 'preview_completed', 'session_id': session_id})}
              else:
                 # Return error response for non-preview failures
-                logger.info(f"[DEBUG] About to return background_failed response for non-preview session {session_id}")
+                logger.debug(f"[DEBUG] About to return background_failed response for non-preview session {session_id}")
                 return {'statusCode': 500, 'body': json.dumps({
                     'status': 'background_failed', 
                     'error': 'No validation results returned',
@@ -3359,43 +3417,26 @@ def _send_websocket_message(session_id: str, message: Dict):
     _send_websocket_message_deduplicated(session_id, message, "legacy")
 
 def _update_session_info_with_account_data(email: str, session_id: str, account_info: Dict):
-    """Update session_info.json with comprehensive account information."""
+    """Update session_info.json with account information using unified session management."""
     try:
         from ..core.unified_s3_manager import UnifiedS3Manager
         
         storage_manager = UnifiedS3Manager()
-        session_path = storage_manager.get_session_path(email, session_id)
-        session_info_key = f"{session_path}session_info.json"
         
-        # Get existing session info
-        try:
-            existing_response = storage_manager.s3_client.get_object(
-                Bucket=storage_manager.bucket_name,
-                Key=session_info_key
-            )
-            session_info = json.loads(existing_response['Body'].read())
-        except:
-            # Create basic session info if doesn't exist
-            session_info = {
-                'session_id': session_id,
-                'created': datetime.now().isoformat(),
-                'email': email,
-                'last_updated': datetime.now().isoformat()
-            }
+        # Use unified session management to preserve version tracking data
+        session_info = storage_manager.load_session_info(email, session_id)
         
-        # Update with account information
+        # Update with account information (preserves all existing data)
         session_info['account_info'] = account_info
         session_info['last_updated'] = datetime.now().isoformat()
         
-        # Store updated session info
-        storage_manager.s3_client.put_object(
-            Bucket=storage_manager.bucket_name,
-            Key=session_info_key,
-            Body=json.dumps(session_info, indent=2),
-            ContentType='application/json'
-        )
+        # Save using unified session management to preserve structure
+        success = storage_manager.save_session_info(email, session_id, session_info)
         
-        logger.info(f"Updated session_info.json with account data for {session_id}")
+        if success:
+            logger.info(f"Updated session_info.json with account data for {session_id} (preserving version tracking)")
+        else:
+            logger.error(f"Failed to save session_info.json with account data for {session_id}")
         
     except Exception as e:
         logger.error(f"Failed to update session_info with account data: {e}")
