@@ -2384,6 +2384,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         grouped_targets = validator.group_columns_by_search_group(validation_targets)
         search_groups_count = len(grouped_targets)
         total_expected_ai_calls = search_groups_count * len(rows)
+
+        # Add QC calls to progress tracking if QC is enabled
+        if qc_manager and qc_manager.is_qc_enabled():
+            qc_expected_calls = len(rows)  # One QC call per row
+            total_expected_ai_calls += qc_expected_calls
+            logger.info(f"[AI_PROGRESS] Total expected calls: {search_groups_count * len(rows)} validation + {qc_expected_calls} QC = {total_expected_ai_calls}")
         
         # Processing progress setup completed
         # Expected AI calls calculated
@@ -2404,9 +2410,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'total_qc_cost': 0.0,
             'total_qc_cost_actual': 0.0,
             'total_qc_cost_estimated': 0.0,
-            'total_qc_time_actual_seconds': 0.0,
-            'total_qc_time_estimated_seconds': 0.0,
-            'total_qc_time_savings_seconds': 0.0,
+            'total_qc_time_actual': 0.0,
+            'total_qc_time_estimated': 0.0,
+            'total_qc_time_savings': 0.0,
             'total_qc_calls': 0,  # Track total QC API calls
             'confidence_lowered_count': 0,  # Track confidence lowered events
             'values_replaced_count': 0,  # Track value replacements
@@ -2791,6 +2797,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         group_metadata=group_metadata
                     )
 
+                    # Report QC call progress
+                    report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, last_reported_count)
+
                     # Merge QC results into row_results
                     if qc_results_by_field:
                         for field_name, qc_field_data in qc_results_by_field.items():
@@ -2823,9 +2832,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         # Add timing and cost aggregation
                         qc_metrics_summary['total_qc_cost_actual'] += qc_metrics.get('qc_cost_actual', 0.0)
                         qc_metrics_summary['total_qc_cost_estimated'] += qc_metrics.get('qc_cost_estimated', 0.0)
-                        qc_metrics_summary['total_qc_time_actual_seconds'] += qc_metrics.get('qc_time_actual_seconds', 0.0)
-                        qc_metrics_summary['total_qc_time_estimated_seconds'] += qc_metrics.get('qc_time_estimated_seconds', 0.0)
-                        qc_metrics_summary['total_qc_time_savings_seconds'] += qc_metrics.get('qc_time_savings_seconds', 0.0)
+                        qc_metrics_summary['total_qc_time_actual'] += qc_metrics.get('qc_time_actual_seconds', 0.0)
+                        qc_metrics_summary['total_qc_time_estimated'] += qc_metrics.get('qc_time_estimated_seconds', 0.0)
+                        qc_metrics_summary['total_qc_time_savings'] += qc_metrics.get('qc_time_savings_seconds', 0.0)
                         qc_metrics_summary['total_qc_calls'] += qc_metrics.get('qc_calls', 0)  # Add QC API calls
                         qc_metrics_summary['confidence_lowered_count'] += qc_metrics.get('confidence_lowered_count', 0)
                         qc_metrics_summary['values_replaced_count'] += qc_metrics.get('values_replaced_count', 0)
@@ -3781,6 +3790,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                    f"is_enabled: {qc_manager.is_qc_enabled() if qc_manager else 'N/A'}, "
                    f"rows_processed: {qc_metrics_summary.get('total_rows_processed', 0)}, "
                    f"fields_reviewed: {qc_metrics_summary.get('total_fields_reviewed', 0)}")
+
         # Include QC metrics if QC was enabled and ran (even if no modifications)
         if qc_manager and qc_manager.is_qc_enabled() and qc_metrics_summary.get('total_rows_processed', 0) > 0:
             # Get overall QC tracker metrics to fill in any missing data
@@ -3858,7 +3868,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 }
 
             anthropic_provider = qc_enhanced_aggregated_metrics['providers']['anthropic']
-            anthropic_provider['calls'] += qc_tracker_metrics.get('total_qc_calls', 0)
+            # Add QC costs/tokens/time to anthropic provider for aggregation, but NOT calls
+            # QC calls are tracked separately in QC metrics to avoid double-counting in validation estimates
+            # anthropic_provider['calls'] += qc_tracker_metrics.get('total_qc_calls', 0)  # REMOVED: Don't add QC calls to validation metrics
             anthropic_provider['tokens'] += qc_tracker_metrics.get('total_qc_tokens', 0)
             anthropic_provider['cost_actual'] += qc_tracker_metrics.get('total_qc_cost', 0.0)
             anthropic_provider['cost_estimated'] += qc_tracker_metrics.get('total_qc_estimated_cost', 0.0)
@@ -3894,7 +3906,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 qc_enhanced_aggregated_metrics['totals'] = {}
 
             totals = qc_enhanced_aggregated_metrics['totals']
-            totals['total_calls'] = totals.get('total_calls', 0) + qc_tracker_metrics.get('total_qc_calls', 0)
+            # Add QC costs/tokens/time to totals, but NOT calls (QC calls tracked separately to avoid double-counting)
+            # totals['total_calls'] = totals.get('total_calls', 0) + qc_tracker_metrics.get('total_qc_calls', 0)  # REMOVED: Don't add QC calls to validation totals
             totals['total_tokens'] = totals.get('total_tokens', 0) + qc_tracker_metrics.get('total_qc_tokens', 0)
             totals['total_cost_actual'] = totals.get('total_cost_actual', 0.0) + qc_tracker_metrics.get('total_qc_cost', 0.0)
             totals['total_cost_estimated'] = totals.get('total_cost_estimated', 0.0) + qc_tracker_metrics.get('total_qc_estimated_cost', 0.0)
@@ -3992,6 +4005,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # DEBUG: Log what we're actually returning in metadata
         logger.info(f"[METADATA_RETURN_DEBUG] Metadata keys being returned: {list(response['body']['metadata'].keys())}")
         logger.info(f"[METADATA_RETURN_DEBUG] validation_metrics in metadata: {response['body']['metadata'].get('validation_metrics', 'NOT FOUND')}")
+
+        # Log what validation lambda is sending back (CALL COUNTS DEBUGGING) - FINAL VERSION
+        validation_calls_by_provider = {}
+        qc_calls_total = 0
+        if qc_enhanced_aggregated_metrics and qc_enhanced_aggregated_metrics.get('providers'):
+            providers = qc_enhanced_aggregated_metrics.get('providers', {})
+            for provider, data in providers.items():
+                if not data.get('is_metadata_only', False):  # Exclude metadata-only providers
+                    validation_calls_by_provider[provider] = data.get('calls', 0)
+
+        if qc_metrics_summary.get('total_rows_processed', 0) > 0:
+            qc_calls_total = qc_metrics_summary.get('total_qc_calls', 0)
+
+        logger.info(f"[VALIDATION_LAMBDA_RESPONSE] FINAL - Sending call counts to interface:")
+        logger.info(f"[VALIDATION_LAMBDA_RESPONSE]   Validation calls by provider: {validation_calls_by_provider}")
+        logger.info(f"[VALIDATION_LAMBDA_RESPONSE]   QC calls total: {qc_calls_total}")
+        logger.info(f"[VALIDATION_LAMBDA_RESPONSE]   Grand total calls: {sum(validation_calls_by_provider.values()) + qc_calls_total}")
         logger.info(f"[METADATA_RETURN_DEBUG] validated_columns_count: {response['body']['metadata'].get('validation_metrics', {}).get('validated_columns_count', 'NOT FOUND')}")
         
         # Add the raw responses for debugging if in test_mode

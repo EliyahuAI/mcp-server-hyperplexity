@@ -2981,10 +2981,14 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
                 expression_attribute_values[':pm'] = sanitized_provider_metrics
                 
                 # Also store aggregated totals for easy querying
-                total_cost_actual = sum(metrics.get('cost_actual', 0) for metrics in sanitized_provider_metrics.values())
-                total_cost_estimated = sum(metrics.get('cost_estimated', 0) for metrics in sanitized_provider_metrics.values())
-                total_calls = sum(metrics.get('calls', 0) for metrics in sanitized_provider_metrics.values())
-                total_tokens = sum(metrics.get('tokens', 0) for metrics in sanitized_provider_metrics.values())
+                total_cost_actual = sum(metrics.get('cost_actual', 0) for metrics in sanitized_provider_metrics.values()
+                                       if not metrics.get('is_metadata_only', False))
+                total_cost_estimated = sum(metrics.get('cost_estimated', 0) for metrics in sanitized_provider_metrics.values()
+                                          if not metrics.get('is_metadata_only', False))
+                total_calls = sum(metrics.get('calls', 0) for metrics in sanitized_provider_metrics.values()
+                                 if not metrics.get('is_metadata_only', False))
+                total_tokens = sum(metrics.get('tokens', 0) for metrics in sanitized_provider_metrics.values()
+                                  if not metrics.get('is_metadata_only', False))
                 
                 update_expression += ", total_provider_cost_actual = :tpca, total_provider_cost_estimated = :tpce"
                 update_expression += ", total_provider_calls = :tpc, total_provider_tokens = :tpt"

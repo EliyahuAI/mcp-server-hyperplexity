@@ -844,8 +844,8 @@ class AIAPIClient:
                         'tokens': token_usage.get('total_tokens', 0),
                         'cost_actual': cost_data.get('total_cost', 0.0),  # What was actually paid (with caching benefits)
                         'cost_estimated': cost_estimated.get('total_cost', 0.0),  # What it would cost without caching benefits
-                        'time_estimated_seconds': timing_metrics.get('time_estimated_seconds', processing_time),  # Estimated time without cache for scaling
-                        'time_actual_seconds': timing_metrics.get('time_actual_seconds', processing_time),  # Actual time with cache benefits
+                        'time_estimated': timing_metrics.get('time_estimated_seconds', processing_time),  # Estimated time without cache for scaling
+                        'time_actual': timing_metrics.get('time_actual_seconds', processing_time),  # Actual time with cache benefits
                         'cache_hit_tokens': token_usage.get('cache_read_tokens', 0)
                     }
                 }
@@ -1094,8 +1094,8 @@ class AIAPIClient:
                             'tokens': 0,
                             'cost_actual': 0.0,
                             'cost_estimated': 0.0,
-                            'estimated_processing_time': 0.0,  # Renamed from processing_time
-                            'actual_processing_time': 0.0,     # New field for actual times
+                            'time_estimated': 0.0,  # Estimated processing time
+                            'time_actual': 0.0,     # Actual processing time
                             'cache_hit_tokens': 0,
                             'cache_savings_cost': 0.0,
                             'cache_savings_time': 0.0,
@@ -1114,8 +1114,8 @@ class AIAPIClient:
                     providers[provider]['tokens'] += metrics.get('tokens', 0)
                     providers[provider]['cost_actual'] += metrics.get('cost_actual', 0.0)
                     providers[provider]['cost_estimated'] += metrics.get('cost_estimated', 0.0)
-                    providers[provider]['estimated_processing_time'] += metrics.get('time_estimated_seconds', 0.0)
-                    providers[provider]['actual_processing_time'] += metrics.get('time_actual_seconds', 0.0)
+                    providers[provider]['time_estimated'] += metrics.get('time_estimated', 0.0)
+                    providers[provider]['time_actual'] += metrics.get('time_actual', 0.0)
                     providers[provider]['cache_hit_tokens'] += metrics.get('cache_hit_tokens', 0)
                     
                     # Calculate savings from the call
@@ -1130,7 +1130,7 @@ class AIAPIClient:
                 if metrics['calls'] > 0:
                     metrics['average_cost_per_call'] = metrics['cost_actual'] / metrics['calls']
                     metrics['average_tokens_per_call'] = metrics['tokens'] / metrics['calls']
-                    metrics['average_time_per_call'] = metrics['actual_processing_time'] / metrics['calls']
+                    metrics['average_time_per_call'] = metrics['time_actual'] / metrics['calls']
                 
                 # Cache efficiency
                 if metrics['cost_estimated'] > 0:
@@ -1141,8 +1141,8 @@ class AIAPIClient:
                 totals['total_tokens'] += metrics['tokens']
                 totals['total_cost_actual'] += metrics['cost_actual']
                 totals['total_cost_estimated'] += metrics['cost_estimated']
-                totals['total_estimated_processing_time'] += metrics['estimated_processing_time']
-                totals['total_actual_processing_time'] += metrics['actual_processing_time']
+                totals['total_estimated_processing_time'] += metrics['time_estimated']
+                totals['total_actual_processing_time'] += metrics['time_actual']
                 totals['total_cache_savings_cost'] += metrics['cache_savings_cost']
                 totals['total_cache_savings_time'] += metrics['cache_savings_time']
             
@@ -1594,6 +1594,11 @@ class AIAPIClient:
                                         'time_savings_seconds': original_processing_time - 0.001,
                                         'time_savings_percent': ((original_processing_time - 0.001) / max(0.001, original_processing_time)) * 100
                                     })
+                                    # ALSO UPDATE THE PROVIDER METRICS TO MATCH
+                                    if 'provider_metrics' in enhanced_data and enhanced_data['provider_metrics']:
+                                        provider_name = list(enhanced_data['provider_metrics'].keys())[0]
+                                        enhanced_data['provider_metrics'][provider_name]['time_actual'] = 0.001
+                                        enhanced_data['provider_metrics'][provider_name]['time_estimated'] = original_processing_time
                                 
                                 actual_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
                                 estimated_cost = enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0)
@@ -1777,8 +1782,8 @@ class AIAPIClient:
                             # ALSO UPDATE THE PROVIDER METRICS TO MATCH
                             if 'provider_metrics' in enhanced_data and enhanced_data['provider_metrics']:
                                 provider_name = list(enhanced_data['provider_metrics'].keys())[0]
-                                enhanced_data['provider_metrics'][provider_name]['time_actual_seconds'] = 0.001
-                                enhanced_data['provider_metrics'][provider_name]['time_estimated_seconds'] = original_processing_time
+                                enhanced_data['provider_metrics'][provider_name]['time_actual'] = 0.001
+                                enhanced_data['provider_metrics'][provider_name]['time_estimated'] = original_processing_time
                         
                         actual_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
                         estimated_cost = enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0)
@@ -1886,8 +1891,8 @@ class AIAPIClient:
                             # ALSO UPDATE THE PROVIDER METRICS TO MATCH
                             if 'provider_metrics' in enhanced_data and enhanced_data['provider_metrics']:
                                 provider_name = list(enhanced_data['provider_metrics'].keys())[0]
-                                enhanced_data['provider_metrics'][provider_name]['time_actual_seconds'] = 0.001
-                                enhanced_data['provider_metrics'][provider_name]['time_estimated_seconds'] = original_processing_time
+                                enhanced_data['provider_metrics'][provider_name]['time_actual'] = 0.001
+                                enhanced_data['provider_metrics'][provider_name]['time_estimated'] = original_processing_time
                         
                         actual_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
                         estimated_cost = enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0)
@@ -1984,8 +1989,8 @@ class AIAPIClient:
                             # ALSO UPDATE THE PROVIDER METRICS TO MATCH
                             if 'provider_metrics' in enhanced_data and enhanced_data['provider_metrics']:
                                 provider_name = list(enhanced_data['provider_metrics'].keys())[0]
-                                enhanced_data['provider_metrics'][provider_name]['time_actual_seconds'] = 0.001
-                                enhanced_data['provider_metrics'][provider_name]['time_estimated_seconds'] = original_processing_time
+                                enhanced_data['provider_metrics'][provider_name]['time_actual'] = 0.001
+                                enhanced_data['provider_metrics'][provider_name]['time_estimated'] = original_processing_time
                         
                         actual_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
                         estimated_cost = enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0)

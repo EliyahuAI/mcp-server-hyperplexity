@@ -609,6 +609,25 @@ def handle(event, context):
                 logger.info(f"[METADATA_DEBUG] enhanced_metrics keys: {list(enhanced_metrics.keys()) if enhanced_metrics else 'None'}")
                 logger.info(f"[METADATA_DEBUG] validation_metrics extracted: {validation_metrics}")
 
+                # Log what background handler received from validation lambda (CALL COUNTS DEBUGGING)
+                validation_calls_received = {}
+                qc_calls_received = 0
+                if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
+                    providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
+                    for provider, data in providers.items():
+                        if not data.get('is_metadata_only', False):  # Exclude metadata-only providers
+                            validation_calls_received[provider] = data.get('calls', 0)
+                        else:
+                            logger.info(f"[BACKGROUND_HANDLER_RECEIVED] Excluding metadata-only provider '{provider}' with {data.get('calls', 0)} calls")
+
+                if qc_metrics_data:
+                    qc_calls_received = qc_metrics_data.get('total_qc_calls', 0)
+
+                logger.info(f"[BACKGROUND_HANDLER_RECEIVED] Received call counts from validation lambda:")
+                logger.info(f"[BACKGROUND_HANDLER_RECEIVED]   Validation calls by provider: {validation_calls_received}")
+                logger.info(f"[BACKGROUND_HANDLER_RECEIVED]   QC calls total: {qc_calls_received}")
+                logger.info(f"[BACKGROUND_HANDLER_RECEIVED]   Grand total calls: {sum(validation_calls_received.values()) + qc_calls_received}")
+
                 # Extract enhanced models parameter from validation response (it's inside enhanced_metrics)
                 logger.info(f"[MODELS_DEBUG] metadata keys available: {list(metadata.keys()) if metadata else 'No metadata'}")
                 if enhanced_metrics:
@@ -1030,7 +1049,7 @@ def handle(event, context):
                     "estimated_total_processing_time": estimated_total_time_seconds,  # Keep for backward compatibility
                     "estimated_validation_time": estimated_total_time_seconds, # Explicitly pass the full validation time estimate
                     "total_provider_cost_estimated": totals.get('total_cost_estimated', 0.0),  # Total estimated cost across all providers
-                    "total_provider_calls": totals.get('total_calls', 0)  # Total calls across all providers
+                    "total_provider_calls": totals.get('total_calls', 0) + qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else totals.get('total_calls', 0)  # Total calls including QC
                 })
                 
                 # Add fields at top level for backward compatibility and easy access
@@ -1244,11 +1263,10 @@ def handle(event, context):
                 if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
                     providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
                     for provider, data in providers.items():
-                        if provider == 'QC_Costs':
-                            total_qc_calls += data.get('calls', 0)
-                        else:
+                        # QC is tracked separately in qc_metrics_data, exclude QC_Costs provider
+                        if provider != 'QC_Costs':
                             total_validation_calls += data.get('calls', 0)
-                    logger.info(f"[PROVIDER_CALLS_DEBUG] From enhanced_metrics - validation_calls: {total_validation_calls}, qc_calls: {total_qc_calls}")
+                    logger.info(f"[PROVIDER_CALLS_DEBUG] From enhanced_metrics - validation_calls: {total_validation_calls}")
                 else:
                     # Fallback to token_usage
                     for provider in ['perplexity', 'anthropic']:
@@ -1284,12 +1302,12 @@ def handle(event, context):
                             'tokens': provider_data.get('tokens', 0),
                             'cost_actual': provider_data.get('cost_actual', 0.0),
                             'cost_estimated': provider_data.get('cost_estimated', 0.0),
-                            'processing_time': provider_data.get('time_actual_seconds', 0.0),
+                            'processing_time': provider_data.get('time_actual', 0.0),
                             'cache_hit_tokens': provider_data.get('cache_hit_tokens', 0),
                             'cost_per_row_actual': provider_data.get('cost_actual', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
                             'cost_per_row_estimated': provider_data.get('cost_estimated', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
-                            'time_per_row_actual': provider_data.get('time_actual_seconds', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
-                            'time_per_row_estimated': provider_data.get('time_estimated_seconds', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
+                            'time_per_row_actual': provider_data.get('time_actual', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
+                            'time_per_row_estimated': provider_data.get('time_estimated', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
                             'cache_efficiency_percent': provider_data.get('cache_efficiency_percent', 0.0)
                         }
                     
@@ -1302,8 +1320,8 @@ def handle(event, context):
                     qc_rows_processed = qc_metrics_data.get('total_rows_processed', total_rows_processed)
                     qc_cost_actual = qc_metrics_data.get('total_qc_cost', 0.0)
                     qc_cost_estimated = qc_metrics_data.get('total_qc_cost_estimated', 0.0)
-                    qc_time_actual = qc_metrics_data.get('total_qc_time_actual_seconds', 0.0)
-                    qc_time_estimated = qc_metrics_data.get('total_qc_time_estimated_seconds', 0.0)
+                    qc_time_actual = qc_metrics_data.get('total_qc_time_actual', 0.0)
+                    qc_time_estimated = qc_metrics_data.get('total_qc_time_estimated', 0.0)
 
                     qc_metrics_for_db = {
                         'enabled': True,
@@ -1319,8 +1337,8 @@ def handle(event, context):
                         # Add per-row metrics
                         'cost_per_row_actual': qc_cost_actual / qc_rows_processed if qc_rows_processed > 0 else 0.0,
                         'cost_per_row_estimated': qc_cost_estimated / qc_rows_processed if qc_rows_processed > 0 else 0.0,
-                        'time_actual_seconds': qc_time_actual,
-                        'time_estimated_seconds': qc_time_estimated,
+                        'time_actual': qc_time_actual,
+                        'time_estimated': qc_time_estimated,
                         'time_per_row_actual': qc_time_actual / qc_rows_processed if qc_rows_processed > 0 else 0.0,
                         'time_per_row_estimated': qc_time_estimated / qc_rows_processed if qc_rows_processed > 0 else 0.0,
                         # Add qc_by_column if available
@@ -1373,6 +1391,27 @@ def handle(event, context):
                 background_processing_time_seconds = (end_time - start_time).total_seconds()
                 logger.info(f"[PREVIEW_TIMING] Background handler processing time: {background_processing_time_seconds:.3f}s")
                 
+                # Debug QC search groups calculation
+                base_claude_groups = validation_metrics.get('claude_search_groups_count', 0)
+                qc_has_calls = qc_metrics_data and qc_metrics_data.get('total_qc_calls', 0) > 0
+                qc_calls_count = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
+                corrected_claude_groups = base_claude_groups + (1 if qc_has_calls else 0)
+                logger.info(f"[QC_SEARCH_GROUPS_DEBUG] base_claude_groups: {base_claude_groups}, qc_has_calls: {qc_has_calls}, qc_calls_count: {qc_calls_count}, corrected: {corrected_claude_groups}")
+
+                # Update preview_payload validation_metrics for WebSocket logging
+                # Frontend expects: perplexityGroups = searchGroups - claudeGroups, so adjust accordingly
+                perplexity_only_groups = validation_metrics.get('search_groups_count', 0)  # These are perplexity groups
+                claude_groups_for_frontend = base_claude_groups + (1 if qc_has_calls else 0)  # Include QC as Claude group
+                total_groups_for_frontend = perplexity_only_groups + claude_groups_for_frontend  # Total that works with frontend math
+
+                if 'validation_metrics' not in preview_payload:
+                    preview_payload['validation_metrics'] = {}
+                preview_payload['validation_metrics'].update({
+                    "validated_columns_count": validation_metrics.get('validated_columns_count', 0),
+                    "search_groups_count": total_groups_for_frontend,  # Total groups so frontend math works
+                    "claude_search_groups_count": claude_groups_for_frontend  # Claude + QC groups
+                })
+
                 # Create minimal frontend payload with only consumed fields
                 frontend_payload = {
                     "markdown_table": preview_payload.get("markdown_table", ""),
@@ -1384,8 +1423,8 @@ def handle(event, context):
                     },
                     "validation_metrics": {
                         "validated_columns_count": validation_metrics.get('validated_columns_count', 0),
-                        "search_groups_count": validation_metrics.get('search_groups_count', 0), 
-                        "claude_search_groups_count": validation_metrics.get('claude_search_groups_count', 0)
+                        "search_groups_count": total_groups_for_frontend,  # Total groups so frontend math works
+                        "claude_search_groups_count": claude_groups_for_frontend  # Claude + QC groups
                     },
                     "account_info": {
                         "current_balance": float(current_balance) if current_balance else 0,
@@ -1489,7 +1528,21 @@ def handle(event, context):
                             cost_estimates = preview_payload.get('cost_estimates', {})
                             logger.debug(f"[COST_DEBUG] WebSocket payload cost_estimates: {cost_estimates}")
                             logger.debug(f"[COST_DEBUG] quoted_validation_cost: {cost_estimates.get('quoted_validation_cost')}")
-                            
+
+                            # Log call counts being sent to frontend (CALL COUNTS DEBUGGING)
+                            total_provider_calls_ws = cost_estimates.get('total_provider_calls', 0)
+                            validation_metrics_ws = preview_payload.get('validation_metrics', {})
+                            search_groups_count_ws = validation_metrics_ws.get('search_groups_count', 0)
+                            claude_search_groups_count_ws = validation_metrics_ws.get('claude_search_groups_count', 0)
+                            calculated_perplexity_groups = search_groups_count_ws - claude_search_groups_count_ws
+
+                            logger.info(f"[WEBSOCKET_SENDING] Sending call counts to frontend:")
+                            logger.info(f"[WEBSOCKET_SENDING]   total_provider_calls: {total_provider_calls_ws}")
+                            logger.info(f"[WEBSOCKET_SENDING]   search_groups_count (total): {search_groups_count_ws}")
+                            logger.info(f"[WEBSOCKET_SENDING]   claude_search_groups_count: {claude_search_groups_count_ws}")
+                            logger.info(f"[WEBSOCKET_SENDING]   frontend will calculate perplexity_groups: {calculated_perplexity_groups}")
+                            logger.info(f"[WEBSOCKET_SENDING]   payload contains preview_data with {len(preview_payload)} top-level fields")
+
                             logger.info(f"Sending WebSocket payload to connection {connection_id}: {len(json.dumps(websocket_payload))} bytes")
                             
                             client.post_to_connection(
@@ -2688,12 +2741,12 @@ def handle(event, context):
                                 'tokens': provider_data.get('tokens', 0),
                                 'cost_actual': provider_data.get('cost_actual', 0.0),
                                 'cost_estimated': provider_data.get('cost_estimated', 0.0),
-                                'processing_time': provider_data.get('time_actual_seconds', 0.0),
+                                'processing_time': provider_data.get('time_actual', 0.0),
                                 'cache_hit_tokens': provider_data.get('cache_hit_tokens', 0),
                                 'cost_per_row_actual': provider_data.get('cost_actual', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
                                 'cost_per_row_estimated': provider_data.get('cost_estimated', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
-                                'time_per_row_actual': provider_data.get('time_actual_seconds', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
-                                'time_per_row_estimated': provider_data.get('time_estimated_seconds', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
+                                'time_per_row_actual': provider_data.get('time_actual', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
+                                'time_per_row_estimated': provider_data.get('time_estimated', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
                                 'cache_efficiency_percent': provider_data.get('cache_efficiency_percent', 0.0)
                             }
                         
