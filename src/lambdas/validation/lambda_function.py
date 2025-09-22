@@ -72,6 +72,15 @@ if not logger.handlers:
 else:
     pass  # logger.info("Logger already has handlers, skipping handler setup")
 
+# QC integration imports (after logger is configured)
+try:
+    from qc_integration import QCIntegrationManager
+    QC_AVAILABLE = True
+    logger.info("QC module imported successfully")
+except ImportError as e:
+    QC_AVAILABLE = False
+    logger.warning(f"QC module not available: {e}")
+
 # Import enhanced batch manager (after logger is configured)
 try:
     from enhanced_batch_manager import EnhancedDynamicBatchSizeManager
@@ -887,9 +896,10 @@ def calculate_token_costs_REMOVED(token_usage: Dict[str, Any], pricing_data: Dic
         'pricing_model': pricing.get('model_name', model)
     }
 
-def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Dict, all_enhanced_call_data: List[Dict], 
-                                                         total_rows_in_table: int, preview_rows_processed: int, 
-                                                         batch_processing_times: Dict, 
+def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Dict, all_enhanced_call_data: List[Dict],
+                                                         total_rows_in_table: int, preview_rows_processed: int,
+                                                         batch_processing_times: Dict,
+                                                         qc_manager=None,  # Add QC manager for QC time calculations
                                                          target_full_validation_batch_size: int = 50) -> Dict[str, Any]:
     """
     Calculate full validation estimates based on aggregated preview metrics and actual batch timing.
@@ -968,11 +978,30 @@ def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Di
             actual_batch_sizes.append(len(batch_rows))
         avg_actual_batch_size = sum(actual_batch_sizes) / len(actual_batch_sizes) if actual_batch_sizes else 10
         
+        # Add QC time to batch estimates if QC is enabled
+        qc_time_per_batch = 0.0
+        if qc_manager and qc_manager.is_qc_enabled() and hasattr(qc_manager, 'get_qc_metrics'):
+            qc_tracker_data = qc_manager.get_qc_metrics()
+            total_qc_time_estimated = qc_tracker_data.get('total_qc_time_estimated', 0.0)
+            # QC processes rows in sequence within a batch, so add total QC time to batch time
+            # For preview, we processed actual_batches_processed batches
+            qc_time_per_batch = total_qc_time_estimated / len(batches) if len(batches) > 0 else 0.0
+            logger.info(f"[BATCH_TIMING_QC] Adding QC time to batch estimates: {qc_time_per_batch:.2f}s per batch")
+
+            # Add QC time to each batch estimate
+            for batch_num in estimated_batch_times:
+                estimated_batch_times[batch_num] += qc_time_per_batch
+
+            # Recalculate totals with QC time included
+            estimated_total_time_preview = sum(estimated_batch_times.values())
+            avg_estimated_batch_time = estimated_total_time_preview / len(estimated_batch_times) if estimated_batch_times else 0.0
+
         # Calculate estimated batches and total time for full validation using target batch architecture
         # Use the target batch size for full validation, not the preview's smaller batch size
         # Use ceil because partial batches take as long as full batches (parallel processing within batch)
         import math
         estimated_batches_for_full_table = max(1, math.ceil(total_rows_in_table / target_full_validation_batch_size))
+        # Batches run SEQUENTIALLY, rows within each batch run in PARALLEL
         estimated_total_time_for_full_validation = estimated_batches_for_full_table * avg_estimated_batch_time
         
         estimates = {
@@ -1075,8 +1104,8 @@ def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Di
         pass  # logger.info(f"[BATCH_TIMING] Processed {len(batches)} batches with {len(all_enhanced_call_data)} total calls")
         pass  # logger.info(f"[BATCH_TIMING] Preview: {estimated_total_time_preview:.2f}s, Actual total time: {sum(batch_processing_times.values()):.2f}s")
         pass  # logger.info(f"[BATCH_TIMING] Preview average batch size: {avg_actual_batch_size:.1f} rows, Average estimated batch time: {avg_estimated_batch_time:.2f}s")
-        pass  # logger.info(f"[BATCH_TIMING] Full validation: {total_rows_in_table} rows ÷ {target_full_validation_batch_size} target batch size = {estimated_batches_for_full_table} batches")
-        pass  # logger.info(f"[BATCH_TIMING] Full validation estimate: {estimated_batches_for_full_table} batches × {avg_estimated_batch_time:.2f}s = {estimated_total_time_for_full_validation:.2f}s")
+        logger.info(f"[BATCH_TIMING] Full validation: {total_rows_in_table} rows ÷ {target_full_validation_batch_size} target batch size = {estimated_batches_for_full_table} batches")
+        logger.info(f"[BATCH_TIMING] Full validation estimate: {estimated_batches_for_full_table} batches × {avg_estimated_batch_time:.2f}s = {estimated_total_time_for_full_validation:.2f}s total")
         pass  # logger.info(f"[BATCH_TIMING] Average estimated row processing time: {avg_row_estimated_time:.2f}s (direct calculation over {len(total_row_estimated_times)} rows)")
         
         # Log per-provider cost estimates
@@ -1819,7 +1848,7 @@ def extract_config_from_text_response(text_response: str) -> Dict:
         logger.error(f"Failed to extract config from text: {str(e)}")
         return None
 
-def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[Dict], aggregated_metrics: Dict) -> Dict:
+def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[Dict], aggregated_metrics: Dict, qc_fail_rates_by_column: Dict[str, Dict] = None) -> Dict:
     """
     Construct enhanced models parameter JSON structure with detailed information per search group.
     
@@ -1833,15 +1862,24 @@ def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[
     """
     try:
         enhanced_models = {}
-        
-        # Get validation targets and group by search group
-        validation_targets = getattr(validator, 'validation_targets', [])
+
+        logger.info(f"[ENHANCED_MODELS_DEBUG] construct_enhanced_models_parameter called")
+        logger.info(f"[ENHANCED_MODELS_DEBUG] all_enhanced_call_data type: {type(all_enhanced_call_data)}, length: {len(all_enhanced_call_data) if all_enhanced_call_data else 0}")
+        logger.info(f"[ENHANCED_MODELS_DEBUG] aggregated_metrics type: {type(aggregated_metrics)}, is_none: {aggregated_metrics is None}")
+
+        # Get validation targets and group by search group - exclude ID and IGNORED for models array
+        all_targets = getattr(validator, 'validation_targets', [])
+        validation_targets = [t for t in all_targets if t.importance.upper() not in ["ID", "IGNORED"]]
+        logger.info(f"Enhanced models debug: all_targets count: {len(all_targets)}, validation_targets count: {len(validation_targets)}")
         if not validation_targets:
-            logger.warning("No validation targets found in validator")
+            logger.warning("No non-ID/IGNORED validation targets found in validator")
             return {}
         
         # Group targets by search group
         grouped_targets = validator.group_columns_by_search_group(validation_targets)
+        logger.info(f"Enhanced models debug: grouped_targets count: {len(grouped_targets)}")
+        logger.info(f"Enhanced models debug: all_enhanced_call_data length: {len(all_enhanced_call_data) if all_enhanced_call_data else 0}")
+        logger.info(f"Enhanced models debug: aggregated_metrics: {aggregated_metrics is not None}")
         
         # Get overall aggregated metrics for cost/time calculations
         providers_data = aggregated_metrics.get('providers', {}) if aggregated_metrics else {}
@@ -1923,12 +1961,17 @@ def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[
         # Build enhanced models structure for each search group
         for search_group_id, targets in grouped_targets.items():
             group_key = f"search_group_{search_group_id}"
-            
+
             # Filter to only non-ignored targets
-            active_targets = [t for t in targets if t.importance not in ('ID', 'IGNORED')]
+            active_targets = [t for t in targets if t.importance.upper() not in ('ID', 'IGNORED')]
             column_count = len(active_targets)
-            
+
+            logger.info(f"Enhanced models debug: search_group_{search_group_id} has {len(targets)} total targets, {column_count} active targets")
+            if targets:
+                logger.info(f"Enhanced models debug: sample target importance values: {[t.importance for t in targets[:3]]}")
+
             if column_count == 0:
+                logger.warning(f"Enhanced models debug: Skipping search_group_{search_group_id} - no active columns after filtering")
                 continue  # Skip groups with no active columns
             
             # Get column names for this search group
@@ -1987,8 +2030,8 @@ def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[
                     average_estimated_time = model_stats['estimated_processing_time'] / model_stats['call_count']
                 else:
                     # Final fallback: distribute total across active groups
-                    total_active_groups = len([sg for sg, tgts in grouped_targets.items() 
-                                             if len([t for t in tgts if t.importance not in ('ID', 'IGNORED')]) > 0])
+                    total_active_groups = len([sg for sg, tgts in grouped_targets.items()
+                                             if len([t for t in tgts if t.importance.upper() not in ('ID', 'IGNORED')]) > 0])
                     
                     if total_active_groups > 0:
                         average_estimated_cost = total_cost_estimated / total_active_groups
@@ -2002,6 +2045,9 @@ def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[
             if 'claude' in configured_model.lower() or 'anthropic' in configured_model.lower():
                 max_web_searches = max_web_searches_value
             
+            # NOTE: QC metrics are now tracked separately at the validation level,
+            # not per search group, since QC is done after validation is complete
+
             # Build the enhanced structure
             enhanced_models[group_key] = {
                 "models_requested": models_requested,
@@ -2017,12 +2063,13 @@ def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[
             }
         
         # Debug: Log what we constructed
-        pass  # logger.info(f"[ENHANCED_MODELS_DEBUG] Constructed enhanced models parameter with {len(enhanced_models)} search groups")
-        pass  # logger.info(f"[ENHANCED_MODELS_DEBUG] Search group stats found: {list(search_group_stats.keys())}")
+        logger.info(f"[ENHANCED_MODELS_DEBUG] Constructed enhanced models parameter with {len(enhanced_models)} search groups")
+        logger.info(f"[ENHANCED_MODELS_DEBUG] Enhanced models keys: {list(enhanced_models.keys())}")
+        logger.info(f"[ENHANCED_MODELS_DEBUG] Search group stats found: {list(search_group_stats.keys())}")
         for group_id, stats in search_group_stats.items():
-            pass  # logger.info(f"[ENHANCED_MODELS_DEBUG] Group {group_id}: calls={stats['call_count']}, cost={stats['cost_estimated']}, time={stats['estimated_processing_time']}")
-        
-        pass  # logger.info(f"Constructed enhanced models parameter with {len(enhanced_models)} search groups")
+            logger.info(f"[ENHANCED_MODELS_DEBUG] Group {group_id}: calls={stats['call_count']}, cost=${stats['cost_estimated']:.6f}, time={stats['estimated_processing_time']:.2f}")
+
+        logger.info(f"Constructed enhanced models parameter with {len(enhanced_models)} search groups")
         return enhanced_models
         
     except Exception as e:
@@ -2261,7 +2308,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 print(f"LAMBDA_HANDLER: First validation target: {first_target}")
         
         validator = SimplifiedSchemaValidator(config)
-        
+
+        # Initialize QC manager if available
+        qc_manager = None
+        if QC_AVAILABLE:
+            try:
+                qc_manager = QCIntegrationManager(config, "prompts.yml")
+                logger.info(f"QC Manager initialized: enabled={qc_manager.is_qc_enabled()}")
+            except Exception as e:
+                logger.error(f"Failed to initialize QC manager: {e}")
+                qc_manager = None
+
         print(f"LAMBDA_HANDLER: Validator created with {len(validator.search_groups)} search groups")
         pass  # logger.error(f"LAMBDA_HANDLER: Validator created with {len(validator.search_groups)} search groups")
         
@@ -2337,9 +2394,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         batches_with_claude = 0
         batches_without_claude = 0
         batch_manager = None  # Will be set in process_all_rows
+
+        # Track QC data across all rows
+        all_qc_results = {}  # row_key -> field_name -> qc_data
+        qc_metrics_summary = {
+            'total_rows_processed': 0,
+            'total_fields_reviewed': 0,
+            'total_fields_modified': 0,
+            'total_qc_cost': 0.0,
+            'total_qc_cost_actual': 0.0,
+            'total_qc_cost_estimated': 0.0,
+            'total_qc_time_actual_seconds': 0.0,
+            'total_qc_time_estimated_seconds': 0.0,
+            'total_qc_time_savings_seconds': 0.0,
+            'total_qc_calls': 0,  # Track total QC API calls
+            'confidence_lowered_count': 0,  # Track confidence lowered events
+            'values_replaced_count': 0,  # Track value replacements
+            'qc_models_used': set()
+        }
         
         async def process_all_rows():
-            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, batch_timing_data, total_batches, total_expected_ai_calls, batches_with_claude, batches_without_claude, batch_manager, search_groups_count
+            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, batch_timing_data, total_batches, total_expected_ai_calls, batches_with_claude, batches_without_claude, batch_manager, search_groups_count, all_qc_results, qc_metrics_summary
             
             # Initialize dynamic batch size manager (enhanced version with CSV config if available)
             if ENHANCED_BATCH_MANAGER_AVAILABLE:
@@ -2533,7 +2608,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         async def process_row(session, row, row_idx, batch_manager=None, batch_number=None):
             """Process a single row with progressive multiplexing."""
-            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls
+            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls, qc_manager, all_qc_results, qc_metrics_summary, validator, config
             
             # Track which models and API providers were used for this row
             row_models_used = set()
@@ -2612,9 +2687,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Add ID field results to accumulated results
                     accumulated_results[id_field.column] = row_results[id_field.column]
             
-            # Group validation targets by search group - exclude ID and IGNORED fields 
+            # Group validation targets by search group - exclude ID and IGNORED fields for processing
             validation_targets = [t for t in validator.validation_targets if t.importance.upper() not in ["ID", "IGNORED"]]
             grouped_targets = validator.group_columns_by_search_group(validation_targets)
+
+            # Keep ALL validation targets (including ID fields) for QC context
+            all_validation_targets_for_qc = validator.validation_targets
             
             # Sort search groups by number to ensure sequential processing
             sorted_groups = sorted(grouped_targets.keys())
@@ -2635,10 +2713,131 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, last_reported_count)
                 
                 # Add this group's results to accumulated results for next groups
+                # Exclude ID fields from accumulated results since they are context only
                 for target in targets:
-                    if target.column in row_results:
+                    if target.column in row_results and target.importance.upper() != "ID":
                         accumulated_results[target.column] = row_results[target.column]
-            
+
+            # === QC PROCESSING (after all groups complete) ===
+            qc_data = {}
+            if qc_manager and qc_manager.is_qc_enabled():
+                try:
+                    logger.info(f"Starting QC processing for row {row_idx}")
+
+                    # Prepare all group results for QC
+                    all_group_results = {}
+                    for group_id in sorted_groups:
+                        group_targets = grouped_targets[group_id]
+                        group_results = []
+                        for target in group_targets:
+                            if target.column in row_results:
+                                # Format validation result for QC processing
+                                validation_result = row_results[target.column]
+                                formatted_result = {
+                                    'column': target.column,
+                                    'answer': validation_result.get('value', ''),
+                                    'confidence': validation_result.get('confidence_level', ''),
+                                    'original_confidence': validation_result.get('original_confidence', ''),
+                                    'reasoning': validation_result.get('quote', ''),
+                                    'sources': validation_result.get('sources', []),
+                                    'explanation': validation_result.get('explanation', ''),
+                                    'consistent_with_model_knowledge': validation_result.get('consistent_with_model', '')
+                                }
+                                group_results.append(formatted_result)
+                        if group_results:
+                            all_group_results[f"group_{group_id}"] = group_results
+
+                    # Collect group metadata for QC context
+                    group_metadata = {}
+                    for group_id in sorted_groups:
+                        group_targets = grouped_targets[group_id]
+                        group_key = f"group_{group_id}"
+
+                        # Get group description and model from validator configuration
+                        group_description = ""
+                        group_model = ""
+                        search_context_level = ""
+                        max_web_searches = None
+
+                        # Look up group configuration in search_groups if available
+                        if hasattr(validator, 'search_groups') and validator.search_groups:
+                            for group_config in validator.search_groups:
+                                if group_config.get('group_id') == group_id:
+                                    group_description = group_config.get('description', '')
+                                    break
+
+                        # Resolve model and settings for this group
+                        if group_targets:
+                            group_model, _ = resolve_search_group_model(group_targets, validator)
+                            search_context_level = resolve_search_group_context_size(group_targets, validator)
+                            max_web_searches = resolve_search_group_max_web_searches(group_targets, validator)
+
+                        group_metadata[group_key] = {
+                            'description': group_description,
+                            'model': group_model,
+                            'search_context_level': search_context_level,
+                            'max_web_searches': max_web_searches,
+                            'group_id': group_id
+                        }
+
+                    # Process QC for complete row
+                    qc_results_by_field, qc_metrics = await qc_manager.process_complete_row_qc(
+                        session=session,
+                        row=row_data,
+                        all_group_results=all_group_results,
+                        validation_targets=all_validation_targets_for_qc,  # Use ALL targets including ID fields
+                        context=config.get('table_context', ''),
+                        general_notes=config.get('general_notes', ''),
+                        group_metadata=group_metadata
+                    )
+
+                    # Merge QC results into row_results
+                    if qc_results_by_field:
+                        for field_name, qc_field_data in qc_results_by_field.items():
+                            if field_name in row_results and qc_field_data.get('qc_applied', False):
+                                # Update the field with QC values
+                                row_results[field_name]['qc_applied'] = True
+                                row_results[field_name]['qc_entry'] = qc_field_data.get('qc_entry', '')
+                                row_results[field_name]['qc_confidence'] = qc_field_data.get('updated_confidence', '')
+                                row_results[field_name]['qc_reasoning'] = qc_field_data.get('qc_reasoning', '')
+                                row_results[field_name]['qc_action_taken'] = qc_field_data.get('qc_action_taken', '')
+
+                                # Update the main value if QC provided a replacement
+                                if qc_field_data.get('qc_action_taken') == 'value_replaced':
+                                    row_results[field_name]['value'] = qc_field_data.get('qc_entry', row_results[field_name]['value'])
+
+                                # Update confidence if QC changed it
+                                if qc_field_data.get('updated_confidence'):
+                                    row_results[field_name]['confidence_level'] = qc_field_data.get('updated_confidence')
+
+                    # Store QC results for final response
+                    if qc_results_by_field:
+                        all_qc_results[row_key] = qc_results_by_field
+
+                    # Update QC metrics summary
+                    qc_metrics_summary['total_rows_processed'] += 1
+                    if qc_metrics:
+                        qc_metrics_summary['total_fields_reviewed'] += qc_metrics.get('qc_fields_reviewed', 0)
+                        qc_metrics_summary['total_fields_modified'] += qc_metrics.get('qc_fields_modified', 0)
+                        qc_metrics_summary['total_qc_cost'] += qc_metrics.get('qc_cost', 0.0)
+                        # Add timing and cost aggregation
+                        qc_metrics_summary['total_qc_cost_actual'] += qc_metrics.get('qc_cost_actual', 0.0)
+                        qc_metrics_summary['total_qc_cost_estimated'] += qc_metrics.get('qc_cost_estimated', 0.0)
+                        qc_metrics_summary['total_qc_time_actual_seconds'] += qc_metrics.get('qc_time_actual_seconds', 0.0)
+                        qc_metrics_summary['total_qc_time_estimated_seconds'] += qc_metrics.get('qc_time_estimated_seconds', 0.0)
+                        qc_metrics_summary['total_qc_time_savings_seconds'] += qc_metrics.get('qc_time_savings_seconds', 0.0)
+                        qc_metrics_summary['total_qc_calls'] += qc_metrics.get('qc_calls', 0)  # Add QC API calls
+                        qc_metrics_summary['confidence_lowered_count'] += qc_metrics.get('confidence_lowered_count', 0)
+                        qc_metrics_summary['values_replaced_count'] += qc_metrics.get('values_replaced_count', 0)
+                        if qc_metrics.get('qc_model_used'):
+                            qc_metrics_summary['qc_models_used'].add(qc_metrics['qc_model_used'])
+
+                    logger.info(f"QC processing completed for row {row_idx}: {len(qc_results_by_field)} fields processed")
+
+                except Exception as e:
+                    logger.error(f"QC processing failed for row {row_idx}: {str(e)}")
+                    # Continue without QC data on error
+
             # Still determine next check date, but without holistic validation
             next_check, reasons = validator.determine_next_check_date(row_data, row_results)
             row_results['next_check'] = next_check.isoformat() if next_check else None
@@ -3161,6 +3360,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Use ai_client.aggregate_provider_metrics() to get comprehensive aggregated data
                 aggregated_metrics = ai_client.aggregate_provider_metrics(all_enhanced_call_data)
 
+                # ========== COST_DEBUG: Raw AI Client Aggregated Metrics ==========
+                logger.info(f"[COST_DEBUG] RAW aggregated_metrics from ai_client: {aggregated_metrics}")
+                if aggregated_metrics and 'totals' in aggregated_metrics:
+                    totals = aggregated_metrics['totals']
+                    logger.info(f"[COST_DEBUG] RAW totals: actual=${totals.get('total_cost_actual', 0):.6f}, estimated=${totals.get('total_cost_estimated', 0):.6f}")
+                    providers = aggregated_metrics.get('providers', {})
+                    for provider, data in providers.items():
+                        logger.info(f"[COST_DEBUG] RAW provider {provider}: calls={data.get('calls', 0)}, tokens={data.get('tokens', 0)}, actual=${data.get('cost_actual', 0):.6f}, estimated=${data.get('cost_estimated', 0):.6f}")
+
                 # Log the results of the final aggregation for debugging
                 if aggregated_metrics and 'totals' in aggregated_metrics:
                     totals = aggregated_metrics['totals']
@@ -3208,14 +3416,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 pass  # logger.info(f"[BATCH_SIZE_DEBUG] target_batch_size: {target_batch_size}, mode: {'preview' if is_preview else 'validation'}")
                 
+                # ========== COST_DEBUG: Full Validation Estimates Calculation ==========
+                logger.info(f"[COST_DEBUG] Calculating full validation estimates with:")
+                logger.info(f"[COST_DEBUG] - total_rows_in_table: {total_rows_in_table}")
+                logger.info(f"[COST_DEBUG] - preview_rows_processed: {preview_rows_processed}")
+                logger.info(f"[COST_DEBUG] - target_batch_size: {target_batch_size}")
+
                 full_validation_estimates = calculate_full_validation_estimates_with_batch_timing(
                     aggregated_metrics=aggregated_metrics,
                     all_enhanced_call_data=all_enhanced_call_data,
                     total_rows_in_table=total_rows_in_table,
                     preview_rows_processed=preview_rows_processed,
                     batch_processing_times=batch_processing_times_calculated,
+                    qc_manager=qc_manager,  # Pass QC manager for QC time inclusion
                     target_full_validation_batch_size=target_batch_size
                 )
+
+                # ========== COST_DEBUG: Full Validation Estimates Result ==========
+                logger.info(f"[COST_DEBUG] full_validation_estimates result: {full_validation_estimates}")
+
                 if 'error' in full_validation_estimates:
                     logger.error(f"[VALIDATOR_SIDE_ERROR] Estimates calculation failed: {full_validation_estimates['error']}")
                     full_validation_estimates = None
@@ -3471,8 +3690,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.debug(f"  ✅ Total batch processing time: {total_batch_time:.2f}s")
         
         # Calculate validation structure metrics
+        logger.info(f"[VALIDATION_METRICS_DEBUG] Total validation_targets: {len(validator.validation_targets)}")
+        logger.info(f"[VALIDATION_METRICS_DEBUG] Validation targets importance values: {[f'{t.column}:{t.importance}' for t in validator.validation_targets]}")
         validation_targets = [t for t in validator.validation_targets if t.importance.upper() not in ["ID", "IGNORED"]]
         validated_columns_count = len(validation_targets)
+        logger.info(f"[VALIDATION_METRICS] Calculated validated_columns_count: {validated_columns_count} from {len(validator.validation_targets)} total targets (after filtering ID/IGNORED)")
         grouped_targets = validator.group_columns_by_search_group(validation_targets)
         search_groups_count = len(grouped_targets)
         
@@ -3508,11 +3730,205 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Validation structure metrics:
         # Logged validation metrics
         
-        # Construct enhanced models parameter
+        # Get QC fail rates for models parameter if QC was used
+        qc_fail_rates_by_column = {}
+        if all_qc_results and qc_manager:
+            qc_fail_rates_by_column = qc_manager.cost_tracker.get_qc_fail_rates_by_column()
+
+        # ========== COST_DEBUG: Pre-QC Cost Analysis ==========
+        logger.info(f"[COST_DEBUG] all_enhanced_call_data length: {len(all_enhanced_call_data) if all_enhanced_call_data else 0}")
+        # Log individual enhanced call data items to see what costs are being passed
+        if all_enhanced_call_data:
+            for i, call_data in enumerate(all_enhanced_call_data):
+                logger.info(f"[COST_DEBUG] enhanced_call_data[{i}] structure: {call_data}")
+                # Check if it has provider_metrics structure
+                if 'provider_metrics' in call_data:
+                    for provider, metrics in call_data.get('provider_metrics', {}).items():
+                        logger.info(f"[COST_DEBUG] enhanced_call_data[{i}] provider_metrics[{provider}]: {metrics}")
+                else:
+                    logger.info(f"[COST_DEBUG] enhanced_call_data[{i}] missing provider_metrics structure")
+        logger.info(f"[COST_DEBUG] aggregated_metrics keys: {list(aggregated_metrics.keys()) if aggregated_metrics else 'None'}")
+
+        if aggregated_metrics:
+            totals = aggregated_metrics.get('totals', {})
+            providers = aggregated_metrics.get('providers', {})
+            logger.info(f"[COST_DEBUG] PRE-QC totals: actual=${totals.get('total_cost_actual', 0):.6f}, estimated=${totals.get('total_cost_estimated', 0):.6f}")
+            for provider, data in providers.items():
+                logger.info(f"[COST_DEBUG] PRE-QC provider {provider}: calls={data.get('calls', 0)}, tokens={data.get('tokens', 0)}, actual=${data.get('cost_actual', 0):.6f}, estimated=${data.get('cost_estimated', 0):.6f}")
+
+        logger.info(f"[COST_DEBUG] qc_fail_rates_by_column keys: {list(qc_fail_rates_by_column.keys()) if qc_fail_rates_by_column else 'None'}")
+
         enhanced_models_parameter = construct_enhanced_models_parameter(
-            validator, all_enhanced_call_data, aggregated_metrics
+            validator, all_enhanced_call_data, aggregated_metrics, qc_fail_rates_by_column
         )
+
+        # ========== COST_DEBUG: Enhanced Models Parameter Structure ==========
+        logger.info(f"[COST_DEBUG] enhanced_models_parameter keys: {list(enhanced_models_parameter.keys()) if enhanced_models_parameter else 'None'}")
+        if enhanced_models_parameter:
+            logger.info(f"[COST_DEBUG] enhanced_models_parameter structure: {enhanced_models_parameter}")
+            # Log model details if models array exists
+            models_array = enhanced_models_parameter.get('models', [])
+            logger.info(f"[COST_DEBUG] models array length: {len(models_array)}")
+            for i, model in enumerate(models_array):
+                logger.info(f"[COST_DEBUG] model[{i}]: {model}")
+                if 'qc_fail_rates' in model:
+                    logger.info(f"[COST_DEBUG] model[{i}] qc_fail_rates: {model['qc_fail_rates']}")
+        logger.info(f"[COST_DEBUG] qc_fail_rates_by_column passed to enhanced_models: {qc_fail_rates_by_column}")
         
+        # Prepare QC data for response
+        qc_response_data = {}
+        logger.info(f"[QC_RESPONSE_DEBUG] Preparing QC response - qc_manager: {qc_manager is not None}, "
+                   f"is_enabled: {qc_manager.is_qc_enabled() if qc_manager else 'N/A'}, "
+                   f"rows_processed: {qc_metrics_summary.get('total_rows_processed', 0)}, "
+                   f"fields_reviewed: {qc_metrics_summary.get('total_fields_reviewed', 0)}")
+        # Include QC metrics if QC was enabled and ran (even if no modifications)
+        if qc_manager and qc_manager.is_qc_enabled() and qc_metrics_summary.get('total_rows_processed', 0) > 0:
+            # Get overall QC tracker metrics to fill in any missing data
+            if hasattr(qc_manager, 'get_qc_metrics'):
+                qc_tracker_data = qc_manager.get_qc_metrics()
+                # Use tracker data if our summary is missing values
+                if qc_metrics_summary.get('total_qc_calls', 0) == 0 and qc_tracker_data.get('total_qc_calls', 0) > 0:
+                    qc_metrics_summary['total_qc_calls'] = qc_tracker_data['total_qc_calls']
+                if qc_metrics_summary.get('confidence_lowered_count', 0) == 0 and qc_tracker_data.get('confidence_lowered_count', 0) > 0:
+                    qc_metrics_summary['confidence_lowered_count'] = qc_tracker_data['confidence_lowered_count']
+                if qc_metrics_summary.get('values_replaced_count', 0) == 0 and qc_tracker_data.get('values_replaced_count', 0) > 0:
+                    qc_metrics_summary['values_replaced_count'] = qc_tracker_data['values_replaced_count']
+
+            # Add column-level QC analysis
+            logger.info(f"[QC_METRICS_DEBUG] Checking for cost_tracker: hasattr={hasattr(qc_manager, 'cost_tracker')}, qc_manager={qc_manager.__class__.__name__ if qc_manager else None}")
+            if hasattr(qc_manager, 'cost_tracker'):
+                qc_by_column = qc_manager.cost_tracker.get_qc_fail_rates_by_column()
+                qc_metrics_summary['qc_by_column'] = qc_by_column
+                logger.info(f"[QC_METRICS] Added qc_by_column analysis: {len(qc_by_column)} columns - columns: {list(qc_by_column.keys())}")
+            else:
+                # Fallback: try to get qc_by_column from tracker data
+                if qc_tracker_data and 'qc_by_column' in qc_tracker_data:
+                    logger.info(f"[QC_METRICS_DEBUG] Using qc_by_column from tracker_data directly")
+                    qc_metrics_summary['qc_by_column'] = qc_tracker_data['qc_by_column']
+
+            # Convert set to list for JSON serialization
+            qc_metrics_summary['qc_models_used'] = list(qc_metrics_summary.get('qc_models_used', set()))
+            qc_response_data = {
+                'qc_results': all_qc_results,  # May be empty if no modifications
+                'qc_metrics': qc_metrics_summary
+            }
+            logger.info(f"QC Summary: {qc_metrics_summary['total_rows_processed']} rows processed, "
+                       f"{qc_metrics_summary['total_fields_reviewed']} fields reviewed, "
+                       f"{qc_metrics_summary['total_fields_modified']} fields modified, "
+                       f"${qc_metrics_summary.get('total_qc_cost', 0):.4f} cost")
+            logger.info(f"[QC_RESPONSE_DEBUG] Including QC data in response - qc_results count: {len(all_qc_results)}, metrics: {qc_metrics_summary}")
+
+            # Log QC fail rate summary if available
+            if qc_manager:
+                qc_manager.cost_tracker.log_qc_fail_rate_summary()
+        else:
+            # Even if no rows were processed, check if QC manager has metrics to report
+            if qc_manager and hasattr(qc_manager, 'get_qc_metrics'):
+                qc_tracker_data = qc_manager.get_qc_metrics()
+                if qc_tracker_data and any(qc_tracker_data.get(k, 0) for k in ['total_qc_calls', 'total_fields_reviewed']):
+                    logger.info(f"[QC_RESPONSE_DEBUG] Found QC tracker metrics despite no rows processed: {qc_tracker_data}")
+                    # Add qc_by_column if available
+                    if hasattr(qc_manager, 'cost_tracker'):
+                        qc_by_column = qc_manager.cost_tracker.get_qc_fail_rates_by_column()
+                        qc_tracker_data['qc_by_column'] = qc_by_column
+                        logger.info(f"[QC_METRICS] Added qc_by_column to tracker data: {len(qc_by_column)} columns")
+                    # Include the tracker metrics in response
+                    qc_response_data = {
+                        'qc_results': {},  # Empty results
+                        'qc_metrics': qc_tracker_data
+                    }
+
+        # ========== QC PROVIDER METRICS INTEGRATION ==========
+        # Add QC metrics to aggregated_metrics for provider tracking
+        qc_enhanced_aggregated_metrics = aggregated_metrics.copy() if aggregated_metrics else {'providers': {}, 'totals': {}}
+
+        # Add QC-specific provider tracking if QC was used
+        if all_qc_results and qc_manager:
+            qc_tracker_metrics = qc_manager.get_qc_metrics()
+
+            # Add QC costs to the specific provider (anthropic for QC)
+            if 'providers' not in qc_enhanced_aggregated_metrics:
+                qc_enhanced_aggregated_metrics['providers'] = {}
+
+            # Update anthropic provider with QC costs
+            if 'anthropic' not in qc_enhanced_aggregated_metrics['providers']:
+                qc_enhanced_aggregated_metrics['providers']['anthropic'] = {
+                    'calls': 0, 'tokens': 0, 'cost_actual': 0.0, 'cost_estimated': 0.0,
+                    'time_actual': 0.0, 'time_estimated': 0.0
+                }
+
+            anthropic_provider = qc_enhanced_aggregated_metrics['providers']['anthropic']
+            anthropic_provider['calls'] += qc_tracker_metrics.get('total_qc_calls', 0)
+            anthropic_provider['tokens'] += qc_tracker_metrics.get('total_qc_tokens', 0)
+            anthropic_provider['cost_actual'] += qc_tracker_metrics.get('total_qc_cost', 0.0)
+            anthropic_provider['cost_estimated'] += qc_tracker_metrics.get('total_qc_estimated_cost', 0.0)
+            anthropic_provider['time_actual'] += qc_tracker_metrics.get('total_qc_time_actual', 0.0)
+            anthropic_provider['time_estimated'] += qc_tracker_metrics.get('total_qc_time_estimated', 0.0)
+
+            # Calculate QC fail rates by column
+            qc_fail_rates = qc_manager.cost_tracker.get_qc_fail_rates_by_column()
+
+            # Add separate QC_Costs provider entry for QC-specific analysis
+            # NOTE: This is for tracking/display only - actual costs are already added to anthropic provider
+            # to avoid double counting in totals
+            qc_enhanced_aggregated_metrics['providers']['QC_Costs'] = {
+                'calls': qc_tracker_metrics.get('total_qc_calls', 0),
+                'tokens': qc_tracker_metrics.get('total_qc_tokens', 0),
+                'cost_actual': qc_tracker_metrics.get('total_qc_cost', 0.0),
+                'cost_estimated': qc_tracker_metrics.get('total_qc_estimated_cost', 0.0),
+                'time_actual': qc_tracker_metrics.get('total_qc_time_actual', 0.0),
+                'time_estimated': qc_tracker_metrics.get('total_qc_time_estimated', 0.0),
+                'is_metadata_only': True,  # Flag to indicate this shouldn't be summed in totals
+                'qc_specific_metrics': {
+                    'fields_reviewed': qc_tracker_metrics.get('total_fields_reviewed', 0),
+                    'fields_modified': qc_tracker_metrics.get('total_fields_modified', 0),
+                    'confidence_lowered_count': qc_tracker_metrics.get('confidence_lowered_count', 0),
+                    'values_replaced_count': qc_tracker_metrics.get('values_replaced_count', 0),
+                    'models_used': list(qc_tracker_metrics.get('qc_models_used', set())),
+                    'qc_fail_rates_by_column': qc_fail_rates
+                }
+            }
+
+            # Update totals to include QC costs
+            if 'totals' not in qc_enhanced_aggregated_metrics:
+                qc_enhanced_aggregated_metrics['totals'] = {}
+
+            totals = qc_enhanced_aggregated_metrics['totals']
+            totals['total_calls'] = totals.get('total_calls', 0) + qc_tracker_metrics.get('total_qc_calls', 0)
+            totals['total_tokens'] = totals.get('total_tokens', 0) + qc_tracker_metrics.get('total_qc_tokens', 0)
+            totals['total_cost_actual'] = totals.get('total_cost_actual', 0.0) + qc_tracker_metrics.get('total_qc_cost', 0.0)
+            totals['total_cost_estimated'] = totals.get('total_cost_estimated', 0.0) + qc_tracker_metrics.get('total_qc_estimated_cost', 0.0)
+            totals['total_actual_processing_time'] = totals.get('total_actual_processing_time', 0.0) + qc_tracker_metrics.get('total_qc_time_actual', 0.0)
+            totals['total_estimated_processing_time'] = totals.get('total_estimated_processing_time', 0.0) + qc_tracker_metrics.get('total_qc_time_estimated', 0.0)
+
+            # ========== COST_DEBUG: Post-QC Cost Analysis ==========
+            logger.info(f"[COST_DEBUG] QC tracker metrics: {qc_tracker_metrics}")
+            logger.info(f"[COST_DEBUG] POST-QC totals: actual=${totals.get('total_cost_actual', 0):.6f}, estimated=${totals.get('total_cost_estimated', 0):.6f}")
+            for provider, data in qc_enhanced_aggregated_metrics.get('providers', {}).items():
+                logger.info(f"[COST_DEBUG] POST-QC provider {provider}: calls={data.get('calls', 0)}, tokens={data.get('tokens', 0)}, actual=${data.get('cost_actual', 0):.6f}, estimated=${data.get('cost_estimated', 0):.6f}")
+
+            # Update full_validation_estimates to include QC costs (QC TIME already included in batch estimates)
+            if full_validation_estimates and qc_tracker_metrics:
+                qc_scaling_factor = total_rows_in_table / max(1, preview_rows_processed) if is_preview else 1.0
+                qc_estimated_full_cost = qc_tracker_metrics.get('total_qc_estimated_cost', 0.0) * qc_scaling_factor
+                # Note: QC time is already included in batch estimates, don't add again
+
+                # Update the total estimates to include QC costs only
+                if 'total_estimates' in full_validation_estimates:
+                    full_validation_estimates['total_estimates']['estimated_total_cost_estimated'] += qc_estimated_full_cost
+                    # DON'T add QC time here - already included in batch timing
+                    logger.info(f"[COST_DEBUG] Updated full validation estimates with QC cost: added ${qc_estimated_full_cost:.6f} (${qc_tracker_metrics.get('total_qc_estimated_cost', 0.0):.6f} * {qc_scaling_factor:.1f})")
+                    logger.info(f"[COST_DEBUG] Final estimated_total_cost_estimated: ${full_validation_estimates['total_estimates']['estimated_total_cost_estimated']:.6f}")
+                    logger.info(f"[TIME_DEBUG] QC time already included in batch estimates, not adding separately")
+                    logger.info(f"[TIME_DEBUG] Final estimated_total_processing_time: {full_validation_estimates['total_estimates']['estimated_total_processing_time']:.2f}s")
+
+                # Note: Not updating timing_estimates or batch_timing_analysis as QC time is already included
+
+        # Log the enhanced_models_parameter before including in response
+        logger.info(f"[MODELS_PASSTHROUGH_DEBUG] enhanced_models_parameter being sent in response: {list(enhanced_models_parameter.keys()) if enhanced_models_parameter else 'EMPTY'}")
+        if enhanced_models_parameter:
+            logger.info(f"[MODELS_PASSTHROUGH_DEBUG] Sample search group data: {list(enhanced_models_parameter.get('search_group_1', {}).keys()) if 'search_group_1' in enhanced_models_parameter else 'No search_group_1'}")
+
         # Create a single response
         response = {
             "statusCode": 200,
@@ -3521,7 +3937,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "message": "Validation completed",
                 "data": {
                     # Map row indices to results
-                    "rows": validation_results
+                    "rows": validation_results,
+                    # Add QC data if available
+                    **qc_response_data
                 },
                 "metadata": {
                     "total_rows": len(rows),
@@ -3532,48 +3950,49 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     "single_validations": total_single_validations,
                     "token_usage": total_token_usage,  # Keep for backward compatibility
                     "processing_time": total_processing_time,  # Keep for backward compatibility
-                    
+
                     # ========== ENHANCED AI_API_CLIENT MEASURES ==========
                     "enhanced_metrics": {
-                        "aggregated_metrics": aggregated_metrics,  # Complete provider breakdown with costs/tokens/timing
+                        "aggregated_metrics": qc_enhanced_aggregated_metrics,  # Complete provider breakdown with costs/tokens/timing including QC
                         "full_validation_estimates": full_validation_estimates,  # Full validation projections for preview operations
                         "preview_operation": event.get('is_preview', False),
                         "ai_client_calls_count": len(all_enhanced_call_data),
-                        "all_enhanced_call_data": all_enhanced_call_data  # Individual enhanced data from all AI calls for other calculations
-                    } if aggregated_metrics else None,
-                    # NEW: Batch timing data
-                    "batch_timing": {
-                        "total_batches": len(batch_processing_times_calculated),
-                        "dynamic_batch_sizing": True,  # Indicate that batch sizes were dynamic
-                        "total_batch_time_seconds": total_batch_time,
-                        "average_batch_time_seconds": avg_batch_time,
-                        "average_time_per_row_seconds": avg_time_per_row_across_batches,
-                        "batch_details": list(batch_processing_times_calculated.items())  # Convert dict to list of (batch_num, time) pairs
-                    },
-                    # NEW: Validation structure metrics
-                    "validation_metrics": {
-                        "validated_columns_count": validated_columns_count,
-                        "search_groups_count": search_groups_count,
-                        "enhanced_context_search_groups_count": enhanced_context_groups_count,
-                        "claude_search_groups_count": claude_groups_count
-                    },
-                    # NEW: Enhanced models parameter with detailed search group information
-                    "enhanced_models_parameter": enhanced_models_parameter,
-                    # NEW: Batch API provider statistics (backward compatibility)
-                    "batch_provider_stats": {
-                        "batches_with_claude": batches_with_claude,
-                        "batches_without_claude": batches_without_claude,
-                        "total_batches": batches_with_claude + batches_without_claude
-                    },
-                    # NEW: Per-model batch statistics
-                    "per_model_batch_stats": final_stats
+                        "all_enhanced_call_data": all_enhanced_call_data,  # Individual enhanced data from all AI calls for other calculations
+                        # NEW: Batch timing data
+                        "batch_timing": {
+                            "total_batches": len(batch_processing_times_calculated),
+                            "dynamic_batch_sizing": True,  # Indicate that batch sizes were dynamic
+                            "total_batch_time_seconds": total_batch_time,
+                            "average_batch_time_seconds": avg_batch_time,
+                            "average_time_per_row_seconds": avg_time_per_row_across_batches,
+                            "batch_details": list(batch_processing_times_calculated.items())  # Convert dict to list of (batch_num, time) pairs
+                        },
+                        # NEW: Validation structure metrics
+                        "validation_metrics": {
+                            "validated_columns_count": validated_columns_count,
+                            "search_groups_count": search_groups_count,
+                            "enhanced_context_search_groups_count": enhanced_context_groups_count,
+                            "claude_search_groups_count": claude_groups_count
+                        },
+                        # NEW: Enhanced models parameter with detailed search group information
+                        "enhanced_models_parameter": enhanced_models_parameter,
+                        # NEW: Batch API provider statistics (backward compatibility)
+                        "batch_provider_stats": {
+                            "batches_with_claude": batches_with_claude,
+                            "batches_without_claude": batches_without_claude,
+                            "total_batches": batches_with_claude + batches_without_claude
+                        },
+                        # NEW: Per-model batch statistics
+                        "per_model_batch_stats": final_stats
+                    }
                 }
             }
         }
         
         # DEBUG: Log what we're actually returning in metadata
-        pass  # logger.info(f"DEBUG: Metadata being returned: {list(response['body']['metadata'].keys())}")
-        pass  # logger.info(f"DEBUG: processing_time in metadata = {response['body']['metadata'].get('processing_time', 'NOT FOUND')}")
+        logger.info(f"[METADATA_RETURN_DEBUG] Metadata keys being returned: {list(response['body']['metadata'].keys())}")
+        logger.info(f"[METADATA_RETURN_DEBUG] validation_metrics in metadata: {response['body']['metadata'].get('validation_metrics', 'NOT FOUND')}")
+        logger.info(f"[METADATA_RETURN_DEBUG] validated_columns_count: {response['body']['metadata'].get('validation_metrics', {}).get('validated_columns_count', 'NOT FOUND')}")
         
         # Add the raw responses for debugging if in test_mode
         test_mode = event.get('test_mode', False)

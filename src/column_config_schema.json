@@ -23,6 +23,48 @@
       "maximum": 10,
       "description": "Default maximum web searches for Anthropic models (0-10). 0=disable web search entirely, 1=obvious items, 3=complex items, 5=esoteric facts.  Caution when increasing this number as it can get expensive, especially as the default."
     },
+    "qc_settings": {
+      "type": "object",
+      "description": "Quality Control settings for automated review of validation outputs",
+      "properties": {
+        "enable_qc": {
+          "type": "boolean",
+          "description": "Enable or disable Quality Control review",
+          "default": true
+        },
+        "max_tokens_default": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 50000,
+          "description": "Default maximum tokens for QC processing",
+          "default": 8000
+        },
+        "tokens_per_validated_column_default": {
+          "type": "integer",
+          "minimum": 500,
+          "maximum": 10000,
+          "description": "Additional tokens per validated column for QC",
+          "default": 4000
+        },
+        "model": {
+          "oneOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}}
+          ],
+          "description": "QC model(s) to use. Can be string or array of models for fallback",
+          "default": ["claude-sonnet-4-0", "claude-opus-4-1"]
+        },
+        "anthropic_max_web_searches": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Maximum web searches for QC (0-10). 0=disable web search entirely (default for cost efficiency)",
+          "default": 0
+        }
+      },
+      "required": ["enable_qc"],
+      "additionalProperties": false
+    },
     "search_groups": {
       "type": "array",
       "description": "Required search group definitions for organizing columns - essential for building effective search strategy",

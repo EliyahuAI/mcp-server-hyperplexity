@@ -539,6 +539,7 @@ This comprehensive table shows how each variable is calculated across different 
 | **`current_balance`** | User's current account balance (preview is free) | User's account balance before/after charge | User's current balance (config is free) | Frontend + DynamoDB | `check_user_balance(email)` |
 | **`domain_multiplier`** | Domain-based pricing multiplier for cost projection | Domain multiplier used for actual billing | 1.0 (config generation doesn't use multiplier) | Frontend + DynamoDB | `_apply_domain_multiplier_with_validation(email, cost)['multiplier']` |
 | **`provider_metrics`** | Complete provider breakdown with caching info | Complete provider breakdown with actual metrics | AI provider breakdown for config generation | DynamoDB | Enhanced metrics structure from ai_client with per-provider cost/token/time/cache data |
+| **`qc_metrics`** | QC metrics if QC was enabled (separate from providers) | QC metrics if QC was enabled | null (no QC for config generation) | DynamoDB | QC-specific tracking including fields reviewed/modified, confidence adjustments, QC models used |
 
 ### Key Scaling & Business Logic Formulas
 
@@ -559,6 +560,29 @@ AI API Client → Enhanced Metrics → Validation Lambda → Full Validation Est
    Call Data     Provider Data      Calculations            to Estimates          Logic           Storage
 ```
 
+### QC Metrics Structure
+
+The `qc_metrics` field contains Quality Control metrics separate from provider costs:
+
+```json
+{
+  "enabled": true,
+  "total_fields_reviewed": 18,
+  "total_fields_modified": 5,
+  "confidence_lowered_count": 3,
+  "values_replaced_count": 2,
+  "total_qc_cost": 0.0,  // Actual cost (usually 0 if cached)
+  "total_qc_cost_estimated": 0.077319,  // Estimated cost without cache
+  "total_qc_calls": 3,
+  "qc_models_used": ["claude-sonnet-4-0"]
+}
+```
+
+**Key Points:**
+- QC costs are included in `estimated_validation_eliyahu_cost` and `estimated_validation_time_minutes`
+- QC costs also appear in the `anthropic` provider in `provider_metrics` (not double-counted in totals)
+- The `QC_Costs` entry in `provider_metrics` is metadata-only for tracking purposes
+
 ### Operation-Specific Behavior
 
 **Preview Operations:**
@@ -566,16 +590,19 @@ AI API Client → Enhanced Metrics → Validation Lambda → Full Validation Est
 - ✅ Apply domain multipliers and business logic for user cost projection
 - ✅ Lock in `quoted_validation_cost` that user will be charged later
 - ✅ Use estimated times (without cache) for projections
+- ✅ Include QC costs and time in all estimates (scaled by preview→full factor)
 
 **Full Validation Operations:**
 - ✅ Charge exactly the `quoted_validation_cost` from preview (promise kept)
 - ✅ Measure actual costs and times for comparison with estimates
 - ✅ Track cache efficiency and actual vs estimated performance
+- ✅ Apply QC to all rows and track modification rates
 
 **Configuration Operations:**
 - ✅ Track AI costs for configuration generation (internal accounting)
 - ✅ Free service to users (`quoted_validation_cost = 0`)
 - ✅ No validation-related time/cost projections (not applicable)
+- ✅ No QC applied (configuration generation doesn't use QC)
 
 This reference ensures consistent variable usage across all operation types and proper cost/time calculations throughout the system.
 

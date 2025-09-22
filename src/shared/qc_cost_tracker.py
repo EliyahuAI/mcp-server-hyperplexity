@@ -22,14 +22,19 @@ class QCCostTracker:
         self.qc_metrics = {
             'total_qc_calls': 0,
             'total_qc_tokens': 0,
-            'total_qc_cost': 0.0,
+            'total_qc_cost': 0.0,  # Actual cost paid (with cache benefits)
+            'total_qc_estimated_cost': 0.0,  # Estimated cost without cache
+            'total_qc_time_actual': 0.0,  # Actual time spent (with cache benefits)
+            'total_qc_time_estimated': 0.0,  # Estimated time without cache
             'total_fields_reviewed': 0,
             'total_fields_modified': 0,
             'confidence_lowered_count': 0,
             'values_replaced_count': 0,
             'revision_percentages_by_column': {},
             'qc_models_used': set(),
-            'qc_provider_metrics': {}
+            'qc_provider_metrics': {},
+            # Per-column QC tracking for fail rate analysis
+            'qc_by_column': {}  # column -> {reviewed: int, modified: int, confidence_lowered: int, values_replaced: int}
         }
 
     def track_qc_call(
@@ -50,21 +55,29 @@ class QCCostTracker:
             model_used: Model used for QC
             api_provider: API provider used
         """
-        # Extract cost and token information from response
-        usage = qc_response.get('usage', {})
-        cost_info = qc_response.get('enhanced_data', {}).get('costs', {})
+        # Extract cost, token, and timing information from enhanced_data
+        enhanced_data = qc_response.get('enhanced_data', {})
+        usage = enhanced_data.get('token_usage', {}) or qc_response.get('usage', {})
+        cost_info = enhanced_data.get('costs', {})
+        timing_info = enhanced_data.get('timing', {})
 
         # Update totals
         self.qc_metrics['total_qc_calls'] += 1
         self.qc_metrics['total_qc_tokens'] += usage.get('total_tokens', 0)
 
-        # Get actual cost from enhanced data if available
+        # Get actual vs estimated costs (following DYNAMODB_TABLES.md pattern)
         actual_cost = cost_info.get('actual', {}).get('total_cost', 0.0)
-        if actual_cost > 0:
-            self.qc_metrics['total_qc_cost'] += actual_cost
-        else:
-            # Fallback to response cost
-            self.qc_metrics['total_qc_cost'] += qc_response.get('cost', 0.0)
+        estimated_cost = cost_info.get('estimated', {}).get('total_cost', 0.0)
+
+        self.qc_metrics['total_qc_cost'] += actual_cost  # What we actually paid (with cache benefits)
+        self.qc_metrics['total_qc_estimated_cost'] += estimated_cost  # What it would cost without cache
+
+        # Track actual vs estimated timing (following DYNAMODB_TABLES.md pattern)
+        actual_time = timing_info.get('time_actual_seconds', 0.0)
+        estimated_time = timing_info.get('time_estimated_seconds', 0.0)
+
+        self.qc_metrics['total_qc_time_actual'] += actual_time  # Actual time with cache benefits
+        self.qc_metrics['total_qc_time_estimated'] += estimated_time  # Time without cache
 
         # Update field-level metrics
         self.qc_metrics['total_fields_reviewed'] += qc_metrics.get('qc_fields_reviewed', 0)
@@ -80,18 +93,165 @@ class QCCostTracker:
             self.qc_metrics['qc_provider_metrics'][api_provider] = {
                 'calls': 0,
                 'tokens': 0,
-                'cost': 0.0,
+                'cost_actual': 0.0,
+                'cost_estimated': 0.0,
+                'time_actual': 0.0,
+                'time_estimated': 0.0,
                 'models_used': set()
             }
 
         provider_metrics = self.qc_metrics['qc_provider_metrics'][api_provider]
         provider_metrics['calls'] += 1
         provider_metrics['tokens'] += usage.get('total_tokens', 0)
-        provider_metrics['cost'] += actual_cost if actual_cost > 0 else qc_response.get('cost', 0.0)
+        provider_metrics['cost_actual'] = provider_metrics.get('cost_actual', 0.0) + actual_cost
+        provider_metrics['cost_estimated'] = provider_metrics.get('cost_estimated', 0.0) + estimated_cost
+        provider_metrics['time_actual'] = provider_metrics.get('time_actual', 0.0) + actual_time
+        provider_metrics['time_estimated'] = provider_metrics.get('time_estimated', 0.0) + estimated_time
         provider_metrics['models_used'].add(model_used)
 
+        # Calculate cache efficiency if we have both actual and estimated
+        cache_efficiency = 0.0
+        if estimated_cost > 0:
+            cache_efficiency = ((estimated_cost - actual_cost) / estimated_cost) * 100.0
+
         logger.info(f"QC call tracked: {len(qc_results)} field modifications, "
-                   f"${actual_cost:.6f} cost, {usage.get('total_tokens', 0)} tokens")
+                   f"${actual_cost:.6f} actual cost (${estimated_cost:.6f} estimated), "
+                   f"{usage.get('total_tokens', 0)} tokens, {cache_efficiency:.1f}% cache efficiency")
+
+        # Track per-column QC actions for fail rate analysis
+        self.track_column_qc_actions(qc_results, qc_metrics)
+
+    def track_column_qc_actions(self, qc_results: List[Dict], qc_metrics: Dict[str, Any]):
+        """
+        Track QC actions per column for fail rate analysis.
+
+        Args:
+            qc_results: List of QC results
+            qc_metrics: QC metrics from QC module
+        """
+        # Get fields reviewed from QC metrics
+        fields_reviewed = qc_metrics.get('qc_fields_reviewed', 0)
+        if fields_reviewed == 0:
+            return  # No fields to track
+
+        # Track all fields that were reviewed (whether modified or not)
+        # We'll need to get the column list from somewhere - for now track only modified fields
+        for qc_result in qc_results:
+            column = qc_result.get('column', '')
+            if not column:
+                continue
+
+            # Initialize column tracking if not exists
+            if column not in self.qc_metrics['qc_by_column']:
+                self.qc_metrics['qc_by_column'][column] = {
+                    'reviewed': 0,
+                    'modified': 0,
+                    'confidence_lowered': 0,
+                    'values_replaced': 0
+                }
+
+            column_stats = self.qc_metrics['qc_by_column'][column]
+            column_stats['reviewed'] += 1  # This field was reviewed
+
+            # Check QC action taken
+            qc_action = qc_result.get('qc_action_taken', '')
+            if qc_action in ['confidence_lowered', 'confidence_adjusted']:
+                column_stats['confidence_lowered'] += 1
+                column_stats['modified'] += 1
+            elif qc_action in ['value_replaced', 'value_updated']:
+                column_stats['values_replaced'] += 1
+                column_stats['modified'] += 1
+            elif qc_action not in ['no_change', '']:
+                # Any other action counts as modified
+                column_stats['modified'] += 1
+
+    def get_qc_fail_rates_by_column(self) -> Dict[str, Dict[str, float]]:
+        """
+        Calculate QC fail rates by column.
+
+        Returns:
+            Dictionary mapping column names to fail rate statistics
+        """
+        fail_rates = {}
+
+        for column, stats in self.qc_metrics['qc_by_column'].items():
+            reviewed = stats['reviewed']
+            modified = stats['modified']
+            confidence_lowered = stats['confidence_lowered']
+            values_replaced = stats['values_replaced']
+
+            if reviewed > 0:
+                fail_rates[column] = {
+                    'total_reviewed': reviewed,
+                    'total_modified': modified,
+                    'overall_fail_rate': (modified / reviewed) * 100.0,
+                    'confidence_fail_rate': (confidence_lowered / reviewed) * 100.0,
+                    'value_fail_rate': (values_replaced / reviewed) * 100.0,
+                    'confidence_lowered_count': confidence_lowered,
+                    'values_replaced_count': values_replaced
+                }
+            else:
+                fail_rates[column] = {
+                    'total_reviewed': 0,
+                    'total_modified': 0,
+                    'overall_fail_rate': 0.0,
+                    'confidence_fail_rate': 0.0,
+                    'value_fail_rate': 0.0,
+                    'confidence_lowered_count': 0,
+                    'values_replaced_count': 0
+                }
+
+        return fail_rates
+
+    def track_all_reviewed_fields(self, multiplex_results: List[Dict], qc_results: List[Dict]):
+        """
+        Track all fields that were reviewed by QC (both modified and unmodified).
+
+        Args:
+            multiplex_results: All multiplex results that were sent to QC
+            qc_results: QC results (only contains modified fields)
+        """
+        # Create set of modified columns from QC results
+        modified_columns = {qc_result.get('column', '') for qc_result in qc_results if qc_result.get('column')}
+
+        # Track all fields from multiplex results
+        for multiplex_result in multiplex_results:
+            column = multiplex_result.get('column', '')
+            if not column:
+                continue
+
+            # Initialize column tracking if not exists
+            if column not in self.qc_metrics['qc_by_column']:
+                self.qc_metrics['qc_by_column'][column] = {
+                    'reviewed': 0,
+                    'modified': 0,
+                    'confidence_lowered': 0,
+                    'values_replaced': 0
+                }
+
+            column_stats = self.qc_metrics['qc_by_column'][column]
+
+            # Only increment reviewed count if we haven't already counted this field
+            # (avoid double counting when both track_column_qc_actions and track_all_reviewed_fields are called)
+            if column not in modified_columns:
+                column_stats['reviewed'] += 1  # This field was reviewed but not modified
+
+    def log_qc_fail_rate_summary(self):
+        """Log a summary of QC fail rates by column."""
+        fail_rates = self.get_qc_fail_rates_by_column()
+
+        if not fail_rates:
+            logger.info("No QC fail rate data available")
+            return
+
+        # Sort columns by overall fail rate (highest first)
+        sorted_columns = sorted(fail_rates.items(), key=lambda x: x[1]['overall_fail_rate'], reverse=True)
+
+        logger.info("QC Fail Rate Summary by Column:")
+        for column, stats in sorted_columns:
+            if stats['total_reviewed'] > 0:
+                logger.info(f"  {column}: {stats['overall_fail_rate']:.1f}% fail rate "
+                           f"({stats['total_modified']}/{stats['total_reviewed']} reviewed)")
 
     def update_revision_percentages(self, column_revision_data: Dict[str, Dict[str, Any]]):
         """

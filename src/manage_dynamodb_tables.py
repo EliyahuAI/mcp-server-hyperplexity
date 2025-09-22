@@ -893,11 +893,27 @@ def display_enhanced_run_info(run_item):
                 print(f"  Total Usage: {int(total_calls or 0)} calls | {int(total_tokens or 0):,} tokens")
                 print(f"  Overall Cache Efficiency: {float(overall_cache_eff or 0):.1f}%")
         
+        # QC Metrics (if QC was enabled)
+        qc_metrics = run_item.get('qc_metrics', {})
+        if qc_metrics and isinstance(qc_metrics, dict):
+            print(f"\n[QC METRICS]")
+            print(f"  QC Enabled: {qc_metrics.get('enabled', False)}")
+            if qc_metrics.get('enabled'):
+                print(f"  Fields Reviewed: {qc_metrics.get('total_fields_reviewed', 0)}")
+                print(f"  Fields Modified: {qc_metrics.get('total_fields_modified', 0)}")
+                print(f"  Confidence Lowered: {qc_metrics.get('confidence_lowered_count', 0)}")
+                print(f"  Values Replaced: {qc_metrics.get('values_replaced_count', 0)}")
+                print(f"  QC Cost: ${float(qc_metrics.get('total_qc_cost_estimated', 0)):.6f}")
+                print(f"  QC Calls: {qc_metrics.get('total_qc_calls', 0)}")
+                qc_models = qc_metrics.get('qc_models_used', [])
+                if qc_models:
+                    print(f"  QC Models: {', '.join(qc_models)}")
+
         # Timing information
         time_per_row = float(run_item.get('time_per_row_seconds', 0))
         estimated_time = float(run_item.get('estimated_validation_time_minutes', 0))
         run_time = float(run_item.get('run_time_s', 0))
-        
+
         if time_per_row > 0 or estimated_time > 0 or run_time > 0:
             print(f"\n[TIMING]")
             if time_per_row > 0:
@@ -1209,9 +1225,12 @@ def flatten_preview_data(item):
     })
     
     # Processing times
+    # First check if estimated_validation_time_minutes is at the top level of the item (where it's actually stored)
+    # If not found there, fall back to preview_data (for backward compatibility)
+    estimated_time = item.get('estimated_validation_time_minutes', preview_data.get('estimated_validation_time_minutes', 0))
     flattened.update({
         # Legacy timing fields removed - use run_time_s and estimated_validation_time_minutes
-        'estimated_validation_time_minutes': preview_data.get('estimated_validation_time_minutes', 0)
+        'estimated_validation_time_minutes': estimated_time
     })
     
     # Account info (if present)
@@ -1697,7 +1716,8 @@ Usage:
     python manage_dynamodb_tables.py calls                   # Show recent call tracking (legacy)
     python manage_dynamodb_tables.py recent [limit]          # Show recent validation runs (rich format)
     python manage_dynamodb_tables.py recent-calls [limit]    # Same as recent
-    python manage_dynamodb_tables.py enhanced-runs [limit] [run_type] [status]  # Show enhanced runs with provider metrics
+    python manage_dynamodb_tables.py runs [limit] [run_type] [status]        # Show recent runs with full metrics
+    python manage_dynamodb_tables.py enhanced-runs [limit] [run_type] [status]  # Show enhanced runs with provider metrics (alias for runs)
     python manage_dynamodb_tables.py dashboard              # Show comprehensive dashboard
     python manage_dynamodb_tables.py summary                 # Show summary of all tables
     
@@ -1824,7 +1844,7 @@ Examples:
         limit = int(sys.argv[2]) if len(sys.argv) > 2 else 20
         get_recent_runs_rich_table(limit)
     
-    elif command == "enhanced-runs":
+    elif command == "enhanced-runs" or command == "runs":
         limit = int(sys.argv[2]) if len(sys.argv) > 2 else 20
         run_type_filter = sys.argv[3] if len(sys.argv) > 3 else None
         status_filter = sys.argv[4] if len(sys.argv) > 4 else None

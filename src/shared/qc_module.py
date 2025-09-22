@@ -116,7 +116,7 @@ class QCModule:
 
         return aggregated_sources
 
-    def format_all_multiplex_outputs_for_qc(self, all_group_results: Dict[str, List[Dict]], original_row: Dict[str, Any] = None, validation_targets: List[Any] = None) -> str:
+    def format_all_multiplex_outputs_for_qc(self, all_group_results: Dict[str, List[Dict]], original_row: Dict[str, Any] = None, validation_targets: List[Any] = None, group_metadata: Dict[str, Dict[str, Any]] = None) -> str:
         """
         Format ALL multiplex validation outputs across all field groups for inclusion in QC prompt.
         Enhanced formatting to provide complete context for QC review.
@@ -125,6 +125,7 @@ class QCModule:
             all_group_results: Dictionary mapping group names to their multiplex validation results
             original_row: Original row data for extracting original values
             validation_targets: List of validation target objects for field guidance
+            group_metadata: Dictionary mapping group names to metadata (description, model, etc.)
 
         Returns:
             Formatted string for QC prompt showing all field groups with complete context
@@ -158,12 +159,29 @@ class QCModule:
             if not non_id_results:
                 continue  # Skip this group if only ID fields
 
-            # Enhanced group header with description if available
+            # Enhanced group header with description and model info if available
             group_section = [f"### FIELD GROUP: {group_name}"]
 
-            # Add group description if available (from validation targets)
-            # This would need to be passed from the validation lambda context
-            # For now, we'll include basic group information
+            # Add group metadata if available
+            if group_metadata and group_name in group_metadata:
+                metadata = group_metadata[group_name]
+
+                # Add group description
+                if 'description' in metadata and metadata['description']:
+                    group_section.append(f"**Description**: {metadata['description']}")
+
+                # Add model used for this group
+                if 'model' in metadata and metadata['model']:
+                    group_section.append(f"**Model Used**: {metadata['model']}")
+
+                # Add search context level if available
+                if 'search_context_level' in metadata:
+                    group_section.append(f"**Search Context**: {metadata['search_context_level']}")
+
+                # Add max web searches if available
+                if 'max_web_searches' in metadata:
+                    group_section.append(f"**Max Web Searches**: {metadata['max_web_searches']}")
+
             group_section.append("")
 
             for result in non_id_results:
@@ -239,11 +257,15 @@ class QCModule:
             Formatted string with ID fields for context
         """
         if not validation_targets or not row:
+            logger.warning("QC ID context: No validation targets or row data provided")
             return ""
 
         id_fields = []
+        logger.info(f"QC checking {len(validation_targets)} validation targets for ID fields")
+
         for target in validation_targets:
             # Check if this is an ID field
+            logger.debug(f"QC target: {target.column}, importance: {getattr(target, 'importance', 'NONE')}")
             if hasattr(target, 'importance') and target.importance == 'ID':
                 column = target.column
                 value = row.get(column, '')
@@ -254,11 +276,15 @@ class QCModule:
                     field_info += f" ({description})"
 
                 id_fields.append(field_info)
+                logger.info(f"QC added ID field: {field_info}")
 
         if not id_fields:
+            logger.warning("QC: No ID fields found in validation targets")
             return "No ID fields available for context."
 
-        return '\n'.join(id_fields)
+        result = '\n'.join(id_fields)
+        logger.info(f"QC final ID context: '{result}'")
+        return result
 
 
     def calculate_qc_tokens(self, num_fields: int) -> int:
@@ -280,7 +306,8 @@ class QCModule:
         all_group_results: Dict[str, List[Dict]],
         validation_targets: List[Any],
         context: str = "",
-        general_notes: str = ""
+        general_notes: str = "",
+        group_metadata: Dict[str, Dict[str, Any]] = None
     ) -> Tuple[List[Dict], Dict[str, Any]]:
         """
         Process QC for a complete row after ALL field groups have been processed.
@@ -292,6 +319,7 @@ class QCModule:
             validation_targets: List of validation target objects
             context: Context information for validation
             general_notes: General guidance notes
+            group_metadata: Dictionary mapping group names to metadata (description, model, etc.)
 
         Returns:
             Tuple of (qc_results_list, qc_metrics_dict)
@@ -321,7 +349,9 @@ class QCModule:
             return [], {}
 
         # Format ALL multiplex outputs for QC review
-        all_multiplex_outputs_formatted = self.format_all_multiplex_outputs_for_qc(scrubbed_all_group_results, row, validation_targets)
+        all_multiplex_outputs_formatted = self.format_all_multiplex_outputs_for_qc(
+            scrubbed_all_group_results, row, validation_targets, group_metadata
+        )
 
         # Get QC schema
         qc_schema_response = get_qc_response_format_schema()
@@ -338,8 +368,11 @@ class QCModule:
         }
 
         # Generate ID fields context
+        logger.info(f"QC: About to generate ID context with {len(validation_targets) if validation_targets else 0} validation targets")
         id_context = self.format_id_fields_for_context(validation_targets, row)
+        logger.info(f"QC: Generated ID context: '{id_context}'")
         enhanced_context = f"{context}\n\n{id_context}" if context else id_context
+        logger.info(f"QC: Enhanced context: '{enhanced_context}'")
 
         # Build QC prompt with all field groups
         qc_prompt = qc_prompt_template.format(
@@ -363,6 +396,7 @@ class QCModule:
         token_limit = self.calculate_qc_tokens(non_id_fields)
 
         logger.info(f"Running QC for complete row with {non_id_fields} non-ID fields across {len(all_group_results)} groups, token limit {token_limit}")
+        logger.info(f"QC context being used: '{enhanced_context}'")
 
         try:
             # Make QC API call using ai_api_client
@@ -398,8 +432,9 @@ class QCModule:
                 'qc_time_savings_seconds': timing_data.get('time_savings_seconds', 0.0),
                 'qc_cost_actual': costs_data.get('actual', {}).get('total_cost', 0.0),  # What we actually paid (with cache benefits)
                 'qc_cost_estimated': costs_data.get('estimated', {}).get('total_cost', 0.0),  # What it would cost without cache
-                'qc_cost': costs_data.get('actual', {}).get('total_cost', 0.0),  # For backward compatibility
-                'qc_cache_hit_tokens': token_usage.get('cache_read_tokens', 0)
+                'qc_cache_hit_tokens': token_usage.get('cache_read_tokens', 0),
+                # Include raw response data for proper cost tracking
+                'qc_response_data': qc_response
             }
 
             # Extract structured response using ai_client method
@@ -544,7 +579,6 @@ class QCModule:
                 'qc_time_savings_seconds': timing_data.get('time_savings_seconds', 0.0),
                 'qc_cost_actual': costs_data.get('actual', {}).get('total_cost', 0.0),  # What we actually paid (with cache benefits)
                 'qc_cost_estimated': costs_data.get('estimated', {}).get('total_cost', 0.0),  # What it would cost without cache
-                'qc_cost': costs_data.get('actual', {}).get('total_cost', 0.0),  # For backward compatibility
                 'qc_cache_hit_tokens': token_usage.get('cache_read_tokens', 0)
             }
 

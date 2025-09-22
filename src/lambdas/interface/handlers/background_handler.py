@@ -346,10 +346,17 @@ def handle(event, context):
         from ..reporting.markdown_report import create_markdown_table_from_results
         
         try:
-            from ..reporting.excel_report_new import create_enhanced_excel_with_validation, EXCEL_ENHANCEMENT_AVAILABLE
+            from excel_report_qc_unified import create_qc_enhanced_excel_for_interface
+            EXCEL_ENHANCEMENT_AVAILABLE = True
         except ImportError:
-            EXCEL_ENHANCEMENT_AVAILABLE = False
-            def create_enhanced_excel_with_validation(*args, **kwargs): return None
+            try:
+                from ..reporting.excel_report_new import create_enhanced_excel_with_validation, EXCEL_ENHANCEMENT_AVAILABLE
+                # Fallback function that maps to QC interface
+                def create_qc_enhanced_excel_for_interface(table_data, validation_results, config_data, session_id, validated_sheet_name=None):
+                    return create_enhanced_excel_with_validation(table_data, validation_results, config_data, session_id, validated_sheet_name)
+            except ImportError:
+                EXCEL_ENHANCEMENT_AVAILABLE = False
+                def create_qc_enhanced_excel_for_interface(*args, **kwargs): return None
         
         try:
             from email_sender import send_validation_results_email
@@ -561,6 +568,11 @@ def handle(event, context):
             if validation_results and validation_results.get('validation_results'):
                 # Extract metadata first
                 real_results = validation_results.get('validation_results', {})
+
+                # Extract QC data if present (it's at the top level of validation_results, not in metadata)
+                qc_results = validation_results.get('qc_results', {})
+                qc_metrics_data = validation_results.get('qc_metrics', {})
+                logger.info(f"[QC_DEBUG] Extracted QC data - results: {len(qc_results)} rows, metrics: {qc_metrics_data.get('total_fields_reviewed', 0)} fields reviewed")
                 logger.debug(f"[EXCEL_DEBUG] validation_results keys: {list(validation_results.keys())}")
                 logger.debug(f"[EXCEL_DEBUG] real_results type: {type(real_results)}, keys: {list(real_results.keys()) if isinstance(real_results, dict) else 'N/A'}")
                 if isinstance(real_results, dict) and real_results:
@@ -592,9 +604,21 @@ def handle(event, context):
                 # ========== ENHANCED AI_API_CLIENT INTEGRATION ==========
                 # Extract enhanced cost/time data from validation lambda's ai_client aggregation
                 enhanced_metrics = metadata.get('enhanced_metrics', {})
-                
-                # Extract enhanced models parameter from validation response
-                enhanced_models_parameter = metadata.get('enhanced_models_parameter', {})
+                # validation_metrics is nested inside enhanced_metrics
+                validation_metrics = enhanced_metrics.get('validation_metrics', {})
+                logger.info(f"[METADATA_DEBUG] enhanced_metrics keys: {list(enhanced_metrics.keys()) if enhanced_metrics else 'None'}")
+                logger.info(f"[METADATA_DEBUG] validation_metrics extracted: {validation_metrics}")
+
+                # Extract enhanced models parameter from validation response (it's inside enhanced_metrics)
+                logger.info(f"[MODELS_DEBUG] metadata keys available: {list(metadata.keys()) if metadata else 'No metadata'}")
+                if enhanced_metrics:
+                    logger.info(f"[MODELS_DEBUG] enhanced_metrics keys available: {list(enhanced_metrics.keys())}")
+                    enhanced_models_parameter = enhanced_metrics.get('enhanced_models_parameter', {})
+                else:
+                    enhanced_models_parameter = {}
+                logger.info(f"[MODELS_DEBUG] enhanced_models_parameter from enhanced_metrics: {list(enhanced_models_parameter.keys()) if enhanced_models_parameter else 'EMPTY'}")
+                if enhanced_models_parameter:
+                    logger.info(f"[MODELS_DEBUG] enhanced_models_parameter has {len(enhanced_models_parameter)} search groups")
 
                 # DEBUG: Log the exact structure of the received enhanced_metrics
                 logger.debug(f"[DATA_FLOW_DEBUG] Received enhanced_metrics structure: {json.dumps(enhanced_metrics, indent=2)}")
@@ -623,10 +647,10 @@ def handle(event, context):
                     
                     # Tier 1: Eliyahu Cost (actual cost paid with caching benefits)
                     eliyahu_cost = totals.get('total_cost_actual', 0.0)
-                    
+
                     # Tier 2: Estimated cost without cache (for full validation projections)
                     cost_estimated = totals.get('total_cost_estimated', 0.0)
-                    
+
                     # Extract provider-specific measures
                     providers = aggregated_data.get('providers', {})
                     perplexity_eliyahu_cost = providers.get('perplexity', {}).get('cost_actual', 0.0)
@@ -720,9 +744,18 @@ def handle(event, context):
                     
                     # estimated_validation_time: Use batch-based scaling for accurate time projection
                     # The validation lambda calculates this using proper batch architecture
-                    estimated_total_time_seconds = (timing_estimates.get('total_estimated_time_seconds') or 
+                    logger.info(f"[TIME_DEBUG] timing_estimates: {timing_estimates}")
+                    logger.info(f"[TIME_DEBUG] batch_timing.estimated_total_time_for_full_validation: {batch_timing.get('estimated_total_time_for_full_validation')}")
+                    logger.info(f"[TIME_DEBUG] total_estimates.estimated_total_processing_time: {total_estimates.get('estimated_total_processing_time')}")
+                    estimated_total_time_seconds = (timing_estimates.get('total_estimated_time_seconds') or
                                                    batch_timing.get('estimated_total_time_for_full_validation') or
                                                    total_estimates.get('estimated_total_processing_time', 0.0))
+
+                    logger.info(f"[TIME_DEBUG] estimated_total_time_seconds: {estimated_total_time_seconds}")
+                    logger.info(f"[TIME_DEBUG] Converting to minutes: {estimated_total_time_seconds / 60:.1f} minutes")
+                    logger.info(f"[TIME_DEBUG] timing_estimates.total_estimated_time_seconds: {timing_estimates.get('total_estimated_time_seconds', 'NOT_SET')}")
+                    logger.info(f"[TIME_DEBUG] batch_timing.estimated_total_time_for_full_validation: {batch_timing.get('estimated_total_time_for_full_validation', 'NOT_SET')}")
+                    logger.info(f"[TIME_DEBUG] total_estimates.estimated_total_processing_time: {total_estimates.get('estimated_total_processing_time', 'NOT_SET')}")
                     
                     # Extract per-provider costs from new structure if available
                     if per_provider_estimates:
@@ -772,7 +805,8 @@ def handle(event, context):
                 total_tokens = token_usage.get('total_tokens', 0)
                 total_api_calls = token_usage.get('api_calls', 0)
                 total_cached_calls = token_usage.get('cached_calls', 0)
-                validation_metrics = metadata.get('validation_metrics', {})
+                logger.info(f"[METADATA_DEBUG] metadata keys: {list(metadata.keys()) if metadata else 'None'}")
+                logger.info(f"[METADATA_DEBUG] Looking for validation_metrics in metadata")
                 
                 # Initialize balance variables (preview doesn't charge)
                 initial_balance = 0
@@ -858,6 +892,11 @@ def handle(event, context):
                 
                 # Calculate time per row for full validation (time_per_row_seconds field)
                 # First try to get from enhanced timing estimates, then fall back to calculation
+                logger.info(f"[TIME_DEBUG_FINAL] Final estimated_total_time_seconds before payload: {estimated_total_time_seconds}")
+                if estimated_total_time_seconds:
+                    logger.info(f"[TIME_DEBUG_FINAL] Will be converted to minutes: {estimated_total_time_seconds / 60:.1f}")
+                else:
+                    logger.info(f"[TIME_DEBUG_FINAL] Will be converted to minutes: None")
                 if enhanced_metrics and enhanced_metrics.get('full_validation_estimates'):
                     timing_estimates = enhanced_metrics['full_validation_estimates'].get('timing_estimates', {})
                     time_per_row = timing_estimates.get('time_per_row_seconds', 0.0)
@@ -1047,7 +1086,7 @@ def handle(event, context):
                                 table_data = table_parser.parse_s3_table(S3_UNIFIED_BUCKET, excel_s3_key)
                                 validated_sheet = table_data.get('metadata', {}).get('sheet_name') if isinstance(table_data, dict) else None
                                 
-                                excel_buffer = create_enhanced_excel_with_validation(
+                                excel_buffer = create_qc_enhanced_excel_for_interface(
                                     table_data, real_results, config_data, session_id, validated_sheet_name=validated_sheet
                                 )
                                 
@@ -1186,11 +1225,46 @@ def handle(event, context):
                     configuration_id = config_data.get('generation_metadata', {}).get('config_id', 'unknown')
                 
                 # Extract consolidated fields from preview payload
+                logger.info(f"[TIME_SAVE_DEBUG] preview_payload keys: {list(preview_payload.keys())}")
+                logger.info(f"[TIME_SAVE_DEBUG] estimated_validation_time_minutes in preview_payload: {preview_payload.get('estimated_validation_time_minutes', 'NOT_FOUND')}")
+
                 eliyahu_cost = preview_payload.get('cost_estimates', {}).get('preview_cost', 0.0)  # Actual cost incurred
                 quoted_validation_cost_value = preview_payload.get('cost_estimates', {}).get('quoted_validation_cost', 0.0)  # What user will pay for full
                 estimated_validation_eliyahu_cost_value = preview_payload.get('cost_estimates', {}).get('estimated_validation_eliyahu_cost', 0.0)  # Raw eliyahu cost estimate
                 time_per_row = preview_payload.get('cost_estimates', {}).get('per_row_time', 0.0)  # Time per row estimate
                 estimated_time_minutes = preview_payload.get('estimated_validation_time_minutes', 0.0)  # Total estimated time in minutes
+
+                logger.info(f"[TIME_SAVE_DEBUG] extracted estimated_time_minutes: {estimated_time_minutes}")
+                logger.info(f"[TIME_SAVE_DEBUG] Conversion check: {estimated_time_minutes} minutes = {estimated_time_minutes * 60:.1f} seconds")
+                logger.info(f"[TIME_SAVE_DEBUG] Source estimated_total_time_seconds was: {preview_payload.get('estimated_total_processing_time', 'NOT_IN_PAYLOAD')}")
+
+                # Debug total_provider_calls calculation
+                total_validation_calls = 0
+                total_qc_calls = 0
+                if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
+                    providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
+                    for provider, data in providers.items():
+                        if provider == 'QC_Costs':
+                            total_qc_calls += data.get('calls', 0)
+                        else:
+                            total_validation_calls += data.get('calls', 0)
+                    logger.info(f"[PROVIDER_CALLS_DEBUG] From enhanced_metrics - validation_calls: {total_validation_calls}, qc_calls: {total_qc_calls}")
+                else:
+                    # Fallback to token_usage
+                    for provider in ['perplexity', 'anthropic']:
+                        provider_data = token_usage.get('by_provider', {}).get(provider, {})
+                        total_validation_calls += provider_data.get('api_calls', 0)
+                    logger.info(f"[PROVIDER_CALLS_DEBUG] From token_usage - validation_calls: {total_validation_calls}")
+
+                # Add QC calls from qc_metrics_data
+                if qc_metrics_data:
+                    qc_calls_from_metrics = qc_metrics_data.get('total_qc_calls', 0)
+                    logger.info(f"[PROVIDER_CALLS_DEBUG] QC calls from qc_metrics_data: {qc_calls_from_metrics}")
+                    total_qc_calls = max(total_qc_calls, qc_calls_from_metrics)  # Use max to avoid double-counting
+
+                # Calculate grand total
+                total_provider_calls_override = total_validation_calls + total_qc_calls
+                logger.info(f"[PROVIDER_CALLS_DEBUG] TOTAL calls (validation + QC): {total_provider_calls_override}")
                 batch_size_used = preview_payload.get('actual_batch_size', 10)  # Actual batch size used for preview
                 
                 # Use enhanced provider metrics from ai_client aggregation if available
@@ -1200,8 +1274,11 @@ def handle(event, context):
                 if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
                     # Use properly aggregated enhanced metrics from validation lambda
                     providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
-                    
+
                     for provider, provider_data in providers.items():
+                        # Skip QC_Costs as it's now in separate qc_metrics field
+                        if provider == 'QC_Costs':
+                            continue
                         provider_metrics_for_db[provider] = {
                             'calls': provider_data.get('calls', 0),
                             'tokens': provider_data.get('tokens', 0),
@@ -1212,10 +1289,50 @@ def handle(event, context):
                             'cost_per_row_actual': provider_data.get('cost_actual', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
                             'cost_per_row_estimated': provider_data.get('cost_estimated', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
                             'time_per_row_actual': provider_data.get('time_actual_seconds', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
+                            'time_per_row_estimated': provider_data.get('time_estimated_seconds', 0.0) / total_rows_processed if total_rows_processed > 0 else 0,
                             'cache_efficiency_percent': provider_data.get('cache_efficiency_percent', 0.0)
                         }
                     
                     logger.info(f"[PROVIDER_METRICS] Using enhanced aggregated metrics for provider_metrics_for_db")
+
+                # Create separate QC metrics for database (not mixed with providers)
+                qc_metrics_for_db = {}
+                if qc_metrics_data:
+                    # Calculate per-row QC metrics similar to provider metrics
+                    qc_rows_processed = qc_metrics_data.get('total_rows_processed', total_rows_processed)
+                    qc_cost_actual = qc_metrics_data.get('total_qc_cost', 0.0)
+                    qc_cost_estimated = qc_metrics_data.get('total_qc_cost_estimated', 0.0)
+                    qc_time_actual = qc_metrics_data.get('total_qc_time_actual_seconds', 0.0)
+                    qc_time_estimated = qc_metrics_data.get('total_qc_time_estimated_seconds', 0.0)
+
+                    qc_metrics_for_db = {
+                        'enabled': True,
+                        'total_fields_reviewed': qc_metrics_data.get('total_fields_reviewed', 0),
+                        'total_fields_modified': qc_metrics_data.get('total_fields_modified', 0),
+                        'total_qc_cost': qc_cost_actual,
+                        'total_qc_cost_estimated': qc_cost_estimated,
+                        'total_qc_calls': qc_metrics_data.get('total_qc_calls', 0),
+                        'total_qc_tokens': qc_metrics_data.get('total_qc_tokens', 0),
+                        'qc_models_used': qc_metrics_data.get('qc_models_used', []),
+                        'confidence_lowered_count': qc_metrics_data.get('confidence_lowered_count', 0),
+                        'values_replaced_count': qc_metrics_data.get('values_replaced_count', 0),
+                        # Add per-row metrics
+                        'cost_per_row_actual': qc_cost_actual / qc_rows_processed if qc_rows_processed > 0 else 0.0,
+                        'cost_per_row_estimated': qc_cost_estimated / qc_rows_processed if qc_rows_processed > 0 else 0.0,
+                        'time_actual_seconds': qc_time_actual,
+                        'time_estimated_seconds': qc_time_estimated,
+                        'time_per_row_actual': qc_time_actual / qc_rows_processed if qc_rows_processed > 0 else 0.0,
+                        'time_per_row_estimated': qc_time_estimated / qc_rows_processed if qc_rows_processed > 0 else 0.0,
+                        # Add qc_by_column if available
+                        'qc_by_column': qc_metrics_data.get('qc_by_column', {})
+                    }
+                    logger.info(f"[QC_METRICS] Created QC metrics for DB with qc_by_column: {len(qc_metrics_for_db.get('qc_by_column', {}))} columns")
+
+                # The models field already contains all validation model info via enhanced_models_parameter
+                # QC model info is in qc_metrics_for_db['qc_models_used']
+                logger.info(f"[MODELS_SUMMARY] Validation models in enhanced_models_parameter: {len(enhanced_models_parameter)} search groups")
+                if qc_metrics_for_db:
+                    logger.info(f"[QC_MODELS] QC models used: {qc_metrics_for_db.get('qc_models_used', [])}")
                 else:
                     # Fallback to legacy token_usage conversion
                     by_provider = token_usage.get('by_provider', {})
@@ -1300,11 +1417,25 @@ def handle(event, context):
                     estimated_validation_time_minutes=estimated_time_minutes,
                     end_time=background_end_time,  # Use background handler completion time
                     run_time_s=background_processing_time_seconds,  # Actual background handler processing time
-                    provider_metrics=provider_metrics_for_db  # Enhanced provider-specific metrics
+                    provider_metrics=provider_metrics_for_db,  # Enhanced provider-specific metrics
+                    qc_metrics=qc_metrics_for_db if qc_metrics_for_db else None,  # Separate QC metrics (not mixed with providers)
+                    total_provider_calls=total_provider_calls_override  # Override with correct total including QC
                 )
+
+                # Log what we're saving to database
+                logger.info(f"[DB_SAVE_DEBUG] Saving to database:")
+                logger.info(f"[DB_SAVE_DEBUG]   estimated_validation_time_minutes: {estimated_time_minutes}")
+                logger.info(f"[DB_SAVE_DEBUG]   total_provider_calls: {total_provider_calls_override}")
+                logger.info(f"[DB_SAVE_DEBUG]   qc_metrics: {qc_metrics_for_db}")
+                if qc_metrics_for_db and 'qc_by_column' in qc_metrics_for_db:
+                    logger.info(f"[DB_SAVE_DEBUG]   qc_by_column columns: {list(qc_metrics_for_db['qc_by_column'].keys())}")
+                    logger.info(f"[DB_SAVE_DEBUG]   qc_by_column data: {qc_metrics_for_db['qc_by_column']}")
+                logger.info(f"[DB_SAVE_DEBUG]   provider_metrics keys: {list(provider_metrics_for_db.keys()) if provider_metrics_for_db else 'None'}")
                 
                 # Track enhanced user metrics for preview
                 logger.info(f"[USER_TRACKING] Tracking preview request for email: {email}")
+                logger.info(f"[VALIDATION_METRICS_DEBUG] validation_metrics: {validation_metrics}")
+                logger.info(f"[VALIDATION_METRICS_DEBUG] validated_columns_count: {validation_metrics.get('validated_columns_count', 'KEY_NOT_FOUND')}")
                 try:
                     track_result = track_user_request(
                     email=email,
@@ -1600,13 +1731,13 @@ def handle(event, context):
             total_rows = validation_results.get('total_rows', 1)
             metadata = validation_results.get('metadata', {})
             token_usage = metadata.get('token_usage', {})
-            validation_metrics = metadata.get('validation_metrics', {})
-            
-            # Extract enhanced models parameter from validation response
-            enhanced_models_parameter = metadata.get('enhanced_models_parameter', {})
-            
             # Extract enhanced metrics from validation response
             enhanced_metrics = metadata.get('enhanced_metrics', {})
+            # validation_metrics is nested inside enhanced_metrics
+            validation_metrics = enhanced_metrics.get('validation_metrics', {})
+
+            # Extract enhanced models parameter from enhanced_metrics (not top-level metadata)
+            enhanced_models_parameter = enhanced_metrics.get('enhanced_models_parameter', {}) if enhanced_metrics else {}
             
             # Apply domain multiplier to raw costs and handle billing
             try:
@@ -2124,7 +2255,7 @@ def handle(event, context):
                             logger.info(f"Extracted validated sheet name from metadata: '{validated_sheet}'")
                             logger.info(f"Table data metadata: {table_data.get('metadata', {})}")
                             
-                            excel_buffer = create_enhanced_excel_with_validation(
+                            excel_buffer = create_qc_enhanced_excel_for_interface(
                                 table_data, real_results, config_data, session_id, validated_sheet_name=validated_sheet
                             )
                             if excel_buffer:
@@ -2547,8 +2678,11 @@ def handle(event, context):
                     if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
                         # Use properly aggregated enhanced metrics from validation lambda
                         providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
-                        
+
                         for provider, provider_data in providers.items():
+                            # Skip QC_Costs as it's now in separate qc_metrics field
+                            if provider == 'QC_Costs':
+                                continue
                             provider_metrics_for_db[provider] = {
                                 'calls': provider_data.get('calls', 0),
                                 'tokens': provider_data.get('tokens', 0),
@@ -2559,6 +2693,7 @@ def handle(event, context):
                                 'cost_per_row_actual': provider_data.get('cost_actual', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
                                 'cost_per_row_estimated': provider_data.get('cost_estimated', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
                                 'time_per_row_actual': provider_data.get('time_actual_seconds', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
+                                'time_per_row_estimated': provider_data.get('time_estimated_seconds', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
                                 'cache_efficiency_percent': provider_data.get('cache_efficiency_percent', 0.0)
                             }
                         
@@ -2579,16 +2714,18 @@ def handle(event, context):
                                 cache_efficiency = cached_calls / max(api_calls, 1) if api_calls > 0 else 0
                                 cost_estimated = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
                                 
+                                provider_time = processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1))
                                 provider_metrics_for_db[provider] = {
                                     'calls': api_calls,
                                     'tokens': total_tokens,
                                     'cost_actual': actual_cost,
                                     'cost_estimated': cost_estimated,
-                                    'processing_time': processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1)),
+                                    'processing_time': provider_time,
                                     'cache_hit_tokens': cached_calls * (total_tokens / max(api_calls, 1)) if api_calls > 0 else 0,
                                     'cost_per_row_actual': actual_cost / processed_rows_count if processed_rows_count > 0 else 0,
                                     'cost_per_row_estimated': cost_estimated / processed_rows_count if processed_rows_count > 0 else 0,
-                                    'time_per_row_actual': (processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1))) / processed_rows_count if processed_rows_count > 0 else 0,
+                                    'time_per_row_actual': provider_time / processed_rows_count if processed_rows_count > 0 else 0,
+                                    'time_per_row_estimated': provider_time / processed_rows_count if processed_rows_count > 0 else 0,  # In fallback, use same as actual
                                     'cache_efficiency_percent': (1 - (actual_cost / max(cost_estimated, 0.000001))) * 100
                                 }
                         

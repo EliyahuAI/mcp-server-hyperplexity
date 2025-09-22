@@ -48,7 +48,8 @@ class QCIntegrationManager:
         all_group_results: Dict[str, List[Dict]],
         validation_targets: List[Any],
         context: str = "",
-        general_notes: str = ""
+        general_notes: str = "",
+        group_metadata: Dict[str, Dict[str, Any]] = None
     ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
         """
         Process QC for a complete row after ALL field groups have been processed.
@@ -60,6 +61,7 @@ class QCIntegrationManager:
             validation_targets: Validation targets
             context: Context information
             general_notes: General guidance notes
+            group_metadata: Dictionary mapping group names to metadata (description, model, etc.)
 
         Returns:
             Tuple of (merged_results_by_column, qc_metrics)
@@ -100,35 +102,31 @@ class QCIntegrationManager:
             all_group_results=all_group_results,
             validation_targets=validation_targets,
             context=context,
-            general_notes=general_notes
+            general_notes=general_notes,
+            group_metadata=group_metadata
         )
 
-        # Track QC costs and metrics
+        # Track QC costs and metrics using real QC response data
         if qc_results or qc_metrics:
-            # Simulate QC response structure for cost tracking
-            qc_response = {
-                'usage': {'total_tokens': qc_metrics.get('qc_tokens_used', 0)},
-                'cost': qc_metrics.get('qc_cost', 0.0),
-                'enhanced_data': {
-                    'costs': {
-                        'actual': {'total_cost': qc_metrics.get('qc_cost', 0.0)}
-                    }
-                }
-            }
-
             model_used = qc_metrics.get('qc_model_used', 'claude-sonnet-4-0')
             if isinstance(model_used, list):
                 model_used = model_used[0] if model_used else 'claude-sonnet-4-0'
 
             api_provider = 'anthropic'  # QC uses Claude models
 
+            # Get the real QC response with proper enhanced_data
+            qc_response_data = qc_metrics.get('qc_response_data', {})
+
             self.cost_tracker.track_qc_call(
-                qc_response=qc_response,
+                qc_response=qc_response_data,
                 qc_results=qc_results,
                 qc_metrics=qc_metrics,
                 model_used=model_used,
                 api_provider=api_provider
             )
+
+            # Track all reviewed fields for accurate fail rate calculation
+            self.cost_tracker.track_all_reviewed_fields(all_multiplex_results, qc_results)
 
         # Merge multiplex and QC results
         merged_results = self.qc_module.merge_multiplex_and_qc_results(
@@ -206,32 +204,27 @@ class QCIntegrationManager:
             group_description=group_description
         )
 
-        # Track QC costs and metrics
+        # Track QC costs and metrics using real QC response data
         if qc_results or qc_metrics:
-            # Simulate QC response structure for cost tracking
-            qc_response = {
-                'usage': {'total_tokens': qc_metrics.get('qc_tokens_used', 0)},
-                'cost': qc_metrics.get('qc_cost', 0.0),
-                'enhanced_data': {
-                    'costs': {
-                        'actual': {'total_cost': qc_metrics.get('qc_cost', 0.0)}
-                    }
-                }
-            }
-
             model_used = qc_metrics.get('qc_model_used', 'claude-sonnet-4-0')
             if isinstance(model_used, list):
                 model_used = model_used[0] if model_used else 'claude-sonnet-4-0'
 
             api_provider = 'anthropic'  # QC uses Claude models
 
+            # Get the real QC response with proper enhanced_data
+            qc_response_data = qc_metrics.get('qc_response_data', {})
+
             self.cost_tracker.track_qc_call(
-                qc_response=qc_response,
+                qc_response=qc_response_data,
                 qc_results=qc_results,
                 qc_metrics=qc_metrics,
                 model_used=model_used,
                 api_provider=api_provider
             )
+
+            # Track all reviewed fields for accurate fail rate calculation
+            self.cost_tracker.track_all_reviewed_fields(all_multiplex_results, qc_results)
 
         # Merge multiplex and QC results
         merged_results = self.qc_module.merge_multiplex_and_qc_results(
@@ -240,6 +233,18 @@ class QCIntegrationManager:
         )
 
         return merged_results, qc_metrics
+
+    def get_qc_metrics(self) -> Dict[str, Any]:
+        """
+        Get QC metrics for provider tracking.
+
+        Returns:
+            Dictionary containing QC metrics for provider tracking
+        """
+        if not self.enabled:
+            return {}
+
+        return self.cost_tracker.qc_metrics
 
     def get_aggregated_qc_metrics(self) -> Dict[str, Any]:
         """

@@ -14,7 +14,11 @@
       "Bash(git rm:*)",
       "Bash(aws lambda get-function-configuration:*)",
       "Bash(aws sqs delete-queue:*)",
-      "Bash(aws sqs create-queue:*)"
+      "Bash(aws sqs create-queue:*)",
+      "Read(//tmp/**)",
+      "Bash(aws logs tail:*)",
+      "Bash(aws logs get-log-events:*)",
+      "Read(//mnt/c/Users/ellio/OneDrive/**)"
     ],
     "deny": []
   }

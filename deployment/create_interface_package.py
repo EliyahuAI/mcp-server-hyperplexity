@@ -183,7 +183,9 @@ def copy_source_files():
         "batch_audit_logger.py",
         "model_config_table.py",
         "web_search_rate_limiter.py",
-        "websocket_client.py"
+        "websocket_client.py",
+        # QC-enhanced Excel creator (unified)
+        "excel_report_qc_unified.py"
     ]
     
     for file_name in shared_modules:

@@ -139,7 +139,9 @@ class SimplifiedSchemaValidator:
     
     def get_id_fields(self) -> List[ValidationTarget]:
         """Get fields with ID importance level."""
-        return [target for target in self.validation_targets if target.importance.upper() == "ID"]
+        id_fields = [target for target in self.validation_targets if target.importance.upper() == "ID"]
+        logger.debug(f"get_id_fields() found {len(id_fields)} ID fields from {len(self.validation_targets)} total targets")
+        return id_fields
     
     def get_ignored_fields(self) -> List[ValidationTarget]:
         """Get fields with IGNORED importance level."""
@@ -293,10 +295,25 @@ class SimplifiedSchemaValidator:
         # Build context information (ID fields)
         context_lines = []
         id_fields = self.get_id_fields()
+
+        # Debug logging for ID fields
+        logger.info(f"Total validation targets: {len(self.validation_targets)}")
+        logger.info(f"ID fields found: {len(id_fields)}")
+        for target in self.validation_targets:
+            logger.info(f"Target: {target.column}, importance: {target.importance}")
+
         if id_fields:
+            logger.info(f"Processing {len(id_fields)} ID fields for context")
             for id_field in id_fields:
-                context_lines.append(f"{id_field.column}: {row.get(id_field.column, '')}")
+                field_value = row.get(id_field.column, '')
+                context_line = f"{id_field.column}: {field_value}"
+                context_lines.append(context_line)
+                logger.info(f"Added ID context: {context_line}")
+        else:
+            logger.warning("No ID fields found - context will be empty")
+
         context = "\n".join(context_lines) if context_lines else "No context information available."
+        logger.info(f"Final context for multiplex prompt: {context}")
         
         # Build previous validation results
         previous_results_text = ""

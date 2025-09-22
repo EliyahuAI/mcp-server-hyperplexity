@@ -54,7 +54,7 @@ multiplex_validation: |
   - If you cannot find information for a field that was originally blank, assign None confidence if the field should remain blank
   - Use provided examples to guide your updates format and expected values
   - Always include all required fields: column, answer, confidence, original_confidence, reasoning, sources
-  - Use newline characters correctly in an excel cell, perticularly for bullets, lists, and other formatted text. 
+  - Use newline characters correctly so that they are formatted in an excel cell, perticularly for bullets, lists, and other formatted text. 
   - Double check your updated response and confidence - speak precisely, there is not room for error. 
   
 holistic_validation: |
@@ -85,4 +85,100 @@ holistic_validation: |
     "explanation": "detailed explanation of your findings"
   }
 
-  If no issues are found, return a simple confirmation of data consistency with HIGH confidence. 
+  If no issues are found, return a simple confirmation of data consistency with HIGH confidence.
+
+qc_validation: |
+  === QC REVIEW AND OVERRIDE ===
+
+  You are conducting **Quality Control review** of multiplex validation outputs.
+  Your task is to review the **Updated Entries across ALL field groups** and determine if any require **confidence adjustments** or **value replacements**.
+
+  === SPECIFIC TABLE GUIDANCE ===
+  {general_notes}
+
+  === CONTEXT INFORMATION ===
+
+  The following ID fields provide context for this row but are NOT being QC'd:
+  {context}
+
+ 
+  === ALL VALIDATION OUTPUTS TO REVIEW ===
+
+  Below are the multiplex validation outputs for ALL field groups for this complete row.
+  Review each field across all groups for accuracy and confidence.
+
+  {all_multiplex_outputs}
+
+  === CONFIDENCE RUBRICS ===
+
+  * **HIGH**: Widely accepted fact, directly verified by authoritative source.
+  * **MEDIUM**: Good estimates, respectable sources, consistent but not definitive.
+  * **LOW**: Weak/conflicting sources, uncertainty, unverifiable.
+  * **None**: For blank values that remain blank.
+
+  === QC ACTIONS ===
+
+  For each field requiring revision, determine one of:
+
+  1. **Lower confidence** on the Updated Entry
+  2. **Replace the Updated Entry** with a better QC Entry
+  3. **No action needed** (field is acceptable as-is – *do not include these in response*)
+
+  === RESPONSE FORMAT ===
+
+  * Provide JSON entries **only** for fields requiring QC action.
+  * Each entry must include the **complete JSON object** for that field.
+  * Do not include unchanged fields.
+
+  === JSON SCHEMA EXAMPLE ===
+  {json_schema_example}
+
+  === IMPORTANT QC DIRECTIVES ===
+
+  * Do **not** quote responses.
+  * Only replace with a better validated value.
+  * Never replace with a lower-confidence value.
+  * Use actual URLs (no reference numbers).
+  * Use direct quotes when possible, otherwise note training cutoff limitations.
+  * If blank, assign **None confidence**.
+  * Always provide **required fields** in JSON.
+  * QC-specific fields: `qc_action_taken`, `qc_reasoning`.
+  * Response must be a **valid JSON array**.
+
+  === MULTIPLEX VALIDATION CONTEXT ===
+
+  **IMPORTANT**: This QC review follows the complete multiplex validation process where:
+
+  * Each field group was systematically validated with web search when available
+  * Original values were assessed and updated based on authoritative sources
+  * Confidence levels were assigned using the established rubric
+  * Cross-field consistency was maintained within each group
+  * Sources and reasoning were documented for transparency
+  * Do not use quotation marks around your responses.
+  * Assess both the quality of your updated answer (confidence) and the quality of the original value (original_confidence) using the same confidence rubric.
+  * Only allow a different validated value if you can achieve improve significantly on than the original value. 
+  * NEVER replace an original value with an updated value in which you have lower confidence 
+  * Each field must have its own object in the array if it requires a QC action
+  * Include the exact column name in each object - exactly as defined in the FIELD input
+  * Place actual URLs in the sources arrays, not reference numbers
+  * When web search is available, perform web search only when helpful and include direct quotes from web search results or authoritative sources in the reasoning field. When web search is not available, or not helpful, use your training knowledge and cite knowledge cutoff limitations where relevant.
+  * Extract specific text snippets that support your answer when available, include the source page title if it is available for context.
+  * If you cannot find information for a field that was originally blank, assign None confidence if the field should remain blank
+  * Use newline characters so that they are correctly formatted in an excel cell, perticularly for bullets, lists, and other formatted text. 
+  * Double check your QC responses and confidence - speak precisely, there is not room for error. 
+  * For each field, use the provided examples and format as guidance for the style and format of your responses.
+ 
+  **NOTE ON CITATIONS**: Citations shown are brief references. The original validator accessed full content from these sources that informed the reasoning and confidence levels.
+
+  Your QC role is to provide the **final quality assurance** by:
+  * Use your common sense and judgement to determine if a field requires a QC action.
+  * You are the first to see all of the validated information for this row - make sure it is consistent with the context provided.
+  * Identifying any remaining inconsistencies across ALL groups
+  * Correcting confidence levels that may be too high/low
+  * Replacing values with superior alternatives when available
+  * Ensuring the final output meets the highest accuracy standards
+  * Add QC-specific fields: qc_action_taken, qc_reasoning
+  * When a field must be updated (where a field means an entire JSON entry), the complete JSON is expected per the requirements
+  * Only provide JSON entries for fields whose Updated Entry or confidence values require revision
+  * Citations must be aggregated between Updated and QC runs
+ 

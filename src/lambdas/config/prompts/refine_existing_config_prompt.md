@@ -90,6 +90,7 @@ Did we look at enough sources? For perplexity models, increasing search_context 
 - **Refine general and column notes descriptions** for clarity and business relevance in the column notes or search group descriptions
 - **Add unit requirements** to notes for measurement columns (weights, volumes, temperatures, etc.)
 - **Adjust importance levels** based on business priorities and user feedback
+- **Add QC Power** make sure QC is on, consider giving web access or improving the model if it requires real depth. 
 
 ## REFINEMENT FOCUS REMINDER
 **Your mission**: Make targeted improvements to an existing  configuration based on aggregated user instructions and validation results. Preserve what works, fix what doesn't, and use exact column names. Return both technical and simple AI summaries with your changes - that make sense in the context of refinement. 

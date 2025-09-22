@@ -2808,7 +2808,7 @@ def create_run_record(session_id: str, email: str, total_rows: int, batch_size: 
         else:
             raise
 
-def update_run_status(session_id: str, run_key: str, status: str, run_type: str = None, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None, batch_size: int = None, account_current_balance: float = None, account_sufficient_balance: str = None, account_credits_needed: str = None, account_domain_multiplier: float = None, models: str = None, input_table_name: str = None, configuration_id: str = None, total_rows: int = None, eliyahu_cost: float = None, quoted_validation_cost: float = None, estimated_validation_eliyahu_cost: float = None, time_per_row_seconds: float = None, estimated_validation_time_minutes: float = None, run_time_s: float = None, provider_metrics: dict = None, **kwargs):
+def update_run_status(session_id: str, run_key: str, status: str, run_type: str = None, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None, batch_size: int = None, account_current_balance: float = None, account_sufficient_balance: str = None, account_credits_needed: str = None, account_domain_multiplier: float = None, models: str = None, input_table_name: str = None, configuration_id: str = None, total_rows: int = None, eliyahu_cost: float = None, quoted_validation_cost: float = None, estimated_validation_eliyahu_cost: float = None, time_per_row_seconds: float = None, estimated_validation_time_minutes: float = None, run_time_s: float = None, provider_metrics: dict = None, qc_metrics: dict = None, total_provider_calls: int = None, **kwargs):
     """Updates the status and progress of a validation run using composite primary key."""
     table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
     
@@ -2989,8 +2989,9 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
                 update_expression += ", total_provider_cost_actual = :tpca, total_provider_cost_estimated = :tpce"
                 update_expression += ", total_provider_calls = :tpc, total_provider_tokens = :tpt"
                 expression_attribute_values[':tpca'] = total_cost_actual
-                expression_attribute_values[':tpce'] = total_cost_estimated 
-                expression_attribute_values[':tpc'] = total_calls
+                expression_attribute_values[':tpce'] = total_cost_estimated
+                # Use the total_provider_calls parameter if provided, otherwise use calculated value
+                expression_attribute_values[':tpc'] = total_provider_calls if total_provider_calls is not None else total_calls
                 expression_attribute_values[':tpt'] = total_tokens
                 
                 # Calculate overall cache efficiency
@@ -3011,11 +3012,22 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
         update_expression += ", time_per_row_seconds = :tprs"
         expression_attribute_values[':tprs'] = convert_floats_to_decimal(time_per_row_seconds)
     if estimated_validation_time_minutes is not None:
+        converted_value = convert_floats_to_decimal(estimated_validation_time_minutes)
+        logger.info(f"[DB_UPDATE_DEBUG] Setting estimated_validation_time_minutes = {estimated_validation_time_minutes} (converted to {converted_value})")
         update_expression += ", estimated_validation_time_minutes = :evtm"
-        expression_attribute_values[':evtm'] = convert_floats_to_decimal(estimated_validation_time_minutes)
+        expression_attribute_values[':evtm'] = converted_value
     if run_time_s is not None:
         update_expression += ", run_time_s = :rts"
         expression_attribute_values[':rts'] = convert_floats_to_decimal(run_time_s)
+    # Add qc_metrics as a separate field if provided
+    if qc_metrics is not None:
+        logger.info(f"[DB_UPDATE_DEBUG] Setting qc_metrics = {qc_metrics}")
+        update_expression += ", qc_metrics = :qcm"
+        expression_attribute_values[':qcm'] = convert_floats_to_decimal(qc_metrics)
+    # Handle total_provider_calls override if not handled by provider_metrics
+    if total_provider_calls is not None and provider_metrics is None:
+        update_expression += ", total_provider_calls = :tpc_override"
+        expression_attribute_values[':tpc_override'] = total_provider_calls
     if status in ['COMPLETED', 'FAILED']:
         update_expression += ", end_time = :et"
         expression_attribute_values[':et'] = now
@@ -3070,6 +3082,13 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
             logger.warning(f"Could not calculate actual processing time for {session_id}: {e}")
 
     try:
+        logger.info(f"[DB_FINAL_UPDATE] About to update DynamoDB with:")
+        logger.info(f"[DB_FINAL_UPDATE]   UpdateExpression: {update_expression}")
+        if ':evtm' in expression_attribute_values:
+            logger.info(f"[DB_FINAL_UPDATE]   estimated_validation_time_minutes (:evtm) = {expression_attribute_values[':evtm']}")
+        if ':evtm_calc' in expression_attribute_values:
+            logger.info(f"[DB_FINAL_UPDATE]   estimated_validation_time_minutes calculated (:evtm_calc) = {expression_attribute_values[':evtm_calc']}")
+
         table.update_item(
             Key={'session_id': session_id, 'run_key': run_key},
             UpdateExpression=update_expression,
@@ -3077,6 +3096,8 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
             ExpressionAttributeNames=expression_attribute_names
         )
         logger.info(f"Successfully updated run status for session {session_id}, run_key {run_key}, status: {status}")
+        if estimated_validation_time_minutes is not None or qc_metrics is not None or total_provider_calls is not None:
+            logger.info(f"[DB_UPDATE_DEBUG] Updated fields - time_minutes: {estimated_validation_time_minutes}, qc_metrics: {qc_metrics is not None}, total_calls: {total_provider_calls}")
     except Exception as e:
         logger.error(f"DynamoDB UPDATE FAILED for session {session_id}, run_key {run_key}")
         logger.error(f"Error type: {type(e).__name__}")

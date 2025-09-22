@@ -392,12 +392,17 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 
                 response_payload = json.loads(response['Payload'].read().decode('utf-8'))
                 
-                validation_results, metadata = None, None
+                validation_results, metadata, qc_results, qc_metrics = None, None, None, None
                 if isinstance(response_payload, dict):
                     body = response_payload.get('body', {})
                     if isinstance(body, dict):
-                        validation_results = body.get('data', {}).get('rows')
+                        data = body.get('data', {})
+                        validation_results = data.get('rows')
+                        # Extract QC data from the data section
+                        qc_results = data.get('qc_results', {})
+                        qc_metrics = data.get('qc_metrics', {})
                         metadata = body.get('metadata', {})
+                        logger.info(f"[QC_EXTRACT_DEBUG] Extracted QC data - results: {len(qc_results)}, metrics fields: {qc_metrics.get('total_fields_reviewed', 0) if qc_metrics else 0}")
                     if 'validation_results' in response_payload:
                         validation_results = response_payload['validation_results']
 
@@ -418,7 +423,9 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 result_response = {
                     'total_rows': total_rows, 'validation_results': validation_results, 'metadata': aggregated_metadata,
                     'total_processed_rows': len(validation_results) if validation_results else 0,
-                    'new_row_number': new_row_processed, 'preview_complete': preview_complete
+                    'new_row_number': new_row_processed, 'preview_complete': preview_complete,
+                    'qc_results': qc_results,  # Pass QC results
+                    'qc_metrics': qc_metrics   # Pass QC metrics
                 }
                 if isinstance(response_payload, dict):
                     result_response.update(response_payload)
@@ -454,12 +461,17 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 response = _invoke_validator_with_retry(lambda_client, VALIDATOR_LAMBDA_NAME, payload, logger)
                 response_payload = json.loads(response['Payload'].read().decode('utf-8'))
                 
-                validation_results, metadata = None, None
+                validation_results, metadata, qc_results, qc_metrics = None, None, None, None
                 if isinstance(response_payload, dict):
                     body = response_payload.get('body', {})
                     if isinstance(body, dict):
-                       validation_results = body.get('data', {}).get('rows')
+                       data = body.get('data', {})
+                       validation_results = data.get('rows')
+                       # Extract QC data from the data section
+                       qc_results = data.get('qc_results', {})
+                       qc_metrics = data.get('qc_metrics', {})
                        metadata = body.get('metadata', {})
+                       logger.info(f"[QC_EXTRACT_DEBUG] Full mode - Extracted QC data - results: {len(qc_results) if qc_results else 0}, metrics fields: {qc_metrics.get('total_fields_reviewed', 0) if qc_metrics else 0}")
                     if 'validation_results' in response_payload:
                        validation_results = response_payload['validation_results']
                        metadata = response_payload.get('metadata', {})
@@ -492,7 +504,14 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             logger.info(f"Enhanced batch processing completed. Total results: {len(all_validation_results)}")
             total_function_time = time.time() - function_start_time
             logger.info(f"[RETRY_TRACKER] FUNCTION_COMPLETE - Total function execution time: {total_function_time:.2f}s")
-            return {'total_rows': total_rows, 'validation_results': all_validation_results, 'metadata': aggregated_metadata, 'status': 'completed'}
+            return {
+                'total_rows': total_rows,
+                'validation_results': all_validation_results,
+                'metadata': aggregated_metadata,
+                'status': 'completed',
+                'qc_results': qc_results,  # Pass QC results from full validation
+                'qc_metrics': qc_metrics   # Pass QC metrics from full validation
+            }
             
     except Exception as e:
         total_function_time = time.time() - function_start_time
