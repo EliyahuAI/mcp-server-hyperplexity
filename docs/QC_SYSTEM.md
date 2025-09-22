@@ -143,19 +143,292 @@ FIELD: Market_Cap
   - $45.7B
 ```
 
-## Cost Tracking
+## Cost & Time Tracking System
 
-### QC Metrics
-- **Fields reviewed**: Total fields processed by QC
-- **Fields modified**: Fields where QC made changes
-- **Confidence lowered**: Count of confidence reductions
-- **Values replaced**: Count of value replacements
-- **Cost breakdown**: Tokens, API costs, timing data
+The QC system implements comprehensive cost, time, and results tracking that integrates with the main validation metrics pipeline. This section details the current implementation and data flows.
 
-### Integration
-- QC costs aggregate with validation costs in preview entry
-- Separate QC metrics tracked in provider_metrics
-- Revision percentages calculated per column
+### QC Metrics Overview
+- **Fields reviewed**: Total fields processed by QC across all rows
+- **Fields modified**: Fields where QC made changes (confidence lowered + values replaced)
+- **Confidence lowered**: Count of confidence reductions without value changes
+- **Values replaced**: Count of complete value replacements
+- **Cost breakdown**: Actual vs estimated costs, tokens, timing data
+- **Per-column tracking**: QC modification rates by individual columns
+
+### Cost Integration Architecture
+
+#### 1. QC Cost Collection (`qc_cost_tracker.py`)
+
+**Primary Metrics Container:**
+```python
+qc_metrics = {
+    'total_qc_calls': 0,          # API calls made for QC
+    'total_qc_tokens': 0,         # Total tokens consumed
+    'total_qc_cost': 0.0,         # Actual cost paid (with cache benefits)
+    'total_qc_estimated_cost': 0.0, # Estimated cost without cache
+    'total_qc_time_actual': 0.0,  # Actual time spent (with cache)
+    'total_qc_time_estimated': 0.0, # Estimated time without cache
+    'total_fields_reviewed': 0,   # Fields processed by QC
+    'total_fields_modified': 0,   # Fields changed by QC
+    'confidence_lowered_count': 0, # Confidence reductions
+    'values_replaced_count': 0,   # Value replacements
+    'qc_models_used': set(),      # Models used for QC
+    'qc_by_column': {}            # Per-column modification tracking
+}
+```
+
+**Per-Column QC Tracking:**
+```python
+qc_by_column[column_name] = {
+    'reviewed': 5,              # Times this column was QC'd
+    'modified': 2,              # Times this column was changed
+    'confidence_lowered': 1,    # Confidence reductions for this column
+    'values_replaced': 1        # Value replacements for this column
+}
+```
+
+#### 2. Provider Metrics Integration
+
+**QC costs are integrated into provider metrics using a dual approach:**
+
+```python
+# 1. QC costs added to anthropic provider totals (for aggregation)
+anthropic_provider['tokens'] += qc_tracker_metrics.get('total_qc_tokens', 0)
+anthropic_provider['cost_actual'] += qc_tracker_metrics.get('total_qc_cost', 0.0)
+anthropic_provider['cost_estimated'] += qc_tracker_metrics.get('total_qc_estimated_cost', 0.0)
+# NOTE: QC calls are NOT added to validation call counts to avoid double-counting
+
+# 2. Separate QC_Costs provider entry for tracking/display
+providers['QC_Costs'] = {
+    'calls': qc_tracker_metrics.get('total_qc_calls', 0),
+    'tokens': qc_tracker_metrics.get('total_qc_tokens', 0),
+    'cost_actual': qc_tracker_metrics.get('total_qc_cost', 0.0),
+    'cost_estimated': qc_tracker_metrics.get('total_qc_estimated_cost', 0.0),
+    'is_metadata_only': True    # Excluded from total call counts
+}
+```
+
+**Key Integration Principle**: QC costs/tokens/time are included in totals, but QC calls are tracked separately to avoid double-counting in validation estimates.
+
+#### 3. Data Flow Through System
+
+```
+QC Module (per row) → QC Integration Manager → Validation Lambda → Background Handler → DynamoDB
+     ↓                        ↓                      ↓                   ↓              ↓
+  Individual QC           Aggregated QC         Enhanced Metrics     Frontend Data     Database
+  Actions & Costs         Summary               Integration          Processing        Storage
+```
+
+**Stage 1: QC Module Processing**
+- Processes complete rows after ALL field groups validated
+- Generates structured QC actions: `confidence_lowered`, `value_replaced`, `no_change`
+- Collects timing and cost data from Anthropic API responses
+- Tracks per-field QC decisions
+
+**Stage 2: QC Integration Manager**
+- Aggregates QC metrics across all processed rows
+- Merges QC results with validation results
+- Builds comprehensive QC summary with cost tracking
+
+**Stage 3: Validation Lambda Response**
+- Separates QC metrics from validation provider metrics
+- Includes QC costs in anthropic provider totals (but not calls)
+- Sends both `qc_metrics` and enhanced `provider_metrics` to interface
+
+**Stage 4: Background Handler Processing**
+- Calculates total provider calls excluding QC_Costs metadata-only provider
+- Adjusts frontend scaling to account for QC as separate Claude search group
+- Stores comprehensive QC metrics in DynamoDB
+
+### Time Tracking Implementation
+
+#### Actual vs Estimated Time Pattern
+
+QC follows the same actual/estimated time pattern as validation:
+
+```python
+# Actual time (with cache benefits)
+'total_qc_time_actual': sum(api_response_times_with_cache)
+
+# Estimated time (without cache, for scaling)
+'total_qc_time_estimated': sum(original_processing_times_no_cache)
+```
+
+**Cache Efficiency Calculation:**
+- When QC responses are cached: `time_actual = 0.001s`, `time_estimated = original_time`
+- Time savings percentage: `((estimated - actual) / estimated) * 100`
+
+#### QC Time Integration with Validation Estimates
+
+**Preview Operations:**
+- QC time included in `estimated_validation_time_minutes`
+- QC calls included in `total_provider_calls` for frontend scaling
+- QC costs included in `quoted_validation_cost` user billing
+
+**Full Validation Operations:**
+- QC time measured and compared to preview estimates
+- Cache efficiency tracked for QC API calls
+- Actual QC costs included in `eliyahu_cost`
+
+### Results Tracking & Excel Integration
+
+#### QC Result Fields (per field, per row)
+
+```python
+qc_result = {
+    'qc_entry': 'Pfizer Inc.',           # Final QC value
+    'qc_confidence': 'HIGH',             # QC confidence level
+    'qc_action_taken': 'value_replaced', # Type of QC action
+    'qc_reasoning': 'Corrected to official name',
+    'qc_applied': True,                  # Boolean QC change indicator
+    'qc_sources': [...],                 # QC-specific sources
+
+    # Original validation data preserved
+    'updated_entry': 'pfizer',           # Original validation value
+    'updated_confidence': 'MEDIUM',      # Original confidence
+    'updated_reasoning': '...',          # Original reasoning
+    'updated_sources': [...]             # Original sources
+}
+```
+
+#### Excel Output Integration
+
+**QC Visual Indicators:**
+- QC-modified values displayed in *italics* with confidence colors
+- QC action columns in Details sheet: QC Applied, QC Value, QC Reasoning
+- Complete audit trail: Original → Validation → QC → Final
+
+**Three-Sheet Structure:**
+1. **Updated Values**: Final values (QC if applied, otherwise validation)
+2. **Original Values**: Raw data values (unchanged)
+3. **Details**: Complete audit trail with QC tracking columns
+
+### DynamoDB Storage Structure
+
+#### Runs Table QC Metrics
+
+```json
+{
+  "session_id": "session_20250922_123456",
+  "qc_metrics": {
+    "enabled": true,
+    "total_fields_reviewed": 18,        // Total fields processed by QC
+    "total_fields_modified": 5,         // Fields where QC made changes
+    "confidence_lowered_count": 3,      // Confidence reductions without value change
+    "values_replaced_count": 2,         // Complete value replacements
+    "total_qc_cost": 0.0,              // Actual cost (0 if cached)
+    "total_qc_cost_estimated": 0.077319, // Estimated cost without cache
+    "total_qc_calls": 3,               // API calls made for QC
+    "total_qc_tokens": 15420,          // Total tokens consumed
+    "qc_models_used": ["claude-sonnet-4-0"],
+    "total_qc_time_actual": 0.003,     // Actual time (with cache)
+    "total_qc_time_estimated": 4.67,   // Estimated time (without cache)
+    "qc_by_column": {                  // Per-column tracking
+      "Company": {
+        "reviewed": 5,
+        "modified": 2,
+        "confidence_lowered": 1,
+        "values_replaced": 1
+      },
+      "Market_Cap": {
+        "reviewed": 5,
+        "modified": 1,
+        "confidence_lowered": 0,
+        "values_replaced": 1
+      }
+    },
+    "revision_percentages_by_column": {  // Calculated modification rates
+      "Company": {
+        "percentage": 40.0,
+        "revised_rows": 2,
+        "total_rows": 5
+      }
+    }
+  },
+  "provider_metrics": {
+    "anthropic": {
+      "calls": 0,                      // QC calls NOT included here
+      "tokens": 15420,                 // QC tokens included
+      "cost_actual": 0.0,              // QC actual cost included
+      "cost_estimated": 0.077319,      // QC estimated cost included
+      "time_actual": 0.003,            // QC actual time included
+      "time_estimated": 4.67           // QC estimated time included
+    },
+    "QC_Costs": {                      // Metadata-only tracking
+      "calls": 3,
+      "tokens": 15420,
+      "cost_actual": 0.0,
+      "cost_estimated": 0.077319,
+      "is_metadata_only": true         // Excluded from total call counts
+    }
+  }
+}
+```
+
+### Current Implementation Issues & Future Refactoring
+
+#### Known "Messy" Aspects
+
+**1. Field Name Inconsistencies:**
+```python
+# Mixed usage throughout codebase
+qc_result.get('qc_confidence')      # QC module produces this
+qc_result.get('updated_confidence') # Lambda sometimes expects this
+```
+
+**2. Double Integration Points:**
+- QC costs appear in anthropic provider AND separate QC_Costs entry
+- QC metrics tracked in both `qc_metrics` and `provider_metrics.QC_Costs`
+- Multiple aggregation paths for same data
+
+**3. Call Count Complexity:**
+- Validation calls: counted in provider metrics
+- QC calls: tracked separately to avoid double-counting
+- Frontend scaling: manual adjustment to treat QC as Claude search group
+
+#### Future Refactoring Vision: QC as Search Group
+
+**Goal**: Treat QC as an additional search group that gets tracked naturally within the existing validation framework.
+
+**Proposed Architecture:**
+```python
+# Instead of separate QC tracking, QC becomes a search group
+search_groups = [
+    'group_1_financial_data',    # Original validation groups
+    'group_2_company_info',
+    'group_3_market_data',
+    'qc_review_group'            # QC as additional search group
+]
+
+# QC naturally integrates with existing metrics
+provider_metrics['anthropic']['calls'] += qc_calls  # No special handling needed
+```
+
+**Benefits of Refactoring:**
+- Eliminates dual tracking systems
+- QC calls counted naturally in provider metrics
+- Frontend scaling works without manual adjustments
+- Simplified cost aggregation
+- Unified timing and progress tracking
+
+**Migration Considerations:**
+- Preserve historical QC tracking data
+- Maintain QC-specific result fields (qc_action_taken, qc_reasoning)
+- Keep QC visual indicators in Excel
+- Ensure backward compatibility with existing DynamoDB structure
+
+### Integration Summary
+
+The QC tracking system provides comprehensive cost, time, and results tracking that integrates with the validation pipeline while maintaining separation for analysis. Despite some implementation complexity, it successfully tracks:
+
+✅ **Complete Cost Integration**: QC costs included in all user billing and internal accounting
+✅ **Detailed Results Tracking**: Per-field QC actions with complete audit trail
+✅ **Cache Efficiency**: Actual vs estimated cost/time tracking with cache benefits
+✅ **Column-Level Analytics**: QC modification rates and patterns by field
+✅ **Excel Integration**: Visual QC indicators and complete traceability
+✅ **DynamoDB Storage**: Comprehensive QC metrics stored with validation session data
+
+The system is functional and provides valuable QC insights, but would benefit from the proposed refactoring to treat QC as a natural search group within the existing validation framework.
 
 ## Implementation Details
 

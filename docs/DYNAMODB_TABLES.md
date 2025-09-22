@@ -539,7 +539,7 @@ This comprehensive table shows how each variable is calculated across different 
 | **`current_balance`** | User's current account balance (preview is free) | User's account balance before/after charge | User's current balance (config is free) | Frontend + DynamoDB | `check_user_balance(email)` |
 | **`domain_multiplier`** | Domain-based pricing multiplier for cost projection | Domain multiplier used for actual billing | 1.0 (config generation doesn't use multiplier) | Frontend + DynamoDB | `_apply_domain_multiplier_with_validation(email, cost)['multiplier']` |
 | **`provider_metrics`** | Complete provider breakdown with caching info | Complete provider breakdown with actual metrics | AI provider breakdown for config generation | DynamoDB | Enhanced metrics structure from ai_client with per-provider cost/token/time/cache data |
-| **`qc_metrics`** | QC metrics if QC was enabled (separate from providers) | QC metrics if QC was enabled | null (no QC for config generation) | DynamoDB | QC-specific tracking including fields reviewed/modified, confidence adjustments, QC models used |
+| **`qc_metrics`** | QC metrics if QC was enabled (separate from providers) | QC metrics if QC was enabled | null (no QC for config generation) | DynamoDB | Complete QC tracking: fields reviewed/modified, confidence adjustments, QC models used, per-column analytics, revision percentages |
 
 ### Key Scaling & Business Logic Formulas
 
@@ -550,6 +550,9 @@ This comprehensive table shows how each variable is calculated across different 
 | **Quoted Cost Business Logic** | `max(2.0, math.ceil(estimated_cost × multiplier))` | User billing | $2 minimum charge, rounded up to nearest dollar |
 | **Batch Count** | `math.ceil(total_rows / avg_actual_batch_size)` | Batch planning | ✅ Partial batches take as long as full batches |
 | **Average Row Time (Direct)** | `sum(row_estimated_times) / len(rows_processed)` | Per-row timing | Direct calculation over individual rows, not derived from totals |
+| **QC Modification Rate** | `(modified_fields / reviewed_fields) * 100` | QC analytics | Per-column QC effectiveness measurement |
+| **QC Cost Integration** | `validation_cost + qc_cost` | User billing | QC costs included in all billing calculations |
+| **QC Call Count Adjustment** | `validation_calls + qc_calls` | Frontend scaling | QC treated as additional search group for scaling |
 
 ### Data Flow Chain
 
@@ -560,49 +563,170 @@ AI API Client → Enhanced Metrics → Validation Lambda → Full Validation Est
    Call Data     Provider Data      Calculations            to Estimates          Logic           Storage
 ```
 
-### QC Metrics Structure
+### QC Metrics Structure (Quality Control Integration)
 
-The `qc_metrics` field contains Quality Control metrics separate from provider costs:
+The `qc_metrics` field contains comprehensive Quality Control metrics separate from but integrated with provider costs. QC represents automated review of validation outputs to improve accuracy and consistency.
+
+#### Complete QC Metrics Schema
 
 ```json
 {
-  "enabled": true,
-  "total_fields_reviewed": 18,
-  "total_fields_modified": 5,
-  "confidence_lowered_count": 3,
-  "values_replaced_count": 2,
-  "total_qc_cost": 0.0,  // Actual cost (usually 0 if cached)
-  "total_qc_cost_estimated": 0.077319,  // Estimated cost without cache
-  "total_qc_calls": 3,
-  "qc_models_used": ["claude-sonnet-4-0"]
+  "qc_metrics": {
+    "enabled": true,                        // Whether QC was enabled for this run
+    "total_fields_reviewed": 18,            // Total fields processed by QC across all rows
+    "total_fields_modified": 5,             // Fields where QC made changes (confidence + value changes)
+    "confidence_lowered_count": 3,          // Fields where QC lowered confidence without changing value
+    "values_replaced_count": 2,             // Fields where QC replaced the validation value entirely
+    "total_qc_cost": 0.0,                  // Actual cost paid for QC (usually 0 if cached)
+    "total_qc_cost_estimated": 0.077319,   // Estimated cost without cache benefits
+    "total_qc_calls": 3,                   // Number of API calls made for QC processing
+    "total_qc_tokens": 15420,              // Total tokens consumed by QC
+    "total_qc_time_actual": 0.003,         // Actual time spent on QC (with cache benefits)
+    "total_qc_time_estimated": 4.67,       // Estimated time without cache (for scaling)
+    "qc_models_used": ["claude-sonnet-4-0"], // AI models used for QC processing
+
+    // Per-column QC tracking for analysis
+    "qc_by_column": {
+      "Company": {
+        "reviewed": 5,                     // Times this column was QC'd
+        "modified": 2,                     // Times this column was changed by QC
+        "confidence_lowered": 1,           // Confidence reductions for this column
+        "values_replaced": 1               // Value replacements for this column
+      },
+      "Market_Cap": {
+        "reviewed": 5,
+        "modified": 1,
+        "confidence_lowered": 0,
+        "values_replaced": 1
+      }
+    },
+
+    // Calculated modification rates per column
+    "revision_percentages_by_column": {
+      "Company": {
+        "percentage": 40.0,                // QC modification rate for this column
+        "revised_rows": 2,                 // Number of rows where QC changed this column
+        "total_rows": 5                    // Total rows processed for this column
+      }
+    }
+  }
 }
 ```
 
+#### QC Integration with Provider Metrics
+
+QC uses a **dual integration approach** to avoid double-counting while preserving complete tracking:
+
+```json
+{
+  "provider_metrics": {
+    "anthropic": {
+      "calls": 0,                          // QC calls NOT included (avoids double-counting)
+      "tokens": 15420,                     // QC tokens included in totals
+      "cost_actual": 0.0,                  // QC actual cost included in totals
+      "cost_estimated": 0.077319,          // QC estimated cost included in totals
+      "time_actual": 0.003,                // QC actual time included in totals
+      "time_estimated": 4.67               // QC estimated time included in totals
+    },
+    "QC_Costs": {                          // Metadata-only entry for tracking
+      "calls": 3,                          // QC calls tracked here for analysis
+      "tokens": 15420,                     // QC tokens (duplicated for tracking)
+      "cost_actual": 0.0,                  // QC actual cost (duplicated for tracking)
+      "cost_estimated": 0.077319,          // QC estimated cost (duplicated for tracking)
+      "is_metadata_only": true             // Excluded from total call counts to prevent double-counting
+    }
+  }
+}
+```
+
+#### QC Cost Integration Principles
+
+**1. Cost Inclusion:**
+- QC costs included in `eliyahu_cost` (actual cost paid)
+- QC costs included in `quoted_validation_cost` (user billing)
+- QC costs included in `estimated_validation_eliyahu_cost` (raw estimates)
+
+**2. Call Count Separation:**
+- QC calls tracked separately from validation calls to avoid double-counting in estimates
+- Frontend scaling adjusted to account for QC as additional "Claude search group"
+- Total provider calls = validation calls + QC calls (calculated, not aggregated)
+
+**3. Time Integration:**
+- QC time included in `estimated_validation_time_minutes`
+- QC follows same actual/estimated time pattern as validation
+- Cache efficiency tracked for QC API calls
+
+#### QC Data Flow & Storage
+
+```
+Validation → QC Processing → Results Integration → DynamoDB Storage
+     ↓             ↓               ↓                    ↓
+  Per-field    QC Actions &    Combined Final       Comprehensive
+  Validation   Cost Tracking   Results + Audit      QC Metrics
+  Results                      Trail                Storage
+```
+
+**QC Storage Strategy:**
+- `qc_metrics`: Complete QC-specific tracking and analytics
+- `provider_metrics.anthropic`: QC costs/tokens/time integrated with validation totals
+- `provider_metrics.QC_Costs`: Metadata-only QC tracking (excluded from totals)
+- Excel results: QC values marked with italics, complete audit trail preserved
+
+#### Frontend Integration & Call Count Handling
+
+QC requires special handling for frontend call count calculations:
+
+```javascript
+// Frontend expects this calculation for scaling
+const perplexityGroups = searchGroups - claudeGroups;
+const totalEstimatedCalls = (perplexityGroups * 30) + (claudeGroups * 30);
+```
+
+**Backend Adjustment for QC:**
+```python
+# Backend sends adjusted values to make frontend math work
+perplexity_only_groups = 3  # Actual perplexity search groups
+qc_as_claude_group = 1      # QC represented as Claude search group
+total_groups = 4            # 3 perplexity + 1 QC
+claude_groups = 1           # 0 validation Claude + 1 QC
+
+# Frontend calculates: (4 - 1) * 30 + 1 * 30 = 90 + 30 = 120 ✓
+```
+
 **Key Points:**
-- QC costs are included in `estimated_validation_eliyahu_cost` and `estimated_validation_time_minutes`
-- QC costs also appear in the `anthropic` provider in `provider_metrics` (not double-counted in totals)
+- QC costs are included in user billing and all cost calculations
+- QC calls are tracked separately to avoid double-counting in validation estimates
+- QC appears in anthropic provider totals (costs/tokens/time) but not call counts
 - The `QC_Costs` entry in `provider_metrics` is metadata-only for tracking purposes
+- Frontend scaling adjusted to treat QC as additional Claude search group
+- Complete per-column QC analytics stored for modification rate analysis
 
 ### Operation-Specific Behavior
 
-**Preview Operations:**
+**Preview Operations (with QC Integration):**
 - ✅ Calculate estimates for full validation using batch architecture
 - ✅ Apply domain multipliers and business logic for user cost projection
 - ✅ Lock in `quoted_validation_cost` that user will be charged later
 - ✅ Use estimated times (without cache) for projections
-- ✅ Include QC costs and time in all estimates (scaled by preview→full factor)
+- ✅ **Include QC costs and time in all estimates** (scaled by preview→full factor)
+- ✅ **QC calls included in total provider calls** for frontend scaling (9 validation + 3 QC = 12)
+- ✅ **Frontend receives adjusted search group counts** to display 120 total calls (90 perplexity + 30 QC)
 
-**Full Validation Operations:**
+**Full Validation Operations (with QC Integration):**
 - ✅ Charge exactly the `quoted_validation_cost` from preview (promise kept)
 - ✅ Measure actual costs and times for comparison with estimates
 - ✅ Track cache efficiency and actual vs estimated performance
-- ✅ Apply QC to all rows and track modification rates
+- ✅ **Apply QC to all rows after validation** and track modification rates
+- ✅ **QC costs included in `eliyahu_cost`** (actual cost paid)
+- ✅ **QC metrics stored separately** with per-column analytics and revision percentages
+- ✅ **Excel output includes QC indicators** (italics) and complete audit trail
 
-**Configuration Operations:**
+**Configuration Operations (no QC):**
 - ✅ Track AI costs for configuration generation (internal accounting)
 - ✅ Free service to users (`quoted_validation_cost = 0`)
 - ✅ No validation-related time/cost projections (not applicable)
-- ✅ No QC applied (configuration generation doesn't use QC)
+- ✅ **No QC applied** (configuration generation doesn't use QC)
+- ✅ `qc_metrics = null` in database storage
 
 This reference ensures consistent variable usage across all operation types and proper cost/time calculations throughout the system.
 
