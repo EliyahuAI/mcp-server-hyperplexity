@@ -2416,6 +2416,13 @@ def handle(event, context):
                     by_provider = token_usage.get('by_provider', {})
                     perplexity_calls = by_provider.get('perplexity', {}).get('calls', 0)
                     anthropic_calls = by_provider.get('anthropic', {}).get('calls', 0)
+
+                    # Extract QC call counts from validation results (if available)
+                    qc_calls = 0
+                    if validation_results:
+                        qc_metrics_data = validation_results.get('qc_metrics', {})
+                        qc_calls = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
+                        logger.info(f"[RECEIPT_QC_CALLS] Extracted QC calls for receipt: {qc_calls}")
                     
                     # Extract original table name (remove _input suffix if present)
                     original_table_name = input_filename
@@ -2440,6 +2447,7 @@ def handle(event, context):
                         # Add receipt-specific data
                         'perplexity_api_calls': perplexity_calls,
                         'anthropic_api_calls': anthropic_calls,
+                        'qc_api_calls': qc_calls,  # Add QC calls for receipt
                         'rows_processed': processed_rows_count,
                         'table_name': original_table_name,
                         'columns_validated_count': len(summary_data.get('fields_validated', []))
