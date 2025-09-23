@@ -1438,6 +1438,9 @@ def handle(event, context):
                 corrected_claude_groups = base_claude_groups + (1 if qc_has_calls else 0)
                 logger.info(f"[QC_SEARCH_GROUPS_DEBUG] base_claude_groups: {base_claude_groups}, qc_has_calls: {qc_has_calls}, qc_calls_count: {qc_calls_count}, corrected: {corrected_claude_groups}")
 
+                # Preserve original validation metrics for database storage BEFORE modifying for frontend
+                original_validation_metrics = validation_metrics.copy()
+
                 # Update preview_payload validation_metrics for WebSocket logging
                 # Frontend expects: perplexityGroups = searchGroups - claudeGroups, so adjust accordingly
                 total_search_groups = validation_metrics.get('search_groups_count', 0)  # 4 total validation groups
@@ -1530,10 +1533,10 @@ def handle(event, context):
                     # Enhanced metrics
                     rows_processed=total_rows_processed,
                     total_rows=validation_results.get('total_rows', 0),
-                    columns_validated=validation_metrics.get('validated_columns_count', 0),
-                    search_groups=validation_metrics.get('search_groups_count', 0),
-                    high_context_search_groups=validation_metrics.get('enhanced_context_search_groups_count', 0),
-                    claude_calls=validation_metrics.get('claude_search_groups_count', 0),
+                    columns_validated=original_validation_metrics.get('validated_columns_count', 0),
+                    search_groups=original_validation_metrics.get('search_groups_count', 0),
+                    high_context_search_groups=original_validation_metrics.get('enhanced_context_search_groups_count', 0),
+                    claude_calls=original_validation_metrics.get('claude_search_groups_count', 0),
                     eliyahu_cost=eliyahu_cost,  # Actual cost paid
                     estimated_cost=cost_estimated,  # Raw cost estimate without caching
                     quoted_validation_cost=quoted_full_cost,  # This is the scaled full table quote
