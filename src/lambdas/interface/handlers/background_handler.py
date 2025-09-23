@@ -1443,8 +1443,8 @@ def handle(event, context):
                 total_search_groups = validation_metrics.get('search_groups_count', 0)  # 4 total validation groups
                 perplexity_only_groups = total_search_groups - base_claude_groups  # 4 - 1 = 3 perplexity groups
                 claude_groups_for_frontend = base_claude_groups + (1 if qc_has_calls else 0)  # Include QC as fake Claude group (1 + 1 = 2)
-                # DON'T inflate total_groups - QC scaling handled via total_provider_calls, not search groups
-                total_groups_for_frontend = total_search_groups  # Keep actual total (4), don't add fake group
+                # Add fake group to total so frontend math works: perplexity = total - claude = 5 - 2 = 3
+                total_groups_for_frontend = total_search_groups + (1 if qc_has_calls else 0)  # Add fake QC group to total
 
                 if 'validation_metrics' not in preview_payload:
                     preview_payload['validation_metrics'] = {}

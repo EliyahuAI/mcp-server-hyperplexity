@@ -835,16 +835,16 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
         perplexity_calls = by_provider.get('perplexity', {}).get('calls', 0)
         claude_calls = by_provider.get('anthropic', {}).get('calls', 0)
 
+        # Get QC calls from billing_info and fold into Claude calls
+        qc_calls = billing_info.get('qc_api_calls', 0) if billing_info else 0
+        total_claude_calls = claude_calls + qc_calls
+
         call_parts = []
         if perplexity_calls > 0:
             call_parts.append(f"<p><b>Perplexity Calls:</b> {perplexity_calls:,}</p>")
-        if claude_calls > 0:
-            call_parts.append(f"<p><b>Claude Calls:</b> {claude_calls:,}</p>")
+        if total_claude_calls > 0:
+            call_parts.append(f"<p><b>Claude Calls:</b> {total_claude_calls:,}</p>")
 
-        # Add QC calls from transaction_details if available
-        qc_calls = transaction_details.get('qc_api_calls', 0) if transaction_details else 0
-        if qc_calls > 0:
-            call_parts.append(f"<p><b>QC Calls:</b> {qc_calls:,}</p>")
 
         if call_parts:
             api_calls_info = "\n".join(call_parts)
