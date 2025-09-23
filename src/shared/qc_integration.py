@@ -105,7 +105,13 @@ class QCIntegrationManager:
             group_metadata=group_metadata
         )
 
-        # Track QC costs and metrics using real QC response data
+        # Merge multiplex and QC results first to get proper validation data
+        merged_results = self.qc_module.merge_multiplex_and_qc_results(
+            multiplex_results=all_multiplex_results,
+            qc_results=qc_results
+        )
+
+        # Track QC costs and metrics using merged results for proper comparison
         if qc_results or qc_metrics:
             model_used = qc_metrics.get('qc_model_used', 'claude-sonnet-4-0')
             if isinstance(model_used, list):
@@ -113,25 +119,23 @@ class QCIntegrationManager:
 
             api_provider = 'anthropic'  # QC uses Claude models
 
-            # Get the real QC response with proper enhanced_data
+            # Get the real QC response with proper enhanced_data from original qc_metrics
             qc_response_data = qc_metrics.get('qc_response_data', {})
+
+            # Use a hybrid approach: pass original qc_metrics but add merged results to it for comparison
+            enhanced_qc_metrics = qc_metrics.copy()
+            enhanced_qc_metrics['validation_comparison_data'] = merged_results
 
             self.cost_tracker.track_qc_call(
                 qc_response=qc_response_data,
                 qc_results=qc_results,
-                qc_metrics=qc_metrics,
+                qc_metrics=enhanced_qc_metrics,
                 model_used=model_used,
                 api_provider=api_provider
             )
 
             # Track all reviewed fields for accurate fail rate calculation
             self.cost_tracker.track_all_reviewed_fields(all_multiplex_results, qc_results)
-
-        # Merge multiplex and QC results
-        merged_results = self.qc_module.merge_multiplex_and_qc_results(
-            multiplex_results=all_multiplex_results,
-            qc_results=qc_results
-        )
 
         # Add group information to merged results
         for group_name, group_results in all_group_results.items():
@@ -202,7 +206,13 @@ class QCIntegrationManager:
             group_description=group_description
         )
 
-        # Track QC costs and metrics using real QC response data
+        # Merge multiplex and QC results first to get proper validation data
+        merged_results = self.qc_module.merge_multiplex_and_qc_results(
+            multiplex_results=multiplex_results,
+            qc_results=qc_results
+        )
+
+        # Track QC costs and metrics using merged results for proper comparison
         if qc_results or qc_metrics:
             model_used = qc_metrics.get('qc_model_used', 'claude-sonnet-4-0')
             if isinstance(model_used, list):
@@ -210,25 +220,23 @@ class QCIntegrationManager:
 
             api_provider = 'anthropic'  # QC uses Claude models
 
-            # Get the real QC response with proper enhanced_data
+            # Get the real QC response with proper enhanced_data from original qc_metrics
             qc_response_data = qc_metrics.get('qc_response_data', {})
+
+            # Use a hybrid approach: pass original qc_metrics but add merged results to it for comparison
+            enhanced_qc_metrics = qc_metrics.copy()
+            enhanced_qc_metrics['validation_comparison_data'] = merged_results
 
             self.cost_tracker.track_qc_call(
                 qc_response=qc_response_data,
                 qc_results=qc_results,
-                qc_metrics=qc_metrics,
+                qc_metrics=enhanced_qc_metrics,
                 model_used=model_used,
                 api_provider=api_provider
             )
 
             # Track all reviewed fields for accurate fail rate calculation
-            self.cost_tracker.track_all_reviewed_fields(all_multiplex_results, qc_results)
-
-        # Merge multiplex and QC results
-        merged_results = self.qc_module.merge_multiplex_and_qc_results(
-            multiplex_results=multiplex_results,
-            qc_results=qc_results
-        )
+            self.cost_tracker.track_all_reviewed_fields(multiplex_results, qc_results)
 
         return merged_results, qc_metrics
 

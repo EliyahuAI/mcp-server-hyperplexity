@@ -481,14 +481,14 @@ class QCModule:
                 logger.info(f"QC returned {len(qc_results)} field modifications across all groups")
 
                 # Debug QC API response
-                logger.info(f"QC API structured extraction successful: found {len(qc_results)} QC modifications")
+                logger.info(f"QC API structured extraction successful: found {len(qc_results)} QC responses (comprehensive)")
 
-                # Update metrics - all fields are now comprehensively QC'd
-                qc_metrics['qc_fields_modified'] = len(qc_results)
-                for qc_result in qc_results:
-                    # Since QC is comprehensive, all fields are considered reviewed
-                    # Specific modification tracking is handled by QC cost tracker
-                        qc_metrics['qc_values_replaced'] += 1
+                # Update metrics - count actual modifications, not just QC responses
+                # With comprehensive QC, len(qc_results) equals all fields processed
+                # But we only want to count actual modifications for meaningful metrics
+                # Cost tracker will provide accurate modification counts based on value comparison
+                qc_metrics['qc_fields_modified'] = 0  # Will be updated by cost tracker
+                qc_metrics['qc_values_replaced'] = 0  # Will be updated by cost tracker
 
             except Exception as e:
                 logger.warning(f"QC API structured response extraction failed: {str(e)}")
@@ -642,14 +642,14 @@ class QCModule:
                     logger.info(f"[QC_SOURCES_DEBUG] {column}: Added {len(qc_result.get('qc_sources', []))} metadata sources")
 
                 # Debug QC API response
-                logger.info(f"QC API structured extraction successful: found {len(qc_results)} QC modifications")
+                logger.info(f"QC API structured extraction successful: found {len(qc_results)} QC responses (comprehensive)")
 
-                # Update metrics - all fields are now comprehensively QC'd
-                qc_metrics['qc_fields_modified'] = len(qc_results)
-                for qc_result in qc_results:
-                    # Since QC is comprehensive, all fields are considered reviewed
-                    # Specific modification tracking is handled by QC cost tracker
-                        qc_metrics['qc_values_replaced'] += 1
+                # Update metrics - count actual modifications, not just QC responses
+                # With comprehensive QC, len(qc_results) equals all fields processed
+                # But we only want to count actual modifications for meaningful metrics
+                # Cost tracker will provide accurate modification counts based on value comparison
+                qc_metrics['qc_fields_modified'] = 0  # Will be updated by cost tracker
+                qc_metrics['qc_values_replaced'] = 0  # Will be updated by cost tracker
 
             except Exception as e:
                 logger.warning(f"QC API structured response extraction failed: {str(e)}")

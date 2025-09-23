@@ -118,6 +118,13 @@ class QCCostTracker:
                    f"${actual_cost:.6f} actual cost (${estimated_cost:.6f} estimated), "
                    f"{usage.get('total_tokens', 0)} tokens, {cache_efficiency:.1f}% cache efficiency")
 
+        # Debug: Log QC tracking details
+        logger.info(f"QC tracking debug - response keys: {list(qc_response.keys())}")
+        logger.info(f"QC tracking debug - enhanced_data keys: {list(enhanced_data.keys())}")
+        logger.info(f"QC tracking debug - usage: {usage}")
+        logger.info(f"QC tracking debug - costs: {cost_info}")
+        logger.info(f"QC tracking debug - timing: {timing_info}")
+
         # Track per-column QC actions for fail rate analysis
         self.track_column_qc_actions(qc_results, qc_metrics)
 
@@ -154,14 +161,16 @@ class QCCostTracker:
             column_stats['reviewed'] += 1  # This field was reviewed
 
             # Since QC is now comprehensive, determine modifications by comparing values/confidence
-            # Get original validation values from qc_metrics if available
+            # Get validation values from validation_comparison_data (merged results)
             original_value = ''
             original_confidence = ''
             updated_value = ''
             updated_confidence = ''
 
-            if qc_metrics and column in qc_metrics:
-                field_data = qc_metrics[column]
+            validation_data = qc_metrics.get('validation_comparison_data', {})
+            if validation_data and column in validation_data:
+                field_data = validation_data[column]
+                # For merged results structure
                 original_value = str(field_data.get('original_value', ''))
                 original_confidence = str(field_data.get('original_confidence', ''))
                 updated_value = str(field_data.get('updated_entry', ''))
@@ -179,12 +188,20 @@ class QCCostTracker:
             original_confidence_changed = qc_original_confidence != original_confidence
             updated_confidence_changed = qc_updated_confidence != updated_confidence
 
+            # Debug logging for specific comparisons
+            logger.info(f"QC {column}: QC='{qc_value}' vs Updated='{updated_value}', value_changed={value_changed}")
+            logger.info(f"QC {column}: QC_conf='{qc_confidence}' vs Updated_conf='{updated_confidence}', conf_changed={confidence_changed}")
+
             if value_changed:
                 column_stats['values_replaced'] += 1
                 column_stats['modified'] += 1
+                logger.info(f"QC {column}: Marked as VALUE REPLACEMENT")
             elif confidence_changed or original_confidence_changed or updated_confidence_changed:
                 column_stats['confidence_lowered'] += 1  # Generic confidence change tracking
                 column_stats['modified'] += 1
+                logger.info(f"QC {column}: Marked as CONFIDENCE CHANGE")
+            else:
+                logger.info(f"QC {column}: NO MODIFICATION detected")
 
     def get_qc_fail_rates_by_column(self) -> Dict[str, Dict[str, float]]:
         """
