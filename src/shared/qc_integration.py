@@ -82,7 +82,6 @@ class QCIntegrationManager:
                             'qc_applied': False,
                             'qc_entry': result.get('answer', ''),
                             'qc_confidence': result.get('confidence', ''),
-                            'qc_action_taken': 'no_change',
                             'qc_reasoning': '',
                             'qc_sources': [],
                             'all_sources': result.get('sources', []),
@@ -185,7 +184,6 @@ class QCIntegrationManager:
                         'qc_applied': False,
                         'qc_entry': result.get('answer', ''),
                         'qc_confidence': result.get('confidence', ''),
-                        'qc_action_taken': 'no_change',
                         'qc_reasoning': '',
                         'qc_sources': [],
                         'all_sources': result.get('sources', [])
@@ -336,7 +334,7 @@ class QCIntegrationManager:
                 'original_value': merged_result.get('original_value', ''),  # Original Entry
                 'qc_value': merged_result.get('qc_entry', ''),  # QC Entry (final)
                 'qc_applied': qc_applied,
-                'qc_action': merged_result.get('qc_action_taken', 'no_change'),
+                'qc_action': 'Comprehensive QC',  # All fields now get full QC
                 'qc_reasoning': merged_result.get('qc_reasoning', ''),
                 'final_confidence': merged_result.get('qc_confidence', merged_result.get('updated_confidence', '')),
                 'all_sources': merged_result.get('all_sources', [])

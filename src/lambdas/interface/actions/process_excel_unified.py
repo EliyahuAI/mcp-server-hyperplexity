@@ -663,7 +663,7 @@ def _process_preview_sync(storage_manager, email_address, session_id, excel_s3_k
             eliyahu_cost = enhanced_cost_data.get('eliyahu_cost', 0.0)
             cost_estimated = enhanced_cost_data.get('cost_estimated', 0.0)
 
-            markdown_table = create_markdown_table_from_results(real_results, 3, config_s3_key, storage_manager.bucket_name)
+            markdown_table = create_markdown_table_from_results(real_results, 3, config_s3_key, storage_manager.bucket_name, None)
             
             # Prepare enhanced preview results for storage with three-tier cost data
             preview_data = {

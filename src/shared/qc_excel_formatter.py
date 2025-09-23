@@ -83,7 +83,7 @@ def format_qc_result_for_excel(
         'updated_value': merged_qc_result.get('updated_entry', ''),
         'qc_value': merged_qc_result.get('qc_entry', ''),
         'qc_applied': 'Yes' if qc_applied else 'No',
-        'qc_action': merged_qc_result.get('qc_action_taken', 'no_change').replace('_', ' ').title(),
+        'qc_action': 'Comprehensive QC',  # Since all fields now get full QC
         'qc_reasoning': merged_qc_result.get('qc_reasoning', ''),
         'final_confidence': final_confidence,
         'original_confidence': merged_qc_result.get('original_confidence', ''),

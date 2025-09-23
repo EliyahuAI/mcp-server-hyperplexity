@@ -1,6 +1,7 @@
 import json
 import boto3
 import hashlib
+import unicodedata
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
 from botocore.exceptions import NoCredentialsError
@@ -2759,8 +2760,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         group_targets = grouped_targets[group_id]
                         group_key = f"group_{group_id}"
 
-                        # Get group description and model from validator configuration
+                        # Get group description, name, and model from validator configuration
                         group_description = ""
+                        group_name = ""
                         group_model = ""
                         search_context_level = ""
                         max_web_searches = None
@@ -2770,6 +2772,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             for group_config in validator.search_groups:
                                 if group_config.get('group_id') == group_id:
                                     group_description = group_config.get('description', '')
+                                    group_name = group_config.get('group_name', '')
                                     break
 
                         # Resolve model and settings for this group
@@ -2780,6 +2783,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                         group_metadata[group_key] = {
                             'description': group_description,
+                            'group_name': group_name,
                             'model': group_model,
                             'search_context_level': search_context_level,
                             'max_web_searches': max_web_searches,
@@ -2804,24 +2808,39 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if qc_results_by_field:
                         for field_name, qc_field_data in qc_results_by_field.items():
                             if field_name in row_results and qc_field_data.get('qc_applied', False):
+                                # PRESERVE the original validation values before QC changes them
+                                row_results[field_name]['pre_qc_value'] = row_results[field_name]['value']
+                                row_results[field_name]['pre_qc_confidence'] = row_results[field_name].get('confidence_level', row_results[field_name].get('confidence', ''))
+
                                 # Update the field with QC values
                                 row_results[field_name]['qc_applied'] = True
                                 row_results[field_name]['qc_entry'] = qc_field_data.get('qc_entry', '')
-                                row_results[field_name]['qc_confidence'] = qc_field_data.get('updated_confidence', '')
+                                row_results[field_name]['qc_confidence'] = qc_field_data.get('qc_confidence', '')  # Fixed: use qc_confidence instead of updated_confidence
                                 row_results[field_name]['qc_reasoning'] = qc_field_data.get('qc_reasoning', '')
                                 row_results[field_name]['qc_action_taken'] = qc_field_data.get('qc_action_taken', '')
+                                row_results[field_name]['qc_citations'] = qc_field_data.get('qc_citations', '')
+                                row_results[field_name]['qc_sources'] = qc_field_data.get('qc_sources', [])
+                                row_results[field_name]['qc_original_confidence'] = qc_field_data.get('qc_original_confidence', '')
+                                row_results[field_name]['qc_updated_confidence'] = qc_field_data.get('qc_updated_confidence', '')
 
-                                # Update the main value if QC provided a replacement
-                                if qc_field_data.get('qc_action_taken') == 'value_replaced':
-                                    row_results[field_name]['value'] = qc_field_data.get('qc_entry', row_results[field_name]['value'])
-
-                                # Update confidence if QC changed it
-                                if qc_field_data.get('updated_confidence'):
-                                    row_results[field_name]['confidence_level'] = qc_field_data.get('updated_confidence')
+                                # QC results are stored as metadata only - interface lambda will prioritize QC values for display
 
                     # Store QC results for final response
+                    logger.info(f"[QC_RESULTS_DEBUG] Row {row_idx}: qc_results_by_field = {qc_results_by_field}")
                     if qc_results_by_field:
+                        # Store QC results using hash key (for Excel compatibility)
                         all_qc_results[row_key] = qc_results_by_field
+                        logger.info(f"[QC_RESULTS_DEBUG] Stored QC results for row_idx {row_idx} with hash_key {row_key}: {len(qc_results_by_field)} fields")
+
+                        # Debug: Show the actual values being stored
+                        for field_name, qc_data in qc_results_by_field.items():
+                            if isinstance(qc_data, dict) and qc_data.get('qc_applied', False):
+                                original_val = row_data.get(field_name, '')
+                                validated_val = row_results.get(field_name, {}).get('value', '')
+                                qc_val = qc_data.get('qc_entry', '')
+                                logger.info(f"[QC_VALUES_DEBUG] {field_name}: Original='{original_val}' -> Validated='{validated_val}' -> QC='{qc_val}'")
+                    else:
+                        logger.info(f"[QC_RESULTS_DEBUG] No QC results to store for row {row_idx}")
 
                     # Update QC metrics summary
                     qc_metrics_summary['total_rows_processed'] += 1
@@ -3035,14 +3054,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             parsed_results = validator.parse_multiplex_result(api_response, row)
             
             # CRITICAL CACHE VALIDATION LOGIC: Check that response contains all required columns
-            expected_columns = [t.column for t in validation_targets]  # Use validation_targets, not targets
+            # [FIX] Normalize expected columns to match normalized parsing in schema_validator_simplified.py
+            expected_columns = [unicodedata.normalize('NFC', t.column).strip() for t in validation_targets]  # Use validation_targets, not targets
             actual_columns = list(parsed_results.keys())
-            
+
             logger.debug(f"🔍 RESPONSE ANALYSIS:")
             logger.info(f"Expected columns: {expected_columns}")
             logger.info(f"Parsed columns: {actual_columns}")
             logger.debug(f"Expected count: {len(expected_columns)}, Actual count: {len(actual_columns)}")
-            
+
+            # [DEBUG] Log detailed column comparison for debugging cache mismatches
+            for i, (exp, act) in enumerate(zip(expected_columns, actual_columns)):
+                logger.debug(f"[COLUMN_COMPARE] {i}: expected='{exp}' (repr: {repr(exp)}) vs actual='{act}' (repr: {repr(act)}) match={exp == act}")
+
             # Check for exact missing columns first
             exact_missing_columns = set(expected_columns) - set(actual_columns)
             
@@ -3827,6 +3851,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                        f"{qc_metrics_summary['total_fields_modified']} fields modified, "
                        f"${qc_metrics_summary.get('total_qc_cost', 0):.4f} cost")
             logger.info(f"[QC_RESPONSE_DEBUG] Including QC data in response - qc_results count: {len(all_qc_results)}, metrics: {qc_metrics_summary}")
+            logger.info(f"[QC_RESPONSE_DEBUG] all_qc_results keys: {list(all_qc_results.keys())}")
+            if all_qc_results:
+                sample_key = list(all_qc_results.keys())[0]
+                sample_value = all_qc_results[sample_key]
+                logger.info(f"[QC_RESPONSE_DEBUG] Sample QC result - key: {sample_key}, fields: {list(sample_value.keys()) if isinstance(sample_value, dict) else 'Not a dict'}")
 
             # Log QC fail rate summary if available
             if qc_manager:

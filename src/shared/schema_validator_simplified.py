@@ -5,6 +5,7 @@ uses only the format field, and supports model configuration with per-field over
 
 import logging
 import json
+import unicodedata
 from dataclasses import dataclass
 from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime, timedelta
@@ -540,10 +541,16 @@ class SimplifiedSchemaValidator:
             for item in validation_results:
                 if not isinstance(item, dict):
                     continue
-                
+
                 column = item.get('column', '')
                 if not column:
                     continue
+
+                # [FIX] Normalize column name to handle Unicode and encoding issues
+                column = unicodedata.normalize('NFC', column).strip()
+
+                # [DEBUG] Log column parsing for debugging cache mismatches
+                logger.debug(f"[COLUMN_DEBUG] Parsed column: '{column}' (length: {len(column)}, repr: {repr(column)})")
                 
                 answer = item.get('answer', '')
                 confidence_level = item.get('confidence', 'LOW')

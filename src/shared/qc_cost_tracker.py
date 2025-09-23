@@ -153,16 +153,37 @@ class QCCostTracker:
             column_stats = self.qc_metrics['qc_by_column'][column]
             column_stats['reviewed'] += 1  # This field was reviewed
 
-            # Check QC action taken
-            qc_action = qc_result.get('qc_action_taken', '')
-            if qc_action in ['confidence_lowered', 'confidence_adjusted']:
-                column_stats['confidence_lowered'] += 1
-                column_stats['modified'] += 1
-            elif qc_action in ['value_replaced', 'value_updated']:
+            # Since QC is now comprehensive, determine modifications by comparing values/confidence
+            # Get original validation values from qc_metrics if available
+            original_value = ''
+            original_confidence = ''
+            updated_value = ''
+            updated_confidence = ''
+
+            if qc_metrics and column in qc_metrics:
+                field_data = qc_metrics[column]
+                original_value = str(field_data.get('original_value', ''))
+                original_confidence = str(field_data.get('original_confidence', ''))
+                updated_value = str(field_data.get('updated_entry', ''))
+                updated_confidence = str(field_data.get('updated_confidence', ''))
+
+            # Get QC values
+            qc_value = str(qc_result.get('answer', ''))
+            qc_confidence = str(qc_result.get('confidence', ''))
+            qc_original_confidence = str(qc_result.get('original_confidence', ''))
+            qc_updated_confidence = str(qc_result.get('updated_confidence', ''))
+
+            # Determine if QC made modifications
+            value_changed = qc_value != updated_value
+            confidence_changed = qc_confidence != updated_confidence
+            original_confidence_changed = qc_original_confidence != original_confidence
+            updated_confidence_changed = qc_updated_confidence != updated_confidence
+
+            if value_changed:
                 column_stats['values_replaced'] += 1
                 column_stats['modified'] += 1
-            elif qc_action not in ['no_change', '']:
-                # Any other action counts as modified
+            elif confidence_changed or original_confidence_changed or updated_confidence_changed:
+                column_stats['confidence_lowered'] += 1  # Generic confidence change tracking
                 column_stats['modified'] += 1
 
     def get_qc_fail_rates_by_column(self) -> Dict[str, Dict[str, float]]:

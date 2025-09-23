@@ -1607,8 +1607,26 @@ class AIAPIClient:
                             logger.warning(f"Failed to generate enhanced metrics for cached response: {e}")
                             enhanced_data = {}
                         
+                        # [FIX] Convert cached Claude responses to unified Perplexity format for consistent parsing
+                        cached_response = cached_data['api_response']
+                        if api_provider == 'anthropic':
+                            # Convert cached Claude tool response to Perplexity format
+                            logger.info(f"Converting cached Claude response to unified Perplexity format")
+                            structured_data = self.extract_structured_response(cached_response, tool_name)
+                            validation_results = structured_data.get('validation_results', structured_data)
+
+                            # Convert to Perplexity format that parser expects
+                            cached_response = {
+                                'choices': [{
+                                    'message': {
+                                        'role': 'assistant',
+                                        'content': json.dumps(validation_results)
+                                    }
+                                }]
+                            }
+
                         return {
-                            'response': cached_data['api_response'],
+                            'response': cached_response,
                             'token_usage': token_usage,
                             'processing_time': cached_data.get('processing_time', 0),
                             'is_cached': True,  # BULLETPROOF: Always True for cache hits - never take from cached_data  # BULLETPROOF: Always True for cache hits - never take from cached_data

@@ -188,7 +188,7 @@ def _process_files(excel_file, config_file, email_address, params, context):
                 total_cost = token_usage.get('total_cost', 0.0)
                 total_processed_rows = validation_results.get('total_processed_rows', 1)
 
-                markdown_table = create_markdown_table_from_results(real_results, 3, config_s3_key, S3_CACHE_BUCKET)
+                markdown_table = create_markdown_table_from_results(real_results, 3, config_s3_key, S3_CACHE_BUCKET, None)
                 
                 estimated_total_cost = (total_cost / total_processed_rows) * total_rows if total_processed_rows > 0 else 0
                 estimated_total_time = processing_time * math.ceil(total_rows / (batch_size or 10))

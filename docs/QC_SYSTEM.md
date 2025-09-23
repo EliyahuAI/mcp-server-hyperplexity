@@ -41,7 +41,24 @@ QC evaluates each field using the same confidence rubric as validation:
 - **MEDIUM**: Good estimates, respectable sources, not definitive
 - **LOW**: Weak/conflicting sources, uncertainty, unverifiable
 
-### 3. QC Actions
+### 3. QC Citations and Sources
+
+QC provides enhanced citation tracking using the same architecture as validation:
+
+**QC Citations (`qc_citations`)**:
+- Provided by AI in JSON response (like validation `answer`, `confidence`)
+- Can reference existing validation citations: `"[1] Amazon Report - [key excerpt]..."`
+- Can create new citations from web search: `"[NEW] SEC Filing - [key excerpt]..."`
+- Used for "Key Citation:" section in Excel cell comments
+- Required for fields with citations
+
+**QC Sources (`qc_sources`)**:
+- Extracted from AI API client metadata (like validation `citations` field)
+- Contains URLs from QC web searches
+- Added automatically to all QC results
+- Populated in QC Sources column in Excel Details sheet
+
+### 4. QC Actions
 
 **Confidence Lowered**: Keep same value but reduce confidence level
 ```json
@@ -54,14 +71,15 @@ QC evaluates each field using the same confidence rubric as validation:
 }
 ```
 
-**Value Replaced**: Provide better value with reasoning
+**Value Replaced**: Provide better value with reasoning and citations
 ```json
 {
   "column": "Company",
   "answer": "Pfizer Inc.",
   "confidence": "HIGH",
   "qc_action_taken": "value_replaced",
-  "qc_reasoning": "Corrected to official company name with proper formatting"
+  "qc_reasoning": "Corrected to official company name with proper formatting",
+  "qc_citations": "[1] SEC Filing Form 10-K - [Official company name is Pfizer Inc.] ... registered in Delaware (https://sec.gov/...)"
 }
 ```
 
@@ -93,7 +111,10 @@ QC evaluates each field using the same confidence rubric as validation:
 **Default Settings**:
 - **Model**: `claude-sonnet-4-0` (same as validation)
 - **Tokens**: 8K baseline + 4K per field
-- **Web searches**: Disabled (cost efficiency)
+- **Web searches**: Disabled by default (cost efficiency)
+  - Enable for better QC citations when accuracy is critical
+  - QC can create new citations: `"[NEW] Source - [excerpt] (URL)"`
+  - QC sources automatically extracted from web search metadata
 
 ## Excel Output
 
@@ -108,7 +129,10 @@ QC evaluates each field using the same confidence rubric as validation:
 3. **Details**: Complete audit trail with QC columns:
    - QC Applied: Yes/No
    - QC Value: QC-proposed value
+   - QC Confidence: QC confidence level
    - QC Reasoning: Explanation of revision
+   - QC Sources: Source URLs from QC web search
+   - QC Citations: Key citation for cell comments
    - Final Value: Ultimate output value
 
 ### Visual Example
@@ -117,6 +141,20 @@ Original Value: "Pfizer"
 Validated Value: "pfizer" (Medium confidence, yellow)
 QC Value: "Pfizer Inc." (High confidence, italic green)
 Final Value: "Pfizer Inc."
+```
+
+### Enhanced Cell Comments
+QC-enabled validation includes "Key Citation:" in Excel cell comments:
+```
+Original Value: Pfizer
+
+Supporting Information: Company name standardization based on official records
+
+Key Citation: [1] SEC Form 10-K - [Official registered name is Pfizer Inc.] ... Delaware corporation (https://sec.gov/...)
+
+Sources:
+[1] SEC Filing Form 10-K (https://sec.gov/...): "Official company name and registration details"
+[2] Company Website About Page (https://pfizer.com/...): "Corporate information and structure"
 ```
 
 ## Field Processing
@@ -281,7 +319,8 @@ qc_result = {
     'qc_action_taken': 'value_replaced', # Type of QC action
     'qc_reasoning': 'Corrected to official name',
     'qc_applied': True,                  # Boolean QC change indicator
-    'qc_sources': [...],                 # QC-specific sources
+    'qc_sources': ['https://sec.gov/...'], # URLs from AI API metadata
+    'qc_citations': '[1] SEC Form 10-K - [Official name: Pfizer Inc.] (url)', # Key citation from AI
 
     # Original validation data preserved
     'updated_entry': 'pfizer',           # Original validation value

@@ -159,8 +159,19 @@ class QCModule:
             if not non_id_results:
                 continue  # Skip this group if only ID fields
 
-            # Enhanced group header with description and model info if available
-            group_section = [f"### FIELD GROUP: {group_name}"]
+            # Enhanced group header with descriptive name if available, fall back to group_name
+            display_name = group_name
+            if group_metadata and group_name in group_metadata:
+                metadata = group_metadata[group_name]
+                if metadata.get('group_name'):
+                    display_name = metadata['group_name']
+                    logger.info(f"[QC_GROUP_DEBUG] Using descriptive name '{display_name}' for group key '{group_name}'")
+                else:
+                    logger.info(f"[QC_GROUP_DEBUG] No group_name in metadata for '{group_name}', using key as display name")
+            else:
+                logger.info(f"[QC_GROUP_DEBUG] No metadata found for group '{group_name}', using key as display name")
+
+            group_section = [f"### FIELD GROUP: {display_name}"]
 
             # Add group metadata if available
             if group_metadata and group_name in group_metadata:
@@ -198,7 +209,13 @@ class QCModule:
                 original_confidence = result.get('original_confidence', '')
                 reasoning = result.get('reasoning', '')
                 sources = result.get('sources', [])
+                citations = result.get('citations', [])
                 explanation = result.get('explanation', '')
+
+                # Debug logging for citations
+                logger.info(f"[QC_CITATIONS_DEBUG] {column}: Found {len(citations)} citations")
+                if citations:
+                    logger.info(f"[QC_CITATIONS_DEBUG] {column}: First citation sample: {citations[0][:100]}..." if len(citations[0]) > 100 else citations[0])
 
                 # Enhanced field formatting with original and updated values
                 field_output = [
@@ -228,7 +245,7 @@ class QCModule:
                     f"* Original Confidence: {original_confidence}",
                     f"* Reasoning: {reasoning}",
                     f"* Sources: {', '.join(sources) if sources else 'None'}",
-                    f"* Citations: {', '.join(sources) if sources else 'None'}"
+                    f"* Citations: {self._format_citations_for_qc(citations)}"
                 ])
 
                 if explanation:
@@ -298,6 +315,26 @@ class QCModule:
             Token limit for QC call
         """
         return self.qc_max_tokens + (num_fields * self.qc_tokens_per_column)
+
+    def _format_citations_for_qc(self, citations: List[str]) -> str:
+        """
+        Format citations for QC prompt to provide full citation text rather than just URLs.
+
+        Args:
+            citations: List of citation strings (full citation text with titles and snippets)
+
+        Returns:
+            Formatted citation string for QC prompt
+        """
+        if not citations:
+            return 'None'
+
+        # Format all citations with numbers for QC reference
+        formatted_citations = []
+        for i, citation in enumerate(citations, 1):
+            formatted_citations.append(f"[{i}] {citation}")
+        return '\n'.join(formatted_citations)
+
 
     async def process_qc_for_complete_row(
         self,
@@ -446,13 +483,11 @@ class QCModule:
                 # Debug QC API response
                 logger.info(f"QC API structured extraction successful: found {len(qc_results)} QC modifications")
 
-                # Update metrics based on QC actions
+                # Update metrics - all fields are now comprehensively QC'd
                 qc_metrics['qc_fields_modified'] = len(qc_results)
                 for qc_result in qc_results:
-                    action = qc_result.get('qc_action_taken', '')
-                    if action == 'confidence_lowered':
-                        qc_metrics['qc_confidence_lowered'] += 1
-                    elif action == 'value_replaced':
+                    # Since QC is comprehensive, all fields are considered reviewed
+                    # Specific modification tracking is handled by QC cost tracker
                         qc_metrics['qc_values_replaced'] += 1
 
             except Exception as e:
@@ -588,16 +623,32 @@ class QCModule:
                 qc_results = structured_data.get('qc_results', []) if isinstance(structured_data, dict) else []
                 logger.info(f"QC returned {len(qc_results)} field modifications")
 
+                # Extract QC sources from AI API response metadata (like validation does)
+                qc_api_citations = qc_response.get('citations', [])
+                # Scrub encrypted content from citations before processing
+                scrubbed_qc_citations = self.scrub_encrypted_content(qc_api_citations)
+                qc_sources_from_metadata = [c.get('url', '') for c in scrubbed_qc_citations if c.get('url')]
+                logger.info(f"[QC_SOURCES_DEBUG] Extracted {len(qc_sources_from_metadata)} source URLs from QC API response metadata (encrypted content scrubbed)")
+
+                # Add metadata sources to all QC results (since all fields benefit from the QC web search)
+                for qc_result in qc_results:
+                    column = qc_result.get('column', '')
+
+                    # qc_citations comes from AI's JSON response (already included by AI)
+                    # qc_sources comes from API metadata (like validation does)
+                    if 'qc_sources' not in qc_result:
+                        qc_result['qc_sources'] = qc_sources_from_metadata
+
+                    logger.info(f"[QC_SOURCES_DEBUG] {column}: Added {len(qc_result.get('qc_sources', []))} metadata sources")
+
                 # Debug QC API response
                 logger.info(f"QC API structured extraction successful: found {len(qc_results)} QC modifications")
 
-                # Update metrics based on QC actions
+                # Update metrics - all fields are now comprehensively QC'd
                 qc_metrics['qc_fields_modified'] = len(qc_results)
                 for qc_result in qc_results:
-                    action = qc_result.get('qc_action_taken', '')
-                    if action == 'confidence_lowered':
-                        qc_metrics['qc_confidence_lowered'] += 1
-                    elif action == 'value_replaced':
+                    # Since QC is comprehensive, all fields are considered reviewed
+                    # Specific modification tracking is handled by QC cost tracker
                         qc_metrics['qc_values_replaced'] += 1
 
             except Exception as e:
@@ -662,22 +713,50 @@ class QCModule:
                 'qc_applied': qc_applied,
                 'qc_entry': '',
                 'qc_confidence': '',
-                'qc_action_taken': 'no_change',
                 'qc_reasoning': '',
                 'qc_sources': [],
+                'qc_citations': '',
+                'qc_original_confidence': '',  # QC-revised original confidence (for confidence_changed_original)
+                'qc_updated_confidence': '',   # QC-revised updated confidence (for confidence_changed_updated)
 
                 # Aggregated sources
                 'all_sources': aggregated_citations.get(column, [])
             }
 
             if qc_applied:
-                # QC made changes - use QC values as final
+                # QC made changes - extract QC-specific fields only
+                # Since QC is now comprehensive, we always have QC values
+                qc_reasoning = qc_result.get('qc_reasoning', '')
+
+                # Extract QC fields (now all mandatory)
+                qc_entry = qc_result.get('answer', merged_result['updated_entry'])
+                qc_confidence = qc_result.get('confidence', merged_result['updated_confidence'])
+
+                # Extract QC-revised confidence levels (now always provided)
+                qc_original_confidence = qc_result.get('original_confidence', '')
+                qc_updated_confidence = qc_result.get('updated_confidence', '')
+
+                # Update confidence levels if QC provided revisions
+                if qc_original_confidence:
+                    merged_result['qc_original_confidence'] = qc_original_confidence
+                    merged_result['original_confidence'] = qc_original_confidence  # Update in place
+                if qc_updated_confidence:
+                    merged_result['qc_updated_confidence'] = qc_updated_confidence
+                    merged_result['updated_confidence'] = qc_updated_confidence  # Update in place
+
+                # Debug logging to see what QC actually returned
+                logger.info(f"[QC_MERGE_DEBUG] {column}: QC returned entry='{qc_entry}', confidence='{qc_confidence}'")
+                logger.info(f"[QC_MERGE_DEBUG] {column}: Original='{multiplex_result.get('original_value', 'N/A')}', Validated='{merged_result['updated_entry']}', QC='{qc_entry}'")
+                logger.info(f"[QC_MERGE_DEBUG] {column}: Final merged QC fields - qc_applied=True, qc_entry='{qc_entry}', qc_confidence='{qc_confidence}'")
+
                 merged_result.update({
-                    'qc_entry': qc_result.get('answer', merged_result['updated_entry']),
-                    'qc_confidence': qc_result.get('confidence', merged_result['updated_confidence']),
-                    'qc_action_taken': qc_result.get('qc_action_taken', 'no_change'),
-                    'qc_reasoning': qc_result.get('qc_reasoning', ''),
-                    'qc_sources': qc_result.get('sources', [])
+                    'qc_entry': qc_entry,
+                    'qc_confidence': qc_confidence,
+                    'qc_reasoning': qc_reasoning,
+                    'qc_sources': qc_result.get('qc_sources', []),  # QC sources from AI API client
+                    'qc_citations': qc_result.get('qc_citations', ''),  # QC citations for cell comments
+                    'qc_original_confidence': merged_result.get('qc_original_confidence', ''),  # QC-revised original confidence
+                    'qc_updated_confidence': merged_result.get('qc_updated_confidence', '')     # QC-revised updated confidence
                 })
             else:
                 # No QC changes - QC entry same as updated entry

@@ -48,11 +48,6 @@ def get_response_format_schema(is_multiplex=True):
 
 # Additional fields for QC responses that extend the multiplex response schema
 ADDITIONAL_QC_FIELDS = {
-    "qc_action_taken": {
-        "type": "string",
-        "enum": ["confidence_lowered", "value_replaced", "no_change"],
-        "description": "The QC action taken: confidence_lowered (only confidence changed), value_replaced (answer and/or confidence changed), no_change (should not appear in QC output)"
-    },
     "qc_reasoning": {
         "type": "string",
         "description": "Detailed explanation of why QC revision was necessary and what specific issue was addressed"
@@ -61,24 +56,56 @@ ADDITIONAL_QC_FIELDS = {
 
 def get_qc_response_format_schema():
     """
-    Get the QC schema that extends the multiplex schema with additional QC fields.
+    Get the QC-only schema that contains only QC-specific fields.
+    QC does not duplicate validation fields - it only provides QC overlay data.
 
     Returns:
-        The JSON schema for QC response formatting
+        The JSON schema for QC-only response formatting
     """
-    # Deep copy the multiplex schema and add QC fields
-    import copy
-    qc_schema = copy.deepcopy(MULTIPLEX_RESPONSE_SCHEMA)
-
-    # Add QC-specific fields to the properties
-    qc_schema["items"]["properties"].update(ADDITIONAL_QC_FIELDS)
-
-    # Update required fields to include QC fields
-    qc_schema["items"]["required"].extend(["qc_action_taken", "qc_reasoning"])
+    qc_only_schema = {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "column": {
+                    "type": "string",
+                    "description": "The name of the field being QC'd - exactly as defined in the FIELD input"
+                },
+                "qc_reasoning": {
+                    "type": "string",
+                    "description": "Detailed explanation of why QC revision was necessary and what specific issue was addressed"
+                },
+                "answer": {
+                    "type": "string",
+                    "description": "MANDATORY: The QC Entry/value - required for ALL QC responses regardless of action type"
+                },
+                "confidence": {
+                    "type": "string",
+                    "enum": ["HIGH", "MEDIUM", "LOW"],
+                    "description": "MANDATORY: QC confidence level for the QC Entry - required for ALL QC responses"
+                },
+                "original_confidence": {
+                    "type": "string",
+                    "enum": ["HIGH", "MEDIUM", "LOW"],
+                    "description": "MANDATORY: Final confidence level for the original value after QC review (must be provided for all QC responses)"
+                },
+                "updated_confidence": {
+                    "type": "string",
+                    "enum": ["HIGH", "MEDIUM", "LOW"],
+                    "description": "MANDATORY: Final confidence level for the updated value after QC review (must be provided for all QC responses)"
+                },
+                "qc_citations": {
+                    "type": "string",
+                    "description": "Key source citation with most important part summarized for cell comments (format: 'title [key_excerpt] ... full_context URL')"
+                }
+            },
+            "required": ["column", "qc_reasoning", "answer", "confidence", "original_confidence", "updated_confidence", "qc_citations"]
+        }
+    }
 
     return {
         "type": "json_schema",
         "json_schema": {
-            "schema": qc_schema
+            "schema": qc_only_schema
         }
     } 

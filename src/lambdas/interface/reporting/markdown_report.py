@@ -13,7 +13,7 @@ logger.setLevel(logging.INFO)
 s3_client = boto3.client('s3')
 
 
-def create_markdown_table_from_results(validation_results, preview_row_count=3, config_s3_key=None, s3_cache_bucket=None):
+def create_markdown_table_from_results(validation_results, preview_row_count=3, config_s3_key=None, s3_cache_bucket=None, qc_results=None):
     """Convert real validation results from validator Lambda to markdown table format.
     Always shows the first 3 rows in a transposed table format with confidence emojis.
     Fields are ordered by: ID fields first, then by search_group ascending, with a Search Group column at the end.
@@ -26,7 +26,7 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
     def get_confidence_emoji(confidence_level):
         confidence_map = {
             'HIGH': '🟢',
-            'MEDIUM': '🟡', 
+            'MEDIUM': '🟡',
             'LOW': '🔴',
             'ID': '🔵',  # Blue circle for ID fields
             'UNKNOWN': '❓'
@@ -136,13 +136,27 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
             field_result = row_results.get(field_name, {})
             
             if isinstance(field_result, dict) and field_result:
-                # Field was validated or is an ID field - use result
+                # Check for QC data first (highest priority) but hide QC visibility from user
                 confidence = field_result.get('confidence_level', 'UNKNOWN')
                 value = field_result.get('value', '')
-                
-                # Get confidence emoji
+
+                # Check if QC results are available and override validation data (behind the scenes)
+                if qc_results and row_key in qc_results:
+                    row_qc_data = qc_results[row_key]
+                    if field_name in row_qc_data:
+                        field_qc_data = row_qc_data[field_name]
+                        if isinstance(field_qc_data, dict) and field_qc_data.get('qc_applied', False):
+                            # Use QC data when available, but display as normal validation
+                            qc_confidence = field_qc_data.get('qc_confidence', '')
+                            qc_value = field_qc_data.get('qc_entry', '')
+                            if qc_confidence:
+                                confidence = qc_confidence
+                            if qc_value:
+                                value = qc_value
+
+                # Get confidence emoji (use normal validation style - no QC indicators visible to user)
                 emoji = get_confidence_emoji(confidence)
-                
+
                 # Prepare value with emoji prefix
                 if value:
                     display_value = f"{emoji} {value}"
@@ -153,9 +167,21 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
                 # Field not in validation results - show N/A
                 display_value = "N/A"
             
-            # Truncate long values
+            # Truncate long values, but preserve URLs as clickable links
             if len(str(display_value)) > 29:
-                display_value = str(display_value)[:26] + "..."
+                # Check if the value contains a URL
+                import re
+                url_pattern = r'https?://[^\s]+'
+                url_match = re.search(url_pattern, str(display_value))
+
+                if url_match:
+                    # Extract the URL
+                    full_url = url_match.group()
+                    # Create a clickable markdown link with truncated display text
+                    truncated_text = str(display_value)[:22] + "..."
+                    display_value = f"[{truncated_text}]({full_url})"
+                else:
+                    display_value = str(display_value)[:26] + "..."
             
             # Escape pipe characters
             display_value = display_value.replace('|', '\\|')
@@ -190,9 +216,21 @@ def create_markdown_table(validation_results):
         confidence = result.get('confidence', 'UNKNOWN')
         value = result.get('value', '')
         
-        # Truncate long values
+        # Truncate long values, but preserve URLs as clickable links
         if len(str(value)) > 25:
-            value = str(value)[:22] + "..."
+            # Check if the value contains a URL
+            import re
+            url_pattern = r'https?://[^\s]+'
+            url_match = re.search(url_pattern, str(value))
+
+            if url_match:
+                # Extract the URL
+                full_url = url_match.group()
+                # Create a clickable markdown link with truncated display text
+                truncated_text = str(value)[:19] + "..."
+                value = f"[{truncated_text}]({full_url})"
+            else:
+                value = str(value)[:22] + "..."
         
         # Escape any pipe characters in the value
         value = str(value).replace('|', '\\|')
