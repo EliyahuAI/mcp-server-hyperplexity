@@ -134,6 +134,16 @@ class QCIntegrationManager:
                 api_provider=api_provider
             )
 
+            # Update QC metrics with actual modification counts from cost tracker
+            qc_metrics['confidence_lowered_count'] = sum(
+                stats.get('confidence_lowered', 0)
+                for stats in self.cost_tracker.qc_metrics['qc_by_column'].values()
+            )
+            qc_metrics['values_replaced_count'] = sum(
+                stats.get('values_replaced', 0)
+                for stats in self.cost_tracker.qc_metrics['qc_by_column'].values()
+            )
+
             # Track all reviewed fields for accurate fail rate calculation
             self.cost_tracker.track_all_reviewed_fields(all_multiplex_results, qc_results)
 
@@ -233,6 +243,16 @@ class QCIntegrationManager:
                 qc_metrics=enhanced_qc_metrics,
                 model_used=model_used,
                 api_provider=api_provider
+            )
+
+            # Update QC metrics with actual modification counts from cost tracker
+            qc_metrics['confidence_lowered_count'] = sum(
+                stats.get('confidence_lowered', 0)
+                for stats in self.cost_tracker.qc_metrics['qc_by_column'].values()
+            )
+            qc_metrics['values_replaced_count'] = sum(
+                stats.get('values_replaced', 0)
+                for stats in self.cost_tracker.qc_metrics['qc_by_column'].values()
             )
 
             # Track all reviewed fields for accurate fail rate calculation

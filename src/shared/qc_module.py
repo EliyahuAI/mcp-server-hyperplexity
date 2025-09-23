@@ -471,7 +471,13 @@ class QCModule:
                 'qc_cost_estimated': costs_data.get('estimated', {}).get('total_cost', 0.0),  # What it would cost without cache
                 'qc_cache_hit_tokens': token_usage.get('cache_read_tokens', 0),
                 # Include raw response data for proper cost tracking
-                'qc_response_data': qc_response
+                'qc_response_data': qc_response,
+
+                # Add fields expected by validation lambda for aggregation
+                'qc_cost': costs_data.get('actual', {}).get('total_cost', 0.0),  # Alias for qc_cost_actual
+                'qc_calls': 1,  # This QC call count
+                'confidence_lowered_count': 0,  # Will be updated by cost tracker
+                'values_replaced_count': 0  # Will be updated by cost tracker
             }
 
             # Extract structured response using ai_client method
@@ -614,7 +620,13 @@ class QCModule:
                 'qc_time_savings_seconds': timing_data.get('time_savings_seconds', 0.0),
                 'qc_cost_actual': costs_data.get('actual', {}).get('total_cost', 0.0),  # What we actually paid (with cache benefits)
                 'qc_cost_estimated': costs_data.get('estimated', {}).get('total_cost', 0.0),  # What it would cost without cache
-                'qc_cache_hit_tokens': token_usage.get('cache_read_tokens', 0)
+                'qc_cache_hit_tokens': token_usage.get('cache_read_tokens', 0),
+
+                # Add fields expected by validation lambda for aggregation
+                'qc_cost': costs_data.get('actual', {}).get('total_cost', 0.0),  # Alias for qc_cost_actual
+                'qc_calls': 1,  # This QC call count
+                'confidence_lowered_count': 0,  # Will be updated by cost tracker
+                'values_replaced_count': 0  # Will be updated by cost tracker
             }
 
             # Extract structured response using ai_client method
