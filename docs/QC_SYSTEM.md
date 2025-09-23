@@ -420,10 +420,56 @@ qc_result.get('updated_confidence') # Lambda sometimes expects this
 - QC metrics tracked in both `qc_metrics` and `provider_metrics.QC_Costs`
 - Multiple aggregation paths for same data
 
-**3. Call Count Complexity:**
+**3. Call Count Complexity (CRITICAL REFACTORING NEEDED):**
 - Validation calls: counted in provider metrics
 - QC calls: tracked separately to avoid double-counting
 - Frontend scaling: manual adjustment to treat QC as Claude search group
+
+**4. Complex Call Counting Implementation (TO BE UNWOUND):**
+
+The current implementation uses multiple workarounds to handle QC calls consistently across the system:
+
+**Background Handler (Preview):**
+```python
+# Add fake QC group to total so frontend math works: perplexity = total - claude = 5 - 2 = 3
+total_groups_for_frontend = total_search_groups + (1 if qc_has_calls else 0)  # Add fake QC group to total
+claude_groups_for_frontend = base_claude_groups + (1 if qc_has_calls else 0)  # Include QC as fake Claude group
+```
+
+**Background Handler (Full Validation):**
+```python
+# Calculate total_provider_calls including QC calls (like preview does)
+total_validation_calls = sum(provider_data.get('calls', 0) for provider_data in provider_metrics_for_db.values())
+total_qc_calls = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
+total_provider_calls_override = total_validation_calls + total_qc_calls
+```
+
+**Receipt Generation:**
+```python
+# Extract QC call counts from validation results (if available)
+qc_calls = 0
+if validation_results:
+    qc_metrics_data = validation_results.get('qc_metrics', {})
+    qc_calls = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
+
+# Fold QC calls into Claude calls for receipt display
+total_claude_calls = claude_calls + qc_calls
+```
+
+**Email Generation:**
+```python
+# Get QC calls from billing_info and fold into Claude calls
+qc_calls = billing_info.get('qc_api_calls', 0) if billing_info else 0
+total_claude_calls = claude_calls + qc_calls
+```
+
+**WHY THIS IS MESSY:**
+- QC calls must be extracted separately and manually added to totals
+- Frontend receives fake search groups to make call estimates work
+- Receipts and emails manually fold QC calls into Claude calls
+- Different parts of the system handle QC calls differently
+- Call counting logic is scattered across multiple files
+- Complex special-case handling throughout the codebase
 
 #### Future Refactoring Vision: QC as Search Group
 
@@ -449,12 +495,23 @@ provider_metrics['anthropic']['calls'] += qc_calls  # No special handling needed
 - Frontend scaling works without manual adjustments
 - Simplified cost aggregation
 - Unified timing and progress tracking
+- **Removes all the messy call counting workarounds above**
+
+**Migration Plan for Call Counting:**
+1. **Create QC search group** in validation config
+2. **Remove fake group logic** from background_handler.py
+3. **Remove QC call extraction** from receipt/email generation
+4. **Remove total_provider_calls_override** logic
+5. **Clean up billing_info QC fields** (qc_api_calls becomes unnecessary)
+6. **Update frontend** to handle QC as natural Claude search group
+7. **Remove manual call folding** from all display logic
 
 **Migration Considerations:**
 - Preserve historical QC tracking data
 - Maintain QC-specific result fields (qc_action_taken, qc_reasoning)
 - Keep QC visual indicators in Excel
 - Ensure backward compatibility with existing DynamoDB structure
+- **Test call counting across all interfaces** (frontend, progress, receipts, emails)
 
 ### Integration Summary
 
