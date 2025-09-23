@@ -3817,9 +3817,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Include QC metrics if QC was enabled and ran (even if no modifications)
         if qc_manager and qc_manager.is_qc_enabled() and qc_metrics_summary.get('total_rows_processed', 0) > 0:
-            # Get overall QC tracker metrics to fill in any missing data
-            if hasattr(qc_manager, 'get_qc_metrics'):
-                qc_tracker_data = qc_manager.get_qc_metrics()
+            # Get properly formatted QC tracker metrics to fill in any missing data
+            if hasattr(qc_manager, 'get_aggregated_qc_metrics'):
+                qc_tracker_aggregated = qc_manager.get_aggregated_qc_metrics()
+                qc_tracker_data = qc_tracker_aggregated.get('qc_totals', {})
                 # Use tracker data if our summary is missing values
                 if qc_metrics_summary.get('total_qc_calls', 0) == 0 and qc_tracker_data.get('total_qc_calls', 0) > 0:
                     qc_metrics_summary['total_qc_calls'] = qc_tracker_data['total_qc_calls']
@@ -3827,6 +3828,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     qc_metrics_summary['confidence_lowered_count'] = qc_tracker_data['confidence_lowered_count']
                 if qc_metrics_summary.get('values_replaced_count', 0) == 0 and qc_tracker_data.get('values_replaced_count', 0) > 0:
                     qc_metrics_summary['values_replaced_count'] = qc_tracker_data['values_replaced_count']
+                # Also update other metrics that might be missing
+                if qc_metrics_summary.get('total_fields_modified', 0) == 0 and qc_tracker_data.get('total_fields_modified', 0) > 0:
+                    qc_metrics_summary['total_fields_modified'] = qc_tracker_data['total_fields_modified']
 
             # Add column-level QC analysis
             logger.info(f"[QC_METRICS_DEBUG] Checking for cost_tracker: hasattr={hasattr(qc_manager, 'cost_tracker')}, qc_manager={qc_manager.__class__.__name__ if qc_manager else None}")
@@ -3862,19 +3866,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 qc_manager.cost_tracker.log_qc_fail_rate_summary()
         else:
             # Even if no rows were processed, check if QC manager has metrics to report
-            if qc_manager and hasattr(qc_manager, 'get_qc_metrics'):
-                qc_tracker_data = qc_manager.get_qc_metrics()
-                if qc_tracker_data and any(qc_tracker_data.get(k, 0) for k in ['total_qc_calls', 'total_fields_reviewed']):
-                    logger.info(f"[QC_RESPONSE_DEBUG] Found QC tracker metrics despite no rows processed: {qc_tracker_data}")
+            if qc_manager and hasattr(qc_manager, 'get_aggregated_qc_metrics'):
+                qc_tracker_aggregated = qc_manager.get_aggregated_qc_metrics()
+                qc_tracker_totals = qc_tracker_aggregated.get('qc_totals', {})
+                if qc_tracker_totals and any(qc_tracker_totals.get(k, 0) for k in ['total_qc_calls', 'total_fields_reviewed']):
+                    logger.info(f"[QC_RESPONSE_DEBUG] Found QC tracker metrics despite no rows processed: {qc_tracker_totals}")
                     # Add qc_by_column if available
                     if hasattr(qc_manager, 'cost_tracker'):
                         qc_by_column = qc_manager.cost_tracker.get_qc_fail_rates_by_column()
-                        qc_tracker_data['qc_by_column'] = qc_by_column
+                        qc_tracker_totals['qc_by_column'] = qc_by_column
                         logger.info(f"[QC_METRICS] Added qc_by_column to tracker data: {len(qc_by_column)} columns")
-                    # Include the tracker metrics in response
+                    # Include the properly formatted tracker metrics in response
                     qc_response_data = {
                         'qc_results': {},  # Empty results
-                        'qc_metrics': qc_tracker_data
+                        'qc_metrics': qc_tracker_totals
                     }
 
         # ========== QC PROVIDER METRICS INTEGRATION ==========

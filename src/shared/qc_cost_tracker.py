@@ -333,15 +333,21 @@ class QCCostTracker:
                 'models_used': list(metrics['models_used'])
             }
 
+        # Calculate accurate totals from per-column data
+        total_fields_reviewed = sum(stats.get('reviewed', 0) for stats in self.qc_metrics['qc_by_column'].values())
+        total_fields_modified = sum(stats.get('modified', 0) for stats in self.qc_metrics['qc_by_column'].values())
+        total_confidence_lowered = sum(stats.get('confidence_lowered', 0) for stats in self.qc_metrics['qc_by_column'].values())
+        total_values_replaced = sum(stats.get('values_replaced', 0) for stats in self.qc_metrics['qc_by_column'].values())
+
         return {
             'qc_totals': {
                 'total_qc_calls': self.qc_metrics['total_qc_calls'],
                 'total_qc_tokens': self.qc_metrics['total_qc_tokens'],
                 'total_qc_cost': round(self.qc_metrics['total_qc_cost'], 6),
-                'total_fields_reviewed': self.qc_metrics['total_fields_reviewed'],
-                'total_fields_modified': self.qc_metrics['total_fields_modified'],
-                'confidence_lowered_count': self.qc_metrics['confidence_lowered_count'],
-                'values_replaced_count': self.qc_metrics['values_replaced_count'],
+                'total_fields_reviewed': total_fields_reviewed,  # Calculated from per-column data
+                'total_fields_modified': total_fields_modified,  # Calculated from per-column data
+                'confidence_lowered_count': total_confidence_lowered,  # Calculated from per-column data
+                'values_replaced_count': total_values_replaced,  # Calculated from per-column data
                 'qc_models_used': qc_models_used
             },
             'qc_provider_metrics': provider_metrics,
