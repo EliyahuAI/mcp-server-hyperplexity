@@ -2874,6 +2874,13 @@ def handle(event, context):
                     else:
                         logger.info(f"[QC_DB_STORAGE] No QC metrics found in validation results")
 
+                    # Calculate total_provider_calls including QC calls (like preview does)
+                    total_validation_calls = sum(provider_data.get('calls', 0) for provider_data in provider_metrics_for_db.values())
+                    total_qc_calls = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
+                    total_provider_calls_override = total_validation_calls + total_qc_calls
+                    status_update_data['total_provider_calls'] = total_provider_calls_override
+                    logger.info(f"[FULL_VALIDATION_CALLS] Validation calls: {total_validation_calls}, QC calls: {total_qc_calls}, Total: {total_provider_calls_override}")
+
                     # Record completion time for background handler
                     background_end_time = datetime.now(timezone.utc).isoformat()
                     
