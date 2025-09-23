@@ -329,7 +329,8 @@ class QCCostTracker:
             provider_metrics[provider] = {
                 'calls': metrics['calls'],
                 'tokens': metrics['tokens'],
-                'cost': metrics['cost'],
+                'cost_actual': metrics['cost_actual'],
+                'cost_estimated': metrics['cost_estimated'],
                 'models_used': list(metrics['models_used'])
             }
 
