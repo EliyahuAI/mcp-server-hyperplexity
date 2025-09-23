@@ -2865,7 +2865,15 @@ def handle(event, context):
                         logger.warning(f"[VALIDATION_PROVIDER_METRICS] Falling back to legacy token_usage conversion for provider_metrics_for_db")
                     
                     status_update_data['provider_metrics'] = provider_metrics_for_db
-                    
+
+                    # Extract QC metrics from validation results if available
+                    qc_metrics_data = validation_results.get('qc_metrics', {})
+                    if qc_metrics_data:
+                        logger.info(f"[QC_DB_STORAGE] Found QC metrics in validation results: {list(qc_metrics_data.keys())}")
+                        status_update_data['qc_metrics'] = qc_metrics_data
+                    else:
+                        logger.info(f"[QC_DB_STORAGE] No QC metrics found in validation results")
+
                     # Record completion time for background handler
                     background_end_time = datetime.now(timezone.utc).isoformat()
                     
