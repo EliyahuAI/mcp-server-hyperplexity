@@ -3902,9 +3902,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 }
 
             anthropic_provider = qc_enhanced_aggregated_metrics['providers']['anthropic']
-            # Add QC costs/tokens/time to anthropic provider for aggregation, but NOT calls
-            # QC calls are tracked separately in QC metrics to avoid double-counting in validation estimates
-            # anthropic_provider['calls'] += qc_tracker_metrics.get('total_qc_calls', 0)  # REMOVED: Don't add QC calls to validation metrics
+            # Add QC costs/tokens/time/calls to anthropic provider for consistent aggregation
+            anthropic_provider['calls'] += qc_tracker_metrics.get('total_qc_calls', 0)  # Include QC calls in Anthropic provider
             anthropic_provider['tokens'] += qc_tracker_metrics.get('total_qc_tokens', 0)
             anthropic_provider['cost_actual'] += qc_tracker_metrics.get('total_qc_cost', 0.0)
             anthropic_provider['cost_estimated'] += qc_tracker_metrics.get('total_qc_estimated_cost', 0.0)
@@ -3940,8 +3939,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 qc_enhanced_aggregated_metrics['totals'] = {}
 
             totals = qc_enhanced_aggregated_metrics['totals']
-            # Add QC costs/tokens/time to totals, but NOT calls (QC calls tracked separately to avoid double-counting)
-            # totals['total_calls'] = totals.get('total_calls', 0) + qc_tracker_metrics.get('total_qc_calls', 0)  # REMOVED: Don't add QC calls to validation totals
+            # Add QC costs/tokens/time/calls to totals for consistent aggregation
+            totals['total_calls'] = totals.get('total_calls', 0) + qc_tracker_metrics.get('total_qc_calls', 0)  # Include QC calls in totals
             totals['total_tokens'] = totals.get('total_tokens', 0) + qc_tracker_metrics.get('total_qc_tokens', 0)
             totals['total_cost_actual'] = totals.get('total_cost_actual', 0.0) + qc_tracker_metrics.get('total_qc_cost', 0.0)
             totals['total_cost_estimated'] = totals.get('total_cost_estimated', 0.0) + qc_tracker_metrics.get('total_qc_estimated_cost', 0.0)

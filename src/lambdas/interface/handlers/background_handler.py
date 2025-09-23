@@ -1320,9 +1320,9 @@ def handle(event, context):
                     logger.info(f"[PROVIDER_CALLS_DEBUG] QC calls from qc_metrics_data: {qc_calls_from_metrics}")
                     total_qc_calls = max(total_qc_calls, qc_calls_from_metrics)  # Use max to avoid double-counting
 
-                # Calculate grand total
-                total_provider_calls_override = total_validation_calls + total_qc_calls
-                logger.info(f"[PROVIDER_CALLS_DEBUG] TOTAL calls (validation + QC): {total_provider_calls_override}")
+                # Calculate grand total (QC calls now included in validation_calls via anthropic provider)
+                total_provider_calls_override = total_validation_calls
+                logger.info(f"[PROVIDER_CALLS_DEBUG] TOTAL calls (QC included in validation): {total_provider_calls_override}, QC calls (debug): {total_qc_calls}")
                 batch_size_used = preview_payload.get('actual_batch_size', 10)  # Actual batch size used for preview
                 
                 # Use enhanced provider metrics from ai_client aggregation if available
@@ -2884,12 +2884,19 @@ def handle(event, context):
                     else:
                         logger.info(f"[QC_DB_STORAGE] No QC metrics found in validation results")
 
-                    # Calculate total_provider_calls including QC calls (like preview does)
-                    total_validation_calls = sum(provider_data.get('calls', 0) for provider_data in provider_metrics_for_db.values())
-                    total_qc_calls = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
-                    total_provider_calls_override = total_validation_calls + total_qc_calls
+                    # Calculate total_provider_calls from all providers (QC calls now included in anthropic provider)
+                    total_provider_calls_override = sum(
+                        provider_data.get('calls', 0)
+                        for provider_name, provider_data in provider_metrics_for_db.items()
+                        if not provider_data.get('is_metadata_only', False)  # Exclude QC_Costs metadata-only provider
+                    )
                     status_update_data['total_provider_calls'] = total_provider_calls_override
-                    logger.info(f"[FULL_VALIDATION_CALLS] Validation calls: {total_validation_calls}, QC calls: {total_qc_calls}, Total: {total_provider_calls_override}")
+
+                    # Debug logging to verify call counting
+                    anthropic_calls = provider_metrics_for_db.get('anthropic', {}).get('calls', 0)
+                    perplexity_calls = provider_metrics_for_db.get('perplexity', {}).get('calls', 0)
+                    qc_calls_debug = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
+                    logger.info(f"[FULL_VALIDATION_CALLS] Anthropic calls (incl QC): {anthropic_calls}, Perplexity calls: {perplexity_calls}, QC calls (debug): {qc_calls_debug}, Total: {total_provider_calls_override}")
 
                     # Record completion time for background handler
                     background_end_time = datetime.now(timezone.utc).isoformat()
