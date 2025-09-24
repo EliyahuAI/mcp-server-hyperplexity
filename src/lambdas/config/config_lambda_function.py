@@ -283,49 +283,12 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
                 else:
                     logger.error("Failed to fix config validation errors on retry")
         
-        # Add conversation entry to config change log first
-        if updated_config:
-            # Get the version info for the filename (before saving)
-            current_version = 1
-            if existing_config and 'generation_metadata' in existing_config:
-                current_version = existing_config['generation_metadata'].get('version', 1) + 1
-            
-            # Create preliminary filename for conversation entry
-            base_filename = "unknown_table"
-            if table_analysis and 'basic_info' in table_analysis:
-                import re
-                original_filename = table_analysis['basic_info'].get('filename', 'unknown_table')
-                base_filename = re.sub(r'\.(xlsx?|csv)$', '', original_filename, flags=re.IGNORECASE)
-                base_filename = re.sub(r'_config(_V\d+)?$', '', base_filename, flags=re.IGNORECASE)
-            config_filename = f"{base_filename}_config_V{current_version:02d}.json"
-            
-            # Add conversation entry with metadata
-            updated_config = add_conversation_entry(
-                updated_config, existing_config, instructions,
-                clarifying_questions, clarification_urgency, reasoning, ai_summary, technical_ai_summary, session_id,
-                conversation_history, config_filename
-            )
-        
-        # Note: S3 saving is handled by the interface lambda after receiving the config
-        # Config lambda focuses on generation, interface lambda handles storage
-        config_s3_key = None
-        config_download_url = None
-        logger.info("Config generation complete - S3 storage handled by interface lambda")
-        
-        # Extract version for easy access
-        config_version = updated_config.get('generation_metadata', {}).get('version', 1) if updated_config else 1
-
-        # Create clean config without metadata for interface lambda (interface lambda adds its own metadata)
-        clean_config = updated_config.copy() if updated_config else {}
-        # Remove metadata that should be handled by interface lambda
-        metadata_keys = ['generation_metadata', 'storage_metadata']
-        for key in metadata_keys:
-            if key in clean_config:
-                del clean_config[key]
+        # Config lambda returns clean structured response - interface lambda handles metadata and conversation tracking
+        logger.info("Config generation complete - returning clean config to interface lambda")
 
         return {
             'success': True,
-            'updated_config': clean_config,
+            'updated_config': updated_config,
             'clarifying_questions': clarifying_questions,
             'clarification_urgency': clarification_urgency,
             'reasoning': reasoning,
@@ -630,15 +593,52 @@ These columns have high QC fail rates and should be improved:
 - Review examples and format specifications for failing columns
 - Consider moving problem columns to different search groups with related information"""
 
-    # Add user instructions if provided
-    if instructions:
+    # Add comprehensive user instruction history
+    if instructions or conversation_history:
         base_prompt += f"""
 
-# USER REFINEMENT REQUEST
+# USER FEEDBACK AND REFINEMENT REQUEST
 
-**User Instructions**: {instructions}
+"""
+        # Extract and present all user messages from conversation history
+        user_messages = []
+        if conversation_history:
+            for entry in conversation_history:
+                if entry.get('entry_type') == 'user_input' or entry.get('action') == 'user_message':
+                    timestamp = entry.get('timestamp', 'Unknown time')
+                    user_instruction = entry.get('user_instructions', entry.get('instructions', ''))
+                    if user_instruction:
+                        user_messages.append({
+                            'timestamp': timestamp,
+                            'instruction': user_instruction
+                        })
 
-**Your Task**: Analyze the user's request and make ONLY the specific changes needed to address their concerns. Preserve everything else that is working well."""
+        if user_messages:
+            base_prompt += "**User Feedback History** (chronological order):\n\n"
+            for i, msg in enumerate(user_messages, 1):
+                # Parse timestamp to make it readable
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(msg['timestamp'].replace('Z', '+00:00'))
+                    readable_time = dt.strftime('%Y-%m-%d %H:%M')
+                except:
+                    readable_time = msg['timestamp'][:16]  # Fallback
+
+                base_prompt += f"{i}. **{readable_time}**: {msg['instruction']}\n\n"
+
+        # Highlight the current/latest instruction
+        if instructions:
+            base_prompt += f"""**🎯 CURRENT REQUEST** (focus on this):
+"{instructions}"
+
+"""
+
+        base_prompt += """**Your Task**:
+1. **Review all user feedback** to understand the evolution of their requirements
+2. **Focus primarily on the CURRENT REQUEST** while considering previous context
+3. **Make ONLY the specific changes** needed to address the current request
+4. **Preserve everything else** that is working well and hasn't been criticized
+5. **Avoid going in circles** - don't undo previous changes unless specifically requested"""
 
     return base_prompt
 
