@@ -545,7 +545,8 @@ def handle(event, context):
             
             validation_results = invoke_validator_lambda(
                 actual_excel_s3_key, actual_config_s3_key, max_rows, batch_size, S3_UNIFIED_BUCKET, VALIDATOR_LAMBDA_NAME,
-                preview_first_row=True, preview_max_rows=preview_max_rows, sequential_call=sequential_call_num
+                preview_first_row=True, preview_max_rows=preview_max_rows, sequential_call=sequential_call_num,
+                session_id=session_id
             )
             
             # Send validation completion progress update - interface final processing begins (90-100% range)
@@ -3050,7 +3051,7 @@ def handle(event, context):
                 update_run_status(
                     session_id=session_id_for_error,
                     run_key=run_key_for_error,
-                    status='FAILED', 
+                    status='FAILED',
                     run_type=run_type_for_error,
                     error_message=str(e),
                     processed_rows=0,
@@ -3060,6 +3061,31 @@ def handle(event, context):
                 )
             else:
                 logger.warning(f"Cannot update run status for failed session {session_id_for_error} - no run_key available")
+
+            # Send error notification to frontend via WebSocket
+            if session_id_for_error:
+                try:
+                    if is_config:
+                        error_message = {
+                            'type': 'config_generation_failed',
+                            'session_id': session_id_for_error,
+                            'success': False,
+                            'error': str(e),
+                            'progress': 100
+                        }
+                    else:
+                        error_message = {
+                            'type': 'validation_failed' if not is_preview else 'preview_failed',
+                            'session_id': session_id_for_error,
+                            'progress': 100,
+                            'status': f'❌ {run_type_for_error} failed: {str(e)[:100]}{"..." if len(str(e)) > 100 else ""}',
+                            'error': str(e)
+                        }
+
+                    _send_websocket_message_deduplicated(session_id_for_error, error_message)
+                    logger.info(f"Sent error notification via WebSocket for session {session_id_for_error}")
+                except Exception as ws_error:
+                    logger.error(f"Failed to send error notification via WebSocket: {ws_error}")
         return {'statusCode': 500, 'body': json.dumps({'status': 'background_failed', 'error': str(e)})}
 
 def handle_config_generation(event, context):
