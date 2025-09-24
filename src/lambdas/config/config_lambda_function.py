@@ -314,10 +314,18 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         
         # Extract version for easy access
         config_version = updated_config.get('generation_metadata', {}).get('version', 1) if updated_config else 1
-        
+
+        # Create clean config without metadata for interface lambda (interface lambda adds its own metadata)
+        clean_config = updated_config.copy() if updated_config else {}
+        # Remove metadata that should be handled by interface lambda
+        metadata_keys = ['generation_metadata', 'storage_metadata']
+        for key in metadata_keys:
+            if key in clean_config:
+                del clean_config[key]
+
         return {
             'success': True,
-            'updated_config': updated_config,
+            'updated_config': clean_config,
             'clarifying_questions': clarifying_questions,
             'clarification_urgency': clarification_urgency,
             'reasoning': reasoning,
