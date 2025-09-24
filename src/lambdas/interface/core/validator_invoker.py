@@ -7,7 +7,7 @@ import logging
 import os
 import tempfile
 import time
-import openpyxl
+from openpyxl import Workbook, load_workbook
 import csv
 import boto3
 import math
@@ -175,7 +175,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                         raise ValueError("CSV file is empty")
                     
                     # Convert CSV to Excel format in memory
-                    workbook = openpyxl.Workbook()
+                    workbook = Workbook()
                     worksheet = workbook.active
                     worksheet.title = "Data"
                     
@@ -203,7 +203,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         
         # Now process as Excel file (whether original or converted from CSV)
         logger.info(f"Processing {original_file_type} file as Excel format")
-        workbook = openpyxl.load_workbook(io.BytesIO(excel_content))
+        workbook = load_workbook(io.BytesIO(excel_content))
         
         # Log available sheet names
         logger.info(f"Available sheets in Excel: {workbook.sheetnames}")
@@ -389,9 +389,16 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 response = _invoke_validator_with_retry(lambda_client, VALIDATOR_LAMBDA_NAME, payload, logger)
                 validation_processing_time = time.time() - validation_start_time
                 logger.info(f"[RETRY_TRACKER] PREVIEW_COMPLETE - Validator Lambda processing took {validation_processing_time:.2f} seconds")
-                
+
                 response_payload = json.loads(response['Payload'].read().decode('utf-8'))
-                
+
+                # Check for validation lambda errors
+                if isinstance(response_payload, dict) and response_payload.get('statusCode') == 500:
+                    error_body = response_payload.get('body', {})
+                    error_message = error_body.get('error', 'Unknown validation error') if isinstance(error_body, dict) else str(error_body)
+                    logger.error(f"[VALIDATION_ERROR] Validation lambda returned error: {error_message}")
+                    raise Exception(f"Validation failed: {error_message}")
+
                 validation_results, metadata, qc_results, qc_metrics = None, None, None, None
                 if isinstance(response_payload, dict):
                     body = response_payload.get('body', {})
@@ -460,7 +467,14 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 logger.info(f"[RETRY_TRACKER] FULL_MODE - Starting validation call for {len(rows)} rows")
                 response = _invoke_validator_with_retry(lambda_client, VALIDATOR_LAMBDA_NAME, payload, logger)
                 response_payload = json.loads(response['Payload'].read().decode('utf-8'))
-                
+
+                # Check for validation lambda errors
+                if isinstance(response_payload, dict) and response_payload.get('statusCode') == 500:
+                    error_body = response_payload.get('body', {})
+                    error_message = error_body.get('error', 'Unknown validation error') if isinstance(error_body, dict) else str(error_body)
+                    logger.error(f"[VALIDATION_ERROR] Validation lambda returned error: {error_message}")
+                    raise Exception(f"Validation failed: {error_message}")
+
                 validation_results, metadata, qc_results, qc_metrics = None, None, None, None
                 if isinstance(response_payload, dict):
                     body = response_payload.get('body', {})
@@ -548,10 +562,18 @@ def _handle_special_request(special_request, excel_s3_key, S3_CACHE_BUCKET, VALI
             
             # Call validation lambda
             response = _invoke_validator_with_retry(lambda_client, VALIDATOR_LAMBDA_NAME, payload, logger)
-            
+
             response_payload = json.loads(response['Payload'].read().decode('utf-8'))
+
+            # Check for validation lambda errors
+            if isinstance(response_payload, dict) and response_payload.get('statusCode') == 500:
+                error_body = response_payload.get('body', {})
+                error_message = error_body.get('error', 'Unknown validation error') if isinstance(error_body, dict) else str(error_body)
+                logger.error(f"[VALIDATION_ERROR] Config generation lambda returned error: {error_message}")
+                raise Exception(f"Config generation failed: {error_message}")
+
             logger.info(f"Config generation response received from validation lambda")
-            
+
             # Extract the result from validation lambda response
             if isinstance(response_payload, dict):
                 body = response_payload.get('body', {})
