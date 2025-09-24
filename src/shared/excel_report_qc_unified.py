@@ -678,9 +678,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
             INCLUDE_QC_COLUMNS = True  # Set to False to test if QC columns cause corruption
 
             if INCLUDE_QC_COLUMNS:
-                detail_headers.extend(["Column", "Original Value", "Original Confidence", "Validated Value",
-                                "Validation Confidence", "QC Applied", "QC Value", "QC Confidence", "QC Reasoning",
-                                "QC Sources", "QC Citations", "QC Original Confidence", "QC Updated Confidence",
+                detail_headers.extend(["Column", "Original Value", "Updated Value", "QC Value",
+                                "QC Original Confidence", "QC Updated Confidence", "QC Confidence",
+                                "QC Applied", "QC Reasoning", "QC Sources", "QC Citations",
                                 "Final Value", "Reasoning", "Sources", "Citations",
                                 "Explanation", "Consistent with Model", "Model", "Timestamp", "New"])
             else:
@@ -731,37 +731,24 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 details_sheet.write(detail_row, col_idx, safe_for_excel(str(value)))
                                 col_idx += 1
                             
-                            # Write standard columns in new order: Column, Original Value, Original Confidence, Validated Value, Validation Confidence
+                            # Write standard columns in new order: Column, Original Value, Updated Value, QC Value
                             details_sheet.write(detail_row, col_idx, safe_for_excel(field_name))  # Column
                             col_idx += 1
                             details_sheet.write(detail_row, col_idx, safe_for_excel(str(row_data.get(field_name, ''))))  # Original value
                             col_idx += 1
-                            
-                            # Original confidence
-                            original_confidence = field_data.get('original_confidence', '')
-                            original_confidence_str = str(original_confidence) if original_confidence else ''
-                            original_format = get_confidence_format(original_confidence, original_confidence_formats)
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(original_confidence_str), original_format)
-                            col_idx += 1
-                            
-                            # Validated Value (pre-QC result) - use preserved pre-QC value if available
+
+                            # Updated Value (pre-QC result) - use preserved pre-QC value if available
                             if field_data.get('qc_applied') and 'pre_qc_value' in field_data:
-                                validated_value = str(field_data.get('pre_qc_value', ''))
-                                validation_confidence = field_data.get('pre_qc_confidence', '')
+                                updated_value = str(field_data.get('pre_qc_value', ''))
+                                updated_confidence = field_data.get('pre_qc_confidence', '')
                             else:
-                                validated_value = str(field_data.get('value', ''))
-                                validation_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
+                                updated_value = str(field_data.get('value', ''))
+                                updated_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
 
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(validated_value))  # Validated value
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(updated_value))  # Updated value
                             col_idx += 1
 
-                            # Validation confidence
-                            validation_confidence_str = str(validation_confidence) if validation_confidence else ''
-                            confidence_format = get_confidence_format(validation_confidence, validation_confidence_formats)
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(validation_confidence_str), confidence_format)
-                            col_idx += 1
-
-                            # QC Applied - extract QC data properly
+                            # Extract QC data properly
                             qc_applied = False
                             qc_value = ''
                             qc_confidence = ''
@@ -771,7 +758,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             qc_original_confidence = ''
                             qc_updated_confidence = ''
 
-                            # Final value starts as validated value
+                            # Final value starts as updated value
                             final_value = str(field_data.get('value', ''))
 
                             if qc_results and row_key in qc_results:
@@ -808,12 +795,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                                 # QC provided a replacement value
                                                 final_value = qc_value
                                             else:
-                                                # QC only changed confidence, keep the validated value
+                                                # QC only changed confidence, keep the updated value
                                                 final_value = str(field_data.get('value', ''))
                                             logger.info(f"[QC_EXCEL_EXTRACT_DEBUG] {field_name}: QC extracted - value='{qc_value}', confidence='{qc_confidence}'")
-
-                            details_sheet.write(detail_row, col_idx, 'Yes' if qc_applied else 'No')  # QC Applied
-                            col_idx += 1
 
                             # Use QC confidence format for QC Value when QC applied
                             qc_format = None
@@ -830,6 +814,16 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 details_sheet.write(detail_row, col_idx, '')  # Write empty on error
                             col_idx += 1
 
+                            # QC Original Confidence column (only populated when QC changes original confidence)
+                            qc_original_confidence_format = get_confidence_format(qc_original_confidence, qc_confidence_formats) if qc_original_confidence else None
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(qc_original_confidence), qc_original_confidence_format)  # QC Original Confidence
+                            col_idx += 1
+
+                            # QC Updated Confidence column (only populated when QC changes updated confidence)
+                            qc_updated_confidence_format = get_confidence_format(qc_updated_confidence, qc_confidence_formats) if qc_updated_confidence else None
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(qc_updated_confidence), qc_updated_confidence_format)  # QC Updated Confidence
+                            col_idx += 1
+
                             # QC Confidence column
                             try:
                                 qc_confidence_format = get_confidence_format(qc_confidence, qc_confidence_formats) if qc_confidence else None
@@ -838,6 +832,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             except Exception as e:
                                 logger.error(f"[EXCEL_WRITE_ERROR] QC Confidence write failed for {field_name}: {e}")
                                 details_sheet.write(detail_row, col_idx, '')  # Write empty on error
+                            col_idx += 1
+
+                            details_sheet.write(detail_row, col_idx, 'Yes' if qc_applied else 'No')  # QC Applied
                             col_idx += 1
 
                             try:
@@ -863,18 +860,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             details_sheet.write(detail_row, col_idx, safe_for_excel(qc_citations))  # QC Citations
                             col_idx += 1
 
-                            # QC Original Confidence column (only populated when QC changes original confidence)
-                            qc_original_confidence_format = get_confidence_format(qc_original_confidence, qc_confidence_formats) if qc_original_confidence else None
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(qc_original_confidence), qc_original_confidence_format)  # QC Original Confidence
-                            col_idx += 1
-
-                            # QC Updated Confidence column (only populated when QC changes updated confidence)
-                            qc_updated_confidence_format = get_confidence_format(qc_updated_confidence, qc_confidence_formats) if qc_updated_confidence else None
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(qc_updated_confidence), qc_updated_confidence_format)  # QC Updated Confidence
-                            col_idx += 1
-
-                            # Final Value should use QC confidence format if QC applied, otherwise validation confidence format
-                            final_format = qc_format if qc_applied else confidence_format
+                            # Final Value should use QC confidence format if QC applied, otherwise updated confidence format
+                            updated_confidence_format = get_confidence_format(updated_confidence, validation_confidence_formats)
+                            final_format = qc_format if qc_applied else updated_confidence_format
                             details_sheet.write(detail_row, col_idx, safe_for_excel(final_value), final_format)  # Final Value
                             col_idx += 1
 
@@ -972,13 +960,17 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                         col_idx += 1
                     
                     # Standard columns (map old field names to new ones)
-                    standard_columns = ['Column', 'Original Value', 'Validated Value', 'Validation Confidence', 
-                                      'Original Confidence', 'Reasoning', 'Sources', 'Citations', 'Explanation', 
+                    standard_columns = ['Column', 'Original Value', 'Updated Value', 'QC Value',
+                                      'QC Original Confidence', 'QC Updated Confidence', 'QC Confidence',
+                                      'QC Applied', 'QC Reasoning', 'QC Sources', 'QC Citations',
+                                      'Final Value', 'Reasoning', 'Sources', 'Citations', 'Explanation',
                                       'Consistent with Model', 'Model', 'Timestamp', 'New']
-                    
-                    # Handle field name mapping
+
+                    # Handle field name mapping for backward compatibility
                     field_mapping = {
-                        'Confidence': 'Validation Confidence',
+                        'Validated Value': 'Updated Value',
+                        'Validation Confidence': 'QC Updated Confidence',
+                        'Confidence': 'QC Updated Confidence',
                         'Quote': 'Reasoning'
                     }
                     
@@ -992,13 +984,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 value = existing_detail.get(old_name[0], '')
                         
                         # Apply confidence formatting if applicable
-                        if 'Confidence' in col_name and col_name != 'Original Confidence':
-                            # Validation confidence
-                            confidence_format = get_confidence_format(value, validation_confidence_formats)
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(value) if value is not None else ''), confidence_format)
-                        elif col_name == 'Original Confidence':
-                            # Original confidence
-                            confidence_format = get_confidence_format(value, original_confidence_formats)
+                        if col_name in ['QC Original Confidence', 'QC Updated Confidence', 'QC Confidence']:
+                            # QC confidence formatting
+                            confidence_format = get_confidence_format(value, qc_confidence_formats)
                             details_sheet.write(detail_row, col_idx, safe_for_excel(str(value) if value is not None else ''), confidence_format)
                         else:
                             details_sheet.write(detail_row, col_idx, safe_for_excel(str(value) if value is not None else ''))
