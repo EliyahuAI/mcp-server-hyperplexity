@@ -306,28 +306,11 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
                 conversation_history, config_filename
             )
         
-        # Save config to S3 after adding conversation entry (so saved config includes full history)
+        # Note: S3 saving is handled by the interface lambda after receiving the config
+        # Config lambda focuses on generation, interface lambda handles storage
         config_s3_key = None
         config_download_url = None
-        try:
-            if updated_config:
-                save_result = save_config_to_s3(updated_config, session_id, table_analysis, existing_config)
-                if save_result:
-                    config_s3_key = save_result['s3_key']
-                    saved_filename = save_result['filename']
-                    config_download_url = create_config_download_url(config_s3_key)
-                    logger.info(f"Config saved to S3 with key: {config_s3_key}")
-                    logger.info(f"Config filename: {saved_filename}")
-                    logger.info(f"Download URL created: {config_download_url}")
-                    
-                    # Use the actual saved filename (should match what we calculated)
-                    config_filename = saved_filename
-                else:
-                    logger.error("Failed to get S3 save result")
-        except Exception as s3_error:
-            logger.error(f"Failed to save config to S3: {str(s3_error)}")
-            config_s3_key = None
-            config_download_url = None
+        logger.info("Config generation complete - S3 storage handled by interface lambda")
         
         # Extract version for easy access
         config_version = updated_config.get('generation_metadata', {}).get('version', 1) if updated_config else 1
