@@ -29,17 +29,18 @@ class S3TableParser:
         self.s3_client = boto3.client('s3')
         self.logger = logging.getLogger(__name__)
     
-    def parse_s3_table(self, bucket: str, key: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
+    def parse_s3_table(self, bucket: str, key: str, sheet_name: Optional[str] = None, extract_formulas: bool = False) -> Dict[str, Any]:
         """
         Parse Excel/CSV from S3 into standard JSON format
-        
+
         Args:
             bucket: S3 bucket name
             key: S3 object key
             sheet_name: Excel sheet name (optional, uses first sheet if not specified)
-            
+            extract_formulas: Whether to extract Excel formulas with descriptions (default: False)
+
         Returns:
-            Structured table data with metadata
+            Structured table data with metadata, optionally including formulas
         """
         try:
             # Download file from S3
@@ -54,7 +55,7 @@ class S3TableParser:
             elif filename.endswith(('.xlsx', '.xls')):
                 if not OPENPYXL_AVAILABLE:
                     raise ImportError("openpyxl is required for Excel file support")
-                return self._parse_excel_content(file_content, filename, sheet_name)
+                return self._parse_excel_content(file_content, filename, sheet_name, extract_formulas)
             else:
                 raise ValueError(f"Unsupported file format: {filename}")
                 
@@ -144,7 +145,7 @@ class S3TableParser:
             self.logger.error(f"Failed to parse CSV content: {str(e)}")
             raise
     
-    def _parse_excel_content(self, file_content: bytes, filename: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
+    def _parse_excel_content(self, file_content: bytes, filename: str, sheet_name: Optional[str] = None, extract_formulas: bool = False) -> Dict[str, Any]:
         """Parse Excel content into structured format"""
         try:
             # Create temporary file
@@ -153,9 +154,9 @@ class S3TableParser:
                 temp_file_path = temp_file.name
             
             try:
-                # Load workbook
-                workbook = load_workbook(temp_file_path, read_only=True)
-                
+                # Load workbook (can't use read_only if we need formulas)
+                workbook = load_workbook(temp_file_path, read_only=not extract_formulas, data_only=not extract_formulas)
+
                 # Select worksheet
                 if sheet_name:
                     if sheet_name not in workbook.sheetnames:
@@ -172,9 +173,14 @@ class S3TableParser:
                         worksheet = workbook[workbook.sheetnames[0]]
                         sheet_name = workbook.sheetnames[0]
                         print(f"No 'Results' sheet found, using first sheet: '{sheet_name}'")
-                
+
                 # Read data with robust table detection
-                all_rows = list(worksheet.iter_rows(values_only=True))
+                if extract_formulas:
+                    # Get both cell objects and values for formula extraction
+                    all_rows, all_cell_objects = self._extract_rows_with_formulas(worksheet)
+                else:
+                    all_rows = list(worksheet.iter_rows(values_only=True))
+                    all_cell_objects = None
                 
                 if not all_rows:
                     raise ValueError("Empty Excel worksheet")
@@ -192,17 +198,33 @@ class S3TableParser:
                 
                 # Convert to structured format
                 structured_data = []
-                for row in data_rows:
+                formula_data = [] if extract_formulas else None
+
+                for row_idx, row in enumerate(data_rows):
                     if row and any(cell is not None for cell in row):  # Skip empty rows
                         row_dict = {}
+                        formula_dict = {} if extract_formulas else None
+
                         for i, header in enumerate(clean_headers):
                             cell_value = row[i] if i < len(row) else None
                             row_dict[header] = str(cell_value).strip() if cell_value is not None else ""
+
+                            # Extract formula if requested
+                            if extract_formulas and all_cell_objects:
+                                actual_row_idx = table_start_row + 1 + row_idx
+                                if actual_row_idx < len(all_cell_objects) and i < len(all_cell_objects[actual_row_idx]):
+                                    cell_obj = all_cell_objects[actual_row_idx][i]
+                                    formula_info = self._extract_formula_info(cell_obj, clean_headers, worksheet)
+                                    if formula_info:
+                                        formula_dict[header] = formula_info
+
                         structured_data.append(row_dict)
+                        if extract_formulas and formula_dict:
+                            formula_data.append(formula_dict)
                 
                 workbook.close()
                 
-                return {
+                result = {
                     'filename': filename,
                     'total_rows': len(structured_data),
                     'total_columns': len(clean_headers),
@@ -215,6 +237,14 @@ class S3TableParser:
                         'sample_rows': min(5, len(structured_data))
                     }
                 }
+
+                # Add formula data if extracted
+                if extract_formulas and formula_data:
+                    result['formulas'] = formula_data
+                    result['metadata']['has_formulas'] = True
+                    result['metadata']['formula_count'] = sum(len(row_formulas) for row_formulas in formula_data)
+
+                return result
                 
             finally:
                 # Clean up temp file
@@ -653,6 +683,190 @@ class S3TableParser:
         # Allow some variance but not too much
         consistent_count = sum(1 for count in col_counts if abs(count - avg_cols) <= 1)
         return consistent_count >= len(rows) * 0.7  # 70% of rows should be consistent
+
+    def _extract_rows_with_formulas(self, worksheet):
+        """Extract both values and cell objects from worksheet for formula analysis"""
+        all_rows = []
+        all_cell_objects = []
+
+        for row in worksheet.iter_rows():
+            value_row = []
+            cell_row = []
+
+            for cell in row:
+                value_row.append(cell.value)
+                cell_row.append(cell)
+
+            all_rows.append(tuple(value_row))
+            all_cell_objects.append(cell_row)
+
+        return all_rows, all_cell_objects
+
+    def _extract_formula_info(self, cell_obj, column_headers, worksheet):
+        """Extract detailed formula information with column references"""
+        if not cell_obj:
+            return None
+
+        # Check if cell has a formula - openpyxl stores formulas in the 'value' attribute
+        # when data_only=False, and the data_type will be 'f' for formulas
+        formula = None
+
+        # Try different ways to get the formula
+        if hasattr(cell_obj, 'data_type') and cell_obj.data_type == 'f':
+            formula = cell_obj.value
+        elif hasattr(cell_obj, 'value') and str(cell_obj.value).startswith('='):
+            formula = cell_obj.value
+        elif hasattr(cell_obj, 'formula') and cell_obj.formula:
+            formula = cell_obj.formula
+
+        if not formula or not str(formula).startswith('='):
+            return None
+
+        try:
+            formula_str = str(formula)
+
+            # Extract cell references and convert to column names
+            referenced_columns = self._extract_column_references(formula_str, column_headers, worksheet)
+
+            # Determine formula type
+            formula_type = self._classify_formula(formula_str)
+
+            # Get the calculated value - if data_only=False, we need to evaluate or get cached result
+            calculated_value = "Not calculated"
+            if hasattr(cell_obj, 'displayed_value') and cell_obj.displayed_value is not None:
+                calculated_value = str(cell_obj.displayed_value)
+            elif hasattr(cell_obj, '_value') and cell_obj._value is not None:
+                calculated_value = str(cell_obj._value)
+            else:
+                # For formula cells, the value might be stored separately
+                # We'll show the formula instead
+                calculated_value = f"Formula result: {formula_str}"
+
+            return {
+                'formula': formula_str,
+                'formula_type': formula_type,
+                'referenced_columns': referenced_columns,
+                'calculated_value': calculated_value,
+                'description': self._generate_formula_description(formula_str, referenced_columns, formula_type)
+            }
+
+        except Exception as e:
+            self.logger.warning(f"Error extracting formula info: {e}")
+            return {
+                'formula': str(formula),
+                'formula_type': 'unknown',
+                'referenced_columns': [],
+                'calculated_value': str(cell_obj.value),
+                'description': f"Formula: {formula}"
+            }
+
+    def _extract_column_references(self, formula_str, column_headers, worksheet):
+        """Extract column references from formula and map to column names"""
+        import re
+
+        # Find all cell references (like A1, B2, C3:D10, etc.)
+        cell_ref_pattern = r'([A-Z]+)(\d+)'
+        matches = re.findall(cell_ref_pattern, formula_str)
+
+        referenced_columns = []
+        seen_columns = set()
+
+        for col_letter, row_num in matches:
+            # Convert column letter to index
+            col_idx = self._column_letter_to_index(col_letter)
+
+            # Map to column name if within our headers
+            if 0 <= col_idx < len(column_headers):
+                column_name = column_headers[col_idx]
+                if column_name not in seen_columns:
+                    referenced_columns.append({
+                        'column_name': column_name,
+                        'column_index': col_idx,
+                        'excel_column': col_letter,
+                        'example_cell': f"{col_letter}{row_num}"
+                    })
+                    seen_columns.add(column_name)
+            else:
+                # Column is outside our data range
+                referenced_columns.append({
+                    'column_name': f"Column_{col_letter}",
+                    'column_index': col_idx,
+                    'excel_column': col_letter,
+                    'example_cell': f"{col_letter}{row_num}",
+                    'note': "Outside table range"
+                })
+
+        return referenced_columns
+
+    def _column_letter_to_index(self, col_letter):
+        """Convert Excel column letter(s) to 0-based index"""
+        result = 0
+        for char in col_letter:
+            result = result * 26 + (ord(char) - ord('A') + 1)
+        return result - 1
+
+    def _classify_formula(self, formula_str):
+        """Classify the type of Excel formula"""
+        formula_upper = formula_str.upper()
+
+        # Common function patterns
+        if 'SUM(' in formula_upper:
+            return 'sum'
+        elif 'AVERAGE(' in formula_upper or 'AVG(' in formula_upper:
+            return 'average'
+        elif 'COUNT(' in formula_upper:
+            return 'count'
+        elif 'IF(' in formula_upper:
+            return 'conditional'
+        elif 'VLOOKUP(' in formula_upper or 'HLOOKUP(' in formula_upper or 'INDEX(' in formula_upper:
+            return 'lookup'
+        elif 'CONCATENATE(' in formula_upper or '&' in formula_str:
+            return 'text'
+        elif any(func in formula_upper for func in ['MIN(', 'MAX(', 'MEDIAN(']):
+            return 'statistical'
+        elif any(func in formula_upper for func in ['DATE(', 'TODAY(', 'NOW(']):
+            return 'date'
+        elif any(op in formula_str for op in ['+', '-', '*', '/']):
+            return 'arithmetic'
+        else:
+            return 'other'
+
+    def _generate_formula_description(self, formula_str, referenced_columns, formula_type):
+        """Generate a human-readable description of the formula"""
+        if not referenced_columns:
+            return f"Formula calculation: {formula_str}"
+
+        col_names = [ref['column_name'] for ref in referenced_columns]
+        col_names_str = ", ".join(col_names)
+
+        descriptions = {
+            'sum': f"Sum of values from columns: {col_names_str}",
+            'average': f"Average of values from columns: {col_names_str}",
+            'count': f"Count of non-empty values from columns: {col_names_str}",
+            'conditional': f"Conditional calculation using columns: {col_names_str}",
+            'lookup': f"Lookup value using columns: {col_names_str}",
+            'text': f"Text concatenation using columns: {col_names_str}",
+            'statistical': f"Statistical calculation using columns: {col_names_str}",
+            'date': f"Date calculation using columns: {col_names_str}",
+            'arithmetic': f"Arithmetic calculation using columns: {col_names_str}",
+            'other': f"Formula using columns: {col_names_str}"
+        }
+
+        base_description = descriptions.get(formula_type, descriptions['other'])
+
+        # Add specific column details if there are only a few referenced columns
+        if len(referenced_columns) <= 3:
+            details = []
+            for ref in referenced_columns:
+                if 'note' in ref:
+                    details.append(f"{ref['column_name']} ({ref['note']})")
+                else:
+                    details.append(f"{ref['column_name']} (Excel column {ref['excel_column']})")
+
+            if details:
+                base_description += f" - Details: {'; '.join(details)}"
+
+        return base_description
 
 # Global instance for easy imports
 s3_table_parser = S3TableParser()

@@ -41,16 +41,37 @@ Refine the existing configuration by:
 ## General guidance on configurations
 {{INCLUDE:common_config_guidance.md}}
 
+{{TABLE_ANALYSIS}}
+
+{{FORMULA_ANALYSIS}}
+
 ## Conversation Context Analysis
 
-**CRITICAL**: Before making any changes, analyze the conversation history:
+**CRITICAL**: Before making any changes, analyze the conversation history AND performance data:
 1. **Review the config_change_log entries** in chronological order
 2. **Identify the conversation thread** - what has the user been asking for?
 3. **Note the AI summaries** from previous interactions - what was done before?
-4. **Look for unresolved questions** from previous clarifying_questions
-5. **Pay attention to clarification_urgency patterns** - are there recurring concerns?
+4. **Analyze performance data** - which columns are failing QC? Which search groups are expensive/slow?
+5. **Look for unresolved questions** from previous clarifying_questions
+6. **Pay attention to clarification_urgency patterns** - are there recurring concerns?
 
 This conversation context is essential for making informed refinements that build on previous interactions rather than contradicting them.
+
+## Performance-Based Refinement Priority
+
+**HIGH PRIORITY** (Address these first):
+- Columns with >20% overall QC fail rate or >30% value fail rate
+- Search groups with unexpectedly high costs or processing times
+- Models that are underperforming for their assigned task complexity
+
+**MEDIUM PRIORITY**:
+- User-requested improvements to well-performing areas
+- Cost optimization for expensive but accurate search groups
+- Minor format or example improvements
+
+**LOW PRIORITY**:
+- Cosmetic changes to well-performing configurations
+- Model changes that don't address specific performance issues
 ## Refinement Principles
 - **Preserve what works**: Don't change existing settings if they look like they are getting good high confidence results (there is preview information here somewhere)
 - **Focus on user needs**: Address specific instructions given

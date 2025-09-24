@@ -383,17 +383,44 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 'status': '🧠 Detecting data domain and patterns...'
             })
         
-        # Use consolidated table parser
+        # Use consolidated table parser with formula extraction
         try:
             from shared_table_parser import s3_table_parser
-            
-            # Analyze table structure directly from S3
+
+            # First, analyze basic table structure
             table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key)
-            
+
             if not table_analysis:
                 return {'success': False, 'error': 'Failed to analyze table structure'}
-            
+
             logger.info(f"Table analysis completed: {table_analysis.get('basic_info', {}).get('filename', 'Unknown')}")
+
+            # For Excel files, also extract formulas to enhance config generation
+            formula_data = None
+            if table_analysis.get('metadata', {}).get('file_type') == 'excel':
+                try:
+                    logger.info("Extracting formulas from Excel file for enhanced config generation...")
+                    full_table_data = s3_table_parser.parse_s3_table(
+                        storage_manager.bucket_name,
+                        excel_s3_key,
+                        extract_formulas=True
+                    )
+
+                    if full_table_data.get('formulas'):
+                        formula_data = full_table_data['formulas']
+                        formula_count = full_table_data['metadata'].get('formula_count', 0)
+                        logger.info(f"[SUCCESS] Extracted {formula_count} formulas from Excel file")
+
+                        # Add formula information to table analysis
+                        table_analysis['formula_data'] = formula_data
+                        table_analysis['metadata']['has_formulas'] = True
+                        table_analysis['metadata']['formula_count'] = formula_count
+                    else:
+                        logger.info("No formulas found in Excel file")
+
+                except Exception as formula_error:
+                    logger.warning(f"Formula extraction failed (non-critical): {formula_error}")
+                    # Continue without formulas - this shouldn't break config generation
             
         except Exception as e:
             logger.error(f"Table analysis failed: {str(e)}")
@@ -432,8 +459,20 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
             # Ensure conversation history is preserved by including current conversation log
             conversation_history = []
             if existing_config and existing_config.get('config_change_log'):
-                conversation_history = existing_config['config_change_log']
+                conversation_history = existing_config['config_change_log'].copy()
                 logger.info(f"Preserving {len(conversation_history)} existing conversation entries")
+
+                # For refinements with user instructions, add the user message to conversation history
+                if instructions and instructions.strip():
+                    user_entry = {
+                        'timestamp': datetime.now().isoformat(),
+                        'action': 'user_message',
+                        'session_id': session_id,
+                        'user_instructions': instructions,
+                        'entry_type': 'user_input'
+                    }
+                    conversation_history.append(user_entry)
+                    logger.info(f"Added user message to conversation history for refinement")
                 
                 # Debug: log current version info being passed
                 generation_metadata = existing_config.get('generation_metadata', {})
@@ -476,7 +515,7 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 'session_id': session_id,
                 'email': email,  # Include email for context
                 'preserve_conversation_history': True,  # Signal to config lambda to preserve history
-                'conversation_history': conversation_history,  # Pass existing conversation for preservation
+                'conversation_history': conversation_history,  # Pass updated conversation including user message
                 'latest_validation_results': latest_validation_results  # Add validation results context
             }
             

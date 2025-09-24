@@ -5,12 +5,13 @@ This document contains shared guidelines used by both new config creation and re
 ## Model Selection Guidelines
 - **Default Model**: `sonar` is the default for most use cases - particularly for new configurations
 - **Alternative Models**: Available models include:
-  - Perplexity models: `sonar` (recommended for simple fact checking- default for new configurations), `sonar-pro` (recommended deeper synthesis of sources)
+  - Perplexity models: `sonar` (recommended for simple fact checking- default for new configurations), `sonar-pro` (recommended deeper synthesis of sources, a great inexpensive upgrade for more reasoning)
   - Anthropic models: `claude-opus-4-1` (latest Claude 4 opus for advanced reasoning - expensive!, bring out the big guns only when really deep thought and synthesis is needed - with ), `claude-sonnet-4-0` (latest Claude 4 - this is the first line of defense for advanced reasoning solutions that require search, and very helpful when pure reasoning is needed in response when anthropic_max_web_searches is set to 0, `claude-3.5-haiku-latest` (great for fast reasoning solutions that dont need much thought)
 - **Best Practices**:
   - Use Perplexity models (`sonar` or`sonar-pro`) for standard web search and validation tasks
   - Only use Anthropic models only when deeper reasoning (sonnet-4 in most cases, opus when deep reasoning is called for)
   - Consider the validation complexity before choosing Anthropic models
+  - Rely on the anthropic QC layer (with or without web-search) to process the full information for the row. Sonar/Sonar Pro validation with Sonnet QC without web search is a great first approach.
 
 ## Search Context Size Guidelines for Perplexity
 - **Values**: `"low"`,  `"medium"`,`"high"` (default), (Perplexity only)
@@ -32,12 +33,12 @@ This document contains shared guidelines used by both new config creation and re
 
 
 ## Importance Level Guidelines
-- **ID**: These define the rows - at least one column must be assigned 'ID', usually it is one or more columns to the left of the table. 
+- **ID**: These define the rows - at least one column must be assigned 'ID', usually it is one or more columns to the left of the table.  Getting these right is critical as these define the row information and the stability of the analysis.  An Index is not enough.
 - **CRITICAL**: ANy column requiring research that we can help with
-- **IGNORED**: Indices, metadata, internal fields, timestamps
+- **IGNORED**: Indices, metadata, internal fields, timestamps, derivative fields that really need calculation not AI approximation. 
 
 ## Search Group Strategy
-Create search groups based on where information typically appears together. Are these elements usually found together? For example, a conference start date, end date, and location are almost always found together, and should be part of the same group. 
+Create search groups based on where information typically appears together. Are these elements usually found together? For example, a conference start date, end date, and location are almost always found together, and should be part of the same group. Critically, these groups are processed sequentially, from low to high with information aggregated along the way - make sure that more sophisticated and fragile information is presented after information that it might need first!
 
 ## Intelligent Analysis Process
 
@@ -48,7 +49,7 @@ When analyzing any table, follow this process:
 3. **Identify likely ID columns** usually the first column(s), these are used to identify the row and are not used for research.
 5. **Group related columns** that would appear in same sources
 6. **Extract real examples** from the actual data if provided and consistent with the guidance, otherwise specify a new consistent set.  Examples must match the requirements, update the examples to be in scope. Strongly prefer consistent formatting across the examples.  
-7. **Assign importance levels** based on column criticality, ignore columns that are not informational or on the internet, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose. 
+7. **Assign importance levels** based on column criticality, ignore columns that are not informational or on the internet or are derived calculations that are not easily estimated, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose. 
 
 ## Analysis Presentation Format
 
@@ -79,7 +80,7 @@ Show your assumptions clearly in this format:
 - 0.7-0.8 = HIGH (significant assumptions made)
 - 0.9-1.0 = CRITICAL (core columns will likely be wrong)
 
-**REFINEMENT RULE**: Always use LOWER urgency than the original configurations (typically 0.1-0.3)
+**REFINEMENT RULE**: Always use LOWER urgency than the original configurations
 
 ## Targeted Questions Guidelines
 

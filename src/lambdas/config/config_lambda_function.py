@@ -128,9 +128,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if session_id:
             send_websocket_progress(session_id, "Requesting AI configuration...", 50)
         
+        # Get conversation history from payload if provided
+        conversation_history = event.get('conversation_history', [])
+
         # Process the config generation request (single unified mode)
         result = asyncio.run(generate_config_unified(
-            table_analysis, existing_config, instructions, session_id, latest_validation_results
+            table_analysis, existing_config, instructions, session_id, latest_validation_results, conversation_history
         ))
         
         # Send completion progress update
@@ -154,34 +157,38 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             })
         }
 
-async def generate_config_unified(table_analysis: Dict, existing_config: Dict = None, 
-                                 instructions: str = '', session_id: str = 'unknown', 
-                                 latest_validation_results: Dict = None) -> Dict:
+async def generate_config_unified(table_analysis: Dict, existing_config: Dict = None,
+                                 instructions: str = '', session_id: str = 'unknown',
+                                 latest_validation_results: Dict = None, conversation_history: list = None) -> Dict:
     """Unified config generation - always returns both updated config and clarifying questions."""
     logger.info(f"Config generation started for session {session_id}")
     send_websocket_progress(session_id, "Generating new configuration... (~70s)", 55)
     
-    # Debug logging for existing config
+    # Debug logging for existing config and conversation history
     if existing_config:
-        change_log = existing_config.get('config_change_log', [])
         generation_metadata = existing_config.get('generation_metadata', {})
         current_version = generation_metadata.get('version', 1)
-        logger.info(f"Existing config found - Version: {current_version}, Change log entries: {len(change_log)}")
-        
-        if change_log:
-            logger.info(f"Recent change log entries:")
-            for i, entry in enumerate(change_log[-3:], 1):
-                logger.info(f"  Entry {len(change_log)-3+i}: v{entry.get('version', 'unknown')} - {entry.get('instructions', 'No instructions')[:50]}...")
+        logger.info(f"Existing config found - Version: {current_version}")
     else:
         logger.info("No existing config provided - creating new configuration")
+
+    # Use conversation history from interface lambda (includes user message if refinement)
+    if conversation_history:
+        logger.info(f"Conversation history provided - {len(conversation_history)} entries")
+        for i, entry in enumerate(conversation_history[-3:], 1):
+            entry_type = entry.get('entry_type', entry.get('action', 'unknown'))
+            if entry_type == 'user_input':
+                logger.info(f"  Entry {len(conversation_history)-3+i}: USER - {entry.get('user_instructions', 'No instructions')[:50]}...")
+            else:
+                logger.info(f"  Entry {len(conversation_history)-3+i}: {entry_type} - {entry.get('instructions', 'No instructions')[:50]}...")
+    else:
+        logger.info("No conversation history provided")
     
     try:
-        # For refinements, embed user message in conversation log first
-        if existing_config and instructions:
-            existing_config = embed_user_message_in_log(existing_config, instructions, session_id)
+        # Note: User message logging is handled by the interface lambda before calling us
         
         # Build the unified generation prompt
-        prompt = build_unified_generation_prompt(table_analysis, existing_config, instructions, latest_validation_results)
+        prompt = build_unified_generation_prompt(table_analysis, existing_config, instructions, latest_validation_results, conversation_history)
         
         # Call Claude using shared client with unified schema
         schema = get_unified_generation_schema()
@@ -294,9 +301,9 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             
             # Add conversation entry with metadata
             updated_config = add_conversation_entry(
-                updated_config, existing_config, instructions, 
+                updated_config, existing_config, instructions,
                 clarifying_questions, clarification_urgency, reasoning, ai_summary, technical_ai_summary, session_id,
-                config_filename=config_filename
+                conversation_history, config_filename
             )
         
         # Save config to S3 after adding conversation entry (so saved config includes full history)
@@ -370,13 +377,16 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             'session_id': session_id
         }
 
-def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict = None, 
-                                  instructions: str = '', latest_validation_results: Dict = None) -> str:
+def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict = None,
+                                  instructions: str = '', latest_validation_results: Dict = None,
+                                  conversation_history: list = None) -> str:
     """Build unified prompt for config generation that always returns both config and questions."""
     
     basic_info = table_analysis.get('basic_info', {})
     column_analysis = table_analysis.get('column_analysis', {})
     domain_info = table_analysis.get('domain_info', {})
+    formula_data = table_analysis.get('formula_data', [])
+    has_formulas = table_analysis.get('metadata', {}).get('has_formulas', False)
     
     # Determine if this is a new config or refinement
     is_new_config = existing_config is None or not existing_config.get('config_change_log', [])
@@ -410,51 +420,58 @@ def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict 
         # Fallback to basic prompt
         prompt_template = "You are an expert in data validation and configuration generation."
     
-    base_prompt = f"""{prompt_template}
+    # Process formula analysis template if formulas are present
+    formula_analysis_content = ""
+    calculated_columns = set()
+    referenced_columns = set()
 
-# TABLE ANALYSIS
+    if has_formulas and formula_data:
+        formula_analysis_content = process_formula_analysis_template(
+            formula_data, table_analysis, current_dir
+        )
 
-**File Information:**
-- File: {basic_info.get('filename', 'Unknown')}
-- Size: {basic_info.get('shape', [0, 0])[0]} rows x {basic_info.get('shape', [0, 0])[1]} columns
-- Domain: {domain_info.get('likely_domain', 'general')} (confidence: {domain_info.get('confidence', 0)})
+        # Still need these sets for column-specific context
+        for row_idx, row_formulas in enumerate(formula_data):
+            for col_name, formula_info in row_formulas.items():
+                calculated_columns.add(col_name)
+                for ref in formula_info['referenced_columns']:
+                    referenced_columns.add(ref['column_name'])
 
-**All Column Names ({len(basic_info.get('column_names', []))} total):**
-{', '.join(basic_info.get('column_names', []))}
+    # Build base prompt with field replacements
+    table_analysis_content = build_table_analysis_section(
+        basic_info, column_analysis, domain_info, calculated_columns, referenced_columns, has_formulas
+    )
 
-**CRITICAL REQUIREMENT:** Your configuration MUST include a validation_target entry for EVERY SINGLE one of these {len(basic_info.get('column_names', []))} columns. No column can be omitted.
+    base_prompt = (prompt_template
+                   .replace('{{TABLE_ANALYSIS}}', table_analysis_content)
+                   .replace('{{FORMULA_ANALYSIS}}', formula_analysis_content))
 
-## Column Details"""
-    
-    for col_name, col_info in column_analysis.items():
-        sample_values = col_info.get('sample_values', [])[:3]
-        base_prompt += f"""
-**{col_name}:**
-- Type: {col_info.get('data_type', 'Unknown')}
-- Fill Rate: {col_info.get('fill_rate', 0):.1%}
-- Sample Values: {sample_values}"""
-    
     if existing_config:
-        # Extract conversation history for context
-        change_log = existing_config.get('config_change_log', [])
+        # Use conversation history from interface lambda
         current_version = existing_config.get('generation_metadata', {}).get('version', 1)
         next_version = current_version + 1
-        
+
         # Always add the existing configuration section header
         base_prompt += f"""
 
 # EXISTING CONFIGURATION
 """
-        
-        if change_log:
+
+        if conversation_history:
             base_prompt += f"""
-This configuration has been iteratively improved through {len(change_log)} previous interactions.
+This configuration has been iteratively improved through {len(conversation_history)} previous interactions.
 
 ## Recent Conversation History
 """
             # Include last 3 interactions for context
-            for entry in change_log[-3:]:
-                base_prompt += f"""
+            for entry in conversation_history[-3:]:
+                entry_type = entry.get('entry_type', entry.get('action', 'unknown'))
+                if entry_type == 'user_input':
+                    base_prompt += f"""
+- **{entry.get('timestamp', 'Unknown')}**: USER MESSAGE: "{entry.get('user_instructions', 'No instructions')}"
+"""
+                else:
+                    base_prompt += f"""
 - **{entry.get('timestamp', 'Unknown')}**: "{entry.get('instructions', 'No instructions')}"
   - Response: {entry.get('clarifying_questions', 'No questions')[:100]}...
 """
@@ -462,7 +479,7 @@ This configuration has been iteratively improved through {len(change_log)} previ
             base_prompt += f"""
 This is the current configuration that needs to be refined.
 """
-        
+
         base_prompt += f"""
 
 ## Current Configuration Summary
@@ -479,297 +496,404 @@ Here is the full current configuration that you need to refine:
 ```
 
 **IMPORTANT**: You MUST work with this existing configuration structure. Make only the specific changes requested by the user while preserving the overall structure and any settings that are working well."""
-        
+
         # Add validation results context if available
         logger.info(f"VALIDATION_CONTEXT_DEBUG: latest_validation_results type: {type(latest_validation_results)}, is_none: {latest_validation_results is None}")
-        if latest_validation_results is not None:
-            logger.info(f"VALIDATION_CONTEXT_DEBUG: latest_validation_results is NOT None, proceeding with processing")
-        else:
-            logger.info(f"VALIDATION_CONTEXT_DEBUG: latest_validation_results is None, skipping validation context section")
-            
-        if latest_validation_results:
-            try:
-                logger.info(f"Processing validation results for context. Keys: {list(latest_validation_results.keys())}")
-                
-                # Extract key validation insights
-                validation_summary = latest_validation_results.get('summary', {})
-                overall_confidence = validation_summary.get('overall_confidence', 'Unknown')
-                error_count = len(latest_validation_results.get('validation_errors', []))
-                warning_count = len(latest_validation_results.get('validation_warnings', []))
-                
+
+        if latest_validation_results and isinstance(latest_validation_results, dict):
+            logger.info(f"VALIDATION_CONTEXT_DEBUG: latest_validation_results keys: {list(latest_validation_results.keys())}")
+
+            validation_summary = latest_validation_results.get('validation_summary', {})
+            model_data = latest_validation_results.get('model_data', {})
+            qc_metrics = latest_validation_results.get('qc_metrics', {})
+
+            logger.info(f"VALIDATION_CONTEXT_DEBUG: Raw model_data type: {type(model_data)}, empty: {not bool(model_data)}")
+            logger.info(f"VALIDATION_CONTEXT_DEBUG: Raw qc_metrics type: {type(qc_metrics)}, empty: {not bool(qc_metrics)}")
+
+            # Convert DynamoDB format to plain values if needed
+            if model_data:
+                logger.info(f"VALIDATION_CONTEXT_DEBUG: Sample model_data keys: {list(model_data.keys())[:3] if isinstance(model_data, dict) else 'Not a dict'}")
+                model_data = convert_dynamodb_to_plain(model_data)
+                logger.info(f"VALIDATION_CONTEXT_DEBUG: Converted model_data keys: {list(model_data.keys())[:3] if isinstance(model_data, dict) else 'Not a dict'}")
+
+            if qc_metrics:
+                logger.info(f"VALIDATION_CONTEXT_DEBUG: Sample qc_metrics keys: {list(qc_metrics.keys())[:3] if isinstance(qc_metrics, dict) else 'Not a dict'}")
+                qc_metrics = convert_dynamodb_to_plain(qc_metrics)
+                logger.info(f"VALIDATION_CONTEXT_DEBUG: Converted qc_metrics keys: {list(qc_metrics.keys())[:3] if isinstance(qc_metrics, dict) else 'Not a dict'}")
+
+            if validation_summary or model_data or qc_metrics:
                 base_prompt += f"""
 
-# LATEST VALIDATION RESULTS
+# VALIDATION RESULTS CONTEXT
 
-This configuration was recently tested with validation. Use these results to inform your refinements:
+The following validation results are available from the most recent run using this configuration:
 
 ## Validation Summary
-- **Overall Confidence**: {overall_confidence}
-- **Validation Errors**: {error_count}
-- **Validation Warnings**: {warning_count}"""
-                
-                # Include specific error/warning patterns if present
-                if error_count > 0:
-                    errors = latest_validation_results.get('validation_errors', [])[:3]  # First 3 errors
+- **Total Columns Validated**: {validation_summary.get('total_columns', 'Unknown')}
+- **Overall Status**: {validation_summary.get('overall_status', 'Unknown')}
+- **Issues Found**: {validation_summary.get('total_issues', 'Unknown')}"""
+
+                # Add model performance data
+                if model_data:
                     base_prompt += f"""
 
-## Recent Error Examples
-{chr(10).join([f"- {err.get('message', 'Unknown error')[:100]}..." for err in errors])}"""
-                
-                if warning_count > 0:
-                    warnings = latest_validation_results.get('validation_warnings', [])[:3]  # First 3 warnings
-                    base_prompt += f"""
+## Search Group Performance Analysis
 
-## Recent Warning Examples
-{chr(10).join([f"- {warn.get('message', 'Unknown warning')[:100]}..." for warn in warnings])}"""
-                
-                # Include first 3 rows of actual validation results for detailed refinement context
-                row_results = latest_validation_results.get('validation_results', {})
-                markdown_table = latest_validation_results.get('markdown_table', '')
-                logger.info(f"Row results available: {bool(row_results)}, markdown_table available: {bool(markdown_table)}")
-                
-                if row_results:
-                    # Use detailed validation_results structure (full validation)
-                    base_prompt += f"""
+**Model Usage and Performance by Search Group:**
+"""
+                    for group_key, group_data in model_data.items():
+                        if isinstance(group_data, dict) and 'search_group_config' in group_data:
+                            group_config = group_data['search_group_config']
+                            group_id = group_config.get('group_id', 'Unknown')
+                            group_name = group_config.get('group_name', 'Unknown')
+                            model_used = group_data.get('mode_model_used', 'Unknown')
+                            column_count = group_data.get('column_count', 0)
+                            avg_cost = group_data.get('average_estimated_cost', 0)
+                            avg_time = group_data.get('average_estimated_time', 0)
+                            search_context = group_data.get('search_context_level', 'Unknown')
+                            max_web_searches = group_data.get('max_web_searches')
+                            columns = group_data.get('column_names', [])
 
-## Detailed Validation Results - First 3 Rows
-
-This shows how the current configuration performed on the first few rows:"""
-                    
-                    for row_idx in ["0", "1", "2"]:
-                        if row_idx in row_results:
-                            row_data = row_results[row_idx]
-                            logger.info(f"Processing row {row_idx}, columns: {len(row_data) if isinstance(row_data, dict) else 'not dict'}")
                             base_prompt += f"""
+**Search Group {group_id}: {group_name}**
+- Model Used: {model_used}
+- Columns ({column_count}): {', '.join(columns)}
+- Avg Cost: ${avg_cost:.4f} per row
+- Avg Time: {avg_time:.1f}s per row
+- Search Context: {search_context}
+- Web Searches: {max_web_searches if max_web_searches is not None else 'N/A (Perplexity)'}"""
 
-### Row {int(row_idx) + 1} Results"""
-                            
-                            # Show validation results for each column in this row
-                            for col_name, col_result in row_data.items():
-                                if isinstance(col_result, dict) and 'confidence' in col_result:
-                                    confidence_raw = col_result.get('confidence', 0)
-                                    # Ensure confidence is a float for formatting
-                                    try:
-                                        confidence = float(confidence_raw) if confidence_raw is not None else 0.0
-                                    except (ValueError, TypeError):
-                                        confidence = 0.0
-                                    
-                                    confidence_level = col_result.get('confidence_level', 'UNKNOWN')
-                                    value = col_result.get('value', 'N/A')
-                                    update_required = col_result.get('update_required', False)
-                                    
-                                    # Truncate long values for readability
-                                    display_value = str(value)[:100] + "..." if len(str(value)) > 100 else str(value)
-                                    
-                                    base_prompt += f"""
-- **{col_name}**: "{display_value}" 
-  - Confidence: {confidence:.2f}
-  - Level: {confidence_level}{"" if not update_required else " [WARNING] NEEDS UPDATE"}"""
-                
-                elif markdown_table:
-                    # Use preview results markdown table (preview validation)
-                    logger.info("Using markdown table from preview results")
+                # Add QC metrics and column-specific fail rates
+                if qc_metrics and isinstance(qc_metrics, dict):
+                    qc_enabled = qc_metrics.get('enabled', False)
+                    qc_cost = qc_metrics.get('cost_per_row_actual', 0)
+                    confidence_lowered = qc_metrics.get('confidence_lowered_count', 0)
+
                     base_prompt += f"""
 
-## Validation Preview Results
+## Quality Control (QC) Performance Analysis
 
-This shows how the current configuration performed on the first few rows:
+**QC Overview:**
+- QC Enabled: {qc_enabled}
+- QC Cost per Row: ${qc_cost:.4f}
+- Confidence Adjustments: {confidence_lowered}
 
-{markdown_table}
+**Column-Specific QC Analysis:**"""
 
-### Key Observations from Preview:
-- 🔵 **ID/Input fields** are working correctly for row identification
-- 🟢 **High confidence fields** are finding information successfully  
-- 🟡 **Medium confidence fields** may need optimization
-- 🔴 **Low confidence fields** require immediate attention - these should be readily available online"""
-                
-                else:
-                    logger.info("No row results or markdown table found in validation results structure")
-                    base_prompt += f"""
+                    qc_by_column = qc_metrics.get('qc_by_column', {})
+                    problem_columns = []
+                    good_columns = []
 
-## Validation Results Note
-Validation results were found but contain no detailed row data or markdown table for analysis."""
-                    
-            except Exception as e:
-                logger.error(f"Could not parse validation results for context: {e}")
-                import traceback
-                logger.error(f"Validation results parsing traceback: {traceback.format_exc()}")
+                    for col_name, col_metrics in qc_by_column.items():
+                        if isinstance(col_metrics, dict):
+                            total_reviewed = col_metrics.get('total_reviewed', 0)
+                            total_modified = col_metrics.get('total_modified', 0)
+                            value_fail_rate = float(col_metrics.get('value_fail_rate', 0))
+                            confidence_fail_rate = float(col_metrics.get('confidence_fail_rate', 0))
+                            overall_fail_rate = float(col_metrics.get('overall_fail_rate', 0))
+
+                            # Identify problem columns (high fail rates)
+                            if overall_fail_rate > 0.2 or value_fail_rate > 0.3:  # 20% overall or 30% value fail rate
+                                problem_columns.append({
+                                    'name': col_name,
+                                    'overall_fail_rate': overall_fail_rate,
+                                    'value_fail_rate': value_fail_rate,
+                                    'confidence_fail_rate': confidence_fail_rate,
+                                    'reviewed': total_reviewed,
+                                    'modified': total_modified
+                                })
+                            elif total_reviewed > 0:
+                                good_columns.append({
+                                    'name': col_name,
+                                    'overall_fail_rate': overall_fail_rate,
+                                    'reviewed': total_reviewed
+                                })
+
+                    # Show problem columns first
+                    if problem_columns:
+                        base_prompt += f"""
+
+**❌ PROBLEM COLUMNS - REQUIRE ATTENTION:**
+These columns have high QC fail rates and should be improved:
+"""
+                        for col in problem_columns:
+                            base_prompt += f"""
+- **{col['name']}**: Overall fail: {col['overall_fail_rate']:.1%}, Value fail: {col['value_fail_rate']:.1%}, Confidence fail: {col['confidence_fail_rate']:.1%} ({col['modified']}/{col['reviewed']} modified)
+  → Consider: Different model, better search context, improved examples, or format clarification"""
+
+                    # Show well-performing columns
+                    if good_columns:
+                        base_prompt += f"""
+
+**✅ WELL-PERFORMING COLUMNS:**"""
+                        for col in good_columns:
+                            base_prompt += f"""
+- **{col['name']}**: {col['overall_fail_rate']:.1%} fail rate ({col['reviewed']} reviewed) - Good performance"""
+
                 base_prompt += f"""
 
-## Validation Results Error
-Latest validation results were available but could not be parsed for context."""
-        else:
-            logger.info("No latest_validation_results provided for refinement context")
-    
-    base_prompt += f"""
+**REFINEMENT GUIDANCE:**
+- Focus improvements on problem columns with high fail rates
+- Consider upgrading models for failing columns (sonar → sonar-pro → claude-sonnet-4)
+- Increase web searches for claude models if accuracy is critical
+- Review examples and format specifications for failing columns
+- Consider moving problem columns to different search groups with related information"""
 
-# USER INSTRUCTIONS
+    # Add user instructions if provided
+    if instructions:
+        base_prompt += f"""
 
-{instructions}
+# USER REFINEMENT REQUEST
 
-# TASK REQUIREMENTS
+**User Instructions**: {instructions}
 
-You must ALWAYS provide both:
-1. **An updated/optimized configuration** (required search groups + validation targets)
-2. **Clarifying questions** to gather more information for further improvements
+**Your Task**: Analyze the user's request and make ONLY the specific changes needed to address their concerns. Preserve everything else that is working well."""
 
-## Configuration Requirements
-- Update the configuration based on the instructions and table analysis
-- **MANDATORY**: Include exactly {len(basic_info.get('column_names', []))} validation_targets (one for each column)
-- Generate 2-4 specific clarifying questions that would help improve the configuration further
-- Set clarification_urgency (0-1 scale): 
-  * **0.0** = Configuration is solid, no clarification needed
-  * **0.1-0.3** = Minor improvements possible with clarification
-  * **0.4-0.6** = Moderate improvements likely with clarification  
-  * **0.7-0.9** = Important columns may have suboptimal settings
-  * **1.0** = Critical columns will likely be wrong without clarification
-- Include your reasoning for the changes made
-
-## Validation Checklist
-Verify your response includes:
-- [SUCCESS] Exactly {len(basic_info.get('column_names', []))} validation_targets
-- [SUCCESS] Each column name appears once: {', '.join(basic_info.get('column_names', []))}
-
-## Final Step
-Use the **generate_config_and_questions** tool to return both the configuration and questions."""
-    
     return base_prompt
 
+def process_formula_analysis_template(formula_data, table_analysis, current_dir):
+    """Process the formula analysis template with field replacements"""
+    try:
+        formula_template_path = os.path.join(current_dir, 'prompts', 'formula_analysis.md')
+        with open(formula_template_path, 'r', encoding='utf-8') as f:
+            formula_template = f.read()
+    except Exception as e:
+        logger.warning(f"Could not load formula template {formula_template_path}: {e}")
+        return ""
+
+    formula_count = table_analysis.get('metadata', {}).get('formula_count', 0)
+
+    # Create a mapping of columns to their formulas for better organization
+    formula_by_column = {}
+    referenced_columns = set()
+    calculated_columns = set()
+
+    for row_idx, row_formulas in enumerate(formula_data):
+        for col_name, formula_info in row_formulas.items():
+            if col_name not in formula_by_column:
+                formula_by_column[col_name] = []
+            formula_by_column[col_name].append({
+                'row': row_idx + 1,
+                'formula': formula_info['formula'],
+                'type': formula_info['formula_type'],
+                'description': formula_info['description'],
+                'referenced_columns': formula_info['referenced_columns']
+            })
+            calculated_columns.add(col_name)
+            for ref in formula_info['referenced_columns']:
+                referenced_columns.add(ref['column_name'])
+
+    # Build formula dependencies detail
+    formula_dependencies_detail = ""
+    for col_name, formulas in formula_by_column.items():
+        formula_dependencies_detail += f"""
+
+**{col_name} (CALCULATED COLUMN):**
+- Contains {len(formulas)} formula(s)
+- Formulas:"""
+        for formula in formulas:
+            formula_dependencies_detail += f"""
+  - Row {formula['row']}: {formula['formula']} ({formula['type']})
+  - Description: {formula['description']}"""
+
+    # Source columns section
+    source_cols = referenced_columns - calculated_columns
+    if source_cols:
+        formula_dependencies_detail += f"""
+
+**SOURCE COLUMNS (Referenced by Formulas):**
+These columns are used in calculations and require strict format validation:"""
+        for col in source_cols:
+            formula_dependencies_detail += f"""
+- **{col}**: Used in formulas - MUST maintain consistent data format to prevent Excel formula errors"""
+
+    # Build column-specific formula context
+    column_formula_context = ""
+    for col_name in calculated_columns | referenced_columns:
+        if col_name in calculated_columns:
+            column_formula_context += f"""
+- **{col_name}**: CALCULATED COLUMN - Contains Excel formulas, use Claude validation (no web search)"""
+        elif col_name in referenced_columns:
+            column_formula_context += f"""
+- **{col_name}**: SOURCE COLUMN - Used in Excel formulas, requires strict format validation"""
+
+    # Replace template fields
+    return (formula_template
+            .replace('{{FORMULA_COUNT}}', str(formula_count))
+            .replace('{{FORMULA_DEPENDENCIES_DETAIL}}', formula_dependencies_detail)
+            .replace('{{CALCULATED_COLUMNS_LIST}}', ', '.join(calculated_columns) if calculated_columns else 'None')
+            .replace('{{SOURCE_COLUMNS_LIST}}', ', '.join(source_cols) if source_cols else 'None')
+            .replace('{{COLUMN_FORMULA_CONTEXT}}', column_formula_context))
+
+
+def convert_dynamodb_to_plain(data):
+    """Convert DynamoDB formatted data (with type descriptors) to plain Python objects"""
+    if not data:
+        return data
+
+    if isinstance(data, dict):
+        # Check if this looks like a DynamoDB item with type descriptors
+        if len(data) == 1 and list(data.keys())[0] in ['S', 'N', 'BOOL', 'M', 'L', 'SS', 'NS', 'BS', 'NULL']:
+            # This is a DynamoDB attribute value
+            key = list(data.keys())[0]
+            value = data[key]
+
+            if key == 'S':
+                return str(value)
+            elif key == 'N':
+                try:
+                    # Try to convert to int first, then float
+                    if '.' in str(value):
+                        return float(value)
+                    else:
+                        return int(value)
+                except ValueError:
+                    return float(value)
+            elif key == 'BOOL':
+                return bool(value)
+            elif key == 'M':
+                # Map type - recursively convert
+                return {k: convert_dynamodb_to_plain(v) for k, v in value.items()}
+            elif key == 'L':
+                # List type - recursively convert
+                return [convert_dynamodb_to_plain(item) for item in value]
+            elif key == 'NULL':
+                return None
+            else:
+                return value
+        else:
+            # Regular dict - recursively convert values
+            return {k: convert_dynamodb_to_plain(v) for k, v in data.items()}
+
+    elif isinstance(data, list):
+        return [convert_dynamodb_to_plain(item) for item in data]
+
+    else:
+        return data
+
+def build_table_analysis_section(basic_info, column_analysis, domain_info, calculated_columns, referenced_columns, has_formulas):
+    """Build the table analysis section"""
+    column_count = len(basic_info.get('column_names', []))
+
+    table_section = f"""
+# TABLE ANALYSIS
+
+**File Information:**
+- File: {basic_info.get('filename', 'Unknown')}
+- Size: {basic_info.get('shape', [0, 0])[0]} rows x {basic_info.get('shape', [0, 0])[1]} columns
+- Domain: {domain_info.get('likely_domain', 'general')} (confidence: {domain_info.get('confidence', 0)})
+
+**All Column Names ({column_count} total):**
+{', '.join(basic_info.get('column_names', []))}
+
+**CRITICAL REQUIREMENT:** Your configuration MUST include a validation_target entry for EVERY SINGLE one of these {column_count} columns. No column can be omitted.
+
+## Column Details"""
+
+    for col_name, col_info in column_analysis.items():
+        sample_values = col_info.get('sample_values', [])[:3]
+        table_section += f"""
+**{col_name}:**
+- Type: {col_info.get('data_type', 'Unknown')}
+- Fill Rate: {col_info.get('fill_rate', 0):.1%}
+- Sample Values: {sample_values}"""
+
+        # Add formula context if this column has formulas or is referenced by formulas
+        if has_formulas:
+            # Check if this column is calculated (has formulas)
+            if col_name in calculated_columns:
+                table_section += f"""
+- **CALCULATED COLUMN**: Contains Excel formulas - use Claude validation (no web search)"""
+
+            # Check if this column is referenced by formulas (is a source column)
+            elif col_name in referenced_columns:
+                table_section += f"""
+- **SOURCE COLUMN**: Used in Excel formulas - requires strict format validation"""
+
+    return table_section
+
 def get_unified_generation_schema() -> Dict:
-    """Get the unified JSON schema that combines column config validation with AI feedback requirements."""
-    # Load the base column config schema
-    column_config_schema = load_column_config_schema()
-    
-    # Load the AI generation feedback schema
-    ai_feedback_schema = load_ai_generation_schema()
-    
-    # Combine them - the updated_config must follow column_config_schema
-    # Create a deep copy to avoid modifying the original
-    updated_config_schema = json.loads(json.dumps(column_config_schema))
-    updated_config_schema["description"] = "The complete updated configuration following the column_config_schema.json structure"
-    
-    combined_schema = {
-        "type": "object",
-        "properties": {
-            "updated_config": updated_config_schema
-        },
-        "required": ["updated_config"]
-    }
-    
-    # Add AI feedback properties
-    for prop_name, prop_schema in ai_feedback_schema.get("properties", {}).items():
-        combined_schema["properties"][prop_name] = prop_schema
-    
-    # Add AI feedback required fields (deduplicate to avoid duplicate entries)
-    ai_required = ai_feedback_schema.get("required", [])
-    for field in ai_required:
-        if field not in combined_schema["required"]:
-            combined_schema["required"].append(field)
-    
-    
-    return combined_schema
-
-def load_column_config_schema() -> Dict:
-    """Load the base column config schema from the shared JSON file."""
+    """Get the unified JSON schema for AI config generation by combining the response wrapper with the config schema."""
     import os
-    current_dir = os.path.dirname(__file__)
-    
-    # Try multiple possible locations for the schema file
-    possible_paths = [
-        # 1. Same directory as this file (deployed Lambda)
-        os.path.join(current_dir, 'column_config_schema.json'),
-        # 2. Lambda task root directory 
-        '/var/task/column_config_schema.json',
-        # 3. Relative to current working directory
-        'column_config_schema.json',
-        # 4. Local testing - src/ location
-        os.path.join(current_dir, '..', 'src', 'column_config_schema.json'),
-        # 5. Shared directory for local testing
-        os.path.join(current_dir, '..', '..', 'src', 'column_config_schema.json')
-    ]
-    
-    schema_file = None
-    for path in possible_paths:
-        if os.path.exists(path):
-            schema_file = path
-            break
-    
-    if not schema_file:
-        # Enhanced error message with debugging info
-        tried_paths = '\n'.join([f"  - {path}" for path in possible_paths])
-        current_files = [f for f in os.listdir(current_dir) if f.endswith('.json')] if os.path.exists(current_dir) else []
-        raise FileNotFoundError(
-            f"Column config schema file not found in any of these locations:\n{tried_paths}\n"
-            f"Current directory: {current_dir}\n"
-            f"Files in current directory: {current_files}\n"
-            f"Current working directory: {os.getcwd()}"
-        )
-    
+
+    # Load the column config schema (source of truth)
+    config_schema_file = os.path.join(os.path.dirname(__file__), 'column_config_schema.json')
+    logger.info(f"Looking for config schema at: {config_schema_file}")
+
+    if not os.path.exists(config_schema_file):
+        raise FileNotFoundError(f"Column config schema file not found: {config_schema_file}")
+
     try:
-        with open(schema_file, 'r', encoding='utf-8') as f:
-            schema = json.load(f)
-        return schema
+        with open(config_schema_file, 'r') as f:
+            config_schema = json.load(f)
+            logger.info(f"Successfully loaded column config schema")
+
+        # Build the AI response wrapper schema
+        ai_response_schema = {
+            "title": "AI Config Generation Response Schema",
+            "description": "Schema for AI responses when generating or refining column configurations",
+            "type": "object",
+            "required": ["updated_config", "clarifying_questions", "clarification_urgency", "technical_ai_summary", "ai_summary"],
+            "properties": {
+                "updated_config": config_schema,  # Use the loaded config schema directly
+                "clarifying_questions": {
+                    "type": "string",
+                    "description": "Specific questions about the table or columns to help improve the configuration further."
+                },
+                "clarification_urgency": {
+                    "type": "number",
+                    "description": "Urgency score from 0-1 with anchored levels:\n0.0-0.1 = MINIMAL (configuration is solid, minor tweaks only)\n0.2-0.3 = LOW (refinements should typically use this range - good foundation, some improvements possible)\n0.4-0.6 = MODERATE (several important clarifications needed)\n0.7-0.8 = HIGH (significant assumptions made, clarification strongly recommended)\n0.9-1.0 = CRITICAL (core columns will likely be wrong without clarification)\n\nREFINEMENT RULE: Refinements must use LOWER urgency than new configurations (typically 0.1-0.3) since they build on existing validated foundations."
+                },
+                "technical_ai_summary": {
+                    "type": "string",
+                    "description": "Technical summary explaining what you did, highlighting assumptions that you needed to make. Include details about search groups, context, criticality, and specific configuration decisions. The focus changes depending on whether the configuration is new or a refinement (you are updating an existing configuration):\n\nFOR NEW CONFIGURATIONS: What is your understanding of the context of this table? What were your assumptions? Does this need refinement? \n\n FOR REFINEMENTS: Focus on changes made and the reasons why they were made. Does this need futher refinement?"
+                },
+                "ai_summary": {
+                    "type": "string",
+                    "description": "Simple lay person description of what is happening without explicitly mentioning search groups, context, or criticality. This should be shorter and clearer than the technical summary. Examples: 'Increased search context to high' becomes 'Instructed Perplexity to look at more sources', 'Created dedicated search group' becomes 'Looking for that value by itself'. Focus on the 'why' in simple terms."
+                }
+            },
+            "additionalProperties": False
+        }
+
+        logger.info(f"Successfully built AI response schema")
+        return ai_response_schema
+
     except Exception as e:
-        logger.error(f"Failed to load column config schema {schema_file}: {e}")
-        raise Exception(f"Could not load column config schema: {str(e)}")
+        logger.error(f"Failed to load column config schema: {e}")
+        raise
 
-def load_ai_generation_schema() -> Dict:
-    """Load the AI generation feedback schema from the JSON file."""
-    import os
-    current_dir = os.path.dirname(__file__)
-    schema_file = os.path.join(current_dir, 'ai_generation_schema.json')
-    
-    if not os.path.exists(schema_file):
-        raise FileNotFoundError(f"AI generation schema file not found: {schema_file}")
-    
-    try:
-        with open(schema_file, 'r', encoding='utf-8') as f:
-            schema = json.load(f)
-        return schema
-    except Exception as e:
-        logger.error(f"Failed to load AI generation schema {schema_file}: {e}")
-        raise Exception(f"Could not load AI generation schema: {str(e)}")
-
-def embed_user_message_in_log(existing_config: Dict, instructions: str, session_id: str) -> Dict:
-    """Embed user message in conversation log before processing for refinements."""
-    
-    # Initialize conversation log if it doesn't exist
-    if 'config_change_log' not in existing_config:
-        existing_config['config_change_log'] = []
-    
-    # Add user message entry
-    user_message_entry = {
-        'timestamp': datetime.now().isoformat(),
-        'action': 'user_message',
-        'session_id': session_id,
-        'user_instructions': instructions,
-        'entry_type': 'user_input'
-    }
-    
-    existing_config['config_change_log'].append(user_message_entry)
-    return existing_config
-
-def add_conversation_entry(updated_config: Dict, existing_config: Dict = None, 
+def add_conversation_entry(updated_config: Dict, existing_config: Dict = None,
                           instructions: str = '', clarifying_questions: str = '',
-                          clarification_urgency: float = 0.0, reasoning: str = '', 
-                          ai_summary: str = '', technical_ai_summary: str = '', session_id: str = 'unknown',
-                          config_filename: str = None) -> Dict:
+                          clarification_urgency: float = 0.0, reasoning: str = '',
+                          ai_summary: str = '', technical_ai_summary: str = '',
+                          session_id: str = 'unknown', conversation_history: list = None,
+                          config_filename: str = '') -> Dict:
     """Add conversation entry to config change log and update metadata."""
-    
-    # Preserve existing change log from existing_config
-    if existing_config and 'config_change_log' in existing_config:
-        # Copy existing conversation history to updated config
-        updated_config['config_change_log'] = existing_config['config_change_log'].copy()
-        logger.info(f"Preserved {len(updated_config['config_change_log'])} existing conversation entries")
-    elif 'config_change_log' not in updated_config:
-        # Initialize if not present
-        updated_config['config_change_log'] = []
-    
+    from datetime import datetime
+
+    # Initialize or preserve existing change log with multiple fallbacks
+    if 'config_change_log' not in updated_config:
+        # Priority 1: Use conversation_history passed from interface lambda
+        if conversation_history and len(conversation_history) > 0:
+            updated_config['config_change_log'] = conversation_history.copy()
+            logger.info(f"✅ Preserved {len(updated_config['config_change_log'])} conversation entries from interface lambda")
+        # Priority 2: Use existing_config if available
+        elif existing_config and 'config_change_log' in existing_config:
+            updated_config['config_change_log'] = existing_config['config_change_log'].copy()
+            logger.info(f"✅ Preserved {len(updated_config['config_change_log'])} conversation entries from existing_config")
+        # Priority 3: Initialize empty log
+        else:
+            updated_config['config_change_log'] = []
+            logger.info("🆕 Initialized new conversation log")
+    else:
+        logger.info(f"ℹ️ Using existing config_change_log with {len(updated_config.get('config_change_log', []))} entries")
+
     # Get version number
     current_version = 1
     if existing_config and 'generation_metadata' in existing_config:
         current_version = existing_config['generation_metadata'].get('version', 1) + 1
-    
+
     # Add conversation entry
     conversation_entry = {
         'timestamp': datetime.now().isoformat(),
@@ -782,100 +906,18 @@ def add_conversation_entry(updated_config: Dict, existing_config: Dict = None,
         'ai_summary': ai_summary,
         'technical_ai_summary': technical_ai_summary,
         'version': current_version,
-        'model_used': 'claude-opus-4-1'
+        'model_used': 'claude-opus-4-1',
+        'config_filename': config_filename
     }
-    
-    # Add config filename if provided
-    if config_filename:
-        conversation_entry['config_filename'] = config_filename
-    
+
     updated_config['config_change_log'].append(conversation_entry)
-    
+
     # Update generation metadata
-    if 'generation_metadata' not in updated_config:
-        updated_config['generation_metadata'] = {}
-    
-    updated_config['generation_metadata'].update({
+    updated_config['generation_metadata'] = {
         'version': current_version,
         'last_updated': datetime.now().isoformat(),
         'total_interactions': len(updated_config['config_change_log']),
-        'model_used': 'claude-opus-4-1'
-    })
-    
-    # Add saved filename to metadata if provided
-    if config_filename:
-        updated_config['generation_metadata']['saved_filename'] = config_filename
-    
+        'model_used': conversation_entry['model_used']
+    }
+
     return updated_config
-
-def save_config_to_s3(generated_config: Dict, session_id: str, table_analysis: Dict = None, existing_config: Dict = None) -> Dict:
-    """Save generated configuration to S3 with proper naming based on input file.
-    
-    Returns:
-        Dict containing 's3_key' and 'filename' on success
-    """
-    try:
-        import boto3
-        import re
-        
-        # Upload config to S3
-        s3_client = boto3.client('s3')
-        bucket_name = os.environ.get('S3_CONFIG_BUCKET', 'perplexity-config-downloads')
-        
-        # Get the current version number
-        current_version = 1
-        if existing_config and 'generation_metadata' in existing_config:
-            current_version = existing_config['generation_metadata'].get('version', 1) + 1
-        
-        # Extract base filename from table analysis
-        base_filename = "unknown_table"
-        if table_analysis and 'basic_info' in table_analysis:
-            original_filename = table_analysis['basic_info'].get('filename', 'unknown_table')
-            # Remove file extension
-            base_filename = re.sub(r'\.(xlsx?|csv)$', '', original_filename, flags=re.IGNORECASE)
-            # Remove any existing _config or _config_VXX suffixes
-            base_filename = re.sub(r'_config(_V\d+)?$', '', base_filename, flags=re.IGNORECASE)
-        
-        # Create config filename with version
-        config_filename = f"{base_filename}_config_V{current_version:02d}.json"
-        key = f"generated_configs/{config_filename}"
-        
-        # Upload config as JSON
-        config_json = json.dumps(generated_config, indent=2)
-        
-        s3_client.put_object(
-            Bucket=bucket_name,
-            Key=key,
-            Body=config_json,
-            ContentType='application/json',
-            Metadata={'session_id': session_id}
-        )
-        
-        logger.info(f"Config uploaded to S3: {key}")
-        return {
-            's3_key': key,
-            'filename': config_filename
-        }
-        
-    except Exception as e:
-        logger.error(f"Failed to save config to S3: {str(e)}")
-        raise
-
-def create_config_download_url(s3_key: str) -> str:
-    """Create S3 download URL for the generated configuration."""
-    try:
-        import boto3
-        
-        s3_client = boto3.client('s3')
-        bucket_name = os.environ.get('S3_CONFIG_BUCKET', 'perplexity-config-downloads')
-        
-        # Since the bucket has public access, create direct public URL
-        public_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
-        
-        logger.info(f"Created public download URL for S3 key: {s3_key}")
-        return public_url
-        
-    except Exception as e:
-        logger.error(f"Failed to create config download URL: {str(e)}")
-        return ""
-
