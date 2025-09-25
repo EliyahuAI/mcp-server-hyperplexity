@@ -1908,7 +1908,49 @@ def check_or_send_validation(email: str) -> Dict[str, Any]:
             'validated': False,
             'error': 'internal_error',
             'message': f'Internal error: {str(e)}'
-        } 
+        }
+
+
+def is_new_user(email: str) -> bool:
+    """
+    Check if a user is new (has no completed validation runs).
+
+    Args:
+        email: User's email address
+
+    Returns:
+        True if user has no completed validation runs, False otherwise
+    """
+    try:
+        # Normalize email to lowercase
+        email = email.lower().strip()
+
+        # Query the validation runs table for any completed runs by this user
+        table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
+
+        # Use GSI to query by email (if available) or scan for the email
+        # Since the runs table uses session_id as partition key, we need to scan
+        response = table.scan(
+            FilterExpression='contains(#email, :email) AND #status = :completed_status',
+            ExpressionAttributeNames={
+                '#email': 'email',
+                '#status': 'status'
+            },
+            ExpressionAttributeValues={
+                ':email': email,
+                ':completed_status': 'completed'
+            },
+            Limit=1  # We only need to know if any exist
+        )
+
+        # If we found any completed runs, user is not new
+        has_completed_runs = len(response.get('Items', [])) > 0
+        return not has_completed_runs
+
+    except Exception as e:
+        logger.error(f"Error checking if user {email} is new: {e}")
+        # Default to False (not new) on error to avoid showing demos inappropriately
+        return False
 
 
 # --- Account Balance and Transaction Management ---

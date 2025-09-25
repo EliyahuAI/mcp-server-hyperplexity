@@ -34,19 +34,16 @@ The batch handling for claude 4,0 opus still crashed a call even with the advanc
 ----
 The config generations are not printing the config ids. 
 ----
-during processing, we should turn off the phony updates. 
-----
+
 
 Update text about adding to be in the cart, notify about pushing the shopping cart to checkout. 
-
+review using code to add to card
 
 --- 
-The use of dummy collumns to get a better answer - these are background questions that will help guide an answer that are added and removed that aid in the search. 
+The use of dummy columns to get a better answer - these are background questions that will help guide an answer that are added and removed that aid in the search. 
 
 
 
-----
-Should add an iterate option after a full run. 
 
 ---
 
@@ -56,8 +53,7 @@ Preview of table when asking questions at the beginning of generate config with 
 --- 
 For validation history, we should pass the reasoning for the last value as well, and the sources. 
 
---- 
-Sources seem sparse, make sure getting all of the citation
+
 
 ----
 new vs historical is not working 
@@ -66,9 +62,7 @@ new vs historical is not working
 -----
 had a 94% match and a failed preview over websocket that was not handled. 
 
-----
 
-failed preview just gets stuck, need to gracefully handle. 
 
 
 ----
@@ -81,15 +75,10 @@ No 'Results' sheet found, using first sheet: 'Congresses Master List'
 
 add table wide memory if it comes across it should store by key, we should pass this info up to the validator. 
 
---- 
-
-You should be able to revert configuration
 
 ---
 After full validation, you should be able to specify specific rows for preview.  Perhaps ask this first then run a preview with refine triggered?
 
-----
-No getting sources off of claude. 
 
 ----
 Need better notice about enabling editing to see comments. 
@@ -105,44 +94,21 @@ calculate profitability to prevent abuse of the previews. Also, expensive previe
 What to do with tables that are3 rows or less?
 
 
-----
-
-sonar, high -> context -> citations to better model when not certain is a move. Prevents high cost from antropic web search, starts with lowest cost. A bit slow 
-
-This is baked in to the QA review
 
 ----
 
 Progress updates should have time estimates and interval updates (this will take 70s, use this array 5s - this, 10s that
 
------
 
 
-Add original and updated confidence distributions to the runs databased.  Added clarity to the prompt, need to check the processing to reinforce
 
----
-Need to have the QC oversight working again. 
-
-----
-mess on the anthropic max tokens, didn't handle it right. 
-
---- 
-download results takes a minute before the files is ready for download, you get an error if it is not ready. 
-
-+
-Remaining Balance shows as 0.00 before updating causing concern. 
- Need to add delay
 ---
  Should read in any excel formulas and work with them. 
+Needs testinng
 
 ----
- we need to turn off the try our prompt generator (certyainly must open in a new page) , and potentially the header. 
 
---- 
 
-QA row by row
-
-----
 
 Overall QA
 + Track quality. 

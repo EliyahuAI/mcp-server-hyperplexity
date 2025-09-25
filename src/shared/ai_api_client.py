@@ -30,13 +30,19 @@ class AIAPIClient:
     # Model hierarchy from best to most basic
     MODEL_HIERARCHY = [
         "claude-opus-4-1",
-        "claude-opus-4-0", 
+        "claude-opus-4-0",
         "claude-sonnet-4-0",
         "sonar-pro",
         "claude-3-7-sonnet-latest",
         "sonar",
         "claude-3-5-haiku-latest"
     ]
+
+    # Provider-specific maximum token limits
+    PROVIDER_MAX_TOKENS = {
+        'anthropic': 64000,  # Max for Claude models like claude-sonnet-4-20250514
+        'perplexity': 32000  # Max for Perplexity models
+    }
     
     def __init__(self, s3_bucket: str = None):
         # Check if using unified bucket structure
@@ -120,11 +126,35 @@ class AIAPIClient:
     
     def _determine_api_provider(self, model: str) -> str:
         """Determine API provider based on model name."""
-        if (model.startswith('anthropic/') or 
-            model.startswith('anthropic.') or 
+        if (model.startswith('anthropic/') or
+            model.startswith('anthropic.') or
             model.startswith('claude-')):
             return 'anthropic'
         return 'perplexity'
+
+    def _enforce_provider_token_limit(self, model: str, requested_tokens: int) -> int:
+        """
+        Enforce provider-specific maximum token limits to prevent API errors.
+
+        Args:
+            model: The model name to determine provider
+            requested_tokens: The originally requested max_tokens value
+
+        Returns:
+            int: The enforced token limit that won't exceed provider maximums
+        """
+        if not requested_tokens or requested_tokens <= 0:
+            return requested_tokens
+
+        api_provider = self._determine_api_provider(model)
+        provider_limit = self.PROVIDER_MAX_TOKENS.get(api_provider)
+
+        if provider_limit and requested_tokens > provider_limit:
+            logger.warning(f"[TOKEN_LIMIT_ENFORCED] Model {model} ({api_provider}) requested {requested_tokens} tokens, "
+                         f"but provider limit is {provider_limit}. Capping at {provider_limit} tokens.")
+            return provider_limit
+
+        return requested_tokens
     
     def _normalize_anthropic_model(self, model: str) -> str:
         """Convert anthropic/ format to direct API format if needed."""
@@ -1662,9 +1692,12 @@ class AIAPIClient:
                         "input_schema": schema
                     })
                     
+                    # Enforce provider token limits to prevent API errors
+                    enforced_max_tokens = self._enforce_provider_token_limit(current_model, max_tokens or 8000)
+
                     data = {
                         "model": current_model_normalized,
-                        "max_tokens": max_tokens or 8000,
+                        "max_tokens": enforced_max_tokens,
                         "temperature": 0.1,
                         "messages": [{"role": "user", "content": prompt}],
                         "tools": tools,
@@ -1678,7 +1711,7 @@ class AIAPIClient:
                 elif api_provider == 'perplexity':
                     # Perplexity API call for structured output
                     result = await self._make_single_perplexity_structured_call(prompt, schema, current_model,
-                                                                               use_cache, cache_key, call_start_time, search_context_size, debug_name)
+                                                                               use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 8000)
                 else:
                     logger.warning(f"[SKIP] Unknown provider for model {current_model}")
                     continue
@@ -2425,8 +2458,8 @@ class AIAPIClient:
             raise
     
     async def _make_single_perplexity_structured_call(self, prompt: str, schema: Dict, model: str,
-                                                     use_cache: bool, cache_key: str, start_time: datetime, 
-                                                     search_context_size: str = "low", debug_name: str = None) -> Dict:
+                                                     use_cache: bool, cache_key: str, start_time: datetime,
+                                                     search_context_size: str = "low", debug_name: str = None, max_tokens: int = 8000) -> Dict:
         """Make a single Perplexity API call for structured output."""
         # Perplexity supports structured output via response_format
         headers = {
@@ -2446,6 +2479,9 @@ class AIAPIClient:
             actual_schema = schema['properties']['validation_results']
             logger.info(f"Extracted validation_results schema from tool format for Perplexity API")
         
+        # Enforce provider token limits to prevent API errors
+        enforced_max_tokens = self._enforce_provider_token_limit(model, max_tokens)
+
         data = {
             "model": model,
             "messages": [
@@ -2453,7 +2489,7 @@ class AIAPIClient:
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.1,
-            "max_tokens": 8000,
+            "max_tokens": enforced_max_tokens,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {

@@ -66,14 +66,64 @@ def handle_use_config_by_id(event_data, context=None):
         
         storage_manager = UnifiedS3Manager()
         
-        # Look up the config by ID
-        config_data, config_key = storage_manager.get_config_by_id(config_id, email)
-        
-        if not config_data:
-            return create_response(404, {
-                'success': False,
-                'error': f'Configuration not found for ID: {config_id}'
-            })
+        # Handle special identifier 'last' to get previous configuration
+        if config_id.lower() == 'last':
+            # Get session info to find previous configuration
+            session_info = storage_manager.load_session_info(email, session_id)
+
+            if not session_info:
+                return create_response(404, {
+                    'success': False,
+                    'error': 'No session information found. Cannot determine previous configuration.'
+                })
+
+            # Look through config history to find the most recent config before current
+            versions = session_info.get('versions', {})
+            version_numbers = [int(v) for v in versions.keys() if v.isdigit()]
+
+            if len(version_numbers) < 2:
+                return create_response(404, {
+                    'success': False,
+                    'error': 'No previous configuration available. This is the first or only configuration.'
+                })
+
+            # Get the second-to-latest version
+            version_numbers.sort(reverse=True)
+            previous_version = version_numbers[1]  # Second highest version
+
+            previous_version_data = versions.get(str(previous_version), {})
+            config_info = previous_version_data.get('config', {})
+            config_path = config_info.get('config_path')
+
+            if not config_path:
+                return create_response(404, {
+                    'success': False,
+                    'error': f'Previous configuration path not found for version {previous_version}'
+                })
+
+            # Load the previous configuration directly
+            try:
+                config_response = storage_manager.s3_client.get_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=config_path
+                )
+                config_data = json.loads(config_response['Body'].read().decode('utf-8'))
+                config_key = config_path
+                logger.info(f"Found previous config version {previous_version} for session {session_id}")
+            except Exception as e:
+                return create_response(404, {
+                    'success': False,
+                    'error': f'Failed to load previous configuration: {str(e)}'
+                })
+        else:
+            # Look up the config by ID (normal path)
+            config_data, config_key = storage_manager.get_config_by_id(config_id, email)
+
+            if not config_data:
+                return create_response(404, {
+                    'success': False,
+                    'error': f'Configuration not found for ID: {config_id}'
+                })
         
         logger.info(f"Found config by ID {config_id}: {config_key}")
         
@@ -93,15 +143,21 @@ def handle_use_config_by_id(event_data, context=None):
         version = 1
         if existing_config and existing_config.get('storage_metadata', {}).get('version'):
             version = existing_config['storage_metadata']['version'] + 1
-        
+
+        # Determine the source based on whether this is a revert operation
+        if config_id.lower() == 'last':
+            source = f'restoringV{previous_version}'
+        else:
+            source = 'used_by_id'
+
         # Store the config in the current session with usage timestamp
         usage_timestamp = datetime.now().isoformat()
         storage_result = storage_manager.store_config_file(
-            email=email, 
-            session_id=session_id, 
-            config_data=clean_config_data, 
-            version=version, 
-            source='used_by_id',
+            email=email,
+            session_id=session_id,
+            config_data=clean_config_data,
+            version=version,
+            source=source,
             description=source_description,
             original_name=original_name,  # Preserve original name chain
             source_session=source_session,
@@ -122,7 +178,7 @@ def handle_use_config_by_id(event_data, context=None):
                 session_id=session_id,
                 table_name=table_name,
                 current_config_version=version,
-                config_source='used_by_id',
+                config_source=source,
                 source_session=source_session,
                 config_id=storage_result.get('config_id'),
                 config_description=source_description

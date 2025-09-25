@@ -37,6 +37,7 @@ TOKEN_USAGE_TABLE = "perplexity-validator-token-usage"
 WS_CONNECTIONS_TABLE = "perplexity-validator-ws-connections"
 BATCH_AUDIT_TABLE = "perplexity-validator-batch-audit"
 MODEL_CONFIG_TABLE = "perplexity-validator-model-config"
+PROVIDER_LIMITS_TABLE = "perplexity-validator-provider-limits"
 
 # Logical column ordering for CSV exports
 USER_VALIDATION_COLUMNS = [
@@ -1039,6 +1040,7 @@ def show_dashboard():
             (USER_VALIDATION_TABLE, "Email Validation"),
             (BATCH_AUDIT_TABLE, "Batch Size Audit"),
             (MODEL_CONFIG_TABLE, "Model Configuration"),
+            (PROVIDER_LIMITS_TABLE, "Provider Token Limits"),
             (WS_CONNECTIONS_TABLE, "WebSocket Connections")
         ]
         
@@ -1351,7 +1353,7 @@ def export_all_tables_to_csv(output_dir="events", limit=None):
         USER_VALIDATION_TABLE, USER_TRACKING_TABLE, RUNS_TABLE,
         ACCOUNT_TRANSACTIONS_TABLE, DOMAIN_MULTIPLIERS_TABLE,
         TOKEN_USAGE_TABLE, WS_CONNECTIONS_TABLE, BATCH_AUDIT_TABLE,
-        MODEL_CONFIG_TABLE
+        MODEL_CONFIG_TABLE, PROVIDER_LIMITS_TABLE
     ]
     exported_files = []
     

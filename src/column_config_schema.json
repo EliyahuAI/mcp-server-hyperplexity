@@ -150,6 +150,56 @@
             "type": "string",
             "enum": ["low", "medium", "high"],
             "description": "Override search context size for this column"
+          },
+          "formula_info": {
+            "type": "object",
+            "description": "Excel formula information for this column (if applicable)",
+            "properties": {
+              "is_calculated": {
+                "type": "boolean",
+                "description": "True if this column contains Excel formulas"
+              },
+              "is_referenced": {
+                "type": "boolean",
+                "description": "True if this column is used in other columns' formulas"
+              },
+              "formulas": {
+                "type": "array",
+                "description": "Array of formulas found in this column",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "formula": {
+                      "type": "string",
+                      "description": "The Excel formula (e.g., =SUM(A1:A10))"
+                    },
+                    "formula_type": {
+                      "type": "string",
+                      "description": "Type of formula (sum, average, arithmetic, etc.)"
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "Human-readable description of what the formula does"
+                    },
+                    "referenced_columns": {
+                      "type": "array",
+                      "description": "Columns this formula references",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["formula", "formula_type", "description"],
+                  "additionalProperties": false
+                }
+              },
+              "validation_strategy": {
+                "type": "string",
+                "enum": ["validate_calculation", "validate_sources", "preserve_formula"],
+                "description": "How to validate this formula-related column"
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false

@@ -40,6 +40,10 @@ Create a comprehensive configuration that includes:
 
 {{INCLUDE:common_config_guidance.md}}
 
+{{TABLE_ANALYSIS}}
+
+{{FORMULA_ANALYSIS}}
+
 ## Response Requirements
 You MUST use the generate_config_and_questions tool with:
 - Complete updated_config with all required fields

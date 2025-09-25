@@ -7,10 +7,11 @@ from pathlib import Path
 
 from interface_lambda.utils.helpers import create_response
 from dynamodb_schemas import (
-    create_email_validation_request, 
+    create_email_validation_request,
     validate_email_code,
     is_email_validated,
-    check_or_send_validation
+    check_or_send_validation,
+    is_new_user
 )
 
 logger = logging.getLogger()
@@ -39,6 +40,9 @@ def handle(request_data, context):
             result = {'success': True, 'validated': is_valid}
         elif action == 'checkOrSendValidation':
             result = check_or_send_validation(email)
+            # Add new user detection for demo functionality
+            if result.get('success') and result.get('validated'):
+                result['is_new_user'] = is_new_user(email)
         else:
             return create_response(400, {'error': f'Unknown email action: {action}'})
 

@@ -1476,105 +1476,10 @@
         }
     }
 
-    /* Reset Button Styles - Subtle by default, prominent when needed */
-    .reset-button {
-        position: fixed;
-        top: 70px;
-        right: 20px;
-        background: rgba(244, 67, 54, 0.7);
-        color: white;
-        border: none;
-        border-radius: 50%;
-        width: 36px;
-        height: 36px;
-        font-size: 14px;
-        cursor: pointer;
-        z-index: 9999;
-        box-shadow: 0 2px 8px rgba(244, 67, 54, 0.3);
-        transition: all 0.3s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        opacity: 0.8;
-    }
-
-    .reset-button:hover {
-        background: #f44336;
-        opacity: 1;
-        transform: scale(1.2);
-        box-shadow: 0 4px 16px rgba(244, 67, 54, 0.4);
-        width: 42px;
-        height: 42px;
-        font-size: 16px;
-    }
-
-    .reset-button:active {
-        transform: scale(1.1);
-    }
-
-    /* Make button more prominent when there are multiple cards (indicating state persistence) */
-    .reset-button.has-state {
-        background: #f44336;
-        opacity: 0.8;
-        width: 40px;
-        height: 40px;
-        font-size: 15px;
-        box-shadow: 0 3px 12px rgba(244, 67, 54, 0.3);
-        animation: subtle-pulse 3s infinite;
-    }
-
-    @keyframes subtle-pulse {
-        0%, 100% {
-            opacity: 0.8;
-            transform: scale(1);
-        }
-        50% {
-            opacity: 0.9;
-            transform: scale(1.05);
-        }
-    }
-
-    .reset-button.has-state:hover {
-        animation: none;
-        width: 46px;
-        height: 46px;
-    }
-
-    @media (max-width: 768px) {
-        .reset-button {
-            top: 15px;
-            right: 15px;
-            width: 32px;
-            height: 32px;
-            font-size: 12px;
-        }
-
-        .reset-button:hover {
-            width: 38px;
-            height: 38px;
-            font-size: 14px;
-        }
-
-        .reset-button.has-state {
-            width: 36px;
-            height: 36px;
-            font-size: 13px;
-        }
-
-        .reset-button.has-state:hover {
-            width: 42px;
-            height: 42px;
-        }
-    }
     </style>
 </head>
 <body>
     <div class="validator-container">
-        <!-- Reset Button -->
-        <button class="reset-button" onclick="resetPage()" title="Reset page and clear saved progress (Ctrl+Shift+R)" style="background: #f44336 !important; opacity: 1 !important; width: 50px !important; height: 50px !important; font-size: 20px !important; top: 70px !important;">
-            ↻
-        </button>
 
         <!-- Dynamic card container -->
         <div id="cardContainer"></div>
@@ -1759,7 +1664,98 @@
                 configStored: false, // Track if config has been stored
                 hasInsufficientBalance: false, // Track when user has insufficient balance
                 isProcessingConfig: false, // Track if config generation/refinement is in progress
-                debounceTimers: new Map() // Track debounce timers by function/card ID
+                debounceTimers: new Map(), // Track debounce timers by function/card ID
+                isNewUser: false // Track if user is new (no prior validation history)
+            };
+
+            // ============================================
+            // TESTING UTILITIES
+            // ============================================
+            function checkForTestingOverrides() {
+                const urlParams = new URLSearchParams(window.location.search);
+
+                // Force new user mode for testing
+                if (urlParams.get('force_new_user') === 'true') {
+                    console.log('[TESTING] Forcing new user mode via URL parameter');
+                    globalState.isNewUser = true;
+                }
+
+                // Force returning user mode for testing
+                if (urlParams.get('force_returning_user') === 'true') {
+                    console.log('[TESTING] Forcing returning user mode via URL parameter');
+                    globalState.isNewUser = false;
+                }
+            }
+
+            // Make testing functions available globally for console use
+            window.testingUtils = {
+                forceNewUser: () => {
+                    console.log('[TESTING] Forcing new user mode');
+                    globalState.isNewUser = true;
+                },
+                forceReturningUser: () => {
+                    console.log('[TESTING] Forcing returning user mode');
+                    globalState.isNewUser = false;
+                },
+                showDemoCard: () => {
+                    console.log('[TESTING] Creating demo selection card');
+                    createSelectDemoCard();
+                },
+                showUploadOrDemoCard: () => {
+                    console.log('[TESTING] Creating upload or demo choice card');
+                    createUploadOrDemoCard();
+                },
+                checkNewUserStatus: () => {
+                    console.log(`[TESTING] Current new user status: ${globalState.isNewUser}`);
+                    return globalState.isNewUser;
+                },
+                clearUserHistory: async (email = null) => {
+                    const userEmail = email || globalState.email;
+                    if (!userEmail) {
+                        console.error('[TESTING] No email provided and no current user email');
+                        return;
+                    }
+
+                    try {
+                        console.log(`[TESTING] Clearing validation history for ${userEmail}...`);
+                        const response = await fetch(`${API_BASE}/validate`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'clearUserHistoryForTesting',
+                                email: userEmail
+                            })
+                        });
+
+                        const result = await response.json();
+
+                        if (result.success) {
+                            console.log(`[TESTING] Successfully cleared ${result.runs_cleared} validation runs`);
+                            console.log(`[TESTING] ${userEmail} is now treated as a new user`);
+                        } else {
+                            console.error(`[TESTING] Failed to clear history: ${result.error}`);
+                        }
+
+                        return result;
+                    } catch (error) {
+                        console.error('[TESTING] Error clearing user history:', error);
+                        return { success: false, error: error.message };
+                    }
+                },
+                // Quick test sequence
+                testNewUserFlow: async () => {
+                    console.log('[TESTING] Starting new user flow test...');
+
+                    // Force new user mode
+                    globalState.isNewUser = true;
+                    console.log('[TESTING] Set as new user');
+
+                    // Show the choice card
+                    createUploadOrDemoCard();
+                    console.log('[TESTING] Created upload or demo choice card');
+
+                    console.log('[TESTING] Test complete. You should see the welcome card with demo option.');
+                }
             };
 
             // ============================================
@@ -2312,7 +2308,14 @@
                 buttonElement.classList.add('selected');
                 buttonElement.disabled = true;
                 if (newText) {
-                    buttonElement.querySelector('.button-text').textContent = newText;
+                    // Try to find .button-text first (standard buttons)
+                    const buttonTextElement = buttonElement.querySelector('.button-text');
+                    if (buttonTextElement) {
+                        buttonTextElement.textContent = newText;
+                    } else {
+                        // Fallback: set the entire button content for demo buttons and others
+                        buttonElement.innerHTML = `<span>${newText}</span>`;
+                    }
                 }
                 // Disable all sibling buttons
                 const siblings = buttonElement.parentElement.querySelectorAll('.std-button');
@@ -2433,6 +2436,15 @@
                 }
 
                 // Add buttons above estimates
+                // Check if revert button should be shown (only if version > 1)
+                const currentVersion = previewData.config_version || globalState.currentConfig?.config_version || 1;
+                const showRevertButton = currentVersion > 1;
+
+                const revertButtonHtml = showRevertButton ?
+                    `<button type="button" class="std-button secondary" data-action="revert-config">
+                            ↩️ Revert to Previous
+                        </button>` : '';
+
                 const actionsHtml = `
                     <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
                         <button type="button" class="std-button secondary" data-action="download-preview">
@@ -2441,6 +2453,7 @@
                         <button type="button" class="std-button secondary" data-action="refine-config">
                             🔧 Refine Configuration
                         </button>
+                        ${revertButtonHtml}
                     </div>
                 `;
                 previewContent.innerHTML += actionsHtml;
@@ -2525,13 +2538,14 @@
                 setTimeout(() => {
                     const downloadBtn = card.querySelector('[data-action="download-preview"]');
                     const refineBtn = card.querySelector('[data-action="refine-config"]');
-                    
+                    const revertBtn = card.querySelector('[data-action="revert-config"]');
+
                     if (downloadBtn) {
                         downloadBtn.addEventListener('click', async () => {
                             await downloadPreviewResults(previewData);
                         });
                     }
-                    
+
                     if (refineBtn) {
                         refineBtn.addEventListener('click', debounceConfigAction('refine-config', async () => {
                             // Don't use markButtonSelected as it expects different button structure
@@ -2539,6 +2553,16 @@
                             refineBtn.textContent = '🔧 Refining...';
                             globalState.activePreviewCard = null;
                             await createRefinementCard();
+                        }));
+                    }
+
+                    // Only add revert button listener if the button exists (version > 1)
+                    if (revertBtn) {
+                        revertBtn.addEventListener('click', debounceConfigAction('revert-config', async () => {
+                            revertBtn.disabled = true;
+                            revertBtn.textContent = '↩️ Reverting...';
+                            globalState.activePreviewCard = null;
+                            await createConfigCardWithId('last');
                         }));
                     }
                 }, 100);
@@ -3370,7 +3394,17 @@
             }
 
             function routeMessage(data, sessionId) {
-                
+
+                // Debug logging for all WebSocket messages
+                console.log(`[WEBSOCKET_DEBUG] Received message:`, {
+                    type: data.type,
+                    message: data.message,
+                    status: data.status,
+                    progress: data.progress,
+                    session_id: data.session_id,
+                    timestamp: data.timestamp
+                });
+
                 // Safety check: ensure data is valid
                 if (!data || typeof data !== 'object') {
                     return;
@@ -3383,17 +3417,39 @@
                 }
                 
                 // Handle progress updates for any card with progress indicator
-                if ((data.type === 'progress' || data.type === 'config_generation_progress' ||
+                const isProgressType = (data.type === 'progress' || data.type === 'config_generation_progress' ||
                      data.type === 'progress_update' || data.type === 'config_progress_update' ||
-                     data.type === 'preview_progress') && data.progress !== undefined) {
+                     data.type === 'preview_progress');
+                const hasProgress = data.progress !== undefined;
+
+                if (isProgressType && hasProgress) {
+
+                    console.log(`[WEBSOCKET_DEBUG] Progress update matched:`, {
+                        type: data.type,
+                        progress: data.progress,
+                        message: data.status || data.message,
+                        cardHandlers_size: cardHandlers.size
+                    });
+
                     // Find the card with progress indicator and update it
                     for (const [cardId, handlerInfo] of cardHandlers) {
                         if (handlerInfo && cardId) {
                             const message = data.status || data.message || null;
+                            console.log(`[WEBSOCKET_DEBUG] Updating progress for card ${cardId}:`, {
+                                progress: data.progress,
+                                message: message
+                            });
                             updateThinkingProgress(cardId, data.progress, message);
                         }
                     }
                     return; // Progress messages don't need further routing to completion handlers
+                } else if (isProgressType) {
+                    console.log(`[WEBSOCKET_DEBUG] Progress type message but no progress field:`, {
+                        type: data.type,
+                        progress: data.progress,
+                        message: data.status || data.message,
+                        hasProgress: hasProgress
+                    });
                 }
                 
                 // Handle completion messages - these need to go to the normal handlers
@@ -3569,6 +3625,15 @@
                             `• Remaining balance: $${globalState.accountBalance.toFixed(2)}` : 
                             `• Balance updating...`;
                         
+                        // Check if revert button should be shown (only if version > 1)
+                        const currentVersion = data.config_version || globalState.currentConfig?.config_version || 1;
+                        const showRevertButton = currentVersion > 1;
+
+                        const revertButtonHtml = showRevertButton ?
+                            `<button class="std-button secondary" id="${cardId}-revert-btn" style="flex: 1;">
+                                    <span class="button-text">↩️ Revert to Previous</span>
+                                </button>` : '';
+
                         messagesContainer.innerHTML = `
                             <div class="message message-success" style="margin-bottom: 1rem;">
                                 <span class="message-icon">🎉</span>
@@ -3596,6 +3661,7 @@
                                 </button>
                             </div>
                             <div style="display: flex; gap: 10px; margin-top: 0.5rem;">
+                                ${revertButtonHtml}
                                 <button class="std-button secondary" onclick="window.resetPage()" style="flex: 1;">
                                     <span class="button-text">🔄 New Validation</span>
                                 </button>
@@ -3606,14 +3672,30 @@
                         setTimeout(() => {
                             const downloadBtn = document.getElementById(`${cardId}-download-btn`);
                             const refineBtn = document.getElementById(`${cardId}-refine-btn`);
+                            const revertBtn = document.getElementById(`${cardId}-revert-btn`);
                             const balanceInfo = document.getElementById(`${cardId}-balance-info`);
-                            
+
                             if (refineBtn) {
                                 refineBtn.addEventListener('click', debounceConfigAction('refine-config-2', async () => {
                                     try {
                                         await window.createRefinementCard();
                                     } catch (error) {
                                         console.error('Refine error:', error);
+                                    }
+                                }));
+                            }
+
+                            // Only add revert button listener if the button exists (version > 1)
+                            if (revertBtn) {
+                                revertBtn.addEventListener('click', debounceConfigAction('revert-config-completion', async () => {
+                                    try {
+                                        revertBtn.disabled = true;
+                                        revertBtn.querySelector('.button-text').textContent = '↩️ Reverting...';
+                                        await createConfigCardWithId('last');
+                                    } catch (error) {
+                                        console.error('Revert error:', error);
+                                        revertBtn.disabled = false;
+                                        revertBtn.querySelector('.button-text').textContent = '↩️ Revert to Previous';
                                     }
                                 }));
                             }
@@ -3841,6 +3923,9 @@
                 });
             }
 
+            // Make showUploadInfo globally accessible
+            window.showUploadInfo = showUploadInfo;
+
             // Markdown rendering wrapper
             function renderMarkdown(text) {
                 if (!text) return '';
@@ -3965,7 +4050,8 @@
                     
                     if (response.ok && data.success) {
                         if (data.validated) {
-                            // Already validated
+                            // Already validated - store new user status
+                            globalState.isNewUser = data.is_new_user || false;
                             handleEmailValidated(cardId);
                         } else {
                             // Show code input
@@ -4034,6 +4120,10 @@
                     
                     if (response.ok && data.success) {
                         markButtonSelected(button, '✓ Verified');
+                        // Check if user is new (may not be available in validateEmailCode response)
+                        if (!globalState.hasOwnProperty('isNewUser')) {
+                            globalState.isNewUser = false; // Default for code validation path
+                        }
                         handleEmailValidated(cardId);
                     } else {
                         showMessage(`${cardId}-messages`, data.message || 'Invalid code', 'error');
@@ -4083,8 +4173,137 @@
                     buttonsContainer.style.display = 'none';
                 }
 
-                // Create next card
-                setTimeout(() => createUploadCard(), 500);
+                // Create next card - show demo option for new users
+                setTimeout(() => {
+                    if (globalState.isNewUser) {
+                        createUploadOrDemoCard();
+                    } else {
+                        createUploadCard();
+                    }
+                }, 500);
+            }
+
+            // New User Upload Options Card
+            function createUploadOrDemoCard() {
+                const cardId = generateCardId();
+                const content = `
+                    <div id="${cardId}-options" style="text-align: center; padding: 20px;">
+                        <p style="margin: 0 0 20px 0; font-size: var(--font-size-large); color: var(--text-secondary);">
+                            Welcome! Choose how to get started:
+                        </p>
+                    </div>
+                    <div id="${cardId}-messages"></div>
+                    <div id="${cardId}-buttons"></div>
+                `;
+
+                const card = createCard({
+                    id: cardId,
+                    icon: '🚀',
+                    title: 'Get Started',
+                    subtitle: 'New user detected - choose your path',
+                    content,
+                    buttons: [
+                        {
+                            text: '📁 Upload Your Own Table',
+                            icon: '',
+                            variant: 'primary',
+                            callback: async function() {
+                                proceedWithUpload(cardId);
+                            }
+                        },
+                        {
+                            text: '🎯 Try a Demo Table',
+                            icon: '',
+                            variant: 'secondary',
+                            callback: async function() {
+                                proceedWithDemo(cardId);
+                            }
+                        }
+                    ]
+                });
+
+                return card;
+            }
+
+            function proceedWithDemo(cardId) {
+                // Show completion state - only green success box
+                showFinalCardState(cardId, 'Loading demo selection...', 'success');
+
+                // Create demo selection card
+                setTimeout(() => createSelectDemoCard(), 500);
+            }
+
+            function proceedWithUpload(cardId) {
+                // Show completion state
+                showFinalCardState(cardId, 'Ready to select your file...', 'success');
+
+                // Directly open file picker instead of creating another card
+                setTimeout(() => {
+                    const fileInput = document.createElement('input');
+                    fileInput.type = 'file';
+                    fileInput.accept = '.xlsx,.xls,.csv';
+                    fileInput.style.display = 'none';
+
+                    fileInput.onchange = (e) => {
+                        if (e.target.files && e.target.files[0]) {
+                            // Store the selected file globally
+                            globalState.excelFile = e.target.files[0];
+                            globalState.excelFileName = e.target.files[0].name;
+
+                            // Update the completion message to show selected file (green box has built-in checkmark)
+                            showFinalCardState(cardId, `File selected: ${e.target.files[0].name}`, 'success');
+
+                            // Skip upload card entirely - upload file then go to config
+                            setTimeout(async () => {
+                                try {
+                                    // Upload the file directly (same as handleFileSelect does)
+                                    const formData = new FormData();
+                                    formData.append('excel_file', globalState.excelFile);
+                                    formData.append('email', globalState.email);
+                                    formData.append('action', 'processExcel');
+                                    // Only append session_id if we have one
+                                    if (globalState.sessionId) {
+                                        formData.append('session_id', globalState.sessionId);
+                                    }
+
+                                    const uploadResponse = await fetch(`${API_BASE}/validate`, {
+                                        method: 'POST',
+                                        body: formData
+                                    });
+
+                                    const data = await uploadResponse.json();
+
+                                    if (uploadResponse.ok && data.success) {
+                                        // Update session info from upload
+                                        if (data.session_id) {
+                                            globalState.sessionId = data.session_id;
+                                            localStorage.setItem('sessionId', data.session_id);
+                                        }
+                                        globalState.excelFileUploaded = true;
+
+                                        // Update completion message to show upload success
+                                        showFinalCardState(cardId, `File uploaded: ${globalState.excelFileName}`, 'success');
+
+                                        // Go directly to configuration
+                                        setTimeout(() => {
+                                            createConfigurationCard();
+                                        }, 1000);
+                                    } else {
+                                        throw new Error(data.error || 'Failed to upload file');
+                                    }
+                                } catch (error) {
+                                    console.error('Upload error:', error);
+                                    showFinalCardState(cardId, `Upload failed: ${error.message}`, 'error');
+                                }
+                            }, 1000);
+                        }
+                    };
+
+                    // Add to body and trigger click
+                    document.body.appendChild(fileInput);
+                    fileInput.click();
+                    document.body.removeChild(fileInput);
+                }, 500);
             }
 
             // 2. File Upload Card
@@ -4333,6 +4552,177 @@
                 
                 return card;
             }
+
+            // ============================================
+            // DEMO MANAGEMENT FUNCTIONS
+            // ============================================
+
+            function createSelectDemoCard() {
+                const cardId = generateCardId();
+                const content = `
+                    <div id="${cardId}-options" style="text-align: center; padding: 20px;">
+                        <p style="margin: 0 0 20px 0; font-size: var(--font-size-base); color: var(--text-secondary);">
+                            Try our demo tables to see how the validator works
+                        </p>
+                        <div id="${cardId}-demos-list" style="display: flex; flex-direction: column; gap: 12px;">
+                            <div style="text-align: center; color: var(--text-secondary);">
+                                <span>Loading available demos...</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="${cardId}-messages"></div>
+                `;
+
+                const card = createCard({
+                    id: cardId,
+                    icon: '🎯',
+                    title: 'Select Demo Table',
+                    subtitle: 'Choose from pre-configured examples',
+                    content
+                });
+
+                // Load available demos
+                loadAvailableDemos(cardId);
+
+                return card;
+            }
+
+            async function loadAvailableDemos(cardId) {
+                try {
+                    const response = await fetch(`${API_BASE}/validate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'listDemos'
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (!result.success) {
+                        throw new Error(result.error || 'Failed to load demos');
+                    }
+
+                    const demosList = document.getElementById(`${cardId}-demos-list`);
+                    if (!demosList) return;
+
+                    if (!result.demos || result.demos.length === 0) {
+                        demosList.innerHTML = `
+                            <div style="text-align: center; color: #666; padding: 20px;">
+                                <p>No demos available at this time.</p>
+                                <p>Please upload your own table file.</p>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    // Create demo buttons
+                    const demosHtml = result.demos.map(demo => `
+                        <button class="std-button primary" style="width: 100%; text-align: left; padding: 16px;"
+                                onclick="selectDemo('${cardId}', '${demo.name}', this)">
+                            <div style="display: flex; flex-direction: column; gap: 4px; text-align: left; align-items: flex-start; width: 100%;">
+                                <div style="font-weight: bold; font-size: var(--font-size-base); text-align: left; width: 100%;">
+                                    ${demo.display_name}
+                                </div>
+                                <div style="font-size: var(--font-size-small); color: var(--text-secondary); font-weight: normal; text-align: left; width: 100%;">
+                                    ${demo.description.length > 100 ?
+                                        demo.description.substring(0, 100) + '...' :
+                                        demo.description}
+                                </div>
+                            </div>
+                        </button>
+                    `).join('');
+
+                    demosList.innerHTML = demosHtml;
+
+                } catch (error) {
+                    console.error('Error loading demos:', error);
+                    const demosList = document.getElementById(`${cardId}-demos-list`);
+                    if (demosList) {
+                        demosList.innerHTML = `
+                            <div style="text-align: center; color: #d32f2f; padding: 20px;">
+                                <p>Failed to load demos: ${error.message}</p>
+                                <button class="std-button secondary" onclick="loadAvailableDemos('${cardId}')">
+                                    🔄 Try Again
+                                </button>
+                            </div>
+                        `;
+                    }
+                }
+            }
+
+            async function selectDemo(cardId, demoName, buttonElement) {
+                markButtonSelected(buttonElement, '🚀 Loading Demo...');
+
+                try {
+                    // Make sure we have session info
+                    if (!globalState.sessionId || !globalState.email) {
+                        throw new Error('Session not properly initialized');
+                    }
+
+                    const response = await fetch(`${API_BASE}/validate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'selectDemo',
+                            demo_name: demoName,
+                            email: globalState.email,
+                            session_id: globalState.sessionId
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (!result.success) {
+                        throw new Error(result.error || 'Failed to load demo');
+                    }
+
+                    // Update session ID with new one from demo (like table uploads)
+                    if (result.session_id) {
+                        globalState.sessionId = result.session_id;
+                        // Store new session ID in localStorage for persistence
+                        localStorage.setItem('sessionId', result.session_id);
+                        console.log(`Demo created new session: ${result.session_id}`);
+                    }
+
+                    // Set global state as if user uploaded files
+                    globalState.excelFileUploaded = true;
+                    globalState.configStored = true;
+                    globalState.currentConfig = result.config_data;
+
+                    // Show success message with demo details
+                    const successMessage = `
+                        <div style="text-align: left;">
+                            <div style="font-weight: bold; margin-bottom: 8px; font-size: var(--font-size-base);">
+                                ${result.demo.display_name}
+                            </div>
+                            <div style="color: var(--text-secondary); line-height: 1.4; font-size: var(--font-size-base);">
+                                ${result.demo.description}
+                            </div>
+                        </div>
+                    `;
+
+                    showFinalCardState(cardId, successMessage, 'success');
+
+                    // Auto-proceed to preview after short delay
+                    setTimeout(() => {
+                        createPreviewCard();
+                    }, 1500);
+
+                } catch (error) {
+                    console.error('Error selecting demo:', error);
+                    markButtonUnselected(buttonElement, buttonElement.innerHTML);
+                    showMessage(`${cardId}-messages`, `Failed to load demo: ${error.message}`, 'error');
+                }
+            }
+
+            // Make demo functions globally available for onclick handlers
+            window.proceedWithDemo = proceedWithDemo;
+            window.proceedWithUpload = proceedWithUpload;
+            window.selectDemo = selectDemo;
+            window.loadAvailableDemos = loadAvailableDemos;
+
+            // ============================================
 
             // selectUploadConfig function removed - now handled inline in button callback
 
@@ -5264,7 +5654,57 @@
             }
 
             // selectCreateWithAI function removed - now handled inline in button callback
-            
+
+            // Create a config card pre-filled with a specific config ID
+            async function createConfigCardWithId(configId) {
+                const cardId = generateCardId();
+
+                // Create the content structure with config input and messages
+                const content = `
+                    <div id="${cardId}-config-list"></div>
+                    <div id="${cardId}-options" style="margin-top: 20px;">
+                        <div style="margin-bottom: 16px;">
+                            <input type="text"
+                                id="${cardId}-config-id-input"
+                                class="form-input"
+                                placeholder="Reverting to previous configuration..."
+                                style="width: 100%; text-align: center;"
+                                data-card-id="${cardId}"
+                                value="${configId}"
+                                readonly
+                            />
+                        </div>
+                        <div id="${cardId}-button-container"></div>
+                    </div>
+                    <div id="${cardId}-messages"></div>
+                `;
+
+                // Create the card with appropriate title for revert
+                const card = createCard({
+                    id: cardId,
+                    icon: '↩️',
+                    title: 'Revert Configuration',
+                    subtitle: 'Reverting to previous configuration and generating new preview',
+                    content
+                });
+
+                // Automatically submit the config ID after a short delay
+                setTimeout(async () => {
+                    try {
+                        await useConfigById(cardId, configId);
+                        // After successfully using the config, auto-create preview
+                        setTimeout(() => {
+                            createPreviewCard();
+                        }, 1000);
+                    } catch (error) {
+                        console.error('Error reverting to config:', error);
+                        showMessage(`${cardId}-messages`, `Error reverting to previous configuration: ${error.message}`, 'error');
+                    }
+                }, 500);
+
+                return card;
+            }
+
             function createConfigurationCard() {
                 const cardId = generateCardId();
                 
@@ -6724,6 +7164,10 @@ Please answer these questions and then I'll generate your configuration and auto
                     </div>
                 `;
 
+                // Check if revert button should be shown (only if version > 1)
+                const currentVersion = completionData.config_version || globalState.currentConfig?.config_version || 1;
+                const showRevertButton = currentVersion > 1;
+
                 buttons = [
                     {
                         text: 'Preparing Download...',
@@ -6746,15 +7190,34 @@ Please answer these questions and then I'll generate your configuration and auto
                                 alert('Refine failed: ' + error.message);
                             }
                         }
-                    },
-                    {
-                        text: 'New Validation',
-                        icon: '🔄',
-                        variant: 'secondary',
-                        width: 'full',
-                        callback: () => window.resetPage()
                     }
                 ];
+
+                // Only add revert button if version > 1
+                if (showRevertButton) {
+                    buttons.push({
+                        text: 'Revert to Previous',
+                        icon: '↩️',
+                        variant: 'secondary',
+                        width: 'half',
+                        callback: async function() {
+                            try {
+                                await createConfigCardWithId('last');
+                            } catch (error) {
+                                console.error('Revert error:', error);
+                                alert('Revert failed: ' + error.message);
+                            }
+                        }
+                    });
+                }
+
+                buttons.push({
+                    text: 'New Validation',
+                    icon: '🔄',
+                    variant: 'secondary',
+                    width: 'full',
+                    callback: () => window.resetPage()
+                });
             }
 
             const card = createCard({
@@ -6814,6 +7277,9 @@ Please answer these questions and then I'll generate your configuration and auto
         // ============================================
 
         document.addEventListener('DOMContentLoaded', function() {
+            // Check for testing overrides before anything else
+            checkForTestingOverrides();
+
             // MOBILE VERSION: Skip mobile detection to allow mobile usage
             // if (isMobileDevice()) {
             //     showMobileMessage();
@@ -7665,6 +8131,37 @@ Please answer these questions and then I'll generate your configuration and auto
                                 } catch (error) {
                                     console.error('Refine error:', error);
                                     alert('Refine failed: ' + error.message);
+                                }
+                            };
+                        }
+
+                    } else if (dataAction === 'revert-config' || buttonText.includes('Revert to Previous')) {
+                        // Check if debounceConfigAction is available
+                        if (typeof debounceConfigAction === 'function') {
+                            button.onclick = debounceConfigAction('revert-config-generic', async () => {
+                                try {
+                                    button.disabled = true;
+                                    button.textContent = '↩️ Reverting...';
+                                    await createConfigCardWithId('last');
+                                } catch (error) {
+                                    console.error('Revert error:', error);
+                                    alert('Revert failed: ' + error.message);
+                                    button.disabled = false;
+                                    button.textContent = '↩️ Revert to Previous';
+                                }
+                            });
+                        } else {
+                            // Fallback without debouncing
+                            button.onclick = async () => {
+                                try {
+                                    button.disabled = true;
+                                    button.textContent = '↩️ Reverting...';
+                                    await createConfigCardWithId('last');
+                                } catch (error) {
+                                    console.error('Revert error:', error);
+                                    alert('Revert failed: ' + error.message);
+                                    button.disabled = false;
+                                    button.textContent = '↩️ Revert to Previous';
                                 }
                             };
                         }

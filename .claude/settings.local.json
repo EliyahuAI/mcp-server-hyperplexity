@@ -18,7 +18,8 @@
       "Read(//tmp/**)",
       "Bash(aws logs tail:*)",
       "Bash(aws logs get-log-events:*)",
-      "Read(//mnt/c/Users/ellio/OneDrive/**)"
+      "Read(//mnt/c/Users/ellio/OneDrive/**)",
+      "Bash(aws sqs get-queue-attributes:*)"
     ],
     "deny": []
   }

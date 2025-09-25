@@ -119,5 +119,7 @@ Did we look at enough sources? For perplexity models, increasing search_context 
 
 {{VALIDATION_CONTEXT}}
 
+{{USER_FEEDBACK_SECTION}}
+
 ## REFINEMENT FOCUS REMINDER
 **Your mission**: Make targeted improvements to an existing  configuration based on aggregated user instructions and validation results. Preserve what works, fix what doesn't, and use exact column names. Return both technical and simple AI summaries with your changes - that make sense in the context of refinement. 
