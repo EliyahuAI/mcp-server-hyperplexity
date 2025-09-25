@@ -172,8 +172,14 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
     print(f"🚨 CONFIG LAMBDA ENTRY POINT - Session: {session_id}, Instructions: {instructions[:50]}...")
     print(f"🚨 GENERATE_CONFIG_UNIFIED_PARAMS: existing_config={bool(existing_config)}, latest_validation_results={bool(latest_validation_results)}")
     if existing_config:
-        print(f"🚨 GENERATE_CONFIG_UNIFIED_PARAMS: existing_config keys: {list(existing_config.keys())}")
-        print(f"🚨 GENERATE_CONFIG_UNIFIED_PARAMS: config_change_log present: {bool(existing_config.get('config_change_log'))}")
+        if isinstance(existing_config, dict):
+            print(f"🚨 GENERATE_CONFIG_UNIFIED_PARAMS: existing_config keys: {list(existing_config.keys())}")
+            print(f"🚨 GENERATE_CONFIG_UNIFIED_PARAMS: config_change_log present: {bool(existing_config.get('config_change_log'))}")
+        else:
+            print(f"🚨 GENERATE_CONFIG_UNIFIED_PARAMS: existing_config is not a dict - type: {type(existing_config)}")
+            print(f"🚨 GENERATE_CONFIG_UNIFIED_PARAMS: existing_config value: {existing_config}")
+            # Convert to None since we can't use a non-dict config
+            existing_config = None
 
     logger.info(f"Config generation started for session {session_id}")
     send_websocket_progress(session_id, "Generating new configuration... (~70s)", 55)
@@ -366,7 +372,9 @@ def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict 
     # 1. We have an existing_config with config_change_log, OR
     # 2. We have DynamoDB validation run data, OR
     # 3. We have latest_validation_results data
-    has_existing_config = existing_config is not None and existing_config.get('config_change_log', [])
+    has_existing_config = (existing_config is not None and
+                          isinstance(existing_config, dict) and
+                          existing_config.get('config_change_log', []))
     has_validation_data = detailed_runs_data is not None or latest_validation_results is not None
 
     is_new_config = not (has_existing_config or has_validation_data)
@@ -1047,6 +1055,11 @@ def build_validation_context_section(latest_validation_results: Dict) -> str:
     """Build the validation context section with performance data."""
     if not latest_validation_results:
         return ""
+
+    # Safety check: ensure we have a dict, not a list
+    if not isinstance(latest_validation_results, dict):
+        print(f"🚨 build_validation_context_section - ERROR: Expected dict but got {type(latest_validation_results)}")
+        return "# VALIDATION CONTEXT\n\nValidation results format error - expected dictionary but received different type."
 
     print(f"🚨 build_validation_context_section - Available keys: {list(latest_validation_results.keys())}")
 
