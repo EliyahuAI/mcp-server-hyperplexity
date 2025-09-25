@@ -5176,12 +5176,12 @@
                     } else {
                         const totalFound = result.matches ? result.matches.length : 0;
                         const message = totalFound > 0 ?
-                                      `Found ${totalFound} previous configs but none match well enough (need ≥80% match). Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.` :
-                                      'No matching configurations found from your previous sessions. Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.';
-                        
+                                      `Found ${totalFound} previous configs but none match well enough (need ≥80% match). Automatically proceeding with AI generation.` :
+                                      'No matching configurations found from your previous sessions. Automatically proceeding with AI generation.';
+
                         showMessage(`${cardId}-messages`, message, 'info');
-                        // Reset button
-                        markButtonUnselected(button);
+                        // Automatically trigger AI generation
+                        generateWithAI(cardId);
                     }
                     
                 } catch (error) {
@@ -5203,15 +5203,15 @@
                     if (goodMatches && goodMatches.length > 0) {
                         await showRecentConfigOptions(cardId, goodMatches, globalState.matchingConfigs.table_columns);
                     } else {
-                        const totalMatches = (globalState.matchingConfigs && globalState.matchingConfigs.matches) ? 
+                        const totalMatches = (globalState.matchingConfigs && globalState.matchingConfigs.matches) ?
                                            globalState.matchingConfigs.matches.length : 0;
-                        const message = totalMatches > 0 ? 
-                                       `Found ${totalMatches} previous configs but none match well enough (need ≥80% match). Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.` :
-                                       'No matching configurations available. Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.';
-                        
+                        const message = totalMatches > 0 ?
+                                       `Found ${totalMatches} previous configs but none match well enough (need ≥80% match). Automatically proceeding with AI generation.` :
+                                       'No matching configurations available. Automatically proceeding with AI generation.';
+
                         showMessage(`${cardId}-messages`, message, 'info');
-                        // Reset button
-                        markButtonUnselected(button);
+                        // Automatically trigger AI generation
+                        generateWithAI(cardId);
                     }
                     
                 } catch (error) {
@@ -8447,8 +8447,17 @@ Please answer these questions and then I'll generate your configuration and auto
                     }
 
                     if (cardCount >= 2) {
-                        // Always auto-restore without modal
-                        console.log(`[AUTO] Auto-restoring ${cardCount} cards (no modal)`);
+                        // Check if this was a page refresh (performance navigation timing)
+                        if (performance && performance.getEntriesByType) {
+                            const navEntries = performance.getEntriesByType('navigation');
+                            if (navEntries.length > 0 && navEntries[0].type === 'reload') {
+                                console.log(`[REFRESH] Page refresh detected - NOT auto-restoring ${cardCount} cards`);
+                                return false;
+                            }
+                        }
+
+                        // Auto-restore for navigation back/forward
+                        console.log(`[AUTO] Auto-restoring ${cardCount} cards (navigation back)`);
                         return restoreApplicationState();
                     } else {
                         console.log(`[AUTO] Only ${cardCount} saved cards - clearing state`);
@@ -9051,47 +9060,24 @@ Please answer these questions and then I'll generate your configuration and auto
                    document.querySelectorAll('[id^="card-"]').length > 1;
         }
 
-        // Differentiate between refresh and navigation
-        let isRefresh = false;
-        let isUnloading = false;
-
-        // Detect refresh vs navigation
-        window.addEventListener('keydown', (e) => {
-            // Ctrl+R, Cmd+R, F5
-            if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
-                isRefresh = true;
-                console.log('[NAV] Refresh detected via keyboard');
-            } else if (e.key === 'F5') {
-                isRefresh = true;
-                console.log('[NAV] Refresh detected via F5');
-            }
-        });
-
-        // Handle beforeunload - warn on navigation, silent on refresh
+        // Simple beforeunload warning - no custom modals
         window.addEventListener('beforeunload', (e) => {
-            isUnloading = true;
-
             if (hasValuableData()) {
-                if (!isRefresh) {
-                    // Navigation away - warn user
-                    console.log('[NAV] Navigation away detected - showing warning');
-                    const message = 'You have uploaded data and made progress. Navigating away will erase your session. Are you sure?';
-                    e.preventDefault();
-                    e.returnValue = message;
-                    return message;
-                } else {
-                    // Refresh - save state silently
-                    console.log('[NAV] Refresh detected - saving state silently');
-                    if (typeof saveApplicationState === 'function') {
-                        saveApplicationState();
-                    }
+                // Save state for navigation (not refresh)
+                if (typeof saveApplicationState === 'function') {
+                    saveApplicationState();
                 }
+
+                // Show browser's native warning
+                const message = 'You have uploaded data and made progress. Are you sure you want to leave?';
+                e.returnValue = message;
+                return message;
             }
         });
 
         // Handle page visibility changes (back/forward navigation)
         document.addEventListener('visibilitychange', () => {
-            if (!document.hidden && !isUnloading) {
+            if (!document.hidden) {
                 console.log('[NAV] Page became visible - checking for restore');
 
                 // Small delay to ensure state is ready
@@ -9127,10 +9113,6 @@ Please answer these questions and then I'll generate your configuration and auto
         });
 
 
-        // Reset refresh flag after a delay
-        setTimeout(() => {
-            isRefresh = false;
-        }, 1000);
 
         console.log('[NAV] Navigation protection system initialized');
 
