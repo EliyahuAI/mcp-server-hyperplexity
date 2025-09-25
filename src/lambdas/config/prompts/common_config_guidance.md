@@ -35,7 +35,7 @@ This document contains shared guidelines used by both new config creation and re
 ## Importance Level Guidelines
 - **ID**: These define the rows - at least one column must be assigned 'ID', usually it is one or more columns to the left of the table.  Getting these right is critical as these define the row information and the stability of the analysis.  An Index is not enough.
 - **CRITICAL**: ANy column requiring research that we can help with
-- **IGNORED**: Indices, metadata, internal fields, timestamps, derivative fields that really need calculation not AI approximation. 
+- **IGNORE**: Indices, metadata, internal fields, timestamps, calculated/formula columns that are dependent on other columns and need calculation not AI approximation. 
 
 ## Search Group Strategy
 Create search groups based on where information typically appears together. Are these elements usually found together? For example, a conference start date, end date, and location are almost always found together, and should be part of the same group. Critically, these groups are processed sequentially, from low to high with information aggregated along the way - make sure that more sophisticated and fragile information is presented after information that it might need first!
@@ -49,7 +49,7 @@ When analyzing any table, follow this process:
 3. **Identify likely ID columns** usually the first column(s), these are used to identify the row and are not used for research.
 5. **Group related columns** that would appear in same sources
 6. **Extract real examples** from the actual data if provided and consistent with the guidance, otherwise specify a new consistent set.  Examples must match the requirements, update the examples to be in scope. Strongly prefer consistent formatting across the examples.  
-7. **Assign importance levels** based on column criticality, ignore columns that are not informational or on the internet or are derived calculations that are not easily estimated, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose. 
+7. **Assign importance levels** based on column criticality, mark calculated/formula columns as IGNORE as they are dependent on other columns and require calculation not AI research, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose. 
 
 ## Analysis Presentation Format
 
@@ -82,21 +82,27 @@ Show your assumptions clearly in this format:
 
 **REFINEMENT RULE**: Always use LOWER urgency than the original configurations
 
-## Targeted Questions Guidelines
+## CLARIFYING QUESTIONS - CONFIGURATION CHOICES
+Generate questions that explain what you configured and suggest specific improvements:
 
-Only ask when genuinely unclear or need confirmation that would likely impprove the quality of your search:
+**Good**: "I configured searches for current revenue data - would you prefer quarterly breakdowns instead?"
+**Bad**: "Should I validate revenue or skip it?"
+
+Reference your actual configuration decisions and offer concrete alternatives that might work better. These must no refer to any technical details of the configuration. They should focus on the business needs, cost/accuracy tradeoffs for context and performance models, and critical assumptions.
+
+Only ask when genuinely unclear or need confirmation that would likely impprove the quality of your search. Format your questions nicely, and clearly, requiring no technical understanding of the user.
 
 ### Types of Questions to Ask:
 - **Risky Assumptions**: "Is my understanding of [specific assumption] correct?"
-- **A/B Clarifications**: "For [ambiguous column], should this be: A) [option A] or B) [defaulted to B]?"
+- **A/B Clarifications**: "I have assumed  [option A], is [option B] more accurate?"
 - **Cost/Accuracy Tradeoff**: "Are you OK with increasing the AI usage to achieve better accuracy? I can use more advanced models and or more searches - but this can amplify cost." This is a good question when items are missed, or require complex synthesis, and you have held back in your recommendations.  
 
 ### Avoid Asking:
 - ❌ Obvious table purposes (clear from column names)
 - ❌ Clear data formats (evident from sample data)
 - ❌ Standard examples (use real data from table)
-- ❌ Basic groupings (infer from logical relationships)
 - ❌ Specific model preferences 
+- ❌ Specific row preferences 
 
 ## Format Detection Guidelines
 
@@ -133,10 +139,10 @@ Search groups are **REQUIRED** for every configuration - they are essential for 
 
 **MANDATORY REQUIREMENTS:**
 - **You MUST define at least two search groups** in the `search_groups` array (Group 0/ID Group and another)
-- **Every validation target MUST be assigned to a search group** via the `search_group` field (except those that are Ignore)
+- **Every validation target MUST be assigned to a search group** via the `search_group` field (except those with IGNORE importance)
 - **Group 0**: Always ID/identifier fields (not validated, used for context), you must provide an ID group and assign at least one,  validation target to this. Note - these usually come from the left-most column(s). No validated columns in this group!
 - **Group 1+**: Columns whose information appears together in typical sources
-- **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or Ignore)/2)
+- **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or IGNORE)/2)
 - **Upper limit**: Maximum 10
 - **No ungrouped fields allowed**: Every column must belong to a search group for optimal performance
 

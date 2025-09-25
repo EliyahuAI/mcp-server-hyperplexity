@@ -21,8 +21,14 @@ from row_key_utils import generate_row_key
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-def safe_for_excel(value):
-    """Convert value to Excel-safe format, handling control characters, Unicode bullets, and complex QC content."""
+
+def safe_for_excel(value, preserve_formulas=False):
+    """Convert value to Excel-safe format, handling control characters, Unicode bullets, and complex QC content.
+
+    Args:
+        value: The value to make Excel-safe
+        preserve_formulas: If True, don't escape formulas (for IGNORE columns that should retain original formulas)
+    """
     if value is None:
         return ""
     if isinstance(value, (int, float)):
@@ -95,7 +101,8 @@ def safe_for_excel(value):
 
     # Prevent Excel formula interpretation - only escape actual formulas, not content like bullet points
     # Only add tick mark for standalone formula operators, not bullet points or legitimate content
-    if value_str.startswith('=') or (value_str.startswith(('+', '@')) and len(value_str) > 1):
+    # Skip escaping if preserve_formulas=True (for IGNORE columns that should retain original formulas)
+    if not preserve_formulas and (value_str.startswith('=') or (value_str.startswith(('+', '@')) and len(value_str) > 1)):
         value_str = "'" + value_str  # Prefix with single quote to force text interpretation
     # Don't escape "-" as it's commonly used for bullet points and legitimate content
 
@@ -245,11 +252,19 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         
         # Get ID fields from config for proper row key generation
         id_fields = []
+        # Build column importance mapping for formula preservation
+        column_importance = {}
         for target in config_data.get('validation_targets', []):
-            if target.get('importance', '').upper() == 'ID':
-                field_name = target.get('name') or target.get('column')
-                if field_name:
+            field_name = target.get('name') or target.get('column')
+            if field_name:
+                importance = target.get('importance', '').upper()
+                column_importance[field_name] = importance
+                if importance == 'ID':
                     id_fields.append(field_name)
+
+        def should_preserve_formulas(column_name):
+            """Check if formulas should be preserved for this column (IGNORE columns)."""
+            return column_importance.get(column_name, '').upper() == 'IGNORE'
         
         # Generate row keys for each row
         row_keys = []
@@ -415,7 +430,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                     validation_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
                             cell_format = get_confidence_format(validation_confidence, validation_confidence_formats)
 
-                        updated_sheet.write(updated_row_idx, col_idx, safe_for_excel(updated_value), cell_format)
+                        updated_sheet.write(updated_row_idx, col_idx, safe_for_excel(updated_value, should_preserve_formulas(col_name)), cell_format)
                         
                         # Add comment with original value and reasoning (same as Original Values sheet)
                         comment_text = None
@@ -653,7 +668,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                     comment_text = '\n\n'.join(comment_parts)
                     
                     # Write original value
-                    original_sheet.write(row_idx + 1, col_idx, safe_for_excel(original_value), cell_format)
+                    original_sheet.write(row_idx + 1, col_idx, safe_for_excel(original_value, should_preserve_formulas(col_name)), cell_format)
                     
                     # Add comment if needed
                     if comment_text:
@@ -734,7 +749,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             # Write standard columns in new order: Column, Original Value, Updated Value, QC Value
                             details_sheet.write(detail_row, col_idx, safe_for_excel(field_name))  # Column
                             col_idx += 1
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(row_data.get(field_name, ''))))  # Original value
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(row_data.get(field_name, '')), should_preserve_formulas(field_name)))  # Original value
                             col_idx += 1
 
                             # Updated Value (pre-QC result) - use preserved pre-QC value if available
@@ -745,7 +760,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 updated_value = str(field_data.get('value', ''))
                                 updated_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
 
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(updated_value))  # Updated value
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(updated_value, should_preserve_formulas(field_name)))  # Updated value
                             col_idx += 1
 
                             # Extract QC data properly
@@ -807,7 +822,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 qc_format = qc_confidence_formats.get('MEDIUM')  # Default QC format
 
                             try:
-                                details_sheet.write(detail_row, col_idx, safe_for_excel(qc_value), qc_format)  # QC Value
+                                details_sheet.write(detail_row, col_idx, safe_for_excel(qc_value, should_preserve_formulas(field_name)), qc_format)  # QC Value
                                 logger.debug(f"[EXCEL_WRITE_DEBUG] QC Value written successfully for {field_name}")
                             except Exception as e:
                                 logger.error(f"[EXCEL_WRITE_ERROR] QC Value write failed for {field_name}: {e}")
@@ -863,7 +878,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             # Final Value should use QC confidence format if QC applied, otherwise updated confidence format
                             updated_confidence_format = get_confidence_format(updated_confidence, validation_confidence_formats)
                             final_format = qc_format if qc_applied else updated_confidence_format
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(final_value), final_format)  # Final Value
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(final_value, should_preserve_formulas(field_name)), final_format)  # Final Value
                             col_idx += 1
 
                             details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('reasoning', ''))))  # Reasoning
