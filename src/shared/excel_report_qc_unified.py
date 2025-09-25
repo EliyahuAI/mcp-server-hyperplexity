@@ -202,6 +202,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
             rows_data = excel_data.get('data', [])
             # Get formula data if available (for restoring original formulas)
             formula_data = excel_data.get('formulas', []) or excel_data.get('formula_data', [])
+            logger.info(f"Formula data available: {len(formula_data)} rows")
             # Handle sheet name for both CSV and Excel files
             metadata = excel_data.get('metadata', {})
             file_type = metadata.get('file_type', 'unknown')
@@ -283,6 +284,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                     formula_info = row_formulas[col_name]
                     if isinstance(formula_info, dict) and 'formula' in formula_info:
                         original_formula = formula_info['formula']
+                        logger.info(f"Restoring formula for {col_name}: {original_formula}")
                         return original_formula
             return default_value
         

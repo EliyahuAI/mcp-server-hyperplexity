@@ -2713,6 +2713,7 @@
 
                     if (downloadBtn) {
                         downloadBtn.addEventListener('click', async () => {
+                            markDownloadStart();
                             await downloadPreviewResults(previewData);
                         });
                     }
@@ -4084,6 +4085,7 @@
                                     downloadBtn.querySelector('.button-text').textContent = '📥 Download Results';
                                     downloadBtn.addEventListener('click', async () => {
                                         try {
+                                            markDownloadStart();
                                             await window.downloadValidationResults();
                                         } catch (error) {
                                             console.error('Download error:', error);
@@ -6887,7 +6889,7 @@ Please provide any additional context, or simply proceed to generate your initia
                         payload.config_id = configId;
                     }
 
-                    const response = await fetch(API_BASE_URL, {
+                    const response = await fetch(`${API_BASE}/validate`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -7890,6 +7892,7 @@ Please provide any additional context, or simply proceed to generate your initia
                         // Add the click handler
                         downloadButton.addEventListener('click', async function() {
                             try {
+                                markDownloadStart();
                                 await window.downloadValidationResults();
                             } catch (error) {
                                 console.error('Download error:', error);
@@ -8671,6 +8674,7 @@ Please provide any additional context, or simply proceed to generate your initia
                     } else if (dataAction === 'download-preview' || buttonText.includes('Download Rich Preview')) {
                         button.onclick = async () => {
                             try {
+                                markDownloadStart();
                                 if (window.lastPreviewData) {
                                     await downloadPreviewResults(window.lastPreviewData);
                                 } else {
@@ -8745,6 +8749,7 @@ Please provide any additional context, or simply proceed to generate your initia
                         }
                         button.onclick = async () => {
                             try {
+                                markDownloadStart();
                                 await window.downloadValidationResults();
                             } catch (error) {
                                 console.error('Download error:', error);
@@ -8755,6 +8760,7 @@ Please provide any additional context, or simply proceed to generate your initia
                     } else if (buttonText.includes('Download Results') || buttonClass.includes('download-button')) {
                         button.onclick = async () => {
                             try {
+                                markDownloadStart();
                                 await window.downloadValidationResults();
                             } catch (error) {
                                 console.error('Download error:', error);
@@ -9192,9 +9198,23 @@ Please provide any additional context, or simply proceed to generate your initia
                    document.querySelectorAll('[id^="card-"]').length > 1;
         }
 
+        // Track download operations to avoid triggering warnings
+        let isDownloading = false;
+
+        // Helper function to mark download start
+        window.markDownloadStart = function() {
+            isDownloading = true;
+            console.log('[NAV] Download started - disabling navigation warnings');
+            // Reset flag after a short delay in case download doesn't trigger beforeunload
+            setTimeout(() => {
+                isDownloading = false;
+                console.log('[NAV] Download flag reset');
+            }, 3000);
+        };
+
         // Simple beforeunload warning - no custom modals
         window.addEventListener('beforeunload', (e) => {
-            if (hasValuableData()) {
+            if (hasValuableData() && !isDownloading) {
                 // Save state for navigation (not refresh)
                 if (typeof saveApplicationState === 'function') {
                     saveApplicationState();
@@ -9204,6 +9224,12 @@ Please provide any additional context, or simply proceed to generate your initia
                 const message = 'You have uploaded data and made progress. Are you sure you want to leave?';
                 e.returnValue = message;
                 return message;
+            }
+
+            // Reset download flag regardless
+            if (isDownloading) {
+                console.log('[NAV] Beforeunload triggered during download - allowing without warning');
+                isDownloading = false;
             }
         });
 
