@@ -200,6 +200,8 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         if isinstance(excel_data, dict) and excel_data.get('column_names') and excel_data.get('data'):
             headers = excel_data.get('column_names', [])
             rows_data = excel_data.get('data', [])
+            # Get formula data if available (for restoring original formulas)
+            formula_data = excel_data.get('formulas', []) or excel_data.get('formula_data', [])
             # Handle sheet name for both CSV and Excel files
             metadata = excel_data.get('metadata', {})
             file_type = metadata.get('file_type', 'unknown')
@@ -271,6 +273,18 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
             """Check if confidence-based coloring should be applied (only for validated columns)."""
             importance = column_importance.get(column_name, '').upper()
             return importance not in ['IGNORED', 'ID']
+
+        def get_original_value_with_formulas(row_idx, col_name, default_value):
+            """Get the original value, preferring formula over calculated value for IGNORED/ID columns."""
+            if should_preserve_formulas(col_name) and formula_data and row_idx < len(formula_data):
+                # Check if this row/column has a formula
+                row_formulas = formula_data[row_idx]
+                if isinstance(row_formulas, dict) and col_name in row_formulas:
+                    formula_info = row_formulas[col_name]
+                    if isinstance(formula_info, dict) and 'formula' in formula_info:
+                        original_formula = formula_info['formula']
+                        return original_formula
+            return default_value
         
         # Generate row keys for each row
         row_keys = []
@@ -392,30 +406,36 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                     # Write updated values for this row
                     
                     for col_idx, col_name in enumerate(headers):
-                        original_value = row_data.get(col_name, '')
+                        # Get original value, preferring formula for IGNORED/ID columns
+                        base_value = row_data.get(col_name, '')
+                        original_value = get_original_value_with_formulas(row_idx, col_name, base_value)
                         updated_value = original_value
                         qc_applied = False
 
-                        # Check for QC value first (highest priority)
-                        if qc_results and row_key in qc_results:
-                            row_qc_data = qc_results[row_key]
-                            if col_name in row_qc_data:
-                                field_qc_data = row_qc_data[col_name]
-                                if isinstance(field_qc_data, dict) and field_qc_data.get('qc_applied', False):
-                                    updated_value = field_qc_data.get('qc_entry', original_value)
-                                    qc_applied = True
+                        # For IGNORED/ID columns, always keep original value (including formulas)
+                        # Only process validation/QC for validated columns
+                        if should_apply_coloring(col_name):
+                            # Check for QC value first (highest priority)
+                            if qc_results and row_key in qc_results:
+                                row_qc_data = qc_results[row_key]
+                                if col_name in row_qc_data:
+                                    field_qc_data = row_qc_data[col_name]
+                                    if isinstance(field_qc_data, dict) and field_qc_data.get('qc_applied', False):
+                                        updated_value = field_qc_data.get('qc_entry', original_value)
+                                        qc_applied = True
 
-                        # If no QC applied, use validation value
-                        if not qc_applied and row_validation_data and col_name in row_validation_data:
-                            field_data = row_validation_data[col_name]
-                            if isinstance(field_data, dict):
-                                original_confidence = field_data.get('original_confidence')
-                                validation_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
+                            # If no QC applied, use validation value
+                            if not qc_applied and row_validation_data and col_name in row_validation_data:
+                                field_data = row_validation_data[col_name]
+                                if isinstance(field_data, dict):
+                                    original_confidence = field_data.get('original_confidence')
+                                    validation_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
 
-                                # Only update if validation confidence is higher than original confidence
-                                # Now properly handles case where original has no confidence (blank values)
-                                if should_update_value(original_confidence, validation_confidence):
-                                    updated_value = field_data.get('value', original_value)
+                                    # Only update if validation confidence is higher than original confidence
+                                    # Now properly handles case where original has no confidence (blank values)
+                                    if should_update_value(original_confidence, validation_confidence):
+                                        updated_value = field_data.get('value', original_value)
+                        # For IGNORED/ID columns, updated_value remains the same as original_value (including formulas)
                         
                         # Apply appropriate formatting (QC takes priority over validation confidence)
                         # Skip coloring for IGNORED and ID columns
@@ -568,8 +588,10 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                 for col_idx, col_name in enumerate(headers):
                     if not col_name:
                         continue
-                        
-                    original_value = row_data.get(col_name, '')
+
+                    # Get original value, preferring formula for IGNORED/ID columns
+                    base_value = row_data.get(col_name, '')
+                    original_value = get_original_value_with_formulas(row_idx, col_name, base_value)
                     cell_format = None
                     comment_text = None
                     
@@ -763,7 +785,10 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             # Write standard columns in new order: Column, Original Value, Updated Value, QC Value
                             details_sheet.write(detail_row, col_idx, safe_for_excel(field_name))  # Column
                             col_idx += 1
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(str(row_data.get(field_name, '')), should_preserve_formulas(field_name)))  # Original value
+                            # Get original value with formulas for IGNORED/ID columns
+                            base_original_value = str(row_data.get(field_name, ''))
+                            original_value_with_formula = get_original_value_with_formulas(row_idx, field_name, base_original_value)
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(original_value_with_formula, should_preserve_formulas(field_name)))  # Original value
                             col_idx += 1
 
                             # Updated Value (pre-QC result) - use preserved pre-QC value if available
