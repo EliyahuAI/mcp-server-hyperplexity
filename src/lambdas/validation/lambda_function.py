@@ -95,9 +95,13 @@ except ImportError as e:
 try:
     from websocket_client import WebSocketClient
     websocket_client = WebSocketClient()
-except ImportError:
+    logger.info(f"[WEBSOCKET_DEBUG_VALIDATION] WebSocket client initialized successfully")
+except ImportError as e:
     websocket_client = None
-    logger.warning("WebSocket client not available")
+    logger.error(f"[WEBSOCKET_DEBUG_VALIDATION] WebSocket client import failed: {e}")
+except Exception as e:
+    websocket_client = None
+    logger.error(f"[WEBSOCKET_DEBUG_VALIDATION] WebSocket client initialization failed: {e}")
 
 # Initialize AWS clients with retry configuration
 config = Config(
@@ -2162,6 +2166,8 @@ async def call_anthropic_api_text(session: aiohttp.ClientSession, prompt: str,
 
 def send_websocket_progress(session_id: str, message: str, progress: int = None):
     """Send progress update via WebSocket"""
+    logger.info(f"[WEBSOCKET_DEBUG_VALIDATION] send_websocket_progress called: websocket_client={websocket_client is not None}, session_id={session_id}, message={message}, progress={progress}")
+
     if websocket_client and session_id:
         try:
             update_data = {
@@ -2172,14 +2178,22 @@ def send_websocket_progress(session_id: str, message: str, progress: int = None)
             }
             if progress is not None:
                 update_data['progress'] = progress
-            
-            websocket_client.send_to_session(session_id, update_data)
+
+            logger.info(f"[WEBSOCKET_DEBUG_VALIDATION] Sending data: {update_data}")
+            result = websocket_client.send_to_session(session_id, update_data)
+            logger.info(f"[WEBSOCKET_DEBUG_VALIDATION] Send result: {result}")
             logger.debug(f"Sent WebSocket progress: {message} to session {session_id}")
         except Exception as e:
-            logger.warning(f"Failed to send WebSocket progress: {e}")
+            logger.error(f"[WEBSOCKET_DEBUG_VALIDATION] Failed to send WebSocket progress: {e}")
+            import traceback
+            logger.error(f"[WEBSOCKET_DEBUG_VALIDATION] Full traceback: {traceback.format_exc()}")
+    else:
+        logger.warning(f"[WEBSOCKET_DEBUG_VALIDATION] Cannot send - websocket_client={websocket_client is not None}, session_id={session_id}")
 
 def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, completed_counter, last_reported_counter):
     """Thread-safe AI call progress reporting that prevents out-of-order updates"""
+    logger.info(f"[WEBSOCKET_DEBUG_VALIDATION] report_ai_call_progress called: session_id={session_id}, total_expected={total_expected}")
+
     if not session_id or total_expected <= 0:
         return completed_counter[0], last_reported_counter[0]
     
@@ -2587,7 +2601,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     logger.warning(f"Failed to get result from completed task: {e}")
                         
                         logger.info(f"Storing {len(completed_results)} partial results from failed batch {batch_index}")
-                        for idx, result, _ in completed_results:
+                        for idx, result, _, _ in completed_results:
                             validation_results[idx] = result
                     
                     # Update progress
@@ -3388,7 +3402,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             pass  # logger.info(f"[AGG_DEBUG] About to aggregate: {total_calls_to_aggregate} calls, "
                   # f"Providers: {list(providers_found)}, "
                   # f"Sample costs: {costs_preview[:5]}...")
-            
+
+            # Initialize batch processing times before any potential exceptions
+            batch_processing_times_calculated = {}  # batch_number -> max_processing_time_in_that_batch
+
             try:
                 # Use ai_client.aggregate_provider_metrics() to get comprehensive aggregated data
                 aggregated_metrics = ai_client.aggregate_provider_metrics(all_enhanced_call_data)
@@ -3428,10 +3445,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # For validation mode, we're processing the actual rows
                     total_rows_in_table = len(validation_results)
                     preview_rows_processed = len(validation_results)
-                
-                # Initialize batch processing times before use
-                batch_processing_times_calculated = {}  # batch_number -> max_processing_time_in_that_batch
-                
+
                 # Get target batch size from batch manager
                 if batch_manager:
                     # For enhanced batch manager, get a representative batch size

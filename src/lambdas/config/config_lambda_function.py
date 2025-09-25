@@ -67,6 +67,14 @@ def send_websocket_progress(session_id: str, message: str, progress: int = None)
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for configuration generation requests."""
     try:
+        # Debug: Log what we received in the event
+        print(f"🚨 CONFIG_LAMBDA_RECEIVED: Event keys: {list(event.keys())}")
+        print(f"🚨 CONFIG_LAMBDA_RECEIVED: Has existing_config: {bool(event.get('existing_config'))}")
+        print(f"🚨 CONFIG_LAMBDA_RECEIVED: Has latest_validation_results: {bool(event.get('latest_validation_results'))}")
+        if event.get('existing_config'):
+            existing_config_keys = list(event['existing_config'].keys()) if isinstance(event['existing_config'], dict) else "Not a dict"
+            print(f"🚨 CONFIG_LAMBDA_RECEIVED: existing_config keys: {existing_config_keys}")
+
         # Extract request parameters
         table_analysis = event.get('table_analysis')
         existing_config = event.get('existing_config')  # Optional
@@ -161,6 +169,12 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
                                  instructions: str = '', session_id: str = 'unknown',
                                  latest_validation_results: Dict = None, conversation_history: list = None) -> Dict:
     """Unified config generation - always returns both updated config and clarifying questions."""
+    print(f"🚨 CONFIG LAMBDA ENTRY POINT - Session: {session_id}, Instructions: {instructions[:50]}...")
+    print(f"🚨 GENERATE_CONFIG_UNIFIED_PARAMS: existing_config={bool(existing_config)}, latest_validation_results={bool(latest_validation_results)}")
+    if existing_config:
+        print(f"🚨 GENERATE_CONFIG_UNIFIED_PARAMS: existing_config keys: {list(existing_config.keys())}")
+        print(f"🚨 GENERATE_CONFIG_UNIFIED_PARAMS: config_change_log present: {bool(existing_config.get('config_change_log'))}")
+
     logger.info(f"Config generation started for session {session_id}")
     send_websocket_progress(session_id, "Generating new configuration... (~70s)", 55)
     
@@ -188,7 +202,7 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         # Note: User message logging is handled by the interface lambda before calling us
         
         # Build the unified generation prompt
-        prompt = build_unified_generation_prompt(table_analysis, existing_config, instructions, latest_validation_results, conversation_history)
+        prompt = build_unified_generation_prompt(table_analysis, existing_config, instructions, latest_validation_results, conversation_history, session_id)
         
         # Call Claude using shared client with unified schema
         schema = get_unified_generation_schema()
@@ -294,10 +308,6 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             'reasoning': reasoning,
             'ai_summary': ai_summary,
             'technical_ai_summary': technical_ai_summary,
-            'config_s3_key': config_s3_key,
-            'config_download_url': config_download_url,
-            'config_filename': config_filename,
-            'config_version': config_version,  # Add explicit version field
             'session_id': session_id,
             # Add cost and usage tracking data (enhanced metrics)
             'eliyahu_cost': eliyahu_cost,
@@ -325,15 +335,20 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         
     except Exception as e:
         logger.error(f"Unified config generation failed: {str(e)}")
+        # Safely get session_id, with fallback if parameter is undefined
+        try:
+            safe_session_id = session_id
+        except NameError:
+            safe_session_id = 'unknown'
         return {
             'success': False,
             'error': f'Config generation failed: {str(e)}',
-            'session_id': session_id
+            'session_id': safe_session_id
         }
 
 def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict = None,
                                   instructions: str = '', latest_validation_results: Dict = None,
-                                  conversation_history: list = None) -> str:
+                                  conversation_history: list = None, session_id: str = 'unknown') -> str:
     """Build unified prompt for config generation that always returns both config and questions."""
     
     basic_info = table_analysis.get('basic_info', {})
@@ -342,9 +357,22 @@ def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict 
     formula_data = table_analysis.get('formula_data', [])
     has_formulas = table_analysis.get('metadata', {}).get('has_formulas', False)
     
+    # Get detailed performance data from DynamoDB first to inform refinement decision
+    detailed_runs_data = get_latest_runs_data_from_dynamodb(session_id) if session_id != 'unknown' else None
+    print(f"🚨 RUNS DATA FROM DYNAMODB: {bool(detailed_runs_data)}")
+
     # Determine if this is a new config or refinement
-    is_new_config = existing_config is None or not existing_config.get('config_change_log', [])
-    
+    # It's a refinement if:
+    # 1. We have an existing_config with config_change_log, OR
+    # 2. We have DynamoDB validation run data, OR
+    # 3. We have latest_validation_results data
+    has_existing_config = existing_config is not None and existing_config.get('config_change_log', [])
+    has_validation_data = detailed_runs_data is not None or latest_validation_results is not None
+
+    is_new_config = not (has_existing_config or has_validation_data)
+
+    print(f"🚨 REFINEMENT DETECTION: existing_config={bool(has_existing_config)}, validation_data={bool(has_validation_data)}, is_new_config={is_new_config}")
+
     # Load the appropriate prompt template
     import os
     current_dir = os.path.dirname(__file__)
@@ -396,9 +424,41 @@ def build_unified_generation_prompt(table_analysis: Dict, existing_config: Dict 
         basic_info, column_analysis, domain_info, calculated_columns, referenced_columns, has_formulas
     )
 
+    # Build validation context and user feedback sections
+    print(f"🚨 VALIDATION CONTEXT CHECK - latest_validation_results is None: {latest_validation_results is None}")
+
+    # Use the already-retrieved DynamoDB data
+    if detailed_runs_data:
+        print(f"🚨 DYNAMODB RUNS KEYS: {list(detailed_runs_data.keys())}")
+        # Use the detailed DynamoDB data for validation context
+        validation_context_content = build_validation_context_section(detailed_runs_data)
+    else:
+        # Fallback to interface response data
+        if latest_validation_results:
+            print(f"🚨 FALLBACK - VALIDATION RESULTS KEYS: {list(latest_validation_results.keys())}")
+        validation_context_content = build_validation_context_section(latest_validation_results) if latest_validation_results else ""
+
+    user_feedback_content = build_user_feedback_section(instructions, conversation_history) if (instructions or conversation_history) else ""
+
+    print(f"🚨 VALIDATION CONTEXT LENGTH: {len(validation_context_content)}")
+    if validation_context_content:
+        print(f"🚨 VALIDATION CONTEXT PREVIEW: {validation_context_content[:200]}...")
+
+    # Ensure we have fallback content for empty sections
+    if not table_analysis_content:
+        table_analysis_content = "# TABLE ANALYSIS\n\nTable analysis data not available."
+    if not formula_analysis_content:
+        formula_analysis_content = "# FORMULA ANALYSIS\n\nNo Excel formulas detected in this dataset."
+    if not validation_context_content:
+        validation_context_content = "# VALIDATION CONTEXT\n\nNo previous validation results available for context."
+    if not user_feedback_content:
+        user_feedback_content = "# USER FEEDBACK\n\nNo specific user feedback provided for this refinement."
+
     base_prompt = (prompt_template
                    .replace('{{TABLE_ANALYSIS}}', table_analysis_content)
-                   .replace('{{FORMULA_ANALYSIS}}', formula_analysis_content))
+                   .replace('{{FORMULA_ANALYSIS}}', formula_analysis_content)
+                   .replace('{{VALIDATION_CONTEXT}}', validation_context_content)
+                   .replace('{{USER_FEEDBACK_SECTION}}', user_feedback_content))
 
     if existing_config:
         # Use conversation history from interface lambda
@@ -593,52 +653,7 @@ These columns have high QC fail rates and should be improved:
 - Review examples and format specifications for failing columns
 - Consider moving problem columns to different search groups with related information"""
 
-    # Add comprehensive user instruction history
-    if instructions or conversation_history:
-        base_prompt += f"""
-
-# USER FEEDBACK AND REFINEMENT REQUEST
-
-"""
-        # Extract and present all user messages from conversation history
-        user_messages = []
-        if conversation_history:
-            for entry in conversation_history:
-                if entry.get('entry_type') == 'user_input' or entry.get('action') == 'user_message':
-                    timestamp = entry.get('timestamp', 'Unknown time')
-                    user_instruction = entry.get('user_instructions', entry.get('instructions', ''))
-                    if user_instruction:
-                        user_messages.append({
-                            'timestamp': timestamp,
-                            'instruction': user_instruction
-                        })
-
-        if user_messages:
-            base_prompt += "**User Feedback History** (chronological order):\n\n"
-            for i, msg in enumerate(user_messages, 1):
-                # Parse timestamp to make it readable
-                try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(msg['timestamp'].replace('Z', '+00:00'))
-                    readable_time = dt.strftime('%Y-%m-%d %H:%M')
-                except:
-                    readable_time = msg['timestamp'][:16]  # Fallback
-
-                base_prompt += f"{i}. **{readable_time}**: {msg['instruction']}\n\n"
-
-        # Highlight the current/latest instruction
-        if instructions:
-            base_prompt += f"""**🎯 CURRENT REQUEST** (focus on this):
-"{instructions}"
-
-"""
-
-        base_prompt += """**Your Task**:
-1. **Review all user feedback** to understand the evolution of their requirements
-2. **Focus primarily on the CURRENT REQUEST** while considering previous context
-3. **Make ONLY the specific changes** needed to address the current request
-4. **Preserve everything else** that is working well and hasn't been criticized
-5. **Avoid going in circles** - don't undo previous changes unless specifically requested"""
+    # User feedback section is handled by template replacement
 
     return base_prompt
 
@@ -761,6 +776,403 @@ def convert_dynamodb_to_plain(data):
 
     else:
         return data
+
+def build_user_feedback_section(instructions: str, conversation_history: list) -> str:
+    """Build the user feedback section for the refinement prompt."""
+    if not instructions and not conversation_history:
+        return ""
+
+    content = """# USER FEEDBACK AND REFINEMENT REQUEST
+
+"""
+
+    # Extract and present all user messages from conversation history
+    user_messages = []
+    if conversation_history:
+        for entry in conversation_history:
+            if entry.get('entry_type') == 'user_input' or entry.get('action') == 'user_message':
+                timestamp = entry.get('timestamp', 'Unknown time')
+                user_instruction = entry.get('user_instructions', entry.get('instructions', ''))
+                if user_instruction:
+                    user_messages.append({
+                        'timestamp': timestamp,
+                        'instruction': user_instruction
+                    })
+
+    if user_messages:
+        content += "**User Feedback History** (chronological order):\n\n"
+        for i, msg in enumerate(user_messages, 1):
+            # Parse timestamp to make it readable
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(msg['timestamp'].replace('Z', '+00:00'))
+                readable_time = dt.strftime('%Y-%m-%d %H:%M')
+            except:
+                readable_time = msg['timestamp'][:16]  # Fallback
+
+            content += f"{i}. **{readable_time}**: {msg['instruction']}\n\n"
+
+    # Highlight the current/latest instruction
+    if instructions:
+        content += f"""**🎯 CURRENT REQUEST** (focus on this):
+"{instructions}"
+
+"""
+
+    content += """**Your Task**:
+1. **Review all user feedback** to understand the evolution of their requirements
+2. **Focus primarily on the CURRENT REQUEST** while considering previous context
+3. **Make ONLY the specific changes** needed to address the current request
+4. **Preserve everything else** that is working well and hasn't been criticized
+5. **Avoid going in circles** - don't undo previous changes unless specifically requested
+
+"""
+
+    return content
+
+def get_latest_runs_data_from_dynamodb(session_id: str) -> Optional[Dict]:
+    """Get the latest runs data directly from DynamoDB table."""
+    try:
+        import boto3
+        from botocore.exceptions import ClientError
+
+        print(f"🚨 Querying DynamoDB runs table for session: {session_id}")
+
+        dynamodb = boto3.resource('dynamodb')
+        table = dynamodb.Table('perplexity-validator-runs')
+
+        # Query for the most recent validation or preview run for this session
+        # Since we can't use OR with begins_with in KeyConditionExpression, we need two separate queries
+        # Try to get Preview runs first, then Validation runs, and take the most recent
+        preview_response = table.query(
+            KeyConditionExpression='session_id = :session_id AND begins_with(run_key, :preview)',
+            ExpressionAttributeValues={
+                ':session_id': session_id,
+                ':preview': 'Preview#'
+            },
+            ScanIndexForward=False,  # Get most recent first
+            Limit=1
+        )
+
+        validation_response = table.query(
+            KeyConditionExpression='session_id = :session_id AND begins_with(run_key, :validation)',
+            ExpressionAttributeValues={
+                ':session_id': session_id,
+                ':validation': 'Validation#'
+            },
+            ScanIndexForward=False,  # Get most recent first
+            Limit=1
+        )
+
+        # Combine results and get the most recent
+        all_items = preview_response.get('Items', []) + validation_response.get('Items', [])
+        if all_items:
+            # Sort by run_key to get most recent (since run_key contains timestamp)
+            response = {'Items': sorted(all_items, key=lambda x: x['run_key'], reverse=True)}
+        else:
+            response = {'Items': []}
+
+        if response.get('Items'):
+            run_item = response['Items'][0]
+            print(f"🚨 Found DynamoDB run item with keys: {list(run_item.keys())}")
+            return run_item
+        else:
+            print(f"🚨 No runs found in DynamoDB for session: {session_id}")
+            return None
+
+    except Exception as e:
+        print(f"🚨 Error querying DynamoDB runs table: {e}")
+        return None
+
+def build_validation_context_from_interface_data(interface_response: Dict) -> str:
+    """Build validation context from interface response data format."""
+    print("🚨 Building validation context from interface data")
+
+    cost_estimates = interface_response.get('cost_estimates', {})
+    validation_metrics = interface_response.get('validation_metrics', {})
+    markdown_table = interface_response.get('markdown_table', '')
+
+    content = """
+# VALIDATION RESULTS CONTEXT
+
+The following validation results are available from the most recent preview run:
+"""
+
+    # Add actual preview results first - this is what the user needs to see!
+    if markdown_table:
+        content += """
+## Actual Preview Results
+
+Here are the actual validation results from the preview run:
+
+"""
+        content += f"```\n{markdown_table}\n```\n\n"
+        print(f"🚨 Added markdown table to validation context ({len(markdown_table)} characters)")
+
+    content += """
+## Cost Analysis
+"""
+
+    if cost_estimates:
+        estimated_cost = cost_estimates.get('estimated_validation_eliyahu_cost', 0)
+        estimated_time = cost_estimates.get('estimated_validation_time', 0)
+        content += f"""
+- **Estimated Total Cost**: ${estimated_cost:.2f}
+- **Estimated Processing Time**: {estimated_time:.1f} minutes
+"""
+
+    if validation_metrics:
+        content += f"""
+## Validation Metrics
+- **Search Groups**: {validation_metrics.get('search_groups_count', 'Unknown')}
+- **Validated Columns**: {validation_metrics.get('validated_columns_count', 'Unknown')}
+- **Claude Search Groups**: {validation_metrics.get('claude_search_groups_count', 0)} (expensive)
+"""
+
+    content += """
+
+## Cost Optimization Recommendations
+Based on the preview results, consider:
+1. **High-cost areas**: Claude models with web searches are significantly more expensive
+2. **Processing time**: Complex models take much longer to process
+3. **Search group efficiency**: Multiple search groups increase total cost
+
+"""
+
+    print(f"🚨 Generated validation context length: {len(content)}")
+    return content
+
+def build_validation_context_from_runs_data(runs_data: Dict, models: Dict, qc_metrics: Dict, provider_metrics: Dict) -> str:
+    """Build detailed validation context from DynamoDB runs data."""
+    print("🚨 Building validation context from detailed runs data")
+
+    content = """
+# VALIDATION RESULTS CONTEXT
+
+The following detailed validation results are from the most recent run:
+"""
+
+    # Add actual preview results if available in runs data
+    preview_data = runs_data.get('preview_data')
+    if preview_data:
+        # Handle JSON string format from DynamoDB
+        if isinstance(preview_data, str):
+            try:
+                import json
+                preview_data = json.loads(preview_data)
+            except:
+                print("🚨 Warning: Could not parse preview_data JSON")
+                preview_data = None
+
+        if preview_data and isinstance(preview_data, dict):
+            markdown_table = preview_data.get('markdown_table', '')
+            if markdown_table:
+                content += """
+## Actual Preview Results
+
+Here are the actual validation results from the preview run:
+
+"""
+                content += f"```\n{markdown_table}\n```\n\n"
+                print(f"🚨 Added DynamoDB markdown table to validation context ({len(markdown_table)} characters)")
+
+    content += """
+## Cost Analysis by Search Group
+"""
+
+    # Parse models data (JSON string in DynamoDB)
+    if isinstance(models, str):
+        try:
+            import json
+            models = json.loads(models)
+        except:
+            models = {}
+
+    if models:
+        for group_name, group_data in models.items():
+            if isinstance(group_data, dict):
+                avg_cost = group_data.get('average_estimated_cost', 0)
+                avg_time = group_data.get('average_estimated_time', 0)
+                model_used = group_data.get('mode_model_used', 'unknown')
+                column_count = group_data.get('column_count', 0)
+
+                content += f"""
+**{group_name}** ({model_used}):
+- Cost per row: ${avg_cost:.4f}
+- Time per row: {avg_time:.1f}s
+- Columns: {column_count}
+"""
+
+    # Add QC metrics
+    if qc_metrics and isinstance(qc_metrics, dict):
+        qc_by_column = qc_metrics.get('qc_by_column', {})
+        if qc_by_column:
+            content += """
+## Quality Control Issues
+High-priority columns needing attention:
+"""
+            for col_name, col_qc in qc_by_column.items():
+                if isinstance(col_qc, dict):
+                    fail_rate = col_qc.get('overall_fail_rate', 0)
+                    if fail_rate > 20:  # High fail rate
+                        content += f"""
+- **{col_name}**: {fail_rate:.1f}% QC fail rate (needs improvement)
+"""
+
+    # Add provider cost summary
+    if provider_metrics:
+        content += """
+## Provider Cost Breakdown
+"""
+        for provider, metrics in provider_metrics.items():
+            if isinstance(metrics, dict):
+                cost_per_row = metrics.get('cost_per_row_actual', 0)
+                calls = metrics.get('calls', 0)
+                content += f"""
+- **{provider}**: ${cost_per_row:.4f}/row ({calls} calls)
+"""
+
+    content += """
+## Cost Optimization Opportunities
+Based on actual performance data:
+1. **Most expensive search groups** should be optimized first
+2. **High QC fail rates** indicate models that aren't working well
+3. **Claude with web searches** typically costs 10-20x more than Perplexity models
+"""
+
+    print(f"🚨 Generated detailed validation context length: {len(content)}")
+    return content
+
+def build_validation_context_section(latest_validation_results: Dict) -> str:
+    """Build the validation context section with performance data."""
+    if not latest_validation_results:
+        return ""
+
+    print(f"🚨 build_validation_context_section - Available keys: {list(latest_validation_results.keys())}")
+
+    # Check for DynamoDB runs table structure (the detailed performance data)
+    models = latest_validation_results.get('models', {})
+    qc_metrics = latest_validation_results.get('qc_metrics', {})
+    provider_metrics = latest_validation_results.get('provider_metrics', {})
+
+    # Convert DynamoDB format if it's raw DynamoDB data
+    if isinstance(models, dict) and models:
+        # Check if it's DynamoDB format (has type descriptors)
+        if any(isinstance(v, dict) and len(v) == 1 and list(v.keys())[0] in ['S', 'N', 'M', 'L'] for v in models.values() if isinstance(v, dict)):
+            models = convert_dynamodb_to_plain(models)
+        if isinstance(qc_metrics, dict) and qc_metrics:
+            qc_metrics = convert_dynamodb_to_plain(qc_metrics)
+        if isinstance(provider_metrics, dict) and provider_metrics:
+            provider_metrics = convert_dynamodb_to_plain(provider_metrics)
+
+    print(f"🚨 DynamoDB runs data - models: {bool(models)}, qc_metrics: {bool(qc_metrics)}, provider_metrics: {bool(provider_metrics)}")
+
+    # If we have detailed performance data, use it
+    if models or qc_metrics or provider_metrics:
+        return build_validation_context_from_runs_data(latest_validation_results, models, qc_metrics, provider_metrics)
+
+    # Fallback to interface response structure
+    print("🚨 No detailed performance data found, trying interface response structure")
+    cost_estimates = latest_validation_results.get('cost_estimates', {})
+    validation_metrics = latest_validation_results.get('validation_metrics', {})
+
+    if cost_estimates or validation_metrics:
+        return build_validation_context_from_interface_data(latest_validation_results)
+
+    # Convert DynamoDB format to plain values if needed
+    if model_data:
+        model_data = convert_dynamodb_to_plain(model_data)
+
+    if qc_metrics:
+        qc_metrics = convert_dynamodb_to_plain(qc_metrics)
+
+    if not (validation_summary or model_data or qc_metrics):
+        return ""
+
+    content = """
+# VALIDATION RESULTS CONTEXT
+
+The following validation results are available from the most recent run using this configuration:
+
+## Validation Summary
+"""
+
+    if validation_summary:
+        for key, value in validation_summary.items():
+            content += f"- **{key}**: {value}\n"
+
+    # Add model performance data
+    if model_data:
+        content += f"""
+
+**Model Usage and Performance by Search Group:**
+"""
+        for group_key, group_data in model_data.items():
+            if isinstance(group_data, dict) and 'search_group_config' in group_data:
+                group_config = group_data['search_group_config']
+                group_id = group_config.get('group_id', 'Unknown')
+                group_name = group_config.get('group_name', 'Unknown')
+                model = group_config.get('model', 'Unknown')
+
+                # Extract performance metrics
+                cost_per_row = group_data.get('cost_per_row_actual', 0)
+                processing_time = group_data.get('time_per_row_seconds', 0)
+                success_rate = group_data.get('success_rate', 'Unknown')
+
+                priority = "HIGH PRIORITY" if cost_per_row > 0.03 or processing_time > 30 else "NORMAL"
+
+                content += f"""
+- **Group {group_id} ({group_name})**: Model={model}, Cost=${cost_per_row:.4f}/row, Time={processing_time:.1f}s/row, Success={success_rate}% [{priority}]"""
+
+    # Add QC metrics and column-specific fail rates
+    if qc_metrics and isinstance(qc_metrics, dict):
+        qc_enabled = qc_metrics.get('enabled', False)
+        qc_cost = qc_metrics.get('cost_per_row_actual', 0)
+        confidence_lowered = qc_metrics.get('confidence_lowered_count', 0)
+
+        content += f"""
+
+## Quality Control Analysis
+- **QC Enabled**: {qc_enabled}
+- **QC Cost per Row**: ${qc_cost:.4f}
+- **Confidence Lowered Count**: {confidence_lowered}
+
+**Column-Specific QC Analysis:**"""
+
+        qc_by_column = qc_metrics.get('qc_by_column', {})
+        problem_columns = []
+        good_columns = []
+
+        for col_name, col_qc in qc_by_column.items():
+            overall_fail_rate = col_qc.get('overall_fail_rate', 0) * 100
+            value_fail_rate = col_qc.get('value_fail_rate', 0) * 100
+
+            if overall_fail_rate > 20 or value_fail_rate > 30:
+                priority = "HIGH PRIORITY"
+                problem_columns.append(f"- **{col_name}**: {overall_fail_rate:.1f}% overall fail, {value_fail_rate:.1f}% value fail [{priority}]")
+            elif overall_fail_rate > 10 or value_fail_rate > 15:
+                priority = "MEDIUM PRIORITY"
+                problem_columns.append(f"- **{col_name}**: {overall_fail_rate:.1f}% overall fail, {value_fail_rate:.1f}% value fail [{priority}]")
+            else:
+                good_columns.append(f"- **{col_name}**: {overall_fail_rate:.1f}% overall fail, {value_fail_rate:.1f}% value fail [PERFORMING WELL]")
+
+        for col in problem_columns:
+            content += f"\n{col}"
+        for col in good_columns[:3]:  # Show first 3 good columns to show what's working
+            content += f"\n{col}"
+
+        if problem_columns:
+            content += f"""
+
+**OPTIMIZATION RECOMMENDATIONS:**
+- Focus on HIGH PRIORITY columns with >20% fail rates first
+- Consider increasing search context for failing columns
+- Evaluate if failing columns need different models or search groups
+- Increase web searches for claude models if accuracy is critical
+- Review examples and format specifications for failing columns
+- Consider moving problem columns to different search groups with related information"""
+
+    return content
 
 def build_table_analysis_section(basic_info, column_analysis, domain_info, calculated_columns, referenced_columns, has_formulas):
     """Build the table analysis section"""

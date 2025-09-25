@@ -3574,31 +3574,51 @@ def invoke_config_lambda(event: Dict) -> Dict:
         
         logger.info(f"Invoking config lambda: {config_lambda_name}")
         
-        # Add validation results to event if this is a refinement (has existing_config)
-        if event.get('existing_config') and event.get('email') and event.get('session_id'):
+        # Always try to retrieve existing config and validation results for config generation
+        if event.get('email') and event.get('session_id'):
             try:
-                logger.info(f"BACKGROUND_HANDLER: This is a refinement - retrieving validation results for {event.get('email')}/{event.get('session_id')}")
-                
-                # Import and use UnifiedS3Manager to get validation results
+                logger.info(f"BACKGROUND_HANDLER: Retrieving existing config and validation results for {event.get('email')}/{event.get('session_id')}")
+
+                # Import and use UnifiedS3Manager to get both config and validation results
                 from ..core.unified_s3_manager import UnifiedS3Manager
                 storage_manager = UnifiedS3Manager()
-                
-                latest_validation_results = storage_manager.get_latest_validation_results(
-                    email=event.get('email'),
-                    session_id=event.get('session_id')
-                )
-                
-                if latest_validation_results:
-                    event['latest_validation_results'] = latest_validation_results
-                    logger.info(f"BACKGROUND_HANDLER: Successfully added validation results to config lambda payload!")
-                    logger.info(f"Validation results keys: {list(latest_validation_results.keys())}")
-                    if 'markdown_table' in latest_validation_results:
-                        logger.info(f"markdown_table size: {len(latest_validation_results['markdown_table'])}")
-                else:
-                    logger.info(f"BACKGROUND_HANDLER: No validation results found")
-                    
+
+                # Try to get existing configuration
+                if not event.get('existing_config'):
+                    logger.info("BACKGROUND_HANDLER: No existing_config in event, trying to retrieve from storage")
+                    try:
+                        existing_config = storage_manager.get_latest_config(
+                            email=event.get('email'),
+                            session_id=event.get('session_id')
+                        )
+                        if existing_config:
+                            event['existing_config'] = existing_config
+                            logger.info(f"BACKGROUND_HANDLER: Successfully retrieved existing config!")
+                            logger.info(f"Config keys: {list(existing_config.keys())}")
+                        else:
+                            logger.info(f"BACKGROUND_HANDLER: No existing config found")
+                    except Exception as config_error:
+                        logger.warning(f"BACKGROUND_HANDLER: Exception retrieving existing config: {config_error}")
+
+                # Try to get validation results
+                if not event.get('latest_validation_results'):
+                    logger.info("BACKGROUND_HANDLER: No validation results in event, trying to retrieve from storage")
+                    latest_validation_results = storage_manager.get_latest_validation_results(
+                        email=event.get('email'),
+                        session_id=event.get('session_id')
+                    )
+
+                    if latest_validation_results:
+                        event['latest_validation_results'] = latest_validation_results
+                        logger.info(f"BACKGROUND_HANDLER: Successfully added validation results to config lambda payload!")
+                        logger.info(f"Validation results keys: {list(latest_validation_results.keys())}")
+                        if 'markdown_table' in latest_validation_results:
+                            logger.info(f"markdown_table size: {len(latest_validation_results['markdown_table'])}")
+                    else:
+                        logger.info(f"BACKGROUND_HANDLER: No validation results found")
+
             except Exception as e:
-                logger.warning(f"BACKGROUND_HANDLER: Exception retrieving validation results: {e}")
+                logger.warning(f"BACKGROUND_HANDLER: Exception retrieving config/validation data: {e}")
                 import traceback
                 logger.warning(f"Traceback: {traceback.format_exc()}")
         
@@ -3623,11 +3643,32 @@ def invoke_config_lambda(event: Dict) -> Dict:
         except Exception as size_check_error:
             logger.warning(f"Could not check payload size: {size_check_error}")
         
+        # Construct proper payload for config lambda (extract only the fields it expects)
+        config_lambda_payload = {
+            'table_analysis': event.get('table_analysis'),
+            'existing_config': event.get('existing_config'),
+            'instructions': event.get('instructions', 'Generate an optimal configuration for this data validation scenario'),
+            'session_id': event.get('session_id', 'unknown'),
+            'latest_validation_results': event.get('latest_validation_results'),
+            'conversation_history': event.get('conversation_history', []),
+            # Add table data sources that config lambda can use if table_analysis is missing
+            'excel_s3_key': event.get('excel_s3_key'),
+            'csv_s3_key': event.get('csv_s3_key'),
+            'table_data': event.get('table_data')
+        }
+
+        logger.info(f"BACKGROUND_HANDLER: Constructed config lambda payload with keys: {list(config_lambda_payload.keys())}")
+        logger.info(f"BACKGROUND_HANDLER: existing_config in payload: {bool(config_lambda_payload.get('existing_config'))}")
+        logger.info(f"BACKGROUND_HANDLER: table_analysis in payload: {bool(config_lambda_payload.get('table_analysis'))}")
+        logger.info(f"BACKGROUND_HANDLER: excel_s3_key in payload: {bool(config_lambda_payload.get('excel_s3_key'))}")
+        logger.info(f"BACKGROUND_HANDLER: csv_s3_key in payload: {bool(config_lambda_payload.get('csv_s3_key'))}")
+        logger.info(f"BACKGROUND_HANDLER: table_data in payload: {bool(config_lambda_payload.get('table_data'))}")
+
         # Invoke the lambda
         response = lambda_client.invoke(
             FunctionName=config_lambda_name,
             InvocationType='RequestResponse',
-            Payload=json.dumps(event)
+            Payload=json.dumps(config_lambda_payload)
         )
         
         # Parse response

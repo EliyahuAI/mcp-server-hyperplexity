@@ -487,26 +487,24 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
             else:
                 logger.info("No existing conversation history found to preserve")
             
-            # Get latest validation or preview results for refinement context
+            # Get latest validation or preview results for context
+            # This helps determine if we should treat this as a refinement even without existing_config
             latest_validation_results = None
-            if existing_config:  # Only for refinements
-                try:
-                    logger.info(f"🔍 RESULTS_RETRIEVAL: This is a refinement - getting latest results for config context")
-                    
-                    # Use circular-dependency-free method for getting results during config generation
-                    latest_validation_results = storage_manager.get_latest_results_for_context(email, session_id)
-                    if latest_validation_results:
-                        logger.info(f"✅ SUCCESS: Retrieved results for config refinement context")
-                    else:
-                        logger.info("❌ No validation or preview results found for context")
-                            
-                except Exception as e:
-                    logger.error(f"DEBUG_CONFIG_UNIFIED: EXCEPTION - Could not retrieve results for context: {e}")
-                    import traceback
-                    logger.error(f"DEBUG_CONFIG_UNIFIED: Traceback: {traceback.format_exc()}")
-                    latest_validation_results = None
-            else:
-                logger.info("DEBUG_CONFIG_UNIFIED: This is a new config generation (no existing_config) - skipping results retrieval")
+            try:
+                logger.info(f"🔍 RESULTS_RETRIEVAL: Getting latest results for config context")
+
+                # Use circular-dependency-free method for getting results during config generation
+                latest_validation_results = storage_manager.get_latest_results_for_context(email, session_id)
+                if latest_validation_results:
+                    logger.info(f"✅ SUCCESS: Retrieved results for config context (existing_config={bool(existing_config)})")
+                else:
+                    logger.info("❌ No validation or preview results found for context")
+
+            except Exception as e:
+                logger.error(f"DEBUG_CONFIG_UNIFIED: EXCEPTION - Could not retrieve results for context: {e}")
+                import traceback
+                logger.error(f"DEBUG_CONFIG_UNIFIED: Traceback: {traceback.format_exc()}")
+                latest_validation_results = None
             
             payload = {
                 'table_analysis': table_analysis,
