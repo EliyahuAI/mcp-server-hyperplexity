@@ -44,6 +44,8 @@ Create a comprehensive configuration that includes:
 
 {{FORMULA_ANALYSIS}}
 
+{{USER_FEEDBACK_SECTION}}
+
 ## CLARIFYING QUESTIONS - CONFIGURATION CHOICES
 Generate questions that explain what you configured and suggest specific improvements:
 
