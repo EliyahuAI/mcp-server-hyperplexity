@@ -44,12 +44,19 @@ Create a comprehensive configuration that includes:
 
 {{FORMULA_ANALYSIS}}
 
+## CLARIFYING QUESTIONS - CONFIGURATION CHOICES
+Generate questions that explain what you configured and suggest specific improvements:
+
+**Good**: "I configured searches for current revenue data - would you prefer quarterly breakdowns instead?"
+**Bad**: "Should I validate revenue or skip it?"
+
+Reference your actual configuration decisions and offer concrete alternatives that might work better. These must no refer to any technical details of the configuration. They should focus on the business needs, cost/accuracy tradeoffs for context and performance models, and critical assumptions.
+
 ## Response Requirements
 You MUST use the generate_config_and_questions tool with:
 - Complete updated_config with all required fields
 - Specific clarifying_questions (2-4 questions)
 - **technical_ai_summary** field with detailed technical reasoning explaining your configuration decisions
 - **ai_summary** field with simple business-friendly overview
-
 
 Focus on creating a solid foundation that can be iteratively improved through user feedback.

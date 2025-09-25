@@ -506,9 +506,17 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 logger.error(f"DEBUG_CONFIG_UNIFIED: Traceback: {traceback.format_exc()}")
                 latest_validation_results = None
             
+            # Strip generation_metadata from existing_config to prevent cache pollution
+            clean_existing_config = None
+            if existing_config:
+                clean_existing_config = existing_config.copy()
+                if 'generation_metadata' in clean_existing_config:
+                    logger.info("Stripping generation_metadata from existing_config for config lambda to prevent cache issues")
+                    del clean_existing_config['generation_metadata']
+
             payload = {
                 'table_analysis': table_analysis,
-                'existing_config': existing_config,
+                'existing_config': clean_existing_config,
                 'instructions': instructions,
                 'session_id': session_id,
                 'email': email,  # Include email for context
@@ -795,11 +803,20 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                         if 'config_filename' not in entry:
                             entry['config_filename'] = config_filename
             
+            # DEBUG: Log clarifying questions from config lambda
+            config_clarifying_questions = body.get('clarifying_questions', '')
+            print(f"🔍 INTERFACE_DEBUG: Config lambda clarifying_questions: {bool(config_clarifying_questions)}")
+            if config_clarifying_questions:
+                print(f"🔍 INTERFACE_DEBUG: Questions length: {len(config_clarifying_questions)}")
+                print(f"🔍 INTERFACE_DEBUG: Questions preview: {config_clarifying_questions[:200]}...")
+            else:
+                print(f"🔍 INTERFACE_DEBUG: No clarifying questions from config lambda")
+
             # ========== ENHANCED RESPONSE WITH COST ANALYSIS ==========
             return {
                 'success': True,
                 'updated_config': updated_config,
-                'clarifying_questions': body.get('clarifying_questions', ''),
+                'clarifying_questions': config_clarifying_questions,
                 'clarification_urgency': body.get('clarification_urgency', 0.0),
                 'reasoning': body.get('reasoning', ''),
                 'ai_summary': body.get('ai_summary', ''),

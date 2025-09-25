@@ -272,6 +272,15 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         reasoning = response_data.get('reasoning', '')
         ai_summary = response_data.get('ai_summary', '')
         technical_ai_summary = response_data.get('technical_ai_summary', '')
+
+        # DEBUG: Log clarifying questions details
+        print(f"🔍 CONFIG_DEBUG: Clarifying questions generated: {bool(clarifying_questions)}")
+        if clarifying_questions:
+            print(f"🔍 CONFIG_DEBUG: Questions length: {len(clarifying_questions)}")
+            print(f"🔍 CONFIG_DEBUG: Questions preview: {clarifying_questions[:200]}...")
+        else:
+            print(f"🔍 CONFIG_DEBUG: No clarifying questions generated")
+        print(f"🔍 CONFIG_DEBUG: Clarification urgency: {clarification_urgency}")
         
         # Validate the AI-generated config before proceeding
         if updated_config:
@@ -305,6 +314,11 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         
         # Config lambda returns clean structured response - interface lambda handles metadata and conversation tracking
         logger.info("Config generation complete - returning clean config to interface lambda")
+
+        # DEBUG: Log what we're returning
+        print(f"🔍 CONFIG_DEBUG: Returning clarifying_questions: {bool(clarifying_questions)}")
+        if clarifying_questions:
+            print(f"🔍 CONFIG_DEBUG: Return questions preview: {clarifying_questions[:200]}...")
 
         return {
             'success': True,
@@ -1254,7 +1268,7 @@ def get_unified_generation_schema() -> Dict:
                 "updated_config": config_schema,  # Use the loaded config schema directly
                 "clarifying_questions": {
                     "type": "string",
-                    "description": "Specific questions about the table or columns to help improve the configuration further."
+                    "description": "Questions that reference your actual configuration decisions and suggest concrete alternatives. Format: 'I configured [specific choice] - would [specific alternative] work better?' Avoid generic 'Should I do A or B?' questions."
                 },
                 "clarification_urgency": {
                     "type": "number",

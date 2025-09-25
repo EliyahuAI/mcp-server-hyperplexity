@@ -4113,22 +4113,37 @@
                     // Mark Excel file as uploaded since backend saves it during AI config generation
                     globalState.excelFileUploaded = true;
                     
+                    // DEBUG: Log data structure for clarifying questions
+                    console.log('🔍 FRONTEND_DEBUG: Config generation complete - looking for clarifying questions');
+                    console.log('🔍 FRONTEND_DEBUG: data keys:', Object.keys(data));
+                    console.log('🔍 FRONTEND_DEBUG: data.clarifying_questions:', !!data.clarifying_questions, data.clarifying_questions ? data.clarifying_questions.length : 'N/A');
+                    if (data.config_data) console.log('🔍 FRONTEND_DEBUG: data.config_data keys:', Object.keys(data.config_data));
+                    if (data.config) console.log('🔍 FRONTEND_DEBUG: data.config keys:', Object.keys(data.config));
+                    if (data.response_data) console.log('🔍 FRONTEND_DEBUG: data.response_data keys:', Object.keys(data.response_data));
+
                     // Try multiple locations for clarifying questions
                     let questions = null;
                     if (data.clarifying_questions) {
                         questions = data.clarifying_questions;
+                        console.log('🔍 FRONTEND_DEBUG: Found questions in data.clarifying_questions');
                     } else if (data.config_data && data.config_data.clarifying_questions) {
                         questions = data.config_data.clarifying_questions;
+                        console.log('🔍 FRONTEND_DEBUG: Found questions in data.config_data.clarifying_questions');
                     } else if (data.config && data.config.clarifying_questions) {
                         questions = data.config.clarifying_questions;
+                        console.log('🔍 FRONTEND_DEBUG: Found questions in data.config.clarifying_questions');
                     } else if (data.response_data && data.response_data.clarifying_questions) {
                         questions = data.response_data.clarifying_questions;
+                        console.log('🔍 FRONTEND_DEBUG: Found questions in data.response_data.clarifying_questions');
                     // Config data should now come directly from API response
+                    } else {
+                        console.log('🔍 FRONTEND_DEBUG: No clarifying questions found in any location');
                     }
                     
                     if (questions) {
                         globalState.savedQuestions = questions;
                     } else {
+                        console.log('🔍 FRONTEND_DEBUG: No clarifying questions in WebSocket response, will rely on backend fallback when needed');
                     }
 
                     let aiMessage = data.ai_summary || data.ai_response || 'Configuration generated successfully!';
@@ -6297,10 +6312,16 @@
             // Create refinement card specifically for post-preview refinement
             window.createRefinementCard = async function() {
                 const cardId = generateCardId();
-                
-                // Debug: Check what questions are available right now
-                if (globalState.currentConfig && globalState.currentConfig.clarifying_questions) {
-                } else {
+
+                // DEBUG: Check what questions are available right now
+                console.log('🔍 FRONTEND_DEBUG: createRefinementCard called');
+                console.log('🔍 FRONTEND_DEBUG: globalState.savedQuestions:', !!globalState.savedQuestions, globalState.savedQuestions ? globalState.savedQuestions.length : 'N/A');
+                console.log('🔍 FRONTEND_DEBUG: globalState.currentConfig:', !!globalState.currentConfig);
+                if (globalState.currentConfig) {
+                    console.log('🔍 FRONTEND_DEBUG: currentConfig.clarifying_questions:', !!globalState.currentConfig.clarifying_questions);
+                    if (globalState.currentConfig.clarifying_questions) {
+                        console.log('🔍 FRONTEND_DEBUG: currentConfig questions length:', globalState.currentConfig.clarifying_questions.length);
+                    }
                 }
                 
                 const content = `
@@ -6352,12 +6373,36 @@
                 // Add initial AI message with questions if available
                 
                 let questionsToShow = null;
+                console.log('🔍 FRONTEND_DEBUG: Looking for questions to show in refinement card');
                 if (globalState.savedQuestions) {
                     questionsToShow = globalState.savedQuestions;
+                    console.log('🔍 FRONTEND_DEBUG: Using globalState.savedQuestions:', questionsToShow.length);
                 } else if (globalState.currentConfig?.clarifying_questions) {
                     questionsToShow = globalState.currentConfig.clarifying_questions;
+                    console.log('🔍 FRONTEND_DEBUG: Using currentConfig.clarifying_questions:', questionsToShow.length);
+                } else {
+                    console.log('🔍 FRONTEND_DEBUG: No questions found in primary locations');
                 }
-                
+
+                // If no questions found anywhere, try to fetch from backend as fallback
+                if (!questionsToShow && globalState.email && globalState.sessionId) {
+                    console.log('🔍 FRONTEND_DEBUG: No questions found locally, attempting backend fallback...');
+                    try {
+                        const backendResult = await fetchClarifyingQuestionsFromBackend(
+                            globalState.email,
+                            globalState.sessionId
+                        );
+                        if (backendResult && backendResult.questions) {
+                            questionsToShow = backendResult.questions;
+                            console.log('🔍 FRONTEND_DEBUG: Successfully retrieved questions from backend fallback:', questionsToShow.length);
+                            // Also save to global state for future use
+                            globalState.savedQuestions = questionsToShow;
+                        }
+                    } catch (error) {
+                        console.error('🔍 FRONTEND_DEBUG: Backend fallback failed:', error);
+                    }
+                }
+
                 // Determine if we're refining from preview or full validation results
                 let initialMessage;
                 if (globalState.completionData) {
@@ -6825,6 +6870,53 @@ Please provide any additional context, or simply proceed to generate your initia
                 ]);
             }
 
+            // Helper function to fetch clarifying questions from backend
+            async function fetchClarifyingQuestionsFromBackend(email, sessionId, configId = null) {
+                try {
+                    console.log('🔍 FRONTEND_DEBUG: Fetching clarifying questions from backend', {email: !!email, sessionId: !!sessionId, configId: !!configId});
+
+                    const payload = {
+                        action: 'getAiSummary',
+                        email: email,
+                        session_id: sessionId
+                    };
+
+                    if (configId) {
+                        payload.config_id = configId;
+                    }
+
+                    const response = await fetch(API_BASE_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+
+                    if (data.success && data.clarifying_questions) {
+                        console.log('🔍 FRONTEND_DEBUG: Successfully retrieved clarifying questions from backend:', data.clarifying_questions.length);
+                        return {
+                            questions: data.clarifying_questions,
+                            urgency: data.clarification_urgency || 0,
+                            aiSummary: data.ai_summary || '',
+                            configVersion: data.config_version || 1
+                        };
+                    } else {
+                        console.log('🔍 FRONTEND_DEBUG: No clarifying questions returned from backend');
+                        return null;
+                    }
+                } catch (error) {
+                    console.error('🔍 FRONTEND_DEBUG: Error fetching clarifying questions from backend:', error);
+                    return null;
+                }
+            }
+
             // Helper function to extract clarifying questions from the latest config change log entry
             function getQuestionsFromChangeLog(config) {
                 
@@ -6882,20 +6974,47 @@ Please provide any additional context, or simply proceed to generate your initia
                 
                 
                 // Priority: saved questions from WebSocket response, then current config questions directly, then config change log
+                console.log('🔍 FRONTEND_DEBUG: Searching for questions in refinement - priority order');
                 if (globalState.savedQuestions) {
                     questionsToShow = globalState.savedQuestions;
+                    console.log('🔍 FRONTEND_DEBUG: Found in globalState.savedQuestions:', questionsToShow.length);
                 } else if (globalState.currentConfig && globalState.currentConfig.clarifying_questions) {
                     questionsToShow = globalState.currentConfig.clarifying_questions;
+                    console.log('🔍 FRONTEND_DEBUG: Found in currentConfig.clarifying_questions:', questionsToShow.length);
                 } else {
+                    console.log('🔍 FRONTEND_DEBUG: No questions in primary sources, checking config change log');
                     // Only try change log if we have an actual config structure
                     const changeLogQuestions = actualConfig ? getQuestionsFromChangeLog(actualConfig) : null;
                     if (changeLogQuestions) {
                         questionsToShow = changeLogQuestions;
+                        console.log('🔍 FRONTEND_DEBUG: Found in change log:', questionsToShow.length);
                     } else if (actualConfig && actualConfig.clarifying_questions) {
                         questionsToShow = actualConfig.clarifying_questions;
+                        console.log('🔍 FRONTEND_DEBUG: Found in actualConfig.clarifying_questions:', questionsToShow.length);
+                    } else {
+                        console.log('🔍 FRONTEND_DEBUG: No questions found anywhere');
                     }
                 }
-                
+
+                // If no questions found anywhere, try to fetch from backend as fallback
+                if (!questionsToShow && globalState.email && globalState.sessionId) {
+                    console.log('🔍 FRONTEND_DEBUG: No questions found locally in refinement, attempting backend fallback...');
+                    try {
+                        const backendResult = await fetchClarifyingQuestionsFromBackend(
+                            globalState.email,
+                            globalState.sessionId
+                        );
+                        if (backendResult && backendResult.questions) {
+                            questionsToShow = backendResult.questions;
+                            console.log('🔍 FRONTEND_DEBUG: Successfully retrieved questions from backend fallback in refinement:', questionsToShow.length);
+                            // Also save to global state for future use
+                            globalState.savedQuestions = questionsToShow;
+                        }
+                    } catch (error) {
+                        console.error('🔍 FRONTEND_DEBUG: Backend fallback failed in refinement:', error);
+                    }
+                }
+
                 // First paragraph: Ask about preview-based changes
                 const initialMessage = `What did you like and not like about the preview results?`;
                 await addChatMessage(cardId, 'ai', initialMessage);
