@@ -347,7 +347,6 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
             # Only generate new session ID if none was provided (new upload)
             if not session_id:
                 logger.info("No session_id provided - generating new session ID for new table upload")
-                from datetime import datetime
                 import hashlib
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 hash_input = f"{email_address}_{timestamp}".encode()
@@ -453,7 +452,31 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
                     # No Excel file and no config - invalid state
                     return create_response(400, {'error': 'No files provided. Please upload an Excel file or config file.'})
             else:
-                # Config found - log details
+                # Config found - check if this is a new Excel file upload for config generation
+                if excel_file and not params.get('preview_first_row') and not params.get('async'):
+                    # New Excel file uploaded even though config exists - this is for config generation
+                    logger.info("New Excel file uploaded to session with existing config - treating as config generation request")
+
+                    # Search for matching configs for the new file
+                    try:
+                        from .find_matching_config import find_matching_configs
+                        matching_configs = find_matching_configs(email_address, base_session_id, limit=3)
+                        logger.info(f"Found {len(matching_configs.get('matches', []))} matching configs")
+
+                    except Exception as e:
+                        logger.error(f"Error searching for matching configs: {e}")
+                        matching_configs = {'success': False, 'matches': []}
+
+                    return create_response(200, {
+                        'success': True,
+                        'message': 'Excel file uploaded successfully for config generation',
+                        'session_id': session_id,
+                        'excel_s3_key': excel_s3_key,
+                        'storage_path': storage_manager.get_session_path(email_address, base_session_id),
+                        'matching_configs': matching_configs
+                    })
+
+                # Config found and this is validation/preview request - log details
                 config_source = existing_config.get('storage_metadata', {}).get('source', 'unknown')
                 config_version = existing_config.get('storage_metadata', {}).get('version', 'unknown')
                 logger.info(f"Using existing config from unified storage: {config_s3_key} (source: {config_source}, version: {config_version})")

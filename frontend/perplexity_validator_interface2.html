@@ -4188,9 +4188,6 @@
                 const cardId = generateCardId();
                 const content = `
                     <div id="${cardId}-options" style="text-align: center; padding: 20px;">
-                        <p style="margin: 0 0 20px 0; font-size: var(--font-size-large); color: var(--text-secondary);">
-                            Welcome! Choose how to get started:
-                        </p>
                     </div>
                     <div id="${cardId}-messages"></div>
                     <div id="${cardId}-buttons"></div>
@@ -4250,21 +4247,19 @@
                             globalState.excelFile = e.target.files[0];
                             globalState.excelFileName = e.target.files[0].name;
 
-                            // Update the completion message to show selected file (green box has built-in checkmark)
-                            showFinalCardState(cardId, `File selected: ${e.target.files[0].name}`, 'success');
+                            // Show uploading progress immediately
+                            showFinalCardState(cardId, `Uploading file: ${e.target.files[0].name}`, 'info');
 
                             // Skip upload card entirely - upload file then go to config
                             setTimeout(async () => {
                                 try {
+
                                     // Upload the file directly (same as handleFileSelect does)
                                     const formData = new FormData();
                                     formData.append('excel_file', globalState.excelFile);
                                     formData.append('email', globalState.email);
                                     formData.append('action', 'processExcel');
-                                    // Only append session_id if we have one
-                                    if (globalState.sessionId) {
-                                        formData.append('session_id', globalState.sessionId);
-                                    }
+                                    // New file upload should NEVER reuse existing session - always generate new session ID
 
                                     const uploadResponse = await fetch(`${API_BASE}/validate`, {
                                         method: 'POST',
@@ -4274,6 +4269,8 @@
                                     const data = await uploadResponse.json();
 
                                     if (uploadResponse.ok && data.success) {
+                                        // Show upload completion
+                                        showFinalCardState(cardId, `File uploaded: ${globalState.excelFileName}`, 'success');
                                         // Update session info from upload
                                         if (data.session_id) {
                                             globalState.sessionId = data.session_id;
@@ -4459,8 +4456,8 @@
                 }
                 
                 // Show processing message while uploading
-                showMessage(`${cardId}-messages`, 
-                    `Uploading ${file.name}...`, 
+                showMessage(`${cardId}-messages`,
+                    `Uploading file: ${file.name}`,
                     'info'
                 );
 
@@ -4482,7 +4479,7 @@
             }
 
             async function uploadExcelFile(cardId, file) {
-                
+
                 const formData = new FormData();
                 formData.append('excel_file', file);
                 formData.append('email', globalState.email);
@@ -4496,6 +4493,12 @@
                 const data = await response.json();
 
                 if (response.ok && data.success && data.session_id) {
+                    // Show upload completion
+                    showMessage(`${cardId}-messages`,
+                        `File uploaded: ${file.name}`,
+                        'success'
+                    );
+
                     globalState.sessionId = data.session_id;
                     globalState.excelFileUploaded = true;
                     globalState.storagePath = data.storage_path;
@@ -4561,9 +4564,6 @@
                 const cardId = generateCardId();
                 const content = `
                     <div id="${cardId}-options" style="text-align: center; padding: 20px;">
-                        <p style="margin: 0 0 20px 0; font-size: var(--font-size-base); color: var(--text-secondary);">
-                            Try our demo tables to see how the validator works
-                        </p>
                         <div id="${cardId}-demos-list" style="display: flex; flex-direction: column; gap: 12px;">
                             <div style="text-align: center; color: var(--text-secondary);">
                                 <span>Loading available demos...</span>
@@ -7945,11 +7945,8 @@ Please answer these questions and then I'll generate your configuration and auto
                     <div style="display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem;">
                         <div style="font-size: 32px; flex-shrink: 0;">🔄</div>
                         <div style="flex: 1;">
-                            <div style="font-weight: 600; font-size: var(--font-size-large); margin-bottom: 0.5rem; color: var(--text-color);">
-                                Previous Session Found
-                            </div>
-                            <div style="font-size: var(--font-size-base); color: var(--text-secondary); line-height: 1.5; margin-bottom: 1rem;">
-                                We found a previous validation session with your progress saved.
+                            <div style="font-weight: 600; font-size: var(--font-size-large); margin-bottom: 1rem; color: var(--text-color);">
+                                Select a Refresh Option
                             </div>
                         </div>
                     </div>
@@ -7965,9 +7962,6 @@ Please answer these questions and then I'll generate your configuration and auto
                         </button>
                     </div>
 
-                    <div style="font-size: var(--font-size-small); color: var(--text-secondary); text-align: center; margin-top: 1rem; line-height: 1.4;">
-                        Choose "Restore Session" to continue where you left off, or "Start Fresh" for a new validation.
-                    </div>
                 </div>
             `;
 
@@ -8000,6 +7994,42 @@ Please answer these questions and then I'll generate your configuration and auto
                 // Clear saved state and start normally
                 sessionStorage.removeItem('hyperplexity_app_state');
                 window.isRestoringState = false;
+
+                // Clear all globalState except email (keep user logged in)
+                const emailToKeep = globalState.email;
+                Object.keys(globalState).forEach(key => {
+                    if (key === 'email') return; // Keep email
+                    if (key === 'websockets') {
+                        // Close all websocket connections
+                        globalState.websockets.forEach(ws => {
+                            if (ws && ws.readyState === WebSocket.OPEN) {
+                                ws.close();
+                            }
+                        });
+                        globalState.websockets.clear();
+                    } else if (key === 'cardProgress') {
+                        globalState.cardProgress = {};
+                    } else if (key === 'debounceTimers') {
+                        globalState.debounceTimers.clear();
+                    } else {
+                        // Reset to initial values
+                        if (typeof globalState[key] === 'boolean') {
+                            globalState[key] = false;
+                        } else if (typeof globalState[key] === 'number') {
+                            globalState[key] = 0;
+                        } else {
+                            globalState[key] = null;
+                        }
+                    }
+                });
+                globalState.email = emailToKeep; // Restore email
+
+                // Clear the UI
+                const container = document.querySelector('.container');
+                if (container) {
+                    container.innerHTML = '';
+                }
+
                 // Allow normal initialization to proceed
                 setTimeout(() => {
                     createEmailCard();
