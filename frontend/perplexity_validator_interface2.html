@@ -1665,7 +1665,9 @@
                 hasInsufficientBalance: false, // Track when user has insufficient balance
                 isProcessingConfig: false, // Track if config generation/refinement is in progress
                 debounceTimers: new Map(), // Track debounce timers by function/card ID
-                isNewUser: false // Track if user is new (no prior validation history)
+                isNewUser: false, // Track if user is new (no prior validation history)
+                userAttemptedProcessing: false, // Track if user tried to process but was blocked by insufficient balance
+                pendingProcessingTrigger: null // Store function to trigger processing when balance is sufficient
             };
 
             // ============================================
@@ -2727,11 +2729,27 @@
                             } else {
                                 // Insufficient balance - open add credits page
                                 globalState.hasInsufficientBalance = true;
+                                // Mark that user attempted processing from preview
+                                globalState.userAttemptedProcessing = true;
+                                globalState.pendingProcessingTrigger = () => {
+                                    console.log('[AUTO-PROCESS] Triggering delayed processing from preview after balance update');
+                                    globalState.activePreviewCard = null;
+
+                                    // Find and click the Process Table button to trigger normal processing
+                                    const buttons = document.querySelectorAll('button');
+                                    for (const button of buttons) {
+                                        const buttonText = button.querySelector('.button-text, span');
+                                        if (buttonText && buttonText.textContent.includes('Process Table')) {
+                                            button.click();
+                                            break;
+                                        }
+                                    }
+                                };
                                 markButtonSelected(button, '💳 Opening store...');
                                 const creditsNeeded = accountInfo?.credits_needed || estimatedCost;
                                 const recommendedAmount = Math.ceil(creditsNeeded); // Round up to nearest dollar
                                 openAddCreditsPage(recommendedAmount, `${cardId}-messages`);
-                                
+
                                 // Reset button after a delay
                                 setTimeout(() => {
                                     markButtonUnselected(button);
@@ -2740,6 +2758,11 @@
                         }
                     }
                 ]);
+
+                // Show instruction message for Add Credits button
+                if (!sufficientBalance) {
+                    showMessage(`${cardId}-messages`, `💳 Click button to add credits. After purchase, return to this tab for auto-processing.`, 'info', false, 'add-credits-instruction');
+                }
             }
             // Create standardized progress component
             function createProgress(options) {
@@ -3095,13 +3118,15 @@
 
                 if (hasProductComponent && recommendedAmount) {
                     // Use automatic credit purchasing if component is available
-                    showMessage(messageContainer, `💳 Adding ${creditsText} credits to cart and redirecting...`, 'info', false, 'auto-purchase');
-
                     console.log(`[CREDITS] Using automatic purchase for ${recommendedAmount} credits`);
 
                     // Use the needCredits function for automatic purchasing
                     setTimeout(() => {
                         needCredits(recommendedAmount);
+                        // Show instruction to return after purchase
+                        setTimeout(() => {
+                            showMessage(messageContainer, `💳 Credits added to cart! Please complete purchase and return to this tab.`, 'info', false, 'return-instruction');
+                        }, 1500);
                     }, 1000);
 
                 } else {
@@ -3217,10 +3242,41 @@
                                 console.log('[FOCUS] Balance improved - updating interface');
                                 globalState.hasInsufficientBalance = false;
 
-                                // Re-check all preview cards for sufficient balance
-                                setTimeout(() => {
-                                    updatePreviewBalanceDisplay();
-                                }, 500);
+                                // Check if we can auto-trigger processing
+                                const estimatedCost = globalState.estimatedCost || 0;
+                                const canProcess = newBalance >= estimatedCost;
+
+                                if (canProcess && globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger) {
+                                    console.log('[FOCUS] Balance sufficient and user previously attempted - auto-triggering processing');
+
+                                    // Clear blue message and show green success message
+                                    const messageContainers = document.querySelectorAll('[id$="-messages"]');
+                                    if (messageContainers.length > 0) {
+                                        const lastContainer = messageContainers[messageContainers.length - 1];
+                                        const containerId = lastContainer.id;
+
+                                        // Clear existing messages (especially the blue "Credits added to cart" message)
+                                        const container = document.getElementById(containerId);
+                                        if (container) {
+                                            container.innerHTML = '';
+                                        }
+
+                                        showMessage(containerId, `🎉 Balance updated! Auto-starting validation...`, 'success', false, 'auto-process');
+                                    }
+
+                                    // Trigger the pending processing after a brief delay
+                                    setTimeout(() => {
+                                        const triggerFunc = globalState.pendingProcessingTrigger;
+                                        globalState.pendingProcessingTrigger = null;
+                                        globalState.userAttemptedProcessing = false;
+                                        triggerFunc();
+                                    }, 2000);
+                                } else {
+                                    // Re-check all preview cards for sufficient balance
+                                    setTimeout(() => {
+                                        updatePreviewBalanceDisplay();
+                                    }, 500);
+                                }
                             }
                         }
                     }
@@ -4559,6 +4615,13 @@
                                         }
                                         globalState.excelFileUploaded = true;
 
+                                        // [FIX] Store matching configs if found
+                                        if (data.matching_configs && data.matching_configs.success && data.matching_configs.matches) {
+                                            globalState.matchingConfigs = data.matching_configs;
+                                        } else {
+                                            globalState.matchingConfigs = null;
+                                        }
+
                                         // Update completion message to show upload success
                                         showFinalCardState(cardId, `File uploaded: ${globalState.excelFileName}`, 'success');
 
@@ -4747,11 +4810,9 @@
                     await uploadExcelFile(cardId, file);
                     // Create configuration card after successful upload
                     setTimeout(() => {
-                        
                         createConfigurationCard();
                     }, 500);
                 } catch (error) {
-                    console.error('Excel file upload failed:', error);
                     // Reset UI on failure
                     dropZone.style.pointerEvents = 'auto';
                     dropZone.style.opacity = '1';
@@ -4766,12 +4827,15 @@
                 formData.append('email', globalState.email);
                 formData.append('action', 'processExcel');
 
-                const response = await fetch(`${API_BASE}/validate`, {
-                    method: 'POST',
-                    body: formData
-                });
 
-                const data = await response.json();
+                try {
+                    const response = await fetch(`${API_BASE}/validate`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
 
                 if (response.ok && data.success && data.session_id) {
                     // Show upload completion
@@ -4786,6 +4850,7 @@
                     localStorage.setItem('sessionId', globalState.sessionId);
                     
                     // Store matching configs if found
+
                     if (data.matching_configs && data.matching_configs.success && data.matching_configs.matches) {
                         globalState.matchingConfigs = data.matching_configs;
                     } else {
@@ -4800,6 +4865,9 @@
                     );
                 } else {
                     throw new Error(data.error || 'Failed to upload Excel file');
+                }
+                } catch (error) {
+                    throw error;
                 }
             }
 
@@ -5053,11 +5121,12 @@
                     });
                     
                     const result = await response.json();
-                    
+
+
                     if (!result.success) {
                         throw new Error(result.error || 'Failed to search for matching configs');
                     }
-                    
+
                     // Filter for good matches (>= 80% - backend already does this but double-check)
                     const goodMatches = result.matches ? result.matches.filter(match => match.match_score >= 0.8) : [];
                     
@@ -5202,7 +5271,6 @@
                     const matchScore = Math.round(config.match_score * 100);
                     return matchScore === 100;
                 });
-                
 
                 if (!perfectMatch) {
                     // No perfect match - show only "Create with AI"
@@ -6083,14 +6151,18 @@
                     }
 
                     // Now populate the green buttons based on matching configs
+
                     const buttonContainer = document.getElementById(`${cardId}-button-container`);
                     if (buttonContainer) {
                         if (globalState.matchingConfigs && globalState.matchingConfigs.matches) {
                             const goodMatches = globalState.matchingConfigs.matches.filter(match => match.match_score >= 0.8);
-                            
+
                             if (goodMatches.length > 0) {
                                 // Check for perfect matches
-                                const perfectMatch = goodMatches.find(config => Math.round(config.match_score * 100) === 100);
+                                const perfectMatch = goodMatches.find(config => {
+                                    const matchScore = Math.round(config.match_score * 100);
+                                    return matchScore === 100;
+                                });
                                 
                                 if (perfectMatch) {
                                     buttonContainer.innerHTML = `
@@ -7051,17 +7123,24 @@ Please answer these questions and then I'll generate your configuration and auto
                     
                     globalState.currentConfig = data;
                     globalState.excelFileUploaded = true;
-                    
+
+                    // Reset balance and cost states since config changed
+                    globalState.hasInsufficientBalance = false;
+                    globalState.estimatedCost = null;
+
                     // Save clarifying questions for later use in refinement
                     if (data.clarifying_questions) {
                         globalState.savedQuestions = data.clarifying_questions;
                     }
-                    
+
                     let aiMessage = data.ai_summary || data.ai_response || 'Configuration refined successfully!';
                     await addChatMessage(cardId, 'ai', aiMessage);
-                    
+
                     // Auto-generate preview immediately after refinement
                     setTimeout(() => {
+                        console.log('[REFINEMENT] Auto-generating preview after refinement (balance state reset)...');
+                        // Clear any existing preview card state to allow new preview
+                        globalState.activePreviewCard = null;
                         createPreviewCard();
                     }, 1000);
                     
@@ -7170,10 +7249,15 @@ Please answer these questions and then I'll generate your configuration and auto
 
             // 5. Preview Card - Fixed to ensure consistent card ID and prevent duplicates
             function createPreviewCard() {
+                console.log('[PREVIEW] createPreviewCard() called');
+
                 // Check if a preview card already exists
                 if (globalState.activePreviewCard) {
+                    console.log('[PREVIEW] Preview card already exists, skipping:', globalState.activePreviewCard);
                     return;
                 }
+
+                console.log('[PREVIEW] Creating new preview card...');
 
                 // Generate the card ID FIRST
                 const cardId = generateCardId();
@@ -7358,6 +7442,22 @@ Please answer these questions and then I'll generate your configuration and auto
                 if (currentBalance < estimatedCost) {
                     console.warn(`[SECURITY] Payment bypass attempt blocked - insufficient balance`);
                     completeThinkingInCard(cardId, 'Insufficient Balance');
+
+                    // Mark that user attempted processing
+                    globalState.userAttemptedProcessing = true;
+                    globalState.pendingProcessingTrigger = () => {
+                        console.log('[AUTO-PROCESS] Triggering delayed processing after balance update');
+
+                        // Find and click the Process Table button to trigger normal processing
+                        const buttons = document.querySelectorAll('button');
+                        for (const button of buttons) {
+                            const buttonText = button.querySelector('.button-text, span');
+                            if (buttonText && buttonText.textContent.includes('Process Table')) {
+                                button.click();
+                                break;
+                            }
+                        }
+                    };
 
                     // Reset any buttons that might be in "Processing..." state
                     setTimeout(() => {
@@ -7670,13 +7770,8 @@ Please answer these questions and then I'll generate your configuration and auto
             setTimeout(() => {
                 // Only create initial card if we're not restoring from saved state and haven't shown modal
                 if (!window.isRestoringState && !hasHandledState) {
-                    console.log('[DEBUG] Creating email card - normal startup');
                     createEmailCard();
                 } else {
-                    console.log('[DEBUG] Skipping email card creation - state handled or restoring:', {
-                        isRestoringState: window.isRestoringState,
-                        hasHandledState: hasHandledState
-                    });
                 }
 
                 // Restore scrolling after card is created and settled
@@ -8192,13 +8287,11 @@ Please answer these questions and then I'll generate your configuration and auto
                         globalState.debounceTimers = new Map();
                     }
 
-                    console.log('[DEBUG] Restored global state:', globalState);
                 }
 
                 // Restore preview data
                 if (state.lastPreviewData) {
                     window.lastPreviewData = state.lastPreviewData;
-                    console.log('[DEBUG] Restored preview data');
                 }
 
                 // Show a brief notification that state was restored
@@ -8268,7 +8361,6 @@ Please answer these questions and then I'll generate your configuration and auto
 
         // Show restore session modal when saved state is detected
         function showRestoreSessionModal() {
-            console.log('[DEBUG] Showing restore session modal');
 
             // Create backdrop
             const backdrop = document.createElement('div');
@@ -8329,7 +8421,6 @@ Please answer these questions and then I'll generate your configuration and auto
             document.body.appendChild(backdrop);
             document.body.appendChild(modal);
 
-            console.log('[DEBUG] Modal and backdrop added to DOM');
 
             // Add global functions for the buttons
             window.restoreSession = function() {
@@ -8670,6 +8761,11 @@ Please answer these questions and then I'll generate your configuration and auto
                     }
                 ]);
 
+                // Show instruction message for Add Credits button
+                if (!sufficientBalance) {
+                    showMessage(`${cardId}-messages`, `💳 Click button to add credits. After purchase, return to this tab for auto-processing.`, 'info', false, 'add-credits-instruction');
+                }
+
                 console.log(`[INFO] Recreated ${sufficientBalance ? 'Process Table' : 'Add Credits'} button for ${cardId}`);
             } catch (error) {
                 console.warn(`[WARN] Could not recreate button for ${cardId}:`, error);
@@ -8742,8 +8838,6 @@ Please answer these questions and then I'll generate your configuration and auto
             const saved = sessionStorage.getItem('hyperplexity_app_state');
             if (saved) {
                 const state = JSON.parse(saved);
-                console.log('[DEBUG] Current saved state:', state);
-                console.log('[DEBUG] Number of saved cards:', state.cards?.length || 0);
                 if (state.cards) {
                     state.cards.forEach((card, i) => {
                         const cleanTitle = (card.title || '').replace(/<[^>]*>/g, '').trim();
@@ -8758,7 +8852,6 @@ Please answer these questions and then I'll generate your configuration and auto
                     });
                 }
             } else {
-                console.log('[DEBUG] No saved state found');
             }
         };
 
