@@ -111,7 +111,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 if excel_s3_key:
                     logger.info(f"Analyzing Excel from S3: {excel_s3_key}")
-                    table_analysis = s3_table_parser.analyze_table_structure(bucket, excel_s3_key)
+                    table_analysis = s3_table_parser.analyze_table_structure(bucket, excel_s3_key, extract_formulas=True)
                 elif csv_s3_key:
                     logger.info(f"Analyzing CSV from S3: {csv_s3_key}")
                     table_analysis = s3_table_parser.analyze_table_structure(bucket, csv_s3_key)
@@ -726,10 +726,10 @@ These columns are used in calculations and require strict format validation:"""
     for col_name in calculated_columns | referenced_columns:
         if col_name in calculated_columns:
             column_formula_context += f"""
-- **{col_name}**: CALCULATED COLUMN - Contains Excel formulas, use Claude validation (no web search)"""
+- **{col_name}**: CALCULATED COLUMN - Mark as CRITICAL importance, validate using AI logic (Claude with anthropic_max_web_searches: 0), NOT suitable as ID field"""
         elif col_name in referenced_columns:
             column_formula_context += f"""
-- **{col_name}**: SOURCE COLUMN - Used in Excel formulas, requires strict format validation"""
+- **{col_name}**: SOURCE COLUMN - Mark as CRITICAL importance, strict format validation required, can be ID field if unique"""
 
     # Replace template fields
     return (formula_template
@@ -1219,12 +1219,12 @@ def build_table_analysis_section(basic_info, column_analysis, domain_info, calcu
             # Check if this column is calculated (has formulas)
             if col_name in calculated_columns:
                 table_section += f"""
-- **CALCULATED COLUMN**: Contains Excel formulas - use Claude validation (no web search)"""
+- **CALCULATED COLUMN**: Contains Excel formulas - validate using AI logic (Claude, no web search), NOT suitable as ID field"""
 
             # Check if this column is referenced by formulas (is a source column)
             elif col_name in referenced_columns:
                 table_section += f"""
-- **SOURCE COLUMN**: Used in Excel formulas - requires strict format validation"""
+- **SOURCE COLUMN**: Used in Excel formulas - requires strict format validation, can be ID field if unique"""
 
     return table_section
 

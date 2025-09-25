@@ -387,8 +387,8 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
         try:
             from shared_table_parser import s3_table_parser
 
-            # First, analyze basic table structure
-            table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key)
+            # First, analyze table structure with formula extraction for config generation
+            table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
 
             if not table_analysis:
                 return {'success': False, 'error': 'Failed to analyze table structure'}

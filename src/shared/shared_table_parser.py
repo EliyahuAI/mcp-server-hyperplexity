@@ -275,19 +275,37 @@ class S3TableParser:
             self.logger.error(f"Failed to get table sample: {str(e)}")
             raise
     
-    def analyze_table_structure(self, bucket: str, key: str) -> Dict[str, Any]:
+    def analyze_table_structure(self, bucket: str, key: str, extract_formulas: bool = False) -> Dict[str, Any]:
         """Analyze table structure for AI config generation"""
         try:
-            # Get sample data
-            sample = self.get_table_sample(bucket, key, max_rows=20)
-            
+            # Get sample data - extract formulas if requested for Excel files
+            should_extract_formulas = extract_formulas and (key.endswith('.xlsx') or key.endswith('.xls'))
+
+            if should_extract_formulas:
+                # Use full parse with formula extraction for Excel files
+                full_data = self.parse_s3_table(bucket, key, extract_formulas=True)
+                sample = {
+                    'filename': full_data['filename'],
+                    'total_rows': full_data['total_rows'],
+                    'total_columns': full_data['total_columns'],
+                    'column_names': full_data['column_names'],
+                    'sample_data': full_data['data'][:20],  # First 20 rows
+                    'metadata': full_data['metadata']
+                }
+                # Include formula data if available
+                formula_data = full_data.get('formulas', [])
+            else:
+                # Use regular sample method for faster analysis
+                sample = self.get_table_sample(bucket, key, max_rows=20)
+                formula_data = []
+
             # Analyze each column
             column_analysis = {}
             for col_name in sample['column_names']:
                 # Get values for this column
                 values = [row.get(col_name, '') for row in sample['sample_data']]
                 non_empty_values = [v for v in values if v.strip()]
-                
+
                 column_analysis[col_name] = {
                     'data_type': self._infer_data_type(non_empty_values),
                     'non_null_count': len(non_empty_values),
@@ -295,8 +313,8 @@ class S3TableParser:
                     'sample_values': sorted(list(set(non_empty_values)))[:5],  # Up to 5 unique samples, deterministically sorted
                     'fill_rate': len(non_empty_values) / len(values) if values else 0.0
                 }
-            
-            return {
+
+            result = {
                 'basic_info': {
                     'filename': sample['filename'],
                     'shape': [sample['total_rows'], sample['total_columns']],
@@ -307,6 +325,16 @@ class S3TableParser:
                 'domain_info': self._infer_domain_info(sample),
                 'metadata': sample['metadata']
             }
+
+            # Add formula data if extracted
+            if should_extract_formulas and formula_data:
+                result['formula_data'] = formula_data
+                # Ensure metadata indicates formulas were found
+                result['metadata']['has_formulas'] = True
+                result['metadata']['formula_count'] = sum(len(row_formulas) for row_formulas in formula_data)
+                self.logger.info(f"Formula extraction: {result['metadata']['formula_count']} formulas found in {len(formula_data)} rows")
+
+            return result
             
         except Exception as e:
             self.logger.error(f"Failed to analyze table structure: {str(e)}")
@@ -826,6 +854,8 @@ class S3TableParser:
             return 'statistical'
         elif any(func in formula_upper for func in ['DATE(', 'TODAY(', 'NOW(']):
             return 'date'
+        elif any(func in formula_upper for func in ['MOD(', 'ROUND(', 'ABS(', 'SQRT(', 'POWER(', 'FLOOR(', 'CEILING(']):
+            return 'arithmetic'
         elif any(op in formula_str for op in ['+', '-', '*', '/']):
             return 'arithmetic'
         else:
@@ -834,25 +864,17 @@ class S3TableParser:
     def _generate_formula_description(self, formula_str, referenced_columns, formula_type):
         """Generate a human-readable description of the formula"""
         if not referenced_columns:
-            return f"Formula calculation: {formula_str}"
+            return f"Formula: {formula_str}"
 
-        col_names = [ref['column_name'] for ref in referenced_columns]
-        col_names_str = ", ".join(col_names)
+        # Replace cell references with column names
+        formula_with_column_names = formula_str
+        for ref in referenced_columns:
+            # Replace Excel column references (like B2, B3, etc.) with column name
+            import re
+            pattern = rf"{ref['excel_column']}\d+"
+            formula_with_column_names = re.sub(pattern, ref['column_name'], formula_with_column_names)
 
-        descriptions = {
-            'sum': f"Sum of values from columns: {col_names_str}",
-            'average': f"Average of values from columns: {col_names_str}",
-            'count': f"Count of non-empty values from columns: {col_names_str}",
-            'conditional': f"Conditional calculation using columns: {col_names_str}",
-            'lookup': f"Lookup value using columns: {col_names_str}",
-            'text': f"Text concatenation using columns: {col_names_str}",
-            'statistical': f"Statistical calculation using columns: {col_names_str}",
-            'date': f"Date calculation using columns: {col_names_str}",
-            'arithmetic': f"Arithmetic calculation using columns: {col_names_str}",
-            'other': f"Formula using columns: {col_names_str}"
-        }
-
-        base_description = descriptions.get(formula_type, descriptions['other'])
+        return f"Formula: {formula_with_column_names}"
 
         # Add specific column details if there are only a few referenced columns
         if len(referenced_columns) <= 3:
