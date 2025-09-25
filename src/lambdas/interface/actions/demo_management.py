@@ -352,12 +352,12 @@ def handle(request_data, context):
         elif action == 'selectDemo':
             demo_name = request_data.get('demo_name', '').strip()
             email = request_data.get('email', '').strip()
-            session_id = request_data.get('session_id', '').strip()
+            session_id = request_data.get('session_id', '').strip()  # Optional for demos
 
-            if not all([demo_name, email, session_id]):
+            if not all([demo_name, email]):
                 return create_response(400, {
                     'success': False,
-                    'error': 'Missing required parameters: demo_name, email, session_id'
+                    'error': 'Missing required parameters: demo_name, email'
                 })
 
             result = copy_demo_to_session(demo_name, email, session_id)

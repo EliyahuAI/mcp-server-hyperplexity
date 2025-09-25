@@ -1854,6 +1854,145 @@
             }
 
             // ============================================
+            // CREDIT PURCHASING SYSTEM
+            // ============================================
+
+            /**
+             * Add credits to cart using the product component on the page
+             * @param {number} quantity - Number of credits to add
+             * @returns {boolean} Success status
+             */
+            function addCreditsToCart(quantity) {
+                if (!quantity || quantity < 1) {
+                    console.warn('[CREDITS] Invalid quantity:', quantity);
+                    return false;
+                }
+
+                console.log(`[CREDITS] Adding ${quantity} credits to cart...`);
+
+                // Find the quantity input
+                const quantityInput = document.querySelector('input[name="quantity-input"]');
+                if (!quantityInput) {
+                    console.warn('[CREDITS] Quantity input not found. Make sure the product component is on the page.');
+                    return false;
+                }
+
+                // Find the add-to-cart button
+                const addToCartButton = document.querySelector('.sqs-add-to-cart-button');
+                if (!addToCartButton) {
+                    console.warn('[CREDITS] Add-to-cart button not found.');
+                    return false;
+                }
+
+                // Set the quantity
+                quantityInput.value = quantity;
+                console.log(`[CREDITS] Set quantity to ${quantity}`);
+
+                // Trigger input events to make sure the UI updates
+                const inputEvent = new Event('input', { bubbles: true });
+                const changeEvent = new Event('change', { bubbles: true });
+                quantityInput.dispatchEvent(inputEvent);
+                quantityInput.dispatchEvent(changeEvent);
+
+                // Click the add-to-cart button
+                setTimeout(() => {
+                    addToCartButton.click();
+                    console.log('[CREDITS] Clicked add-to-cart button');
+                }, 500);
+
+                return true;
+            }
+
+            /**
+             * Add credits and redirect to cart page
+             * @param {number} quantity - Number of credits to add
+             */
+            function addCreditsAndGoToCart(quantity) {
+                if (!quantity || quantity < 1) {
+                    console.warn('[CREDITS] Invalid quantity for purchase:', quantity);
+                    // Just go to cart if invalid quantity
+                    window.open('https://eliyahu.ai/cart', '_blank');
+                    return;
+                }
+
+                console.log(`[CREDITS] Adding ${quantity} credits and redirecting to cart...`);
+
+                const success = addCreditsToCart(quantity);
+
+                if (success) {
+                    // Wait for cart to update, then open cart in new tab
+                    setTimeout(() => {
+                        console.log('[CREDITS] Opening cart in new tab...');
+                        window.open('https://eliyahu.ai/cart', '_blank');
+                    }, 1500);
+                } else {
+                    // Fallback: open cart in new tab
+                    console.log('[CREDITS] Product component not found, opening cart in new tab');
+                    window.open('https://eliyahu.ai/cart', '_blank');
+                }
+            }
+
+            /**
+             * Main function for when user needs credits
+             * @param {number} quantity - Number of credits needed
+             */
+            function needCredits(quantity) {
+                console.log(`[CREDITS] User needs ${quantity} credits - initiating purchase flow`);
+                addCreditsAndGoToCart(quantity);
+            }
+
+            /**
+             * Check if the product component is available on the page
+             * @returns {boolean} True if components are found
+             */
+            function checkProductComponent() {
+                const quantityInput = document.querySelector('input[name="quantity-input"]');
+                const addButton = document.querySelector('.sqs-add-to-cart-button');
+                const increaseBtn = document.querySelector('.increase-button');
+                const decreaseBtn = document.querySelector('.decrease-button');
+
+                console.log('[CREDITS] Product component check:');
+                console.log('- Quantity input:', quantityInput ? 'Found' : 'NOT FOUND');
+                console.log('- Add-to-cart button:', addButton ? 'Found' : 'NOT FOUND');
+                console.log('- Increase button:', increaseBtn ? 'Found' : 'NOT FOUND');
+                console.log('- Decrease button:', decreaseBtn ? 'Found' : 'NOT FOUND');
+
+                if (quantityInput) {
+                    console.log('- Current quantity:', quantityInput.value);
+                }
+
+                return !!(quantityInput && addButton);
+            }
+
+            // Expose credit purchasing functions globally
+            window.creditPurchasing = {
+                addToCart: addCreditsToCart,
+                addAndGoToCart: addCreditsAndGoToCart,
+                needCredits: needCredits,
+                checkComponent: checkProductComponent
+            };
+
+            // Also expose individual functions for console use
+            window.needCredits = needCredits;
+            window.addCreditsToCart = addCreditsToCart;
+            window.addCreditsAndGoToCart = addCreditsAndGoToCart;
+            window.checkProductComponent = checkProductComponent;
+
+            // Log availability of credit purchasing system
+            console.log('[CREDITS] Credit purchasing system loaded');
+            console.log('[CREDITS] Available functions: needCredits(qty), addCreditsToCart(qty), checkProductComponent()');
+
+            // Check if product component is available on page load
+            setTimeout(() => {
+                const componentAvailable = checkProductComponent();
+                if (componentAvailable) {
+                    console.log('[CREDITS] Product component detected - automatic purchasing enabled');
+                } else {
+                    console.log('[CREDITS] No product component found - will use manual store navigation');
+                }
+            }, 1000);
+
+            // ============================================
             // GLOBAL PROGRESS SYSTEM REMOVED
             // ============================================
             // All progress now handled at card level via showThinkingInCard()
@@ -2886,10 +3025,13 @@
             }
             
             function showInsufficientBalanceError(errorData, cardId = null) {
-                const balance = errorData.current_balance || 0;
+                // Use the current balance from global state (same as preview cards)
+                const balance = globalState.accountBalance || errorData.current_balance || 0;
                 const minCost = errorData.estimated_minimum_cost || 0.01;
                 // Domain multiplier hidden from frontend
                 const shortfall = Math.max(0, minCost - balance);
+
+                console.log(`[BALANCE_DEBUG] Insufficient balance dialog - Balance: $${balance.toFixed(4)}, Cost: $${minCost.toFixed(4)}, Shortfall: $${shortfall.toFixed(4)}`);
                 
                 // Calculate recommended purchase amounts
                 const recommendedMinimum = Math.ceil(shortfall); // Round up to nearest dollar
@@ -2903,51 +3045,16 @@
                     <div class="insufficient-balance-error">
                         <div class="error-icon">💳</div>
                         <div class="error-content">
-                            <h4>Insufficient Balance</h4>
-                            <div class="balance-details">
-                                <div class="balance-row">
-                                    <span>Current Balance:</span>
-                                    <span class="balance-amount">$${balance.toFixed(4)}</span>
-                                </div>
-                                <div class="balance-row">
-                                    <span>Required for this validation:</span>
-                                    <span class="cost-amount">$${minCost.toFixed(4)}</span>
-                                </div>
-                                <div class="balance-row shortfall">
-                                    <span>Additional credits needed:</span>
-                                    <span class="shortfall-amount">$${shortfall.toFixed(4)}</span>
-                                </div>
-                            </div>
-                            
-                            <div class="purchase-recommendations">
-                                <h5>💡 Recommended Purchase:</h5>
-                                <div class="recommendation-options">
-                                    <div class="recommendation basic">
-                                        <strong>Minimum:</strong> $${recommendedMinimum.toFixed(2)}
-                                        <small>Covers this validation + small buffer</small>
-                                    </div>
-                                    <div class="recommendation recommended">
-                                        <strong>Recommended:</strong> $${recommendedSafe.toFixed(2)}
-                                        <small>Covers multiple validations ⭐</small>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="domain-info">
-                                <small>💡 Additional costs may apply based on your account type</small>
-                            </div>
-                            
+                            <h4>Need ${recommendedMinimum} Credits</h4>
+                            <p>You need $${shortfall.toFixed(2)} more credits to run this validation.</p>
+
                             <div class="error-actions">
-                                <button class="std-button secondary" onclick="openAddCreditsPage()">
-                                    <span class="button-text">💳 Add Credits via Store</span>
+                                <button class="std-button primary" onclick="needCredits(${recommendedMinimum})" style="width: 100%; margin-bottom: 10px;">
+                                    <span class="button-text">💳 Get ${recommendedMinimum} Credits</span>
                                 </button>
-                                <button class="std-button primary" onclick="refreshCurrentBalance(); closeModal();">
-                                    <span class="button-text">🔄 Check for Credits</span>
+                                <button class="std-button secondary" onclick="checkBalanceAndUpdate(this);">
+                                    <span class="button-text">🔄 Check Balance</span>
                                 </button>
-                            </div>
-                            
-                            <div class="return-info">
-                                <small>✨ Your balance will automatically refresh when you return from the store</small>
                             </div>
                         </div>
                     </div>
@@ -2972,88 +3079,252 @@
                 // Get current session info for tracking
                 const sessionId = globalState.sessionId || 'no-session';
                 const userEmail = getCurrentUserEmail() || '';
-                
+
                 // Calculate recommended amount if not provided
                 if (!recommendedAmount && globalState.lastInsufficientBalanceError) {
                     const errorData = globalState.lastInsufficientBalanceError;
                     const shortfall = Math.max(0, (errorData.estimated_minimum_cost || 0.01) - (errorData.current_balance || 0));
                     recommendedAmount = Math.ceil(shortfall); // Round up to nearest dollar
                 }
-                
-                // Show confirmation message in the page instead of system dialog
-                const creditsText = recommendedAmount ? `$${recommendedAmount.toFixed(2)}` : 'custom';
-                showMessage(messageContainer, `💳 You need ${creditsText} in credits. Opening store in new tab...`, 'info', false, 'store-opening');
-                
-                // Build store URL - use environment-specific URL
-                const storeUrl = ENV_CONFIG.storeUrl;
-                
-                // Add query parameters for tracking
-                const params = new URLSearchParams();
-                if (recommendedAmount) {
-                    params.append('amount', recommendedAmount.toFixed(2));
+
+                // Show confirmation message
+                const creditsText = recommendedAmount ? `${recommendedAmount}` : 'some';
+
+                // Check if product component is available on the current page
+                const hasProductComponent = checkProductComponent();
+
+                if (hasProductComponent && recommendedAmount) {
+                    // Use automatic credit purchasing if component is available
+                    showMessage(messageContainer, `💳 Adding ${creditsText} credits to cart and redirecting...`, 'info', false, 'auto-purchase');
+
+                    console.log(`[CREDITS] Using automatic purchase for ${recommendedAmount} credits`);
+
+                    // Use the needCredits function for automatic purchasing
+                    setTimeout(() => {
+                        needCredits(recommendedAmount);
+                    }, 1000);
+
+                } else {
+                    // Fall back to opening store page manually
+                    showMessage(messageContainer, `💳 You need ${creditsText} credits. Opening store in new tab...`, 'info', false, 'store-opening');
+
+                    // Build store URL - use environment-specific URL
+                    const storeUrl = ENV_CONFIG.storeUrl;
+
+                    // Add query parameters for tracking
+                    const params = new URLSearchParams();
+                    if (recommendedAmount) {
+                        params.append('amount', recommendedAmount.toFixed(2));
+                    }
+                    if (sessionId) {
+                        params.append('session', sessionId);
+                    }
+                    if (userEmail) {
+                        params.append('email', userEmail);
+                    }
+                    params.append('return_to', window.location.href);
+
+                    // Create the full URL
+                    const fullUrl = `${storeUrl}?${params.toString()}`;
+
+                    window.open(fullUrl, '_blank');
+
+                    // Set flag to refresh balance when user returns
+                    globalState.awaitingBalanceRefresh = true;
+
+                    // Update the same message instead of creating a new one
+                    setTimeout(() => {
+                        showMessage(messageContainer, `💳 Opening store with ${creditsText} credits. Your balance will refresh when you return.`, 'info', false, 'store-opening');
+                    }, 500);
+
+                    // Setup balance refresh with proper messaging (only when insufficient balance)
+                    setupBalanceRefreshOnReturn(messageContainer);
                 }
-                if (sessionId) {
-                    params.append('session', sessionId);
-                }
-                if (userEmail) {
-                    params.append('email', userEmail);
-                }
-                params.append('return_to', window.location.href);
-                
-                // Create the full URL
-                const fullUrl = `${storeUrl}?${params.toString()}`;
-                
-                window.open(fullUrl, '_blank');
-                
-                // Set flag to refresh balance when user returns
-                globalState.awaitingBalanceRefresh = true;
-                
-                // Update the same message instead of creating a new one
-                setTimeout(() => {
-                    showMessage(messageContainer, `💳 Opening store with ${creditsText} credits. Your balance will refresh when you return.`, 'info', false, 'store-opening');
-                }, 500);
-                
-                // Setup balance refresh with proper messaging (only when insufficient balance)
-                setupBalanceRefreshOnReturn(messageContainer);
             }
 
             // Add window focus event listener to refresh balance when user returns
             let windowFocusHandler = null;
-            
+            let lastFocusTime = 0;
+
             function setupBalanceRefreshOnReturn(messageContainer = 'messages') {
                 if (windowFocusHandler) {
                     window.removeEventListener('focus', windowFocusHandler);
                 }
-                
+
                 windowFocusHandler = async () => {
+                    const now = Date.now();
+
+                    // Avoid rapid-fire focus events (debounce to 2 seconds)
+                    if (now - lastFocusTime < 2000) {
+                        return;
+                    }
+                    lastFocusTime = now;
+
+                    console.log('[FOCUS] Tab gained focus, checking balance...');
+
                     if (globalState.awaitingBalanceRefresh) {
                         globalState.awaitingBalanceRefresh = false;
-                        
+
                         // Show loading message with specific ID
                         showMessage(messageContainer, '🔄 Checking for balance updates...', 'info', false, 'balance-check');
-                        
+
                         // Wait a moment for any webhook processing to complete
                         await new Promise(resolve => setTimeout(resolve, 2000));
-                        
-                        // Refresh balance for current email 
+
+                        // Refresh balance for current email
                         await refreshCurrentBalance();
-                        
+
                         // Check for orders once on return, then start polling
                         const foundCredits = await checkForNewOrders(messageContainer);
                         if (!foundCredits) {
                             // Only start polling if no credits were found immediately
                             setTimeout(() => startOrderPolling(messageContainer), 2000);
                         }
-                    } else if (globalState.hasInsufficientBalance) {
-                        // Only check balance on focus if user has insufficient balance
+                    } else {
+                        // Always check balance when returning to tab
+                        const oldBalance = globalState.accountBalance;
                         await refreshCurrentBalance();
+
+                        // Check if we have sufficient balance before checking for orders
+                        const currentBalance = globalState.accountBalance || 0;
+                        const estimatedCost = globalState.estimatedCost || 0;
+                        const hasSufficientBalance = currentBalance >= estimatedCost;
+
+                        // Only check for new orders if we don't have sufficient balance
+                        if (!hasSufficientBalance) {
+                            console.log('[FOCUS] Insufficient balance, checking for new Squarespace orders...');
+                            try {
+                                await checkForNewOrders('messages', false); // Don't show status message
+                            } catch (error) {
+                                console.error('[FOCUS] Error checking orders:', error);
+                            }
+                        } else {
+                            console.log('[FOCUS] Sufficient balance, skipping order check');
+                        }
+
+                        // Get balance again in case orders were processed
+                        await refreshCurrentBalance();
+                        const newBalance = globalState.accountBalance;
+
+                        if (oldBalance !== newBalance) {
+                            console.log(`[FOCUS] Balance changed from $${oldBalance || 0} to $${newBalance || 0}`);
+
+                            // Update all balance displays
+                            updateAllBalanceDisplays();
+
+                            // If balance improved and user had insufficient balance, update buttons
+                            if (globalState.hasInsufficientBalance && newBalance > oldBalance) {
+                                console.log('[FOCUS] Balance improved - updating interface');
+                                globalState.hasInsufficientBalance = false;
+
+                                // Re-check all preview cards for sufficient balance
+                                setTimeout(() => {
+                                    updatePreviewBalanceDisplay();
+                                }, 500);
+                            }
+                        }
                     }
-                    // If sufficient balance, no need to check on every focus
                 };
-                
+
                 window.addEventListener('focus', windowFocusHandler);
             }
-            
+
+            // Set up global balance refresh on focus (always active)
+            setupBalanceRefreshOnReturn();
+
+            // Enhanced check balance function with UI feedback
+            window.checkBalanceAndUpdate = async function(buttonElement) {
+                const originalText = buttonElement.querySelector('.button-text').textContent;
+                const buttonText = buttonElement.querySelector('.button-text');
+
+                // Show loading state
+                buttonText.textContent = '🔄 Checking...';
+                buttonElement.disabled = true;
+
+                try {
+                    const oldBalance = globalState.accountBalance || 0;
+                    await refreshCurrentBalance();
+
+                    // Check if we have sufficient balance before checking for orders
+                    const estimatedCost = globalState.estimatedCost || 0;
+                    const hasSufficientBalance = oldBalance >= estimatedCost;
+
+                    // Only check for new orders if we don't have sufficient balance
+                    if (!hasSufficientBalance) {
+                        buttonText.textContent = '🔍 Checking orders...';
+                        try {
+                            await checkForNewOrders('messages', false);
+                        } catch (orderError) {
+                            console.error('[BALANCE_CHECK] Order check failed:', orderError);
+                        }
+                    } else {
+                        console.log('[BALANCE_CHECK] Sufficient balance, skipping order check');
+                    }
+
+                    // Refresh balance again after order check
+                    await refreshCurrentBalance();
+                    const newBalance = globalState.accountBalance || 0;
+
+                    console.log(`[BALANCE_CHECK] Balance: $${oldBalance} → $${newBalance}`);
+
+                    // Update all displays
+                    updateAllBalanceDisplays();
+
+                    if (newBalance !== oldBalance) {
+                        // Balance changed - update interface
+                        if (globalState.hasInsufficientBalance && newBalance > oldBalance) {
+                            console.log('[BALANCE_CHECK] Balance improved - updating interface');
+                            globalState.hasInsufficientBalance = false;
+
+                            // Update preview cards
+                            setTimeout(() => {
+                                updatePreviewBalanceDisplay();
+                            }, 500);
+
+                            // Show success message
+                            buttonText.textContent = `✅ $${newBalance.toFixed(2)}`;
+                            setTimeout(() => {
+                                buttonText.textContent = originalText;
+                            }, 2000);
+                        } else {
+                            // Balance updated but still insufficient or decreased
+                            buttonText.textContent = `💰 $${newBalance.toFixed(2)}`;
+                            setTimeout(() => {
+                                buttonText.textContent = originalText;
+                            }, 2000);
+                        }
+                    } else {
+                        // No change
+                        buttonText.textContent = `✓ $${newBalance.toFixed(2)}`;
+                        setTimeout(() => {
+                            buttonText.textContent = originalText;
+                        }, 2000);
+                    }
+
+                } catch (error) {
+                    console.error('[BALANCE_CHECK] Error:', error);
+                    buttonText.textContent = '❌ Error';
+                    setTimeout(() => {
+                        buttonText.textContent = originalText;
+                    }, 2000);
+                } finally {
+                    buttonElement.disabled = false;
+                }
+            };
+
+            // Manual order check function for testing
+            window.manualOrderCheck = async function() {
+                console.log('[MANUAL] Starting manual order check...');
+                try {
+                    const result = await checkForNewOrders('messages', true);
+                    console.log('[MANUAL] Order check result:', result);
+                    return result;
+                } catch (error) {
+                    console.error('[MANUAL] Order check failed:', error);
+                    return false;
+                }
+            };
+
             // Order polling state
             let orderPollingInterval = null;
             let pollingAttempts = 0;
@@ -3152,25 +3423,35 @@
                                 const infoMessages = container.querySelectorAll('.message-info');
                                 infoMessages.forEach(msg => msg.remove());
                             }
-                            
-                            // Show success message
-                            showMessage(messageContainer, `🎉 Found your purchase! Added $${orderData.credits_added.toFixed(2)} credits`, 'success');
-                            
+
                             // Immediately refresh the balance and update UI
                             await refreshCurrentBalance();
-                            
+                            const currentBalance = globalState.accountBalance || 0;
+                            const estimatedCost = globalState.estimatedCost || 0;
+                            const hasSufficientBalance = currentBalance >= estimatedCost;
+
+                            // Show appropriate message based on balance sufficiency
+                            if (hasSufficientBalance) {
+                                showMessage(messageContainer, `Balance updated: $${currentBalance.toFixed(2)}, press Process Table to continue`, 'success');
+                                // Stop any ongoing polling since we have sufficient balance
+                                stopOrderPolling();
+                            } else {
+                                const additionalNeeded = estimatedCost - currentBalance;
+                                showMessage(messageContainer, `Balance updated: $${currentBalance.toFixed(2)}, purchase $${Math.ceil(additionalNeeded).toFixed(2)} credit to process table`, 'success');
+                            }
+
                             // Force a longer delay to ensure balance is updated and DOM is ready
                             setTimeout(() => {
                                 // Update all displays first
                                 updatePreviewBalanceDisplay();
                                 updateAllBalanceDisplays();
-                                
+
                                 // Then reset buttons after displays are updated
                                 setTimeout(() => {
                                     resetProcessButtons();
                                 }, 50);
                             }, 200);
-                            
+
                             return true; // Credits were added
                         }
                     }
@@ -4652,29 +4933,58 @@
             }
 
             async function selectDemo(cardId, demoName, buttonElement) {
+                console.log('selectDemo called with:', { cardId, demoName, buttonElement }); // Debug log
                 markButtonSelected(buttonElement, '🚀 Loading Demo...');
 
                 try {
-                    // Make sure we have session info
-                    if (!globalState.sessionId || !globalState.email) {
-                        throw new Error('Session not properly initialized');
+                    // Make sure we have email (sessionId will be created/updated by backend)
+                    if (!globalState.email) {
+                        // Try to get email from localStorage if not in globalState
+                        const storedEmail = localStorage.getItem('validatedEmail');
+                        if (storedEmail && storedEmail.includes('@')) {
+                            globalState.email = storedEmail;
+                        } else {
+                            throw new Error('Email not provided - please enter your email first');
+                        }
                     }
+
+                    const requestBody = {
+                        action: 'selectDemo',
+                        demo_name: demoName,
+                        email: globalState.email
+                    };
+
+                    // Only include session_id if we actually have one (not null/undefined/empty)
+                    if (globalState.sessionId) {
+                        requestBody.session_id = globalState.sessionId;
+                    }
+
+                    console.log('Request body:', requestBody); // Debug log
+                    console.log('JSON.stringify(requestBody):', JSON.stringify(requestBody)); // Debug log
 
                     const response = await fetch(`${API_BASE}/validate`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'selectDemo',
-                            demo_name: demoName,
-                            email: globalState.email,
-                            session_id: globalState.sessionId
-                        })
+                        body: JSON.stringify(requestBody)
                     });
 
                     const result = await response.json();
 
                     if (!result.success) {
-                        throw new Error(result.error || 'Failed to load demo');
+                        // Check if it's a session-related error
+                        const errorMsg = result.error || 'Failed to load demo';
+                        console.log('Backend error:', errorMsg); // Debug log
+
+                        // Only clear session data for actual session errors, not other backend errors
+                        if (errorMsg.toLowerCase().includes('session') && (errorMsg.toLowerCase().includes('expired') || errorMsg.toLowerCase().includes('invalid'))) {
+                            // Clear stale session data
+                            localStorage.removeItem('sessionId');
+                            localStorage.removeItem('validatedEmail');
+                            globalState.sessionId = null;
+                            globalState.email = '';
+                            throw new Error('Session expired - please refresh the page');
+                        }
+                        throw new Error(errorMsg);
                     }
 
                     // Update session ID with new one from demo (like table uploads)
@@ -7027,6 +7337,54 @@ Please answer these questions and then I'll generate your configuration and auto
             }
     
             async function startFullProcessing(cardId) {
+                // SECURITY: Get fresh balance before processing to prevent payment bypass
+                let currentBalance = globalState.accountBalance || 0;
+                const estimatedCost = globalState.estimatedCost || 0;
+
+                // If balance seems wrong, refresh it
+                if (currentBalance === 0 || currentBalance === undefined) {
+                    console.log('[SECURITY] Balance appears stale, refreshing...');
+                    try {
+                        await refreshCurrentBalance();
+                        currentBalance = globalState.accountBalance || 0;
+                        console.log(`[SECURITY] Refreshed balance: $${currentBalance.toFixed(4)}`);
+                    } catch (error) {
+                        console.error('[SECURITY] Could not refresh balance:', error);
+                    }
+                }
+
+                console.log(`[SECURITY] Processing validation - Balance: $${currentBalance.toFixed(4)}, Cost: $${estimatedCost.toFixed(4)}`);
+
+                if (currentBalance < estimatedCost) {
+                    console.warn(`[SECURITY] Payment bypass attempt blocked - insufficient balance`);
+                    completeThinkingInCard(cardId, 'Insufficient Balance');
+
+                    // Reset any buttons that might be in "Processing..." state
+                    setTimeout(() => {
+                        const processingButtons = document.querySelectorAll('button .button-text');
+                        processingButtons.forEach(buttonText => {
+                            if (buttonText.textContent.includes('Processing...')) {
+                                // Find what the button text should be based on balance
+                                const sufficientBalance = currentBalance >= estimatedCost;
+                                if (sufficientBalance) {
+                                    buttonText.textContent = `✨ Process Table${estimatedCost ? ` ($${estimatedCost.toFixed(2)})` : ''}`;
+                                } else {
+                                    const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
+                                    const recommendedAmount = Math.ceil(creditsNeeded);
+                                    buttonText.textContent = `💳 Add Credits ($${recommendedAmount.toFixed(2)})`;
+                                }
+                                buttonText.closest('button').disabled = false;
+                            }
+                        });
+                    }, 100);
+
+                    showInsufficientBalanceError({
+                        current_balance: currentBalance,
+                        estimated_minimum_cost: estimatedCost
+                    }, cardId);
+                    return;
+                }
+
                 // Show thinking indicators with contextual message
                 showThinkingInCard(cardId, 'Initializing validation process...', true);
                 // Start dummy progress animation
@@ -7286,10 +7644,13 @@ Please answer these questions and then I'll generate your configuration and auto
             //     return;
             // }
             
-            // Check for stored session first (no DOM access)
-            const storedSessionId = localStorage.getItem('sessionId');
-            if (storedSessionId) {
-                globalState.sessionId = storedSessionId;
+            // Fresh session - don't restore sessionId as backend will create new ones
+            // sessionId gets created when user uploads file or selects demo
+
+            // Restore email from localStorage if available
+            const storedEmail = localStorage.getItem('validatedEmail');
+            if (storedEmail && storedEmail.includes('@')) {
+                globalState.email = storedEmail;
             }
             
             // Balance refresh system will be initialized when needed (when insufficient balance occurs)
@@ -8258,76 +8619,60 @@ Please answer these questions and then I'll generate your configuration and auto
         // Special function to recreate Process Table button for preview cards
         function recreateProcessTableButton(cardElement, cardId) {
             try {
-                // Look for button container
+                // Check balance and reuse existing button creation logic
+                const currentBalance = globalState.accountBalance || 0;
+                const estimatedCost = globalState.estimatedCost || 0;
+                const sufficientBalance = currentBalance >= estimatedCost;
+
+                console.log(`[DEBUG] Recreating button for ${cardId}: Balance $${currentBalance.toFixed(4)} vs Cost $${estimatedCost.toFixed(4)}`);
+
+                // Ensure button container exists
                 let buttonContainer = cardElement.querySelector(`#${cardId}-buttons`);
-
                 if (!buttonContainer) {
-                    console.log(`[DEBUG] No button container found for ${cardId}, looking for card content`);
-
-                    // Try to find the card content area to add buttons
                     const cardContent = cardElement.querySelector('.card-content');
                     if (cardContent) {
-                        // Create button container if it doesn't exist
                         buttonContainer = document.createElement('div');
                         buttonContainer.id = `${cardId}-buttons`;
                         buttonContainer.style.cssText = 'margin-top: 20px; text-align: center;';
                         cardContent.appendChild(buttonContainer);
-                        console.log(`[DEBUG] Created button container for ${cardId}`);
                     } else {
-                        console.log(`[DEBUG] No card content found for ${cardId}`);
                         return;
                     }
                 }
 
-                // Check if there's already a working Process Table button
-                let existingButton = buttonContainer.querySelector('button');
-
-                if (existingButton) {
-                    const buttonText = existingButton.textContent.trim();
-                    console.log(`[DEBUG] Found existing button: "${buttonText}"`);
-
-                    if (buttonText.includes('Process Table') || buttonText.includes('Add Credits')) {
-                        // Reattach the proper handler
-                        existingButton.onclick = async (e) => {
+                // Reuse existing button creation logic (same as in preview cards)
+                const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
+                createButtonRow(`${cardId}-buttons`, [
+                    {
+                        text: sufficientBalance
+                            ? `Process Table${estimatedCost ? ` ($${estimatedCost.toFixed(2)})` : ''}`
+                            : `Add Credits ($${Math.ceil(creditsNeeded).toFixed(2)})`,
+                        icon: sufficientBalance ? '✨' : '💳',
+                        variant: sufficientBalance ? 'primary' : 'secondary',
+                        width: 'full',
+                        callback: async (e) => {
                             const button = e.target.closest('button');
-                            const hasCreditsText = buttonText.includes('Add Credits');
 
-                            if (!hasCreditsText) {
-                                // Process Table button
+                            if (sufficientBalance) {
                                 markButtonSelected(button, '✨ Processing...');
                                 globalState.activePreviewCard = null;
                                 createProcessingCard();
                             } else {
-                                // Add Credits button
-                                const creditsNeeded = buttonText.match(/\$([0-9.]+)/);
-                                const amount = creditsNeeded ? creditsNeeded[1] : null;
-                                openAddCreditsPage(amount, `${cardId}-messages`);
+                                markButtonSelected(button, '💳 Opening store...');
+                                const recommendedAmount = Math.ceil(creditsNeeded);
+                                openAddCreditsPage(recommendedAmount, `${cardId}-messages`);
+
+                                setTimeout(() => {
+                                    markButtonUnselected(button);
+                                }, 2000);
                             }
-                        };
-
-                        console.log(`[INFO] Reattached Process Table button handler for ${cardId}`);
+                        }
                     }
-                } else {
-                    console.log(`[DEBUG] No Process Table button found, creating one for ${cardId}`);
+                ]);
 
-                    // Create a new Process Table button
-                    const processButton = document.createElement('button');
-                    processButton.className = 'std-button primary';
-                    processButton.style.cssText = 'width: 100%; margin-top: 10px;';
-                    processButton.innerHTML = '<span class="button-text">✨ Process Table</span>';
-
-                    processButton.onclick = async (e) => {
-                        const button = e.target.closest('button');
-                        markButtonSelected(button, '✨ Processing...');
-                        globalState.activePreviewCard = null;
-                        createProcessingCard();
-                    };
-
-                    buttonContainer.appendChild(processButton);
-                    console.log(`[INFO] Created new Process Table button for ${cardId}`);
-                }
+                console.log(`[INFO] Recreated ${sufficientBalance ? 'Process Table' : 'Add Credits'} button for ${cardId}`);
             } catch (error) {
-                console.warn(`[WARN] Could not recreate Process Table button for ${cardId}:`, error);
+                console.warn(`[WARN] Could not recreate button for ${cardId}:`, error);
             }
         }
 
