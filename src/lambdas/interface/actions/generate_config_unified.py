@@ -616,6 +616,31 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 print(f"🔍 INTERFACE_DEBUG: Added clarifying questions to config BEFORE storage")
             else:
                 print(f"🔍 INTERFACE_DEBUG: No clarifying questions from config lambda")
+
+            # CRITICAL: Add conversation entry to config_change_log
+            from datetime import datetime
+            if 'config_change_log' not in updated_config:
+                updated_config['config_change_log'] = []
+
+            # Create conversation entry for this interaction
+            conversation_entry = {
+                'timestamp': datetime.now().isoformat(),
+                'action': 'unified_generation',
+                'session_id': session_id,
+                'instructions': instructions,
+                'clarifying_questions': config_clarifying_questions,
+                'clarification_urgency': clarification_urgency,
+                'reasoning': body.get('reasoning', ''),
+                'ai_summary': body.get('ai_summary', ''),
+                'technical_ai_summary': body.get('technical_ai_summary', ''),
+                'version': updated_config.get('generation_metadata', {}).get('version', 1),
+                'model_used': body.get('model_used', 'unknown'),
+                'config_filename': body.get('config_filename', ''),
+                'entry_type': 'ai_response'
+            }
+
+            updated_config['config_change_log'].append(conversation_entry)
+            print(f"🔍 INTERFACE_DEBUG: Added conversation entry to config_change_log (total entries: {len(updated_config['config_change_log'])})")
             
             # Progress update
             if websocket_callback:
