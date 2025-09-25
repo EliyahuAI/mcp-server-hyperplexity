@@ -6433,19 +6433,21 @@
                 }
                 
                 // Add initial AI message with generic table questions
-                const initialQuestions = `This is the first time we're working with this table structure - we need to understand how to best validate your data. Let's build an initial configuration together that clarifies what the table is about and specifies an optimized approach to table validation. Once we have a configuration that we like, we can use this for tables with the same columns down the road.
+                const initialQuestions = `Let's build an initial configuration together that clarifies what the table and columns are about and that specifies an optimized approach to validating this table.
 
 **The following questions are optional but will help us create a more targeted configuration:**
 
-1. **Primary Purpose**: Are you looking to gather research from the internet, fact-check existing entries, or update the information in the table?
+**Primary Purpose**: Are you looking to gather research from the internet, fact-check existing entries, or update the information in the table?
 
-2. **Table Context**: Who uses this table and for what purpose?
+**Row Identifiers**: Which columns identify the row?
 
-3. **Column Meaning**: Specify intent for columns that are not self-evident in the table.
+**Table Context**: Who uses this table and for what purpose?
 
-4. **Dependencies**: Are any columns calculated from other columns, or do they require information not available online?
+**Column Meaning**: Specify intent for columns that are not self-evident in the table.
 
-5. **Other Requirements**: Do you have specific requirements for validation (general or for specific columns)? Examples: academic sources only, data about upcoming events.
+**Dependencies**: Are any columns calculated from other columns, or do they require information not available online?
+
+**Other Requirements**: Do you have specific requirements for validation (general or for specific columns)? Examples: academic sources only, data about upcoming events.
 
 Our initial configuration will balance cost and accuracy by using efficient models and targeted searching. After reviewing the preview results, you can use the "Refine Configuration" button to selectively apply more powerful models and deeper analysis to specific areas that need improvement. The goal is to arrive at an optimal configuration that we can use for tables with the same columns down the road.
 
