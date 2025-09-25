@@ -263,8 +263,14 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                     id_fields.append(field_name)
 
         def should_preserve_formulas(column_name):
-            """Check if formulas should be preserved for this column (IGNORED columns)."""
-            return column_importance.get(column_name, '').upper() == 'IGNORED'
+            """Check if formulas should be preserved for this column (IGNORED and ID columns)."""
+            importance = column_importance.get(column_name, '').upper()
+            return importance in ['IGNORED', 'ID']
+
+        def should_apply_coloring(column_name):
+            """Check if confidence-based coloring should be applied (only for validated columns)."""
+            importance = column_importance.get(column_name, '').upper()
+            return importance not in ['IGNORED', 'ID']
         
         # Generate row keys for each row
         row_keys = []
@@ -412,23 +418,27 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                     updated_value = field_data.get('value', original_value)
                         
                         # Apply appropriate formatting (QC takes priority over validation confidence)
-                        if qc_applied:
-                            # Get QC confidence format (same as validation format)
-                            if qc_results and row_key in qc_results:
-                                row_qc_data = qc_results[row_key]
-                                if col_name in row_qc_data:
-                                    field_qc_data = row_qc_data[col_name]
-                                    cell_format = get_qc_confidence_format(field_qc_data, qc_confidence_formats)
-                            if not cell_format:
-                                # Fallback to generic format if no confidence found
-                                cell_format = qc_confidence_formats.get('MEDIUM')  # Default QC format
+                        # Skip coloring for IGNORED and ID columns
+                        if should_apply_coloring(col_name):
+                            if qc_applied:
+                                # Get QC confidence format (same as validation format)
+                                if qc_results and row_key in qc_results:
+                                    row_qc_data = qc_results[row_key]
+                                    if col_name in row_qc_data:
+                                        field_qc_data = row_qc_data[col_name]
+                                        cell_format = get_qc_confidence_format(field_qc_data, qc_confidence_formats)
+                                if not cell_format:
+                                    # Fallback to generic format if no confidence found
+                                    cell_format = qc_confidence_formats.get('MEDIUM')  # Default QC format
+                            else:
+                                validation_confidence = None
+                                if row_validation_data and col_name in row_validation_data:
+                                    field_data = row_validation_data[col_name]
+                                    if isinstance(field_data, dict):
+                                        validation_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
+                                cell_format = get_confidence_format(validation_confidence, validation_confidence_formats)
                         else:
-                            validation_confidence = None
-                            if row_validation_data and col_name in row_validation_data:
-                                field_data = row_validation_data[col_name]
-                                if isinstance(field_data, dict):
-                                    validation_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
-                            cell_format = get_confidence_format(validation_confidence, validation_confidence_formats)
+                            cell_format = None  # No coloring for IGNORED and ID columns
 
                         updated_sheet.write(updated_row_idx, col_idx, safe_for_excel(updated_value, should_preserve_formulas(col_name)), cell_format)
                         
@@ -582,7 +592,11 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                             original_confidence = qc_original_confidence
 
                             # Apply original confidence color (only if confidence should be colored)
-                            cell_format = get_confidence_format(original_confidence, original_confidence_formats)
+                            # Skip coloring for IGNORED and ID columns
+                            if should_apply_coloring(col_name):
+                                cell_format = get_confidence_format(original_confidence, original_confidence_formats)
+                            else:
+                                cell_format = None  # No coloring for IGNORED and ID columns
                             
                             # Create comment with updated value, reasoning, and citations
                             comment_parts = []
@@ -815,11 +829,15 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                             logger.info(f"[QC_EXCEL_EXTRACT_DEBUG] {field_name}: QC extracted - value='{qc_value}', confidence='{qc_confidence}'")
 
                             # Use QC confidence format for QC Value when QC applied
-                            qc_format = None
-                            if qc_applied and qc_confidence:
-                                qc_format = get_confidence_format(qc_confidence, qc_confidence_formats)
-                            if not qc_format and qc_applied:
-                                qc_format = qc_confidence_formats.get('MEDIUM')  # Default QC format
+                            # Skip coloring for IGNORED and ID columns
+                            if should_apply_coloring(field_name):
+                                qc_format = None
+                                if qc_applied and qc_confidence:
+                                    qc_format = get_confidence_format(qc_confidence, qc_confidence_formats)
+                                if not qc_format and qc_applied:
+                                    qc_format = qc_confidence_formats.get('MEDIUM')  # Default QC format
+                            else:
+                                qc_format = None  # No coloring for IGNORED and ID columns
 
                             try:
                                 details_sheet.write(detail_row, col_idx, safe_for_excel(qc_value, should_preserve_formulas(field_name)), qc_format)  # QC Value
@@ -830,18 +848,30 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             col_idx += 1
 
                             # QC Original Confidence column (only populated when QC changes original confidence)
-                            qc_original_confidence_format = get_confidence_format(qc_original_confidence, qc_confidence_formats) if qc_original_confidence else None
+                            # Skip coloring for IGNORED and ID columns
+                            if should_apply_coloring(field_name):
+                                qc_original_confidence_format = get_confidence_format(qc_original_confidence, qc_confidence_formats) if qc_original_confidence else None
+                            else:
+                                qc_original_confidence_format = None
                             details_sheet.write(detail_row, col_idx, safe_for_excel(qc_original_confidence), qc_original_confidence_format)  # QC Original Confidence
                             col_idx += 1
 
                             # QC Updated Confidence column (only populated when QC changes updated confidence)
-                            qc_updated_confidence_format = get_confidence_format(qc_updated_confidence, qc_confidence_formats) if qc_updated_confidence else None
+                            # Skip coloring for IGNORED and ID columns
+                            if should_apply_coloring(field_name):
+                                qc_updated_confidence_format = get_confidence_format(qc_updated_confidence, qc_confidence_formats) if qc_updated_confidence else None
+                            else:
+                                qc_updated_confidence_format = None
                             details_sheet.write(detail_row, col_idx, safe_for_excel(qc_updated_confidence), qc_updated_confidence_format)  # QC Updated Confidence
                             col_idx += 1
 
                             # QC Confidence column
                             try:
-                                qc_confidence_format = get_confidence_format(qc_confidence, qc_confidence_formats) if qc_confidence else None
+                                # Skip coloring for IGNORED and ID columns
+                                if should_apply_coloring(field_name):
+                                    qc_confidence_format = get_confidence_format(qc_confidence, qc_confidence_formats) if qc_confidence else None
+                                else:
+                                    qc_confidence_format = None
                                 details_sheet.write(detail_row, col_idx, safe_for_excel(qc_confidence), qc_confidence_format)  # QC Confidence
                                 logger.debug(f"[EXCEL_WRITE_DEBUG] QC Confidence written successfully for {field_name}")
                             except Exception as e:
@@ -876,8 +906,12 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             col_idx += 1
 
                             # Final Value should use QC confidence format if QC applied, otherwise updated confidence format
-                            updated_confidence_format = get_confidence_format(updated_confidence, validation_confidence_formats)
-                            final_format = qc_format if qc_applied else updated_confidence_format
+                            # Skip coloring for IGNORED and ID columns
+                            if should_apply_coloring(field_name):
+                                updated_confidence_format = get_confidence_format(updated_confidence, validation_confidence_formats)
+                                final_format = qc_format if qc_applied else updated_confidence_format
+                            else:
+                                final_format = None  # No coloring for IGNORED and ID columns
                             details_sheet.write(detail_row, col_idx, safe_for_excel(final_value, should_preserve_formulas(field_name)), final_format)  # Final Value
                             col_idx += 1
 
@@ -999,8 +1033,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 value = existing_detail.get(old_name[0], '')
                         
                         # Apply confidence formatting if applicable
-                        if col_name in ['QC Original Confidence', 'QC Updated Confidence', 'QC Confidence']:
-                            # QC confidence formatting
+                        # Skip coloring for IGNORED and ID columns (use existing_column as the field name)
+                        if col_name in ['QC Original Confidence', 'QC Updated Confidence', 'QC Confidence'] and should_apply_coloring(existing_column):
+                            # QC confidence formatting (only for validated columns)
                             confidence_format = get_confidence_format(value, qc_confidence_formats)
                             details_sheet.write(detail_row, col_idx, safe_for_excel(str(value) if value is not None else ''), confidence_format)
                         else:
