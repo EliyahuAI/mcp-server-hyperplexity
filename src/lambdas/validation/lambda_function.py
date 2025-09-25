@@ -2673,7 +2673,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Process IGNORED fields
             if ignored_fields:
-                pass  # logger.info(f"Adding {len(ignored_fields)} IGNORED fields without processing")
+                logger.info(f"Adding {len(ignored_fields)} IGNORED fields without processing")
                 for ignored_field in ignored_fields:
                     # Simply copy the original value to the result without validation
                     original_value = row_data.get(ignored_field.column, "")
