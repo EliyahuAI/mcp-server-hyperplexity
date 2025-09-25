@@ -6903,6 +6903,12 @@ Please provide any additional context, or simply proceed to generate your initia
 
                     const data = await response.json();
 
+                    // DEBUG: Log full response to understand what we're getting
+                    console.log('🔍 FRONTEND_DEBUG: Backend response keys:', Object.keys(data));
+                    console.log('🔍 FRONTEND_DEBUG: data.success:', data.success);
+                    console.log('🔍 FRONTEND_DEBUG: data.clarifying_questions:', !!data.clarifying_questions, data.clarifying_questions ? data.clarifying_questions.length : 'N/A');
+                    if (data.error) console.log('🔍 FRONTEND_DEBUG: Backend error:', data.error);
+
                     if (data.success && data.clarifying_questions) {
                         console.log('🔍 FRONTEND_DEBUG: Successfully retrieved clarifying questions from backend:', data.clarifying_questions.length);
                         return {

@@ -122,7 +122,24 @@ def handle_get_ai_summary(event_data, context=None):
         # Get clarifying questions if available
         clarifying_questions = config_data.get('clarifying_questions', '')
         clarification_urgency = config_data.get('clarification_urgency', 0)
-        
+
+        # DEBUG: Log clarifying questions search
+        logger.info(f"🔍 GET_AI_SUMMARY_DEBUG: Config data keys: {list(config_data.keys())}")
+        logger.info(f"🔍 GET_AI_SUMMARY_DEBUG: Clarifying questions found: {bool(clarifying_questions)}")
+        if clarifying_questions:
+            logger.info(f"🔍 GET_AI_SUMMARY_DEBUG: Questions length: {len(clarifying_questions)}")
+            logger.info(f"🔍 GET_AI_SUMMARY_DEBUG: Questions preview: {clarifying_questions[:200]}...")
+
+        # Also check in change log entries
+        if not clarifying_questions and config_change_log:
+            logger.info(f"🔍 GET_AI_SUMMARY_DEBUG: No direct questions, checking {len(config_change_log)} change log entries")
+            for i, entry in enumerate(config_change_log):
+                if 'clarifying_questions' in entry and entry['clarifying_questions']:
+                    logger.info(f"🔍 GET_AI_SUMMARY_DEBUG: Found questions in change log entry {i}: {len(entry['clarifying_questions'])} chars")
+                    clarifying_questions = entry['clarifying_questions']
+                    clarification_urgency = entry.get('clarification_urgency', 0)
+                    break
+
         logger.info(f"Successfully retrieved AI summary for session {session_id}, version {config_version}")
         
         response_data = {
