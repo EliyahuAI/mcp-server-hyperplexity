@@ -4564,7 +4564,7 @@
             function createUploadOrDemoCard() {
                 const cardId = generateCardId();
                 const content = `
-                    <div id="${cardId}-options" style="text-align: center; padding: 20px;">
+                    <div id="${cardId}-options" style="text-align: center;">
                     </div>
                     <div id="${cardId}-messages"></div>
                     <div id="${cardId}-buttons"></div>
@@ -5176,12 +5176,12 @@
                     } else {
                         const totalFound = result.matches ? result.matches.length : 0;
                         const message = totalFound > 0 ?
-                                      `Found ${totalFound} previous configs but none match well enough (need ≥80% match). Automatically proceeding with AI generation.` :
-                                      'No matching configurations found from your previous sessions. Automatically proceeding with AI generation.';
+                                      `Found ${totalFound} previous configs but none match well enough (need ≥80% match). Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.` :
+                                      'No matching configurations found from your previous sessions. Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.';
 
                         showMessage(`${cardId}-messages`, message, 'info');
-                        // Automatically trigger AI generation
-                        generateWithAI(cardId);
+                        // Reset button
+                        markButtonUnselected(button);
                     }
                     
                 } catch (error) {
@@ -5206,12 +5206,12 @@
                         const totalMatches = (globalState.matchingConfigs && globalState.matchingConfigs.matches) ?
                                            globalState.matchingConfigs.matches.length : 0;
                         const message = totalMatches > 0 ?
-                                       `Found ${totalMatches} previous configs but none match well enough (need ≥80% match). Automatically proceeding with AI generation.` :
-                                       'No matching configurations available. Automatically proceeding with AI generation.';
+                                       `Found ${totalMatches} previous configs but none match well enough (need ≥80% match). Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.` :
+                                       'No matching configurations available. Use a <strong>Configuration ID</strong> from your email, upload a config file, or create one with AI.';
 
                         showMessage(`${cardId}-messages`, message, 'info');
-                        // Automatically trigger AI generation
-                        generateWithAI(cardId);
+                        // Reset button
+                        markButtonUnselected(button);
                     }
                     
                 } catch (error) {
@@ -6125,6 +6125,18 @@
             }
 
             function createConfigurationCard() {
+                // Check if we have any good matches - if not, skip configuration card and go straight to AI
+                if (!globalState.matchingConfigs || !globalState.matchingConfigs.matches) {
+                    createAIConfigCard(false);
+                    return;
+                }
+
+                const goodMatches = globalState.matchingConfigs.matches.filter(match => match.match_score >= 0.8);
+                if (goodMatches.length === 0) {
+                    createAIConfigCard(false);
+                    return;
+                }
+
                 const cardId = generateCardId();
                 
                 // Create the content structure with config input and messages
@@ -6376,24 +6388,23 @@
                 }
                 
                 // Add initial AI message with generic table questions
-                const initialQuestions = `I'll help you create an optimal configuration for your table validation. First, let me ask a few questions to better understand your table:
+                const initialQuestions = `This is the first time we're working with this table structure - we need to understand how to best validate your data. Let's build an initial configuration together that clarifies what the table is about and specifies an optimized approach to table validation. Once we have a configuration that we like, we can use this for tables with the same columns down the road.
 
-**1. How is this table used and who uses it most?**
-Please describe the primary purpose and main users of this data.
+**The following questions are optional but will help us create a more targeted configuration:**
 
-**2. Which columns are important for identifying each row?**
-These are typically the leftmost columns that uniquely identify each record (these will be treated as ID columns and taken at face value without research).
+1. **Primary Purpose**: Are you looking to gather research from the internet, fact-check existing entries, or update the information in the table?
 
-**3. Are there any columns with information that can't be found on the internet that we can ignore?**
-Some internal codes or proprietary data might not be researchable online.
+2. **Table Context**: Who uses this table and for what purpose?
 
-**4. Are any columns derived from each other?**
-If so, it would be great to specify these relationships to optimize our validation strategy.
+3. **Column Meaning**: Specify intent for columns that are not self-evident in the table.
 
-**5. How price-sensitive are you for this validation?**
-We balance cost with depth of reasoning. If you are not price sensitive, let us know and we will bring out the big guns (this can increase cost by 5-10x for much deeper analysis).
+4. **Dependencies**: Are any columns calculated from other columns, or do they require information not available online?
 
-Please answer these questions and then I'll generate your configuration and automatically create a preview.`;
+5. **Other Requirements**: Do you have specific requirements for validation (general or for specific columns)? Examples: academic sources only, data about upcoming events.
+
+Our initial configuration will balance cost and accuracy by using efficient models and targeted searching. After reviewing the preview results, you can use the "Refine Configuration" button to selectively apply more powerful models and deeper analysis to specific areas that need improvement. The goal is to arrive at an optimal configuration that we can use for tables with the same columns down the road.
+
+Please provide any additional context, or simply proceed to generate your initial configuration.`;
                 
                 await addChatMessage(cardId, 'ai', initialQuestions);
                 
