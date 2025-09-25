@@ -1667,8 +1667,34 @@
                 debounceTimers: new Map(), // Track debounce timers by function/card ID
                 isNewUser: false, // Track if user is new (no prior validation history)
                 userAttemptedProcessing: false, // Track if user tried to process but was blocked by insufficient balance
-                pendingProcessingTrigger: null // Store function to trigger processing when balance is sufficient
+                pendingProcessingTrigger: null, // Store function to trigger processing when balance is sufficient
+
+                // Workflow state tracking
+                workflowPhase: 'initial', // initial, upload, config, preview, validating, completed
+                processingState: {
+                    previewCompleted: false,
+                    validationCompleted: false,
+                    validationStartTime: null,
+                    previewStartTime: null,
+                    lastEstimatedCost: null,
+                    lastBalanceCheck: null
+                }
             };
+
+            // Helper function to ensure processingState is always properly initialized
+            function ensureProcessingState() {
+                if (!globalState.processingState || typeof globalState.processingState !== 'object') {
+                    console.warn('[GLOBALSTATE] Reinitializing null/invalid processingState');
+                    globalState.processingState = {
+                        previewCompleted: false,
+                        validationCompleted: false,
+                        validationStartTime: null,
+                        previewStartTime: null,
+                        lastEstimatedCost: null,
+                        lastBalanceCheck: null
+                    };
+                }
+            }
 
             // ============================================
             // TESTING UTILITIES
@@ -2540,6 +2566,10 @@
             function showPreviewResults(cardId, previewData) {
                 // Save preview data globally for restoration
                 window.lastPreviewData = previewData;
+
+                // Mark preview as completed
+                ensureProcessingState();
+                globalState.processingState.previewCompleted = true;
                 
                 // Hide progress, show results
                 const resultsEl = document.getElementById(`${cardId}-results`);
@@ -3861,6 +3891,11 @@
                             const data = await response.json();
                             if (data.status === 'completed' || data.preview_data) {
                                 // Route the completion message
+                                // Mark validation as completed
+                                ensureProcessingState();
+                                globalState.processingState.validationCompleted = true;
+                                globalState.workflowPhase = 'completed';
+
                                 routeMessage({
                                     status: 'COMPLETED',
                                     preview_data: data.preview_data,
@@ -3938,6 +3973,11 @@
                 } else if (data.status === 'COMPLETED') {
                     // Store completion data for download
                     globalState.completionData = data;
+
+                    // Mark validation as completed
+                    ensureProcessingState();
+                    globalState.processingState.validationCompleted = true;
+                    globalState.workflowPhase = 'completed';
                     
                     // First update to 100% if we have a progress bar
                     const indicator = document.getElementById(`${cardId}-thinking`);
@@ -4614,6 +4654,7 @@
                                             localStorage.setItem('sessionId', data.session_id);
                                         }
                                         globalState.excelFileUploaded = true;
+                                        globalState.workflowPhase = 'upload';
 
                                         // [FIX] Store matching configs if found
                                         if (data.matching_configs && data.matching_configs.success && data.matching_configs.matches) {
@@ -7123,6 +7164,7 @@ Please answer these questions and then I'll generate your configuration and auto
                     
                     globalState.currentConfig = data;
                     globalState.excelFileUploaded = true;
+                    globalState.workflowPhase = 'config';
 
                     // Reset balance and cost states since config changed
                     globalState.hasInsufficientBalance = false;
@@ -7262,6 +7304,14 @@ Please answer these questions and then I'll generate your configuration and auto
                 // Generate the card ID FIRST
                 const cardId = generateCardId();
                 globalState.activePreviewCard = cardId;
+
+                // Update workflow state
+                globalState.workflowPhase = 'preview';
+
+                // Ensure processingState exists and set preview state
+                ensureProcessingState();
+                globalState.processingState.previewStartTime = Date.now();
+                globalState.processingState.previewCompleted = false;
                 
                 const content = `
                     <div id="${cardId}-progress"></div>
@@ -7413,6 +7463,14 @@ Please answer these questions and then I'll generate your configuration and auto
                     subtitle: 'Validating your entire table...',
                     content
                 });
+
+                // Update workflow state
+                globalState.workflowPhase = 'validating';
+
+                // Ensure processingState exists and set validation state
+                ensureProcessingState();
+                globalState.processingState.validationStartTime = Date.now();
+                globalState.processingState.validationCompleted = false;
 
                 // Start processing
                 startFullProcessing(cardId);
@@ -8287,6 +8345,18 @@ Please answer these questions and then I'll generate your configuration and auto
                         globalState.debounceTimers = new Map();
                     }
 
+                    // Ensure processingState is properly initialized
+                    if (!globalState.processingState || typeof globalState.processingState !== 'object') {
+                        globalState.processingState = {
+                            previewCompleted: false,
+                            validationCompleted: false,
+                            validationStartTime: null,
+                            previewStartTime: null,
+                            lastEstimatedCost: null,
+                            lastBalanceCheck: null
+                        };
+                    }
+
                 }
 
                 // Restore preview data
@@ -8463,6 +8533,16 @@ Please answer these questions and then I'll generate your configuration and auto
                         globalState.cardProgress = {};
                     } else if (key === 'debounceTimers') {
                         globalState.debounceTimers.clear();
+                    } else if (key === 'processingState') {
+                        // Properly reinitialize processingState
+                        globalState.processingState = {
+                            previewCompleted: false,
+                            validationCompleted: false,
+                            validationStartTime: null,
+                            previewStartTime: null,
+                            lastEstimatedCost: null,
+                            lastBalanceCheck: null
+                        };
                     } else {
                         // Reset to initial values
                         if (typeof globalState[key] === 'boolean') {
@@ -8707,15 +8787,129 @@ Please answer these questions and then I'll generate your configuration and auto
             }
         }
 
+        // Helper function to create completion button for already processed tables
+        function createCompletedButton(cardElement, cardId) {
+            try {
+                // Ensure button container exists
+                let buttonContainer = cardElement.querySelector(`#${cardId}-buttons`);
+                if (!buttonContainer) {
+                    const cardContent = cardElement.querySelector('.card-content');
+                    if (cardContent) {
+                        buttonContainer = document.createElement('div');
+                        buttonContainer.id = `${cardId}-buttons`;
+                        buttonContainer.style.cssText = 'margin-top: 20px; text-align: center;';
+                        cardContent.appendChild(buttonContainer);
+                    } else {
+                        return;
+                    }
+                }
+
+                // Create "Download Results" button for completed validation
+                createButtonRow(`${cardId}-buttons`, [
+                    {
+                        text: 'Download Results',
+                        icon: '📥',
+                        variant: 'success',
+                        width: 'full',
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            markButtonSelected(button, '📥 Downloading...');
+
+                            try {
+                                await window.downloadValidationResults();
+                                markButtonUnselected(button);
+                            } catch (error) {
+                                console.error('Download error:', error);
+                                alert('Download failed: ' + error.message);
+                                markButtonUnselected(button);
+                            }
+                        }
+                    }
+                ]);
+
+                // Mark as completed and show completion message
+                ensureProcessingState();
+                globalState.processingState.validationCompleted = true;
+                globalState.workflowPhase = 'completed';
+                showMessage(`${cardId}-messages`, `✅ Table validation completed successfully!`, 'success', false, 'validation-completed');
+
+                console.log(`[INFO] Created completion button for ${cardId}`);
+            } catch (error) {
+                console.warn(`[WARN] Could not create completion button for ${cardId}:`, error);
+            }
+        }
+
         // Special function to recreate Process Table button for preview cards
         function recreateProcessTableButton(cardElement, cardId) {
+            try {
+                // Ensure processingState is initialized
+                ensureProcessingState();
+
+                // Check workflow state first to determine correct restore behavior
+                const workflowPhase = globalState.workflowPhase || 'preview';
+                const processingState = globalState.processingState;
+
+                console.log(`[RESTORE] Restoring button for ${cardId}: Phase=${workflowPhase}, ValidationCompleted=${processingState.validationCompleted}, PreviewCompleted=${processingState.previewCompleted}`);
+
+                // Handle different workflow phases with proper button states
+                if (workflowPhase === 'validating' && processingState.validationStartTime) {
+                    // Mid-validation refresh - show email notice instead of button
+                    const timeSinceStart = Date.now() - processingState.validationStartTime;
+                    if (timeSinceStart < 5 * 60 * 1000) { // Less than 5 minutes ago
+                        showMessage(`${cardId}-messages`, `⚠️ Validation was interrupted by refresh. Results will be emailed when complete.`, 'warning', false, 'validation-interrupted');
+                        return;
+                    }
+                }
+
+                if (workflowPhase === 'preview' && processingState.previewStartTime && !processingState.previewCompleted) {
+                    // Mid-preview refresh - resume preview automatically
+                    const timeSinceStart = Date.now() - processingState.previewStartTime;
+                    if (timeSinceStart < 2 * 60 * 1000) { // Less than 2 minutes ago
+                        showMessage(`${cardId}-messages`, `🔄 Resuming preview generation...`, 'info', false, 'preview-resuming');
+                        setTimeout(() => {
+                            startPreview(cardId);
+                        }, 1000);
+                        return;
+                    }
+                }
+
+                if (processingState.validationCompleted) {
+                    // Validation already completed - show completion state
+                    createCompletedButton(cardElement, cardId);
+                    return;
+                }
+
+                // For preview cards that completed successfully, show appropriate button based on balance
+                if (workflowPhase === 'preview' && processingState.previewCompleted) {
+                    createProcessTableButtonWithBalance(cardElement, cardId);
+                    return;
+                }
+
+                // For config/upload phases, don't show process button yet
+                if (workflowPhase === 'config' || workflowPhase === 'upload' || workflowPhase === 'initial') {
+                    console.log(`[RESTORE] Workflow in ${workflowPhase} phase - no process button needed yet`);
+                    return;
+                }
+
+                // Default case: create normal process button (for legacy or edge cases)
+                createProcessTableButtonWithBalance(cardElement, cardId);
+
+            } catch (error) {
+                console.warn(`[WARN] Could not recreate button for ${cardId}:`, error);
+                // Fallback to basic button creation
+                createProcessTableButtonWithBalance(cardElement, cardId);
+            }
+        }
+
+        // Helper function to create Process Table button with balance checking
+        function createProcessTableButtonWithBalance(cardElement, cardId) {
             try {
                 // Check balance and reuse existing button creation logic
                 const currentBalance = globalState.accountBalance || 0;
                 const estimatedCost = globalState.estimatedCost || 0;
                 const sufficientBalance = currentBalance >= estimatedCost;
 
-                console.log(`[DEBUG] Recreating button for ${cardId}: Balance $${currentBalance.toFixed(4)} vs Cost $${estimatedCost.toFixed(4)}`);
+                console.log(`[RESTORE] Creating button for ${cardId}: Balance $${currentBalance.toFixed(4)} vs Cost $${estimatedCost.toFixed(4)} = ${sufficientBalance ? 'SUFFICIENT' : 'INSUFFICIENT'}`);
 
                 // Ensure button container exists
                 let buttonContainer = cardElement.querySelector(`#${cardId}-buttons`);
