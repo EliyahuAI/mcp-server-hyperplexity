@@ -603,6 +603,19 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
             updated_config = body.get('updated_config')
             if not updated_config:
                 return {'success': False, 'error': 'No config returned from AI generation'}
+
+            # CRITICAL: Add clarifying questions to the config BEFORE storing
+            config_clarifying_questions = body.get('clarifying_questions', '')
+            clarification_urgency = body.get('clarification_urgency', 0.0)
+            print(f"🔍 INTERFACE_DEBUG: Config lambda clarifying_questions: {bool(config_clarifying_questions)}")
+            if config_clarifying_questions:
+                print(f"🔍 INTERFACE_DEBUG: Questions length: {len(config_clarifying_questions)}")
+                print(f"🔍 INTERFACE_DEBUG: Questions preview: {config_clarifying_questions[:200]}...")
+                updated_config['clarifying_questions'] = config_clarifying_questions
+                updated_config['clarification_urgency'] = clarification_urgency
+                print(f"🔍 INTERFACE_DEBUG: Added clarifying questions to config BEFORE storage")
+            else:
+                print(f"🔍 INTERFACE_DEBUG: No clarifying questions from config lambda")
             
             # Progress update
             if websocket_callback:
@@ -803,23 +816,6 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                         if 'config_filename' not in entry:
                             entry['config_filename'] = config_filename
             
-            # DEBUG: Log clarifying questions from config lambda
-            config_clarifying_questions = body.get('clarifying_questions', '')
-            clarification_urgency = body.get('clarification_urgency', 0.0)
-            print(f"🔍 INTERFACE_DEBUG: Config lambda clarifying_questions: {bool(config_clarifying_questions)}")
-            if config_clarifying_questions:
-                print(f"🔍 INTERFACE_DEBUG: Questions length: {len(config_clarifying_questions)}")
-                print(f"🔍 INTERFACE_DEBUG: Questions preview: {config_clarifying_questions[:200]}...")
-            else:
-                print(f"🔍 INTERFACE_DEBUG: No clarifying questions from config lambda")
-
-            # CRITICAL: Add clarifying questions to the config before storing
-            if config_clarifying_questions:
-                updated_config['clarifying_questions'] = config_clarifying_questions
-                updated_config['clarification_urgency'] = clarification_urgency
-                print(f"🔍 INTERFACE_DEBUG: Added clarifying questions to config before storage")
-            else:
-                print(f"🔍 INTERFACE_DEBUG: No clarifying questions to add to config")
 
             # ========== ENHANCED RESPONSE WITH COST ANALYSIS ==========
             return {
