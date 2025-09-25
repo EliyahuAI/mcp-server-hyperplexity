@@ -719,10 +719,16 @@ def process_formula_analysis_template(formula_data, table_analysis, current_dir)
 **{col_name} (CALCULATED COLUMN):**
 - Contains {len(formulas)} formula(s)
 - Formulas:"""
-        for formula in formulas:
+        # Show only first 2 formula examples to avoid clutter
+        for formula in formulas[:2]:
             formula_dependencies_detail += f"""
   - Row {formula['row']}: {formula['formula']} ({formula['type']})
   - Description: {formula['description']}"""
+
+        # Add note if there are more formulas
+        if len(formulas) > 2:
+            formula_dependencies_detail += f"""
+  - ... and {len(formulas) - 2} more rows with similar formulas"""
 
     # Source columns section
     source_cols = referenced_columns - calculated_columns
@@ -740,7 +746,7 @@ These columns are used in calculations and require strict format validation:"""
     for col_name in calculated_columns | referenced_columns:
         if col_name in calculated_columns:
             column_formula_context += f"""
-- **{col_name}**: CALCULATED COLUMN - Mark as CRITICAL importance, validate using AI logic (Claude with anthropic_max_web_searches: 0), NOT suitable as ID field"""
+- **{col_name}**: CALCULATED COLUMN - Mark as IGNORED importance, these should not be validated by AI as they are dependent columns containing formulas, NOT suitable as ID field"""
         elif col_name in referenced_columns:
             column_formula_context += f"""
 - **{col_name}**: SOURCE COLUMN - Mark as CRITICAL importance, strict format validation required, can be ID field if unique"""

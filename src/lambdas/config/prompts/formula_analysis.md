@@ -10,8 +10,7 @@
 **FORMULA-AWARE CONFIG REQUIREMENTS:**
 
 1. **Calculated Columns** ({{CALCULATED_COLUMNS_LIST}}):
-   - Mark as **CRITICAL** importance - these should be validated by AI using the underlying formula logic
-   - Use Claude AI validation (anthropic_max_web_searches: 0) since this is pure calculation, not web research
+   - Mark as **IGNORED** importance - these should not be validated by AI 
    - Include detailed formula information in field notes explaining the calculation logic
    - Provide clear examples showing the expected calculation pattern
    - **DO NOT use calculated columns as ID fields** - they are derived data, not unique identifiers

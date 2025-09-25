@@ -263,8 +263,8 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                     id_fields.append(field_name)
 
         def should_preserve_formulas(column_name):
-            """Check if formulas should be preserved for this column (IGNORE columns)."""
-            return column_importance.get(column_name, '').upper() == 'IGNORE'
+            """Check if formulas should be preserved for this column (IGNORED columns)."""
+            return column_importance.get(column_name, '').upper() == 'IGNORED'
         
         # Generate row keys for each row
         row_keys = []

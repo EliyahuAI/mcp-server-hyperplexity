@@ -35,7 +35,7 @@ This document contains shared guidelines used by both new config creation and re
 ## Importance Level Guidelines
 - **ID**: These define the rows - at least one column must be assigned 'ID', usually it is one or more columns to the left of the table.  Getting these right is critical as these define the row information and the stability of the analysis.  An Index is not enough.
 - **CRITICAL**: ANy column requiring research that we can help with
-- **IGNORE**: Indices, metadata, internal fields, timestamps, calculated/formula columns that are dependent on other columns and need calculation not AI approximation. 
+- **IGNORED**: Indices, metadata, internal fields, timestamps, calculated/formula columns that are dependent on other columns and need calculation not AI approximation. 
 
 ## Search Group Strategy
 Create search groups based on where information typically appears together. Are these elements usually found together? For example, a conference start date, end date, and location are almost always found together, and should be part of the same group. Critically, these groups are processed sequentially, from low to high with information aggregated along the way - make sure that more sophisticated and fragile information is presented after information that it might need first!
@@ -49,7 +49,7 @@ When analyzing any table, follow this process:
 3. **Identify likely ID columns** usually the first column(s), these are used to identify the row and are not used for research.
 5. **Group related columns** that would appear in same sources
 6. **Extract real examples** from the actual data if provided and consistent with the guidance, otherwise specify a new consistent set.  Examples must match the requirements, update the examples to be in scope. Strongly prefer consistent formatting across the examples.  
-7. **Assign importance levels** based on column criticality, mark calculated/formula columns as IGNORE as they are dependent on other columns and require calculation not AI research, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose. 
+7. **Assign importance levels** based on column criticality, mark calculated/formula columns as IGNORED as they are dependent on other columns and require calculation not AI research, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose. 
 
 ## Analysis Presentation Format
 
@@ -139,10 +139,10 @@ Search groups are **REQUIRED** for every configuration - they are essential for 
 
 **MANDATORY REQUIREMENTS:**
 - **You MUST define at least two search groups** in the `search_groups` array (Group 0/ID Group and another)
-- **Every validation target MUST be assigned to a search group** via the `search_group` field (except those with IGNORE importance)
+- **Every validation target MUST be assigned to a search group** via the `search_group` field (except those with IGNORED importance)
 - **Group 0**: Always ID/identifier fields (not validated, used for context), you must provide an ID group and assign at least one,  validation target to this. Note - these usually come from the left-most column(s). No validated columns in this group!
 - **Group 1+**: Columns whose information appears together in typical sources
-- **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or IGNORE)/2)
+- **Target Number of Groups**: Shoot for number of validation columns ceil((non-ID or IGNORED)/2)
 - **Upper limit**: Maximum 10
 - **No ungrouped fields allowed**: Every column must belong to a search group for optimal performance
 
