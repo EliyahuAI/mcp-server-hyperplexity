@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Hyperplexity Table Validator implements a comprehensive session persistence system that automatically saves user progress and allows restoration after page refreshes or navigation. This system ensures users don't lose their work when accidentally refreshing or navigating away from the application.
+The Hyperplexity Table Validator implements a comprehensive session persistence system that automatically saves user progress and provides seamless restoration after page refreshes or navigation. This system ensures users don't lose their work when accidentally refreshing or navigating away from the application.
 
 ## Current Implementation
 
@@ -11,6 +11,7 @@ The Hyperplexity Table Validator implements a comprehensive session persistence 
 - **Scope**: Per-browser-tab session (clears when tab closes)
 - **Capacity**: ~5-10MB typical browser limit
 - **Persistence**: Survives page refreshes, back/forward navigation
+- **Navigation Protection**: Warns users before losing unsaved work
 
 ### Architecture Components
 
@@ -20,35 +21,40 @@ The Hyperplexity Table Validator implements a comprehensive session persistence 
 - Form input changes (debounced 1 second)
 - Page unload events
 - User interactions
+- Navigation events
 ```
 
 **Data Saved:**
 - **Card States**: Main workflow cards (card-1, card-2, etc.) with content and metadata
 - **Form Data**: All input field values, checkboxes, selections (excluding file inputs)
 - **Global State**: Session ID, environment config, user context
+- **Processing State**: Workflow phase tracking, completion status
 - **Preview Data**: Rich preview results for download functionality
 - **UI State**: Scroll position, card completion status
 - **Timestamps**: For automatic expiration (1 hour)
 
-#### 2. State Restoration (`restoreApplicationState()`)
+#### 2. Automatic State Restoration (`attemptStateRestore()`)
 ```javascript
 // Triggered when:
 - Page loads with existing session storage
-- Only for meaningful progress (3+ cards)
-- User chooses "Restore Session" from modal
+- Meaningful progress exists (2+ cards)
+- State is recent (within 1 hour)
+- AUTOMATIC - no user confirmation required
 ```
 
 **Restoration Process:**
 1. **Validation**: Checks data integrity and age (<1 hour)
-2. **Card Recreation**: Rebuilds cards with proper HTML structure
-3. **Event Handler Reattachment**: Restores button functionality
-4. **Form Data Population**: Repopulates all input fields
-5. **State Synchronization**: Restores scroll position and global state
+2. **Automatic Decision**: No modals - always restores if valid state exists
+3. **Card Recreation**: Rebuilds cards with proper HTML structure
+4. **Event Handler Reattachment**: Restores button functionality
+5. **Form Data Population**: Repopulates all input fields
+6. **State Synchronization**: Restores scroll position and global state
 
-#### 3. Smart Restoration Logic
-- **Early Stage (1-2 cards)**: Auto-clears state, starts fresh
-- **Meaningful Progress (3+ cards)**: Shows restoration modal
-- **Modal Choice**: User decides between restore or fresh start
+#### 3. Navigation Protection System
+- **Navigation Warning**: Warns when leaving page with unsaved progress
+- **Tab Visibility Detection**: Handles browser refresh vs navigation away
+- **Automatic Restoration**: Silent restore on return - no user prompts
+- **State Cleanup**: Automatically expires old sessions (1+ hour)
 
 #### 4. Reset Functionality
 - **Visual Reset Button**: Top-right corner, becomes prominent when state exists
@@ -120,16 +126,11 @@ The Hyperplexity Table Validator implements a comprehensive session persistence 
 3. **Browser Recovery**: Session survives browser crashes
 4. **Multi-Step Process**: Complex validations preserved across steps
 
-### Smart Modal System
-```
-🔄 Previous Session Found
-We found a previous validation session with your progress saved.
-
-[📂 Restore Session] [🆕 Start Fresh]
-
-Choose "Restore Session" to continue where you left off,
-or "Start Fresh" for a new validation.
-```
+### Automatic Restoration Experience
+- **Silent Operation**: No modals or user confirmations required
+- **Seamless Return**: Users continue exactly where they left off
+- **Navigation Warnings**: Prevents accidental data loss when leaving
+- **Smart Cleanup**: Automatically removes stale sessions
 
 ### Reset Options
 - **Subtle Button**: Small, semi-transparent in corner
@@ -204,15 +205,191 @@ CREATE TABLE session_states (
 - **Recovery Tools**: Admin tools for session debugging
 - **Performance Monitoring**: Track save/restore performance
 
+## Restoration Challenges and Code Complexity
+
+### The Dual-State Problem
+
+One of the biggest challenges in the session persistence system is handling the fact that any given application state can be reached through **two different paths**:
+
+1. **Original Path**: User progresses through the workflow naturally
+2. **Restored Path**: State is recreated from saved session data
+
+This dual-state nature creates significant code complexity because:
+
+#### Event Handler Restoration
+```javascript
+// Original: Button created with natural event attachment
+<button onclick="processTable()">Process Table</button>
+
+// Restored: Must manually reattach events after DOM recreation
+const button = cardElement.querySelector('button');
+button.addEventListener('click', processTable);
+```
+
+#### Form Data Synchronization
+```javascript
+// Original: Form data flows naturally through user interaction
+globalState.email = inputElement.value;
+
+// Restored: Must manually populate AND sync state
+inputElement.value = savedState.formData.email;
+globalState.email = savedState.formData.email;
+```
+
+#### Button State Recreation
+The most complex challenge is recreating dynamic button states:
+
+```javascript
+// Original workflow progression:
+// [Upload File] → [File Uploaded ✓] → [Process Table] → [Processing...] → [Download Results]
+
+// Restored state must determine:
+// - Which button should be shown?
+// - What state should it be in?
+// - What functionality should be attached?
+// - How to handle credit insufficiency?
+// - Should auto-processing be triggered?
+```
+
+### Code Complexity Manifestations
+
+#### 1. Conditional Logic Explosion
+```javascript
+if (isRestoring) {
+    // Handle restored state
+    if (cardData.formData.hasProcessed) {
+        createDownloadButton();
+    } else if (needsCredits()) {
+        createAddCreditsButton();
+    } else {
+        createProcessButton();
+    }
+} else {
+    // Handle original workflow
+    // Completely different logic path
+}
+```
+
+#### 2. Event Handler Duplication
+Every interactive element requires two initialization paths:
+- Original creation during workflow
+- Restoration recreation with proper event binding
+
+#### 3. State Validation Complexity
+```javascript
+// Must validate that restored state makes sense
+if (cardData.type === 'preview' && !globalState.sessionId) {
+    // Inconsistent state - how did we get preview without session?
+    console.warn('Invalid restored state detected');
+    clearState();
+    return;
+}
+```
+
+#### 4. Credit System Integration
+The credit purchasing system adds another layer of complexity:
+```javascript
+// Original: User hits insufficient credits → shows Add Credits button
+// Restored: Must detect credit state AND user intent for auto-processing
+if (isRestoring && savedState.userIntendedToProcess && hasCredits()) {
+    // Auto-trigger processing that was interrupted
+    setTimeout(() => processTable(), 1000);
+}
+```
+
+### Technical Debt and Maintenance Issues
+
+#### Button Recreation Mess
+The most problematic area is button state management:
+
+```javascript
+function reinitializeCardButtons(cardElement, cardData) {
+    // 200+ lines of conditional logic to determine:
+    // - What buttons existed originally?
+    // - What state should they be in now?
+    // - How to handle edge cases?
+    // - Credit insufficiency scenarios
+    // - Auto-processing triggers
+}
+```
+
+#### Global State Synchronization
+```javascript
+// Must keep multiple state representations in sync:
+- sessionStorage (persistent)
+- globalState (runtime)
+- DOM elements (visual)
+- Processing state tracking
+- Credit system state
+```
+
+#### Error Handling Complexity
+Every restoration operation can fail in multiple ways:
+- Corrupt session data
+- Missing DOM elements
+- Invalid state transitions
+- Credit system inconsistencies
+- WebSocket connection issues
+
+### Design Patterns for Managing Complexity
+
+#### 1. State Machine Pattern
+```javascript
+const workflowStates = {
+    initial: { validTransitions: ['email'] },
+    email: { validTransitions: ['upload', 'demo'] },
+    upload: { validTransitions: ['config'] },
+    config: { validTransitions: ['preview'] },
+    preview: { validTransitions: ['validation', 'credits'] },
+    validation: { validTransitions: ['results'] },
+    results: { validTransitions: [] }
+};
+```
+
+#### 2. Restoration Factory Pattern
+```javascript
+class CardRestorer {
+    static restore(cardData, isOriginal = false) {
+        const restorer = CardRestorerFactory.create(cardData.type);
+        return restorer.restore(cardData, isOriginal);
+    }
+}
+```
+
+#### 3. Event Handler Registry
+```javascript
+const eventHandlers = new Map();
+// Centralized event handler management for both original and restored states
+```
+
+### Future Improvements
+
+#### Simplification Strategies
+1. **Unified State Representation**: Single source of truth for all state
+2. **Declarative Button States**: Define button configurations rather than imperative recreation
+3. **State Validation Framework**: Comprehensive validation rules
+4. **Restoration Testing**: Automated tests for all restoration scenarios
+
+#### Architectural Changes
+```javascript
+// Instead of dual-path logic:
+if (isRestoring) { /* complex restoration logic */ }
+else { /* different original logic */ }
+
+// Move to unified state machine:
+const currentState = determineWorkflowState();
+const buttonConfig = getButtonConfigForState(currentState);
+renderButton(buttonConfig);
+```
+
 ## Technical Implementation
 
 ### Key Functions
 - `saveApplicationState()`: Core save logic with debouncing
 - `restoreApplicationState()`: Complete restoration with validation
-- `reinitializeCardButtons()`: Event handler reattachment
-- `recreateProcessTableButton()`: Special handling for complex buttons
-- `showRestoreSessionModal()`: User choice interface
-- `attemptStateRestore()`: Smart restore decision logic
+- `reinitializeCardButtons()`: Event handler reattachment (most complex function)
+- `recreateProcessTableButton()`: Special handling for complex processing buttons
+- `attemptStateRestore()`: Automatic restore decision logic (no modals)
 
 ### Error Handling
 - **Graceful Degradation**: Continues without persistence if storage fails
@@ -249,4 +426,25 @@ console.warn('[WARN] Could not save application state:', error);
 
 ## Conclusion
 
-The current session persistence system provides robust protection against data loss while maintaining good user experience. The client-side approach offers immediate functionality with reasonable security for the current use case. Future database integration will enable enhanced collaboration and cross-device access while addressing security limitations.
+The current session persistence system provides robust protection against data loss with automatic, seamless restoration. The elimination of restore modals creates a smoother user experience, but the underlying dual-state complexity remains a significant architectural challenge.
+
+### Key Strengths
+- **Zero-Friction Experience**: No user prompts or confirmations required
+- **Navigation Protection**: Warns before data loss but restores silently
+- **Robust State Management**: Handles complex workflow states and credit system integration
+- **Time-Based Cleanup**: Automatically expires stale sessions
+
+### Technical Challenges
+- **Dual-State Complexity**: Every feature must work in both original and restored contexts
+- **Button Recreation Logic**: Complex conditional logic to recreate proper button states
+- **Event Handler Management**: Manual reattachment of all interactive functionality
+- **State Synchronization**: Multiple state representations must remain consistent
+
+### Future Architectural Goals
+The system would benefit from a complete architectural redesign using:
+1. **Unified State Machine**: Single workflow state representation
+2. **Declarative UI**: Button configurations rather than imperative recreation
+3. **Component-Based Architecture**: Self-contained restoration logic
+4. **Comprehensive Testing**: Automated validation of all restoration scenarios
+
+While the current system effectively prevents data loss and provides excellent user experience, the underlying code complexity suggests a need for architectural simplification in future iterations.

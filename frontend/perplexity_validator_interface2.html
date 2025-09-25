@@ -8429,145 +8429,6 @@ Please answer these questions and then I'll generate your configuration and auto
         // Global flag to track if we're restoring state
         window.isRestoringState = false;
 
-        // Show restore session modal when saved state is detected
-        function showRestoreSessionModal() {
-
-            // Create backdrop
-            const backdrop = document.createElement('div');
-            backdrop.id = 'restore-backdrop';
-            backdrop.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0, 0, 0, 0.5);
-                z-index: 10001;
-                backdrop-filter: blur(3px);
-            `;
-
-            const modal = document.createElement('div');
-            modal.id = 'restore-session-modal';
-            modal.style.cssText = `
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: white;
-                border-radius: 12px;
-                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-                z-index: 10002;
-                opacity: 1;
-                max-width: 450px;
-                width: 90%;
-                border-left: 4px solid #b01bc1;
-            `;
-
-            modal.innerHTML = `
-                <div style="padding: 1.5rem;">
-                    <div style="display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem;">
-                        <div style="font-size: 32px; flex-shrink: 0;">🔄</div>
-                        <div style="flex: 1;">
-                            <div style="font-weight: 600; font-size: var(--font-size-large); margin-bottom: 1rem; color: var(--text-color);">
-                                Select a Refresh Option
-                            </div>
-                        </div>
-                    </div>
-
-                    <div style="display: flex; gap: 10px; justify-content: center;">
-                        <button class="std-button primary" onclick="restoreSession()" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                            <span>📂</span>
-                            <span>Restore Session</span>
-                        </button>
-                        <button class="std-button secondary" onclick="startFresh()" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                            <span>🆕</span>
-                            <span>Start Fresh</span>
-                        </button>
-                    </div>
-
-                </div>
-            `;
-
-            document.body.appendChild(backdrop);
-            document.body.appendChild(modal);
-
-
-            // Add global functions for the buttons
-            window.restoreSession = function() {
-                backdrop.remove();
-                modal.remove();
-                window.isRestoringState = true;
-                clearExistingCards();
-                const restored = restoreApplicationState();
-                if (!restored) {
-                    window.isRestoringState = false;
-                    // Fallback to normal initialization
-                    setTimeout(() => {
-                        if (!window.isRestoringState) {
-                            createEmailCard();
-                        }
-                    }, 100);
-                }
-            };
-
-            window.startFresh = function() {
-                backdrop.remove();
-                modal.remove();
-                // Clear saved state and start normally
-                sessionStorage.removeItem('hyperplexity_app_state');
-                window.isRestoringState = false;
-
-                // Clear all globalState except email (keep user logged in)
-                const emailToKeep = globalState.email;
-                Object.keys(globalState).forEach(key => {
-                    if (key === 'email') return; // Keep email
-                    if (key === 'websockets') {
-                        // Close all websocket connections
-                        globalState.websockets.forEach(ws => {
-                            if (ws && ws.readyState === WebSocket.OPEN) {
-                                ws.close();
-                            }
-                        });
-                        globalState.websockets.clear();
-                    } else if (key === 'cardProgress') {
-                        globalState.cardProgress = {};
-                    } else if (key === 'debounceTimers') {
-                        globalState.debounceTimers.clear();
-                    } else if (key === 'processingState') {
-                        // Properly reinitialize processingState
-                        globalState.processingState = {
-                            previewCompleted: false,
-                            validationCompleted: false,
-                            validationStartTime: null,
-                            previewStartTime: null,
-                            lastEstimatedCost: null,
-                            lastBalanceCheck: null
-                        };
-                    } else {
-                        // Reset to initial values
-                        if (typeof globalState[key] === 'boolean') {
-                            globalState[key] = false;
-                        } else if (typeof globalState[key] === 'number') {
-                            globalState[key] = 0;
-                        } else {
-                            globalState[key] = null;
-                        }
-                    }
-                });
-                globalState.email = emailToKeep; // Restore email
-
-                // Clear the UI
-                const container = document.querySelector('.container');
-                if (container) {
-                    container.innerHTML = '';
-                }
-
-                // Allow normal initialization to proceed
-                setTimeout(() => {
-                    createEmailCard();
-                }, 100);
-            };
-        }
 
         // Try to restore state when DOM is loaded - BEFORE other initialization
         function attemptStateRestore() {
@@ -8575,21 +8436,27 @@ Please answer these questions and then I'll generate your configuration and auto
             if (hasState) {
                 try {
                     const state = JSON.parse(hasState);
-                    const cardCount = state.cards ? state.cards.length : 0;
+                    const cardCount = (state.cards || []).length;
+                    const oneHour = 60 * 60 * 1000;
 
-                    // Only show restore modal if there are 3+ cards (meaningful progress)
-                    if (cardCount >= 3) {
-                        console.log(`[INFO] Found ${cardCount} saved cards - showing restore modal`);
-                        showRestoreSessionModal();
-                        return true; // Indicate we're handling state
+                    // Check if state is recent (within 1 hour)
+                    if (Date.now() - state.timestamp > oneHour) {
+                        console.log(`[AUTO] Saved state is too old (${Math.round((Date.now() - state.timestamp) / 60000)} minutes) - clearing`);
+                        sessionStorage.removeItem('hyperplexity_app_state');
+                        return false;
+                    }
+
+                    if (cardCount >= 2) {
+                        // Always auto-restore without modal
+                        console.log(`[AUTO] Auto-restoring ${cardCount} cards (no modal)`);
+                        return restoreApplicationState();
                     } else {
-                        console.log(`[INFO] Only ${cardCount} saved cards - clearing state and starting fresh`);
-                        // Clear minimal state and start fresh
+                        console.log(`[AUTO] Only ${cardCount} saved cards - clearing state`);
                         sessionStorage.removeItem('hyperplexity_app_state');
                         return false;
                     }
                 } catch (error) {
-                    console.warn('[WARN] Invalid saved state, clearing:', error);
+                    console.warn('[AUTO] Invalid saved state, clearing:', error);
                     sessionStorage.removeItem('hyperplexity_app_state');
                     return false;
                 }
@@ -8776,10 +8643,8 @@ Please answer these questions and then I'll generate your configuration and auto
                     setupFileUpload(cardId);
                 });
 
-                // Special handling for Preview cards that need Process Table button
-                if (cardId === 'card-4' || cardElement.textContent.includes('Preview')) {
-                    recreateProcessTableButton(cardElement, cardId);
-                }
+                // Try to fix buttons on all cards - let the function decide what to do
+                recreateProcessTableButton(cardElement, cardId);
 
                 console.log(`[INFO] Reinitialized all functionality for card: ${cardId}`);
             } catch (error) {
@@ -8787,129 +8652,246 @@ Please answer these questions and then I'll generate your configuration and auto
             }
         }
 
-        // Helper function to create completion button for already processed tables
-        function createCompletedButton(cardElement, cardId) {
-            try {
-                // Ensure button container exists
-                let buttonContainer = cardElement.querySelector(`#${cardId}-buttons`);
-                if (!buttonContainer) {
-                    const cardContent = cardElement.querySelector('.card-content');
-                    if (cardContent) {
-                        buttonContainer = document.createElement('div');
-                        buttonContainer.id = `${cardId}-buttons`;
-                        buttonContainer.style.cssText = 'margin-top: 20px; text-align: center;';
-                        cardContent.appendChild(buttonContainer);
-                    } else {
-                        return;
-                    }
-                }
-
-                // Create "Download Results" button for completed validation
-                createButtonRow(`${cardId}-buttons`, [
-                    {
-                        text: 'Download Results',
-                        icon: '📥',
-                        variant: 'success',
-                        width: 'full',
-                        callback: async (e) => {
-                            const button = e.target.closest('button');
-                            markButtonSelected(button, '📥 Downloading...');
-
-                            try {
-                                await window.downloadValidationResults();
-                                markButtonUnselected(button);
-                            } catch (error) {
-                                console.error('Download error:', error);
-                                alert('Download failed: ' + error.message);
-                                markButtonUnselected(button);
-                            }
-                        }
-                    }
-                ]);
-
-                // Mark as completed and show completion message
-                ensureProcessingState();
-                globalState.processingState.validationCompleted = true;
-                globalState.workflowPhase = 'completed';
-                showMessage(`${cardId}-messages`, `✅ Table validation completed successfully!`, 'success', false, 'validation-completed');
-
-                console.log(`[INFO] Created completion button for ${cardId}`);
-            } catch (error) {
-                console.warn(`[WARN] Could not create completion button for ${cardId}:`, error);
-            }
-        }
+        // Removed createCompletedButton - was causing duplicate download buttons
 
         // Special function to recreate Process Table button for preview cards
         function recreateProcessTableButton(cardElement, cardId) {
             try {
-                // Ensure processingState is initialized
-                ensureProcessingState();
+                console.log(`[RESTORE] Simple restore for ${cardId} - checking for existing buttons`);
 
-                // Check workflow state first to determine correct restore behavior
-                const workflowPhase = globalState.workflowPhase || 'preview';
-                const processingState = globalState.processingState;
+                // SIMPLE APPROACH: If the card already has working buttons, don't touch them
+                const existingButtons = cardElement.querySelectorAll('button');
+                const hasWorkingDownload = Array.from(existingButtons).some(btn =>
+                    btn.textContent.includes('Download Results') && !btn.disabled && btn.onclick
+                );
 
-                console.log(`[RESTORE] Restoring button for ${cardId}: Phase=${workflowPhase}, ValidationCompleted=${processingState.validationCompleted}, PreviewCompleted=${processingState.previewCompleted}`);
-
-                // Handle different workflow phases with proper button states
-                if (workflowPhase === 'validating' && processingState.validationStartTime) {
-                    // Mid-validation refresh - show email notice instead of button
-                    const timeSinceStart = Date.now() - processingState.validationStartTime;
-                    if (timeSinceStart < 5 * 60 * 1000) { // Less than 5 minutes ago
-                        showMessage(`${cardId}-messages`, `⚠️ Validation was interrupted by refresh. Results will be emailed when complete.`, 'warning', false, 'validation-interrupted');
-                        return;
-                    }
-                }
-
-                if (workflowPhase === 'preview' && processingState.previewStartTime && !processingState.previewCompleted) {
-                    // Mid-preview refresh - resume preview automatically
-                    const timeSinceStart = Date.now() - processingState.previewStartTime;
-                    if (timeSinceStart < 2 * 60 * 1000) { // Less than 2 minutes ago
-                        showMessage(`${cardId}-messages`, `🔄 Resuming preview generation...`, 'info', false, 'preview-resuming');
-                        setTimeout(() => {
-                            startPreview(cardId);
-                        }, 1000);
-                        return;
-                    }
-                }
-
-                if (processingState.validationCompleted) {
-                    // Validation already completed - show completion state
-                    createCompletedButton(cardElement, cardId);
+                if (hasWorkingDownload) {
+                    console.log(`[RESTORE] Card ${cardId} already has working download button - skipping`);
                     return;
                 }
 
-                // For preview cards that completed successfully, show appropriate button based on balance
-                if (workflowPhase === 'preview' && processingState.previewCompleted) {
+                // Check if this is a preview card with cost estimates
+                const cardContent = cardElement.innerHTML || '';
+                const hasCostEstimate = cardContent.includes('Cost') && cardContent.includes('Credits Needed');
+
+                if (hasCostEstimate) {
+                    // This is a preview card - create process/credits button with balance checking
+                    console.log(`[RESTORE] Card ${cardId} has cost estimates - creating process button`);
                     createProcessTableButtonWithBalance(cardElement, cardId);
-                    return;
+                } else {
+                    // Not a preview card - leave it alone unless it's clearly broken
+                    console.log(`[RESTORE] Card ${cardId} appears to be complete or not a preview - skipping button creation`);
                 }
-
-                // For config/upload phases, don't show process button yet
-                if (workflowPhase === 'config' || workflowPhase === 'upload' || workflowPhase === 'initial') {
-                    console.log(`[RESTORE] Workflow in ${workflowPhase} phase - no process button needed yet`);
-                    return;
-                }
-
-                // Default case: create normal process button (for legacy or edge cases)
-                createProcessTableButtonWithBalance(cardElement, cardId);
 
             } catch (error) {
                 console.warn(`[WARN] Could not recreate button for ${cardId}:`, error);
-                // Fallback to basic button creation
-                createProcessTableButtonWithBalance(cardElement, cardId);
             }
         }
 
         // Helper function to create Process Table button with balance checking
         function createProcessTableButtonWithBalance(cardElement, cardId) {
             try {
-                // Check balance and reuse existing button creation logic
-                const currentBalance = globalState.accountBalance || 0;
-                const estimatedCost = globalState.estimatedCost || 0;
+                // Extract cost and balance from card content if available
+                const cardContent = cardElement.innerHTML || '';
+                let extractedCost = 0;
+                let extractedBalance = 0;
+
+                // Look for cost in the card content (e.g., "Cost\n$2.00")
+                const costMatch = cardContent.match(/Cost[^$]*\$(\d+\.?\d*)/);
+                if (costMatch) {
+                    extractedCost = parseFloat(costMatch[1]);
+                    console.log(`[RESTORE] Extracted cost from card content: $${extractedCost}`);
+                }
+
+                // Look for balance in the card content (e.g., "Your Balance\n$0.00")
+                const balanceMatch = cardContent.match(/Your Balance[^$]*\$(\d+\.?\d*)/);
+                if (balanceMatch) {
+                    extractedBalance = parseFloat(balanceMatch[1]);
+                    console.log(`[RESTORE] Extracted balance from card content: $${extractedBalance}`);
+                }
+
+                // Use extracted values or fall back to global state
+                const currentBalance = extractedBalance || globalState.accountBalance || 0;
+                const estimatedCost = extractedCost || globalState.estimatedCost || 0;
                 const sufficientBalance = currentBalance >= estimatedCost;
 
-                console.log(`[RESTORE] Creating button for ${cardId}: Balance $${currentBalance.toFixed(4)} vs Cost $${estimatedCost.toFixed(4)} = ${sufficientBalance ? 'SUFFICIENT' : 'INSUFFICIENT'}`);
+                // Update global state with extracted values
+                if (extractedCost > 0) globalState.estimatedCost = extractedCost;
+                if (extractedBalance >= 0) globalState.accountBalance = extractedBalance;
+
+                console.log(`[RESTORE] Initial button calculation for ${cardId}: Balance $${currentBalance.toFixed(4)} vs Cost $${estimatedCost.toFixed(4)} = ${sufficientBalance ? 'SUFFICIENT' : 'INSUFFICIENT'}`);
+
+                // Check for updated balance and pending orders during restore
+                setTimeout(async () => {
+                    try {
+                        // Skip if no email available
+                        if (!globalState.email) {
+                            console.log(`[RESTORE] Skipping balance/order check - no email available`);
+                            return;
+                        }
+
+                        console.log(`[RESTORE] Checking for balance updates and pending orders for ${cardId}...`);
+                        console.log(`[RESTORE] Available data: email=${!!globalState.email}, sessionId=${!!globalState.sessionId}`);
+
+                        // Check for balance update - but only call if we have necessary data
+                        if (globalState.sessionId && globalState.email) {
+                            try {
+                                const balanceResponse = await fetch(`${API_BASE}/validate`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        email: globalState.email,
+                                        action: 'getAccountBalance'
+                                    })
+                                });
+
+                                if (balanceResponse.ok) {
+                                    const balanceData = await balanceResponse.json();
+                                    if (balanceData.success) {
+                                        // Handle different response formats (same as existing balance code)
+                                        let newBalance = balanceData.balance;
+                                        if (newBalance === undefined && balanceData.account_info) {
+                                            newBalance = balanceData.account_info.balance || balanceData.account_info.current_balance;
+                                        }
+
+                                        if (typeof newBalance === 'number') {
+                                            const oldBalance = globalState.accountBalance || 0;
+
+                                            if (Math.abs(newBalance - oldBalance) > 0.001) {
+                                                console.log(`[RESTORE] Balance updated from $${oldBalance.toFixed(2)} to $${newBalance.toFixed(2)}`);
+                                                globalState.accountBalance = newBalance;
+
+                                                // Check if balance became sufficient and user previously attempted processing
+                                                const newSufficientBalance = newBalance >= estimatedCost;
+                                                console.log(`[RESTORE] Updated calculation: Balance $${newBalance.toFixed(4)} vs Cost $${estimatedCost.toFixed(4)} = ${newSufficientBalance ? 'SUFFICIENT' : 'INSUFFICIENT'}`);
+
+                                                console.log(`[RESTORE-DEBUG] Auto-processing check:`, {
+                                                    newSufficientBalance,
+                                                    oldSufficientBalance: sufficientBalance,
+                                                    userAttemptedProcessing: globalState.userAttemptedProcessing,
+                                                    hasPendingTrigger: !!globalState.pendingProcessingTrigger,
+                                                    shouldAutoProcess: newSufficientBalance && !sufficientBalance && globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger
+                                                });
+
+                                                if (newSufficientBalance && !sufficientBalance && globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger) {
+                                                    console.log(`[RESTORE-DEBUG] Triggering auto-processing...`);
+
+                                                    // Clear blue message and show green success message (same as tab focus)
+                                                    const messageContainers = document.querySelectorAll('[id$="-messages"]');
+                                                    console.log(`[RESTORE-DEBUG] Found ${messageContainers.length} message containers`);
+
+                                                    if (messageContainers.length > 0) {
+                                                        const lastContainer = messageContainers[messageContainers.length - 1];
+                                                        const containerId = lastContainer.id;
+                                                        console.log(`[RESTORE-DEBUG] Using container: ${containerId}`);
+
+                                                        // Clear existing messages
+                                                        const container = document.getElementById(containerId);
+                                                        if (container) {
+                                                            console.log(`[RESTORE-DEBUG] Clearing messages, current content: ${container.innerHTML.substring(0, 100)}...`);
+                                                            container.innerHTML = '';
+                                                        }
+
+                                                        showMessage(containerId, `🎉 Balance updated! Auto-starting validation...`, 'success', false, 'auto-process');
+                                                    }
+
+                                                    // Trigger auto-processing (same as tab focus)
+                                                    console.log(`[RESTORE-DEBUG] Setting 1-second timer for auto-processing...`);
+                                                    setTimeout(() => {
+                                                        console.log(`[RESTORE-DEBUG] Timer fired - calling pendingProcessingTrigger`);
+                                                        try {
+                                                            globalState.pendingProcessingTrigger();
+                                                            console.log(`[RESTORE-DEBUG] Auto-processing trigger completed successfully`);
+                                                        } catch (error) {
+                                                            console.error(`[RESTORE-DEBUG] Auto-processing trigger failed:`, error);
+                                                        }
+                                                        globalState.userAttemptedProcessing = false;
+                                                        globalState.pendingProcessingTrigger = null;
+                                                    }, 1000);
+
+                                                    return; // Exit early, processing will start automatically
+                                                } else if (newSufficientBalance !== sufficientBalance) {
+                                                    // Balance status changed but no auto-processing - just recreate button
+                                                    console.log(`[RESTORE] Balance status changed - recreating button`);
+                                                    recreateProcessTableButton(cardElement, cardId);
+                                                    return;
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    const errorText = await balanceResponse.text();
+                                    console.warn(`[RESTORE] Balance check failed (${balanceResponse.status}):`, errorText);
+                                }
+                            } catch (balanceError) {
+                                console.warn(`[RESTORE] Balance check error:`, balanceError);
+                            }
+                        }
+
+                        // Check for pending Squarespace orders - separate try/catch
+                        try {
+                            const orderResponse = await fetch(`${API_BASE}/validate`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    email: globalState.email,
+                                    action: 'checkSquarespaceOrders'
+                                })
+                            });
+
+                            if (orderResponse.ok) {
+                                const orderData = await orderResponse.json();
+                                if (orderData.success && orderData.new_orders_found) {
+                                    console.log(`[RESTORE] New orders found - balance may have updated`);
+
+                                    // Update balance if provided in the response
+                                    if (typeof orderData.new_balance === 'number') {
+                                        const oldBalance = globalState.accountBalance || 0;
+                                        globalState.accountBalance = orderData.new_balance;
+                                        console.log(`[RESTORE] Balance updated from orders: $${oldBalance.toFixed(2)} to $${orderData.new_balance.toFixed(2)}`);
+
+                                        // Check for auto-processing trigger (same logic as balance check)
+                                        const orderSufficientBalance = orderData.new_balance >= estimatedCost;
+                                        if (orderSufficientBalance && !sufficientBalance && globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger) {
+                                            // Show success message and trigger auto-processing
+                                            const messageContainers = document.querySelectorAll('[id$="-messages"]');
+                                            if (messageContainers.length > 0) {
+                                                const lastContainer = messageContainers[messageContainers.length - 1];
+                                                const containerId = lastContainer.id;
+                                                const container = document.getElementById(containerId);
+                                                if (container) {
+                                                    container.innerHTML = '';
+                                                }
+                                                showMessage(containerId, `🎉 Order processed! Auto-starting validation...`, 'success', false, 'auto-process');
+                                            }
+
+                                            setTimeout(() => {
+                                                globalState.pendingProcessingTrigger();
+                                                globalState.userAttemptedProcessing = false;
+                                                globalState.pendingProcessingTrigger = null;
+                                            }, 1000);
+
+                                            return;
+                                        }
+                                    }
+
+                                    // Fallback: trigger another balance check after order processing if no balance provided
+                                    setTimeout(() => {
+                                        recreateProcessTableButton(cardElement, cardId);
+                                    }, 2000);
+                                    return; // Exit early, button will be recreated
+                                }
+                            } else {
+                                const errorText = await orderResponse.text();
+                                console.warn(`[RESTORE] Order polling failed (${orderResponse.status}):`, errorText);
+                            }
+                        } catch (orderError) {
+                            console.warn(`[RESTORE] Order polling error:`, orderError);
+                        }
+                    } catch (error) {
+                        console.warn(`[RESTORE] Failed to check balance/orders for ${cardId}:`, error);
+                    }
+                }, 500); // Small delay to not interfere with initial button creation
 
                 // Ensure button container exists
                 let buttonContainer = cardElement.querySelector(`#${cardId}-buttons`);
@@ -9057,6 +9039,100 @@ Please answer these questions and then I'll generate your configuration and auto
         console.log('- Run hardReset() in console (aggressive reset)');
         console.log('- Run clearState() in console (then reload manually)');
         console.log('- Run inspectState() in console (debug saved data)');
+
+        // ============================================
+        // NAVIGATION PROTECTION & RESTORE SYSTEM
+        // ============================================
+
+        // Track if we have valuable data that shouldn't be lost
+        function hasValuableData() {
+            return globalState.excelFileUploaded ||
+                   globalState.currentConfig ||
+                   document.querySelectorAll('[id^="card-"]').length > 1;
+        }
+
+        // Differentiate between refresh and navigation
+        let isRefresh = false;
+        let isUnloading = false;
+
+        // Detect refresh vs navigation
+        window.addEventListener('keydown', (e) => {
+            // Ctrl+R, Cmd+R, F5
+            if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+                isRefresh = true;
+                console.log('[NAV] Refresh detected via keyboard');
+            } else if (e.key === 'F5') {
+                isRefresh = true;
+                console.log('[NAV] Refresh detected via F5');
+            }
+        });
+
+        // Handle beforeunload - warn on navigation, silent on refresh
+        window.addEventListener('beforeunload', (e) => {
+            isUnloading = true;
+
+            if (hasValuableData()) {
+                if (!isRefresh) {
+                    // Navigation away - warn user
+                    console.log('[NAV] Navigation away detected - showing warning');
+                    const message = 'You have uploaded data and made progress. Navigating away will erase your session. Are you sure?';
+                    e.preventDefault();
+                    e.returnValue = message;
+                    return message;
+                } else {
+                    // Refresh - save state silently
+                    console.log('[NAV] Refresh detected - saving state silently');
+                    if (typeof saveApplicationState === 'function') {
+                        saveApplicationState();
+                    }
+                }
+            }
+        });
+
+        // Handle page visibility changes (back/forward navigation)
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && !isUnloading) {
+                console.log('[NAV] Page became visible - checking for restore');
+
+                // Small delay to ensure state is ready
+                setTimeout(() => {
+                    if (hasValuableData()) {
+                        console.log('[NAV] Has valuable data - no restore needed');
+                        return;
+                    }
+
+                    // Check if we have saved state
+                    const savedState = sessionStorage.getItem('hyperplexity_app_state');
+                    if (savedState) {
+                        try {
+                            const state = JSON.parse(savedState);
+                            const oneHour = 60 * 60 * 1000;
+
+                            if (Date.now() - state.timestamp <= oneHour && state.cards && state.cards.length > 1) {
+                                console.log('[NAV] Auto-restoring from page visibility change');
+                                // Auto-restore without modal
+                                if (typeof restoreApplicationState === 'function') {
+                                    restoreApplicationState();
+                                }
+                            } else if (Date.now() - state.timestamp > oneHour) {
+                                console.log('[NAV] Clearing old state from visibility change');
+                                sessionStorage.removeItem('hyperplexity_app_state');
+                            }
+                        } catch (error) {
+                            console.warn('[NAV] Error checking saved state:', error);
+                        }
+                    }
+                }, 100);
+            }
+        });
+
+
+        // Reset refresh flag after a delay
+        setTimeout(() => {
+            isRefresh = false;
+        }, 1000);
+
+        console.log('[NAV] Navigation protection system initialized');
 
         // Note: State restoration is now handled in the main DOMContentLoaded event
         // to avoid conflicts with card initialization
