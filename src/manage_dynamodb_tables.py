@@ -2149,6 +2149,7 @@ def test_model_config_command(model_name):
             print(f"  Rate Limit Factor: {float(config.get('rate_limit_factor', 0.75)):.2f}")
             print(f"  Input Cost: ${float(config.get('input_cost_per_million_tokens', 0)):.2f} per million tokens")
             print(f"  Output Cost: ${float(config.get('output_cost_per_million_tokens', 0)):.2f} per million tokens")
+            print(f"  Max Tokens: {config.get('max_tokens', 'Not specified')}")
             print(f"  Notes: {config.get('notes', 'None')}")
         else:
             print("[ERROR] No matching configuration found.")

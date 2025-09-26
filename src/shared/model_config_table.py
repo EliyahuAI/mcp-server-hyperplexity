@@ -96,7 +96,10 @@ class ModelConfigTable:
                         # Pricing configuration
                         'input_cost_per_million_tokens': Decimal(str(float(row['input_cost_per_million_tokens']))),
                         'output_cost_per_million_tokens': Decimal(str(float(row['output_cost_per_million_tokens']))),
-                        
+
+                        # Token limits (optional field for backward compatibility)
+                        'max_tokens': int(row.get('max_tokens', 0)) if row.get('max_tokens', '').strip() else 0,
+
                         'notes': row.get('notes', '').strip(),
                         
                         # TTL: Keep configs for 1 year unless updated

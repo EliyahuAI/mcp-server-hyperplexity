@@ -15,6 +15,7 @@ import random
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Union
 from perplexity_schema import get_response_format_schema
+from model_config_table import ModelConfigTable
 import traceback
 
 # Configure logging
@@ -38,11 +39,7 @@ class AIAPIClient:
         "claude-3-5-haiku-latest"
     ]
 
-    # Provider-specific maximum token limits
-    PROVIDER_MAX_TOKENS = {
-        'anthropic': 64000,  # Max for Claude models like claude-sonnet-4-20250514
-        'perplexity': 32000  # Max for Perplexity models
-    }
+    # Token limits now retrieved from model configuration database
     
     def __init__(self, s3_bucket: str = None):
         # Check if using unified bucket structure
@@ -60,6 +57,10 @@ class AIAPIClient:
         self.s3_client = boto3.client('s3')
         self.anthropic_api_key = self._get_anthropic_api_key()
         self.perplexity_api_key = self._get_perplexity_api_key()
+
+        # Initialize model configuration table for dynamic token limits
+        self.model_config_table = ModelConfigTable()
+        self._token_limits_cache = {}  # Cache for token limits to avoid repeated DB calls
     
     def _get_anthropic_api_key(self) -> str:
         """Get Anthropic API key from environment or SSM."""
@@ -134,28 +135,62 @@ class AIAPIClient:
 
     def _enforce_provider_token_limit(self, model: str, requested_tokens: int) -> int:
         """
-        Enforce provider-specific maximum token limits to prevent API errors.
+        Enforce model-specific maximum token limits from database configuration to prevent API errors.
 
         Args:
-            model: The model name to determine provider
+            model: The model name to check limits for
             requested_tokens: The originally requested max_tokens value
 
         Returns:
-            int: The enforced token limit that won't exceed provider maximums
+            int: The enforced token limit that won't exceed model maximums
         """
         if not requested_tokens or requested_tokens <= 0:
             return requested_tokens
 
-        api_provider = self._determine_api_provider(model)
-        provider_limit = self.PROVIDER_MAX_TOKENS.get(api_provider)
+        # Get model-specific token limit from database
+        model_limit = self._get_model_token_limit(model)
 
-        if provider_limit and requested_tokens > provider_limit:
-            logger.warning(f"[TOKEN_LIMIT_ENFORCED] Model {model} ({api_provider}) requested {requested_tokens} tokens, "
-                         f"but provider limit is {provider_limit}. Capping at {provider_limit} tokens.")
-            return provider_limit
+        if model_limit and requested_tokens > model_limit:
+            logger.warning(f"[TOKEN_LIMIT_ENFORCED] Model {model} requested {requested_tokens} tokens, "
+                         f"but model limit is {model_limit}. Capping at {model_limit} tokens.")
+            return model_limit
 
         return requested_tokens
-    
+
+    def _get_model_token_limit(self, model: str) -> Optional[int]:
+        """
+        Get the maximum token limit for a model from the configuration database.
+
+        Args:
+            model: The model name
+
+        Returns:
+            int: The max token limit for the model, or None if no limit is configured
+        """
+        # Check cache first
+        if model in self._token_limits_cache:
+            return self._token_limits_cache[model]
+
+        try:
+            # Get model configuration from database
+            config = self.model_config_table.get_config_for_model(model)
+
+            if config and config.get('max_tokens', 0) > 0:
+                token_limit = int(config['max_tokens'])
+                # Cache the result
+                self._token_limits_cache[model] = token_limit
+                logger.debug(f"Retrieved token limit for {model}: {token_limit}")
+                return token_limit
+            else:
+                logger.warning(f"No token limit configured for model: {model}")
+                # Cache the None result to avoid repeated DB calls
+                self._token_limits_cache[model] = None
+                return None
+
+        except Exception as e:
+            logger.error(f"Failed to get token limit for model {model}: {e}")
+            return None
+
     def _normalize_anthropic_model(self, model: str) -> str:
         """Convert anthropic/ format to direct API format if needed."""
         if model.startswith('anthropic/'):
