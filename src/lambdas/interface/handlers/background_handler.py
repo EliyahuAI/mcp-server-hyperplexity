@@ -1143,7 +1143,7 @@ def handle(event, context):
                                 # Use shared_table_parser to get structured data
                                 from shared_table_parser import S3TableParser
                                 table_parser = S3TableParser()
-                                table_data = table_parser.parse_s3_table(S3_UNIFIED_BUCKET, excel_s3_key)
+                                table_data = table_parser.parse_s3_table(S3_UNIFIED_BUCKET, excel_s3_key, extract_formulas=True)
                                 validated_sheet = table_data.get('metadata', {}).get('sheet_name') if isinstance(table_data, dict) else None
                                 
                                 excel_buffer = create_qc_enhanced_excel_for_interface(
@@ -1730,7 +1730,72 @@ def handle(event, context):
             # Normal mode processing
             results_key = event['results_key']
             logger.debug(f"Background normal processing for session {session_id}")
-            
+
+            # SECURITY: Check balance BEFORE starting expensive full validation processing
+            from dynamodb_schemas import check_user_balance, get_domain_multiplier
+            from ..core.unified_s3_manager import UnifiedS3Manager
+
+            try:
+                current_balance = check_user_balance(email)
+                logger.info(f"[SECURITY] Full validation balance check for {email}: ${current_balance:.6f}")
+
+                # Get estimated cost from preview data (what was quoted to user)
+                storage_manager_temp = UnifiedS3Manager()
+                preview_data = storage_manager_temp.get_preview_data(email, clean_session_id)
+
+                if preview_data and preview_data.get('cost_estimates'):
+                    estimated_cost = preview_data['cost_estimates'].get('quoted_validation_cost', 0.01)
+                    logger.info(f"[SECURITY] Using quoted cost from preview: ${estimated_cost:.6f}")
+                else:
+                    # Fallback: calculate estimated cost using domain multiplier
+                    email_domain = email.split('@')[-1] if '@' in email else 'unknown'
+                    multiplier = get_domain_multiplier(email_domain)
+                    estimated_cost = max(0.01, 0.01 * float(multiplier))  # Minimum cost with domain multiplier
+                    logger.warning(f"[SECURITY] No preview cost found, using fallback: ${estimated_cost:.6f} (domain: {email_domain}, multiplier: {multiplier})")
+
+                # Reject if insufficient balance
+                if current_balance is None or current_balance < estimated_cost:
+                    logger.error(f"[SECURITY] BLOCKING full validation - insufficient balance: ${current_balance:.6f} < ${estimated_cost:.6f}")
+
+                    # Send insufficient balance error via WebSocket
+                    _send_websocket_message(session_id, {
+                        'type': 'validation_failed',
+                        'session_id': session_id,
+                        'progress': 100,
+                        'status': '❌ Insufficient balance for full validation',
+                        'error': 'insufficient_balance',
+                        'current_balance': float(current_balance) if current_balance else 0,
+                        'estimated_cost': float(estimated_cost),
+                        'credits_needed': max(0, estimated_cost - (current_balance or 0))
+                    })
+
+                    # Update run status to failed
+                    update_run_status_for_session(
+                        status='FAILED',
+                        run_type='Validation',
+                        verbose_status=f'Insufficient balance: ${current_balance:.2f} < ${estimated_cost:.2f}',
+                        percent_complete=100
+                    )
+
+                    return {
+                        'statusCode': 402,  # Payment Required
+                        'body': json.dumps({
+                            'status': 'failed',
+                            'error': 'insufficient_balance',
+                            'current_balance': float(current_balance) if current_balance else 0,
+                            'estimated_cost': float(estimated_cost),
+                            'session_id': session_id
+                        })
+                    }
+
+                logger.info(f"[SECURITY] ✅ Balance sufficient for full validation: ${current_balance:.6f} >= ${estimated_cost:.6f}")
+
+            except ImportError:
+                logger.warning("[SECURITY] DynamoDB not available - skipping balance check (development mode)")
+            except Exception as e:
+                logger.error(f"[SECURITY] Error checking balance before full validation: {e}")
+                # Continue processing if balance check fails (avoid blocking due to technical issues)
+
             # Use unified storage to get Excel and config files
             from ..core.unified_s3_manager import UnifiedS3Manager
             storage_manager = UnifiedS3Manager()
@@ -1754,7 +1819,7 @@ def handle(event, context):
             table_parser = S3TableParser()
             
             # Parse table to get structure and row count
-            table_data = table_parser.parse_s3_table(storage_manager.bucket_name, actual_excel_s3_key)
+            table_data = table_parser.parse_s3_table(storage_manager.bucket_name, actual_excel_s3_key, extract_formulas=True)
             total_rows_in_file = len(table_data.get('rows', []))
             rows_to_process = min(max_rows, total_rows_in_file) if max_rows else total_rows_in_file
 
@@ -2202,7 +2267,7 @@ def handle(event, context):
                 try:
                     from shared_table_parser import S3TableParser
                     table_parser = S3TableParser()
-                    table_data = table_parser.parse_s3_table(storage_manager.bucket_name, excel_s3_key)
+                    table_data = table_parser.parse_s3_table(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
                     logger.info(f"Parsed table data for ZIP creation: {type(table_data)}")
                 except Exception as e:
                     logger.error(f"Failed to parse table data for ZIP: {e}")
@@ -2381,7 +2446,7 @@ def handle(event, context):
                             from shared_table_parser import S3TableParser
                             table_parser = S3TableParser()
                             logger.info(f"Parsing S3 table: {S3_UNIFIED_BUCKET}/{excel_s3_key}")
-                            table_data = table_parser.parse_s3_table(S3_UNIFIED_BUCKET, excel_s3_key)
+                            table_data = table_parser.parse_s3_table(S3_UNIFIED_BUCKET, excel_s3_key, extract_formulas=True)
                             logger.info(f"Table parser returned data type: {type(table_data)}")
                             if isinstance(table_data, dict):
                                 logger.info(f"Table data keys: {list(table_data.keys())}")
@@ -3424,10 +3489,46 @@ def handle_config_generation(event, context):
                 original_session_id = event.get('original_session_id') or session_id
                 
                 if email and original_session_id and response.get('updated_config'):
+                    # CRITICAL: Add clarifying questions and conversation log to config before storing
+                    updated_config = response['updated_config'].copy()
+
+                    # Add clarifying questions to config
+                    config_clarifying_questions = response.get('clarifying_questions', '')
+                    clarification_urgency = response.get('clarification_urgency', 0.0)
+                    if config_clarifying_questions:
+                        updated_config['clarifying_questions'] = config_clarifying_questions
+                        updated_config['clarification_urgency'] = clarification_urgency
+                        print(f"🔍 BACKGROUND_DEBUG: Added clarifying questions to config")
+
+                    # Add conversation entry to config_change_log
+                    from datetime import datetime
+                    if 'config_change_log' not in updated_config:
+                        updated_config['config_change_log'] = []
+
+                    # Create conversation entry for this interaction
+                    conversation_entry = {
+                        'timestamp': datetime.now().isoformat(),
+                        'action': 'unified_generation',
+                        'session_id': original_session_id,
+                        'instructions': event.get('instructions', ''),
+                        'clarifying_questions': config_clarifying_questions,
+                        'clarification_urgency': clarification_urgency,
+                        'reasoning': response.get('reasoning', ''),
+                        'ai_summary': response.get('ai_summary', ''),
+                        'technical_ai_summary': response.get('technical_ai_summary', ''),
+                        'version': updated_config.get('generation_metadata', {}).get('version', 1),
+                        'model_used': response.get('model_used', 'unknown'),
+                        'config_filename': response.get('config_filename', ''),
+                        'entry_type': 'ai_response'
+                    }
+
+                    updated_config['config_change_log'].append(conversation_entry)
+                    print(f"🔍 BACKGROUND_DEBUG: Added conversation entry to config_change_log (total entries: {len(updated_config['config_change_log'])})")
+
                     # Store config in unified storage using versioning system
                     from ..actions.generate_config_unified import store_config_with_versioning
                     storage_result = store_config_with_versioning(
-                        email, original_session_id, response['updated_config'], 
+                        email, original_session_id, updated_config,
                         source='ai_generated'
                     )
                     logger.info(f"Stored config in unified storage: {storage_result}")
@@ -3643,10 +3744,17 @@ def invoke_config_lambda(event: Dict) -> Dict:
         except Exception as size_check_error:
             logger.warning(f"Could not check payload size: {size_check_error}")
         
+        # Strip generation_metadata from existing_config to prevent cache pollution
+        clean_existing_config = event.get('existing_config')
+        if clean_existing_config and 'generation_metadata' in clean_existing_config:
+            clean_existing_config = clean_existing_config.copy()
+            logger.info("BACKGROUND_HANDLER: Stripping generation_metadata from existing_config for config lambda to prevent cache issues")
+            del clean_existing_config['generation_metadata']
+
         # Construct proper payload for config lambda (extract only the fields it expects)
         config_lambda_payload = {
             'table_analysis': event.get('table_analysis'),
-            'existing_config': event.get('existing_config'),
+            'existing_config': clean_existing_config,
             'instructions': event.get('instructions', 'Generate an optimal configuration for this data validation scenario'),
             'session_id': event.get('session_id', 'unknown'),
             'latest_validation_results': event.get('latest_validation_results'),
