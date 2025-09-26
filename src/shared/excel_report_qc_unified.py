@@ -42,6 +42,14 @@ def safe_for_excel(value, preserve_formulas=False):
     # Convert to string for processing
     value_str = str(value)
 
+    # Special handling for formula preservation - return formulas AS-IS without any processing
+    if preserve_formulas and value_str.startswith('='):
+        # For formulas, only check Excel cell content limit but don't modify the formula structure
+        if len(value_str) > 32767:
+            logger.warning(f"Formula exceeds Excel cell limit ({len(value_str)} chars): {value_str[:100]}...")
+            return value_str[:32767]  # Truncate but keep as formula
+        return value_str
+
     # Handle very long content first - be more conservative for QC data
     if len(value_str) > 10000:
         # For very long QC content, truncate more aggressively
@@ -180,6 +188,8 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         validated_sheet_name: Name of the sheet that was actually validated (from metadata)
         qc_results: Optional QC results to integrate into the Excel file
     """
+    logger.error("🔥🔥🔥 EXCEL REPORT QC UNIFIED VERSION IS RUNNING 🔥🔥🔥")
+
     if not EXCEL_ENHANCEMENT_AVAILABLE:
         logger.warning("Enhanced Excel not available, skipping Excel creation")
         return None
@@ -462,7 +472,15 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                         else:
                             cell_format = None  # No coloring for IGNORED and ID columns
 
-                        updated_sheet.write(updated_row_idx, col_idx, safe_for_excel(updated_value, should_preserve_formulas(col_name)), cell_format)
+                        # Use xlsxwriter's write_formula method for preserved formulas to ensure proper Excel format
+                        if should_preserve_formulas(col_name) and str(updated_value).startswith('='):
+                            try:
+                                updated_sheet.write_formula(updated_row_idx, col_idx, str(updated_value), cell_format)
+                            except Exception as e:
+                                logger.warning(f"Failed to write formula, falling back to text: {e}")
+                                updated_sheet.write(updated_row_idx, col_idx, safe_for_excel(updated_value, should_preserve_formulas(col_name)), cell_format)
+                        else:
+                            updated_sheet.write(updated_row_idx, col_idx, safe_for_excel(updated_value, should_preserve_formulas(col_name)), cell_format)
                         
                         # Add comment with original value and reasoning (same as Original Values sheet)
                         comment_text = None
@@ -705,8 +723,15 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 if comment_parts:
                                     comment_text = '\n\n'.join(comment_parts)
                     
-                    # Write original value
-                    original_sheet.write(row_idx + 1, col_idx, safe_for_excel(original_value, should_preserve_formulas(col_name)), cell_format)
+                    # Write original value - use xlsxwriter's write_formula method for preserved formulas
+                    if should_preserve_formulas(col_name) and str(original_value).startswith('='):
+                        try:
+                            original_sheet.write_formula(row_idx + 1, col_idx, str(original_value), cell_format)
+                        except Exception as e:
+                            logger.warning(f"Failed to write formula, falling back to text: {e}")
+                            original_sheet.write(row_idx + 1, col_idx, safe_for_excel(original_value, should_preserve_formulas(col_name)), cell_format)
+                    else:
+                        original_sheet.write(row_idx + 1, col_idx, safe_for_excel(original_value, should_preserve_formulas(col_name)), cell_format)
                     
                     # Add comment if needed
                     if comment_text:
@@ -790,7 +815,15 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             # Get original value with formulas for IGNORED/ID columns
                             base_original_value = str(row_data.get(field_name, ''))
                             original_value_with_formula = get_original_value_with_formulas(row_idx, field_name, base_original_value)
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(original_value_with_formula, should_preserve_formulas(field_name)))  # Original value
+                            # Write original value with formula preservation
+                            if should_preserve_formulas(field_name) and str(original_value_with_formula).startswith('='):
+                                try:
+                                    details_sheet.write_formula(detail_row, col_idx, str(original_value_with_formula))
+                                except Exception as e:
+                                    logger.warning(f"Failed to write formula, falling back to text: {e}")
+                                    details_sheet.write(detail_row, col_idx, safe_for_excel(original_value_with_formula, should_preserve_formulas(field_name)))
+                            else:
+                                details_sheet.write(detail_row, col_idx, safe_for_excel(original_value_with_formula, should_preserve_formulas(field_name)))
                             col_idx += 1
 
                             # Updated Value (pre-QC result) - use preserved pre-QC value if available
@@ -801,7 +834,15 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 updated_value = str(field_data.get('value', ''))
                                 updated_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
 
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(updated_value, should_preserve_formulas(field_name)))  # Updated value
+                            # Write updated value with formula preservation
+                            if should_preserve_formulas(field_name) and str(updated_value).startswith('='):
+                                try:
+                                    details_sheet.write_formula(detail_row, col_idx, str(updated_value))
+                                except Exception as e:
+                                    logger.warning(f"Failed to write formula, falling back to text: {e}")
+                                    details_sheet.write(detail_row, col_idx, safe_for_excel(updated_value, should_preserve_formulas(field_name)))
+                            else:
+                                details_sheet.write(detail_row, col_idx, safe_for_excel(updated_value, should_preserve_formulas(field_name)))
                             col_idx += 1
 
                             # Extract QC data properly
@@ -867,7 +908,15 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 qc_format = None  # No coloring for IGNORED and ID columns
 
                             try:
-                                details_sheet.write(detail_row, col_idx, safe_for_excel(qc_value, should_preserve_formulas(field_name)), qc_format)  # QC Value
+                                # Write QC value with formula preservation
+                                if should_preserve_formulas(field_name) and str(qc_value).startswith('='):
+                                    try:
+                                        details_sheet.write_formula(detail_row, col_idx, str(qc_value), qc_format)
+                                    except Exception as e:
+                                        logger.warning(f"Failed to write QC formula, falling back to text: {e}")
+                                        details_sheet.write(detail_row, col_idx, safe_for_excel(qc_value, should_preserve_formulas(field_name)), qc_format)
+                                else:
+                                    details_sheet.write(detail_row, col_idx, safe_for_excel(qc_value, should_preserve_formulas(field_name)), qc_format)  # QC Value
                                 logger.debug(f"[EXCEL_WRITE_DEBUG] QC Value written successfully for {field_name}")
                             except Exception as e:
                                 logger.error(f"[EXCEL_WRITE_ERROR] QC Value write failed for {field_name}: {e}")
@@ -939,7 +988,15 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 final_format = qc_format if qc_applied else updated_confidence_format
                             else:
                                 final_format = None  # No coloring for IGNORED and ID columns
-                            details_sheet.write(detail_row, col_idx, safe_for_excel(final_value, should_preserve_formulas(field_name)), final_format)  # Final Value
+                            # Write final value with formula preservation
+                            if should_preserve_formulas(field_name) and str(final_value).startswith('='):
+                                try:
+                                    details_sheet.write_formula(detail_row, col_idx, str(final_value), final_format)
+                                except Exception as e:
+                                    logger.warning(f"Failed to write final formula, falling back to text: {e}")
+                                    details_sheet.write(detail_row, col_idx, safe_for_excel(final_value, should_preserve_formulas(field_name)), final_format)
+                            else:
+                                details_sheet.write(detail_row, col_idx, safe_for_excel(final_value, should_preserve_formulas(field_name)), final_format)  # Final Value
                             col_idx += 1
 
                             details_sheet.write(detail_row, col_idx, safe_for_excel(str(field_data.get('reasoning', ''))))  # Reasoning
@@ -1107,6 +1164,7 @@ def create_qc_enhanced_excel_for_interface(
     Returns:
         BytesIO buffer with Excel content, or None if creation failed
     """
+    logger.error("🚀🚀🚀 QC ENHANCED INTERFACE FUNCTION IS RUNNING 🚀🚀🚀")
     try:
         # Extract QC results and actual validation results from the full response
         qc_results = None
