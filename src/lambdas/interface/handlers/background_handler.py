@@ -3501,7 +3501,6 @@ def handle_config_generation(event, context):
                         print(f"🔍 BACKGROUND_DEBUG: Added clarifying questions to config")
 
                     # Add conversation entry to config_change_log
-                    from datetime import datetime
                     if 'config_change_log' not in updated_config:
                         updated_config['config_change_log'] = []
 
@@ -3563,7 +3562,15 @@ def handle_config_generation(event, context):
             if DYNAMODB_AVAILABLE and config_email and session_id:
                 try:
                     logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with failure")
-                    update_run_status(session_id=session_id, run_key=run_key, status='FAILED',
+                    # run_key might not be available in this scope, so get it
+                    try:
+                        from dynamodb_schemas import find_existing_run_key
+                        error_run_key = find_existing_run_key(session_id)
+                    except:
+                        error_run_key = None
+
+                    if error_run_key:
+                        update_run_status(session_id=session_id, run_key=error_run_key, status='FAILED',
                         run_type="Config Generation",
                         verbose_status=f"Configuration generation failed: {response.get('error', 'Unknown error')}",
                         percent_complete=0,
@@ -3578,8 +3585,10 @@ def handle_config_generation(event, context):
                         eliyahu_cost=0.0,
                         estimated_validation_eliyahu_cost=0.0,
                         time_per_row_seconds=0.0
-                    )
-                    logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated config generation run record with failure")
+                        )
+                    else:
+                        logger.warning(f"[CONFIG_RUN_TRACKING] Could not update run status - no run_key found for session {session_id}")
+                    logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated config run record with failure")
                 except Exception as e:
                     logger.error(f"[CONFIG_RUN_TRACKING] Failed to update config run record with failure: {e}")
             
@@ -3616,7 +3625,15 @@ def handle_config_generation(event, context):
         if DYNAMODB_AVAILABLE and config_email and session_id:
             try:
                 logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with exception failure")
-                update_run_status(session_id=session_id, run_key=run_key, status='FAILED',
+                # run_key might not be available in this scope, so get it
+                try:
+                    from dynamodb_schemas import find_existing_run_key
+                    exception_run_key = find_existing_run_key(session_id)
+                except:
+                    exception_run_key = None
+
+                if exception_run_key:
+                    update_run_status(session_id=session_id, run_key=exception_run_key, status='FAILED',
                     run_type="Config Generation",
                     verbose_status=f"Configuration generation failed with exception: {str(e)}",
                     percent_complete=0,
@@ -3632,7 +3649,9 @@ def handle_config_generation(event, context):
                     quoted_validation_cost=0.0,
                     estimated_validation_eliyahu_cost=0.0,
                     time_per_row_seconds=0.0
-                )
+                    )
+                else:
+                    logger.warning(f"[CONFIG_RUN_TRACKING] Could not update run status - no run_key found for session {session_id}")
                 logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated config generation run record with exception failure")
             except Exception as update_error:
                 logger.error(f"[CONFIG_RUN_TRACKING] Failed to update config run record with exception: {update_error}")
