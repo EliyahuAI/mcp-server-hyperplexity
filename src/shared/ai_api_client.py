@@ -42,15 +42,21 @@ class AIAPIClient:
     # Token limits now retrieved from model configuration database
     
     def __init__(self, s3_bucket: str = None):
-        # Check if using unified bucket structure
-        self.unified_bucket = os.environ.get('S3_UNIFIED_BUCKET')
-        if self.unified_bucket:
+        # Check for dedicated cache bucket first (shared across all environments)
+        cache_bucket = os.environ.get('S3_CACHE_BUCKET')
+        if cache_bucket:
+            self.s3_bucket = cache_bucket
+            self.use_unified_structure = True
+            logger.info(f"AI_API_CLIENT: Using shared cache bucket: {cache_bucket}")
+        elif os.environ.get('S3_UNIFIED_BUCKET'):
+            # Fallback to unified bucket structure
+            self.unified_bucket = os.environ.get('S3_UNIFIED_BUCKET')
             self.s3_bucket = self.unified_bucket
             self.use_unified_structure = True
             logger.info(f"AI_API_CLIENT: Using unified S3 bucket: {self.unified_bucket}")
         else:
             # Legacy fallback
-            self.s3_bucket = s3_bucket or os.environ.get('S3_CACHE_BUCKET', 'perplexity-cache')
+            self.s3_bucket = s3_bucket or 'perplexity-cache'
             self.use_unified_structure = False
             logger.info(f"AI_API_CLIENT: Using legacy S3 bucket: {self.s3_bucket}")
         
