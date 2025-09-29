@@ -113,7 +113,7 @@ def setup_interface_completion_queue(sqs_client, dry_run=False):
     # Configure for completion notifications
     attributes = {
         'MessageRetentionPeriod': '86400',        # 1 day - completion messages should be processed quickly
-        'VisibilityTimeout': '300',               # 5 minutes - interface processing is faster
+        'VisibilityTimeout': '900',               # 15 minutes - match interface lambda timeout
         'ReceiveMessageWaitTimeSeconds': '20'     # Long polling
     }
 
