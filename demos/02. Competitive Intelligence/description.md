@@ -1,3 +1,3 @@
-# Competitive Intelligence - Pharma Products
+# Competitive Intelligence
 
-Here we monitor the competitive landscape for pharmaceutical products in the gastrointestinal space for latest news and developments. 
+Monitor the competitive landscape for pharmaceutical products in the gastrointestinal space for latest news and developments. 
