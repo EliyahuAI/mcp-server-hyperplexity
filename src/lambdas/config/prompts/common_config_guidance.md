@@ -46,10 +46,10 @@ When analyzing any table, follow this process:
 
 1. **Infer table purpose** from column names and data patterns, how is this table used? who uses it? what are the critical patterns?
 2. **Detect data types** from sample values (dates, time, numbers, strings, URLs, etc.) - be specific about the format in the notes is not evident in the examples. 
-3. **Identify likely ID columns** usually the first column(s), these are used to identify the row and are not used for research.
-5. **Group related columns** that would appear in same sources
+3. **Identify likely ID columns** usually the first column(s), these are used to identify the row and are not used for research. Another indicator of an ID collumn is that they are usually filled in in every row. In many cases you need more than 1 column to form the stable context for the row. 
+5. **Group related columns** that would appear in same sources, with the simplest information in the lowest columns.
 6. **Extract real examples** from the actual data if provided and consistent with the guidance, otherwise specify a new consistent set.  Examples must match the requirements, update the examples to be in scope. Strongly prefer consistent formatting across the examples.  
-7. **Assign importance levels** based on column criticality, mark calculated/formula columns as IGNORED as they are dependent on other columns and require calculation not AI research, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose. 
+7. **Assign importance levels** based on column criticality, mark calculated/formula columns as IGNORED as they are dependent on other columns and require calculation not AI research, ID columns needed to specify the row precisely, critical columns which serve the tables primary purpose. Make sure to mark any columns that you do not know what they are as IGNORED.
 
 ## Analysis Presentation Format
 
@@ -102,7 +102,7 @@ Only ask when genuinely unclear or need confirmation that would likely impprove 
 - ❌ Clear data formats (evident from sample data)
 - ❌ Standard examples (use real data from table)
 - ❌ Specific model preferences 
-- ❌ Specific row preferences 
+- ❌ Technical details
 
 ## Format Detection Guidelines
 

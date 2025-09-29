@@ -618,29 +618,43 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 print(f"🔍 INTERFACE_DEBUG: No clarifying questions from config lambda")
 
             # CRITICAL: Add conversation entry to config_change_log
-            from datetime import datetime
-            if 'config_change_log' not in updated_config:
-                updated_config['config_change_log'] = []
+            try:
+                from datetime import datetime
+                print(f"🔍 INTERFACE_DEBUG: About to add conversation entry")
+                print(f"🔍 INTERFACE_DEBUG: updated_config keys before: {list(updated_config.keys())}")
 
-            # Create conversation entry for this interaction
-            conversation_entry = {
-                'timestamp': datetime.now().isoformat(),
-                'action': 'unified_generation',
-                'session_id': session_id,
-                'instructions': instructions,
-                'clarifying_questions': config_clarifying_questions,
-                'clarification_urgency': clarification_urgency,
-                'reasoning': body.get('reasoning', ''),
-                'ai_summary': body.get('ai_summary', ''),
-                'technical_ai_summary': body.get('technical_ai_summary', ''),
-                'version': updated_config.get('generation_metadata', {}).get('version', 1),
-                'model_used': body.get('model_used', 'unknown'),
-                'config_filename': body.get('config_filename', ''),
-                'entry_type': 'ai_response'
-            }
+                if 'config_change_log' not in updated_config:
+                    updated_config['config_change_log'] = []
+                    print(f"🔍 INTERFACE_DEBUG: Initialized new config_change_log")
+                else:
+                    print(f"🔍 INTERFACE_DEBUG: Existing config_change_log has {len(updated_config['config_change_log'])} entries")
 
-            updated_config['config_change_log'].append(conversation_entry)
-            print(f"🔍 INTERFACE_DEBUG: Added conversation entry to config_change_log (total entries: {len(updated_config['config_change_log'])})")
+                # Create conversation entry for this interaction
+                conversation_entry = {
+                    'timestamp': datetime.now().isoformat(),
+                    'action': 'unified_generation',
+                    'session_id': session_id,
+                    'instructions': instructions,
+                    'clarifying_questions': config_clarifying_questions,
+                    'clarification_urgency': clarification_urgency,
+                    'reasoning': body.get('reasoning', ''),
+                    'ai_summary': body.get('ai_summary', ''),
+                    'technical_ai_summary': body.get('technical_ai_summary', ''),
+                    'version': updated_config.get('generation_metadata', {}).get('version', 1),
+                    'model_used': body.get('model_used', 'unknown'),
+                    'config_filename': body.get('config_filename', ''),
+                    'entry_type': 'ai_response'
+                }
+
+                updated_config['config_change_log'].append(conversation_entry)
+                print(f"🔍 INTERFACE_DEBUG: Successfully added conversation entry to config_change_log")
+                print(f"🔍 INTERFACE_DEBUG: Total entries now: {len(updated_config['config_change_log'])}")
+                print(f"🔍 INTERFACE_DEBUG: updated_config keys after: {list(updated_config.keys())}")
+            except Exception as e:
+                print(f"🔍 INTERFACE_DEBUG: ERROR adding conversation entry: {e}")
+                print(f"🔍 INTERFACE_DEBUG: Exception type: {type(e)}")
+                import traceback
+                print(f"🔍 INTERFACE_DEBUG: Traceback: {traceback.format_exc()}")
             
             # Progress update
             if websocket_callback:

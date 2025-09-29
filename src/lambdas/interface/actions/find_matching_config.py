@@ -178,7 +178,7 @@ def analyze_table_columns(email: str, session_id: str, storage_manager: UnifiedS
         # Use shared table parser to analyze columns
         try:
             # Analyze table structure directly from S3
-            table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key)
+            table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
             
             if not table_analysis:
                 logger.warning("Table analysis failed")
@@ -901,12 +901,14 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
                 match_data = {
                     'config_id': config_id,
                     'config_key': config_key,
+                    'config_s3_key': config_key,  # Add this for frontend compatibility
                     'match_score': match_score,
                     'description': description,
                     'created_date': storage_metadata.get('first_created') or storage_metadata.get('created_at', ''),
                     'last_modified': storage_metadata.get('stored_at', ''),
                     'column_count': len(config_columns),
-                    'matching_columns': len(set(table_columns) & set(config_columns))
+                    'matching_columns': len(set(table_columns) & set(config_columns)),
+                    'source_session': extract_session_and_version_from_config_id(config_id)[0]  # Extract session for frontend
                 }
                 
                 # Categorize matches

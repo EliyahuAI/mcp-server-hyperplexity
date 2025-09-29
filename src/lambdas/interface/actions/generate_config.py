@@ -96,7 +96,7 @@ async def handle_generate_config(event_data, websocket_callback=None):
         # Analyze table structure using S3 parser
         logger.info("Analyzing table structure...")
         try:
-            table_analysis = s3_table_parser.analyze_table_structure(S3_CACHE_BUCKET, excel_s3_key)
+            table_analysis = s3_table_parser.analyze_table_structure(S3_CACHE_BUCKET, excel_s3_key, extract_formulas=True)
             
         except Exception as e:
             logger.error(f"Failed to analyze table structure: {e}")

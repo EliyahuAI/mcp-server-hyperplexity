@@ -3384,10 +3384,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             else:
                 logger.warning(f"[AGG_DEBUG] Row {row_idx}: No _raw_responses found")
         
+        # Initialize batch processing times before any potential exceptions
+        batch_processing_times_calculated = {}  # batch_number -> max_processing_time_in_that_batch
+
         # Use ai_client aggregation methods instead of manual calculations
         if all_enhanced_call_data:
             pass  # logger.info(f"[AGG_DEBUG] Collected {len(all_enhanced_call_data)} enhanced call data items for aggregation")
-            
+
             # Debug: Summary of what we're about to aggregate
             total_calls_to_aggregate = len(all_enhanced_call_data)
             providers_found = set()
@@ -3398,13 +3401,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 costs = item.get('costs', {})
                 actual_cost = costs.get('actual', {}).get('total_cost', 0.0)
                 costs_preview.append(f"${actual_cost:.6f}")
-            
+
             pass  # logger.info(f"[AGG_DEBUG] About to aggregate: {total_calls_to_aggregate} calls, "
                   # f"Providers: {list(providers_found)}, "
                   # f"Sample costs: {costs_preview[:5]}...")
-
-            # Initialize batch processing times before any potential exceptions
-            batch_processing_times_calculated = {}  # batch_number -> max_processing_time_in_that_batch
 
             try:
                 # Use ai_client.aggregate_provider_metrics() to get comprehensive aggregated data

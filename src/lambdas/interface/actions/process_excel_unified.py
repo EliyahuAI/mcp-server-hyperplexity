@@ -214,7 +214,7 @@ def _enhance_cost_aggregation(validation_results: dict, processing_time: float) 
 
 def handle_multipart_form(event, context):
     """Handles multipart/form-data requests for Excel processing with unified storage."""
-    
+
     headers = event.get('headers', {})
     content_type = headers.get('Content-Type') or headers.get('content-type', '')
     body = event.get('body', '')
@@ -415,10 +415,11 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
             # Normal operation: get existing config file from unified storage
             logger.info("No config file provided - retrieving existing config from unified storage")
             existing_config, config_s3_key = storage_manager.get_latest_config(email_address, base_session_id)
+
             if not config_s3_key:
                 # Check if this is validation/preview request (requires config) vs file upload (doesn't require config)
                 is_validation_request = params.get('preview_first_row') or params.get('async')
-                
+
                 if is_validation_request:
                     # This is a validation/preview request but no config found
                     logger.error(f"Validation/preview request but no config found for session {base_session_id}")
@@ -432,10 +433,10 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
                         from .find_matching_config import find_matching_configs
                         matching_configs = find_matching_configs(email_address, base_session_id, limit=3)
                         logger.info(f"Found {len(matching_configs.get('matches', []))} matching configs")
-                        
+
                         # Don't auto-copy configs - let user explicitly select them
                         # This prevents premature version increments (configs should only be copied when user chooses to use them)
-                        
+
                     except Exception as e:
                         logger.error(f"Error searching for matching configs: {e}")
                         matching_configs = {'success': False, 'matches': []}
@@ -499,7 +500,7 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
         total_rows = -1
         try:
             if excel_s3_key and s3_table_parser:
-                table_data = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key)
+                table_data = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
                 if table_data and 'basic_info' in table_data:
                     total_rows = table_data['basic_info'].get('total_rows', -1)
                 logger.info(f"Calculated total rows using shared parser: {total_rows}")
