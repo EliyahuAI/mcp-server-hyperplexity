@@ -43,7 +43,7 @@ LAMBDA_CONFIG = {
     "FunctionName": "perplexity-validator",
     "Runtime": "python3.9",
     "Handler": "lambda_function.lambda_handler", # This will be created in the package root
-    "Timeout": 600,  # 10 minutes in seconds (max allowed for Lambda)
+    "Timeout": 870,  # 14.5 minutes in seconds (14m 30s)
     "MemorySize": 1024,  # Increased from 512 MB to 1024 MB for better performance
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
     "Environment": {
@@ -409,7 +409,7 @@ def test_lambda_function(function_name, region=None, test_event=None):
             region_name=region,
             config=Config(
                 connect_timeout=120,
-                read_timeout=300,  # Increase read timeout to 5 minutes
+                read_timeout=900,  # Increase read timeout to 15 minutes (must be >= lambda timeout)
                 retries={'max_attempts': 0}
             )
         )
@@ -480,7 +480,7 @@ def test_lambda_function(function_name, region=None, test_event=None):
         start_time = int(time.time() * 1000) - 60000  # Start 1 minute before now
 
         # Invoke Lambda function
-        logger.info("Invoking Lambda with 5-minute timeout...")
+        logger.info("Invoking Lambda with 15-minute timeout...")
         response = lambda_client.invoke(
             FunctionName=function_name,
             InvocationType='RequestResponse',
@@ -782,7 +782,7 @@ def main():
     parser.add_argument('--test-event', help='Path to a custom test event JSON file to use for testing')
     parser.add_argument('--logs', action='store_true', help='Fetch the latest CloudWatch logs for the Lambda function')
     parser.add_argument('--logs-minutes', type=int, default=30, help='Number of minutes of logs to fetch (default: 30)')
-    parser.add_argument('--timeout', type=int, default=300, help='Lambda invocation timeout in seconds (default: 300)')
+    parser.add_argument('--timeout', type=int, default=870, help='Lambda execution timeout in seconds (default: 870 = 14.5 minutes)')
     parser.add_argument('--diagnose-logs', action='store_true', help='Deploy and test a function to diagnose CloudWatch Logs permissions')
     parser.add_argument('--environment', '-e', default='prod', choices=['dev', 'test', 'staging', 'prod'], help='Deployment environment (default: prod)')
     args = parser.parse_args()

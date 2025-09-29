@@ -58,8 +58,37 @@ def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, 
             # Log success without interfering with the response stream
             logger.info(f"[RETRY_TRACKER] Lambda invoke completed successfully")
             
+            # Check for response payload size issues (HTTP 413 - Request Entity Too Large)
+            try:
+                # First, check if we can read the response at all
+                response_data = response['Payload'].read()
+                response_size = len(response_data)
+                logger.info(f"[RESPONSE_SIZE] Lambda response payload size: {response_size/1024/1024:.2f} MB")
+
+                # Check for AWS Lambda runtime errors in the response
+                if response_size == 0:
+                    logger.error(f"[RESPONSE_ERROR] Empty response from lambda - possible runtime failure")
+                    raise Exception("Empty response from validation lambda - possible runtime error")
+
+                # Try to decode as JSON to check for malformed responses
+                try:
+                    response_str = response_data.decode('utf-8')
+                    if "Failed to post invocation response" in response_str:
+                        logger.error(f"[RESPONSE_ERROR] Lambda runtime failed to post response - likely 413 (Request Too Large)")
+                        raise Exception("Lambda response too large - validation data exceeds 6MB limit")
+                except UnicodeDecodeError:
+                    logger.error(f"[RESPONSE_ERROR] Response contains invalid UTF-8 - possible corruption")
+                    raise Exception("Corrupted response from validation lambda")
+
+                # Reset the stream for normal processing
+                response['Payload'] = io.BytesIO(response_data)
+
+            except Exception as read_error:
+                logger.error(f"[RESPONSE_ERROR] Failed to validate response: {str(read_error)}")
+                raise Exception(f"Invalid response from validation lambda: {str(read_error)}")
+
             return response
-            
+
         except botocore.exceptions.ReadTimeoutError as e:
             elapsed_time = time.time() - attempt_start_time
             logger.error(f"[RETRY_TRACKER] READ_TIMEOUT - Attempt {attempt + 1} failed after {elapsed_time:.2f}s")

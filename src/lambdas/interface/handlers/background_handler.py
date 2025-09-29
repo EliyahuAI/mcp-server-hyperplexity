@@ -16,6 +16,7 @@ import boto3
 
 # Initialize AWS clients
 s3_client = boto3.client('s3')
+ses_client = boto3.client('ses', region_name='us-east-1')
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -47,6 +48,231 @@ except ImportError as e:
 
 # Global variable for the API Gateway Management client
 api_gateway_management_client = None
+
+def send_validation_failure_alert(session_id, email, error_type, error_details, session_data=None):
+    """
+    Send high-priority alert emails for validation failures
+
+    Args:
+        session_id: Session identifier
+        email: User's email address
+        error_type: Type of error (e.g., "Response Too Large", "Timeout", etc.)
+        error_details: Detailed error information
+        session_data: Optional session metadata for context
+    """
+    try:
+        # Prepare session information
+        session_info = session_data or {}
+        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+
+        # Email to user
+        user_subject = "🟥 URGENT: Validation Processing Issue - We're On It!"
+        user_body = f"""
+Dear Valued Customer,
+
+We've encountered a technical issue while processing your validation request and wanted to notify you immediately.
+
+SESSION DETAILS:
+- Session ID: {session_id}
+- Time: {timestamp}
+- Issue Type: {error_type}
+- Your Email: {email}
+
+WHAT HAPPENED:
+{error_details}
+
+WHAT WE'RE DOING:
+✅ Our technical team has been automatically alerted
+✅ We're investigating the issue immediately
+✅ Your data and session information are safely stored
+✅ We will resolve this and complete your validation
+
+NEXT STEPS:
+- You will receive an update within 2 hours
+- No action needed on your part
+- Your account will not be charged for failed processing
+
+If you have any questions or concerns, please don't hesitate to reach out to us directly.
+
+Best regards,
+The Hyperplexity Team
+
+---
+Technical Reference: {session_id}
+Support: eliyahu@eliyahu.ai
+"""
+
+        # Email to admin (Eliyahu)
+        admin_subject = f"🟥 CRITICAL: Validation Lambda Failure - {error_type}"
+        admin_body = f"""
+CRITICAL VALIDATION SYSTEM FAILURE
+
+SESSION: {session_id}
+USER: {email}
+TIME: {timestamp}
+ERROR TYPE: {error_type}
+
+ERROR DETAILS:
+{error_details}
+
+SESSION DATA:
+{json.dumps(session_info, indent=2) if session_info else 'No session data available'}
+
+IMMEDIATE ACTION REQUIRED:
+1. Investigate validation lambda response size/timeout issues
+2. Check for data processing bottlenecks
+3. Consider implementing chunked processing
+4. Follow up with user within 2 hours
+
+SYSTEM HEALTH CHECK NEEDED:
+- Lambda timeout configurations
+- Response payload size limits
+- Memory allocation
+- Batch processing logic
+
+This is an automated alert from the validation system.
+"""
+
+        # Send user email
+        try:
+            ses_client.send_email(
+                Source='noreply@eliyahu.ai',
+                Destination={'ToAddresses': [email]},
+                Message={
+                    'Subject': {'Data': user_subject, 'Charset': 'UTF-8'},
+                    'Body': {'Text': {'Data': user_body, 'Charset': 'UTF-8'}}
+                }
+            )
+            logger.info(f"[ALERT_EMAIL] User alert sent to {email}")
+        except Exception as e:
+            logger.error(f"[ALERT_EMAIL] Failed to send user alert: {e}")
+
+        # Send admin email (high priority)
+        try:
+            ses_client.send_email(
+                Source='alerts@eliyahu.ai',
+                Destination={'ToAddresses': ['eliyahu@eliyahu.ai']},
+                Message={
+                    'Subject': {'Data': admin_subject, 'Charset': 'UTF-8'},
+                    'Body': {'Text': {'Data': admin_body, 'Charset': 'UTF-8'}}
+                }
+            )
+            logger.info(f"[ALERT_EMAIL] Admin alert sent to eliyahu@eliyahu.ai")
+        except Exception as e:
+            logger.error(f"[ALERT_EMAIL] Failed to send admin alert: {e}")
+
+    except Exception as e:
+        logger.error(f"[ALERT_EMAIL] Failed to send validation failure alerts: {e}")
+
+def send_preview_failure_alert(session_id, email, error_type, error_details, session_data=None):
+    """
+    Send lower-priority alert emails for preview failures with CSV guidance
+
+    Args:
+        session_id: Session identifier
+        email: User's email address
+        error_type: Type of error
+        error_details: Detailed error information
+        session_data: Optional session metadata for context
+    """
+    try:
+        # Prepare session information
+        session_info = session_data or {}
+        timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+
+        # Email to user (informative, not urgent)
+        user_subject = "🟥 Preview Processing Issue - Troubleshooting Guide"
+        user_body = f"""
+Hi there,
+
+We encountered an issue while processing your data preview and wanted to let you know right away.
+
+SESSION DETAILS:
+- Session ID: {session_id}
+- Time: {timestamp}
+- Issue: {error_type}
+
+WHAT HAPPENED:
+{error_details}
+
+TROUBLESHOOTING STEPS:
+Please visit our troubleshooting guide for step-by-step solutions:
+https://eliyahu.ai/troubleshooting
+
+This guide contains the most up-to-date recommendations for resolving common processing issues, including file format suggestions and table structure requirements.
+
+We've queued this issue for our team to review, but following the troubleshooting guide will likely resolve it immediately.
+
+If you continue to have issues after following the troubleshooting guide, please don't hesitate to reach out.
+
+Best regards,
+The Hyperplexity Team
+
+---
+Technical Reference: {session_id}
+Support: eliyahu@eliyahu.ai
+"""
+
+        # Email to admin (lower priority - informational)
+        admin_subject = f"Preview Processing Issue - {error_type}"
+        admin_body = f"""
+Preview Processing Issue (Lower Priority)
+
+SESSION: {session_id}
+USER: {email}
+TIME: {timestamp}
+ERROR TYPE: {error_type}
+
+ERROR DETAILS:
+{error_details}
+
+SESSION DATA:
+{json.dumps(session_info, indent=2) if session_info else 'No session data available'}
+
+SUGGESTED INVESTIGATION:
+- Check if table format is non-standard
+- Look for multiple tables or complex formatting
+- Review if column headers are properly positioned
+- Consider if Excel-specific features are causing issues
+
+USER GUIDANCE PROVIDED:
+- Directed to troubleshooting guide
+- Referenced dynamic recommendations
+- No urgency communicated
+
+This is a preview issue, not full validation failure.
+"""
+
+        # Send user email
+        try:
+            ses_client.send_email(
+                Source='noreply@eliyahu.ai',
+                Destination={'ToAddresses': [email]},
+                Message={
+                    'Subject': {'Data': user_subject, 'Charset': 'UTF-8'},
+                    'Body': {'Text': {'Data': user_body, 'Charset': 'UTF-8'}}
+                }
+            )
+            logger.info(f"[PREVIEW_ALERT] User guidance sent to {email}")
+        except Exception as e:
+            logger.error(f"[PREVIEW_ALERT] Failed to send user guidance: {e}")
+
+        # Send admin email (informational priority)
+        try:
+            ses_client.send_email(
+                Source='system@eliyahu.ai',
+                Destination={'ToAddresses': ['eliyahu@eliyahu.ai']},
+                Message={
+                    'Subject': {'Data': admin_subject, 'Charset': 'UTF-8'},
+                    'Body': {'Text': {'Data': admin_body, 'Charset': 'UTF-8'}}
+                }
+            )
+            logger.info(f"[PREVIEW_ALERT] Admin notification sent")
+        except Exception as e:
+            logger.error(f"[PREVIEW_ALERT] Failed to send admin notification: {e}")
+
+    except Exception as e:
+        logger.error(f"[PREVIEW_ALERT] Failed to send preview failure alerts: {e}")
 
 def _calculate_cost_estimated(token_usage: Dict, metadata: Dict) -> float:
     """
@@ -543,11 +769,71 @@ def handle(event, context):
                     percent_complete=5
                 )
             
-            validation_results = invoke_validator_lambda(
-                actual_excel_s3_key, actual_config_s3_key, max_rows, batch_size, S3_UNIFIED_BUCKET, VALIDATOR_LAMBDA_NAME,
-                preview_first_row=True, preview_max_rows=preview_max_rows, sequential_call=sequential_call_num,
-                session_id=session_id
-            )
+            try:
+                validation_results = invoke_validator_lambda(
+                    actual_excel_s3_key, actual_config_s3_key, max_rows, batch_size, S3_UNIFIED_BUCKET, VALIDATOR_LAMBDA_NAME,
+                    preview_first_row=True, preview_max_rows=preview_max_rows, sequential_call=sequential_call_num,
+                    session_id=session_id
+                )
+
+                # Validate preview results (less strict than full validation)
+                if not validation_results or not isinstance(validation_results, dict):
+                    raise Exception("Preview validation returned empty or invalid results")
+
+                logger.info(f"[PREVIEW_SUCCESS] Received preview validation results")
+
+            except Exception as preview_error:
+                error_msg = str(preview_error)
+                logger.error(f"[PREVIEW_FAILURE] Preview validation error: {error_msg}")
+
+                # Determine error type
+                error_type = "Preview Processing Error"
+                if "response too large" in error_msg.lower() or "413" in error_msg:
+                    error_type = "Preview Response Too Large"
+                elif "timeout" in error_msg.lower():
+                    error_type = "Preview Timeout"
+                elif "empty or invalid results" in error_msg.lower():
+                    error_type = "Preview Empty Response"
+
+                # Send lower-priority preview error emails
+                send_preview_failure_alert(session_id, email_address, error_type, error_msg, {
+                    'session_id': session_id,
+                    'excel_s3_key': actual_excel_s3_key,
+                    'config_s3_key': actual_config_s3_key,
+                    'preview_max_rows': preview_max_rows,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
+
+                # Update run status to failed
+                update_run_status_for_session(
+                    status='FAILED',
+                    run_type='Preview',
+                    verbose_status=f'Preview processing failed: {error_type}',
+                    percent_complete=100
+                )
+
+                # Send failure notification via WebSocket
+                _send_websocket_message(session_id, {
+                    'type': 'preview_failed',
+                    'session_id': session_id,
+                    'progress': 100,
+                    'status': f'⚠️ Preview failed: {error_type}',
+                    'error': error_type.lower().replace(' ', '_'),
+                    'message': 'Preview encountered an issue. Please try saving as CSV or check table format.'
+                })
+
+                # Return error response
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({
+                        'status': 'failed',
+                        'error': error_type,
+                        'message': 'Preview processing failed. Consider trying CSV format.',
+                        'session_id': session_id
+                    })
+                }
+
+            # Only continue if preview was successful
             
             # Send validation completion progress update - interface final processing begins (90-100% range)
             _send_websocket_message_deduplicated(session_id, {
@@ -1874,12 +2160,90 @@ def handle(event, context):
             # After the loop, we would have the final results.
             # For now, we will call the original invoker to get the final result in one go,
             # as refactoring it to return per-batch results is a larger change.
-            validation_results = invoke_validator_lambda(
-                excel_s3_key, config_s3_key, max_rows, batch_size, S3_UNIFIED_BUCKET, VALIDATOR_LAMBDA_NAME,
-                preview_first_row=False,
-                session_id=session_id,
-                update_callback=_update_progress
-            )
+
+            try:
+                validation_results = invoke_validator_lambda(
+                    excel_s3_key, config_s3_key, max_rows, batch_size, S3_UNIFIED_BUCKET, VALIDATOR_LAMBDA_NAME,
+                    preview_first_row=False,
+                    session_id=session_id,
+                    update_callback=_update_progress
+                )
+
+                # Validate that we got complete results
+                if not validation_results or not isinstance(validation_results, dict):
+                    raise Exception("Validation lambda returned empty or invalid results")
+
+                # Check for expected data structure
+                if 'validation_results' not in validation_results:
+                    raise Exception("Validation lambda response missing validation_results field")
+
+                # Check if we have meaningful data
+                val_results = validation_results.get('validation_results', {})
+                if not val_results and rows_to_process > 0:
+                    raise Exception("Validation lambda returned no results for non-empty dataset")
+
+                logger.info(f"[VALIDATION_SUCCESS] Received complete validation results: {len(val_results)} rows processed")
+
+            except Exception as validation_error:
+                error_msg = str(validation_error)
+                logger.error(f"[VALIDATION_FAILURE] Critical validation error: {error_msg}")
+
+                # Determine error type for better classification
+                error_type = "Unknown Error"
+                if "response too large" in error_msg.lower() or "413" in error_msg:
+                    error_type = "Response Too Large (413)"
+                elif "timeout" in error_msg.lower():
+                    error_type = "Lambda Timeout"
+                elif "empty or invalid results" in error_msg.lower():
+                    error_type = "Empty Response"
+                elif "missing validation_results" in error_msg.lower():
+                    error_type = "Malformed Response"
+
+                # Prepare comprehensive session data for alert
+                session_data = {
+                    'session_id': session_id,
+                    'excel_s3_key': excel_s3_key,
+                    'config_s3_key': config_s3_key,
+                    'max_rows': max_rows,
+                    'batch_size': batch_size,
+                    'rows_to_process': rows_to_process,
+                    'is_preview': is_preview,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                }
+
+                # Send alert emails
+                send_validation_failure_alert(session_id, email, error_type, error_msg, session_data)
+
+                # Update run status to failed
+                update_run_status_for_session(
+                    status='FAILED',
+                    run_type='Validation',
+                    verbose_status=f'Validation processing failed: {error_type}',
+                    percent_complete=100
+                )
+
+                # Send failure notification via WebSocket
+                _send_websocket_message(session_id, {
+                    'type': 'validation_failed',
+                    'session_id': session_id,
+                    'progress': 100,
+                    'status': f'❌ Validation failed: {error_type}',
+                    'error': error_type.lower().replace(' ', '_'),
+                    'message': 'Technical issue encountered. Our team has been notified and will resolve this promptly.'
+                })
+
+                # Return error response - DO NOT continue processing
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({
+                        'status': 'failed',
+                        'error': error_type,
+                        'message': 'Validation processing failed. Alerts have been sent.',
+                        'session_id': session_id
+                    })
+                }
+
+            # Only continue if validation was successful
         
         # After invoke_validator_lambda returns
         if validation_results:
