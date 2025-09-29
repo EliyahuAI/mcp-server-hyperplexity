@@ -43,7 +43,7 @@ CONFIG_LAMBDA_CONFIG = {
     "Runtime": "python3.9",
     "Handler": "config_lambda_function.lambda_handler",
     "Timeout": 300,  # 5 minutes for AI configuration generation
-    "MemorySize": 512,  # Moderate memory for AI API calls
+    "MemorySize": 256,  # Optimized: was 512MB, max used 114MB
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
     "Environment": {
         "Variables": {

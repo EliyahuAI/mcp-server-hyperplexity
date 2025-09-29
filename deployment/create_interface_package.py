@@ -55,7 +55,7 @@ LAMBDA_CONFIG = {
     "Runtime": "python3.9",
     "Handler": "interface_lambda_function.lambda_handler", # This will be created in the package root
     "Timeout": 900,  # 15 minutes for file uploads and processing
-    "MemorySize": 2048,  # Higher memory for file processing
+    "MemorySize": 512,  # Optimized: was 2048MB, max used 275MB
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
     "Environment": {
         "Variables": {
