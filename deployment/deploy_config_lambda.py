@@ -213,6 +213,9 @@ def deploy_lambda(region="us-east-1"):
                 Environment=CONFIG_LAMBDA_CONFIG["Environment"]
             )
             logger.info("Function configuration updated")
+
+            # Set log retention policy
+            set_log_retention_policy(CONFIG_LAMBDA_CONFIG["FunctionName"], region)
             
         else:
             # Create new function
@@ -228,6 +231,9 @@ def deploy_lambda(region="us-east-1"):
                 Publish=True
             )
             logger.info(f"Function created - ARN: {response['FunctionArn']}")
+
+            # Set log retention policy
+            set_log_retention_policy(CONFIG_LAMBDA_CONFIG["FunctionName"], region)
         
         # Verify deployment
         final_config = lambda_client.get_function(FunctionName=CONFIG_LAMBDA_CONFIG["FunctionName"])
@@ -298,6 +304,37 @@ def test_deployment(region="us-east-1"):
     except Exception as e:
         logger.error(f"Test failed: {e}")
         return False
+
+def set_log_retention_policy(function_name, region, retention_days=3):
+    """Sets the CloudWatch log retention policy for the given Lambda function."""
+    logger.info(f"Setting log retention for {function_name} to {retention_days} days...")
+    log_group_name = f"/aws/lambda/{function_name}"
+    logs_client = boto3.client('logs', region_name=region)
+
+    try:
+        # It can take a moment for the log group to be created after the function is.
+        # We will wait and retry a few times.
+        retries = 5
+        wait_time = 5
+        for i in range(retries):
+            log_groups_response = logs_client.describe_log_groups(logGroupNamePrefix=log_group_name)
+            if 'logGroups' in log_groups_response and any(lg['logGroupName'] == log_group_name for lg in log_groups_response['logGroups']):
+                logger.info(f"Log group '{log_group_name}' found.")
+                logs_client.put_retention_policy(
+                    logGroupName=log_group_name,
+                    retentionInDays=retention_days
+                )
+                logger.info(f"Successfully set retention policy for '{log_group_name}' to {retention_days} days.")
+                return
+            else:
+                logger.info(f"Log group '{log_group_name}' not found. Waiting {wait_time} seconds... (Attempt {i+1}/{retries})")
+                time.sleep(wait_time)
+        
+        logger.warning(f"Could not find log group '{log_group_name}' after multiple attempts. Please set retention manually.")
+
+    except Exception as e:
+        logger.warning(f"Could not set retention policy for {log_group_name}: {e}")
+
 
 def main():
     """Main deployment function."""

@@ -241,6 +241,85 @@ def create_zip():
     
     logger.info(f"ZIP file created: {OUTPUT_ZIP}")
 
+def configure_sqs_event_source_mappings(lambda_client, function_name, region):
+    """Configure SQS event source mappings for Smart Delegation System."""
+    try:
+        logger.info("Configuring SQS event source mappings for Smart Delegation System...")
+
+        # Get AWS account ID for constructing ARNs
+        sts_client = boto3.client('sts', region_name=region)
+        account_id = sts_client.get_caller_identity()['Account']
+
+        # Define the event source mappings needed for Smart Delegation System
+        mappings = []
+
+        # 1. Interface Lambda should listen to completion queue for async completion processing
+        if 'interface' in function_name.lower():
+            mappings.append({
+                'queue_name': 'perplexity-validator-completion-queue',
+                'description': 'Async completion processing for interface lambda'
+            })
+
+        # 2. Validation Lambda should listen to async queue for async validation requests
+        elif 'validator' in function_name.lower() and 'interface' not in function_name.lower():
+            mappings.append({
+                'queue_name': 'perplexity-validator-async-queue',
+                'description': 'Async validation requests for validation lambda'
+            })
+
+        # Configure each mapping
+        for mapping in mappings:
+            queue_name = mapping['queue_name']
+            description = mapping['description']
+            queue_arn = f"arn:aws:sqs:{region}:{account_id}:{queue_name}"
+
+            try:
+                # Check if mapping already exists
+                existing_mappings = lambda_client.list_event_source_mappings(
+                    FunctionName=function_name,
+                    EventSourceArn=queue_arn
+                )
+
+                if existing_mappings['EventSourceMappings']:
+                    logger.info(f"SQS event source mapping already exists for {queue_name} -> {function_name}")
+                    # Check if it's enabled
+                    existing_mapping = existing_mappings['EventSourceMappings'][0]
+                    if existing_mapping['State'] != 'Enabled':
+                        logger.info(f"Enabling existing event source mapping...")
+                        lambda_client.update_event_source_mapping(
+                            UUID=existing_mapping['UUID'],
+                            Enabled=True
+                        )
+                        logger.info(f"Event source mapping enabled: {existing_mapping['UUID']}")
+                else:
+                    # Create new mapping
+                    logger.info(f"Creating SQS event source mapping: {description}")
+                    response = lambda_client.create_event_source_mapping(
+                        EventSourceArn=queue_arn,
+                        FunctionName=function_name,
+                        BatchSize=1,
+                        MaximumBatchingWindowInSeconds=0,
+                        Enabled=True
+                    )
+                    logger.info(f"Created event source mapping: {response['UUID']} ({response['State']})")
+
+            except ClientError as e:
+                error_code = e.response.get('Error', {}).get('Code', '')
+                if error_code == 'ResourceNotFoundException':
+                    logger.warning(f"SQS queue {queue_name} does not exist. Skipping event source mapping.")
+                    logger.info(f"Run setup_sqs_queues.py to create the required queues first.")
+                else:
+                    logger.error(f"Failed to configure event source mapping for {queue_name}: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error configuring event source mapping for {queue_name}: {e}")
+
+        if not mappings:
+            logger.info(f"No SQS event source mappings needed for {function_name}")
+
+    except Exception as e:
+        logger.error(f"Error configuring SQS event source mappings: {e}")
+        logger.info("This is not critical for basic functionality, continuing deployment...")
+
 def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, stage_name="prod"):
     """Deploy the Lambda function and optionally set up API Gateway."""
     function_name = function_name or LAMBDA_CONFIG["FunctionName"]
@@ -373,6 +452,8 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, s
                             logger.info("Function configuration updated")
                             if 'WEBSOCKET_API_URL' in merged_env_vars:
                                 logger.info(f"Preserved WEBSOCKET_API_URL: {merged_env_vars['WEBSOCKET_API_URL']}")
+                            # Set log retention policy
+                            set_log_retention_policy(function_name, region)
                             break
                         except lambda_client.exceptions.ResourceConflictException as e:
                             if retry < max_config_retries - 1:
@@ -402,6 +483,8 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, s
                     
                     response = lambda_client.create_function(**create_params)
                     logger.info(f"Function created: {response['FunctionArn']}")
+                    # Set log retention policy
+                    set_log_retention_policy(function_name, region)
                 
                 # Clean up S3 package after deployment
                 try:
@@ -490,6 +573,8 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, s
                         logger.info("Function configuration updated")
                         if 'WEBSOCKET_API_URL' in merged_env_vars:
                             logger.info(f"Preserved WEBSOCKET_API_URL: {merged_env_vars['WEBSOCKET_API_URL']}")
+                        # Set log retention policy
+                        set_log_retention_policy(function_name, region)
                         break
                     except lambda_client.exceptions.ResourceConflictException as e:
                         if retry < max_config_retries - 1:
@@ -516,14 +601,19 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, s
                 
                 response = lambda_client.create_function(**create_params)
                 logger.info(f"Function created: {response['FunctionArn']}")
+                # Set log retention policy
+                set_log_retention_policy(function_name, region)
         
+        # Configure SQS event source mappings for Smart Delegation System
+        configure_sqs_event_source_mappings(lambda_client, function_name, region)
+
         # Deploy API Gateway if requested
         if deploy_api_gateway:
             api_url = setup_api_gateway(lambda_client, function_name, region, stage_name)
             if api_url:
                 logger.info(f"API Gateway deployed successfully. Endpoint: {api_url}")
                 return True, api_url
-        
+
         return True, None
         
     except Exception as e:
@@ -1004,14 +1094,16 @@ def deploy_websocket_lambda(zip_path, region):
     try:
         lambda_client.get_function(FunctionName=config['FunctionName'])
         logger.info("WebSocket Lambda exists, updating code...")
-        return lambda_client.update_function_code(
+        response = lambda_client.update_function_code(
             FunctionName=config['FunctionName'],
             ZipFile=zip_content,
             Publish=True
         )
+        set_log_retention_policy(config['FunctionName'], region)
+        return response
     except lambda_client.exceptions.ResourceNotFoundException:
         logger.info("WebSocket Lambda does not exist, creating...")
-        return lambda_client.create_function(
+        response = lambda_client.create_function(
             FunctionName=config['FunctionName'],
             Runtime=config['Runtime'],
             Role=config['Role'],
@@ -1021,6 +1113,8 @@ def deploy_websocket_lambda(zip_path, region):
             MemorySize=config['MemorySize'],
             Publish=True
         )
+        set_log_retention_policy(config['FunctionName'], region)
+        return response
 
 def setup_websocket_api(lambda_function_name, region, stage_name="prod"):
     """Creates and configures the WebSocket API in API Gateway."""
@@ -1288,6 +1382,36 @@ def setup_unified_s3_bucket():
     except Exception as e:
         logger.error(f"❌ Error setting up S3 buckets: {e}")
         return False
+
+def set_log_retention_policy(function_name, region, retention_days=3):
+    """Sets the CloudWatch log retention policy for the given Lambda function."""
+    logger.info(f"Setting log retention for {function_name} to {retention_days} days...")
+    log_group_name = f"/aws/lambda/{function_name}"
+    logs_client = boto3.client('logs', region_name=region)
+
+    try:
+        # It can take a moment for the log group to be created after the function is.
+        # We will wait and retry a few times.
+        retries = 5
+        wait_time = 5
+        for i in range(retries):
+            log_groups_response = logs_client.describe_log_groups(logGroupNamePrefix=log_group_name)
+            if 'logGroups' in log_groups_response and any(lg['logGroupName'] == log_group_name for lg in log_groups_response['logGroups']):
+                logger.info(f"Log group '{log_group_name}' found.")
+                logs_client.put_retention_policy(
+                    logGroupName=log_group_name,
+                    retentionInDays=retention_days
+                )
+                logger.info(f"Successfully set retention policy for '{log_group_name}' to {retention_days} days.")
+                return
+            else:
+                logger.info(f"Log group '{log_group_name}' not found. Waiting {wait_time} seconds... (Attempt {i+1}/{retries})")
+                time.sleep(wait_time)
+        
+        logger.warning(f"Could not find log group '{log_group_name}' after multiple attempts. Please set retention manually.")
+
+    except Exception as e:
+        logger.warning(f"Could not set retention policy for {log_group_name}: {e}")
 
 def main():
     """Main function."""
