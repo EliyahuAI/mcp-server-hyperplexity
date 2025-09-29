@@ -391,6 +391,13 @@ def extract_alternative_email_from_order(order: Dict[str, Any]) -> Optional[str]
                 if customizations:  # Make sure customizations is not None
                     for customization in customizations or []:
                         label = customization.get('label', '').lower()
+                        # Check for Hyperplexity Email first (highest priority)
+                        if 'hyperplexity' in label and 'email' in label:
+                            value = customization.get('value', '').strip()
+                            if value:
+                                logger.info(f"Found Hyperplexity email in customizations: {value}")
+                                return value.lower()
+                        # Check for other alternative email patterns
                         if any(keyword in label for keyword in ['alternative', 'alternate', 'backup', 'secondary']):
                             if 'email' in label:
                                 value = customization.get('value', '').strip()
@@ -408,13 +415,19 @@ def extract_alternative_email_from_order(order: Dict[str, Any]) -> Optional[str]
         for field in form_submissions:
             label = field.get('label', '').lower()
             value = field.get('value', '').strip()
-            
+
+            # Check for Hyperplexity Email first (highest priority)
+            if 'hyperplexity' in label and 'email' in label:
+                if value:
+                    logger.info(f"Found Hyperplexity email in form submission: {value}")
+                    return value.lower()
+
             # Check for specific labels that indicate funding email
             if 'email to fund' in label or 'fund' in label and 'email' in label:
                 if value:
                     logger.info(f"Found funding email in form submission: {value}")
                     return value.lower()
-            
+
             # Check for general alternative email patterns
             if any(keyword in label for keyword in ['alternative', 'alternate', 'backup', 'secondary']):
                 if 'email' in label and value:
