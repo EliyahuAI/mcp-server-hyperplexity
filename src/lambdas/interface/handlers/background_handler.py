@@ -2331,10 +2331,53 @@ def handle_main_processing(event, context):
             estimated_minutes = 0.0
             should_delegate = False
 
-            # Try to get the estimated processing time from previous preview run
+            # Try to get the estimated processing time from stored preview data
             try:
-                # The estimated_total_time_seconds should be available from preview processing above
-                if 'estimated_total_time_seconds' in locals() and estimated_total_time_seconds:
+                # Retrieve the time estimate from stored preview data
+                storage_manager_temp = UnifiedS3Manager()
+                preview_data = storage_manager_temp.get_latest_preview_results(email, clean_session_id)
+
+                estimated_total_time_seconds = None
+                if preview_data:
+                    # Try multiple possible field names where time estimates might be stored
+                    time_estimate_fields = [
+                        'estimated_validation_time',           # Seconds - most direct field
+                        'estimated_total_processing_time',     # Seconds - backup field
+                        'estimated_total_time_seconds'         # Seconds - legacy field
+                    ]
+
+                    for field_name in time_estimate_fields:
+                        if field_name in preview_data and preview_data[field_name]:
+                            estimated_total_time_seconds = preview_data[field_name]
+                            logger.info(f"[DELEGATION_DECISION] Found time estimate in field '{field_name}': {estimated_total_time_seconds}s")
+                            break
+
+                    # If we didn't find seconds, try minutes fields
+                    if not estimated_total_time_seconds:
+                        minutes_fields = [
+                            'estimated_validation_time_minutes'  # Minutes - convert to seconds
+                        ]
+
+                        for field_name in minutes_fields:
+                            if field_name in preview_data and preview_data[field_name]:
+                                estimated_total_time_seconds = preview_data[field_name] * 60.0
+                                logger.info(f"[DELEGATION_DECISION] Found time estimate in field '{field_name}': {preview_data[field_name]}min = {estimated_total_time_seconds}s")
+                                break
+
+                    # Also try nested locations for backwards compatibility
+                    if not estimated_total_time_seconds:
+                        nested_locations = [
+                            ('processing_estimates', 'estimated_total_time_seconds'),
+                            ('cost_estimates', 'estimated_validation_time')
+                        ]
+
+                        for parent_key, child_key in nested_locations:
+                            if preview_data.get(parent_key) and preview_data[parent_key].get(child_key):
+                                estimated_total_time_seconds = preview_data[parent_key][child_key]
+                                logger.info(f"[DELEGATION_DECISION] Found time estimate in nested location '{parent_key}.{child_key}': {estimated_total_time_seconds}s")
+                                break
+
+                if estimated_total_time_seconds and estimated_total_time_seconds > 0:
                     estimated_minutes = estimated_total_time_seconds / 60.0
                     should_delegate = estimated_minutes > MAX_SYNC_INVOCATION_TIME_MINUTES
 
@@ -2342,7 +2385,14 @@ def handle_main_processing(event, context):
                     logger.info(f"[DELEGATION_DECISION] Sync timeout limit: {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f} minutes")
                     logger.info(f"[DELEGATION_DECISION] Should delegate: {should_delegate}")
                 else:
-                    logger.warning(f"[DELEGATION_DECISION] No estimated_total_time_seconds available, using sync processing")
+                    logger.warning(f"[DELEGATION_DECISION] No valid time estimate found in preview data, using sync processing")
+                    logger.debug(f"[DELEGATION_DECISION] Available preview data keys: {list(preview_data.keys()) if preview_data else 'None'}")
+                    if preview_data:
+                        # Log some field values to help debug
+                        debug_fields = ['estimated_validation_time', 'estimated_total_processing_time', 'estimated_validation_time_minutes']
+                        for field in debug_fields:
+                            if field in preview_data:
+                                logger.debug(f"[DELEGATION_DECISION] {field}: {preview_data[field]}")
             except Exception as e:
                 logger.error(f"[DELEGATION_DECISION] Error checking delegation criteria: {e}")
 
@@ -2456,6 +2506,13 @@ def handle_main_processing(event, context):
                         session_id=session_id,
                         update_callback=_update_progress
                     )
+
+                # Check if sync validation returned incomplete status and should be delegated to async
+                if validation_results and validation_results.get('status') == 'incomplete':
+                    logger.warning(f"[SYNC_INCOMPLETE] Synchronous validation incomplete: {validation_results.get('completeness_reason', 'Unknown reason')}")
+                    # This case should trigger async delegation through the existing Smart Delegation System logic
+                    # We'll handle this as a validation error and let the error handling decide what to do
+                    raise Exception(f"Sync validation incomplete: {validation_results.get('completeness_reason', 'Unknown reason')}")
 
                 # Validate that we got complete results
                 if not validation_results or not isinstance(validation_results, dict):
@@ -3651,7 +3708,92 @@ def handle_main_processing(event, context):
                     status_update_data['actual_processing_time_seconds'] = background_processing_time_seconds  # Override with background handler time
                     status_update_data['actual_time_per_batch_seconds'] = background_processing_time_seconds  # Override with background handler time
                     logger.info(f"[TIMING_OVERRIDE] Override timing fields with background handler time: {background_processing_time_seconds:.3f}s")
-                    
+
+                    # ========== FINAL VALIDATION COMPLETENESS CHECK ==========
+                    # This is the final checkpoint where we validate that we have complete results
+                    # regardless of whether they came from sync or async processing
+                    logger.info(f"[FINAL_COMPLETENESS_CHECK] Performing final validation result completeness check")
+
+                    # Extract validation results for completeness check
+                    final_validation_results = validation_results.get('validation_results', {}) if validation_results else {}
+                    expected_row_count = total_rows_in_file
+                    actual_results_count = len(final_validation_results) if isinstance(final_validation_results, dict) else 0
+
+                    logger.info(f"[FINAL_COMPLETENESS_CHECK] Expected rows: {expected_row_count}, Actual results: {actual_results_count}")
+
+                    # Check for basic completeness
+                    is_complete = True
+                    completeness_issues = []
+
+                    # Check row count completeness
+                    if actual_results_count < expected_row_count:
+                        is_complete = False
+                        completeness_issues.append(f"Missing results: {actual_results_count}/{expected_row_count} rows")
+
+                    # Check for meaningful data in results
+                    if actual_results_count == 0:
+                        is_complete = False
+                        completeness_issues.append("No validation results found")
+
+                    # Check for expected data structure in a sample of results
+                    if final_validation_results and isinstance(final_validation_results, dict):
+                        # Check first few results for proper structure
+                        sample_keys = list(final_validation_results.keys())[:3]
+                        for row_key in sample_keys:
+                            row_data = final_validation_results.get(row_key, {})
+                            if not isinstance(row_data, dict):
+                                is_complete = False
+                                completeness_issues.append(f"Invalid row data structure for row {row_key}")
+                                break
+
+                            # Check if row has validation results (not just empty dict)
+                            if not any(isinstance(v, dict) and 'value' in v for v in row_data.values()):
+                                is_complete = False
+                                completeness_issues.append(f"Row {row_key} missing validation field data")
+                                break
+
+                    # Check for expected sheets in enhanced Excel (if available)
+                    try:
+                        if enhanced_excel_content:
+                            import openpyxl
+                            import io
+                            wb = openpyxl.load_workbook(io.BytesIO(enhanced_excel_content), read_only=True)
+                            expected_sheets = ['Results', 'Summary']  # Basic expected sheets
+                            missing_sheets = [sheet for sheet in expected_sheets if sheet not in wb.sheetnames]
+                            if missing_sheets:
+                                is_complete = False
+                                completeness_issues.append(f"Enhanced Excel missing sheets: {missing_sheets}")
+                            wb.close()
+                    except Exception as excel_check_error:
+                        logger.warning(f"[FINAL_COMPLETENESS_CHECK] Could not verify enhanced Excel structure: {excel_check_error}")
+
+                    # Check metadata completeness
+                    if validation_results:
+                        metadata = validation_results.get('metadata', {})
+                        if not metadata or not isinstance(metadata, dict):
+                            is_complete = False
+                            completeness_issues.append("Missing or invalid metadata")
+                        else:
+                            # Check for essential metadata fields
+                            essential_metadata = ['processing_time', 'completed_rows']
+                            missing_metadata = [field for field in essential_metadata if field not in metadata]
+                            if missing_metadata:
+                                completeness_issues.append(f"Missing metadata fields: {missing_metadata}")
+
+                    # Log completeness results
+                    if is_complete:
+                        logger.info(f"[FINAL_COMPLETENESS_CHECK] ✅ Validation results are COMPLETE")
+                    else:
+                        logger.error(f"[FINAL_COMPLETENESS_CHECK] ❌ Validation results are INCOMPLETE: {'; '.join(completeness_issues)}")
+                        # Add completeness status to the status update
+                        status_update_data['completeness_issues'] = completeness_issues
+                        status_update_data['validation_incomplete'] = True
+
+                        # Update the verbose status to indicate incomplete results
+                        original_status = status_update_data.get('verbose_status', 'Validation complete')
+                        status_update_data['verbose_status'] = f"{original_status} (⚠️ Some validation results may be incomplete)"
+
+                    # Always continue with the status update - we want to track incomplete results too
                     update_run_status(**status_update_data)
                     
                     # Track enhanced user metrics for full validation

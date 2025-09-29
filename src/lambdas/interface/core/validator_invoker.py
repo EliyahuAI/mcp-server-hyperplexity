@@ -27,6 +27,117 @@ lambda_client = boto3.client('lambda', config=boto3.session.Config(
     connect_timeout=60  # 1 minute connect timeout
 ))
 
+def is_validation_response_complete(response_payload, expected_row_count, is_preview=False):
+    """
+    Check if validation response indicates complete processing.
+
+    Args:
+        response_payload: The parsed response from validation lambda
+        expected_row_count: Number of rows we expected to be processed
+        is_preview: Whether this is a preview validation (less strict checking)
+
+    Returns:
+        tuple: (is_complete: bool, reason: str, validation_results: dict)
+    """
+    try:
+        # Check for basic response structure
+        if not response_payload or not isinstance(response_payload, dict):
+            return False, "No response or invalid response structure", None
+
+        # Check HTTP status code
+        status_code = response_payload.get('statusCode', 200)
+        if status_code != 200:
+            error_msg = "HTTP error"
+            if status_code == 500:
+                body = response_payload.get('body', {})
+                if isinstance(body, dict):
+                    error_msg = body.get('error', 'Unknown validation error')
+                else:
+                    error_msg = str(body)
+            return False, f"HTTP {status_code}: {error_msg}", None
+
+        # Extract response body
+        body = response_payload.get('body', {})
+        if not isinstance(body, dict):
+            return False, "Invalid response body structure", None
+
+        # Check success flag
+        if not body.get('success', False):
+            error_msg = body.get('error', 'Unknown validation error')
+            return False, f"Validation failed: {error_msg}", None
+
+        # Extract data section
+        data = body.get('data', {})
+        if not isinstance(data, dict):
+            return False, "Missing or invalid data section", None
+
+        # Extract validation results
+        validation_results = data.get('rows', {})
+        if not validation_results or not isinstance(validation_results, dict):
+            return False, "No validation results in response", None
+
+        # Extract metadata
+        metadata = body.get('metadata', {})
+        if not isinstance(metadata, dict):
+            return False, "Missing or invalid metadata section", None
+
+        # Check row count completion (different logic for preview vs full validation)
+        if is_preview:
+            # For preview, we're more flexible - just check that we got some results
+            if len(validation_results) == 0:
+                return False, "Preview returned no validation results", None
+            # Preview is complete if we got any results
+            return True, "Preview validation complete", validation_results
+        else:
+            # For full validation, check completed vs total rows
+            completed_rows = metadata.get('completed_rows', 0)
+            total_rows = metadata.get('total_rows', expected_row_count)
+
+            logger.info(f"[COMPLETENESS_CHECK] Completed: {completed_rows}, Expected: {expected_row_count}, Total in metadata: {total_rows}")
+
+            # If we have explicit row counts, use them
+            if completed_rows < expected_row_count:
+                return False, f"Partial processing: {completed_rows}/{expected_row_count} rows completed", validation_results
+
+            # Check that we have validation results for the expected number of rows
+            actual_results_count = len(validation_results)
+            if actual_results_count < expected_row_count:
+                return False, f"Incomplete results: {actual_results_count}/{expected_row_count} rows returned", validation_results
+
+        # Check for essential metadata fields
+        required_metadata = ['processing_time', 'cache_hits', 'cache_misses']
+        missing_metadata = [field for field in required_metadata if field not in metadata]
+        if missing_metadata:
+            logger.warning(f"[COMPLETENESS_CHECK] Missing metadata fields: {missing_metadata} (proceeding anyway)")
+
+        # Check for token usage (indicates actual API calls were made)
+        token_usage = metadata.get('token_usage', {})
+        if not token_usage and not is_preview:
+            logger.warning(f"[COMPLETENESS_CHECK] No token usage found (possible cached-only processing)")
+
+        # Enhanced Excel validation - check for expected sheets and structure
+        if not is_preview:
+            # For full validation, verify the enhanced Excel should contain expected sheets
+            enhanced_metrics = metadata.get('enhanced_metrics', {})
+            if enhanced_metrics:
+                # Check if enhanced_metrics contains expected structure
+                validation_calls = enhanced_metrics.get('validation_calls_by_provider', {})
+                if not validation_calls:
+                    logger.warning(f"[COMPLETENESS_CHECK] No validation calls found in enhanced metrics")
+
+                # Check for QC data if QC was expected
+                qc_results = data.get('qc_results', {})
+                qc_metrics = data.get('qc_metrics', {})
+                if qc_results or qc_metrics:
+                    logger.info(f"[COMPLETENESS_CHECK] QC data found: {len(qc_results)} results, {qc_metrics.get('total_fields_reviewed', 0)} fields reviewed")
+
+        # All checks passed
+        return True, "Validation complete", validation_results
+
+    except Exception as e:
+        logger.error(f"[COMPLETENESS_CHECK] Error checking validation completeness: {e}")
+        return False, f"Completeness check error: {str(e)}", None
+
 def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, max_retries=2):
     """
     Invoke validator lambda with retry logic for timeouts.
@@ -426,7 +537,19 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
 
                 response_payload = json.loads(response['Payload'].read().decode('utf-8'))
 
-                # Check for validation lambda errors
+                # ========== VALIDATION COMPLETENESS DETECTION - PREVIEW ==========
+                is_complete, completeness_reason, extracted_results = is_validation_response_complete(
+                    response_payload, preview_max_rows, is_preview=True
+                )
+
+                if not is_complete:
+                    logger.error(f"[PREVIEW_INCOMPLETE] Preview validation incomplete: {completeness_reason}")
+                    # For preview, we're more tolerant - return what we got with a warning
+                    logger.warning(f"[PREVIEW_INCOMPLETE] Continuing with incomplete preview results")
+
+                logger.info(f"[PREVIEW_COMPLETE] Preview validation completeness: {completeness_reason}")
+
+                # Check for validation lambda errors (now handled by completeness check too)
                 if isinstance(response_payload, dict) and response_payload.get('statusCode') == 500:
                     error_body = response_payload.get('body', {})
                     error_message = error_body.get('error', 'Unknown validation error') if isinstance(error_body, dict) else str(error_body)
@@ -502,7 +625,27 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 response = _invoke_validator_with_retry(lambda_client, VALIDATOR_LAMBDA_NAME, payload, logger)
                 response_payload = json.loads(response['Payload'].read().decode('utf-8'))
 
-                # Check for validation lambda errors
+                # ========== VALIDATION COMPLETENESS DETECTION - FULL VALIDATION ==========
+                is_complete, completeness_reason, extracted_results = is_validation_response_complete(
+                    response_payload, len(rows), is_preview=False
+                )
+
+                logger.info(f"[FULL_VALIDATION_COMPLETE] Validation completeness: {completeness_reason}")
+
+                if not is_complete:
+                    logger.error(f"[FULL_VALIDATION_INCOMPLETE] Full validation incomplete: {completeness_reason}")
+                    # For full validation, this is a critical failure - we should delegate to async if possible
+                    # Return incomplete status so Smart Delegation System can decide what to do
+                    return {
+                        'status': 'incomplete',
+                        'total_rows': len(rows),
+                        'validation_results': extracted_results if extracted_results else {},
+                        'metadata': aggregated_metadata,
+                        'completeness_reason': completeness_reason,
+                        'incomplete_validation': True
+                    }
+
+                # Check for validation lambda errors (now handled by completeness check too)
                 if isinstance(response_payload, dict) and response_payload.get('statusCode') == 500:
                     error_body = response_payload.get('body', {})
                     error_message = error_body.get('error', 'Unknown validation error') if isinstance(error_body, dict) else str(error_body)
