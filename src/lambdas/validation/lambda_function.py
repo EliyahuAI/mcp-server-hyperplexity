@@ -2219,6 +2219,34 @@ def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests and config generation."""
     try:
+        # ========== SQS EVENT HANDLING FOR SMART DELEGATION SYSTEM ==========
+        # Check if this is an SQS event (from Smart Delegation System)
+        if 'Records' in event and event['Records']:
+            logger.info(f"[SQS_HANDLER] Processing {len(event['Records'])} SQS message(s)")
+
+            # Process each SQS record
+            responses = []
+            for record in event['Records']:
+                if record.get('eventSource') == 'aws:sqs':
+                    try:
+                        # Extract the actual validation request from SQS message body
+                        message_body = json.loads(record['body'])
+                        logger.info(f"[SQS_HANDLER] Processing SQS message: {message_body.get('message_type', 'unknown')}")
+
+                        # Call the same lambda_handler recursively with the extracted event
+                        response = lambda_handler(message_body, context)
+                        responses.append(response)
+
+                    except Exception as sqs_error:
+                        logger.error(f"[SQS_HANDLER] Error processing SQS record: {sqs_error}")
+                        responses.append({
+                            'statusCode': 500,
+                            'body': json.dumps({'error': f'SQS processing error: {str(sqs_error)}'})
+                        })
+
+            # Return the last response (or aggregate if needed)
+            return responses[-1] if responses else {'statusCode': 200, 'body': json.dumps({'message': 'No valid SQS records processed'})}
+
         # Check for config generation request first
         if event.get('config_generation_request'):
             logger.info("Processing config generation request")
@@ -2852,11 +2880,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Processing search group
                 
                 # Always use multiplex validation regardless of number of fields
-                await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id, row_api_providers)
+                is_cached = await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id, row_api_providers)
                 total_multiplex_validations += 1
                 
                 # Send AI call progress update via WebSocket using thread-safe counter
-                report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, last_reported_count)
+                # but not for cached calls, to avoid slowing down the frontend
+                if not is_cached:
+                    report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, last_reported_count)
                 
                 # Add this group's results to accumulated results for next groups
                 # Exclude ID fields from accumulated results since they are context only
@@ -3416,7 +3446,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             logger.info(f"✅ Processed {processed_count}/{len(validation_targets)} columns successfully")
             
-            # Function modifies row_results and row_models_used in place - no return needed  
+            return is_cached
          # Run the async function
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)

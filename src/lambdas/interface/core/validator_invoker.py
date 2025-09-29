@@ -51,7 +51,11 @@ def is_validation_response_complete(response_payload, expected_row_count, is_pre
             if status_code == 500:
                 body = response_payload.get('body', {})
                 if isinstance(body, dict):
-                    error_msg = body.get('error', 'Unknown validation error')
+                    error_msg = body.get('error', body.get('errorMessage', body.get('message', 'Unknown validation error')))
+                    # If still unknown, log the response structure
+                    if error_msg == 'Unknown validation error':
+                        logger.error(f"[COMPLETENESS_CHECK] HTTP 500 - response structure: {response_payload}")
+                        error_msg = f"Internal server error - response keys: {list(body.keys()) if body else 'empty body'}"
                 else:
                     error_msg = str(body)
             return False, f"HTTP {status_code}: {error_msg}", None
@@ -64,6 +68,19 @@ def is_validation_response_complete(response_payload, expected_row_count, is_pre
         # Check success flag
         if not body.get('success', False):
             error_msg = body.get('error', 'Unknown validation error')
+            # Try to get more detailed error information
+            if error_msg == 'Unknown validation error':
+                # Log the actual response structure for debugging
+                logger.error(f"[COMPLETENESS_CHECK] Unknown error - response body structure: {body}")
+                # Try alternative error message locations
+                if 'message' in body:
+                    error_msg = body['message']
+                elif 'errorMessage' in body:
+                    error_msg = body['errorMessage']
+                elif 'errorType' in body:
+                    error_msg = f"{body['errorType']}: {body.get('errorMessage', 'No details')}"
+                else:
+                    error_msg = f"Unknown validation error - response keys: {list(body.keys())}"
             return False, f"Validation failed: {error_msg}", None
 
         # Extract data section

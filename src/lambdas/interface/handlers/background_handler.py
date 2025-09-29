@@ -55,7 +55,7 @@ api_gateway_management_client = None
 
 # ========== SMART DELEGATION SYSTEM CONFIGURATION ==========
 # Configurable sync timeout limit - jobs exceeding this will be delegated to async processing
-MAX_SYNC_INVOCATION_TIME_MINUTES = float(os.environ.get('MAX_SYNC_INVOCATION_TIME', '5.0'))
+MAX_SYNC_INVOCATION_TIME_MINUTES = float(os.environ.get('MAX_SYNC_INVOCATION_TIME', '0.0'))
 VALIDATOR_SAFETY_BUFFER_MINUTES = float(os.environ.get('VALIDATOR_SAFETY_BUFFER', '3.0'))
 
 # SQS Queue Names for async processing
@@ -153,7 +153,7 @@ This is an automated alert from the validation system.
         # Send user email
         try:
             ses_client.send_email(
-                Source='noreply@eliyahu.ai',
+                Source='eliyahu@eliyahu.ai',  # Use verified email address
                 Destination={'ToAddresses': [email]},
                 Message={
                     'Subject': {'Data': user_subject, 'Charset': 'UTF-8'},
@@ -167,7 +167,7 @@ This is an automated alert from the validation system.
         # Send admin email (high priority)
         try:
             ses_client.send_email(
-                Source='alerts@eliyahu.ai',
+                Source='eliyahu@eliyahu.ai',  # Use verified email address
                 Destination={'ToAddresses': ['eliyahu@eliyahu.ai']},
                 Message={
                     'Subject': {'Data': admin_subject, 'Charset': 'UTF-8'},
@@ -263,7 +263,7 @@ This is a preview issue, not full validation failure.
         # Send user email
         try:
             ses_client.send_email(
-                Source='noreply@eliyahu.ai',
+                Source='eliyahu@eliyahu.ai',  # Use verified email address
                 Destination={'ToAddresses': [email]},
                 Message={
                     'Subject': {'Data': user_subject, 'Charset': 'UTF-8'},
@@ -277,7 +277,7 @@ This is a preview issue, not full validation failure.
         # Send admin email (informational priority)
         try:
             ses_client.send_email(
-                Source='system@eliyahu.ai',
+                Source='eliyahu@eliyahu.ai',  # Use verified email address
                 Destination={'ToAddresses': ['eliyahu@eliyahu.ai']},
                 Message={
                     'Subject': {'Data': admin_subject, 'Charset': 'UTF-8'},
@@ -580,6 +580,76 @@ def get_unified_bucket():
 S3_UNIFIED_BUCKET = get_unified_bucket()
 S3_RESULTS_BUCKET = os.environ.get('S3_RESULTS_BUCKET', 'perplexity-results')
 VALIDATOR_LAMBDA_NAME = os.environ.get('VALIDATOR_LAMBDA_NAME', 'perplexity-validator')
+
+
+def verify_async_validation_trigger(session_id, sqs_message_id, timeout_seconds=30):
+    """
+    Verify that the async validation lambda gets triggered within the timeout period.
+    Returns True if triggered successfully, False otherwise.
+    """
+    import time
+
+    try:
+        logger.info(f"[VALIDATION_TRIGGER_CHECK] Waiting {timeout_seconds}s for async validation lambda to start...")
+
+        # Initialize CloudWatch Logs client
+        logs_client = boto3.client('logs')
+        validator_log_group = f"/aws/lambda/{VALIDATOR_LAMBDA_NAME}"
+
+        # Get current time for filtering recent logs
+        start_time = int(time.time() * 1000)  # Convert to milliseconds
+
+        # Wait and check for lambda invocation logs
+        check_interval = 2  # Check every 2 seconds
+        max_checks = timeout_seconds // check_interval
+
+        for check_num in range(max_checks):
+            try:
+                # Look for START RequestId logs indicating lambda invocation
+                filter_response = logs_client.filter_log_events(
+                    logGroupName=validator_log_group,
+                    startTime=start_time,
+                    filterPattern='"START RequestId"',
+                    limit=10
+                )
+
+                # Check if we found any START events
+                events = filter_response.get('events', [])
+                if events:
+                    logger.info(f"[VALIDATION_TRIGGER_CHECK] Found {len(events)} validation lambda START events")
+
+                    # Look for our session ID in recent logs to confirm it's processing our request
+                    session_filter_response = logs_client.filter_log_events(
+                        logGroupName=validator_log_group,
+                        startTime=start_time,
+                        filterPattern=f'"{session_id}"',
+                        limit=5
+                    )
+
+                    session_events = session_filter_response.get('events', [])
+                    if session_events:
+                        logger.info(f"[VALIDATION_TRIGGER_CHECK] Confirmed validation lambda processing session {session_id}")
+                        return True
+                    else:
+                        logger.info(f"[VALIDATION_TRIGGER_CHECK] Validation lambda started but not yet processing session {session_id}")
+
+            except Exception as log_error:
+                # Log group might not exist yet or permissions issue
+                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Log check error (check {check_num + 1}): {log_error}")
+
+            # Wait before next check
+            if check_num < max_checks - 1:  # Don't wait after the last check
+                time.sleep(check_interval)
+                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Check {check_num + 1}/{max_checks} - waiting {check_interval}s...")
+
+        # Timeout reached without finding validation lambda activity
+        logger.warning(f"[VALIDATION_TRIGGER_CHECK] No validation lambda activity found for session {session_id} within {timeout_seconds}s")
+        return False
+
+    except Exception as e:
+        logger.error(f"[VALIDATION_TRIGGER_CHECK] Error verifying async validation trigger: {e}")
+        # Return False to indicate we couldn't verify the trigger
+        return False
 
 
 def handle_async_completion_in_background_handler(event, context):
@@ -2401,6 +2471,12 @@ def handle_main_processing(event, context):
                 logger.info(f"[DELEGATION] Delegating to async processing (estimated {estimated_minutes:.1f}min > {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min)")
 
                 try:
+                    # Import WebSocket connection function
+                    from dynamodb_schemas import get_connection_by_session
+
+                    # Get WebSocket connection ID for context preservation
+                    connection_id = get_connection_by_session(session_id) if session_id else None
+
                     # Prepare delegation context with all necessary data
                     delegation_context = {
                         'request_context': {
@@ -2408,7 +2484,7 @@ def handle_main_processing(event, context):
                             'run_key': run_key,
                             'email': email,
                             'websocket_connection_id': connection_id,
-                            'start_time': start_time.isoformat() if hasattr(start_time, 'isoformat') else str(start_time),
+                            'start_time': background_start_time,  # Use background_start_time instead of undefined start_time
                             'config_data': config_data,
                             'total_rows': total_rows_in_file,
                             'max_rows': max_rows,
@@ -2417,7 +2493,7 @@ def handle_main_processing(event, context):
                         'file_locations': {
                             'excel_s3_key': excel_s3_key,
                             'config_s3_key': config_s3_key,
-                            'validation_history': validation_history_key if validation_history else None
+                            'validation_history': None  # Set to None for now - validation_history variables not defined in this scope
                         },
                         'preview_estimates': {
                             'estimated_total_time_seconds': estimated_total_time_seconds,
@@ -2454,7 +2530,7 @@ def handle_main_processing(event, context):
                             'batch_size': batch_size,
                             'S3_UNIFIED_BUCKET': S3_UNIFIED_BUCKET,
                             'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME,
-                            'validation_history': validation_history_key if validation_history else None
+                            'validation_history': None  # Set to None for now - validation_history variables not defined in this scope
                         }
 
                         try:
@@ -2466,17 +2542,66 @@ def handle_main_processing(event, context):
 
                             logger.info(f"[DELEGATION] Successfully triggered async validator via SQS: {response['MessageId']}")
 
-                            # Background handler job is done - async validator will take over
-                            return {
-                                'statusCode': 200,
-                                'body': json.dumps({
+                            # Verify async validator lambda gets triggered within reasonable time
+                            validation_lambda_triggered = verify_async_validation_trigger(
+                                session_id, response['MessageId'], timeout_seconds=10
+                            )
+
+                            if not validation_lambda_triggered:
+                                logger.error(f"[DELEGATION] Async validation lambda was not triggered within 10 seconds!")
+                                logger.error(f"[DELEGATION] SQS Message ID: {response['MessageId']}")
+                                logger.error(f"[DELEGATION] This indicates a problem with SQS event source mapping or lambda permissions")
+
+                                # Send failure notification via WebSocket
+                                try:
+                                    _send_websocket_message(session_id, {
+                                        'type': 'validation_error',
+                                        'status': 'FAILED',
+                                        'error': 'Async validation system failed to start',
+                                        'details': 'The validation lambda was not triggered by the async delegation system',
+                                        'troubleshooting': 'Check SQS event source mapping and lambda permissions',
+                                        'sqs_message_id': response['MessageId'],
+                                        'retry_suggestion': 'Please try your validation again or contact support'
+                                    })
+                                    logger.info(f"[DELEGATION] Sent failure notification via WebSocket for session {session_id}")
+                                except Exception as websocket_error:
+                                    logger.error(f"[DELEGATION] Failed to send WebSocket failure notification: {websocket_error}")
+
+                                # Update run status to indicate delegation failure
+                                try:
+                                    update_run_status(
+                                        session_id=session_id,
+                                        run_key=run_key,
+                                        status='FAILED',
+                                        verbose_status='Async delegation failed - validation lambda not triggered'
+                                    )
+                                except Exception as status_error:
+                                    logger.error(f"[DELEGATION] Failed to update run status: {status_error}")
+
+                                # Continue with sync processing as fallback
+                                logger.info(f"[DELEGATION] Falling back to sync processing due to async delegation failure")
+                                should_delegate = False
+
+                            logger.info(f"[DELEGATION] Async validation lambda successfully triggered and started processing")
+
+                            # Send success notification via WebSocket
+                            try:
+                                _send_websocket_message(session_id, {
+                                    'type': 'delegation_success',
                                     'status': 'DELEGATED_TO_ASYNC',
-                                    'session_id': session_id,
+                                    'message': f'Job delegated to async processing (estimated {estimated_minutes:.1f} minutes)',
                                     'estimated_minutes': estimated_minutes,
                                     'sqs_message_id': response['MessageId'],
-                                    'message': f'Job delegated to async processing (estimated {estimated_minutes:.1f} minutes)'
+                                    'info': 'Your validation is now running in the background. You will receive updates as processing progresses.'
                                 })
-                            }
+                                logger.info(f"[DELEGATION] Sent delegation success notification via WebSocket for session {session_id}")
+                            except Exception as websocket_error:
+                                logger.error(f"[DELEGATION] Failed to send WebSocket success notification: {websocket_error}")
+
+                            # Background handler job is done - async validator will take over
+                            # Don't return HTTP response, just exit gracefully
+                            logger.info(f"[DELEGATION] Background handler completed delegation for session {session_id}")
+                            return
 
                         except Exception as sqs_error:
                             logger.error(f"[DELEGATION] Failed to send SQS message: {sqs_error}")
@@ -2586,12 +2711,14 @@ def handle_main_processing(event, context):
 
                 # Send failure notification via WebSocket
                 _send_websocket_message(session_id, {
-                    'type': 'validation_failed',
+                    'type': 'error',  # Use generic 'error' type that frontend definitely handles
                     'session_id': session_id,
                     'progress': 100,
                     'status': f'❌ Validation failed: {error_type}',
-                    'error': error_type.lower().replace(' ', '_'),
-                    'message': 'Technical issue encountered. Our team has been notified and will resolve this promptly.'
+                    'error': f'Validation failed: {error_type}',  # Full error message for frontend
+                    'error_type': error_type.lower().replace(' ', '_'),  # Specific error type for debugging
+                    'message': 'Technical issue encountered. Our team has been notified and will resolve this promptly.',
+                    'validation_failed': True  # Additional flag for validation-specific handling if needed
                 })
 
                 # Return error response - DO NOT continue processing
