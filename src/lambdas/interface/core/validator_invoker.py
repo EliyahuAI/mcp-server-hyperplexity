@@ -76,6 +76,11 @@ def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, 
                     if "Failed to post invocation response" in response_str:
                         logger.error(f"[RESPONSE_ERROR] Lambda runtime failed to post response - likely 413 (Request Too Large)")
                         raise Exception("Lambda response too large - validation data exceeds 6MB limit")
+                    # Additional check for empty response that might indicate 413 error
+                    if response_size > 0 and response_size < 100:  # Very small responses might be error messages
+                        if "413" in response_str or "Request Entity Too Large" in response_str:
+                            logger.error(f"[RESPONSE_ERROR] Detected 413 error in small response: {response_str[:200]}")
+                            raise Exception("Lambda response too large - validation data exceeds 6MB limit")
                 except UnicodeDecodeError:
                     logger.error(f"[RESPONSE_ERROR] Response contains invalid UTF-8 - possible corruption")
                     raise Exception("Corrupted response from validation lambda")

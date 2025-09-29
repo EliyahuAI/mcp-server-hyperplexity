@@ -2079,8 +2079,59 @@ def handle(event, context):
             except ImportError:
                 logger.warning("[SECURITY] DynamoDB not available - skipping balance check (development mode)")
             except Exception as e:
-                logger.error(f"[SECURITY] Error checking balance before full validation: {e}")
-                # Continue processing if balance check fails (avoid blocking due to technical issues)
+                error_msg = str(e)
+                logger.error(f"[SECURITY] Critical error in balance check before full validation: {error_msg}")
+
+                # Classify the error type
+                error_type = "Balance Check System Failure"
+                if "get_preview_data" in error_msg:
+                    error_type = "Preview Data Access Error"
+                elif "UnifiedS3Manager" in error_msg:
+                    error_type = "Storage System Error"
+                elif "check_user_balance" in error_msg:
+                    error_type = "Balance Verification Error"
+
+                # Prepare session data for alert
+                session_data = {
+                    'session_id': session_id,
+                    'email': email,
+                    'clean_session_id': clean_session_id,
+                    'error_location': 'pre_validation_balance_check',
+                    'system_component': 'UnifiedS3Manager/DynamoDB',
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                }
+
+                # Send critical system failure alert
+                send_validation_failure_alert(session_id, email, error_type, error_msg, session_data)
+
+                # Update run status to failed
+                update_run_status_for_session(
+                    status='FAILED',
+                    run_type='Validation',
+                    verbose_status=f'Pre-validation system check failed: {error_type}',
+                    percent_complete=100
+                )
+
+                # Send failure notification via WebSocket
+                _send_websocket_message(session_id, {
+                    'type': 'validation_failed',
+                    'session_id': session_id,
+                    'progress': 100,
+                    'status': f'❌ System error: {error_type}',
+                    'error': error_type.lower().replace(' ', '_'),
+                    'message': 'Technical system error encountered. Our team has been notified and will resolve this promptly.'
+                })
+
+                # DO NOT continue processing - return error immediately
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({
+                        'status': 'failed',
+                        'error': error_type,
+                        'message': 'System error during pre-validation checks. Processing halted for safety.',
+                        'session_id': session_id
+                    })
+                }
 
             # Use unified storage to get Excel and config files
             from ..core.unified_s3_manager import UnifiedS3Manager
@@ -2177,12 +2228,26 @@ def handle(event, context):
                 if 'validation_results' not in validation_results:
                     raise Exception("Validation lambda response missing validation_results field")
 
-                # Check if we have meaningful data
+                # Check if we have meaningful data - enhanced detection for 413 errors
                 val_results = validation_results.get('validation_results', {})
-                if not val_results and rows_to_process > 0:
-                    raise Exception("Validation lambda returned no results for non-empty dataset")
+                results_count = len(val_results) if isinstance(val_results, dict) else 0
 
-                logger.info(f"[VALIDATION_SUCCESS] Received complete validation results: {len(val_results)} rows processed")
+                logger.info(f"[VALIDATION_DEBUG] val_results type: {type(val_results)}, content preview: {str(val_results)[:200] if val_results else 'Empty'}")
+                logger.info(f"[VALIDATION_DEBUG] rows_to_process: {rows_to_process}, results_count: {results_count}")
+
+                # Primary check: completely empty results for non-empty dataset
+                if not val_results and rows_to_process > 0:
+                    raise Exception("Validation lambda returned completely empty results for non-empty dataset")
+
+                # Secondary check: zero results count (catches 413 payload errors)
+                if rows_to_process > 0 and results_count == 0:
+                    raise Exception(f"Validation lambda processed {rows_to_process} rows but returned 0 results - suspected payload size limit exceeded (HTTP 413)")
+
+                # Tertiary check: suspiciously small results relative to input
+                if rows_to_process > 10 and results_count < (rows_to_process * 0.1):  # Less than 10% results returned
+                    logger.warning(f"[VALIDATION_WARNING] Suspiciously low result count: {results_count} results from {rows_to_process} rows")
+
+                logger.info(f"[VALIDATION_SUCCESS] Received complete validation results: {results_count} rows processed")
 
             except Exception as validation_error:
                 error_msg = str(validation_error)
@@ -2191,7 +2256,10 @@ def handle(event, context):
                 # Determine error type for better classification
                 error_type = "Unknown Error"
                 if "response too large" in error_msg.lower() or "413" in error_msg:
-                    error_type = "Response Too Large (413)"
+                    if "suspected" in error_msg.lower():
+                        error_type = "Response Too Large (413) Suspected"
+                    else:
+                        error_type = "Response Too Large (413)"
                 elif "timeout" in error_msg.lower():
                     error_type = "Lambda Timeout"
                 elif "empty or invalid results" in error_msg.lower():
