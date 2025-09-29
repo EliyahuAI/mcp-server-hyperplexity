@@ -2141,7 +2141,7 @@ def handle_main_processing(event, context):
 
                 # Get estimated cost from preview data (what was quoted to user)
                 storage_manager_temp = UnifiedS3Manager()
-                preview_data = storage_manager_temp.get_preview_data(email, clean_session_id)
+                preview_data = storage_manager_temp.get_latest_preview_results(email, clean_session_id)
 
                 if preview_data and preview_data.get('cost_estimates'):
                     estimated_cost = preview_data['cost_estimates'].get('quoted_validation_cost', 0.01)
@@ -2198,7 +2198,7 @@ def handle_main_processing(event, context):
 
                 # Classify the error type
                 error_type = "Balance Check System Failure"
-                if "get_preview_data" in error_msg:
+                if "get_latest_preview_results" in error_msg or "get_preview_data" in error_msg:
                     error_type = "Preview Data Access Error"
                 elif "UnifiedS3Manager" in error_msg:
                     error_type = "Storage System Error"
