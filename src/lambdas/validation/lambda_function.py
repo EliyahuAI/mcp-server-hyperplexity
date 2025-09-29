@@ -2223,7 +2223,132 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if event.get('config_generation_request'):
             logger.info("Processing config generation request")
             return handle_config_generation_request(event, context)
-        
+
+        # ========== SMART DELEGATION SYSTEM - TIME MONITORING ==========
+        # Check if this is an async delegation request from the smart delegation system
+        is_async_request = event.get('async_delegation_request', False)
+        session_id = event.get('session_id', 'unknown')
+
+        # Time monitoring configuration
+        SAFETY_BUFFER_MS = int(os.environ.get('VALIDATOR_SAFETY_BUFFER_MS', '180000'))  # 3 minutes default
+        MAX_PROCESSING_TIME_MS = int(os.environ.get('VALIDATOR_MAX_PROCESSING_TIME_MS', '870000'))  # 14.5 minutes default
+
+        # Track execution start time
+        execution_start_time = time.time() * 1000  # milliseconds
+
+        def get_remaining_time_ms():
+            """Get remaining execution time in milliseconds."""
+            if context:
+                return context.get_remaining_time_in_millis()
+            else:
+                # Fallback calculation for testing
+                elapsed_ms = (time.time() * 1000) - execution_start_time
+                return MAX_PROCESSING_TIME_MS - elapsed_ms
+
+        def should_continue_processing():
+            """Check if we have enough time to continue processing."""
+            remaining_ms = get_remaining_time_ms()
+            return remaining_ms > SAFETY_BUFFER_MS
+
+        def save_async_progress(chunks_completed=0, chunks_total=0, rows_processed=0, current_cost=0.0):
+            """Save progress to DynamoDB for async processing."""
+            if is_async_request and session_id != 'unknown':
+                try:
+                    # Import here to avoid circular imports
+                    import sys
+                    import os
+                    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
+                    from dynamodb_schemas import update_async_progress
+
+                    # Get run_key from event or derive it
+                    run_key = event.get('run_key', f"AsyncValidation_{int(time.time())}")
+
+                    update_async_progress(
+                        session_id=session_id,
+                        run_key=run_key,
+                        chunks_completed=chunks_completed,
+                        chunks_total=chunks_total,
+                        rows_processed=rows_processed,
+                        current_cost=current_cost
+                    )
+                    logger.info(f"[ASYNC_PROGRESS] Updated progress: {chunks_completed}/{chunks_total} chunks, {rows_processed} rows, ${current_cost:.2f}")
+                except Exception as e:
+                    logger.error(f"[ASYNC_PROGRESS] Failed to save progress: {e}")
+
+        def trigger_self_continuation():
+            """Trigger self-continuation via SQS for more processing time."""
+            try:
+                import boto3
+
+                sqs_client = boto3.client('sqs')
+                async_validator_queue = os.environ.get('ASYNC_VALIDATOR_QUEUE', 'perplexity-validator-async-queue')
+
+                # Create continuation message with current state
+                continuation_message = {
+                    'message_type': 'ASYNC_VALIDATION_CONTINUATION',
+                    'session_id': session_id,
+                    'run_key': event.get('run_key', f"AsyncValidation_{int(time.time())}"),
+                    'async_delegation_request': True,
+                    'is_continuation': True,
+                    'continuation_count': event.get('continuation_count', 0) + 1,
+                    # Pass through original parameters
+                    'excel_s3_key': event.get('excel_s3_key'),
+                    'config_s3_key': event.get('config_s3_key'),
+                    'max_rows': event.get('max_rows'),
+                    'batch_size': event.get('batch_size'),
+                    'S3_UNIFIED_BUCKET': event.get('S3_UNIFIED_BUCKET'),
+                    'VALIDATOR_LAMBDA_NAME': event.get('VALIDATOR_LAMBDA_NAME'),
+                    'validation_history': event.get('validation_history')
+                }
+
+                # Send continuation message
+                response = sqs_client.send_message(
+                    QueueUrl=async_validator_queue,
+                    MessageBody=json.dumps(continuation_message, default=str)
+                )
+
+                logger.info(f"[SELF_TRIGGER] Triggered continuation for session {session_id}: {response['MessageId']}")
+                return True
+
+            except Exception as e:
+                logger.error(f"[SELF_TRIGGER] Failed to trigger continuation: {e}")
+                return False
+
+        def trigger_interface_completion(results_s3_key):
+            """Trigger interface lambda for job completion."""
+            try:
+                import boto3
+
+                sqs_client = boto3.client('sqs')
+                completion_queue = os.environ.get('INTERFACE_COMPLETION_QUEUE', 'perplexity-validator-completion-queue')
+
+                # Create completion message for background handler
+                completion_message = {
+                    'async_completion': True,  # Flag for background handler
+                    'message_type': 'ASYNC_VALIDATION_COMPLETE',  # Legacy field
+                    'session_id': session_id,
+                    'run_key': event.get('run_key', f"AsyncValidation_{int(time.time())}"),
+                    'results_s3_key': results_s3_key,
+                    'completion_timestamp': datetime.now(timezone.utc).isoformat(),
+                    'total_duration_seconds': (time.time() * 1000 - execution_start_time) / 1000,
+                    'background_processing': True  # Route to background handler
+                }
+
+                # Send completion message
+                response = sqs_client.send_message(
+                    QueueUrl=completion_queue,
+                    MessageBody=json.dumps(completion_message, default=str)
+                )
+
+                logger.info(f"[COMPLETION_TRIGGER] Triggered interface completion for session {session_id}: {response['MessageId']}")
+                return True
+
+            except Exception as e:
+                logger.error(f"[COMPLETION_TRIGGER] Failed to trigger interface: {e}")
+                return False
+
+        logger.info(f"[TIME_MONITORING] Lambda execution started, safety buffer: {SAFETY_BUFFER_MS}ms, remaining: {get_remaining_time_ms()}ms")
+
         # Continue with normal validation logic
         # Test CloudWatch logging - with extreme verbosity for debugging
         print("==== LAMBDA FUNCTION STARTED - CONSOLE.LOG PRINT ====")
@@ -4088,7 +4213,61 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if session_id:
             final_count = completed_ai_calls[0]
             send_websocket_progress(session_id, f"Validation completed! {final_count} AI calls processed", 100)
-        
+
+        # ========== SAVE CUMULATIVE RESULTS TO S3 ==========
+        # Always save complete cumulative results for async processing
+        if is_async_request and session_id:
+            try:
+                # Create cumulative results structure
+                cumulative_results = {
+                    'validation_results': response['body']['data']['rows'],
+                    'token_usage': response['body']['metadata']['token_usage'],
+                    'enhanced_metrics': response['body']['metadata']['enhanced_metrics'],
+                    'metadata': {
+                        'total_rows_processed': response['body']['metadata']['completed_rows'],
+                        'total_rows': response['body']['metadata']['total_rows'],
+                        'processing_complete': True,  # Will be updated for continuation
+                        'cache_hits': response['body']['metadata']['cache_hits'],
+                        'cache_misses': response['body']['metadata']['cache_misses'],
+                        'processing_time': response['body']['metadata']['processing_time'],
+                        'completion_timestamp': datetime.now(timezone.utc).isoformat()
+                    }
+                }
+
+                # Save to S3
+                s3_client = boto3.client('s3')
+                s3_bucket = event.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
+                results_s3_key = f"sessions/{session_id}/complete_validation_results.json"
+
+                s3_client.put_object(
+                    Bucket=s3_bucket,
+                    Key=results_s3_key,
+                    Body=json.dumps(cumulative_results, default=str),
+                    ContentType='application/json',
+                    Metadata={
+                        'session_id': session_id,
+                        'completion_timestamp': datetime.now(timezone.utc).isoformat()
+                    }
+                )
+
+                logger.info(f"[S3_SAVE] Saved cumulative results to s3://{s3_bucket}/{results_s3_key}")
+
+                # Check if we should trigger completion or continue
+                remaining_ms = get_remaining_time_ms()
+                should_continue = should_continue_processing()
+
+                if should_continue and remaining_ms > SAFETY_BUFFER_MS:
+                    # Still have time and work to do - this was an intermediate save
+                    logger.info(f"[S3_SAVE] Intermediate save completed, processing continues")
+                else:
+                    # Final completion - trigger interface
+                    logger.info(f"[S3_SAVE] Final save completed, triggering interface completion")
+                    trigger_interface_completion(results_s3_key)
+
+            except Exception as e:
+                logger.error(f"[S3_SAVE] Failed to save cumulative results to S3: {e}")
+                # Don't fail the entire function - just log the error
+
         # Return the combined results
         return response
         

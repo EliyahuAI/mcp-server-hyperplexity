@@ -42,13 +42,21 @@ def safe_for_excel(value, preserve_formulas=False):
     # Convert to string for processing
     value_str = str(value)
 
-    # Special handling for formula preservation - return formulas AS-IS without any processing
-    if preserve_formulas and value_str.startswith('='):
-        # For formulas, only check Excel cell content limit but don't modify the formula structure
-        if len(value_str) > 32767:
-            logger.warning(f"Formula exceeds Excel cell limit ({len(value_str)} chars): {value_str[:100]}...")
-            return value_str[:32767]  # Truncate but keep as formula
-        return value_str
+    # --- Unified Formula Handling ---
+    if value_str.startswith('='):
+        # If it's an external formula, always escape it as a string with a note.
+        if '[' in value_str:
+            return f"(external source) {value_str}"
+
+        # If we are preserving internal formulas, return them as is (with length check).
+        if preserve_formulas:
+            if len(value_str) > 32767:
+                logger.warning(f"Formula exceeds Excel cell limit ({len(value_str)} chars): {value_str[:100]}...")
+                return value_str[:32767]
+            return value_str
+        
+        # Otherwise (not preserving internal formulas), escape with a single quote.
+        return "'" + value_str
 
     # Handle very long content first - be more conservative for QC data
     if len(value_str) > 10000:
@@ -106,13 +114,6 @@ def safe_for_excel(value, preserve_formulas=False):
     value_str = re.sub(r'\n{3,}', '\n\n', value_str)
     # Replace multiple consecutive spaces with single space
     value_str = re.sub(r' {3,}', ' ', value_str)
-
-    # Prevent Excel formula interpretation - only escape actual formulas, not content like bullet points
-    # Only add tick mark for standalone formula operators, not bullet points or legitimate content
-    # Skip escaping if preserve_formulas=True (for IGNORE columns that should retain original formulas)
-    if not preserve_formulas and (value_str.startswith('=') or (value_str.startswith(('+', '@')) and len(value_str) > 1)):
-        value_str = "'" + value_str  # Prefix with single quote to force text interpretation
-    # Don't escape "-" as it's commonly used for bullet points and legitimate content
 
     # Final Excel cell content limit check
     if len(value_str) > 32767:
@@ -215,6 +216,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
             logger.info(f"Formula data available: {len(formula_data)} rows")
             # Handle sheet name for both CSV and Excel files
             metadata = excel_data.get('metadata', {})
+            has_external_links = metadata.get('has_external_links', False)
             file_type = metadata.get('file_type', 'unknown')
             
             if file_type == 'csv':
@@ -287,6 +289,10 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
 
         def get_original_value_with_formulas(row_idx, col_name, default_value):
             """Get the original value, preferring formula over calculated value for IGNORED/ID columns."""
+            # If the sheet has external links, never restore formulas, always use the calculated value.
+            if has_external_links:
+                return default_value
+
             if should_preserve_formulas(col_name) and formula_data and row_idx < len(formula_data):
                 # Check if this row/column has a formula
                 row_formulas = formula_data[row_idx]

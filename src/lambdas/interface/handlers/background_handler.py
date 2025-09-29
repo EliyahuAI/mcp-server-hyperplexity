@@ -17,6 +17,7 @@ import boto3
 # Initialize AWS clients
 s3_client = boto3.client('s3')
 ses_client = boto3.client('ses', region_name='us-east-1')
+sqs_client = boto3.client('sqs')
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
@@ -40,14 +41,30 @@ try:
     import os
     sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
     from dynamodb_schemas import update_processing_metrics, track_email_delivery, track_user_request, update_run_status, create_run_record
+    from dynamodb_schemas import save_delegation_context, update_async_progress, load_delegation_context, mark_async_completion
     DYNAMODB_AVAILABLE = True
     logger.debug("DynamoDB functions imported successfully at module level")
 except ImportError as e:
     logger.error(f"Failed to import dynamodb_schemas at module level: {e}")
     # Dummy functions are already defined above
 
+# Common final processing will be implemented with cleaner bifurcation approach
+
 # Global variable for the API Gateway Management client
 api_gateway_management_client = None
+
+# ========== SMART DELEGATION SYSTEM CONFIGURATION ==========
+# Configurable sync timeout limit - jobs exceeding this will be delegated to async processing
+MAX_SYNC_INVOCATION_TIME_MINUTES = float(os.environ.get('MAX_SYNC_INVOCATION_TIME', '5.0'))
+VALIDATOR_SAFETY_BUFFER_MINUTES = float(os.environ.get('VALIDATOR_SAFETY_BUFFER', '3.0'))
+
+# SQS Queue Names for async processing
+ASYNC_VALIDATOR_QUEUE = os.environ.get('ASYNC_VALIDATOR_QUEUE', 'perplexity-validator-async-queue')
+INTERFACE_COMPLETION_QUEUE = os.environ.get('INTERFACE_COMPLETION_QUEUE', 'perplexity-validator-completion-queue')
+
+logger.info(f"[DELEGATION_CONFIG] MAX_SYNC_INVOCATION_TIME: {MAX_SYNC_INVOCATION_TIME_MINUTES} minutes")
+logger.info(f"[DELEGATION_CONFIG] ASYNC_VALIDATOR_QUEUE: {ASYNC_VALIDATOR_QUEUE}")
+logger.info(f"[DELEGATION_CONFIG] INTERFACE_COMPLETION_QUEUE: {INTERFACE_COMPLETION_QUEUE}")
 
 def send_validation_failure_alert(session_id, email, error_type, error_details, session_data=None):
     """
@@ -564,9 +581,106 @@ S3_UNIFIED_BUCKET = get_unified_bucket()
 S3_RESULTS_BUCKET = os.environ.get('S3_RESULTS_BUCKET', 'perplexity-results')
 VALIDATOR_LAMBDA_NAME = os.environ.get('VALIDATOR_LAMBDA_NAME', 'perplexity-validator')
 
+
+def handle_async_completion_in_background_handler(event, context):
+    """
+    Handle async completion within the background handler.
+    Load results from S3, reconstruct variables, and continue to common completion code.
+    """
+    try:
+        session_id = event.get('session_id')
+        results_s3_key = event.get('results_s3_key')
+
+        if not session_id or not results_s3_key:
+            logger.error("[ASYNC_COMPLETION] Missing required fields: session_id or results_s3_key")
+            return {'statusCode': 400, 'body': json.dumps({'error': 'Missing required fields'})}
+
+        logger.info(f"[ASYNC_COMPLETION] Loading results for session {session_id} from {results_s3_key}")
+
+        # Load validation results from S3
+        try:
+            s3_parts = results_s3_key.split('/', 1)
+            if len(s3_parts) != 2:
+                s3_bucket = S3_UNIFIED_BUCKET
+                s3_key = results_s3_key
+            else:
+                s3_bucket, s3_key = s3_parts
+
+            response = s3_client.get_object(Bucket=s3_bucket, Key=s3_key)
+            validation_results = json.loads(response['Body'].read().decode('utf-8'))
+            logger.info(f"[ASYNC_COMPLETION] Loaded validation results: {len(str(validation_results))} bytes")
+
+        except Exception as e:
+            logger.error(f"[ASYNC_COMPLETION] Failed to load results from s3://{s3_bucket}/{s3_key}: {e}")
+            return {'statusCode': 404, 'body': json.dumps({'error': f'Could not load results: {str(e)}'})}
+
+        # Load delegation context from DynamoDB
+        try:
+            delegation_context = load_delegation_context(session_id)
+            if not delegation_context:
+                logger.error(f"[ASYNC_COMPLETION] No delegation context found for session {session_id}")
+                return {'statusCode': 404, 'body': json.dumps({'error': 'No delegation context found'})}
+
+            logger.info(f"[ASYNC_COMPLETION] Loaded delegation context for session {session_id}")
+
+        except Exception as e:
+            logger.error(f"[ASYNC_COMPLETION] Failed to load delegation context: {e}")
+            return {'statusCode': 500, 'body': json.dumps({'error': f'Failed to load context: {str(e)}'})}
+
+        # Reconstruct the event and variables as if sync processing had just completed
+        request_context = delegation_context.get('request_context', {})
+        file_locations = delegation_context.get('file_locations', {})
+
+        # Create reconstructed event for the common completion code
+        reconstructed_event = {
+            'session_id': session_id,
+            'run_key': request_context.get('run_key'),
+            'email': request_context.get('email'),
+            'email_address': request_context.get('email'),
+            'preview_mode': request_context.get('preview_mode', False),
+            'excel_s3_key': file_locations.get('excel_s3_key'),
+            'config_s3_key': file_locations.get('config_s3_key'),
+            'results_key': file_locations.get('results_key'),
+            'total_rows': request_context.get('total_rows'),
+            'reference_pin': request_context.get('reference_pin'),
+            'timestamp': request_context.get('timestamp'),
+            'background_processing': True,
+            'async_completion_mode': True  # Flag to indicate this is async completion
+        }
+
+        logger.info(f"[ASYNC_COMPLETION] Reconstructed event for session {session_id}, proceeding to common completion")
+
+        # Add validation results to event and process with main handler
+        reconstructed_event['_validation_results_from_async'] = validation_results
+        reconstructed_event['_skip_validation_call'] = True
+
+        logger.info(f"[ASYNC_COMPLETION] Calling main handler for completion processing")
+
+        # Process the reconstructed event through the main handler (without async completion check)
+        return handle_main_processing(reconstructed_event, context)
+
+    except Exception as e:
+        logger.error(f"[ASYNC_COMPLETION] Failed to handle async completion: {e}")
+        return {'statusCode': 500, 'body': json.dumps({'error': str(e)})}
+
+
+
 def handle(event, context):
     """Handle background processing for both normal and preview mode validation."""
+    # ========== ASYNC COMPLETION CHECK ==========
+    # Check if this is async completion (validation lambda finished and we need to complete the job)
+    if event.get('async_completion'):
+        logger.info("[ASYNC_COMPLETION] Processing async completion request")
+        return handle_async_completion_in_background_handler(event, context)
+
+    # Normal processing
+    return handle_main_processing(event, context)
+
+
+def handle_main_processing(event, context):
+    """Main processing logic for background validation."""
     try:
+
         from ..core.validator_invoker import invoke_validator_lambda
         from ..reporting.zip_report import create_enhanced_result_zip
         from ..reporting.markdown_report import create_markdown_table_from_results
@@ -2212,13 +2326,136 @@ def handle(event, context):
             # For now, we will call the original invoker to get the final result in one go,
             # as refactoring it to return per-batch results is a larger change.
 
+            # ========== SMART DELEGATION SYSTEM DECISION POINT ==========
+            # Check if we should delegate to async processing based on estimated time
+            estimated_minutes = 0.0
+            should_delegate = False
+
+            # Try to get the estimated processing time from previous preview run
             try:
-                validation_results = invoke_validator_lambda(
-                    excel_s3_key, config_s3_key, max_rows, batch_size, S3_UNIFIED_BUCKET, VALIDATOR_LAMBDA_NAME,
-                    preview_first_row=False,
-                    session_id=session_id,
-                    update_callback=_update_progress
-                )
+                # The estimated_total_time_seconds should be available from preview processing above
+                if 'estimated_total_time_seconds' in locals() and estimated_total_time_seconds:
+                    estimated_minutes = estimated_total_time_seconds / 60.0
+                    should_delegate = estimated_minutes > MAX_SYNC_INVOCATION_TIME_MINUTES
+
+                    logger.info(f"[DELEGATION_DECISION] Estimated processing time: {estimated_minutes:.1f} minutes")
+                    logger.info(f"[DELEGATION_DECISION] Sync timeout limit: {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f} minutes")
+                    logger.info(f"[DELEGATION_DECISION] Should delegate: {should_delegate}")
+                else:
+                    logger.warning(f"[DELEGATION_DECISION] No estimated_total_time_seconds available, using sync processing")
+            except Exception as e:
+                logger.error(f"[DELEGATION_DECISION] Error checking delegation criteria: {e}")
+
+            if should_delegate:
+                # ========== ASYNC DELEGATION WORKFLOW ==========
+                logger.info(f"[DELEGATION] Delegating to async processing (estimated {estimated_minutes:.1f}min > {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min)")
+
+                try:
+                    # Prepare delegation context with all necessary data
+                    delegation_context = {
+                        'request_context': {
+                            'session_id': session_id,
+                            'run_key': run_key,
+                            'email': email,
+                            'websocket_connection_id': connection_id,
+                            'start_time': start_time.isoformat() if hasattr(start_time, 'isoformat') else str(start_time),
+                            'config_data': config_data,
+                            'total_rows': total_rows_in_file,
+                            'max_rows': max_rows,
+                            'batch_size': batch_size
+                        },
+                        'file_locations': {
+                            'excel_s3_key': excel_s3_key,
+                            'config_s3_key': config_s3_key,
+                            'validation_history': validation_history_key if validation_history else None
+                        },
+                        'preview_estimates': {
+                            'estimated_total_time_seconds': estimated_total_time_seconds,
+                            'estimated_minutes': estimated_minutes,
+                            'cost_estimated': cost_estimated if 'cost_estimated' in locals() else 0.0,
+                            'multiplier': multiplier if 'multiplier' in locals() else 1.0
+                        },
+                        'processing_metadata': {
+                            'S3_UNIFIED_BUCKET': S3_UNIFIED_BUCKET,
+                            'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME
+                        }
+                    }
+
+                    # Save delegation context to DynamoDB
+                    delegation_success = save_delegation_context(
+                        session_id=session_id,
+                        run_key=run_key,
+                        context_data=delegation_context,
+                        estimated_minutes=estimated_minutes,
+                        sync_timeout_minutes=MAX_SYNC_INVOCATION_TIME_MINUTES,
+                        reason=f"estimated_{estimated_minutes:.1f}min_exceeds_{MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min_sync_limit"
+                    )
+
+                    if delegation_success:
+                        # Trigger async validator via SQS
+                        async_message = {
+                            'message_type': 'ASYNC_VALIDATION_REQUEST',
+                            'session_id': session_id,
+                            'run_key': run_key,
+                            'async_delegation_request': True,
+                            'excel_s3_key': excel_s3_key,
+                            'config_s3_key': config_s3_key,
+                            'max_rows': max_rows,
+                            'batch_size': batch_size,
+                            'S3_UNIFIED_BUCKET': S3_UNIFIED_BUCKET,
+                            'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME,
+                            'validation_history': validation_history_key if validation_history else None
+                        }
+
+                        try:
+                            # Send message to async validator queue
+                            response = sqs_client.send_message(
+                                QueueUrl=ASYNC_VALIDATOR_QUEUE,
+                                MessageBody=json.dumps(async_message, default=str)
+                            )
+
+                            logger.info(f"[DELEGATION] Successfully triggered async validator via SQS: {response['MessageId']}")
+
+                            # Background handler job is done - async validator will take over
+                            return {
+                                'statusCode': 200,
+                                'body': json.dumps({
+                                    'status': 'DELEGATED_TO_ASYNC',
+                                    'session_id': session_id,
+                                    'estimated_minutes': estimated_minutes,
+                                    'sqs_message_id': response['MessageId'],
+                                    'message': f'Job delegated to async processing (estimated {estimated_minutes:.1f} minutes)'
+                                })
+                            }
+
+                        except Exception as sqs_error:
+                            logger.error(f"[DELEGATION] Failed to send SQS message: {sqs_error}")
+                            should_delegate = False  # Fall back to sync processing
+                    else:
+                        logger.error(f"[DELEGATION] Failed to save context, falling back to sync processing")
+                        should_delegate = False
+
+                except Exception as e:
+                    logger.error(f"[DELEGATION] Delegation failed, falling back to sync processing: {e}")
+                    should_delegate = False
+
+            if not should_delegate:
+                # ========== SYNCHRONOUS PROCESSING (CURRENT BEHAVIOR) ==========
+                logger.info(f"[DELEGATION] Using synchronous processing (estimated {estimated_minutes:.1f}min <= {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min)")
+
+            try:
+                # Check if this is async completion with pre-loaded results
+                if event.get('_skip_validation_call') and event.get('_validation_results_from_async'):
+                    logger.info("[ASYNC_COMPLETION] Using pre-loaded validation results from async completion")
+                    validation_results = event['_validation_results_from_async']
+                else:
+                    # Normal synchronous validation
+                    validation_results = invoke_validator_lambda(
+                        excel_s3_key, config_s3_key, max_rows, batch_size, S3_UNIFIED_BUCKET, VALIDATOR_LAMBDA_NAME,
+                        preview_first_row=False,
+                        session_id=session_id,
+                        update_callback=_update_progress
+                    )
 
                 # Validate that we got complete results
                 if not validation_results or not isinstance(validation_results, dict):
@@ -3016,20 +3253,20 @@ def handle(event, context):
                         'status': 'Sending validation results to your email...',
                         'session_id': session_id
                     }, "full_validation_email")
-                    
+
                     email_result = send_validation_results_email(
-                        email_address=email_address, excel_content=excel_content, 
+                        email_address=email_address, excel_content=excel_content,
                         config_content=json.dumps(config_data, indent=2).encode('utf-8'),
                         enhanced_excel_content=safe_enhanced_excel_content,
                         input_filename=input_filename, config_filename=config_filename,
                         enhanced_excel_filename=f"{os.path.splitext(input_filename)[0].replace('_input', '')}_Validated.xlsx",
-                        session_id=session_id, summary_data=summary_data, 
+                        session_id=session_id, summary_data=summary_data,
                         processing_time=actual_processing_time,
                         reference_pin=reference_pin, metadata=metadata, preview_email=preview_email,
                         billing_info=billing_info,
                         config_id=config_id
                     )
-                    
+
                     # Send final processing progress update - finalizing (98-100% range)
                     _send_websocket_message_deduplicated(session_id, {
                         'type': 'progress_update',
@@ -3038,11 +3275,11 @@ def handle(event, context):
                         'status': 'Finalizing download links and completion...',
                         'session_id': session_id
                     }, "full_validation_finalizing")
-                    
+
                     # Send final completion notification with download URLs
                     processed_rows_count = len(validation_results.get('validation_results', {}))
                     total_rows_in_file = validation_results.get('total_rows', processed_rows_count)
-                    
+
                     # Create ZIP download URL from results_key
                     zip_download_url = None
                     if results_key:

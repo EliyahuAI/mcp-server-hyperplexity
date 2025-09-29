@@ -222,6 +222,18 @@ class S3TableParser:
                         if extract_formulas and formula_dict:
                             formula_data.append(formula_dict)
                 
+                # --- New Logic: Detect external links ---
+                has_external_links = False
+                if extract_formulas:
+                    for row in worksheet.iter_rows():
+                        for cell in row:
+                            if cell.data_type == 'f' and cell.value and '[' in str(cell.value):
+                                has_external_links = True
+                                self.logger.info("External link detected in formulas.")
+                                break
+                        if has_external_links:
+                            break
+                
                 workbook.close()
                 
                 result = {
@@ -234,7 +246,8 @@ class S3TableParser:
                         'file_type': 'excel',
                         'sheet_name': sheet_name,
                         'source': 's3',
-                        'sample_rows': min(5, len(structured_data))
+                        'sample_rows': min(5, len(structured_data)),
+                        'has_external_links': has_external_links
                     }
                 }
 

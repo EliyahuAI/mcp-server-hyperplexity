@@ -64,9 +64,14 @@ LAMBDA_CONFIG = {
             "VALIDATOR_LAMBDA_NAME": "perplexity-validator",
             "CONFIG_LAMBDA_NAME": "perplexity-validator-config",
             # Legacy variables for compatibility during transition
-            "S3_CACHE_BUCKET": "hyperplexity-storage", 
+            "S3_CACHE_BUCKET": "hyperplexity-storage",
             "S3_RESULTS_BUCKET": "hyperplexity-storage",
-            "S3_CONFIG_BUCKET": "hyperplexity-storage"
+            "S3_CONFIG_BUCKET": "hyperplexity-storage",
+            # Smart Delegation System SQS Queues
+            "ASYNC_VALIDATOR_QUEUE": "https://sqs.us-east-1.amazonaws.com/400232868802/perplexity-validator-async-queue",
+            "INTERFACE_COMPLETION_QUEUE": "https://sqs.us-east-1.amazonaws.com/400232868802/perplexity-validator-completion-queue",
+            "MAX_SYNC_INVOCATION_TIME": "5.0",
+            "VALIDATOR_SAFETY_BUFFER": "3.0"
         }
     },
     "TracingConfig": {

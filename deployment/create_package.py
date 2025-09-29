@@ -51,10 +51,15 @@ LAMBDA_CONFIG = {
             "S3_UNIFIED_BUCKET": "hyperplexity-storage",  # Unified bucket for all storage
             "S3_DOWNLOAD_BUCKET": "hyperplexity-storage", # Same bucket but hyperplexity/downloads/ has public access
             # Legacy variables for compatibility during transition
-            "S3_CACHE_BUCKET": "hyperplexity-storage", 
+            "S3_CACHE_BUCKET": "hyperplexity-storage",
             "S3_RESULTS_BUCKET": "hyperplexity-storage",
             "S3_CONFIG_BUCKET": "hyperplexity-storage",
-            "WEBSOCKET_API_URL": "wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod"
+            "WEBSOCKET_API_URL": "wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod",
+            # Smart Delegation System SQS Queues
+            "ASYNC_VALIDATOR_QUEUE": "https://sqs.us-east-1.amazonaws.com/400232868802/perplexity-validator-async-queue",
+            "INTERFACE_COMPLETION_QUEUE": "https://sqs.us-east-1.amazonaws.com/400232868802/perplexity-validator-completion-queue",
+            "MAX_SYNC_INVOCATION_TIME": "5.0",
+            "VALIDATOR_SAFETY_BUFFER": "3.0"
         }
     },
     "TracingConfig": {

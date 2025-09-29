@@ -935,7 +935,40 @@ class CallTrackingRecord:
             # Search context usage
             'search_context_usage': {},  # {'low': 5, 'medium': 3, 'high': 2}
             'search_group_counts': {},   # Details about search groups
-            
+
+            # ========== SMART DELEGATION SYSTEM FIELDS ==========
+            # Processing mode and delegation state
+            'processing_mode': 'SYNC',  # 'SYNC', 'ASYNC_DELEGATED', 'ASYNC_PROCESSING', 'ASYNC_COMPLETING'
+            'delegation_timestamp': '',  # When delegation occurred
+            'estimated_processing_minutes': 0.0,  # From preview estimation
+            'sync_timeout_limit_minutes': 5.0,  # Configurable sync timeout threshold
+            'delegation_reason': '',  # Why async delegation was chosen
+
+            # Async context preservation (JSON object)
+            'async_context': {},  # Complete context for async job restoration
+
+            # Async progress tracking
+            'async_progress': {
+                'chunks_completed': 0,
+                'chunks_total': 0,
+                'rows_processed': 0,
+                'current_cost': 0.0,
+                'last_update': '',
+                'continuation_count': 0  # How many times validator continued itself
+            },
+
+            # Async completion tracking
+            'async_results_s3_key': '',  # Final results location in S3
+            'async_completion_timestamp': '',  # When async processing completed
+            'async_total_duration_seconds': 0.0,  # Total time across all continuations
+
+            # S3 input files for async processing
+            'async_input_files': {
+                'data_s3_key': '',
+                'config_s3_key': '',
+                'history_s3_key': ''
+            },
+
             # Custom fields
             'notes': '',
             'tags': [],
@@ -2850,7 +2883,9 @@ def create_run_record(session_id: str, email: str, total_rows: int, batch_size: 
         else:
             raise
 
-def update_run_status(session_id: str, run_key: str, status: str, run_type: str = None, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None, batch_size: int = None, account_current_balance: float = None, account_sufficient_balance: str = None, account_credits_needed: str = None, account_domain_multiplier: float = None, models: str = None, input_table_name: str = None, configuration_id: str = None, total_rows: int = None, eliyahu_cost: float = None, quoted_validation_cost: float = None, estimated_validation_eliyahu_cost: float = None, time_per_row_seconds: float = None, estimated_validation_time_minutes: float = None, run_time_s: float = None, provider_metrics: dict = None, qc_metrics: dict = None, total_provider_calls: int = None, **kwargs):
+def update_run_status(session_id: str, run_key: str, status: str, run_type: str = None, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None, batch_size: int = None, account_current_balance: float = None, account_sufficient_balance: str = None, account_credits_needed: str = None, account_domain_multiplier: float = None, models: str = None, input_table_name: str = None, configuration_id: str = None, total_rows: int = None, eliyahu_cost: float = None, quoted_validation_cost: float = None, estimated_validation_eliyahu_cost: float = None, time_per_row_seconds: float = None, estimated_validation_time_minutes: float = None, run_time_s: float = None, provider_metrics: dict = None, qc_metrics: dict = None, total_provider_calls: int = None,
+                      # Smart delegation system parameters
+                      processing_mode: str = None, delegation_timestamp: str = None, estimated_processing_minutes: float = None, sync_timeout_limit_minutes: float = None, delegation_reason: str = None, async_context: dict = None, async_progress: dict = None, async_results_s3_key: str = None, async_completion_timestamp: str = None, async_total_duration_seconds: float = None, async_input_files: dict = None, **kwargs):
     """Updates the status and progress of a validation run using composite primary key."""
     table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
     
@@ -3074,6 +3109,42 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
     if total_provider_calls is not None and provider_metrics is None:
         update_expression += ", total_provider_calls = :tpc_override"
         expression_attribute_values[':tpc_override'] = total_provider_calls
+
+    # ========== SMART DELEGATION SYSTEM FIELDS ==========
+    if processing_mode is not None:
+        update_expression += ", processing_mode = :pm"
+        expression_attribute_values[':pm'] = processing_mode
+    if delegation_timestamp is not None:
+        update_expression += ", delegation_timestamp = :dt"
+        expression_attribute_values[':dt'] = delegation_timestamp
+    if estimated_processing_minutes is not None:
+        update_expression += ", estimated_processing_minutes = :epm"
+        expression_attribute_values[':epm'] = convert_floats_to_decimal(estimated_processing_minutes)
+    if sync_timeout_limit_minutes is not None:
+        update_expression += ", sync_timeout_limit_minutes = :stlm"
+        expression_attribute_values[':stlm'] = convert_floats_to_decimal(sync_timeout_limit_minutes)
+    if delegation_reason is not None:
+        update_expression += ", delegation_reason = :dr"
+        expression_attribute_values[':dr'] = delegation_reason
+    if async_context is not None:
+        update_expression += ", async_context = :ac"
+        expression_attribute_values[':ac'] = convert_floats_to_decimal(async_context)
+    if async_progress is not None:
+        update_expression += ", async_progress = :ap"
+        expression_attribute_values[':ap'] = convert_floats_to_decimal(async_progress)
+    if async_results_s3_key is not None:
+        update_expression += ", async_results_s3_key = :arsk"
+        expression_attribute_values[':arsk'] = async_results_s3_key
+    if async_completion_timestamp is not None:
+        update_expression += ", async_completion_timestamp = :act"
+        expression_attribute_values[':act'] = async_completion_timestamp
+    if async_total_duration_seconds is not None:
+        update_expression += ", async_total_duration_seconds = :atds"
+        expression_attribute_values[':atds'] = convert_floats_to_decimal(async_total_duration_seconds)
+    if async_input_files is not None:
+        update_expression += ", async_input_files = :aif"
+        expression_attribute_values[':aif'] = convert_floats_to_decimal(async_input_files)
+
     if status in ['COMPLETED', 'FAILED']:
         update_expression += ", end_time = :et"
         expression_attribute_values[':et'] = now
@@ -3154,6 +3225,165 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
         import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
         raise  # Re-raise the exception so calling code knows it failed
+
+
+# ========== SMART DELEGATION SYSTEM HELPER FUNCTIONS ==========
+
+def save_delegation_context(session_id: str, run_key: str, context_data: dict,
+                          estimated_minutes: float, sync_timeout_minutes: float = 5.0,
+                          reason: str = "estimated_time_exceeds_sync_limit") -> bool:
+    """Save complete context for async delegation workflow."""
+    from datetime import datetime, timezone
+
+    try:
+        delegation_timestamp = datetime.now(timezone.utc).isoformat()
+
+        # Update run status to ASYNC_DELEGATED with full context
+        update_run_status(
+            session_id=session_id,
+            run_key=run_key,
+            status='PROCESSING',  # Keep as processing, but mark as delegated
+            processing_mode='ASYNC_DELEGATED',
+            delegation_timestamp=delegation_timestamp,
+            estimated_processing_minutes=estimated_minutes,
+            sync_timeout_limit_minutes=sync_timeout_minutes,
+            delegation_reason=reason,
+            async_context=context_data,
+            verbose_status=f"Delegated to async processing (estimated {estimated_minutes:.1f} minutes)"
+        )
+
+        logger.info(f"[DELEGATION] Session {session_id}: Saved context for async processing "
+                   f"(estimated {estimated_minutes:.1f}min > {sync_timeout_minutes:.1f}min limit)")
+        return True
+
+    except Exception as e:
+        logger.error(f"[DELEGATION] Failed to save delegation context for session {session_id}: {e}")
+        return False
+
+
+def update_async_progress(session_id: str, run_key: str, chunks_completed: int = None,
+                         chunks_total: int = None, rows_processed: int = None,
+                         current_cost: float = None, continuation_count: int = None) -> bool:
+    """Update async processing progress in DynamoDB."""
+    from datetime import datetime, timezone
+
+    try:
+        # Get current progress
+        table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
+        response = table.get_item(Key={'session_id': session_id, 'run_key': run_key})
+
+        current_progress = {}
+        if 'Item' in response and 'async_progress' in response['Item']:
+            current_progress = dict(response['Item']['async_progress'])
+
+        # Update provided fields
+        if chunks_completed is not None:
+            current_progress['chunks_completed'] = chunks_completed
+        if chunks_total is not None:
+            current_progress['chunks_total'] = chunks_total
+        if rows_processed is not None:
+            current_progress['rows_processed'] = rows_processed
+        if current_cost is not None:
+            current_progress['current_cost'] = current_cost
+        if continuation_count is not None:
+            current_progress['continuation_count'] = continuation_count
+
+        current_progress['last_update'] = datetime.now(timezone.utc).isoformat()
+
+        # Calculate progress percentage
+        percent_complete = 0
+        if chunks_total and chunks_total > 0:
+            percent_complete = int((chunks_completed / chunks_total) * 90) + 5  # 5-95% range
+
+        # Update run status
+        update_run_status(
+            session_id=session_id,
+            run_key=run_key,
+            status='PROCESSING',
+            processing_mode='ASYNC_PROCESSING',
+            async_progress=current_progress,
+            processed_rows=rows_processed,
+            percent_complete=percent_complete,
+            verbose_status=f"Async processing: chunk {chunks_completed}/{chunks_total}" if chunks_total else "Async processing in progress"
+        )
+
+        logger.info(f"[ASYNC_PROGRESS] Session {session_id}: Updated progress - "
+                   f"chunks {chunks_completed}/{chunks_total}, rows {rows_processed}, cost ${current_cost:.2f}")
+        return True
+
+    except Exception as e:
+        logger.error(f"[ASYNC_PROGRESS] Failed to update progress for session {session_id}: {e}")
+        return False
+
+
+def load_delegation_context(session_id: str, run_key: str = None) -> Optional[dict]:
+    """Load saved delegation context from DynamoDB."""
+    try:
+        table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
+
+        if run_key:
+            # Direct lookup with run_key
+            response = table.get_item(Key={'session_id': session_id, 'run_key': run_key})
+        else:
+            # Query latest run for session
+            response = table.query(
+                KeyConditionExpression='session_id = :sid',
+                ExpressionAttributeValues={':sid': session_id},
+                ScanIndexForward=False,  # Get most recent first
+                Limit=1
+            )
+            if 'Items' in response and response['Items']:
+                item = response['Items'][0]
+            else:
+                return None
+
+        if 'Item' in response:
+            item = response['Item']
+        elif 'Items' in response and response['Items']:
+            item = response['Items'][0]
+        else:
+            return None
+
+        async_context = item.get('async_context', {})
+        if not async_context:
+            logger.warning(f"[DELEGATION] No async_context found for session {session_id}")
+            return None
+
+        logger.info(f"[DELEGATION] Loaded context for session {session_id} from run {item.get('run_key')}")
+        return dict(async_context)
+
+    except Exception as e:
+        logger.error(f"[DELEGATION] Failed to load delegation context for session {session_id}: {e}")
+        return None
+
+
+def mark_async_completion(session_id: str, run_key: str, results_s3_key: str,
+                         total_duration_seconds: float = None) -> bool:
+    """Mark async processing as complete and ready for interface finalization."""
+    from datetime import datetime, timezone
+
+    try:
+        completion_timestamp = datetime.now(timezone.utc).isoformat()
+
+        update_run_status(
+            session_id=session_id,
+            run_key=run_key,
+            status='PROCESSING',  # Still processing until interface completes
+            processing_mode='ASYNC_COMPLETING',
+            async_completion_timestamp=completion_timestamp,
+            async_results_s3_key=results_s3_key,
+            async_total_duration_seconds=total_duration_seconds,
+            percent_complete=95,
+            verbose_status="Async validation complete, finalizing results..."
+        )
+
+        logger.info(f"[ASYNC_COMPLETE] Session {session_id}: Marked as complete, results at {results_s3_key}")
+        return True
+
+    except Exception as e:
+        logger.error(f"[ASYNC_COMPLETE] Failed to mark completion for session {session_id}: {e}")
+        return False
+
 
 def get_run_status(session_id: str, run_key: str) -> Optional[Dict]:
     """Retrieves the status of a specific validation run."""
