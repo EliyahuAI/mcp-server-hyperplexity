@@ -4581,6 +4581,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 s3_bucket = event.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
                 results_s3_key = f"sessions/{session_id}/complete_validation_results.json"
 
+                logger.info(f"[S3_SAVE] About to save to S3: bucket={s3_bucket}, key={results_s3_key}")
+
                 s3_client.put_object(
                     Bucket=s3_bucket,
                     Key=results_s3_key,
@@ -4592,20 +4594,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 )
 
-                logger.debug(f"[S3_SAVE] Saved cumulative results to s3://{s3_bucket}/{results_s3_key}")
+                logger.info(f"[S3_SAVE] Successfully saved cumulative results to s3://{s3_bucket}/{results_s3_key}")
 
                 # Check if we should trigger completion or continue
                 remaining_ms = get_remaining_time_ms()
                 should_continue = should_continue_processing()
+                logger.info(f"[S3_SAVE] Decision point: remaining_ms={remaining_ms}, should_continue={should_continue}")
 
                 # Check if there's more work to do (incomplete validation)
                 total_rows = len(event.get('validation_data', {}).get('rows', []))
                 processed_rows = len(cumulative_results.get('validation_results', {}))
                 has_more_work = processed_rows < total_rows
+                logger.info(f"[S3_SAVE] Work status: processed_rows={processed_rows}, total_rows={total_rows}, has_more_work={has_more_work}")
 
                 if should_continue and remaining_ms > SAFETY_BUFFER_MS:
                     # Still have time and work to do - this was an intermediate save
-                    logger.debug(f"[S3_SAVE] Intermediate save completed, processing continues")
+                    logger.info(f"[S3_SAVE] Intermediate save completed, processing continues")
                 elif not should_continue and has_more_work:
                     # Running out of time but still have work - trigger continuation
                     logger.info(f"[S3_SAVE] Running out of time ({remaining_ms}ms left), triggering continuation")
@@ -4620,11 +4624,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         trigger_interface_completion(results_s3_key)
                 else:
                     # Final completion - either all work done or can't continue
-                    logger.debug(f"[S3_SAVE] Final save completed, triggering interface completion")
+                    logger.info(f"[S3_SAVE] Final save completed, triggering interface completion")
+                    logger.info(f"[S3_SAVE] About to call trigger_interface_completion with results_s3_key={results_s3_key}")
                     trigger_interface_completion(results_s3_key)
+                    logger.info(f"[S3_SAVE] trigger_interface_completion call completed")
 
             except Exception as e:
                 logger.error(f"[S3_SAVE] Failed to save cumulative results to S3: {e}")
+                logger.error(f"[S3_SAVE] Exception details: {type(e).__name__}: {str(e)}")
+                import traceback
+                logger.error(f"[S3_SAVE] Traceback: {traceback.format_exc()}")
                 # Don't fail the entire function - just log the error
 
         # Return the combined results
