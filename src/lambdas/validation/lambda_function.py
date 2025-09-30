@@ -2463,6 +2463,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Get deployment environment from Lambda environment variable
                 deployment_environment = os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod')
 
+                # Get S3 bucket from event or environment
+                s3_bucket_for_message = event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage'))
+
                 # Create completion message for background handler
                 completion_message = {
                     'async_completion': True,  # Flag for background handler
@@ -2470,6 +2473,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'session_id': session_id,
                     'run_key': event.get('run_key', f"AsyncValidation_{int(time.time())}"),
                     'results_s3_key': results_s3_key,
+                    'S3_UNIFIED_BUCKET': s3_bucket_for_message,  # Include bucket name for interface
                     'completion_timestamp': datetime.now(timezone.utc).isoformat(),
                     'total_duration_seconds': (time.time() * 1000 - execution_start_time) / 1000,
                     'background_processing': True,  # Route to background handler

@@ -830,12 +830,12 @@ def handle_async_completion_in_background_handler(event, context):
 
         # Load validation results from S3
         try:
-            s3_parts = results_s3_key.split('/', 1)
-            if len(s3_parts) != 2:
-                s3_bucket = S3_UNIFIED_BUCKET
-                s3_key = results_s3_key
-            else:
-                s3_bucket, s3_key = s3_parts
+            # The results_s3_key should be just the key path (e.g., "sessions/xxx/complete_validation_results.json")
+            # The bucket should come from the environment or event
+            s3_bucket = event.get('S3_UNIFIED_BUCKET') or S3_UNIFIED_BUCKET
+            s3_key = results_s3_key
+
+            logger.info(f"[ASYNC_COMPLETION] Loading from bucket={s3_bucket}, key={s3_key}")
 
             response = s3_client.get_object(Bucket=s3_bucket, Key=s3_key)
             validation_results = json.loads(response['Body'].read().decode('utf-8'))
