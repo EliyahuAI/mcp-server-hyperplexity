@@ -257,8 +257,13 @@ def configure_sqs_event_source_mappings(lambda_client, function_name, region):
         async_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_ASYNC_QUEUE_NAME', 'perplexity-validator-async-queue')
         completion_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_COMPLETION_QUEUE_NAME', 'perplexity-validator-completion-queue')
 
+        logger.info(f"[MAPPINGS] Checking event source mappings for function: {function_name}")
+        logger.info(f"[MAPPINGS] Async queue: {async_queue_name}")
+        logger.info(f"[MAPPINGS] Completion queue: {completion_queue_name}")
+
         # 1. Interface Lambda should listen to completion queue for async completion processing
         if 'interface' in function_name.lower():
+            logger.info(f"[MAPPINGS] Function {function_name} is an interface lambda - adding completion queue mapping")
             mappings.append({
                 'queue_name': completion_queue_name,
                 'description': 'Async completion processing for interface lambda'
@@ -285,7 +290,7 @@ def configure_sqs_event_source_mappings(lambda_client, function_name, region):
                 )
 
                 if existing_mappings['EventSourceMappings']:
-                    logger.info(f"SQS event source mapping already exists for {queue_name} -> {function_name}")
+                    logger.info(f"[MAPPINGS] SQS event source mapping already exists for {queue_name} -> {function_name}")
                     # Check if it's enabled
                     existing_mapping = existing_mappings['EventSourceMappings'][0]
                     if existing_mapping['State'] != 'Enabled':
@@ -1041,16 +1046,22 @@ def setup_sqs_triggers(lambda_client, function_name, region):
         # Check existing mappings
         existing_mappings = lambda_client.list_event_source_mappings(FunctionName=function_name).get('EventSourceMappings', [])
         
-        # Clean up incorrect/old mappings first
-        target_arns = {preview_queue_arn, standard_queue_arn}
+        # Get completion queue for Smart Delegation System
+        completion_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_COMPLETION_QUEUE_NAME', 'perplexity-validator-completion-queue')
+        completion_queue_arn = f"arn:aws:sqs:{region}:{account_id}:{completion_queue_name}"
+
+        # Clean up incorrect/old mappings first (but preserve completion queue mapping!)
+        target_arns = {preview_queue_arn, standard_queue_arn, completion_queue_arn}
         for mapping in existing_mappings:
             if mapping['EventSourceArn'] not in target_arns:
-                logger.info(f"Removing incorrect event source mapping: {mapping['EventSourceArn']}")
+                logger.info(f"[CLEANUP] Removing incorrect event source mapping: {mapping['EventSourceArn']}")
                 try:
                     lambda_client.delete_event_source_mapping(UUID=mapping['UUID'])
-                    logger.info(f"Deleted mapping UUID: {mapping['UUID']}")
+                    logger.info(f"[CLEANUP] Deleted mapping UUID: {mapping['UUID']}")
                 except Exception as delete_error:
-                    logger.warning(f"Could not delete mapping {mapping['UUID']}: {delete_error}")
+                    logger.warning(f"[CLEANUP] Could not delete mapping {mapping['UUID']}: {delete_error}")
+            else:
+                logger.info(f"[KEEP] Preserving event source mapping: {mapping['EventSourceArn']}")
         
         # Refresh mappings after cleanup
         existing_mappings = lambda_client.list_event_source_mappings(FunctionName=function_name).get('EventSourceMappings', [])
