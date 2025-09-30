@@ -292,7 +292,52 @@ def configure_sqs_queue_urls(region):
 
     except Exception as e:
         logger.error(f"Could not retrieve SQS queue URLs. Please ensure queues are created. Error: {e}")
+        logger.error(f"Failed to look up queue: async={async_queue_name}, completion={completion_queue_name}")
+
+        # Try to create the queues if they don't exist
+        try:
+            logger.info("Attempting to create missing queues...")
+            sqs_client = boto3.client('sqs', region_name=region)
+
+            # Try to create completion queue if it doesn't exist
+            try:
+                sqs_client.create_queue(QueueName=completion_queue_name)
+                logger.info(f"Created queue: {completion_queue_name}")
+            except sqs_client.exceptions.QueueNameExists:
+                logger.info(f"Queue already exists: {completion_queue_name}")
+            except Exception as create_error:
+                logger.error(f"Failed to create queue {completion_queue_name}: {create_error}")
+
+            # Try to create async queue if it doesn't exist
+            try:
+                sqs_client.create_queue(QueueName=async_queue_name)
+                logger.info(f"Created queue: {async_queue_name}")
+            except sqs_client.exceptions.QueueNameExists:
+                logger.info(f"Queue already exists: {async_queue_name}")
+            except Exception as create_error:
+                logger.error(f"Failed to create queue {async_queue_name}: {create_error}")
+
+            # Try to get URLs again
+            try:
+                async_queue_url = sqs_client.get_queue_url(QueueName=async_queue_name)['QueueUrl']
+                completion_queue_url = sqs_client.get_queue_url(QueueName=completion_queue_name)['QueueUrl']
+
+                # Set the URLs in Lambda environment variables
+                LAMBDA_CONFIG['Environment']['Variables']['ASYNC_VALIDATOR_QUEUE'] = async_queue_url
+                LAMBDA_CONFIG['Environment']['Variables']['INTERFACE_COMPLETION_QUEUE'] = completion_queue_url
+
+                logger.info(f"Successfully configured queue URLs after creation:")
+                logger.info(f"  Async Queue URL: {async_queue_url}")
+                logger.info(f"  Completion Queue URL: {completion_queue_url}")
+                return
+            except Exception as retry_error:
+                logger.error(f"Failed to get queue URLs even after creation attempt: {retry_error}")
+
+        except Exception as create_exception:
+            logger.error(f"Failed to create queues: {create_exception}")
+
         logger.warning("Continuing deployment without SQS queue URLs set in environment.")
+        logger.warning("The Lambda will fall back to default queue names which may not work correctly!")
 
 def configure_sqs_event_source_mappings(lambda_client, function_name, region):
     """Configure SQS event source mappings for Smart Delegation System."""
