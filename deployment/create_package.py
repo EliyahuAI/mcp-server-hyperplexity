@@ -430,10 +430,14 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
         LAMBDA_CONFIG["Timeout"] = timeout
         logger.info(f"Setting Lambda function timeout to {timeout} seconds")
 
+    # Configure SQS queue URLs BEFORE deploying Lambda
+    # This ensures the Lambda has the correct queue URLs in its environment variables
+    configure_sqs_queue_urls(region)
+
     lambda_client = boto3.client('lambda', region_name=region)
-    
+
     logger.info(f"Deploying to Lambda function: {LAMBDA_CONFIG['FunctionName']}")
-    
+
     try:
         # Check if function exists
         try:
@@ -544,10 +548,8 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
             # Set log retention policy
             set_log_retention_policy(LAMBDA_CONFIG["FunctionName"], region)
         
-        # Configure SQS queue URLs for Smart Delegation System
-        configure_sqs_queue_urls(region)
-
         # Configure SQS event source mappings for Smart Delegation System
+        # Note: Queue URLs were already configured before deployment
         configure_sqs_event_source_mappings(lambda_client, LAMBDA_CONFIG["FunctionName"], region)
 
         logger.info("\nDeployment completed successfully!")
