@@ -2380,6 +2380,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Use updated event if available (set during batch processing)
                 current_event = globals().get('_continuation_event', event)
 
+                # Get deployment environment
+                deployment_environment = os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod')
+
                 # Create continuation message with current state
                 continuation_message = {
                     'message_type': 'ASYNC_VALIDATION_CONTINUATION',
@@ -2388,6 +2391,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'async_delegation_request': True,
                     'is_continuation': True,
                     'continuation_count': current_event.get('continuation_count', 0) + 1,
+                    'deployment_environment': deployment_environment,  # Ensure environment matches
                     # Pass through complete payload key (new method)
                     'complete_payload_s3_key': current_event.get('complete_payload_s3_key'),
                     'S3_UNIFIED_BUCKET': current_event.get('S3_UNIFIED_BUCKET'),
@@ -2456,6 +2460,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 else:
                     logger.debug(f"[CLEANUP] No complete_payload_s3_key found - no cleanup needed")
 
+                # Get deployment environment from Lambda environment variable
+                deployment_environment = os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod')
+
                 # Create completion message for background handler
                 completion_message = {
                     'async_completion': True,  # Flag for background handler
@@ -2465,7 +2472,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'results_s3_key': results_s3_key,
                     'completion_timestamp': datetime.now(timezone.utc).isoformat(),
                     'total_duration_seconds': (time.time() * 1000 - execution_start_time) / 1000,
-                    'background_processing': True  # Route to background handler
+                    'background_processing': True,  # Route to background handler
+                    'deployment_environment': deployment_environment  # CRITICAL: Must match interface lambda's environment
                 }
 
                 # Send completion message

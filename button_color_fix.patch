@@ -1,0 +1,26 @@
+--- a/frontend/perplexity_validator_interface2.html
++++ b/frontend/perplexity_validator_interface2.html
+@@ -273,21 +273,19 @@
+     .std-button:hover:not(:disabled):not(.primary):not(.secondary) {
+         background-color: #f0f9f0;
+         border-color: var(--primary-hover);
+-        color: var(--primary-hover);
++        color: var(--primary-color);
+         transform: translateY(-2px);
+         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+     }
+ 
+     .std-button.primary {
+         background-color: white;
+         color: var(--primary-color);
+         border-color: var(--primary-color);
+         border-width: 3px;
+     }
+ 
+     .std-button.primary:hover:not(:disabled) {
+         background-color: #f0f9f0;
+         border-color: var(--primary-hover);
+-        color: var(--primary-hover);
++        color: var(--primary-color);
+         transform: translateY(-2px);
+     }
