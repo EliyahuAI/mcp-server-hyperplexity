@@ -136,16 +136,21 @@ class UnifiedS3Manager:
             
             file_key = f"{session_path}{input_filename}"
             
+            # Store original filename in metadata if provided
+            metadata = {
+                'session_id': session_id,
+                'email': email,
+                'upload_timestamp': datetime.now().isoformat()
+            }
+            if filename:
+                metadata['original_filename'] = filename
+
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=file_key,
                 Body=file_content,
                 ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                Metadata={
-                    'session_id': session_id,
-                    'email': email,
-                    'upload_timestamp': datetime.now().isoformat()
-                }
+                Metadata=metadata
             )
             
             logger.info(f"Stored Excel file: {file_key}")

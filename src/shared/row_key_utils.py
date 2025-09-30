@@ -54,14 +54,18 @@ def generate_row_key(row: Dict[str, Any], primary_keys: List[str]) -> str:
     
     # Convert to JSON string with sorted keys for consistency
     json_str = json.dumps(key_data, sort_keys=True, ensure_ascii=False)
-    
+
     # Hash the JSON string
     # Use UTF-8 encoding to handle all Unicode properly
     hash_obj = hashlib.sha256(json_str.encode('utf-8'))
     row_key = hash_obj.hexdigest()
-    
+
     logger.debug(f"Generated row key hash: {row_key[:8]}... for values: {key_values}")
-    
+    logger.error(f"[ROW_KEY_GENERATION] Full hash: {row_key}")
+    logger.error(f"[ROW_KEY_GENERATION] Primary keys: {primary_keys}")
+    logger.error(f"[ROW_KEY_GENERATION] Key values: {key_values}")
+    logger.error(f"[ROW_KEY_GENERATION] JSON string: {json_str}")
+
     return row_key
 
 def validate_row_key(row_key: str) -> bool:

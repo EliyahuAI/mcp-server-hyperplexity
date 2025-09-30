@@ -63,9 +63,9 @@ VALIDATOR_SAFETY_BUFFER_MINUTES = float(os.environ.get('VALIDATOR_SAFETY_BUFFER'
 ASYNC_VALIDATOR_QUEUE = os.environ.get('ASYNC_VALIDATOR_QUEUE', 'perplexity-validator-async-queue')
 INTERFACE_COMPLETION_QUEUE = os.environ.get('INTERFACE_COMPLETION_QUEUE', 'perplexity-validator-completion-queue')
 
-logger.info(f"[DELEGATION_CONFIG] MAX_SYNC_INVOCATION_TIME: {MAX_SYNC_INVOCATION_TIME_MINUTES} minutes")
-logger.info(f"[DELEGATION_CONFIG] ASYNC_VALIDATOR_QUEUE: {ASYNC_VALIDATOR_QUEUE}")
-logger.info(f"[DELEGATION_CONFIG] INTERFACE_COMPLETION_QUEUE: {INTERFACE_COMPLETION_QUEUE}")
+logger.debug(f"[DELEGATION_CONFIG] MAX_SYNC_INVOCATION_TIME: {MAX_SYNC_INVOCATION_TIME_MINUTES} minutes")
+logger.debug(f"[DELEGATION_CONFIG] ASYNC_VALIDATOR_QUEUE: {ASYNC_VALIDATOR_QUEUE}")
+logger.debug(f"[DELEGATION_CONFIG] INTERFACE_COMPLETION_QUEUE: {INTERFACE_COMPLETION_QUEUE}")
 
 def send_validation_failure_alert(session_id, email, error_type, error_details, session_data=None):
     """
@@ -161,7 +161,7 @@ This is an automated alert from the validation system.
                     'Body': {'Text': {'Data': user_body, 'Charset': 'UTF-8'}}
                 }
             )
-            logger.info(f"[ALERT_EMAIL] User alert sent to {email}")
+            logger.debug(f"[ALERT_EMAIL] User alert sent to {email}")
         except Exception as e:
             logger.error(f"[ALERT_EMAIL] Failed to send user alert: {e}")
 
@@ -175,7 +175,7 @@ This is an automated alert from the validation system.
                     'Body': {'Text': {'Data': admin_body, 'Charset': 'UTF-8'}}
                 }
             )
-            logger.info(f"[ALERT_EMAIL] Admin alert sent to eliyahu@eliyahu.ai")
+            logger.debug(f"[ALERT_EMAIL] Admin alert sent to eliyahu@eliyahu.ai")
         except Exception as e:
             logger.error(f"[ALERT_EMAIL] Failed to send admin alert: {e}")
 
@@ -271,7 +271,7 @@ This is a preview issue, not full validation failure.
                     'Body': {'Text': {'Data': user_body, 'Charset': 'UTF-8'}}
                 }
             )
-            logger.info(f"[PREVIEW_ALERT] User guidance sent to {email}")
+            logger.debug(f"[PREVIEW_ALERT] User guidance sent to {email}")
         except Exception as e:
             logger.error(f"[PREVIEW_ALERT] Failed to send user guidance: {e}")
 
@@ -285,7 +285,7 @@ This is a preview issue, not full validation failure.
                     'Body': {'Text': {'Data': admin_body, 'Charset': 'UTF-8'}}
                 }
             )
-            logger.info(f"[PREVIEW_ALERT] Admin notification sent")
+            logger.debug(f"[PREVIEW_ALERT] Admin notification sent")
         except Exception as e:
             logger.error(f"[PREVIEW_ALERT] Failed to send admin notification: {e}")
 
@@ -591,7 +591,7 @@ def verify_async_validation_trigger(session_id, sqs_message_id, run_key=None, ti
     import time
 
     try:
-        logger.info(f"[VALIDATION_TRIGGER_CHECK] Monitoring DynamoDB for async validation start (session: {session_id}, timeout: {timeout_seconds}s)...")
+        logger.debug(f"[VALIDATION_TRIGGER_CHECK] Monitoring DynamoDB for async validation start (session: {session_id}, timeout: {timeout_seconds}s)...")
 
         # The validation lambda updates DynamoDB run status to 'ASYNC_PROCESSING_STARTED' when it begins
         # We'll monitor for this status change
@@ -636,10 +636,10 @@ def verify_async_validation_trigger(session_id, sqs_message_id, run_key=None, ti
                             continuation_chain = response['Item'].get('continuation_chain', [])
                             if continuation_chain:
                                 latest_continuation = continuation_chain[-1]
-                                logger.info(f"[VALIDATION_TRIGGER_CHECK] Found async status: {status}")
-                                logger.info(f"[VALIDATION_TRIGGER_CHECK] Latest continuation: #{latest_continuation.get('continuation_number', 0)} started at {latest_continuation.get('started_at', 'unknown')}")
+                                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Found async status: {status}")
+                                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Latest continuation: #{latest_continuation.get('continuation_number', 0)} started at {latest_continuation.get('started_at', 'unknown')}")
                             else:
-                                logger.info(f"[VALIDATION_TRIGGER_CHECK] Found ASYNC_PROCESSING_STARTED status in DynamoDB!")
+                                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Found ASYNC_PROCESSING_STARTED status in DynamoDB!")
 
                             _send_websocket_message(session_id, {
                                 'type': 'status_update',
@@ -676,10 +676,10 @@ def verify_async_validation_trigger(session_id, sqs_message_id, run_key=None, ti
                             continuation_chain = item.get('continuation_chain', [])
                             if continuation_chain:
                                 latest_continuation = continuation_chain[-1]
-                                logger.info(f"[VALIDATION_TRIGGER_CHECK] Found async status in latest run: {status}")
-                                logger.info(f"[VALIDATION_TRIGGER_CHECK] Latest continuation: #{latest_continuation.get('continuation_number', 0)} started at {latest_continuation.get('started_at', 'unknown')}")
+                                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Found async status in latest run: {status}")
+                                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Latest continuation: #{latest_continuation.get('continuation_number', 0)} started at {latest_continuation.get('started_at', 'unknown')}")
                             else:
-                                logger.info(f"[VALIDATION_TRIGGER_CHECK] Found ASYNC_PROCESSING_STARTED in latest run!")
+                                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Found ASYNC_PROCESSING_STARTED in latest run!")
 
                             _send_websocket_message(session_id, {
                                 'type': 'status_update',
@@ -708,8 +708,8 @@ def verify_async_validation_trigger(session_id, sqs_message_id, run_key=None, ti
                     )
 
                     # If the file exists, the validation lambda has started and saved initial results
-                    logger.info(f"[VALIDATION_TRIGGER_CHECK] Found validation results file in S3 - validation lambda is active!")
-                    logger.info(f"[VALIDATION_TRIGGER_CHECK] File size: {response.get('ContentLength', 0)} bytes, Last modified: {response.get('LastModified')}")
+                    logger.debug(f"[VALIDATION_TRIGGER_CHECK] Found validation results file in S3 - validation lambda is active!")
+                    logger.debug(f"[VALIDATION_TRIGGER_CHECK] File size: {response.get('ContentLength', 0)} bytes, Last modified: {response.get('LastModified')}")
 
                     # Also send WebSocket update
                     _send_websocket_message(session_id, {
@@ -737,8 +737,8 @@ def verify_async_validation_trigger(session_id, sqs_message_id, run_key=None, ti
                     )
 
                     if response.get('KeyCount', 0) > 0:
-                        logger.info(f"[VALIDATION_TRIGGER_CHECK] Found session files in S3 - validation lambda has started!")
-                        logger.info(f"[VALIDATION_TRIGGER_CHECK] First file: {response['Contents'][0]['Key']}")
+                        logger.debug(f"[VALIDATION_TRIGGER_CHECK] Found session files in S3 - validation lambda has started!")
+                        logger.debug(f"[VALIDATION_TRIGGER_CHECK] First file: {response['Contents'][0]['Key']}")
 
                         _send_websocket_message(session_id, {
                             'type': 'status_update',
@@ -778,7 +778,7 @@ def verify_async_validation_trigger(session_id, sqs_message_id, run_key=None, ti
 
                 recent_invocations = sum([point['Sum'] for point in datapoints])
                 if recent_invocations > 0:
-                    logger.info(f"[VALIDATION_TRIGGER_CHECK] Found {recent_invocations} recent lambda invocations via metrics")
+                    logger.debug(f"[VALIDATION_TRIGGER_CHECK] Found {recent_invocations} recent lambda invocations via metrics")
 
                     # Give it a moment for S3 files to appear
                     if check_num >= 2:  # After 4+ seconds
@@ -826,7 +826,7 @@ def handle_async_completion_in_background_handler(event, context):
             logger.error("[ASYNC_COMPLETION] Missing required fields: session_id or results_s3_key")
             return {'statusCode': 400, 'body': json.dumps({'error': 'Missing required fields'})}
 
-        logger.info(f"[ASYNC_COMPLETION] Loading results for session {session_id} from {results_s3_key}")
+        logger.debug(f"[ASYNC_COMPLETION] Loading results for session {session_id} from {results_s3_key}")
 
         # Load validation results from S3
         try:
@@ -835,19 +835,19 @@ def handle_async_completion_in_background_handler(event, context):
             s3_bucket = event.get('S3_UNIFIED_BUCKET') or S3_UNIFIED_BUCKET
             s3_key = results_s3_key
 
-            logger.info(f"[ASYNC_COMPLETION] Loading from bucket={s3_bucket}, key={s3_key}")
+            logger.debug(f"[ASYNC_COMPLETION] Loading from bucket={s3_bucket}, key={s3_key}")
 
             response = s3_client.get_object(Bucket=s3_bucket, Key=s3_key)
             async_validation_results = json.loads(response['Body'].read().decode('utf-8'))
-            logger.info(f"[ASYNC_COMPLETION] Loaded validation results: {len(str(async_validation_results))} bytes")
+            logger.debug(f"[ASYNC_COMPLETION] Loaded validation results: {len(str(async_validation_results))} bytes")
 
             # DEBUG: Log the actual structure of async results to understand what we're working with
-            logger.info(f"[ASYNC_COMPLETION] Async results type: {type(async_validation_results)}")
+            logger.debug(f"[ASYNC_COMPLETION] Async results type: {type(async_validation_results)}")
             if isinstance(async_validation_results, dict):
-                logger.info(f"[ASYNC_COMPLETION] Async results top-level keys: {list(async_validation_results.keys())}")
+                logger.debug(f"[ASYNC_COMPLETION] Async results top-level keys: {list(async_validation_results.keys())}")
                 # Show a sample of the structure
                 preview = str(async_validation_results)[:500] + "..." if len(str(async_validation_results)) > 500 else str(async_validation_results)
-                logger.info(f"[ASYNC_COMPLETION] Async results structure preview: {preview}")
+                logger.debug(f"[ASYNC_COMPLETION] Async results structure preview: {preview}")
 
             # Async results from S3 have a different format than sync results
             # Sync expects: {statusCode, body: {data: {rows: ...}}}
@@ -873,11 +873,11 @@ def handle_async_completion_in_background_handler(event, context):
                     'qc_results': async_validation_results.get('qc_results', {}),
                     'qc_metrics': async_validation_results.get('qc_metrics', {})
                 }
-                logger.info(f"[ASYNC_COMPLETION] Wrapped async results in sync format for common processing path")
+                logger.debug(f"[ASYNC_COMPLETION] Wrapped async results in sync format for common processing path")
                 if async_validation_results.get('qc_results'):
-                    logger.info(f"[ASYNC_COMPLETION] QC results preserved: {len(async_validation_results['qc_results'])} rows")
+                    logger.debug(f"[ASYNC_COMPLETION] QC results preserved: {len(async_validation_results['qc_results'])} rows")
                 if async_validation_results.get('qc_metrics'):
-                    logger.info(f"[ASYNC_COMPLETION] QC metrics preserved: {async_validation_results['qc_metrics'].get('total_fields_reviewed', 0)} fields reviewed")
+                    logger.debug(f"[ASYNC_COMPLETION] QC metrics preserved: {async_validation_results['qc_metrics'].get('total_fields_reviewed', 0)} fields reviewed")
             else:
                 # Fallback if structure is unexpected
                 validation_results = async_validation_results
@@ -894,7 +894,7 @@ def handle_async_completion_in_background_handler(event, context):
                 logger.error(f"[ASYNC_COMPLETION] No delegation context found for session {session_id}")
                 return {'statusCode': 404, 'body': json.dumps({'error': 'No delegation context found'})}
 
-            logger.info(f"[ASYNC_COMPLETION] Loaded delegation context for session {session_id}")
+            logger.debug(f"[ASYNC_COMPLETION] Loaded delegation context for session {session_id}")
 
         except Exception as e:
             logger.error(f"[ASYNC_COMPLETION] Failed to load delegation context: {e}")
@@ -933,13 +933,13 @@ def handle_async_completion_in_background_handler(event, context):
             'S3_UNIFIED_BUCKET': processing_metadata.get('S3_UNIFIED_BUCKET', S3_UNIFIED_BUCKET)
         }
 
-        logger.info(f"[ASYNC_COMPLETION] Reconstructed event for session {session_id}, proceeding to common completion")
+        logger.debug(f"[ASYNC_COMPLETION] Reconstructed event for session {session_id}, proceeding to common completion")
 
         # Add validation results to event and process with main handler
         reconstructed_event['_validation_results_from_async'] = validation_results
         reconstructed_event['_skip_validation_call'] = True
 
-        logger.info(f"[ASYNC_COMPLETION] Calling main handler for completion processing")
+        logger.debug(f"[ASYNC_COMPLETION] Calling main handler for completion processing")
 
         # Process the reconstructed event through the main handler (without async completion check)
         return handle_main_processing(reconstructed_event, context)
@@ -958,7 +958,7 @@ def handle(event, context):
     if (event.get('async_completion') or
         event.get('message_type') == 'ASYNC_COMPLETION_REQUEST' or
         event.get('message_type') == 'ASYNC_VALIDATION_COMPLETE'):
-        logger.info(f"[ASYNC_COMPLETION] Processing async completion request (message_type={event.get('message_type')}, async_completion={event.get('async_completion', False)})")
+        logger.debug(f"[ASYNC_COMPLETION] Processing async completion request (message_type={event.get('message_type')}, async_completion={event.get('async_completion', False)})")
         return handle_async_completion_in_background_handler(event, context)
 
     # Normal processing
@@ -1192,7 +1192,7 @@ def handle_main_processing(event, context):
                 if not validation_results or not isinstance(validation_results, dict):
                     raise Exception("Preview validation returned empty or invalid results")
 
-                logger.info(f"[PREVIEW_SUCCESS] Received preview validation results")
+                logger.debug(f"[PREVIEW_SUCCESS] Received preview validation results")
 
             except Exception as preview_error:
                 error_msg = str(preview_error)
@@ -1271,7 +1271,7 @@ def handle_main_processing(event, context):
                 # Extract QC data if present (it's at the top level of validation_results, not in metadata)
                 qc_results = validation_results.get('qc_results', {})
                 qc_metrics_data = validation_results.get('qc_metrics', {})
-                logger.info(f"[QC_DEBUG] Extracted QC data - results: {len(qc_results)} rows, metrics: {qc_metrics_data.get('total_fields_reviewed', 0)} fields reviewed")
+                logger.debug(f"[QC_DEBUG] Extracted QC data - results: {len(qc_results)} rows, metrics: {qc_metrics_data.get('total_fields_reviewed', 0)} fields reviewed")
 
                 # Merge QC data into real_results for display purposes (QC values take precedence)
                 if qc_results:
@@ -1345,8 +1345,8 @@ def handle_main_processing(event, context):
                 enhanced_metrics = metadata.get('enhanced_metrics', {})
                 # validation_metrics is nested inside enhanced_metrics
                 validation_metrics = enhanced_metrics.get('validation_metrics', {})
-                logger.info(f"[METADATA_DEBUG] enhanced_metrics keys: {list(enhanced_metrics.keys()) if enhanced_metrics else 'None'}")
-                logger.info(f"[METADATA_DEBUG] validation_metrics extracted: {validation_metrics}")
+                logger.debug(f"[METADATA_DEBUG] enhanced_metrics keys: {list(enhanced_metrics.keys()) if enhanced_metrics else 'None'}")
+                logger.debug(f"[METADATA_DEBUG] validation_metrics extracted: {validation_metrics}")
 
                 # Log what background handler received from validation lambda (CALL COUNTS DEBUGGING)
                 validation_calls_received = {}
@@ -1357,26 +1357,26 @@ def handle_main_processing(event, context):
                         if not data.get('is_metadata_only', False):  # Exclude metadata-only providers
                             validation_calls_received[provider] = data.get('calls', 0)
                         else:
-                            logger.info(f"[BACKGROUND_HANDLER_RECEIVED] Excluding metadata-only provider '{provider}' with {data.get('calls', 0)} calls")
+                            logger.debug(f"[BACKGROUND_HANDLER_RECEIVED] Excluding metadata-only provider '{provider}' with {data.get('calls', 0)} calls")
 
                 if qc_metrics_data:
                     qc_calls_received = qc_metrics_data.get('total_qc_calls', 0)
 
-                logger.info(f"[BACKGROUND_HANDLER_RECEIVED] Received call counts from validation lambda:")
-                logger.info(f"[BACKGROUND_HANDLER_RECEIVED]   Validation calls by provider: {validation_calls_received}")
-                logger.info(f"[BACKGROUND_HANDLER_RECEIVED]   QC calls total: {qc_calls_received}")
-                logger.info(f"[BACKGROUND_HANDLER_RECEIVED]   Grand total calls: {sum(validation_calls_received.values()) + qc_calls_received}")
+                logger.debug(f"[BACKGROUND_HANDLER_RECEIVED] Received call counts from validation lambda:")
+                logger.debug(f"[BACKGROUND_HANDLER_RECEIVED]   Validation calls by provider: {validation_calls_received}")
+                logger.debug(f"[BACKGROUND_HANDLER_RECEIVED]   QC calls total: {qc_calls_received}")
+                logger.debug(f"[BACKGROUND_HANDLER_RECEIVED]   Grand total calls: {sum(validation_calls_received.values()) + qc_calls_received}")
 
                 # Extract enhanced models parameter from validation response (it's inside enhanced_metrics)
-                logger.info(f"[MODELS_DEBUG] metadata keys available: {list(metadata.keys()) if metadata else 'No metadata'}")
+                logger.debug(f"[MODELS_DEBUG] metadata keys available: {list(metadata.keys()) if metadata else 'No metadata'}")
                 if enhanced_metrics:
-                    logger.info(f"[MODELS_DEBUG] enhanced_metrics keys available: {list(enhanced_metrics.keys())}")
+                    logger.debug(f"[MODELS_DEBUG] enhanced_metrics keys available: {list(enhanced_metrics.keys())}")
                     enhanced_models_parameter = enhanced_metrics.get('enhanced_models_parameter', {})
                 else:
                     enhanced_models_parameter = {}
-                logger.info(f"[MODELS_DEBUG] enhanced_models_parameter from enhanced_metrics: {list(enhanced_models_parameter.keys()) if enhanced_models_parameter else 'EMPTY'}")
+                logger.debug(f"[MODELS_DEBUG] enhanced_models_parameter from enhanced_metrics: {list(enhanced_models_parameter.keys()) if enhanced_models_parameter else 'EMPTY'}")
                 if enhanced_models_parameter:
-                    logger.info(f"[MODELS_DEBUG] enhanced_models_parameter has {len(enhanced_models_parameter)} search groups")
+                    logger.debug(f"[MODELS_DEBUG] enhanced_models_parameter has {len(enhanced_models_parameter)} search groups")
 
                 # DEBUG: Log the exact structure of the received enhanced_metrics
                 logger.debug(f"[DATA_FLOW_DEBUG] Received enhanced_metrics structure: {json.dumps(enhanced_metrics, indent=2)}")
@@ -1420,7 +1420,7 @@ def handle_main_processing(event, context):
                     
                     # Use provider sum if it's different from the total (handles both 0 and other mismatches)
                     if provider_cost_sum > 0 and abs(eliyahu_cost - provider_cost_sum) > 0.000001:
-                        logger.info(f"[COST_CORRECTION] Using provider sum ${provider_cost_sum:.6f} instead of total ${eliyahu_cost:.6f}")
+                        logger.debug(f"[COST_CORRECTION] Using provider sum ${provider_cost_sum:.6f} instead of total ${eliyahu_cost:.6f}")
                         eliyahu_cost = provider_cost_sum
                     
                     # Extract API call counts
@@ -1444,9 +1444,9 @@ def handle_main_processing(event, context):
                         time_calculation_method = "total time divided by rows (fallback)"
                     total_estimated_time_seconds = totals.get('total_estimated_processing_time', 0.0)
                     
-                    logger.info(f"[ENHANCED_COSTS] Using ai_client aggregated data - Actual: ${eliyahu_cost:.6f}, No cache: ${cost_estimated:.6f}")
-                    logger.info(f"[ENHANCED_PROVIDERS] Perplexity: ${perplexity_eliyahu_cost:.6f} ({perplexity_calls} calls), Anthropic: ${anthropic_eliyahu_cost:.6f} ({anthropic_calls} calls)")
-                    logger.info(f"[ENHANCED_TIME] Actual time: {total_processing_time:.3f}s, Estimated time per row: {estimated_time_per_row:.3f}s ({time_calculation_method}), Total estimated: {total_estimated_time_seconds:.3f}s")
+                    logger.debug(f"[ENHANCED_COSTS] Using ai_client aggregated data - Actual: ${eliyahu_cost:.6f}, No cache: ${cost_estimated:.6f}")
+                    logger.debug(f"[ENHANCED_PROVIDERS] Perplexity: ${perplexity_eliyahu_cost:.6f} ({perplexity_calls} calls), Anthropic: ${anthropic_eliyahu_cost:.6f} ({anthropic_calls} calls)")
+                    logger.debug(f"[ENHANCED_TIME] Actual time: {total_processing_time:.3f}s, Estimated time per row: {estimated_time_per_row:.3f}s ({time_calculation_method}), Total estimated: {total_estimated_time_seconds:.3f}s")
                     
                     # Debug timing extraction from totals
                     logger.debug(f"[TIME_DEBUG] totals timing keys: {[k for k in totals.keys() if 'time' in k.lower()]}")
@@ -1478,10 +1478,10 @@ def handle_main_processing(event, context):
                 
                 # ========== ENHANCED VALIDATION ESTIMATES ==========
                 # For both preview and validation operations, use enhanced estimates from ai_api_client
-                logger.info(f"[ESTIMATES_CHECK] is_preview: {is_preview}, enhanced_metrics available: {bool(enhanced_metrics)}")
+                logger.debug(f"[ESTIMATES_CHECK] is_preview: {is_preview}, enhanced_metrics available: {bool(enhanced_metrics)}")
                 if enhanced_metrics:
-                    logger.info(f"[ESTIMATES_CHECK] enhanced_metrics keys: {list(enhanced_metrics.keys())}")
-                    logger.info(f"[ESTIMATES_CHECK] full_validation_estimates available: {bool(enhanced_metrics.get('full_validation_estimates'))}")
+                    logger.debug(f"[ESTIMATES_CHECK] enhanced_metrics keys: {list(enhanced_metrics.keys())}")
+                    logger.debug(f"[ESTIMATES_CHECK] full_validation_estimates available: {bool(enhanced_metrics.get('full_validation_estimates'))}")
                 
                 if enhanced_metrics and enhanced_metrics.get('full_validation_estimates'):
                     estimates = enhanced_metrics['full_validation_estimates']
@@ -1502,22 +1502,22 @@ def handle_main_processing(event, context):
                     
                     # estimated_validation_time: Use batch-based scaling for accurate time projection
                     # The validation lambda calculates this using proper batch architecture
-                    logger.info(f"[TIME_DEBUG] timing_estimates: {timing_estimates}")
-                    logger.info(f"[TIME_DEBUG] batch_timing.estimated_total_time_for_full_validation: {batch_timing.get('estimated_total_time_for_full_validation')}")
-                    logger.info(f"[TIME_DEBUG] total_estimates.estimated_total_processing_time: {total_estimates.get('estimated_total_processing_time')}")
+                    logger.debug(f"[TIME_DEBUG] timing_estimates: {timing_estimates}")
+                    logger.debug(f"[TIME_DEBUG] batch_timing.estimated_total_time_for_full_validation: {batch_timing.get('estimated_total_time_for_full_validation')}")
+                    logger.debug(f"[TIME_DEBUG] total_estimates.estimated_total_processing_time: {total_estimates.get('estimated_total_processing_time')}")
                     estimated_total_time_seconds = (timing_estimates.get('total_estimated_time_seconds') or
                                                    batch_timing.get('estimated_total_time_for_full_validation') or
                                                    total_estimates.get('estimated_total_processing_time', 0.0))
 
-                    logger.info(f"[TIME_DEBUG] estimated_total_time_seconds: {estimated_total_time_seconds}")
-                    logger.info(f"[TIME_DEBUG] Converting to minutes: {estimated_total_time_seconds / 60:.1f} minutes")
-                    logger.info(f"[TIME_DEBUG] timing_estimates.total_estimated_time_seconds: {timing_estimates.get('total_estimated_time_seconds', 'NOT_SET')}")
-                    logger.info(f"[TIME_DEBUG] batch_timing.estimated_total_time_for_full_validation: {batch_timing.get('estimated_total_time_for_full_validation', 'NOT_SET')}")
-                    logger.info(f"[TIME_DEBUG] total_estimates.estimated_total_processing_time: {total_estimates.get('estimated_total_processing_time', 'NOT_SET')}")
+                    logger.debug(f"[TIME_DEBUG] estimated_total_time_seconds: {estimated_total_time_seconds}")
+                    logger.debug(f"[TIME_DEBUG] Converting to minutes: {estimated_total_time_seconds / 60:.1f} minutes")
+                    logger.debug(f"[TIME_DEBUG] timing_estimates.total_estimated_time_seconds: {timing_estimates.get('total_estimated_time_seconds', 'NOT_SET')}")
+                    logger.debug(f"[TIME_DEBUG] batch_timing.estimated_total_time_for_full_validation: {batch_timing.get('estimated_total_time_for_full_validation', 'NOT_SET')}")
+                    logger.debug(f"[TIME_DEBUG] total_estimates.estimated_total_processing_time: {total_estimates.get('estimated_total_processing_time', 'NOT_SET')}")
                     
                     # Extract per-provider costs from new structure if available
                     if per_provider_estimates:
-                        logger.info(f"[ENHANCED_PROVIDER_DATA] Found per-provider estimates: {list(per_provider_estimates.keys())}")
+                        logger.debug(f"[ENHANCED_PROVIDER_DATA] Found per-provider estimates: {list(per_provider_estimates.keys())}")
                         
                         # Override provider costs with enhanced data
                         perplexity_data = per_provider_estimates.get('perplexity', {})
@@ -1537,7 +1537,7 @@ def handle_main_processing(event, context):
                     logger.debug(f"[ENHANCED_ESTIMATES_DEBUG] estimated_total_time_for_full_validation: {batch_timing.get('estimated_total_time_for_full_validation', 'NOT_FOUND')}")
                     logger.debug(f"[ENHANCED_ESTIMATES_DEBUG] estimated_total_cost_estimated: {total_estimates.get('estimated_total_cost_estimated', 'NOT_FOUND')}")
                     
-                    logger.info(f"[ENHANCED_ESTIMATES] ✅ Using ai_client full validation estimates:")
+                    logger.debug(f"[ENHANCED_ESTIMATES] ✅ Using ai_client full validation estimates:")
                     logger.info(f"  - Eliyahu cost (no cache, scaled): ${estimated_total_cost_raw:.6f}")
                     logger.info(f"  - Validation time (batch-based): {estimated_total_time_seconds:.3f}s ({estimated_total_time_seconds/60:.1f} minutes)")
                     logger.info(f"  - Batch analysis: {batch_timing.get('estimated_batches_for_full_table', 0)} estimated batches")
@@ -1548,7 +1548,7 @@ def handle_main_processing(event, context):
                     # Fallback to manual scaling calculations for non-preview or legacy data
                     estimated_total_cost_raw = None  # Will be calculated later in manual scaling section
                     estimated_total_time_seconds = None  # Will be calculated later in manual scaling section
-                    logger.info(f"[ENHANCED_ESTIMATES] ❌ No enhanced estimates available - will use manual scaling")
+                    logger.debug(f"[ENHANCED_ESTIMATES] ❌ No enhanced estimates available - will use manual scaling")
 
                 # Validate cost calculations
                 if eliyahu_cost < 0 or cost_estimated < 0:
@@ -1563,8 +1563,8 @@ def handle_main_processing(event, context):
                 total_tokens = token_usage.get('total_tokens', 0)
                 total_api_calls = token_usage.get('api_calls', 0)
                 total_cached_calls = token_usage.get('cached_calls', 0)
-                logger.info(f"[METADATA_DEBUG] metadata keys: {list(metadata.keys()) if metadata else 'None'}")
-                logger.info(f"[METADATA_DEBUG] Looking for validation_metrics in metadata")
+                logger.debug(f"[METADATA_DEBUG] metadata keys: {list(metadata.keys()) if metadata else 'None'}")
+                logger.debug(f"[METADATA_DEBUG] Looking for validation_metrics in metadata")
                 
                 # Initialize balance variables (preview doesn't charge)
                 initial_balance = 0
@@ -1616,7 +1616,7 @@ def handle_main_processing(event, context):
                     track_preview_cost(session_id, email, Decimal(str(cost_estimated)), Decimal(str(multiplier)), total_tokens)
                     
                     # Provider tracking now handled by enhanced metrics from ai_client
-                    logger.info(f"[ENHANCED_METRICS] Preview provider metrics tracked in enhanced data structure")
+                    logger.debug(f"[ENHANCED_METRICS] Preview provider metrics tracked in enhanced data structure")
                             
                     
                 except Exception as e:
@@ -1650,11 +1650,11 @@ def handle_main_processing(event, context):
                 
                 # Calculate time per row for full validation (time_per_row_seconds field)
                 # First try to get from enhanced timing estimates, then fall back to calculation
-                logger.info(f"[TIME_DEBUG_FINAL] Final estimated_total_time_seconds before payload: {estimated_total_time_seconds}")
+                logger.debug(f"[TIME_DEBUG_FINAL] Final estimated_total_time_seconds before payload: {estimated_total_time_seconds}")
                 if estimated_total_time_seconds:
-                    logger.info(f"[TIME_DEBUG_FINAL] Will be converted to minutes: {estimated_total_time_seconds / 60:.1f}")
+                    logger.debug(f"[TIME_DEBUG_FINAL] Will be converted to minutes: {estimated_total_time_seconds / 60:.1f}")
                 else:
-                    logger.info(f"[TIME_DEBUG_FINAL] Will be converted to minutes: None")
+                    logger.debug(f"[TIME_DEBUG_FINAL] Will be converted to minutes: None")
                 if enhanced_metrics and enhanced_metrics.get('full_validation_estimates'):
                     timing_estimates = enhanced_metrics['full_validation_estimates'].get('timing_estimates', {})
                     time_per_row = timing_estimates.get('time_per_row_seconds', 0.0)
@@ -1666,8 +1666,8 @@ def handle_main_processing(event, context):
                 # Simple batch count for display
                 total_batches = math.ceil(total_rows / effective_batch_size) if effective_batch_size > 0 else 1
                 
-                logger.info(f"[SIMPLIFIED_TIMING] Processing time: {processing_time:.3f}s, Est. total: {estimated_total_time_seconds:.3f}s")
-                logger.info(f"[SIMPLIFIED_BATCH] Batch size: {effective_batch_size}, Total batches: {total_batches}")
+                logger.debug(f"[SIMPLIFIED_TIMING] Processing time: {processing_time:.3f}s, Est. total: {estimated_total_time_seconds:.3f}s")
+                logger.debug(f"[SIMPLIFIED_BATCH] Batch size: {effective_batch_size}, Total batches: {total_batches}")
                 
                 # All cost/time calculations now come from enhanced estimates - no manual scaling
                 if estimated_total_cost_raw is None:
@@ -1681,22 +1681,22 @@ def handle_main_processing(event, context):
                     logger.warning(f"[ENHANCED_DATA] Missing quoted_full_cost from enhanced estimates - applying business logic")
                     raw_quoted_cost = cost_estimated * multiplier * (total_rows / max(1, total_rows_processed))
                     quoted_full_cost = max(2.0, math.ceil(raw_quoted_cost))  # Add $2 minimum charge, rounded up
-                    logger.info(f"[ENHANCED_DATA] Calculated fallback quoted_full_cost: ${quoted_full_cost:.2f} (base: ${cost_estimated:.6f}, multiplier: {multiplier}, scaling: {total_rows}/{total_rows_processed})")
+                    logger.debug(f"[ENHANCED_DATA] Calculated fallback quoted_full_cost: ${quoted_full_cost:.2f} (base: ${cost_estimated:.6f}, multiplier: {multiplier}, scaling: {total_rows}/{total_rows_processed})")
                 
                 estimated_total_tokens = total_tokens * (total_rows / max(1, total_rows_processed))
                 
                 # DEBUG: Log enhanced cost data
-                logger.info(f"[ENHANCED_COST] Final estimates:")
-                logger.info(f"[ENHANCED_COST]   eliyahu_cost: ${eliyahu_cost:.6f}")
-                logger.info(f"[ENHANCED_COST]   estimated_total_cost_raw: ${estimated_total_cost_raw:.6f}")
-                logger.info(f"[ENHANCED_COST]   quoted_full_cost (with business logic): ${quoted_full_cost:.2f}")
-                logger.info(f"[ENHANCED_COST]   estimated_total_time_seconds: {estimated_total_time_seconds:.3f}s")
+                logger.debug(f"[ENHANCED_COST] Final estimates:")
+                logger.debug(f"[ENHANCED_COST]   eliyahu_cost: ${eliyahu_cost:.6f}")
+                logger.debug(f"[ENHANCED_COST]   estimated_total_cost_raw: ${estimated_total_cost_raw:.6f}")
+                logger.debug(f"[ENHANCED_COST]   quoted_full_cost (with business logic): ${quoted_full_cost:.2f}")
+                logger.debug(f"[ENHANCED_COST]   estimated_total_time_seconds: {estimated_total_time_seconds:.3f}s")
 
                 # Get the most recent account balance right before calculating sufficient_balance
                 # This ensures we capture any recent credit additions from the frontend
-                logger.info(f"[BALANCE_CHECK] Refreshing balance for {email} before sufficient_balance calculation")
+                logger.debug(f"[BALANCE_CHECK] Refreshing balance for {email} before sufficient_balance calculation")
                 current_balance = check_user_balance(email)
-                logger.info(f"[BALANCE_CHECK] Current balance: {current_balance}, Quoted full cost: {quoted_full_cost}")
+                logger.debug(f"[BALANCE_CHECK] Current balance: {current_balance}, Quoted full cost: {quoted_full_cost}")
 
                 # Create the markdown table for the response
                 markdown_table = create_markdown_table_from_results(real_results, 3, actual_config_s3_key, S3_UNIFIED_BUCKET, qc_results)
@@ -1778,7 +1778,7 @@ def handle_main_processing(event, context):
                     preview_payload['cost_estimates']['actual_processing_time_seconds'] = timing_estimates.get('actual_processing_time_seconds', 0.0)
                     preview_payload['cost_estimates']['actual_time_per_batch_seconds'] = timing_estimates.get('actual_time_per_batch_seconds', 0.0)
                     
-                    logger.info(f"[ENHANCED_TIMING] Added timing data - processing: {timing_estimates.get('actual_processing_time_seconds', 0):.3f}s, "
+                    logger.debug(f"[ENHANCED_TIMING] Added timing data - processing: {timing_estimates.get('actual_processing_time_seconds', 0):.3f}s, "
                                f"per batch: {timing_estimates.get('actual_time_per_batch_seconds', 0):.3f}s")
                 
                 # Add key frontend-expected fields to cost_estimates object (frontend looks for them here)
@@ -1983,8 +1983,8 @@ def handle_main_processing(event, context):
                     configuration_id = config_data.get('generation_metadata', {}).get('config_id', 'unknown')
                 
                 # Extract consolidated fields from preview payload
-                logger.info(f"[TIME_SAVE_DEBUG] preview_payload keys: {list(preview_payload.keys())}")
-                logger.info(f"[TIME_SAVE_DEBUG] estimated_validation_time_minutes in preview_payload: {preview_payload.get('estimated_validation_time_minutes', 'NOT_FOUND')}")
+                logger.debug(f"[TIME_SAVE_DEBUG] preview_payload keys: {list(preview_payload.keys())}")
+                logger.debug(f"[TIME_SAVE_DEBUG] estimated_validation_time_minutes in preview_payload: {preview_payload.get('estimated_validation_time_minutes', 'NOT_FOUND')}")
 
                 eliyahu_cost = preview_payload.get('cost_estimates', {}).get('preview_cost', 0.0)  # Actual cost incurred
                 quoted_validation_cost_value = preview_payload.get('cost_estimates', {}).get('quoted_validation_cost', 0.0)  # What user will pay for full
@@ -1992,9 +1992,9 @@ def handle_main_processing(event, context):
                 time_per_row = preview_payload.get('cost_estimates', {}).get('per_row_time', 0.0)  # Time per row estimate
                 estimated_time_minutes = preview_payload.get('estimated_validation_time_minutes', 0.0)  # Total estimated time in minutes
 
-                logger.info(f"[TIME_SAVE_DEBUG] extracted estimated_time_minutes: {estimated_time_minutes}")
-                logger.info(f"[TIME_SAVE_DEBUG] Conversion check: {estimated_time_minutes} minutes = {estimated_time_minutes * 60:.1f} seconds")
-                logger.info(f"[TIME_SAVE_DEBUG] Source estimated_total_time_seconds was: {preview_payload.get('estimated_total_processing_time', 'NOT_IN_PAYLOAD')}")
+                logger.debug(f"[TIME_SAVE_DEBUG] extracted estimated_time_minutes: {estimated_time_minutes}")
+                logger.debug(f"[TIME_SAVE_DEBUG] Conversion check: {estimated_time_minutes} minutes = {estimated_time_minutes * 60:.1f} seconds")
+                logger.debug(f"[TIME_SAVE_DEBUG] Source estimated_total_time_seconds was: {preview_payload.get('estimated_total_processing_time', 'NOT_IN_PAYLOAD')}")
 
                 # Debug total_provider_calls calculation
                 total_validation_calls = 0
@@ -2005,23 +2005,23 @@ def handle_main_processing(event, context):
                         # QC is tracked separately in qc_metrics_data, exclude QC_Costs provider
                         if provider != 'QC_Costs':
                             total_validation_calls += data.get('calls', 0)
-                    logger.info(f"[PROVIDER_CALLS_DEBUG] From enhanced_metrics - validation_calls: {total_validation_calls}")
+                    logger.debug(f"[PROVIDER_CALLS_DEBUG] From enhanced_metrics - validation_calls: {total_validation_calls}")
                 else:
                     # Fallback to token_usage
                     for provider in ['perplexity', 'anthropic']:
                         provider_data = token_usage.get('by_provider', {}).get(provider, {})
                         total_validation_calls += provider_data.get('api_calls', 0)
-                    logger.info(f"[PROVIDER_CALLS_DEBUG] From token_usage - validation_calls: {total_validation_calls}")
+                    logger.debug(f"[PROVIDER_CALLS_DEBUG] From token_usage - validation_calls: {total_validation_calls}")
 
                 # Add QC calls from qc_metrics_data
                 if qc_metrics_data:
                     qc_calls_from_metrics = qc_metrics_data.get('total_qc_calls', 0)
-                    logger.info(f"[PROVIDER_CALLS_DEBUG] QC calls from qc_metrics_data: {qc_calls_from_metrics}")
+                    logger.debug(f"[PROVIDER_CALLS_DEBUG] QC calls from qc_metrics_data: {qc_calls_from_metrics}")
                     total_qc_calls = max(total_qc_calls, qc_calls_from_metrics)  # Use max to avoid double-counting
 
                 # Calculate grand total (QC calls now included in validation_calls via anthropic provider)
                 total_provider_calls_override = total_validation_calls
-                logger.info(f"[PROVIDER_CALLS_DEBUG] TOTAL calls (QC included in validation): {total_provider_calls_override}, QC calls (debug): {total_qc_calls}")
+                logger.debug(f"[PROVIDER_CALLS_DEBUG] TOTAL calls (QC included in validation): {total_provider_calls_override}, QC calls (debug): {total_qc_calls}")
                 batch_size_used = preview_payload.get('actual_batch_size', 10)  # Actual batch size used for preview
                 
                 # Use enhanced provider metrics from ai_client aggregation if available
@@ -2050,7 +2050,7 @@ def handle_main_processing(event, context):
                             'cache_efficiency_percent': provider_data.get('cache_efficiency_percent', 0.0)
                         }
                     
-                    logger.info(f"[PROVIDER_METRICS] Using enhanced aggregated metrics for provider_metrics_for_db")
+                    logger.debug(f"[PROVIDER_METRICS] Using enhanced aggregated metrics for provider_metrics_for_db")
 
                 # Create separate QC metrics for database (not mixed with providers)
                 qc_metrics_for_db = {}
@@ -2083,13 +2083,13 @@ def handle_main_processing(event, context):
                         # Add qc_by_column if available
                         'qc_by_column': qc_metrics_data.get('qc_by_column', {})
                     }
-                    logger.info(f"[QC_METRICS] Created QC metrics for DB with qc_by_column: {len(qc_metrics_for_db.get('qc_by_column', {}))} columns")
+                    logger.debug(f"[QC_METRICS] Created QC metrics for DB with qc_by_column: {len(qc_metrics_for_db.get('qc_by_column', {}))} columns")
 
                 # The models field already contains all validation model info via enhanced_models_parameter
                 # QC model info is in qc_metrics_for_db['qc_models_used']
-                logger.info(f"[MODELS_SUMMARY] Validation models in enhanced_models_parameter: {len(enhanced_models_parameter)} search groups")
+                logger.debug(f"[MODELS_SUMMARY] Validation models in enhanced_models_parameter: {len(enhanced_models_parameter)} search groups")
                 if qc_metrics_for_db:
-                    logger.info(f"[QC_MODELS] QC models used: {qc_metrics_for_db.get('qc_models_used', [])}")
+                    logger.debug(f"[QC_MODELS] QC models used: {qc_metrics_for_db.get('qc_models_used', [])}")
                 else:
                     # Fallback to legacy token_usage conversion
                     by_provider = token_usage.get('by_provider', {})
@@ -2128,14 +2128,14 @@ def handle_main_processing(event, context):
                 start_time = datetime.fromisoformat(background_start_time.replace('Z', '+00:00'))
                 end_time = datetime.fromisoformat(background_end_time.replace('Z', '+00:00'))
                 background_processing_time_seconds = (end_time - start_time).total_seconds()
-                logger.info(f"[PREVIEW_TIMING] Background handler processing time: {background_processing_time_seconds:.3f}s")
+                logger.debug(f"[PREVIEW_TIMING] Background handler processing time: {background_processing_time_seconds:.3f}s")
                 
                 # Debug QC search groups calculation
                 base_claude_groups = validation_metrics.get('claude_search_groups_count', 0)
                 qc_has_calls = qc_metrics_data and qc_metrics_data.get('total_qc_calls', 0) > 0
                 qc_calls_count = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
                 corrected_claude_groups = base_claude_groups + (1 if qc_has_calls else 0)
-                logger.info(f"[QC_SEARCH_GROUPS_DEBUG] base_claude_groups: {base_claude_groups}, qc_has_calls: {qc_has_calls}, qc_calls_count: {qc_calls_count}, corrected: {corrected_claude_groups}")
+                logger.debug(f"[QC_SEARCH_GROUPS_DEBUG] base_claude_groups: {base_claude_groups}, qc_has_calls: {qc_has_calls}, qc_calls_count: {qc_calls_count}, corrected: {corrected_claude_groups}")
 
                 # Preserve original validation metrics for database storage BEFORE modifying for frontend
                 original_validation_metrics = validation_metrics.copy()
@@ -2206,19 +2206,19 @@ def handle_main_processing(event, context):
                 )
 
                 # Log what we're saving to database
-                logger.info(f"[DB_SAVE_DEBUG] Saving to database:")
-                logger.info(f"[DB_SAVE_DEBUG]   estimated_validation_time_minutes: {estimated_time_minutes}")
-                logger.info(f"[DB_SAVE_DEBUG]   total_provider_calls: {total_provider_calls_override}")
-                logger.info(f"[DB_SAVE_DEBUG]   qc_metrics: {qc_metrics_for_db}")
+                logger.debug(f"[DB_SAVE_DEBUG] Saving to database:")
+                logger.debug(f"[DB_SAVE_DEBUG]   estimated_validation_time_minutes: {estimated_time_minutes}")
+                logger.debug(f"[DB_SAVE_DEBUG]   total_provider_calls: {total_provider_calls_override}")
+                logger.debug(f"[DB_SAVE_DEBUG]   qc_metrics: {qc_metrics_for_db}")
                 if qc_metrics_for_db and 'qc_by_column' in qc_metrics_for_db:
-                    logger.info(f"[DB_SAVE_DEBUG]   qc_by_column columns: {list(qc_metrics_for_db['qc_by_column'].keys())}")
-                    logger.info(f"[DB_SAVE_DEBUG]   qc_by_column data: {qc_metrics_for_db['qc_by_column']}")
-                logger.info(f"[DB_SAVE_DEBUG]   provider_metrics keys: {list(provider_metrics_for_db.keys()) if provider_metrics_for_db else 'None'}")
+                    logger.debug(f"[DB_SAVE_DEBUG]   qc_by_column columns: {list(qc_metrics_for_db['qc_by_column'].keys())}")
+                    logger.debug(f"[DB_SAVE_DEBUG]   qc_by_column data: {qc_metrics_for_db['qc_by_column']}")
+                logger.debug(f"[DB_SAVE_DEBUG]   provider_metrics keys: {list(provider_metrics_for_db.keys()) if provider_metrics_for_db else 'None'}")
                 
                 # Track enhanced user metrics for preview
-                logger.info(f"[USER_TRACKING] Tracking preview request for email: {email}")
-                logger.info(f"[VALIDATION_METRICS_DEBUG] validation_metrics: {validation_metrics}")
-                logger.info(f"[VALIDATION_METRICS_DEBUG] validated_columns_count: {validation_metrics.get('validated_columns_count', 'KEY_NOT_FOUND')}")
+                logger.debug(f"[USER_TRACKING] Tracking preview request for email: {email}")
+                logger.debug(f"[VALIDATION_METRICS_DEBUG] validation_metrics: {validation_metrics}")
+                logger.debug(f"[VALIDATION_METRICS_DEBUG] validated_columns_count: {validation_metrics.get('validated_columns_count', 'KEY_NOT_FOUND')}")
                 try:
                     track_result = track_user_request(
                     email=email,
@@ -2243,7 +2243,7 @@ def handle_main_processing(event, context):
                     total_api_calls=total_api_calls,
                     total_cached_calls=total_cached_calls
                     )
-                    logger.info(f"[USER_TRACKING] Preview tracking result: {track_result}")
+                    logger.debug(f"[USER_TRACKING] Preview tracking result: {track_result}")
                 except Exception as e:
                     logger.error(f"[USER_TRACKING] Failed to track preview request: {e}")
                     import traceback
@@ -2280,12 +2280,12 @@ def handle_main_processing(event, context):
                             claude_search_groups_count_ws = validation_metrics_ws.get('claude_search_groups_count', 0)
                             calculated_perplexity_groups = search_groups_count_ws - claude_search_groups_count_ws
 
-                            logger.info(f"[WEBSOCKET_SENDING] Sending call counts to frontend:")
-                            logger.info(f"[WEBSOCKET_SENDING]   total_provider_calls: {total_provider_calls_ws}")
-                            logger.info(f"[WEBSOCKET_SENDING]   search_groups_count (total): {search_groups_count_ws}")
-                            logger.info(f"[WEBSOCKET_SENDING]   claude_search_groups_count: {claude_search_groups_count_ws}")
-                            logger.info(f"[WEBSOCKET_SENDING]   frontend will calculate perplexity_groups: {calculated_perplexity_groups}")
-                            logger.info(f"[WEBSOCKET_SENDING]   payload contains preview_data with {len(preview_payload)} top-level fields")
+                            logger.debug(f"[WEBSOCKET_SENDING] Sending call counts to frontend:")
+                            logger.debug(f"[WEBSOCKET_SENDING]   total_provider_calls: {total_provider_calls_ws}")
+                            logger.debug(f"[WEBSOCKET_SENDING]   search_groups_count (total): {search_groups_count_ws}")
+                            logger.debug(f"[WEBSOCKET_SENDING]   claude_search_groups_count: {claude_search_groups_count_ws}")
+                            logger.debug(f"[WEBSOCKET_SENDING]   frontend will calculate perplexity_groups: {calculated_perplexity_groups}")
+                            logger.debug(f"[WEBSOCKET_SENDING]   payload contains preview_data with {len(preview_payload)} top-level fields")
 
                             logger.info(f"Sending WebSocket payload to connection {connection_id}: {len(json.dumps(websocket_payload))} bytes")
                             
@@ -2440,7 +2440,7 @@ def handle_main_processing(event, context):
 
             try:
                 current_balance = check_user_balance(email)
-                logger.info(f"[SECURITY] Full validation balance check for {email}: ${current_balance:.6f}")
+                logger.debug(f"[SECURITY] Full validation balance check for {email}: ${current_balance:.6f}")
 
                 # Get estimated cost from preview data (what was quoted to user)
                 storage_manager_temp = UnifiedS3Manager()
@@ -2448,7 +2448,7 @@ def handle_main_processing(event, context):
 
                 if preview_data and preview_data.get('cost_estimates'):
                     estimated_cost = preview_data['cost_estimates'].get('quoted_validation_cost', 0.01)
-                    logger.info(f"[SECURITY] Using quoted cost from preview: ${estimated_cost:.6f}")
+                    logger.debug(f"[SECURITY] Using quoted cost from preview: ${estimated_cost:.6f}")
                 else:
                     # Fallback: calculate estimated cost using domain multiplier
                     email_domain = email.split('@')[-1] if '@' in email else 'unknown'
@@ -2491,7 +2491,7 @@ def handle_main_processing(event, context):
                         })
                     }
 
-                logger.info(f"[SECURITY] ✅ Balance sufficient for full validation: ${current_balance:.6f} >= ${estimated_cost:.6f}")
+                logger.debug(f"[SECURITY] ✅ Balance sufficient for full validation: ${current_balance:.6f} >= ${estimated_cost:.6f}")
 
             except ImportError:
                 logger.warning("[SECURITY] DynamoDB not available - skipping balance check (development mode)")
@@ -2635,29 +2635,29 @@ def handle_main_processing(event, context):
             # ========== GENERATE COMPLETE VALIDATION PAYLOAD (SHARED BY SYNC AND ASYNC) ==========
             # Skip payload generation for async completion - we already have the results
             if event.get('async_completion_mode'):
-                logger.info(f"[PAYLOAD_GENERATION] Skipping payload generation for async completion - results already available")
+                logger.debug(f"[PAYLOAD_GENERATION] Skipping payload generation for async completion - results already available")
                 complete_validation_payload = {}  # Not needed for async completion
             else:
                 # This payload generation is used by sync processing and initial async delegation
-                logger.info(f"[PAYLOAD_GENERATION] Creating complete validation payload for {rows_to_process} rows")
+                logger.debug(f"[PAYLOAD_GENERATION] Creating complete validation payload for {rows_to_process} rows")
 
                 # Get parsed rows from the table data (S3TableParser uses 'data' field)
                 excel_rows = table_data.get('data', [])
                 if max_rows:
                     excel_rows = excel_rows[:max_rows]
 
-                logger.info(f"[PAYLOAD_GENERATION] Processing {len(excel_rows)} rows for validation payload")
+                logger.debug(f"[PAYLOAD_GENERATION] Processing {len(excel_rows)} rows for validation payload")
 
                 # Get ID fields from config for row key generation (same logic as sync validation)
                 id_fields = []
-                logger.info(f"[PAYLOAD_GENERATION] Searching for ID fields in validation targets...")
+                logger.debug(f"[PAYLOAD_GENERATION] Searching for ID fields in validation targets...")
                 for i, target in enumerate(config_data.get('validation_targets', [])):
                     importance = target.get('importance', '')
                     if importance.lower() == 'id':
                         column = target.get('column', '')
                         if column:
                             id_fields.append(column)
-                            logger.info(f"[PAYLOAD_GENERATION] Found ID field: {column}")
+                            logger.debug(f"[PAYLOAD_GENERATION] Found ID field: {column}")
 
                 # Fallback to SimplifiedSchemaValidator primary keys if no explicit ID fields
                 if not id_fields:
@@ -2665,14 +2665,14 @@ def handle_main_processing(event, context):
                         from simplified_schema_validator import SimplifiedSchemaValidator
                         validator = SimplifiedSchemaValidator(config_data)
                         id_fields = validator.primary_key
-                        logger.info(f"[PAYLOAD_GENERATION] Using primary keys from SimplifiedSchemaValidator: {id_fields}")
+                        logger.debug(f"[PAYLOAD_GENERATION] Using primary keys from SimplifiedSchemaValidator: {id_fields}")
                     except Exception as e:
                         logger.warning(f"[PAYLOAD_GENERATION] Could not use SimplifiedSchemaValidator: {e}")
                         # Use default fallback ID fields for demo
                         id_fields = ['Ticker_Symbol', 'Asset_ID']
-                        logger.info(f"[PAYLOAD_GENERATION] Using fallback ID fields: {id_fields}")
+                        logger.debug(f"[PAYLOAD_GENERATION] Using fallback ID fields: {id_fields}")
 
-                logger.info(f"[PAYLOAD_GENERATION] ID fields for row key generation: {id_fields}")
+                logger.debug(f"[PAYLOAD_GENERATION] ID fields for row key generation: {id_fields}")
 
                 # Add pre-computed row keys to each row (same logic as sync validation)
                 from row_key_utils import generate_row_key
@@ -2686,7 +2686,7 @@ def handle_main_processing(event, context):
                     row_data['_row_key'] = row_key
                     processed_rows.append(row_data)
 
-                logger.info(f"[PAYLOAD_GENERATION] Added pre-computed row keys to {len(processed_rows)} rows")
+                logger.debug(f"[PAYLOAD_GENERATION] Added pre-computed row keys to {len(processed_rows)} rows")
 
                 # Load validation history if available and we have Excel content (matching invoke_validator_lambda logic)
                 validation_history = {}
@@ -2701,7 +2701,7 @@ def handle_main_processing(event, context):
 
                     original_validation_history = load_validation_history_from_excel(tmp_file_path)
 
-                    logger.info(f"[PAYLOAD_GENERATION] Loaded validation history for {len(original_validation_history)} row keys from Excel")
+                    logger.debug(f"[PAYLOAD_GENERATION] Loaded validation history for {len(original_validation_history)} row keys from Excel")
 
                     if original_validation_history:
                         validation_history = original_validation_history
@@ -2713,11 +2713,11 @@ def handle_main_processing(event, context):
                             if payload_key and payload_key in validation_history:
                                 matched_count += 1
 
-                        logger.info(f"[PAYLOAD_GENERATION] Matched {matched_count} out of {len(processed_rows)} rows with validation history")
+                        logger.debug(f"[PAYLOAD_GENERATION] Matched {matched_count} out of {len(processed_rows)} rows with validation history")
 
                         if matched_count == 0 and len(validation_history) > 0:
                             logger.warning("[PAYLOAD_GENERATION] No rows matched with validation history - may be using different primary keys")
-                            logger.info(f"[PAYLOAD_GENERATION] Current primary keys: {id_fields}")
+                            logger.debug(f"[PAYLOAD_GENERATION] Current primary keys: {id_fields}")
 
                     # Clean up temp file
                     try:
@@ -2744,7 +2744,7 @@ def handle_main_processing(event, context):
                     "session_id": session_id
                 }
 
-                logger.info(f"[PAYLOAD_GENERATION] Complete validation payload created with {len(processed_rows)} rows")
+                logger.debug(f"[PAYLOAD_GENERATION] Complete validation payload created with {len(processed_rows)} rows")
 
             # ========== SMART DELEGATION SYSTEM DECISION POINT ==========
             # Check if we should delegate to async processing based on estimated time
@@ -2754,11 +2754,11 @@ def handle_main_processing(event, context):
 
             # URGENT FIX: Skip delegation if this is async completion mode (prevents infinite loop)
             if event.get('async_completion_mode'):
-                logger.info(f"[DELEGATION_DECISION] Async completion mode detected - FORCING synchronous completion to prevent infinite loop")
+                logger.debug(f"[DELEGATION_DECISION] Async completion mode detected - FORCING synchronous completion to prevent infinite loop")
                 should_delegate = False
             # Skip delegation for previews - they must always run synchronously
             elif is_preview:
-                logger.info(f"[DELEGATION_DECISION] Preview mode detected - forcing synchronous processing")
+                logger.debug(f"[DELEGATION_DECISION] Preview mode detected - forcing synchronous processing")
                 should_delegate = False
             else:
                 # Try to get the estimated processing time from stored preview data
@@ -2779,7 +2779,7 @@ def handle_main_processing(event, context):
                         for field_name in time_estimate_fields:
                             if field_name in preview_data and preview_data[field_name]:
                                 estimated_total_time_seconds = preview_data[field_name]
-                                logger.info(f"[DELEGATION_DECISION] Found time estimate in field '{field_name}': {estimated_total_time_seconds}s")
+                                logger.debug(f"[DELEGATION_DECISION] Found time estimate in field '{field_name}': {estimated_total_time_seconds}s")
                                 break
 
                         # If we didn't find seconds, try minutes fields
@@ -2791,7 +2791,7 @@ def handle_main_processing(event, context):
                             for field_name in minutes_fields:
                                 if field_name in preview_data and preview_data[field_name]:
                                     estimated_total_time_seconds = preview_data[field_name] * 60.0
-                                    logger.info(f"[DELEGATION_DECISION] Found time estimate in field '{field_name}': {preview_data[field_name]}min = {estimated_total_time_seconds}s")
+                                    logger.debug(f"[DELEGATION_DECISION] Found time estimate in field '{field_name}': {preview_data[field_name]}min = {estimated_total_time_seconds}s")
                                     break
 
                         # Also try nested locations for backwards compatibility
@@ -2804,16 +2804,16 @@ def handle_main_processing(event, context):
                             for parent_key, child_key in nested_locations:
                                 if preview_data.get(parent_key) and preview_data[parent_key].get(child_key):
                                     estimated_total_time_seconds = preview_data[parent_key][child_key]
-                                    logger.info(f"[DELEGATION_DECISION] Found time estimate in nested location '{parent_key}.{child_key}': {estimated_total_time_seconds}s")
+                                    logger.debug(f"[DELEGATION_DECISION] Found time estimate in nested location '{parent_key}.{child_key}': {estimated_total_time_seconds}s")
                                     break
 
                     if estimated_total_time_seconds and estimated_total_time_seconds > 0:
                         estimated_minutes = estimated_total_time_seconds / 60.0
                         should_delegate = estimated_minutes > MAX_SYNC_INVOCATION_TIME_MINUTES
 
-                        logger.info(f"[DELEGATION_DECISION] Estimated processing time: {estimated_minutes:.1f} minutes")
-                        logger.info(f"[DELEGATION_DECISION] Sync timeout limit: {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f} minutes")
-                        logger.info(f"[DELEGATION_DECISION] Should delegate: {should_delegate}")
+                        logger.debug(f"[DELEGATION_DECISION] Estimated processing time: {estimated_minutes:.1f} minutes")
+                        logger.debug(f"[DELEGATION_DECISION] Sync timeout limit: {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f} minutes")
+                        logger.debug(f"[DELEGATION_DECISION] Should delegate: {should_delegate}")
                     else:
                         logger.warning(f"[DELEGATION_DECISION] No valid time estimate found in preview data, using sync processing")
                         logger.debug(f"[DELEGATION_DECISION] Available preview data keys: {list(preview_data.keys()) if preview_data else 'None'}")
@@ -2828,7 +2828,7 @@ def handle_main_processing(event, context):
 
             if should_delegate:
                 # ========== ASYNC DELEGATION WORKFLOW ==========
-                logger.info(f"[DELEGATION] Delegating to async processing (estimated {estimated_minutes:.1f}min > {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min)")
+                logger.debug(f"[DELEGATION] Delegating to async processing (estimated {estimated_minutes:.1f}min > {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min)")
 
                 try:
                     # Import WebSocket connection function
@@ -2890,7 +2890,7 @@ def handle_main_processing(event, context):
                     if delegation_success:
                         # ========== USE PRE-GENERATED VALIDATION PAYLOAD ==========
                         # Use the complete validation payload that was already generated
-                        logger.info(f"[DELEGATION] Using pre-generated validation payload for async processing")
+                        logger.debug(f"[DELEGATION] Using pre-generated validation payload for async processing")
 
                         # Check if we have valid payload with rows
                         payload_rows = complete_validation_payload.get('validation_data', {}).get('rows', [])
@@ -2899,7 +2899,7 @@ def handle_main_processing(event, context):
                             logger.error(f"[DELEGATION] This will cause async validation to fail")
                             should_delegate = False  # Fall back to sync processing
                         else:
-                            logger.info(f"[DELEGATION] Pre-generated payload contains {len(payload_rows)} rows with pre-computed keys")
+                            logger.debug(f"[DELEGATION] Pre-generated payload contains {len(payload_rows)} rows with pre-computed keys")
 
                             # Add async-specific fields to the pre-generated payload
                             async_payload = complete_validation_payload.copy()
@@ -2923,7 +2923,7 @@ def handle_main_processing(event, context):
                                 ContentType='application/json'
                             )
 
-                            logger.info(f"[DELEGATION] Stored complete payload in S3: {payload_s3_key}")
+                            logger.debug(f"[DELEGATION] Stored complete payload in S3: {payload_s3_key}")
 
                             # Trigger async validator via SQS with payload S3 key
                             async_message = {
@@ -2949,7 +2949,7 @@ def handle_main_processing(event, context):
                                     MessageBody=json.dumps(async_message, default=str)
                                 )
 
-                                logger.info(f"[DELEGATION] Successfully triggered async validator via SQS: {response['MessageId']}")
+                                logger.debug(f"[DELEGATION] Successfully triggered async validator via SQS: {response['MessageId']}")
 
                                 # Verify async validator lambda gets triggered within reasonable time (allow for cold starts)
                                 validation_lambda_triggered = verify_async_validation_trigger(
@@ -2972,7 +2972,7 @@ def handle_main_processing(event, context):
                                             'sqs_message_id': response['MessageId'],
                                             'retry_suggestion': 'Please try your validation again or contact support'
                                         })
-                                        logger.info(f"[DELEGATION] Sent failure notification via WebSocket for session {session_id}")
+                                        logger.debug(f"[DELEGATION] Sent failure notification via WebSocket for session {session_id}")
                                     except Exception as websocket_error:
                                         logger.error(f"[DELEGATION] Failed to send WebSocket failure notification: {websocket_error}")
 
@@ -2988,11 +2988,11 @@ def handle_main_processing(event, context):
                                         logger.error(f"[DELEGATION] Failed to update run status: {status_error}")
 
                                     # Continue with sync processing as fallback
-                                    logger.info(f"[DELEGATION] Falling back to sync processing due to async delegation failure")
+                                    logger.debug(f"[DELEGATION] Falling back to sync processing due to async delegation failure")
                                     should_delegate = False
 
                                 else:
-                                    logger.info(f"[DELEGATION] Async validation lambda successfully triggered and started processing")
+                                    logger.debug(f"[DELEGATION] Async validation lambda successfully triggered and started processing")
 
                                     # Send success notification via WebSocket
                                     try:
@@ -3004,13 +3004,13 @@ def handle_main_processing(event, context):
                                             'sqs_message_id': response['MessageId'],
                                             'info': 'Your validation is now running in the background. You will receive updates as processing progresses.'
                                         })
-                                        logger.info(f"[DELEGATION] Sent delegation success notification via WebSocket for session {session_id}")
+                                        logger.debug(f"[DELEGATION] Sent delegation success notification via WebSocket for session {session_id}")
                                     except Exception as websocket_error:
                                         logger.error(f"[DELEGATION] Failed to send WebSocket success notification: {websocket_error}")
 
                                     # Background handler job is done - async validator will take over
                                     # Don't return HTTP response, just exit gracefully
-                                    logger.info(f"[DELEGATION] Background handler completed delegation for session {session_id}")
+                                    logger.debug(f"[DELEGATION] Background handler completed delegation for session {session_id}")
                                     return
 
                             except Exception as sqs_error:
@@ -3026,16 +3026,16 @@ def handle_main_processing(event, context):
 
             if not should_delegate:
                 # ========== SYNCHRONOUS PROCESSING (CURRENT BEHAVIOR) ==========
-                logger.info(f"[DELEGATION] Using synchronous processing (estimated {estimated_minutes:.1f}min <= {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min)")
+                logger.debug(f"[DELEGATION] Using synchronous processing (estimated {estimated_minutes:.1f}min <= {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min)")
 
             try:
                 # Check if this is async completion with pre-loaded results
                 if event.get('_skip_validation_call') and event.get('_validation_results_from_async'):
-                    logger.info("[ASYNC_COMPLETION] Using pre-loaded validation results from async completion")
+                    logger.debug("[ASYNC_COMPLETION] Using pre-loaded validation results from async completion")
                     validation_results = event['_validation_results_from_async']
                 else:
                     # Use the same pre-generated payload for sync validation
-                    logger.info("[SYNC_VALIDATION] Using pre-generated validation payload for sync processing")
+                    logger.debug("[SYNC_VALIDATION] Using pre-generated validation payload for sync processing")
 
                     # Call validation lambda directly with the complete payload
                     import boto3
@@ -3043,12 +3043,12 @@ def handle_main_processing(event, context):
 
                     # Use environment variable directly to get correct lambda name
                     validator_lambda_name = os.environ.get('VALIDATOR_LAMBDA_NAME', 'perplexity-validator')
-                    logger.info(f"[SYNC_VALIDATION] Invoking validation lambda: {validator_lambda_name}")
+                    logger.debug(f"[SYNC_VALIDATION] Invoking validation lambda: {validator_lambda_name}")
 
                     # Debug payload before sending
                     config_targets_count = len(complete_validation_payload.get('config', {}).get('validation_targets', []))
                     rows_count = len(complete_validation_payload.get('validation_data', {}).get('rows', []))
-                    logger.info(f"[SYNC_VALIDATION] Payload debug - config targets: {config_targets_count}, rows: {rows_count}")
+                    logger.debug(f"[SYNC_VALIDATION] Payload debug - config targets: {config_targets_count}, rows: {rows_count}")
 
                     response = lambda_client.invoke(
                         FunctionName=validator_lambda_name,
@@ -3085,8 +3085,8 @@ def handle_main_processing(event, context):
                 val_results = data.get('rows', {})
                 results_count = len(val_results) if isinstance(val_results, dict) else 0
 
-                logger.info(f"[VALIDATION_DEBUG] val_results type: {type(val_results)}, content preview: {str(val_results)[:200] if val_results else 'Empty'}")
-                logger.info(f"[VALIDATION_DEBUG] rows_to_process: {rows_to_process}, results_count: {results_count}")
+                logger.debug(f"[VALIDATION_DEBUG] val_results type: {type(val_results)}, content preview: {str(val_results)[:200] if val_results else 'Empty'}")
+                logger.debug(f"[VALIDATION_DEBUG] rows_to_process: {rows_to_process}, results_count: {results_count}")
 
                 # Primary check: completely empty results for non-empty dataset
                 if not val_results and rows_to_process > 0:
@@ -3100,7 +3100,7 @@ def handle_main_processing(event, context):
                 if rows_to_process > 10 and results_count < (rows_to_process * 0.1):  # Less than 10% results returned
                     logger.warning(f"[VALIDATION_WARNING] Suspiciously low result count: {results_count} results from {rows_to_process} rows")
 
-                logger.info(f"[VALIDATION_SUCCESS] Received complete validation results: {results_count} rows processed")
+                logger.debug(f"[VALIDATION_SUCCESS] Received complete validation results: {results_count} rows processed")
 
             except Exception as validation_error:
                 error_msg = str(validation_error)
@@ -3249,9 +3249,9 @@ def handle_main_processing(event, context):
             logger.error(f"[QC_EXTRACT_VALIDATION] Final extracted qc_results: {type(qc_results)} with {len(qc_results) if isinstance(qc_results, dict) else 'N/A'} items")
             logger.error(f"[QC_EXTRACT_VALIDATION] Final extracted qc_metrics: {type(qc_metrics)} with content: {qc_metrics}")
             if qc_results:
-                logger.info(f"[QC_MERGE_FULL] Merging QC data into full validation results for display")
-                logger.info(f"[QC_MERGE_FULL_DEBUG] QC results structure: {list(qc_results.keys())[:3]}")
-                logger.info(f"[QC_MERGE_FULL_DEBUG] real_results keys sample: {list(real_results.keys())[:3]}")
+                logger.debug(f"[QC_MERGE_FULL] Merging QC data into full validation results for display")
+                logger.debug(f"[QC_MERGE_FULL_DEBUG] QC results structure: {list(qc_results.keys())[:3]}")
+                logger.debug(f"[QC_MERGE_FULL_DEBUG] real_results keys sample: {list(real_results.keys())[:3]}")
 
                 # Create mapping from hash keys (QC) to numeric keys (validation results)
                 qc_hash_keys = list(qc_results.keys())
@@ -3263,19 +3263,19 @@ def handle_main_processing(event, context):
                         validation_key = validation_numeric_keys[i]
                         row_qc_data = qc_results[qc_hash_key]
 
-                        logger.info(f"[QC_MERGE_FULL_DEBUG] Mapping QC hash key {qc_hash_key} -> validation key {validation_key}")
+                        logger.debug(f"[QC_MERGE_FULL_DEBUG] Mapping QC hash key {qc_hash_key} -> validation key {validation_key}")
 
                         if validation_key in real_results:
-                            logger.info(f"[QC_MERGE_FULL_DEBUG] Row {validation_key}: QC fields = {list(row_qc_data.keys())}")
+                            logger.debug(f"[QC_MERGE_FULL_DEBUG] Row {validation_key}: QC fields = {list(row_qc_data.keys())}")
                             for field_name, field_qc_data in row_qc_data.items():
-                                logger.info(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: QC data keys = {list(field_qc_data.keys()) if isinstance(field_qc_data, dict) else 'not dict'}")
-                                logger.info(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: qc_applied = {field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
+                                logger.debug(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: QC data keys = {list(field_qc_data.keys()) if isinstance(field_qc_data, dict) else 'not dict'}")
+                                logger.debug(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: qc_applied = {field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
 
                                 if isinstance(field_qc_data, dict) and (field_qc_data.get('qc_applied') is True or field_qc_data.get('qc_applied') == 'Yes'):
                                     # Since QC is now comprehensive, always use QC values when available
                                     qc_entry = field_qc_data.get('qc_entry', '')
                                     qc_confidence = field_qc_data.get('qc_confidence', '')
-                                    logger.info(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: has qc_entry = {bool(qc_entry)}, has qc_confidence = {bool(qc_confidence)}")
+                                    logger.debug(f"[QC_MERGE_FULL_DEBUG] Field {field_name}: has qc_entry = {bool(qc_entry)}, has qc_confidence = {bool(qc_confidence)}")
 
                                     # Always use QC entry and confidence when available (comprehensive QC)
                                     if qc_entry and str(qc_entry).strip():
@@ -3382,7 +3382,7 @@ def handle_main_processing(event, context):
                     
                     if preview_quoted_cost:
                         charged_cost = float(preview_quoted_cost)
-                        logger.info(f"[BILLING_PATH] ✅ Using preview quoted cost for full validation: ${charged_cost:.6f}")
+                        logger.debug(f"[BILLING_PATH] ✅ Using preview quoted cost for full validation: ${charged_cost:.6f}")
                     else:
                         logger.warning(f"[BILLING_PATH] ❌ Preview quoted cost not found in results - preview_data keys: {list(preview_data.keys()) if preview_data else 'None'}")
                         if preview_data and 'account_info' in preview_data:
@@ -3392,7 +3392,7 @@ def handle_main_processing(event, context):
                 except Exception as e:
                     logger.warning(f"Failed to retrieve preview quoted cost: {e}, using calculated cost")
                 
-                logger.info(f"[BILLING_SUMMARY] Full validation costs:")
+                logger.debug(f"[BILLING_SUMMARY] Full validation costs:")
                 logger.info(f"  - Eliyahu (actual): ${eliyahu_cost:.6f}")
                 logger.info(f"  - Estimated (current): ${cost_estimated:.6f}")
                 logger.info(f"  - Multiplier: {multiplier}x")
@@ -3403,14 +3403,14 @@ def handle_main_processing(event, context):
                 # ========== EARLY COMPLETENESS CHECK BEFORE CHARGING ==========
                 # Check validation completeness BEFORE charging the user
                 if not is_preview and validation_results:
-                    logger.info(f"[EARLY_COMPLETENESS_CHECK] Checking validation completeness BEFORE charging user")
+                    logger.debug(f"[EARLY_COMPLETENESS_CHECK] Checking validation completeness BEFORE charging user")
 
                     # Extract validation results for completeness check
                     final_validation_results = validation_results.get('validation_results', {}) if validation_results else {}
                     expected_row_count = total_rows_in_file
                     actual_results_count = len(final_validation_results) if isinstance(final_validation_results, dict) else 0
 
-                    logger.info(f"[EARLY_COMPLETENESS_CHECK] Expected rows: {expected_row_count}, Actual results: {actual_results_count}")
+                    logger.debug(f"[EARLY_COMPLETENESS_CHECK] Expected rows: {expected_row_count}, Actual results: {actual_results_count}")
 
                     # Check for basic completeness
                     is_complete = True
@@ -3465,7 +3465,7 @@ def handle_main_processing(event, context):
                             })
                         }
                     else:
-                        logger.info(f"[EARLY_COMPLETENESS_CHECK] ✅ Validation results are COMPLETE - proceeding with billing")
+                        logger.debug(f"[EARLY_COMPLETENESS_CHECK] ✅ Validation results are COMPLETE - proceeding with billing")
 
                 # Initialize billing variables for later use (after email success)
                 initial_balance = check_user_balance(email)
@@ -3603,7 +3603,7 @@ def handle_main_processing(event, context):
                 # Load or restore config_data
                 if event.get('async_completion_mode') and event.get('config_data'):
                     config_data = event['config_data']
-                    logger.info(f"[ASYNC_COMPLETION] Using restored config_data from delegation context")
+                    logger.debug(f"[ASYNC_COMPLETION] Using restored config_data from delegation context")
                 else:
                     # Load config from S3 for sync processing or if not available from context
                     config_response = s3_client.get_object(Bucket=storage_manager.bucket_name, Key=config_s3_key)
@@ -3644,7 +3644,7 @@ def handle_main_processing(event, context):
                 # Check if table_data was restored from async completion context
                 if event.get('async_completion_mode') and event.get('table_data'):
                     table_data = event['table_data']
-                    logger.info(f"[ASYNC_COMPLETION] Using restored table_data from delegation context")
+                    logger.debug(f"[ASYNC_COMPLETION] Using restored table_data from delegation context")
                 else:
                     # Parse table data for sync processing or if not available from context
                     try:
@@ -3669,7 +3669,7 @@ def handle_main_processing(event, context):
                             'qc_metrics': qc_metrics   # QC metrics extracted earlier
                         }
 
-                        logger.info(f"[QC_EXCEL_FULL] Passing QC data to Excel: {len(qc_results) if qc_results else 0} QC rows")
+                        logger.debug(f"[QC_EXCEL_FULL] Passing QC data to Excel: {len(qc_results) if qc_results else 0} QC rows")
                         logger.error(f"[QC_SCOPE_DEBUG] qc_results defined: {qc_results is not None}, has data: {bool(qc_results)}")
                         logger.error(f"[QC_SCOPE_DEBUG] qc_metrics defined: {qc_metrics is not None}, has data: {bool(qc_metrics)}")
                         logger.error(f"[QC_SCOPE_DEBUG] qc_results type: {type(qc_results)}, content: {qc_results}")
@@ -3864,7 +3864,7 @@ def handle_main_processing(event, context):
                     if validation_results:
                         qc_metrics_data = validation_results.get('qc_metrics', {})
                         qc_calls = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
-                        logger.info(f"[RECEIPT_QC_CALLS] Extracted QC calls for receipt: {qc_calls}")
+                        logger.debug(f"[RECEIPT_QC_CALLS] Extracted QC calls for receipt: {qc_calls}")
                     
                     # Extract original table name (remove _input suffix if present)
                     original_table_name = input_filename
@@ -3986,7 +3986,7 @@ def handle_main_processing(event, context):
                     # ========== BILLING AFTER SUCCESSFUL EMAIL DELIVERY ==========
                     # Only charge the user AFTER the email has been successfully sent
                     if email_result and email_result.get('success', False):
-                        logger.info(f"[BILLING_SECURITY] ✅ Email delivered successfully - proceeding with billing")
+                        logger.debug(f"[BILLING_SECURITY] ✅ Email delivered successfully - proceeding with billing")
 
                         # For full validation, deduct from account balance
                         if not is_preview and charged_cost > 0:
@@ -4006,7 +4006,7 @@ def handle_main_processing(event, context):
                                 if deduct_success:
                                     final_balance = check_user_balance(email)
                                     charged_amount = charged_cost
-                                    logger.info(f"[BILLING_SUCCESS] ✅ Successfully charged ${charged_cost:.6f} - new balance: ${final_balance:.6f}")
+                                    logger.debug(f"[BILLING_SUCCESS] ✅ Successfully charged ${charged_cost:.6f} - new balance: ${final_balance:.6f}")
                                     # Send balance update via WebSocket
                                     _send_balance_update(session_id, {
                                         'type': 'balance_update',
@@ -4025,7 +4025,7 @@ def handle_main_processing(event, context):
                                 logger.warning(f"[BILLING_ERROR] ❌ Insufficient balance for {email}: {current_balance} < ${charged_cost:.6f}")
                                 balance_error_occurred = True
                         else:
-                            logger.info(f"[BILLING_SKIP] Skipping charge - is_preview={is_preview}, charged_cost={charged_cost}")
+                            logger.debug(f"[BILLING_SKIP] Skipping charge - is_preview={is_preview}, charged_cost={charged_cost}")
 
                         # Track detailed API usage for each provider
                         by_provider = token_usage.get('by_provider', {})
@@ -4218,7 +4218,7 @@ def handle_main_processing(event, context):
                     if not configuration_id or configuration_id == 'unknown':
                         version = config_data.get('storage_metadata', {}).get('version') or config_data.get('generation_metadata', {}).get('version', 'v1')
                         configuration_id = f"{session_id}_{version}_config"
-                        logger.info(f"[CONFIG_ID] Generated configuration_id: {configuration_id}")
+                        logger.debug(f"[CONFIG_ID] Generated configuration_id: {configuration_id}")
                     
                     status_update_data['configuration_id'] = configuration_id
                     
@@ -4247,16 +4247,16 @@ def handle_main_processing(event, context):
                             actual_full_cost_estimated = cost_estimated
                             estimate_accuracy = ((preview_estimate - actual_full_cost_estimated) / preview_estimate * 100) if preview_estimate > 0 else 0
                             
-                            logger.info(f"[COST_COMPARISON] Preview estimated: ${preview_estimate:.6f} | "
+                            logger.debug(f"[COST_COMPARISON] Preview estimated: ${preview_estimate:.6f} | "
                                       f"Actual full cost (no cache): ${actual_full_cost_estimated:.6f} | "
                                       f"Estimate accuracy: {estimate_accuracy:.1f}% | User charged: ${charged_cost:.2f}")
                         else:
-                            logger.info(f"[COST_COMPARISON] No preview estimate found | "
+                            logger.debug(f"[COST_COMPARISON] No preview estimate found | "
                                       f"Actual full cost (no cache): ${cost_estimated:.6f} | "
                                       f"User charged: ${charged_cost:.2f}")
                     except Exception as e:
                         logger.warning(f"[COST_COMPARISON] Could not retrieve preview estimate for comparison: {e}")
-                        logger.info(f"[COST_COMPARISON] Actual full cost (no cache): ${cost_estimated:.6f} | "
+                        logger.debug(f"[COST_COMPARISON] Actual full cost (no cache): ${cost_estimated:.6f} | "
                                   f"User charged: ${charged_cost:.2f}")
                     
                     # Calculate actual validation processing time from DynamoDB record times
@@ -4358,7 +4358,7 @@ def handle_main_processing(event, context):
                                 'cache_efficiency_percent': provider_data.get('cache_efficiency_percent', 0.0)
                             }
                         
-                        logger.info(f"[VALIDATION_PROVIDER_METRICS] Using enhanced aggregated metrics for provider_metrics_for_db")
+                        logger.debug(f"[VALIDATION_PROVIDER_METRICS] Using enhanced aggregated metrics for provider_metrics_for_db")
                     else:
                         # Fallback to legacy token_usage conversion
                         by_provider = token_usage.get('by_provider', {})
@@ -4397,10 +4397,10 @@ def handle_main_processing(event, context):
                     # Extract QC metrics from validation results if available
                     qc_metrics_data = validation_results.get('qc_metrics', {})
                     if qc_metrics_data:
-                        logger.info(f"[QC_DB_STORAGE] Found QC metrics in validation results: {list(qc_metrics_data.keys())}")
+                        logger.debug(f"[QC_DB_STORAGE] Found QC metrics in validation results: {list(qc_metrics_data.keys())}")
                         status_update_data['qc_metrics'] = qc_metrics_data
                     else:
-                        logger.info(f"[QC_DB_STORAGE] No QC metrics found in validation results")
+                        logger.debug(f"[QC_DB_STORAGE] No QC metrics found in validation results")
 
                     # Calculate total_provider_calls from all providers (QC calls now included in anthropic provider)
                     total_provider_calls_override = sum(
@@ -4414,7 +4414,7 @@ def handle_main_processing(event, context):
                     anthropic_calls = provider_metrics_for_db.get('anthropic', {}).get('calls', 0)
                     perplexity_calls = provider_metrics_for_db.get('perplexity', {}).get('calls', 0)
                     qc_calls_debug = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
-                    logger.info(f"[FULL_VALIDATION_CALLS] Anthropic calls (incl QC): {anthropic_calls}, Perplexity calls: {perplexity_calls}, QC calls (debug): {qc_calls_debug}, Total: {total_provider_calls_override}")
+                    logger.debug(f"[FULL_VALIDATION_CALLS] Anthropic calls (incl QC): {anthropic_calls}, Perplexity calls: {perplexity_calls}, QC calls (debug): {qc_calls_debug}, Total: {total_provider_calls_override}")
 
                     # Record completion time for background handler
                     background_end_time = datetime.now(timezone.utc).isoformat()
@@ -4423,26 +4423,26 @@ def handle_main_processing(event, context):
                     start_time = datetime.fromisoformat(background_start_time.replace('Z', '+00:00'))
                     end_time = datetime.fromisoformat(background_end_time.replace('Z', '+00:00'))
                     background_processing_time_seconds = (end_time - start_time).total_seconds()
-                    logger.info(f"[VALIDATION_TIMING] Background handler processing time: {background_processing_time_seconds:.3f}s")
+                    logger.debug(f"[VALIDATION_TIMING] Background handler processing time: {background_processing_time_seconds:.3f}s")
                     
                     # Override timing with actual background handler processing time
                     status_update_data['end_time'] = background_end_time  # Use background handler completion time
                     status_update_data['run_time_s'] = background_processing_time_seconds  # Actual background handler processing time
                     status_update_data['actual_processing_time_seconds'] = background_processing_time_seconds  # Override with background handler time
                     status_update_data['actual_time_per_batch_seconds'] = background_processing_time_seconds  # Override with background handler time
-                    logger.info(f"[TIMING_OVERRIDE] Override timing fields with background handler time: {background_processing_time_seconds:.3f}s")
+                    logger.debug(f"[TIMING_OVERRIDE] Override timing fields with background handler time: {background_processing_time_seconds:.3f}s")
 
                     # ========== DETAILED VALIDATION COMPLETENESS CHECK ==========
                     # This is a detailed check that happens AFTER successful billing
                     # The initial check before billing prevents charges for incomplete results
-                    logger.info(f"[FINAL_COMPLETENESS_CHECK] Performing detailed validation result completeness check")
+                    logger.debug(f"[FINAL_COMPLETENESS_CHECK] Performing detailed validation result completeness check")
 
                     # Extract validation results for completeness check
                     final_validation_results = validation_results.get('validation_results', {}) if validation_results else {}
                     expected_row_count = total_rows_in_file
                     actual_results_count = len(final_validation_results) if isinstance(final_validation_results, dict) else 0
 
-                    logger.info(f"[FINAL_COMPLETENESS_CHECK] Expected rows: {expected_row_count}, Actual results: {actual_results_count}")
+                    logger.debug(f"[FINAL_COMPLETENESS_CHECK] Expected rows: {expected_row_count}, Actual results: {actual_results_count}")
 
                     # Check for basic completeness
                     is_complete = True
@@ -4505,7 +4505,7 @@ def handle_main_processing(event, context):
 
                     # Log completeness results
                     if is_complete:
-                        logger.info(f"[FINAL_COMPLETENESS_CHECK] ✅ Validation results are COMPLETE")
+                        logger.debug(f"[FINAL_COMPLETENESS_CHECK] ✅ Validation results are COMPLETE")
                         # Continue with normal completion flow
                         update_run_status(**status_update_data)
                     else:
@@ -4539,7 +4539,7 @@ def handle_main_processing(event, context):
                         })}
                     
                     # Track enhanced user metrics for full validation
-                    logger.info(f"[USER_TRACKING] Tracking full validation request for email: {email}")
+                    logger.debug(f"[USER_TRACKING] Tracking full validation request for email: {email}")
                     try:
                         track_result = track_user_request(
                         email=email,
@@ -4564,7 +4564,7 @@ def handle_main_processing(event, context):
                         total_api_calls=token_usage.get('api_calls', 0),
                         total_cached_calls=token_usage.get('cached_calls', 0)
                         )
-                        logger.info(f"[USER_TRACKING] Full validation tracking result: {track_result}")
+                        logger.debug(f"[USER_TRACKING] Full validation tracking result: {track_result}")
                     except Exception as e:
                         logger.error(f"[USER_TRACKING] Failed to track full validation request: {e}")
                         import traceback
@@ -4730,7 +4730,7 @@ def handle_config_generation(event, context):
     try:
         import time
         execution_id = f"{context.aws_request_id if context else 'no-context'}_{int(time.time() * 1000)}"
-        logger.info(f"[CONFIG_GEN_START] {execution_id} - Handling config generation request for session {event.get('session_id')}")
+        logger.debug(f"[CONFIG_GEN_START] {execution_id} - Handling config generation request for session {event.get('session_id')}")
         session_id = event.get('session_id')
         config_email = event.get('email', '').lower().strip()
         
@@ -4750,9 +4750,9 @@ def handle_config_generation(event, context):
                 # Get total rows if available
                 total_rows = event.get('total_rows', 0)
                 
-                logger.info(f"[CONFIG_RUN_TRACKING] Creating config generation run record for session {session_id}")
+                logger.debug(f"[CONFIG_RUN_TRACKING] Creating config generation run record for session {session_id}")
                 run_key = create_run_record(session_id, config_email, total_rows, 1, "Config Generation")  # batch_size=1 for config generation
-                logger.info(f"[CONFIG_RUN_TRACKING] Config generation run_key: {run_key}")
+                logger.debug(f"[CONFIG_RUN_TRACKING] Config generation run_key: {run_key}")
                 
                 # Update start_time to when background handler actually begins processing
                 update_run_status(session_id=session_id, run_key=run_key, status='IN_PROGRESS',
@@ -4851,7 +4851,7 @@ def handle_config_generation(event, context):
             # Get and normalize email for tracking
             config_email = event.get('email', '').lower().strip()
             if config_email:  # Only track if email is not empty
-                logger.info(f"[USER_TRACKING] Tracking config generation for email: {config_email}")
+                logger.debug(f"[USER_TRACKING] Tracking config generation for email: {config_email}")
                 try:
                     track_result = track_user_request(
                     email=config_email,
@@ -4871,7 +4871,7 @@ def handle_config_generation(event, context):
                 total_api_calls=response.get('cost_info', {}).get('api_calls', 0),
                 total_cached_calls=response.get('cost_info', {}).get('cached_calls', 0)
                     )
-                    logger.info(f"[USER_TRACKING] Config tracking result: {track_result}")
+                    logger.debug(f"[USER_TRACKING] Config tracking result: {track_result}")
                 except Exception as e:
                     logger.error(f"[USER_TRACKING] Failed to track config generation: {e}")
                     import traceback
@@ -4882,7 +4882,7 @@ def handle_config_generation(event, context):
             # Update config generation run record with completion data
             if DYNAMODB_AVAILABLE and config_email and session_id:
                 try:
-                    logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with completion data")
+                    logger.debug(f"[CONFIG_RUN_TRACKING] Updating config generation run record with completion data")
                     
                     # Get the actual model used from config lambda response
                     models = response.get('model_used', 'unknown')
@@ -4941,7 +4941,7 @@ def handle_config_generation(event, context):
                     start_time = datetime.fromisoformat(background_start_time.replace('Z', '+00:00'))
                     end_time = datetime.fromisoformat(background_end_time.replace('Z', '+00:00'))
                     processing_time_seconds = (end_time - start_time).total_seconds()
-                    logger.info(f"[CONFIG_TIMING] Background handler processing time: {processing_time_seconds:.3f}s")
+                    logger.debug(f"[CONFIG_TIMING] Background handler processing time: {processing_time_seconds:.3f}s")
                     
                     time_per_config = processing_time_seconds  # For config generation, it's time per config
                     processing_time_minutes = processing_time_seconds / 60.0
@@ -4970,7 +4970,7 @@ def handle_config_generation(event, context):
                                 'cache_efficiency_percent': provider_data.get('cache_efficiency_percent', 0.0)
                             }
                         
-                        logger.info(f"[CONFIG_PROVIDER_METRICS] Using enhanced data from config lambda")
+                        logger.debug(f"[CONFIG_PROVIDER_METRICS] Using enhanced data from config lambda")
                     else:
                         # Fallback to legacy token_usage conversion
                         token_usage_data = config_data.get('token_usage', {}).get('by_provider', {})
@@ -5024,7 +5024,7 @@ def handle_config_generation(event, context):
                         run_time_s=processing_time_seconds,  # Actual config generation time in seconds
                         provider_metrics=provider_metrics_for_db  # Enhanced provider-specific metrics
                     )
-                    logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated config generation run record")
+                    logger.debug(f"[CONFIG_RUN_TRACKING] Successfully updated config generation run record")
                 except Exception as e:
                     logger.error(f"[CONFIG_RUN_TRACKING] Failed to update config run record: {e}")
                     import traceback
@@ -5124,16 +5124,16 @@ def handle_config_generation(event, context):
             
             # Send via WebSocket with deduplication
             try:
-                logger.info(f"[CONFIG_COMPLETION] About to send config_generation_complete for {session_id} with download_url: {websocket_message.get('download_url', 'None')}")
+                logger.debug(f"[CONFIG_COMPLETION] About to send config_generation_complete for {session_id} with download_url: {websocket_message.get('download_url', 'None')}")
                 _send_websocket_message_deduplicated(session_id, websocket_message, "config_generation_complete")
-                logger.info(f"[CONFIG_COMPLETION] Sent config_generation_complete for {session_id}")
+                logger.debug(f"[CONFIG_COMPLETION] Sent config_generation_complete for {session_id}")
             except Exception as ws_error:
                 logger.error(f"Failed to send WebSocket message: {ws_error}")
         else:
             # Update config generation run record with failure
             if DYNAMODB_AVAILABLE and config_email and session_id:
                 try:
-                    logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with failure")
+                    logger.debug(f"[CONFIG_RUN_TRACKING] Updating config generation run record with failure")
                     # run_key might not be available in this scope, so get it
                     try:
                         from dynamodb_schemas import find_existing_run_key
@@ -5160,7 +5160,7 @@ def handle_config_generation(event, context):
                         )
                     else:
                         logger.warning(f"[CONFIG_RUN_TRACKING] Could not update run status - no run_key found for session {session_id}")
-                    logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated config run record with failure")
+                    logger.debug(f"[CONFIG_RUN_TRACKING] Successfully updated config run record with failure")
                 except Exception as e:
                     logger.error(f"[CONFIG_RUN_TRACKING] Failed to update config run record with failure: {e}")
             
@@ -5196,7 +5196,7 @@ def handle_config_generation(event, context):
         config_email = event.get('email', '').lower().strip()
         if DYNAMODB_AVAILABLE and config_email and session_id:
             try:
-                logger.info(f"[CONFIG_RUN_TRACKING] Updating config generation run record with exception failure")
+                logger.debug(f"[CONFIG_RUN_TRACKING] Updating config generation run record with exception failure")
                 # run_key might not be available in this scope, so get it
                 try:
                     from dynamodb_schemas import find_existing_run_key
@@ -5224,7 +5224,7 @@ def handle_config_generation(event, context):
                     )
                 else:
                     logger.warning(f"[CONFIG_RUN_TRACKING] Could not update run status - no run_key found for session {session_id}")
-                logger.info(f"[CONFIG_RUN_TRACKING] Successfully updated config generation run record with exception failure")
+                logger.debug(f"[CONFIG_RUN_TRACKING] Successfully updated config generation run record with exception failure")
             except Exception as update_error:
                 logger.error(f"[CONFIG_RUN_TRACKING] Failed to update config run record with exception: {update_error}")
         
@@ -5435,7 +5435,7 @@ def _send_websocket_message_deduplicated(session_id: str, message: Dict, message
                     logger.info(f"🚫 DEDUPLICATED config completion message for {session_id} (type: {message_type}) - last sent {current_time - last_completion:.1f}s ago")
                     return
             _config_completion_cache[completion_key] = current_time
-            logger.info(f"[DEDUP_CACHE] Cached config completion for {session_id}:{message_type}")
+            logger.debug(f"[DEDUP_CACHE] Cached config completion for {session_id}:{message_type}")
             
             # Clean old completion cache entries
             expired_completion_keys = [k for k, v in _config_completion_cache.items() if current_time - v > 120]
