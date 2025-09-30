@@ -4607,7 +4607,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 has_more_work = processed_rows < total_rows
                 logger.info(f"[S3_SAVE] Work status: processed_rows={processed_rows}, total_rows={total_rows}, has_more_work={has_more_work}")
 
-                if should_continue and remaining_ms > SAFETY_BUFFER_MS:
+                # IMPORTANT: Check if work is complete FIRST, before considering time
+                if not has_more_work:
+                    # All work is done - trigger completion regardless of time remaining
+                    logger.info(f"[S3_SAVE] All rows processed ({processed_rows}/{total_rows}), triggering interface completion")
+                    logger.info(f"[S3_SAVE] About to call trigger_interface_completion with results_s3_key={results_s3_key}")
+                    trigger_interface_completion(results_s3_key)
+                    logger.info(f"[S3_SAVE] trigger_interface_completion call completed")
+                elif should_continue and remaining_ms > SAFETY_BUFFER_MS:
                     # Still have time and work to do - this was an intermediate save
                     logger.info(f"[S3_SAVE] Intermediate save completed, processing continues")
                 elif not should_continue and has_more_work:
@@ -4623,11 +4630,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         # Fall back to completion if continuation fails
                         trigger_interface_completion(results_s3_key)
                 else:
-                    # Final completion - either all work done or can't continue
-                    logger.info(f"[S3_SAVE] Final save completed, triggering interface completion")
-                    logger.info(f"[S3_SAVE] About to call trigger_interface_completion with results_s3_key={results_s3_key}")
+                    # This should never happen - all cases are covered above
+                    logger.error(f"[S3_SAVE] Unexpected state: should_continue={should_continue}, has_more_work={has_more_work}, remaining_ms={remaining_ms}")
+                    logger.error(f"[S3_SAVE] Falling back to trigger completion")
                     trigger_interface_completion(results_s3_key)
-                    logger.info(f"[S3_SAVE] trigger_interface_completion call completed")
 
             except Exception as e:
                 logger.error(f"[S3_SAVE] Failed to save cumulative results to S3: {e}")
