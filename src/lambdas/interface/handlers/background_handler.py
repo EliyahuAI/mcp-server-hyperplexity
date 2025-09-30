@@ -3168,6 +3168,10 @@ def handle_main_processing(event, context):
 
             # Only continue if validation was successful
         
+        # Initialize QC variables outside conditional blocks to ensure they're always available
+        qc_results = {}
+        qc_metrics = {}
+
         # After invoke_validator_lambda returns
         if validation_results:
             # Extract processed rows count from the correct structure
@@ -3178,10 +3182,31 @@ def handle_main_processing(event, context):
             update_run_status_for_session( status='PROCESSING', run_type=run_type_processing, processed_rows=processed_rows_count)
 
         # Check for results based on the correct response structure
+        logger.error(f"[HAS_RESULTS_DEBUG] validation_results exists: {validation_results is not None}")
+        if validation_results:
+            logger.error(f"[HAS_RESULTS_DEBUG] validation_results type: {type(validation_results)}")
+            logger.error(f"[HAS_RESULTS_DEBUG] validation_results keys: {list(validation_results.keys()) if isinstance(validation_results, dict) else 'not dict'}")
+            logger.error(f"[HAS_RESULTS_DEBUG] 'body' in validation_results: {'body' in validation_results if isinstance(validation_results, dict) else 'not dict'}")
+
+            if 'body' in validation_results:
+                body_check = validation_results.get('body', {})
+                logger.error(f"[HAS_RESULTS_DEBUG] body type: {type(body_check)}")
+                logger.error(f"[HAS_RESULTS_DEBUG] body keys: {list(body_check.keys()) if isinstance(body_check, dict) else 'not dict'}")
+                logger.error(f"[HAS_RESULTS_DEBUG] 'data' in body: {'data' in body_check if isinstance(body_check, dict) else 'not dict'}")
+
+                if 'data' in body_check:
+                    data_check = body_check.get('data', {})
+                    logger.error(f"[HAS_RESULTS_DEBUG] data type: {type(data_check)}")
+                    logger.error(f"[HAS_RESULTS_DEBUG] data keys: {list(data_check.keys()) if isinstance(data_check, dict) else 'not dict'}")
+                    logger.error(f"[HAS_RESULTS_DEBUG] 'rows' in data: {'rows' in data_check if isinstance(data_check, dict) else 'not dict'}")
+
         has_results = (validation_results and
                       'body' in validation_results and
                       'data' in validation_results.get('body', {}) and
                       'rows' in validation_results.get('body', {}).get('data', {}))
+
+        logger.error(f"[HAS_RESULTS_DEBUG] Final has_results evaluation: {has_results}")
+
         if has_results:
             body = validation_results.get('body', {})
             data = body.get('data', {})
@@ -3190,9 +3215,39 @@ def handle_main_processing(event, context):
             metadata = body.get('metadata', {})
             token_usage = metadata.get('token_usage', {})
 
-            # Extract QC data for full validation (it's in the data section)
+            # Debug the full validation_results structure to find QC data
+            logger.error(f"[VALIDATION_STRUCTURE] validation_results top-level keys: {list(validation_results.keys()) if isinstance(validation_results, dict) else 'not dict'}")
+            logger.error(f"[VALIDATION_STRUCTURE] body keys: {list(body.keys()) if isinstance(body, dict) else 'not dict'}")
+            logger.error(f"[VALIDATION_STRUCTURE] data keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}")
+            logger.error(f"[VALIDATION_STRUCTURE] metadata keys: {list(metadata.keys()) if isinstance(metadata, dict) else 'not dict'}")
+
+            # Check for QC data in all possible locations
+            qc_in_validation_results = validation_results.get('qc_results')
+            qc_in_body = body.get('qc_results')
+            qc_in_data = data.get('qc_results')
+            qc_in_metadata = metadata.get('qc_results')
+
+            logger.error(f"[QC_LOCATION_DEBUG] QC in validation_results: {qc_in_validation_results is not None}")
+            logger.error(f"[QC_LOCATION_DEBUG] QC in body: {qc_in_body is not None}")
+            logger.error(f"[QC_LOCATION_DEBUG] QC in data: {qc_in_data is not None}")
+            logger.error(f"[QC_LOCATION_DEBUG] QC in metadata: {qc_in_metadata is not None}")
+
+            # Extract QC data - check both data level and top level
+            logger.error(f"[QC_EXTRACT_VALIDATION] data structure keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}")
+            logger.error(f"[QC_EXTRACT_VALIDATION] Looking for qc_results in data: {'qc_results' in data if isinstance(data, dict) else 'N/A'}")
+
+            # QC data can be in data section (as expected) or top level (actual location)
             qc_results = data.get('qc_results', {})
             qc_metrics = data.get('qc_metrics', {})
+
+            # If not found in data section, check top level of validation_results
+            if not qc_results and validation_results:
+                qc_results = validation_results.get('qc_results', {})
+                qc_metrics = validation_results.get('qc_metrics', {})
+                logger.error(f"[QC_EXTRACT_VALIDATION] QC data not in data section, found at top level: {bool(qc_results)}")
+
+            logger.error(f"[QC_EXTRACT_VALIDATION] Final extracted qc_results: {type(qc_results)} with {len(qc_results) if isinstance(qc_results, dict) else 'N/A'} items")
+            logger.error(f"[QC_EXTRACT_VALIDATION] Final extracted qc_metrics: {type(qc_metrics)} with content: {qc_metrics}")
             if qc_results:
                 logger.info(f"[QC_MERGE_FULL] Merging QC data into full validation results for display")
                 logger.info(f"[QC_MERGE_FULL_DEBUG] QC results structure: {list(qc_results.keys())[:3]}")
@@ -3554,8 +3609,24 @@ def handle_main_processing(event, context):
                     config_response = s3_client.get_object(Bucket=storage_manager.bucket_name, Key=config_s3_key)
                     config_data = json.loads(config_response['Body'].read().decode('utf-8'))
                     logger.info(f"Loaded config data from S3")
-                
-                input_filename = excel_s3_key.split('/')[-1]
+
+                # Try to get original filename from S3 object metadata first
+                try:
+                    s3_response = s3_client.head_object(Bucket=S3_UNIFIED_BUCKET, Key=excel_s3_key)
+                    s3_metadata = s3_response.get('Metadata', {})
+                    original_filename = s3_metadata.get('original_filename')
+
+                    if original_filename:
+                        input_filename = original_filename
+                        logger.info(f"Using original filename from S3 metadata: {input_filename}")
+                    else:
+                        # Fallback to S3 key filename
+                        input_filename = excel_s3_key.split('/')[-1]
+                        logger.warning(f"No original filename in S3 metadata, using S3 key: {input_filename}")
+                except Exception as e:
+                    # Fallback to S3 key filename if metadata read fails
+                    input_filename = excel_s3_key.split('/')[-1]
+                    logger.warning(f"Failed to read S3 metadata for original filename: {e}, using S3 key: {input_filename}")
                 
                 # Try to get the config lambda filename from metadata, fallback to S3 key
                 config_filename = config_s3_key.split('/')[-1]
@@ -3599,6 +3670,18 @@ def handle_main_processing(event, context):
                         }
 
                         logger.info(f"[QC_EXCEL_FULL] Passing QC data to Excel: {len(qc_results) if qc_results else 0} QC rows")
+                        logger.error(f"[QC_SCOPE_DEBUG] qc_results defined: {qc_results is not None}, has data: {bool(qc_results)}")
+                        logger.error(f"[QC_SCOPE_DEBUG] qc_metrics defined: {qc_metrics is not None}, has data: {bool(qc_metrics)}")
+                        logger.error(f"[QC_SCOPE_DEBUG] qc_results type: {type(qc_results)}, content: {qc_results}")
+                        if qc_results:
+                            logger.error(f"[QC_SCOPE_DEBUG] QC results keys sample: {list(qc_results.keys())[:3]}")
+                        else:
+                            logger.error(f"[QC_SCOPE_DEBUG] QC results is empty or None")
+
+                        # Debug the exact structure being passed to Excel
+                        logger.error(f"[QC_PASS_DEBUG] excel_validation_results structure: {list(excel_validation_results.keys())}")
+                        logger.error(f"[QC_PASS_DEBUG] excel_validation_results['qc_results'] type: {type(excel_validation_results.get('qc_results'))}")
+                        logger.error(f"[QC_PASS_DEBUG] excel_validation_results['qc_results'] content: {excel_validation_results.get('qc_results')}")
 
                         excel_buffer = create_qc_enhanced_excel_for_interface(
                             table_data, excel_validation_results, config_data, session_id,
@@ -3607,6 +3690,20 @@ def handle_main_processing(event, context):
                         if excel_buffer:
                             enhanced_excel_content = excel_buffer.getvalue()
                             logger.info(f"Created enhanced Excel: {len(enhanced_excel_content)} bytes")
+
+                            # Save enhanced Excel to S3 for potential future use
+                            try:
+                                session_path = storage_manager.get_session_path(email, clean_session_id)
+                                enhanced_excel_key = f"{session_path}v{config_version}_results/enhanced_validation.xlsx"
+                                s3_client.put_object(
+                                    Bucket=storage_manager.bucket_name,
+                                    Key=enhanced_excel_key,
+                                    Body=enhanced_excel_content,
+                                    ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                                )
+                                logger.info(f"Saved enhanced Excel to S3: {enhanced_excel_key}")
+                            except Exception as save_e:
+                                logger.warning(f"Failed to save enhanced Excel to S3: {save_e}")
                         else:
                             logger.error("Enhanced Excel creation failed - excel_buffer is None")
                     except Exception as e:
@@ -3750,18 +3847,9 @@ def handle_main_processing(event, context):
                     
                     logger.info(f"Email summary: {len(validated_fields)} validated fields (excluding {len(id_fields)} ID/ignored fields): {sorted(validated_fields)}")
                     
-                    # Load enhanced Excel directly from S3 (no ZIP extraction needed)
-                    # Try to get the enhanced Excel from versioned storage
-                    try:
-                        session_path = storage_manager.get_session_path(email, clean_session_id)
-                        enhanced_excel_key = f"{session_path}v{config_version}_results/enhanced_validation.xlsx"
-
-                        response = s3_client.get_object(Bucket=storage_manager.bucket_name, Key=enhanced_excel_key)
-                        enhanced_excel_content = response['Body'].read()
-                        logger.info(f"Loaded enhanced Excel from S3: {len(enhanced_excel_content)} bytes")
-                    except Exception as e:
-                        logger.warning(f"Could not load enhanced Excel from S3: {e}")
-                        enhanced_excel_content = None
+                    # Enhanced Excel was already created above in the sync validation flow
+                    # No need to load from S3 since we have it in memory
+                    logger.info(f"Using enhanced Excel created during validation: {len(enhanced_excel_content) if enhanced_excel_content else 0} bytes")
                     
                     # Ensure enhanced_excel_content is bytes or None (not other types)
                     safe_enhanced_excel_content = enhanced_excel_content if isinstance(enhanced_excel_content, (bytes, type(None))) else None
