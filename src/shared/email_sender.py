@@ -580,30 +580,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         if metadata and 'token_usage' in metadata:
             token_usage = metadata['token_usage']
         
-        # Create clean email body following style guide
-        body_html = create_validation_results_email_body(
-            session_id,
-            total_rows,
-            fields_validated,
-            confidence_distribution,
-            processing_time,
-            reference_pin,
-            token_usage,
-            enhanced_excel_filename,
-            input_filename,
-            config_filename,
-            preview_email,
-            config_id,
-            original_confidence_distribution,
-            billing_info,
-            enhanced_excel_valid=enhanced_excel_valid
-        )
-        
-        # Attach HTML body
-        part = MIMEText(body_html, 'html', CHARSET)
-        message.attach(part)
-        
-        # Validate and attach enhanced Excel file first (this is the main result)
+        # Validate enhanced Excel file first (before building email body)
         enhanced_excel_valid = False
         if enhanced_excel_content:
             # Validate the Excel content before attaching
@@ -614,7 +591,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
                 wb = openpyxl.load_workbook(BytesIO(enhanced_excel_content), read_only=True, data_only=True)
 
                 # Check for required sheets
-                required_sheets = ['Updated', 'Original', 'Details']
+                required_sheets = ['Updated Values', 'Original Values', 'Details']
                 missing_sheets = [sheet for sheet in required_sheets if sheet not in wb.sheetnames]
 
                 if missing_sheets:
@@ -634,7 +611,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
                         enhanced_excel_valid = False
                     else:
                         # Check Updated sheet also has content
-                        updated_sheet = wb['Updated']
+                        updated_sheet = wb['Updated Values']
                         updated_row_count = 0
                         for row in updated_sheet.iter_rows():
                             updated_row_count += 1
@@ -646,7 +623,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
                             enhanced_excel_valid = False
                         else:
                             # Check Original sheet also has content
-                            original_sheet = wb['Original']
+                            original_sheet = wb['Original Values']
                             original_row_count = 0
                             for row in original_sheet.iter_rows():
                                 original_row_count += 1
@@ -666,6 +643,30 @@ def send_validation_results_email(email_address, excel_content, config_content, 
                 logger.error(f"[EMAIL] Failed to validate enhanced Excel: {e}")
                 enhanced_excel_valid = False
 
+        # Now create email body with the validation result
+        body_html = create_validation_results_email_body(
+            session_id,
+            total_rows,
+            fields_validated,
+            confidence_distribution,
+            processing_time,
+            reference_pin,
+            token_usage,
+            enhanced_excel_filename,
+            input_filename,
+            config_filename,
+            preview_email,
+            config_id,
+            original_confidence_distribution,
+            billing_info,
+            enhanced_excel_valid=enhanced_excel_valid
+        )
+
+        # Attach HTML body
+        part = MIMEText(body_html, 'html', CHARSET)
+        message.attach(part)
+
+        # Attach validated Excel file if validation passed
         if enhanced_excel_valid:
             part = MIMEApplication(enhanced_excel_content)
             part.add_header("Content-Disposition", f'attachment; filename="{enhanced_excel_filename}"')

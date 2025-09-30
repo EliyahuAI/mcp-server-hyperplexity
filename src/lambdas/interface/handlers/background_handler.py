@@ -849,17 +849,39 @@ def handle_async_completion_in_background_handler(event, context):
                 preview = str(async_validation_results)[:500] + "..." if len(str(async_validation_results)) > 500 else str(async_validation_results)
                 logger.info(f"[ASYNC_COMPLETION] Async results structure preview: {preview}")
 
-            # Normalize async results to match sync response format: {statusCode, body: {data: {rows: ...}}}
-            # This allows async and sync results to go through the same processing pipeline
-            validation_results = {
-                'statusCode': 200,
-                'body': {
-                    'data': {
-                        'rows': async_validation_results  # The async results become the 'rows' portion
-                    }
+            # Async results from S3 have a different format than sync results
+            # Sync expects: {statusCode, body: {data: {rows: ...}}}
+            # Async has: {validation_results: {...}, token_usage: {...}, metadata: {...}}
+            # We need to wrap async results to match sync format for the common path
+
+            if isinstance(async_validation_results, dict) and 'validation_results' in async_validation_results:
+                # Wrap async results in sync format
+                validation_results = {
+                    'statusCode': 200,
+                    'body': {
+                        'data': {
+                            'rows': async_validation_results['validation_results']
+                        },
+                        'token_usage': async_validation_results.get('token_usage', {}),
+                        'metadata': async_validation_results.get('metadata', {})
+                    },
+                    # Preserve the original structure for other uses
+                    'validation_results': async_validation_results['validation_results'],
+                    'token_usage': async_validation_results.get('token_usage', {}),
+                    'metadata': async_validation_results.get('metadata', {}),
+                    # CRITICAL: Preserve QC results and metrics at the top level where they're expected
+                    'qc_results': async_validation_results.get('qc_results', {}),
+                    'qc_metrics': async_validation_results.get('qc_metrics', {})
                 }
-            }
-            logger.info(f"[ASYNC_COMPLETION] Normalized async results to sync format for common processing")
+                logger.info(f"[ASYNC_COMPLETION] Wrapped async results in sync format for common processing path")
+                if async_validation_results.get('qc_results'):
+                    logger.info(f"[ASYNC_COMPLETION] QC results preserved: {len(async_validation_results['qc_results'])} rows")
+                if async_validation_results.get('qc_metrics'):
+                    logger.info(f"[ASYNC_COMPLETION] QC metrics preserved: {async_validation_results['qc_metrics'].get('total_fields_reviewed', 0)} fields reviewed")
+            else:
+                # Fallback if structure is unexpected
+                validation_results = async_validation_results
+                logger.warning(f"[ASYNC_COMPLETION] Unexpected async results structure, using as-is")
 
         except Exception as e:
             logger.error(f"[ASYNC_COMPLETION] Failed to load results from s3://{s3_bucket}/{s3_key}: {e}")
@@ -881,6 +903,7 @@ def handle_async_completion_in_background_handler(event, context):
         # Reconstruct the event and variables as if sync processing had just completed
         request_context = delegation_context.get('request_context', {})
         file_locations = delegation_context.get('file_locations', {})
+        processing_metadata = delegation_context.get('processing_metadata', {})
 
         # Create reconstructed event for the common completion code
         reconstructed_event = {
@@ -896,7 +919,18 @@ def handle_async_completion_in_background_handler(event, context):
             'reference_pin': request_context.get('reference_pin'),
             'timestamp': request_context.get('timestamp'),
             'background_processing': True,
-            'async_completion_mode': True  # Flag to indicate this is async completion
+            'async_completion_mode': True,  # Flag to indicate this is async completion
+            # Restore additional critical variables
+            'clean_session_id': request_context.get('clean_session_id', session_id),
+            'preview_email': request_context.get('preview_email', False),
+            'email_folder': request_context.get('email_folder', 'Full Validation'),
+            'batch_size': request_context.get('batch_size'),
+            'max_rows': request_context.get('max_rows'),
+            'config_data': request_context.get('config_data'),
+            # Restore processing metadata for Excel generation
+            'table_data': processing_metadata.get('table_data'),
+            'config_version': processing_metadata.get('config_version', 'v1'),
+            'S3_UNIFIED_BUCKET': processing_metadata.get('S3_UNIFIED_BUCKET', S3_UNIFIED_BUCKET)
         }
 
         logger.info(f"[ASYNC_COMPLETION] Reconstructed event for session {session_id}, proceeding to common completion")
@@ -936,9 +970,12 @@ def handle_main_processing(event, context):
     try:
 
         from ..core.validator_invoker import invoke_validator_lambda
-        from ..reporting.zip_report import create_enhanced_result_zip
         from ..reporting.markdown_report import create_markdown_table_from_results
-        
+
+        # Initialize S3 client for file operations
+        import boto3
+        s3_client = boto3.client('s3')
+
         try:
             from excel_report_qc_unified import create_qc_enhanced_excel_for_interface
             EXCEL_ENHANCEMENT_AVAILABLE = True
@@ -2389,7 +2426,12 @@ def handle_main_processing(event, context):
 
         else:
             # Normal mode processing
-            results_key = event['results_key']
+            results_key = event.get('results_key')
+            if not results_key:
+                # Generate results_key if not provided (e.g., for async completion)
+                # No longer creating ZIP - just track the results folder
+                results_key = f"results/{session_id}/validation_complete"
+                logger.info(f"Generated results_key for session {session_id}: {results_key}")
             logger.debug(f"Background normal processing for session {session_id}")
 
             # SECURITY: Check balance BEFORE starting expensive full validation processing
@@ -2806,12 +2848,20 @@ def handle_main_processing(event, context):
                             'config_data': config_data,
                             'total_rows': total_rows_in_file,
                             'max_rows': max_rows,
-                            'batch_size': batch_size
+                            'batch_size': batch_size,
+                            # Add critical variables for async completion
+                            'reference_pin': reference_pin,
+                            'preview_mode': is_preview,
+                            'preview_email': preview_email,
+                            'timestamp': timestamp,
+                            'clean_session_id': clean_session_id,
+                            'email_folder': event.get('email_folder', 'Full Validation' if not is_preview else 'Preview')  # Add email folder info
                         },
                         'file_locations': {
                             'excel_s3_key': excel_s3_key,
                             'config_s3_key': config_s3_key,
-                            'validation_history': None  # Set to None for now - validation_history variables not defined in this scope
+                            'validation_history': None,  # Set to None for now - validation_history variables not defined in this scope
+                            'results_key': None  # Will be updated after validation completes
                         },
                         'preview_estimates': {
                             'estimated_total_time_seconds': estimated_total_time_seconds,
@@ -2821,7 +2871,9 @@ def handle_main_processing(event, context):
                         },
                         'processing_metadata': {
                             'S3_UNIFIED_BUCKET': S3_UNIFIED_BUCKET,
-                            'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME
+                            'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME,
+                            'table_data': table_data,  # Store table_data for Excel generation
+                            'config_version': config_data.get('config_version', 'v1') if config_data else 'v1'  # Track config version
                         }
                     }
 
@@ -2863,8 +2915,7 @@ def handle_main_processing(event, context):
                             # Store complete payload in S3 for async validator
                             payload_s3_key = f"async_payloads/{session_id}/{run_key}/complete_validation_payload.json"
 
-                            import boto3
-                            s3_client = boto3.client('s3')
+                            # s3_client already initialized at function start
                             s3_client.put_object(
                                 Bucket=S3_UNIFIED_BUCKET,
                                 Key=payload_s3_key,
@@ -3139,8 +3190,9 @@ def handle_main_processing(event, context):
             metadata = body.get('metadata', {})
             token_usage = metadata.get('token_usage', {})
 
-            # Extract QC data for full validation
-            qc_results = validation_results.get('qc_results', {})
+            # Extract QC data for full validation (it's in the data section)
+            qc_results = data.get('qc_results', {})
+            qc_metrics = data.get('qc_metrics', {})
             if qc_results:
                 logger.info(f"[QC_MERGE_FULL] Merging QC data into full validation results for display")
                 logger.info(f"[QC_MERGE_FULL_DEBUG] QC results structure: {list(qc_results.keys())[:3]}")
@@ -3292,77 +3344,79 @@ def handle_main_processing(event, context):
                 logger.info(f"  - User Charged: ${charged_cost:.6f}")
                 logger.info(f"  - Fallback would be: ${multiplier_result['quoted_cost']:.2f}")
                 logger.info(f"BILLING DEBUG: is_preview={is_preview}, charged_cost={charged_cost}, session_id={session_id}")
-                
-                # For full validation, deduct from account balance
+
+                # ========== EARLY COMPLETENESS CHECK BEFORE CHARGING ==========
+                # Check validation completeness BEFORE charging the user
+                if not is_preview and validation_results:
+                    logger.info(f"[EARLY_COMPLETENESS_CHECK] Checking validation completeness BEFORE charging user")
+
+                    # Extract validation results for completeness check
+                    final_validation_results = validation_results.get('validation_results', {}) if validation_results else {}
+                    expected_row_count = total_rows_in_file
+                    actual_results_count = len(final_validation_results) if isinstance(final_validation_results, dict) else 0
+
+                    logger.info(f"[EARLY_COMPLETENESS_CHECK] Expected rows: {expected_row_count}, Actual results: {actual_results_count}")
+
+                    # Check for basic completeness
+                    is_complete = True
+                    completeness_issues = []
+
+                    # Check row count completeness
+                    if actual_results_count < expected_row_count:
+                        is_complete = False
+                        completeness_issues.append(f"Missing results: {actual_results_count}/{expected_row_count} rows")
+
+                    # Check for meaningful data in results
+                    if actual_results_count == 0:
+                        is_complete = False
+                        completeness_issues.append("No validation results found")
+
+                    # Check metadata completeness
+                    if validation_results:
+                        metadata = validation_results.get('metadata', {})
+                        if not metadata or not isinstance(metadata, dict):
+                            is_complete = False
+                            completeness_issues.append("Missing or invalid metadata")
+
+                    # If validation is incomplete, stop here BEFORE charging
+                    if not is_complete:
+                        logger.error(f"[EARLY_COMPLETENESS_CHECK] ❌ Validation results are INCOMPLETE: {'; '.join(completeness_issues)}")
+                        logger.error(f"[EARLY_COMPLETENESS_CHECK] 🚫 STOPPING - will NOT charge user or send email")
+
+                        # Send error message to WebSocket
+                        _send_websocket_message_deduplicated(session_id, {
+                            'type': 'validation_error',
+                            'status': 'FAILED',
+                            'error': f"Validation incomplete: {'; '.join(completeness_issues)}",
+                            'session_id': session_id
+                        }, "validation_incomplete_error")
+
+                        # Update DynamoDB status to FAILED
+                        update_run_status(
+                            session_id=session_id,
+                            run_key=run_key,
+                            status='FAILED',
+                            error_message=f"Validation incomplete: {'; '.join(completeness_issues)}",
+                            verbose_status="Validation failed - incomplete results"
+                        )
+
+                        # Return early to prevent charging and email
+                        return {
+                            'statusCode': 500,
+                            'body': json.dumps({
+                                'error': 'Validation incomplete',
+                                'details': completeness_issues,
+                                'session_id': session_id
+                            })
+                        }
+                    else:
+                        logger.info(f"[EARLY_COMPLETENESS_CHECK] ✅ Validation results are COMPLETE - proceeding with billing")
+
+                # Initialize billing variables for later use (after email success)
                 initial_balance = check_user_balance(email)
                 final_balance = initial_balance
                 balance_error_occurred = False
                 charged_amount = 0
-                
-                if not is_preview and charged_cost > 0:
-                    logger.info(f"BILLING: Proceeding with charge for {email}: ${charged_cost}")
-                    # Check if user has sufficient balance
-                    current_balance = check_user_balance(email)
-                    if current_balance is not None and current_balance >= Decimal(str(charged_cost)):
-                        # Deduct from balance
-                        deduct_success = deduct_from_balance(
-                            email=email,
-                            amount=Decimal(str(charged_cost)),
-                            session_id=session_id,
-                            description=f"Full validation - {len(real_results) if real_results else 0} rows processed",
-                            raw_cost=Decimal(str(eliyahu_cost)),
-                            multiplier=Decimal(str(multiplier))
-                        )
-                        if deduct_success:
-                            final_balance = check_user_balance(email)
-                            charged_amount = charged_cost
-                            # Send balance update via WebSocket
-                            _send_balance_update(session_id, {
-                                'type': 'balance_update',
-                                'new_balance': float(final_balance) if final_balance else 0,
-                                'transaction': {
-                                    'amount': -float(charged_cost),
-                                    'description': f"Full validation - {len(real_results) if real_results else 0} rows processed",
-                                    'eliyahu_cost': float(eliyahu_cost),
-                                    'multiplier': float(multiplier)
-                                }
-                            })
-                        else:
-                            logger.error(f"Failed to deduct ${charged_cost:.6f} from {email} balance")
-                            balance_error_occurred = True
-                    else:
-                        logger.warning(f"Insufficient balance for {email}: {current_balance} < ${charged_cost:.6f}")
-                        balance_error_occurred = True
-                else:
-                    logger.warning(f"BILLING: Skipping charge - is_preview={is_preview}, charged_cost={charged_cost}")
-                
-                # Track detailed API usage for each provider
-                by_provider = token_usage.get('by_provider', {})
-                for provider, provider_usage in by_provider.items():
-                    if provider_usage and isinstance(provider_usage, dict):
-                        usage_data = {
-                            'api_calls': provider_usage.get('api_calls', 0),
-                            'cached_calls': provider_usage.get('cached_calls', 0),
-                            'total_tokens': provider_usage.get('total_tokens', 0),
-                            'cost': provider_usage.get('total_cost', 0.0) * multiplier,  # Apply multiplier
-                            'eliyahu_cost': provider_usage.get('total_cost', 0.0),  # Store eliyahu cost too
-                            'multiplier_applied': multiplier
-                        }
-                        
-                        # Add provider-specific token fields
-                        if provider == 'perplexity':
-                            usage_data.update({
-                                'prompt_tokens': provider_usage.get('prompt_tokens', 0),
-                                'completion_tokens': provider_usage.get('completion_tokens', 0)
-                            })
-                        elif provider == 'anthropic':
-                            usage_data.update({
-                                'input_tokens': provider_usage.get('input_tokens', 0),
-                                'output_tokens': provider_usage.get('output_tokens', 0),
-                                'cache_tokens': provider_usage.get('cache_tokens', 0)
-                            })
-                        
-                        # Track detailed usage for this provider
                         
                 
             except Exception as e:
@@ -3487,10 +3541,19 @@ def handle_main_processing(event, context):
                     'session_id': session_id
                 }, "full_validation_processing")
                 
+                # Load Excel content
                 excel_response = s3_client.get_object(Bucket=storage_manager.bucket_name, Key=excel_s3_key)
                 excel_content = excel_response['Body'].read()
-                config_response = s3_client.get_object(Bucket=storage_manager.bucket_name, Key=config_s3_key)
-                config_data = json.loads(config_response['Body'].read().decode('utf-8'))
+
+                # Load or restore config_data
+                if event.get('async_completion_mode') and event.get('config_data'):
+                    config_data = event['config_data']
+                    logger.info(f"[ASYNC_COMPLETION] Using restored config_data from delegation context")
+                else:
+                    # Load config from S3 for sync processing or if not available from context
+                    config_response = s3_client.get_object(Bucket=storage_manager.bucket_name, Key=config_s3_key)
+                    config_data = json.loads(config_response['Body'].read().decode('utf-8'))
+                    logger.info(f"Loaded config data from S3")
                 
                 input_filename = excel_s3_key.split('/')[-1]
                 
@@ -3507,23 +3570,39 @@ def handle_main_processing(event, context):
                         logger.info(f"Using saved filename from metadata: {config_filename}")
 
                 # Get structured table data for enhanced Excel creation
-                try:
-                    from shared_table_parser import S3TableParser
-                    table_parser = S3TableParser()
-                    table_data = table_parser.parse_s3_table(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
-                    logger.info(f"Parsed table data for ZIP creation: {type(table_data)}")
-                except Exception as e:
-                    logger.error(f"Failed to parse table data for ZIP: {e}")
-                    table_data = None
+                # Check if table_data was restored from async completion context
+                if event.get('async_completion_mode') and event.get('table_data'):
+                    table_data = event['table_data']
+                    logger.info(f"[ASYNC_COMPLETION] Using restored table_data from delegation context")
+                else:
+                    # Parse table data for sync processing or if not available from context
+                    try:
+                        from shared_table_parser import S3TableParser
+                        table_parser = S3TableParser()
+                        table_data = table_parser.parse_s3_table(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
+                        logger.info(f"Parsed table data for enhanced Excel creation: {type(table_data)}")
+                    except Exception as e:
+                        logger.error(f"Failed to parse table data for Excel: {e}")
+                        table_data = None
 
-                enhanced_zip = create_enhanced_result_zip(
-                    real_results, session_id, total_rows, excel_content, config_data,
-                    reference_pin, input_filename, config_filename, metadata,
-                    structured_excel_data=table_data
-                )
-
-                s3_client.put_object(Bucket=S3_RESULTS_BUCKET, Key=results_key, Body=enhanced_zip, ContentType='application/zip')
-                logger.info(f"Enhanced results for {session_id} uploaded to {results_key}")
+                # Create enhanced Excel directly (no ZIP needed)
+                enhanced_excel_content = None
+                if table_data and EXCEL_ENHANCEMENT_AVAILABLE:
+                    try:
+                        validated_sheet = table_data.get('metadata', {}).get('sheet_name') if isinstance(table_data, dict) else None
+                        excel_buffer = create_qc_enhanced_excel_for_interface(
+                            table_data, real_results, config_data, session_id,
+                            validated_sheet_name=validated_sheet
+                        )
+                        if excel_buffer:
+                            enhanced_excel_content = excel_buffer.getvalue()
+                            logger.info(f"Created enhanced Excel: {len(enhanced_excel_content)} bytes")
+                        else:
+                            logger.error("Enhanced Excel creation failed - excel_buffer is None")
+                    except Exception as e:
+                        logger.error(f"Error creating enhanced Excel: {str(e)}")
+                        import traceback
+                        logger.error(traceback.format_exc())
                 
                 # Determine config version and ID for versioned storage
                 config_version = 1
@@ -3575,35 +3654,17 @@ def handle_main_processing(event, context):
                     logger.error(f"Failed to store full validation results: {result.get('error')}")
                     validation_results_path = None
                 
-                # Extract and store enhanced files from ZIP
+                # Store enhanced Excel directly (no ZIP extraction needed)
                 enhanced_excel_path = None
-                try:
-                    import zipfile
-                    import io
-                    
-                    enhanced_excel_content = None
-                    summary_text = None
-                    
-                    with zipfile.ZipFile(io.BytesIO(enhanced_zip), 'r') as zip_file:
-                        # Extract enhanced Excel
-                        if 'validation_results_enhanced.xlsx' in zip_file.namelist():
-                            enhanced_excel_content = zip_file.read('validation_results_enhanced.xlsx')
-                            logger.info("Extracted enhanced Excel from ZIP")
-                        
-                        # Extract summary text
-                        if 'SUMMARY.txt' in zip_file.namelist():
-                            summary_text = zip_file.read('SUMMARY.txt').decode('utf-8')
-                            logger.info("Extracted summary text from ZIP")
-                    
-                    # Store enhanced files in versioned folder
-                    if enhanced_excel_content or summary_text:
+                if enhanced_excel_content:
+                    try:
                         enhanced_result = storage_manager.store_enhanced_files(
-                            email, clean_session_id, config_version, 
-                            enhanced_excel_content, summary_text
+                            email, clean_session_id, config_version,
+                            enhanced_excel_content, None  # No summary text needed
                         )
-                        
+
                         if enhanced_result['success']:
-                            logger.info(f"Stored enhanced files: {enhanced_result['stored_files']}")
+                            logger.info(f"Stored enhanced Excel: {enhanced_result['stored_files']}")
                             # Extract enhanced Excel path if available
                             if enhanced_result.get('stored_files'):
                                 for file_path in enhanced_result['stored_files']:
@@ -3611,10 +3672,9 @@ def handle_main_processing(event, context):
                                         enhanced_excel_path = file_path
                                         break
                         else:
-                            logger.error(f"Failed to store enhanced files: {enhanced_result.get('error')}")
-                
-                except Exception as e:
-                    logger.error(f"Failed to extract enhanced files from ZIP: {e}")
+                            logger.error(f"Failed to store enhanced Excel: {enhanced_result.get('error')}")
+                    except Exception as e:
+                        logger.error(f"Failed to store enhanced Excel: {e}")
                 
                 # Update session tracking with validation results and enhanced Excel paths
                 if validation_results_path:
@@ -3680,46 +3740,18 @@ def handle_main_processing(event, context):
                     
                     logger.info(f"Email summary: {len(validated_fields)} validated fields (excluding {len(id_fields)} ID/ignored fields): {sorted(validated_fields)}")
                     
-                    enhanced_excel_content = None
-                    logger.info(f"EXCEL_ENHANCEMENT_AVAILABLE: {EXCEL_ENHANCEMENT_AVAILABLE}")
-                    
-                    if EXCEL_ENHANCEMENT_AVAILABLE:
-                        try:
-                            # Use shared_table_parser to get structured data instead of raw bytes
-                            from shared_table_parser import S3TableParser
-                            table_parser = S3TableParser()
-                            logger.info(f"Parsing S3 table: {S3_UNIFIED_BUCKET}/{excel_s3_key}")
-                            table_data = table_parser.parse_s3_table(S3_UNIFIED_BUCKET, excel_s3_key, extract_formulas=True)
-                            logger.info(f"Table parser returned data type: {type(table_data)}")
-                            if isinstance(table_data, dict):
-                                logger.info(f"Table data keys: {list(table_data.keys())}")
-                            else:
-                                logger.warning(f"Table parser returned non-dict: {table_data}")
-                            
-                            # Pass structured data instead of raw file bytes
-                            # Extract sheet name from table data metadata for consistency
-                            validated_sheet = table_data.get('metadata', {}).get('sheet_name')
-                            logger.info(f"Extracted validated sheet name from metadata: '{validated_sheet}'")
-                            logger.info(f"Table data metadata: {table_data.get('metadata', {})}")
-                            
-                            excel_buffer = create_qc_enhanced_excel_for_interface(
-                                table_data, validation_results, config_data, session_id, validated_sheet_name=validated_sheet
-                            )
-                            if excel_buffer:
-                                enhanced_excel_content = excel_buffer.getvalue()
-                                logger.info("Created enhanced Excel using xlsxwriter")
-                        except Exception as e:
-                            logger.error(f"Error creating enhanced Excel: {str(e)}")
-                            enhanced_excel_content = None
-                    else:
-                        # Fallback: Create basic Excel using openpyxl when xlsxwriter is not available
-                        try:
-                            logger.info("Creating fallback Excel using openpyxl")
-                            enhanced_excel_content = _create_fallback_preview_excel(real_results, config_data, input_filename, is_full=True)
-                            logger.info("Created fallback Excel successfully")
-                        except Exception as e:
-                            logger.error(f"Error creating fallback Excel: {str(e)}")
-                            enhanced_excel_content = None
+                    # Load enhanced Excel directly from S3 (no ZIP extraction needed)
+                    # Try to get the enhanced Excel from versioned storage
+                    try:
+                        session_path = storage_manager.get_session_path(email, clean_session_id)
+                        enhanced_excel_key = f"{session_path}v{config_version}_results/enhanced_validation.xlsx"
+
+                        response = s3_client.get_object(Bucket=storage_manager.bucket_name, Key=enhanced_excel_key)
+                        enhanced_excel_content = response['Body'].read()
+                        logger.info(f"Loaded enhanced Excel from S3: {len(enhanced_excel_content)} bytes")
+                    except Exception as e:
+                        logger.warning(f"Could not load enhanced Excel from S3: {e}")
+                        enhanced_excel_content = None
                     
                     # Ensure enhanced_excel_content is bytes or None (not other types)
                     safe_enhanced_excel_content = enhanced_excel_content if isinstance(enhanced_excel_content, (bytes, type(None))) else None
@@ -3828,9 +3860,21 @@ def handle_main_processing(event, context):
                         'session_id': session_id
                     }, "full_validation_email")
 
+                    # Convert any Decimal objects to float for JSON serialization
+                    def convert_decimals(obj):
+                        if isinstance(obj, dict):
+                            return {k: convert_decimals(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [convert_decimals(item) for item in obj]
+                        elif hasattr(obj, '__class__') and obj.__class__.__name__ == 'Decimal':
+                            return float(obj)
+                        return obj
+
+                    safe_config_data = convert_decimals(config_data)
+
                     email_result = send_validation_results_email(
                         email_address=email_address, excel_content=excel_content,
-                        config_content=json.dumps(config_data, indent=2).encode('utf-8'),
+                        config_content=json.dumps(safe_config_data, indent=2).encode('utf-8'),
                         enhanced_excel_content=safe_enhanced_excel_content,
                         input_filename=input_filename, config_filename=config_filename,
                         enhanced_excel_filename=f"{os.path.splitext(input_filename)[0].replace('_input', '')}_Validated.xlsx",
@@ -3840,6 +3884,80 @@ def handle_main_processing(event, context):
                         billing_info=billing_info,
                         config_id=config_id
                     )
+
+                    # ========== BILLING AFTER SUCCESSFUL EMAIL DELIVERY ==========
+                    # Only charge the user AFTER the email has been successfully sent
+                    if email_result and email_result.get('success', False):
+                        logger.info(f"[BILLING_SECURITY] ✅ Email delivered successfully - proceeding with billing")
+
+                        # For full validation, deduct from account balance
+                        if not is_preview and charged_cost > 0:
+                            logger.info(f"BILLING: Proceeding with charge for {email}: ${charged_cost}")
+                            # Check if user has sufficient balance
+                            current_balance = check_user_balance(email)
+                            if current_balance is not None and current_balance >= Decimal(str(charged_cost)):
+                                # Deduct from balance
+                                deduct_success = deduct_from_balance(
+                                    email=email,
+                                    amount=Decimal(str(charged_cost)),
+                                    session_id=session_id,
+                                    description=f"Full validation - {len(real_results) if real_results else 0} rows processed",
+                                    raw_cost=Decimal(str(eliyahu_cost)),
+                                    multiplier=Decimal(str(multiplier))
+                                )
+                                if deduct_success:
+                                    final_balance = check_user_balance(email)
+                                    charged_amount = charged_cost
+                                    logger.info(f"[BILLING_SUCCESS] ✅ Successfully charged ${charged_cost:.6f} - new balance: ${final_balance:.6f}")
+                                    # Send balance update via WebSocket
+                                    _send_balance_update(session_id, {
+                                        'type': 'balance_update',
+                                        'new_balance': float(final_balance) if final_balance else 0,
+                                        'transaction': {
+                                            'amount': -float(charged_cost),
+                                            'description': f"Full validation - {len(real_results) if real_results else 0} rows processed",
+                                            'eliyahu_cost': float(eliyahu_cost),
+                                            'multiplier': float(multiplier)
+                                        }
+                                    })
+                                else:
+                                    logger.error(f"[BILLING_ERROR] ❌ Failed to deduct ${charged_cost:.6f} from {email} balance")
+                                    balance_error_occurred = True
+                            else:
+                                logger.warning(f"[BILLING_ERROR] ❌ Insufficient balance for {email}: {current_balance} < ${charged_cost:.6f}")
+                                balance_error_occurred = True
+                        else:
+                            logger.info(f"[BILLING_SKIP] Skipping charge - is_preview={is_preview}, charged_cost={charged_cost}")
+
+                        # Track detailed API usage for each provider
+                        by_provider = token_usage.get('by_provider', {})
+                        for provider, provider_usage in by_provider.items():
+                            if provider_usage and isinstance(provider_usage, dict):
+                                usage_data = {
+                                    'api_calls': provider_usage.get('api_calls', 0),
+                                    'cached_calls': provider_usage.get('cached_calls', 0),
+                                    'total_tokens': provider_usage.get('total_tokens', 0),
+                                    'cost': provider_usage.get('total_cost', 0.0) * multiplier,  # Apply multiplier
+                                    'eliyahu_cost': provider_usage.get('total_cost', 0.0),  # Store eliyahu cost too
+                                    'multiplier_applied': multiplier
+                                }
+
+                                # Add provider-specific token fields
+                                if provider == 'perplexity':
+                                    usage_data.update({
+                                        'prompt_tokens': provider_usage.get('prompt_tokens', 0),
+                                        'completion_tokens': provider_usage.get('completion_tokens', 0)
+                                    })
+                                elif provider == 'anthropic':
+                                    usage_data.update({
+                                        'input_tokens': provider_usage.get('input_tokens', 0),
+                                        'output_tokens': provider_usage.get('output_tokens', 0),
+                                        'cache_tokens': provider_usage.get('cache_tokens', 0)
+                                    })
+                    else:
+                        logger.error(f"[BILLING_SECURITY] ❌ Email delivery failed - BLOCKING ALL CHARGES to protect user")
+                        logger.error(f"[BILLING_SECURITY] Email result: {email_result}")
+                        balance_error_occurred = True  # Mark as error so no charges occur
 
                     # Send final processing progress update - finalizing (98-100% range)
                     _send_websocket_message_deduplicated(session_id, {
@@ -3854,19 +3972,9 @@ def handle_main_processing(event, context):
                     processed_rows_count = len(validation_results.get('validation_results', {}))
                     total_rows_in_file = validation_results.get('total_rows', processed_rows_count)
 
-                    # Create ZIP download URL from results_key
-                    zip_download_url = None
-                    if results_key:
-                        try:
-                            zip_download_url = s3_client.generate_presigned_url(
-                                'get_object',
-                                Params={'Bucket': S3_RESULTS_BUCKET, 'Key': results_key},
-                                ExpiresIn=7200  # 2 hours
-                            )
-                            logger.info(f"Created ZIP download link: {zip_download_url}")
-                        except Exception as e:
-                            logger.error(f"Failed to create ZIP download URL: {e}")
-                            zip_download_url = None
+                    # No longer creating ZIP - enhanced Excel is stored directly in S3
+                    # Download URLs will be provided for the enhanced Excel file directly
+                    zip_download_url = None  # Kept for backward compatibility but set to None
                     
                     # Send completion with download URLs (consistent with preview completion)
                     completion_payload = {
@@ -4226,10 +4334,10 @@ def handle_main_processing(event, context):
                     status_update_data['actual_time_per_batch_seconds'] = background_processing_time_seconds  # Override with background handler time
                     logger.info(f"[TIMING_OVERRIDE] Override timing fields with background handler time: {background_processing_time_seconds:.3f}s")
 
-                    # ========== FINAL VALIDATION COMPLETENESS CHECK ==========
-                    # This is the final checkpoint where we validate that we have complete results
-                    # regardless of whether they came from sync or async processing
-                    logger.info(f"[FINAL_COMPLETENESS_CHECK] Performing final validation result completeness check")
+                    # ========== DETAILED VALIDATION COMPLETENESS CHECK ==========
+                    # This is a detailed check that happens AFTER successful billing
+                    # The initial check before billing prevents charges for incomplete results
+                    logger.info(f"[FINAL_COMPLETENESS_CHECK] Performing detailed validation result completeness check")
 
                     # Extract validation results for completeness check
                     final_validation_results = validation_results.get('validation_results', {}) if validation_results else {}
@@ -4275,7 +4383,7 @@ def handle_main_processing(event, context):
                             import openpyxl
                             import io
                             wb = openpyxl.load_workbook(io.BytesIO(enhanced_excel_content), read_only=True)
-                            expected_sheets = ['Results', 'Summary']  # Basic expected sheets
+                            expected_sheets = ['Updated Values', 'Original Values', 'Details']  # Correct expected sheets
                             missing_sheets = [sheet for sheet in expected_sheets if sheet not in wb.sheetnames]
                             if missing_sheets:
                                 is_complete = False
@@ -4300,18 +4408,37 @@ def handle_main_processing(event, context):
                     # Log completeness results
                     if is_complete:
                         logger.info(f"[FINAL_COMPLETENESS_CHECK] ✅ Validation results are COMPLETE")
+                        # Continue with normal completion flow
+                        update_run_status(**status_update_data)
                     else:
                         logger.error(f"[FINAL_COMPLETENESS_CHECK] ❌ Validation results are INCOMPLETE: {'; '.join(completeness_issues)}")
-                        # Add completeness status to the status update
+                        logger.error(f"[FINAL_COMPLETENESS_CHECK] 🚫 STOPPING completion flow - will not charge user or send email")
+
+                        # Mark as FAILED instead of COMPLETED
+                        status_update_data['status'] = 'FAILED'
+                        status_update_data['error_message'] = f"Validation incomplete: {'; '.join(completeness_issues)}"
+                        status_update_data['verbose_status'] = f"❌ Validation failed: {'; '.join(completeness_issues)}"
                         status_update_data['completeness_issues'] = completeness_issues
                         status_update_data['validation_incomplete'] = True
 
-                        # Update the verbose status to indicate incomplete results
-                        original_status = status_update_data.get('verbose_status', 'Validation complete')
-                        status_update_data['verbose_status'] = f"{original_status} (⚠️ Some validation results may be incomplete)"
+                        # Update status as FAILED
+                        update_run_status(**status_update_data)
 
-                    # Always continue with the status update - we want to track incomplete results too
-                    update_run_status(**status_update_data)
+                        # Send error notification via WebSocket
+                        _send_websocket_message_deduplicated(session_id, {
+                            'type': 'validation_failed',
+                            'session_id': session_id,
+                            'progress': 100,
+                            'status': f'❌ Validation failed: {completeness_issues[0] if completeness_issues else "Incomplete results"}',
+                            'error': f"Validation incomplete: {'; '.join(completeness_issues)}"
+                        })
+
+                        # Return early - do NOT continue with billing, email, or completion
+                        return {'statusCode': 500, 'body': json.dumps({
+                            'status': 'validation_failed',
+                            'error': f"Validation incomplete: {'; '.join(completeness_issues)}",
+                            'session_id': session_id
+                        })}
                     
                     # Track enhanced user metrics for full validation
                     logger.info(f"[USER_TRACKING] Tracking full validation request for email: {email}")

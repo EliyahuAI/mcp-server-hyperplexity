@@ -4599,6 +4599,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 }
 
+                # Include QC data if available
+                if 'qc_results' in response['body']['data']:
+                    cumulative_results['qc_results'] = response['body']['data']['qc_results']
+                if 'qc_metrics' in response['body']['data']:
+                    cumulative_results['qc_metrics'] = response['body']['data']['qc_metrics']
+
                 # Save to S3
                 s3_client = boto3.client('s3')
                 s3_bucket = event.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
