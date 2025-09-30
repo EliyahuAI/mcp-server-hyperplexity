@@ -813,6 +813,7 @@
 
     .thinking-square.error {
         background-color: #E63946 !important;
+        animation: none !important; /* Stop pulsing animation */
     }
 
     /* Progress Track for WebSocket Progress */
@@ -873,10 +874,12 @@
 
     .progress-square.error {
         background-color: #E63946 !important;
+        animation: none !important; /* Stop pulsing animation */
     }
 
     .progress-square-wrapper.error .progress-square {
         background-color: #E63946 !important;
+        animation: none !important; /* Stop pulsing animation */
     }
 
     .progress-text {
@@ -3783,7 +3786,43 @@
                     handleBalanceUpdate(data);
                     return; // Balance updates don't need routing to card handlers
                 }
-                
+
+                // General error handler - handles all error message types
+                if (data.type === 'error' || data.type === 'validation_failed' || data.type === 'preview_failed' ||
+                    data.type === 'config_generation_failed' || data.status === 'FAILED' || data.status === 'ERROR') {
+
+                    console.log(`[WEBSOCKET_DEBUG] General error handler processing:`, data);
+
+                    // Find the most recent card to show the error
+                    if (cardHandlers.size > 0) {
+                        let latestHandler = null;
+                        let latestCardId = null;
+                        let latestOrder = -1;
+
+                        for (const [cardId, handlerInfo] of cardHandlers) {
+                            if (handlerInfo && cardId && handlerInfo.registrationOrder > latestOrder) {
+                                latestHandler = handlerInfo;
+                                latestCardId = cardId;
+                                latestOrder = handlerInfo.registrationOrder;
+                            }
+                        }
+
+                        if (latestCardId) {
+                            // Use specific error messages to trigger red progress indicator
+                            let errorTitle = 'Operation failed';
+                            if (data.type === 'validation_failed') errorTitle = 'Validation failed';
+                            else if (data.type === 'preview_failed') errorTitle = 'Preview failed';
+                            else if (data.type === 'config_generation_failed') errorTitle = 'Generation failed';
+
+                            completeThinkingInCard(latestCardId, errorTitle); // This will turn the progress indicator red
+                            const errorMessage = data.error || data.message || data.status || 'Operation failed';
+                            showMessage(`${latestCardId}-messages`, `Error: ${errorMessage}`, 'error');
+                            console.error('General error handled via WebSocket:', data);
+                        }
+                    }
+                    return; // Error messages don't need further routing
+                }
+
                 // Handle progress updates for any card with progress indicator
                 const isProgressType = (data.type === 'progress' || data.type === 'config_generation_progress' ||
                      data.type === 'progress_update' || data.type === 'config_progress_update' ||

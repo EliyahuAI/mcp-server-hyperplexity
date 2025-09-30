@@ -838,8 +838,28 @@ def handle_async_completion_in_background_handler(event, context):
             logger.info(f"[ASYNC_COMPLETION] Loading from bucket={s3_bucket}, key={s3_key}")
 
             response = s3_client.get_object(Bucket=s3_bucket, Key=s3_key)
-            validation_results = json.loads(response['Body'].read().decode('utf-8'))
-            logger.info(f"[ASYNC_COMPLETION] Loaded validation results: {len(str(validation_results))} bytes")
+            async_validation_results = json.loads(response['Body'].read().decode('utf-8'))
+            logger.info(f"[ASYNC_COMPLETION] Loaded validation results: {len(str(async_validation_results))} bytes")
+
+            # DEBUG: Log the actual structure of async results to understand what we're working with
+            logger.info(f"[ASYNC_COMPLETION] Async results type: {type(async_validation_results)}")
+            if isinstance(async_validation_results, dict):
+                logger.info(f"[ASYNC_COMPLETION] Async results top-level keys: {list(async_validation_results.keys())}")
+                # Show a sample of the structure
+                preview = str(async_validation_results)[:500] + "..." if len(str(async_validation_results)) > 500 else str(async_validation_results)
+                logger.info(f"[ASYNC_COMPLETION] Async results structure preview: {preview}")
+
+            # Normalize async results to match sync response format: {statusCode, body: {data: {rows: ...}}}
+            # This allows async and sync results to go through the same processing pipeline
+            validation_results = {
+                'statusCode': 200,
+                'body': {
+                    'data': {
+                        'rows': async_validation_results  # The async results become the 'rows' portion
+                    }
+                }
+            }
+            logger.info(f"[ASYNC_COMPLETION] Normalized async results to sync format for common processing")
 
         except Exception as e:
             logger.error(f"[ASYNC_COMPLETION] Failed to load results from s3://{s3_bucket}/{s3_key}: {e}")
@@ -953,8 +973,15 @@ def handle_main_processing(event, context):
         is_preview = event.get('preview_mode', False) or event.get('request_type') == 'preview'
         session_id = event['session_id']
         timestamp = event.get('timestamp')
+
+        # Always use a clean session ID format: session_YYYY-MM-DDTHH_MM_SS_XXXXXX
+        # Ensure session ID has proper prefix (moved up to fix UnboundLocalError)
+        clean_session_id = session_id
+        if not clean_session_id.startswith('session_'):
+            clean_session_id = f"session_{clean_session_id}"
+
         reference_pin = event.get('reference_pin', '000000')
-        
+
         # If reference_pin is 'preview' or similar, extract it from clean_session_id
         if reference_pin == 'preview' or not reference_pin or reference_pin == '000000':
             # Extract reference pin from clean session ID
@@ -2511,9 +2538,12 @@ def handle_main_processing(event, context):
             # The actual batching loop
             all_validation_results = {}
             processed_rows_count = 0
-            total_batches = (rows_to_process + batch_size - 1) // batch_size
+
+            # Ensure batch_size has a default value if None
+            effective_batch_size = batch_size if batch_size is not None else 50
+            total_batches = (rows_to_process + effective_batch_size - 1) // effective_batch_size
             
-            update_run_status_for_session( status='PROCESSING', run_type="Validation", verbose_status=f"Validation preparing to process {rows_to_process} rows in {total_batches} batches.", batch_size=batch_size)
+            update_run_status_for_session( status='PROCESSING', run_type="Validation", verbose_status=f"Validation preparing to process {rows_to_process} rows in {total_batches} batches.", batch_size=effective_batch_size)
 
             # DISABLED: Fake simulation replaced with real validation lambda invocation
             logger.debug(f"[DEBUG] Fake batch processing loop DISABLED for session {session_id}")
@@ -2561,113 +2591,118 @@ def handle_main_processing(event, context):
             # as refactoring it to return per-batch results is a larger change.
 
             # ========== GENERATE COMPLETE VALIDATION PAYLOAD (SHARED BY SYNC AND ASYNC) ==========
-            # This payload generation is used by both sync and async processing paths
-            logger.info(f"[PAYLOAD_GENERATION] Creating complete validation payload for {rows_to_process} rows")
+            # Skip payload generation for async completion - we already have the results
+            if event.get('async_completion_mode'):
+                logger.info(f"[PAYLOAD_GENERATION] Skipping payload generation for async completion - results already available")
+                complete_validation_payload = {}  # Not needed for async completion
+            else:
+                # This payload generation is used by sync processing and initial async delegation
+                logger.info(f"[PAYLOAD_GENERATION] Creating complete validation payload for {rows_to_process} rows")
 
-            # Get parsed rows from the table data (S3TableParser uses 'data' field)
-            excel_rows = table_data.get('data', [])
-            if max_rows:
-                excel_rows = excel_rows[:max_rows]
+                # Get parsed rows from the table data (S3TableParser uses 'data' field)
+                excel_rows = table_data.get('data', [])
+                if max_rows:
+                    excel_rows = excel_rows[:max_rows]
 
-            logger.info(f"[PAYLOAD_GENERATION] Processing {len(excel_rows)} rows for validation payload")
+                logger.info(f"[PAYLOAD_GENERATION] Processing {len(excel_rows)} rows for validation payload")
 
-            # Get ID fields from config for row key generation (same logic as sync validation)
-            id_fields = []
-            logger.info(f"[PAYLOAD_GENERATION] Searching for ID fields in validation targets...")
-            for i, target in enumerate(config_data.get('validation_targets', [])):
-                importance = target.get('importance', '')
-                if importance.lower() == 'id':
-                    column = target.get('column', '')
-                    if column:
-                        id_fields.append(column)
-                        logger.info(f"[PAYLOAD_GENERATION] Found ID field: {column}")
+                # Get ID fields from config for row key generation (same logic as sync validation)
+                id_fields = []
+                logger.info(f"[PAYLOAD_GENERATION] Searching for ID fields in validation targets...")
+                for i, target in enumerate(config_data.get('validation_targets', [])):
+                    importance = target.get('importance', '')
+                    if importance.lower() == 'id':
+                        column = target.get('column', '')
+                        if column:
+                            id_fields.append(column)
+                            logger.info(f"[PAYLOAD_GENERATION] Found ID field: {column}")
 
-            # Fallback to SimplifiedSchemaValidator primary keys if no explicit ID fields
-            if not id_fields:
-                try:
-                    from simplified_schema_validator import SimplifiedSchemaValidator
-                    validator = SimplifiedSchemaValidator(config_data)
-                    id_fields = validator.primary_key
-                    logger.info(f"[PAYLOAD_GENERATION] Using primary keys from SimplifiedSchemaValidator: {id_fields}")
-                except Exception as e:
-                    logger.warning(f"[PAYLOAD_GENERATION] Could not use SimplifiedSchemaValidator: {e}")
-                    # Use default fallback ID fields for demo
-                    id_fields = ['Ticker_Symbol', 'Asset_ID']
-                    logger.info(f"[PAYLOAD_GENERATION] Using fallback ID fields: {id_fields}")
+                # Fallback to SimplifiedSchemaValidator primary keys if no explicit ID fields
+                if not id_fields:
+                    try:
+                        from simplified_schema_validator import SimplifiedSchemaValidator
+                        validator = SimplifiedSchemaValidator(config_data)
+                        id_fields = validator.primary_key
+                        logger.info(f"[PAYLOAD_GENERATION] Using primary keys from SimplifiedSchemaValidator: {id_fields}")
+                    except Exception as e:
+                        logger.warning(f"[PAYLOAD_GENERATION] Could not use SimplifiedSchemaValidator: {e}")
+                        # Use default fallback ID fields for demo
+                        id_fields = ['Ticker_Symbol', 'Asset_ID']
+                        logger.info(f"[PAYLOAD_GENERATION] Using fallback ID fields: {id_fields}")
 
-            logger.info(f"[PAYLOAD_GENERATION] ID fields for row key generation: {id_fields}")
+                logger.info(f"[PAYLOAD_GENERATION] ID fields for row key generation: {id_fields}")
 
-            # Add pre-computed row keys to each row (same logic as sync validation)
-            from row_key_utils import generate_row_key
-            processed_rows = []
-            for row_data in excel_rows:
-                # Generate row key
-                row_key = generate_row_key(row_data, id_fields)
-                logger.debug(f"[PAYLOAD_GENERATION] Generated row key: {row_key}")
+                # Add pre-computed row keys to each row (same logic as sync validation)
+                from row_key_utils import generate_row_key
+                processed_rows = []
+                for row_data in excel_rows:
+                    # Generate row key
+                    row_key = generate_row_key(row_data, id_fields)
+                    logger.debug(f"[PAYLOAD_GENERATION] Generated row key: {row_key}")
 
-                # Add row key to row data
-                row_data['_row_key'] = row_key
-                processed_rows.append(row_data)
+                    # Add row key to row data
+                    row_data['_row_key'] = row_key
+                    processed_rows.append(row_data)
 
-            logger.info(f"[PAYLOAD_GENERATION] Added pre-computed row keys to {len(processed_rows)} rows")
+                logger.info(f"[PAYLOAD_GENERATION] Added pre-computed row keys to {len(processed_rows)} rows")
 
-            # Load validation history if available and we have Excel content (matching invoke_validator_lambda logic)
-            validation_history = {}
-            try:
-                # Import validation history loader
-                from interface_lambda.utils.history_loader import load_validation_history_from_excel
-
-                # Save Excel content to a temporary file for history extraction
-                with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_file:
-                    tmp_file.write(excel_content)
-                    tmp_file_path = tmp_file.name
-
-                original_validation_history = load_validation_history_from_excel(tmp_file_path)
-
-                logger.info(f"[PAYLOAD_GENERATION] Loaded validation history for {len(original_validation_history)} row keys from Excel")
-
-                if original_validation_history:
-                    validation_history = original_validation_history
-
-                    # Log matching summary
-                    matched_count = 0
-                    for row in processed_rows:
-                        payload_key = row.get('_row_key', '')
-                        if payload_key and payload_key in validation_history:
-                            matched_count += 1
-
-                    logger.info(f"[PAYLOAD_GENERATION] Matched {matched_count} out of {len(processed_rows)} rows with validation history")
-
-                    if matched_count == 0 and len(validation_history) > 0:
-                        logger.warning("[PAYLOAD_GENERATION] No rows matched with validation history - may be using different primary keys")
-                        logger.info(f"[PAYLOAD_GENERATION] Current primary keys: {id_fields}")
-
-                # Clean up temp file
-                try:
-                    import os
-                    os.unlink(tmp_file_path)
-                except Exception as cleanup_error:
-                    logger.warning(f"[PAYLOAD_GENERATION] Failed to cleanup temp file: {cleanup_error}")
-
-            except Exception as e:
-                logger.warning(f"[PAYLOAD_GENERATION] Failed to load validation history: {e}")
+                # Load validation history if available and we have Excel content (matching invoke_validator_lambda logic)
                 validation_history = {}
+                try:
+                    # Import validation history loader
+                    from interface_lambda.utils.history_loader import load_validation_history_from_excel
 
-            # Create the complete validation payload (used by both sync and async)
-            complete_validation_payload = {
-                "test_mode": False,
-                "config": config_data,  # Embedded config data
-                "validation_data": {
-                    "rows": processed_rows,  # All Excel data with pre-computed row keys
-                    "max_rows": max_rows,
-                    "batch_size": batch_size,
-                    "total_dataset_size": len(processed_rows)
-                },
-                "validation_history": validation_history,  # Properly loaded validation history
-                "session_id": session_id
-            }
+                    # Save Excel content to a temporary file for history extraction
+                    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_file:
+                        tmp_file.write(excel_content)
+                        tmp_file_path = tmp_file.name
 
-            logger.info(f"[PAYLOAD_GENERATION] Complete validation payload created with {len(processed_rows)} rows")
+                    original_validation_history = load_validation_history_from_excel(tmp_file_path)
+
+                    logger.info(f"[PAYLOAD_GENERATION] Loaded validation history for {len(original_validation_history)} row keys from Excel")
+
+                    if original_validation_history:
+                        validation_history = original_validation_history
+
+                        # Log matching summary
+                        matched_count = 0
+                        for row in processed_rows:
+                            payload_key = row.get('_row_key', '')
+                            if payload_key and payload_key in validation_history:
+                                matched_count += 1
+
+                        logger.info(f"[PAYLOAD_GENERATION] Matched {matched_count} out of {len(processed_rows)} rows with validation history")
+
+                        if matched_count == 0 and len(validation_history) > 0:
+                            logger.warning("[PAYLOAD_GENERATION] No rows matched with validation history - may be using different primary keys")
+                            logger.info(f"[PAYLOAD_GENERATION] Current primary keys: {id_fields}")
+
+                    # Clean up temp file
+                    try:
+                        import os
+                        os.unlink(tmp_file_path)
+                    except Exception as cleanup_error:
+                        logger.warning(f"[PAYLOAD_GENERATION] Failed to cleanup temp file: {cleanup_error}")
+
+                except Exception as e:
+                    logger.warning(f"[PAYLOAD_GENERATION] Failed to load validation history: {e}")
+                    validation_history = {}
+
+                # Create the complete validation payload (used by both sync and async)
+                complete_validation_payload = {
+                    "test_mode": False,
+                    "config": config_data,  # Embedded config data
+                    "validation_data": {
+                        "rows": processed_rows,  # All Excel data with pre-computed row keys
+                        "max_rows": max_rows,
+                        "batch_size": batch_size,
+                        "total_dataset_size": len(processed_rows)
+                    },
+                    "validation_history": validation_history,  # Properly loaded validation history
+                    "session_id": session_id
+                }
+
+                logger.info(f"[PAYLOAD_GENERATION] Complete validation payload created with {len(processed_rows)} rows")
 
             # ========== SMART DELEGATION SYSTEM DECISION POINT ==========
             # Check if we should delegate to async processing based on estimated time
@@ -2675,8 +2710,12 @@ def handle_main_processing(event, context):
             estimated_minutes = 0.0
             should_delegate = False
 
+            # URGENT FIX: Skip delegation if this is async completion mode (prevents infinite loop)
+            if event.get('async_completion_mode'):
+                logger.info(f"[DELEGATION_DECISION] Async completion mode detected - FORCING synchronous completion to prevent infinite loop")
+                should_delegate = False
             # Skip delegation for previews - they must always run synchronously
-            if is_preview:
+            elif is_preview:
                 logger.info(f"[DELEGATION_DECISION] Preview mode detected - forcing synchronous processing")
                 should_delegate = False
             else:
@@ -4440,6 +4479,25 @@ def handle_main_processing(event, context):
                     logger.info(f"Sent error notification via WebSocket for session {session_id_for_error}")
                 except Exception as ws_error:
                     logger.error(f"Failed to send error notification via WebSocket: {ws_error}")
+
+                # Send email notification if EMAIL_SENDER_AVAILABLE
+                if EMAIL_SENDER_AVAILABLE:
+                    try:
+                        email_for_error = event.get('email', 'unknown')
+                        if email_for_error != 'unknown':
+                            send_validation_results_email(
+                                email=email_for_error,
+                                session_id=session_id_for_error,
+                                status='FAILED',
+                                error_message=str(e),
+                                is_preview=is_preview,
+                                is_config=is_config
+                            )
+                            logger.info(f"Sent error notification via email to {email_for_error}")
+                        else:
+                            logger.warning(f"Cannot send email notification - no email address in event")
+                    except Exception as email_error:
+                        logger.error(f"Failed to send error notification via email: {email_error}")
         return {'statusCode': 500, 'body': json.dumps({'status': 'background_failed', 'error': str(e)})}
 
 def handle_config_generation(event, context):
