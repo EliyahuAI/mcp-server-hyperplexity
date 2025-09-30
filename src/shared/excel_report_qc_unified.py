@@ -196,8 +196,45 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         logger.error(f"[QC_EXCEL_DEBUG] QC results provided with {len(qc_results)} entries")
         logger.error(f"[QC_EXCEL_DEBUG] QC keys sample: {list(qc_results.keys())[:3]}")
         logger.error(f"[QC_EXCEL_DEBUG] Validation results keys sample: {list(validation_results.keys())[:3] if isinstance(validation_results, dict) else 'Not a dict'}")
+
+        # CREATE QC-TO-VALIDATION KEY MAPPING
+        # QC uses hash keys, validation uses numeric string keys ("0", "1", "2", etc.)
+        # Map by position: first QC key -> "0", second QC key -> "1", etc.
+        qc_to_validation_mapping = {}
+        if isinstance(validation_results, dict):
+            qc_keys = list(qc_results.keys())
+            validation_keys = sorted([k for k in validation_results.keys() if str(k).isdigit()], key=lambda x: int(x))
+
+            for i, qc_key in enumerate(qc_keys):
+                if i < len(validation_keys):
+                    validation_key = validation_keys[i]
+                    qc_to_validation_mapping[qc_key] = validation_key
+
+            logger.error(f"[QC_KEY_MAPPING] Created mapping for {len(qc_to_validation_mapping)} rows")
+            logger.error(f"[QC_KEY_MAPPING] Sample mapping: {dict(list(qc_to_validation_mapping.items())[:3])}")
+        else:
+            qc_to_validation_mapping = {}
+            logger.error("[QC_KEY_MAPPING] Could not create mapping - validation_results not a dict")
     else:
         logger.error("[QC_EXCEL_DEBUG] No QC results provided to Excel function")
+        qc_to_validation_mapping = {}
+
+    # Helper function to find QC data for a validation row_key
+    def get_qc_data_for_row(validation_row_key):
+        """Find QC data for a validation row using the key mapping."""
+        if not qc_results:
+            return None
+
+        # Try direct lookup first (in case keys match)
+        if validation_row_key in qc_results:
+            return qc_results[validation_row_key]
+
+        # Use mapping to find the corresponding QC key
+        for qc_key, mapped_validation_key in qc_to_validation_mapping.items():
+            if str(mapped_validation_key) == str(validation_row_key):
+                return qc_results.get(qc_key)
+
+        return None
 
     if not EXCEL_ENHANCEMENT_AVAILABLE:
         logger.warning("Enhanced Excel not available, skipping Excel creation")
@@ -442,13 +479,17 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                         # Only process validation/QC for validated columns
                         if should_apply_coloring(col_name):
                             # Check for QC value first (highest priority)
-                            if qc_results and row_key in qc_results:
-                                row_qc_data = qc_results[row_key]
-                                if col_name in row_qc_data:
-                                    field_qc_data = row_qc_data[col_name]
-                                    if isinstance(field_qc_data, dict) and field_qc_data.get('qc_applied', False):
-                                        updated_value = field_qc_data.get('qc_entry', original_value)
-                                        qc_applied = True
+                            row_qc_data = get_qc_data_for_row(row_key)
+                            if row_qc_data and col_name in row_qc_data:
+                                field_qc_data = row_qc_data[col_name]
+                                if isinstance(field_qc_data, dict) and field_qc_data.get('qc_applied', False):
+                                    updated_value = field_qc_data.get('qc_entry', original_value)
+                                    qc_applied = True
+                                    logger.error(f"[QC_APPLIED] Row {row_key}, Col {col_name}: Using QC value '{updated_value}'")
+                                else:
+                                    logger.error(f"[QC_NOT_APPLIED] Row {row_key}, Col {col_name}: QC available but not applied - qc_applied={field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
+                            else:
+                                logger.error(f"[QC_MISSING] Row {row_key}, Col {col_name}: No QC data found")
 
                             # If no QC applied, use validation value
                             if not qc_applied and row_validation_data and col_name in row_validation_data:
@@ -468,11 +509,10 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                         if should_apply_coloring(col_name):
                             if qc_applied:
                                 # Get QC confidence format (same as validation format)
-                                if qc_results and row_key in qc_results:
-                                    row_qc_data = qc_results[row_key]
-                                    if col_name in row_qc_data:
-                                        field_qc_data = row_qc_data[col_name]
-                                        cell_format = get_qc_confidence_format(field_qc_data, qc_confidence_formats)
+                                row_qc_data = get_qc_data_for_row(row_key)
+                                if row_qc_data and col_name in row_qc_data:
+                                    field_qc_data = row_qc_data[col_name]
+                                    cell_format = get_qc_confidence_format(field_qc_data, qc_confidence_formats)
                                 if not cell_format:
                                     # Fallback to generic format if no confidence found
                                     cell_format = qc_confidence_formats.get('MEDIUM')  # Default QC format
@@ -518,14 +558,13 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                     qc_reasoning = ''
                                     qc_value = ''
 
-                                    if qc_results and row_key in qc_results:
-                                        row_qc_data = qc_results[row_key]
-                                        if col_name in row_qc_data:
-                                            field_qc_data = row_qc_data[col_name]
-                                            if isinstance(field_qc_data, dict):
-                                                qc_citations = field_qc_data.get('qc_citations', '')
-                                                qc_reasoning = field_qc_data.get('qc_reasoning', '')
-                                                qc_value = field_qc_data.get('qc_entry', '')
+                                    row_qc_data = get_qc_data_for_row(row_key)
+                                    if row_qc_data and col_name in row_qc_data:
+                                        field_qc_data = row_qc_data[col_name]
+                                        if isinstance(field_qc_data, dict):
+                                            qc_citations = field_qc_data.get('qc_citations', '')
+                                            qc_reasoning = field_qc_data.get('qc_reasoning', '')
+                                            qc_value = field_qc_data.get('qc_entry', '')
 
                                     # Smart reasoning selection based on QC data:
                                     # 1. If QC citations exist, use those (no Supporting Information)
@@ -638,14 +677,13 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             reasoning = field_data.get('reasoning', '')
 
                             # Check for QC original confidence override
-                            if qc_results and row_key in qc_results:
-                                row_qc_data = qc_results[row_key]
-                                if isinstance(row_qc_data, dict) and col_name in row_qc_data:
-                                    field_qc_data = row_qc_data[col_name]
-                                    if isinstance(field_qc_data, dict):
-                                        qc_original_confidence = field_qc_data.get('qc_original_confidence')
-                                        if qc_original_confidence and str(qc_original_confidence).strip():
-                                            original_confidence = qc_original_confidence
+                            row_qc_data = get_qc_data_for_row(row_key)
+                            if row_qc_data and isinstance(row_qc_data, dict) and col_name in row_qc_data:
+                                field_qc_data = row_qc_data[col_name]
+                                if isinstance(field_qc_data, dict):
+                                    qc_original_confidence = field_qc_data.get('qc_original_confidence')
+                                    if qc_original_confidence and str(qc_original_confidence).strip():
+                                        original_confidence = qc_original_confidence
 
                             # Apply original confidence color (only if confidence should be colored)
                             # Skip coloring for IGNORED and ID columns
@@ -667,14 +705,13 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 qc_reasoning = ''
                                 qc_value = ''
 
-                                if qc_results and row_key in qc_results:
-                                    row_qc_data = qc_results[row_key]
-                                    if col_name in row_qc_data:
-                                        field_qc_data = row_qc_data.get(col_name)
-                                        if isinstance(field_qc_data, dict):
-                                            qc_citations = field_qc_data.get('qc_citations', '')
-                                            qc_reasoning = field_qc_data.get('qc_reasoning', '')
-                                            qc_value = field_qc_data.get('qc_entry', '')
+                                row_qc_data = get_qc_data_for_row(row_key)
+                                if row_qc_data and col_name in row_qc_data:
+                                    field_qc_data = row_qc_data.get(col_name)
+                                    if isinstance(field_qc_data, dict):
+                                        qc_citations = field_qc_data.get('qc_citations', '')
+                                        qc_reasoning = field_qc_data.get('qc_reasoning', '')
+                                        qc_value = field_qc_data.get('qc_entry', '')
 
                                 # Smart reasoning selection based on QC data:
                                 # 1. If QC citations exist, use those (no Supporting Information)
@@ -872,11 +909,10 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             # Final value starts as updated value
                             final_value = str(field_data.get('value', ''))
 
-                            if qc_results and row_key in qc_results:
-                                row_qc_data = qc_results[row_key]
-                                if field_name in row_qc_data:
-                                    field_qc_data = row_qc_data[field_name]
-                                    if isinstance(field_qc_data, dict):
+                            row_qc_data = get_qc_data_for_row(row_key)
+                            if row_qc_data and field_name in row_qc_data:
+                                field_qc_data = row_qc_data[field_name]
+                                if isinstance(field_qc_data, dict):
                                         qc_applied = field_qc_data.get('qc_applied', False)
                                         logger.info(f"[QC_EXCEL_EXTRACT_DEBUG] {field_name}: qc_applied={qc_applied}, available_keys={list(field_qc_data.keys())}")
                                         if qc_applied:
