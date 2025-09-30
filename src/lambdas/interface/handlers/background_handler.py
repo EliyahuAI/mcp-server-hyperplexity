@@ -3590,8 +3590,18 @@ def handle_main_processing(event, context):
                 if table_data and EXCEL_ENHANCEMENT_AVAILABLE:
                     try:
                         validated_sheet = table_data.get('metadata', {}).get('sheet_name') if isinstance(table_data, dict) else None
+
+                        # Create validation_results structure that includes QC data at top level for Excel function
+                        excel_validation_results = {
+                            'validation_results': real_results,  # The actual row data
+                            'qc_results': qc_results,  # QC data extracted earlier
+                            'qc_metrics': qc_metrics   # QC metrics extracted earlier
+                        }
+
+                        logger.info(f"[QC_EXCEL_FULL] Passing QC data to Excel: {len(qc_results) if qc_results else 0} QC rows")
+
                         excel_buffer = create_qc_enhanced_excel_for_interface(
-                            table_data, real_results, config_data, session_id,
+                            table_data, excel_validation_results, config_data, session_id,
                             validated_sheet_name=validated_sheet
                         )
                         if excel_buffer:

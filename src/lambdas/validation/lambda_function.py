@@ -2947,7 +2947,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         # Track models used in this batch
                         batch_models_used = set()
                         batch_api_providers = set()
-                        for row_idx, row_results, row_models, batch_num in batch_results:
+                        for row_key, row_results, row_models, batch_num in batch_results:
                             batch_models_used.update(row_models)
                             # Also track providers for backward compatibility
                             for model in row_models:
@@ -3051,8 +3051,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         
                         # Store results
                         logger.debug(f"Storing results for batch {batch_index}: {len(batch_results)} results")
-                        for idx, result, _, batch_num in batch_results:
-                            validation_results[idx] = result
+                        for row_key, result, _, batch_num in batch_results:
+                            validation_results[row_key] = result
                             
                     except Exception as batch_error:
                         batch_success = False
@@ -3091,8 +3091,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     logger.warning(f"Failed to get result from completed task: {e}")
                         
                         logger.debug(f"Storing {len(completed_results)} partial results from failed batch {batch_index}")
-                        for idx, result, _, _ in completed_results:
-                            validation_results[idx] = result
+                        for row_key, result, _, _ in completed_results:
+                            validation_results[row_key] = result
                     
                     # Update progress
                     processed_rows = end_idx
@@ -3374,7 +3374,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             row_results['next_check'] = next_check.isoformat() if next_check else None
             row_results['reasons'] = reasons
             
-            return row_idx, row_results, row_models_used, batch_number
+            return row_key, row_results, row_models_used, batch_number
         
         async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False, row_models_used=None, group_id=None, row_api_providers=None):
             """Process a group of columns with a single multiplex AI API call using ai_api_client."""

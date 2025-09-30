@@ -191,6 +191,14 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
     """
     logger.error("🔥🔥🔥 EXCEL REPORT QC UNIFIED VERSION IS RUNNING 🔥🔥🔥")
 
+    # DEBUG: Log QC results structure for key mapping investigation
+    if qc_results:
+        logger.error(f"[QC_EXCEL_DEBUG] QC results provided with {len(qc_results)} entries")
+        logger.error(f"[QC_EXCEL_DEBUG] QC keys sample: {list(qc_results.keys())[:3]}")
+        logger.error(f"[QC_EXCEL_DEBUG] Validation results keys sample: {list(validation_results.keys())[:3] if isinstance(validation_results, dict) else 'Not a dict'}")
+    else:
+        logger.error("[QC_EXCEL_DEBUG] No QC results provided to Excel function")
+
     if not EXCEL_ENHANCEMENT_AVAILABLE:
         logger.warning("Enhanced Excel not available, skipping Excel creation")
         return None
