@@ -2366,6 +2366,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 sqs_client = boto3.client('sqs')
                 async_validator_queue = os.environ.get('ASYNC_VALIDATOR_QUEUE', 'perplexity-validator-async-queue')
 
+                # If async_validator_queue is just a queue name (not a URL), convert it to URL
+                if async_validator_queue and not async_validator_queue.startswith('https://'):
+                    logger.debug(f"[SELF_TRIGGER] Converting queue name to URL: {async_validator_queue}")
+                    try:
+                        queue_url_response = sqs_client.get_queue_url(QueueName=async_validator_queue)
+                        async_validator_queue = queue_url_response['QueueUrl']
+                        logger.debug(f"[SELF_TRIGGER] Using queue URL: {async_validator_queue}")
+                    except Exception as e:
+                        logger.error(f"[SELF_TRIGGER] Failed to get queue URL for {async_validator_queue}: {e}")
+                        return False
+
                 # Use updated event if available (set during batch processing)
                 current_event = globals().get('_continuation_event', event)
 
@@ -4614,13 +4625,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.info(f"[S3_SAVE] About to call trigger_interface_completion with results_s3_key={results_s3_key}")
                     trigger_interface_completion(results_s3_key)
                     logger.info(f"[S3_SAVE] trigger_interface_completion call completed")
-                elif should_continue and remaining_ms > SAFETY_BUFFER_MS:
-                    # Still have time and work to do - this was an intermediate save
-                    logger.info(f"[S3_SAVE] Intermediate save completed, processing continues")
-                elif not should_continue and has_more_work:
-                    # Running out of time but still have work - trigger continuation
-                    logger.info(f"[S3_SAVE] Running out of time ({remaining_ms}ms left), triggering continuation")
-                    logger.info(f"[S3_SAVE] Processed {processed_rows}/{total_rows} rows so far")
+                elif has_more_work:
+                    # More work to do - need to trigger continuation
+                    # (The lambda is about to end, so we must explicitly continue)
+                    logger.info(f"[S3_SAVE] More work remains ({processed_rows}/{total_rows} rows processed), triggering continuation")
+                    logger.info(f"[S3_SAVE] Time remaining: {remaining_ms}ms, should_continue={should_continue}")
 
                     # Trigger self-continuation for more processing time
                     if trigger_self_continuation():
