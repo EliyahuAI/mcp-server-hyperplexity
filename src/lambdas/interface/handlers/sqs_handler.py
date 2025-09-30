@@ -32,12 +32,22 @@ def handle(event, context):
                 logger.info(f"Skipping message from {message_environment} environment (current: {current_environment})")
                 continue
             
-            # Transform SQS message to the format expected by the background handler
+            # Check message type to determine routing
+            message_type = message_body.get('message_type', '')
             request_type = message_body.get('request_type', '')
             is_preview = (request_type == 'preview') or message_body.get('preview_mode', False)
-            
-            # Handle config generation requests differently
-            if request_type == 'config_generation':
+
+            # Handle async completion messages from validation lambda
+            # Check for both message types and async_completion flag for compatibility
+            if (message_type == 'ASYNC_COMPLETION_REQUEST' or
+                message_type == 'ASYNC_VALIDATION_COMPLETE' or
+                message_body.get('async_completion', False)):
+                logger.info(f"Processing async completion for session {message_body.get('session_id')} (message_type={message_type}, async_completion={message_body.get('async_completion', False)})")
+                # Route directly to background handler with the completion data
+                background_event = message_body  # Pass entire message for async completion
+
+            # Handle config generation requests
+            elif request_type == 'config_generation':
                 logger.info(f"Processing config generation request for session {message_body.get('session_id')}")
                 # Pass the entire message body for config generation
                 background_event = {

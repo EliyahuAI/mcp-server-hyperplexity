@@ -7,9 +7,10 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import math
 import io
+import tempfile
 from typing import Dict
 
 import boto3
@@ -582,7 +583,7 @@ S3_RESULTS_BUCKET = os.environ.get('S3_RESULTS_BUCKET', 'perplexity-results')
 VALIDATOR_LAMBDA_NAME = os.environ.get('VALIDATOR_LAMBDA_NAME', 'perplexity-validator')
 
 
-def verify_async_validation_trigger(session_id, sqs_message_id, timeout_seconds=30):
+def verify_async_validation_trigger(session_id, sqs_message_id, run_key=None, timeout_seconds=30):
     """
     Verify that the async validation lambda gets triggered within the timeout period.
     Returns True if triggered successfully, False otherwise.
@@ -590,65 +591,225 @@ def verify_async_validation_trigger(session_id, sqs_message_id, timeout_seconds=
     import time
 
     try:
-        logger.info(f"[VALIDATION_TRIGGER_CHECK] Waiting {timeout_seconds}s for async validation lambda to start...")
+        logger.info(f"[VALIDATION_TRIGGER_CHECK] Monitoring DynamoDB for async validation start (session: {session_id}, timeout: {timeout_seconds}s)...")
 
-        # Initialize CloudWatch Logs client
-        logs_client = boto3.client('logs')
-        validator_log_group = f"/aws/lambda/{VALIDATOR_LAMBDA_NAME}"
+        # The validation lambda updates DynamoDB run status to 'ASYNC_PROCESSING_STARTED' when it begins
+        # We'll monitor for this status change
 
-        # Get current time for filtering recent logs
-        start_time = int(time.time() * 1000)  # Convert to milliseconds
+        # Use the run_key passed as parameter
+        if not run_key:
+            # If no run_key provided, we need to get the latest run for this session
+            logger.debug(f"[VALIDATION_TRIGGER_CHECK] No run_key provided, will query for latest run")
+        else:
+            logger.debug(f"[VALIDATION_TRIGGER_CHECK] Using run_key: {run_key}")
 
-        # Wait and check for lambda invocation logs
         check_interval = 2  # Check every 2 seconds
         max_checks = timeout_seconds // check_interval
 
         for check_num in range(max_checks):
             try:
-                # Look for START RequestId logs indicating lambda invocation
-                filter_response = logs_client.filter_log_events(
-                    logGroupName=validator_log_group,
-                    startTime=start_time,
-                    filterPattern='"START RequestId"',
-                    limit=10
-                )
+                # Check DynamoDB for the run status
+                dynamodb = boto3.resource('dynamodb')
+                table = dynamodb.Table('perplexity-validator-runs')
 
-                # Check if we found any START events
-                events = filter_response.get('events', [])
-                if events:
-                    logger.info(f"[VALIDATION_TRIGGER_CHECK] Found {len(events)} validation lambda START events")
-
-                    # Look for our session ID in recent logs to confirm it's processing our request
-                    session_filter_response = logs_client.filter_log_events(
-                        logGroupName=validator_log_group,
-                        startTime=start_time,
-                        filterPattern=f'"{session_id}"',
-                        limit=5
+                if run_key:
+                    # Direct lookup if we have the run_key
+                    response = table.get_item(
+                        Key={
+                            'session_id': session_id,
+                            'run_key': run_key
+                        }
                     )
 
-                    session_events = session_filter_response.get('events', [])
-                    if session_events:
-                        logger.info(f"[VALIDATION_TRIGGER_CHECK] Confirmed validation lambda processing session {session_id}")
-                        return True
-                    else:
-                        logger.info(f"[VALIDATION_TRIGGER_CHECK] Validation lambda started but not yet processing session {session_id}")
+                    if 'Item' in response:
+                        status = response['Item'].get('status', '')
+                        verbose_status = response['Item'].get('verbose_status', '')
 
-            except Exception as log_error:
-                # Log group might not exist yet or permissions issue
-                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Log check error (check {check_num + 1}): {log_error}")
+                        logger.debug(f"[VALIDATION_TRIGGER_CHECK] DynamoDB status: {status}, verbose: {verbose_status}")
+
+                        # Check for any async processing status (initial or continuation)
+                        if (status == 'ASYNC_PROCESSING_STARTED' or
+                            status.startswith('ASYNC_CONTINUATION_') or
+                            'async' in status.lower()):
+
+                            # Extract continuation info if available
+                            continuation_chain = response['Item'].get('continuation_chain', [])
+                            if continuation_chain:
+                                latest_continuation = continuation_chain[-1]
+                                logger.info(f"[VALIDATION_TRIGGER_CHECK] Found async status: {status}")
+                                logger.info(f"[VALIDATION_TRIGGER_CHECK] Latest continuation: #{latest_continuation.get('continuation_number', 0)} started at {latest_continuation.get('started_at', 'unknown')}")
+                            else:
+                                logger.info(f"[VALIDATION_TRIGGER_CHECK] Found ASYNC_PROCESSING_STARTED status in DynamoDB!")
+
+                            _send_websocket_message(session_id, {
+                                'type': 'status_update',
+                                'status': '[SUCCESS] Async validation lambda confirmed active via DynamoDB',
+                                'session_id': session_id
+                            })
+
+                            return True
+                else:
+                    # Query for the latest run for this session
+                    response = table.query(
+                        KeyConditionExpression='session_id = :sid',
+                        ExpressionAttributeValues={
+                            ':sid': session_id
+                        },
+                        ScanIndexForward=False,  # Get most recent first
+                        Limit=1
+                    )
+
+                    if response.get('Items'):
+                        item = response['Items'][0]
+                        status = item.get('status', '')
+                        verbose_status = item.get('verbose_status', '')
+                        found_run_key = item.get('run_key', '')
+
+                        logger.debug(f"[VALIDATION_TRIGGER_CHECK] Latest run - status: {status}, run_key: {found_run_key}")
+
+                        # Check for any async processing status (initial or continuation)
+                        if (status == 'ASYNC_PROCESSING_STARTED' or
+                            status.startswith('ASYNC_CONTINUATION_') or
+                            'async' in status.lower()):
+
+                            # Extract continuation info if available
+                            continuation_chain = item.get('continuation_chain', [])
+                            if continuation_chain:
+                                latest_continuation = continuation_chain[-1]
+                                logger.info(f"[VALIDATION_TRIGGER_CHECK] Found async status in latest run: {status}")
+                                logger.info(f"[VALIDATION_TRIGGER_CHECK] Latest continuation: #{latest_continuation.get('continuation_number', 0)} started at {latest_continuation.get('started_at', 'unknown')}")
+                            else:
+                                logger.info(f"[VALIDATION_TRIGGER_CHECK] Found ASYNC_PROCESSING_STARTED in latest run!")
+
+                            _send_websocket_message(session_id, {
+                                'type': 'status_update',
+                                'status': '[SUCCESS] Async validation lambda confirmed active via DynamoDB',
+                                'session_id': session_id
+                            })
+
+                            return True
+
+                # Also still check S3 as a fallback (but for early files, not final ones)
+                # Check if the validation results are starting to appear in S3
+                s3_client = boto3.client('s3')
+
+                # Check for the validation results file that the lambda creates
+                # The validation lambda saves to: sessions/{session_id}/complete_validation_results.json
+                results_key = f"sessions/{session_id}/complete_validation_results.json"
+                unified_bucket = get_unified_bucket()
+
+                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Checking S3 for {results_key} in bucket {unified_bucket}")
+
+                try:
+                    # Try to get the results file that the validation lambda creates
+                    response = s3_client.head_object(
+                        Bucket=unified_bucket,
+                        Key=results_key
+                    )
+
+                    # If the file exists, the validation lambda has started and saved initial results
+                    logger.info(f"[VALIDATION_TRIGGER_CHECK] Found validation results file in S3 - validation lambda is active!")
+                    logger.info(f"[VALIDATION_TRIGGER_CHECK] File size: {response.get('ContentLength', 0)} bytes, Last modified: {response.get('LastModified')}")
+
+                    # Also send WebSocket update
+                    _send_websocket_message(session_id, {
+                        'type': 'status_update',
+                        'status': '[SUCCESS] Async validation lambda triggered and processing',
+                        'session_id': session_id
+                    })
+
+                    return True
+
+                except s3_client.exceptions.ClientError as e:
+                    if e.response['Error']['Code'] == '404':
+                        # File doesn't exist yet, continue checking
+                        logger.debug(f"[VALIDATION_TRIGGER_CHECK] Results file not found yet (check {check_num + 1})")
+                    else:
+                        logger.debug(f"[VALIDATION_TRIGGER_CHECK] S3 check error: {e}")
+
+                # Also check for any session files as a backup indicator
+                session_prefix = f"sessions/{session_id}/"
+                try:
+                    response = s3_client.list_objects_v2(
+                        Bucket=unified_bucket,
+                        Prefix=session_prefix,
+                        MaxKeys=1
+                    )
+
+                    if response.get('KeyCount', 0) > 0:
+                        logger.info(f"[VALIDATION_TRIGGER_CHECK] Found session files in S3 - validation lambda has started!")
+                        logger.info(f"[VALIDATION_TRIGGER_CHECK] First file: {response['Contents'][0]['Key']}")
+
+                        _send_websocket_message(session_id, {
+                            'type': 'status_update',
+                            'status': '[SUCCESS] Async validation lambda triggered (session files detected)',
+                            'session_id': session_id
+                        })
+
+                        return True
+
+                except Exception as list_error:
+                    logger.debug(f"[VALIDATION_TRIGGER_CHECK] S3 list error: {list_error}")
+
+                # Also check CloudWatch metrics as a backup
+                validator_lambda_name = os.environ.get('VALIDATOR_LAMBDA_NAME', 'perplexity-validator')
+                cloudwatch = boto3.client('cloudwatch')
+
+                end_time = datetime.now(timezone.utc)
+                start_time = end_time - timedelta(minutes=2)
+
+                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Checking CloudWatch metrics for {validator_lambda_name}")
+                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Time window: {start_time} to {end_time}")
+
+                response = cloudwatch.get_metric_statistics(
+                    Namespace='AWS/Lambda',
+                    MetricName='Invocations',
+                    Dimensions=[{'Name': 'FunctionName', 'Value': validator_lambda_name}],
+                    StartTime=start_time,
+                    EndTime=end_time,
+                    Period=60,
+                    Statistics=['Sum']
+                )
+
+                datapoints = response.get('Datapoints', [])
+                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Got {len(datapoints)} datapoints from CloudWatch")
+                for dp in datapoints:
+                    logger.debug(f"[VALIDATION_TRIGGER_CHECK]   {dp['Timestamp']}: {dp['Sum']} invocations")
+
+                recent_invocations = sum([point['Sum'] for point in datapoints])
+                if recent_invocations > 0:
+                    logger.info(f"[VALIDATION_TRIGGER_CHECK] Found {recent_invocations} recent lambda invocations via metrics")
+
+                    # Give it a moment for S3 files to appear
+                    if check_num >= 2:  # After 4+ seconds
+                        _send_websocket_message(session_id, {
+                            'type': 'status_update',
+                            'status': '[SUCCESS] Async validation lambda triggered (confirmed via metrics)',
+                            'session_id': session_id
+                        })
+                        return True
+
+            except Exception as check_error:
+                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Check error (attempt {check_num + 1}): {check_error}")
 
             # Wait before next check
-            if check_num < max_checks - 1:  # Don't wait after the last check
+            if check_num < max_checks - 1:
                 time.sleep(check_interval)
-                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Check {check_num + 1}/{max_checks} - waiting {check_interval}s...")
+                logger.debug(f"[VALIDATION_TRIGGER_CHECK] Waiting {check_interval}s before next check...")
 
         # Timeout reached without finding validation lambda activity
-        logger.warning(f"[VALIDATION_TRIGGER_CHECK] No validation lambda activity found for session {session_id} within {timeout_seconds}s")
+        logger.warning(f"[VALIDATION_TRIGGER_CHECK] No validation lambda activity detected for session {session_id} within {timeout_seconds}s")
+
+        _send_websocket_message(session_id, {
+            'type': 'status_update',
+            'status': f'[WARNING] Async validation not detected after {timeout_seconds}s - falling back to sync',
+            'session_id': session_id
+        })
+
         return False
 
     except Exception as e:
         logger.error(f"[VALIDATION_TRIGGER_CHECK] Error verifying async validation trigger: {e}")
-        # Return False to indicate we couldn't verify the trigger
         return False
 
 
@@ -739,8 +900,11 @@ def handle(event, context):
     """Handle background processing for both normal and preview mode validation."""
     # ========== ASYNC COMPLETION CHECK ==========
     # Check if this is async completion (validation lambda finished and we need to complete the job)
-    if event.get('async_completion'):
-        logger.info("[ASYNC_COMPLETION] Processing async completion request")
+    # Check both old field name and new message_type for compatibility
+    if (event.get('async_completion') or
+        event.get('message_type') == 'ASYNC_COMPLETION_REQUEST' or
+        event.get('message_type') == 'ASYNC_VALIDATION_COMPLETE'):
+        logger.info(f"[ASYNC_COMPLETION] Processing async completion request (message_type={event.get('message_type')}, async_completion={event.get('async_completion', False)})")
         return handle_async_completion_in_background_handler(event, context)
 
     # Normal processing
@@ -1047,9 +1211,9 @@ def handle_main_processing(event, context):
 
                 # Merge QC data into real_results for display purposes (QC values take precedence)
                 if qc_results:
-                    logger.info(f"[QC_MERGE] Merging QC data into preview results for display")
-                    logger.info(f"[QC_MERGE_DEBUG] QC results structure: {list(qc_results.keys())[:3]}")
-                    logger.info(f"[QC_MERGE_DEBUG] real_results keys sample: {list(real_results.keys())[:3]}")
+                    logger.debug(f"[QC_MERGE] Merging QC data into preview results for display")
+                    logger.debug(f"[QC_MERGE_DEBUG] QC results structure: {list(qc_results.keys())[:3]}")
+                    logger.debug(f"[QC_MERGE_DEBUG] real_results keys sample: {list(real_results.keys())[:3]}")
 
                     # Create mapping from hash keys (QC) to numeric keys (validation results)
                     # QC uses hash keys, validation results use numeric string keys
@@ -1062,19 +1226,19 @@ def handle_main_processing(event, context):
                             validation_key = validation_numeric_keys[i]
                             row_qc_data = qc_results[qc_hash_key]
 
-                            logger.info(f"[QC_MERGE_DEBUG] Mapping QC hash key {qc_hash_key} -> validation key {validation_key}")
+                            logger.debug(f"[QC_MERGE_DEBUG] Mapping QC hash key {qc_hash_key} -> validation key {validation_key}")
 
                             if validation_key in real_results:
-                                logger.info(f"[QC_MERGE_DEBUG] Row {validation_key}: QC fields = {list(row_qc_data.keys())}")
+                                logger.debug(f"[QC_MERGE_DEBUG] Row {validation_key}: QC fields = {list(row_qc_data.keys())}")
                                 for field_name, field_qc_data in row_qc_data.items():
-                                    logger.info(f"[QC_MERGE_DEBUG] Field {field_name}: QC data keys = {list(field_qc_data.keys()) if isinstance(field_qc_data, dict) else 'not dict'}")
-                                    logger.info(f"[QC_MERGE_DEBUG] Field {field_name}: qc_applied = {field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
+                                    logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: QC data keys = {list(field_qc_data.keys()) if isinstance(field_qc_data, dict) else 'not dict'}")
+                                    logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: qc_applied = {field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
 
                                     if isinstance(field_qc_data, dict) and (field_qc_data.get('qc_applied') is True or field_qc_data.get('qc_applied') == 'Yes'):
                                         # Since QC is now comprehensive, always use QC values when available
                                         qc_entry = field_qc_data.get('qc_entry', '')
                                         qc_confidence = field_qc_data.get('qc_confidence', '')
-                                        logger.info(f"[QC_MERGE_DEBUG] Field {field_name}: has qc_entry = {bool(qc_entry)}, has qc_confidence = {bool(qc_confidence)}")
+                                        logger.debug(f"[QC_MERGE_DEBUG] Field {field_name}: has qc_entry = {bool(qc_entry)}, has qc_confidence = {bool(qc_confidence)}")
 
                                         # Always use QC entry and confidence when available (comprehensive QC)
                                         if qc_entry and str(qc_entry).strip():
@@ -2396,75 +2560,190 @@ def handle_main_processing(event, context):
             # For now, we will call the original invoker to get the final result in one go,
             # as refactoring it to return per-batch results is a larger change.
 
+            # ========== GENERATE COMPLETE VALIDATION PAYLOAD (SHARED BY SYNC AND ASYNC) ==========
+            # This payload generation is used by both sync and async processing paths
+            logger.info(f"[PAYLOAD_GENERATION] Creating complete validation payload for {rows_to_process} rows")
+
+            # Get parsed rows from the table data (S3TableParser uses 'data' field)
+            excel_rows = table_data.get('data', [])
+            if max_rows:
+                excel_rows = excel_rows[:max_rows]
+
+            logger.info(f"[PAYLOAD_GENERATION] Processing {len(excel_rows)} rows for validation payload")
+
+            # Get ID fields from config for row key generation (same logic as sync validation)
+            id_fields = []
+            logger.info(f"[PAYLOAD_GENERATION] Searching for ID fields in validation targets...")
+            for i, target in enumerate(config_data.get('validation_targets', [])):
+                importance = target.get('importance', '')
+                if importance.lower() == 'id':
+                    column = target.get('column', '')
+                    if column:
+                        id_fields.append(column)
+                        logger.info(f"[PAYLOAD_GENERATION] Found ID field: {column}")
+
+            # Fallback to SimplifiedSchemaValidator primary keys if no explicit ID fields
+            if not id_fields:
+                try:
+                    from simplified_schema_validator import SimplifiedSchemaValidator
+                    validator = SimplifiedSchemaValidator(config_data)
+                    id_fields = validator.primary_key
+                    logger.info(f"[PAYLOAD_GENERATION] Using primary keys from SimplifiedSchemaValidator: {id_fields}")
+                except Exception as e:
+                    logger.warning(f"[PAYLOAD_GENERATION] Could not use SimplifiedSchemaValidator: {e}")
+                    # Use default fallback ID fields for demo
+                    id_fields = ['Ticker_Symbol', 'Asset_ID']
+                    logger.info(f"[PAYLOAD_GENERATION] Using fallback ID fields: {id_fields}")
+
+            logger.info(f"[PAYLOAD_GENERATION] ID fields for row key generation: {id_fields}")
+
+            # Add pre-computed row keys to each row (same logic as sync validation)
+            from row_key_utils import generate_row_key
+            processed_rows = []
+            for row_data in excel_rows:
+                # Generate row key
+                row_key = generate_row_key(row_data, id_fields)
+                logger.debug(f"[PAYLOAD_GENERATION] Generated row key: {row_key}")
+
+                # Add row key to row data
+                row_data['_row_key'] = row_key
+                processed_rows.append(row_data)
+
+            logger.info(f"[PAYLOAD_GENERATION] Added pre-computed row keys to {len(processed_rows)} rows")
+
+            # Load validation history if available and we have Excel content (matching invoke_validator_lambda logic)
+            validation_history = {}
+            try:
+                # Import validation history loader
+                from interface_lambda.utils.history_loader import load_validation_history_from_excel
+
+                # Save Excel content to a temporary file for history extraction
+                with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_file:
+                    tmp_file.write(excel_content)
+                    tmp_file_path = tmp_file.name
+
+                original_validation_history = load_validation_history_from_excel(tmp_file_path)
+
+                logger.info(f"[PAYLOAD_GENERATION] Loaded validation history for {len(original_validation_history)} row keys from Excel")
+
+                if original_validation_history:
+                    validation_history = original_validation_history
+
+                    # Log matching summary
+                    matched_count = 0
+                    for row in processed_rows:
+                        payload_key = row.get('_row_key', '')
+                        if payload_key and payload_key in validation_history:
+                            matched_count += 1
+
+                    logger.info(f"[PAYLOAD_GENERATION] Matched {matched_count} out of {len(processed_rows)} rows with validation history")
+
+                    if matched_count == 0 and len(validation_history) > 0:
+                        logger.warning("[PAYLOAD_GENERATION] No rows matched with validation history - may be using different primary keys")
+                        logger.info(f"[PAYLOAD_GENERATION] Current primary keys: {id_fields}")
+
+                # Clean up temp file
+                try:
+                    import os
+                    os.unlink(tmp_file_path)
+                except Exception as cleanup_error:
+                    logger.warning(f"[PAYLOAD_GENERATION] Failed to cleanup temp file: {cleanup_error}")
+
+            except Exception as e:
+                logger.warning(f"[PAYLOAD_GENERATION] Failed to load validation history: {e}")
+                validation_history = {}
+
+            # Create the complete validation payload (used by both sync and async)
+            complete_validation_payload = {
+                "test_mode": False,
+                "config": config_data,  # Embedded config data
+                "validation_data": {
+                    "rows": processed_rows,  # All Excel data with pre-computed row keys
+                    "max_rows": max_rows,
+                    "batch_size": batch_size,
+                    "total_dataset_size": len(processed_rows)
+                },
+                "validation_history": validation_history,  # Properly loaded validation history
+                "session_id": session_id
+            }
+
+            logger.info(f"[PAYLOAD_GENERATION] Complete validation payload created with {len(processed_rows)} rows")
+
             # ========== SMART DELEGATION SYSTEM DECISION POINT ==========
             # Check if we should delegate to async processing based on estimated time
+            # IMPORTANT: Never delegate previews to async - they must run synchronously
             estimated_minutes = 0.0
             should_delegate = False
 
-            # Try to get the estimated processing time from stored preview data
-            try:
-                # Retrieve the time estimate from stored preview data
-                storage_manager_temp = UnifiedS3Manager()
-                preview_data = storage_manager_temp.get_latest_preview_results(email, clean_session_id)
+            # Skip delegation for previews - they must always run synchronously
+            if is_preview:
+                logger.info(f"[DELEGATION_DECISION] Preview mode detected - forcing synchronous processing")
+                should_delegate = False
+            else:
+                # Try to get the estimated processing time from stored preview data
+                try:
+                    # Retrieve the time estimate from stored preview data
+                    storage_manager_temp = UnifiedS3Manager()
+                    preview_data = storage_manager_temp.get_latest_preview_results(email, clean_session_id)
 
-                estimated_total_time_seconds = None
-                if preview_data:
-                    # Try multiple possible field names where time estimates might be stored
-                    time_estimate_fields = [
+                    estimated_total_time_seconds = None
+                    if preview_data:
+                        # Try multiple possible field names where time estimates might be stored
+                        time_estimate_fields = [
                         'estimated_validation_time',           # Seconds - most direct field
                         'estimated_total_processing_time',     # Seconds - backup field
                         'estimated_total_time_seconds'         # Seconds - legacy field
                     ]
 
-                    for field_name in time_estimate_fields:
-                        if field_name in preview_data and preview_data[field_name]:
-                            estimated_total_time_seconds = preview_data[field_name]
-                            logger.info(f"[DELEGATION_DECISION] Found time estimate in field '{field_name}': {estimated_total_time_seconds}s")
-                            break
+                        for field_name in time_estimate_fields:
+                            if field_name in preview_data and preview_data[field_name]:
+                                estimated_total_time_seconds = preview_data[field_name]
+                                logger.info(f"[DELEGATION_DECISION] Found time estimate in field '{field_name}': {estimated_total_time_seconds}s")
+                                break
 
-                    # If we didn't find seconds, try minutes fields
-                    if not estimated_total_time_seconds:
-                        minutes_fields = [
+                        # If we didn't find seconds, try minutes fields
+                        if not estimated_total_time_seconds:
+                            minutes_fields = [
                             'estimated_validation_time_minutes'  # Minutes - convert to seconds
                         ]
 
-                        for field_name in minutes_fields:
-                            if field_name in preview_data and preview_data[field_name]:
-                                estimated_total_time_seconds = preview_data[field_name] * 60.0
-                                logger.info(f"[DELEGATION_DECISION] Found time estimate in field '{field_name}': {preview_data[field_name]}min = {estimated_total_time_seconds}s")
-                                break
+                            for field_name in minutes_fields:
+                                if field_name in preview_data and preview_data[field_name]:
+                                    estimated_total_time_seconds = preview_data[field_name] * 60.0
+                                    logger.info(f"[DELEGATION_DECISION] Found time estimate in field '{field_name}': {preview_data[field_name]}min = {estimated_total_time_seconds}s")
+                                    break
 
-                    # Also try nested locations for backwards compatibility
-                    if not estimated_total_time_seconds:
-                        nested_locations = [
+                        # Also try nested locations for backwards compatibility
+                        if not estimated_total_time_seconds:
+                            nested_locations = [
                             ('processing_estimates', 'estimated_total_time_seconds'),
                             ('cost_estimates', 'estimated_validation_time')
                         ]
 
-                        for parent_key, child_key in nested_locations:
-                            if preview_data.get(parent_key) and preview_data[parent_key].get(child_key):
-                                estimated_total_time_seconds = preview_data[parent_key][child_key]
-                                logger.info(f"[DELEGATION_DECISION] Found time estimate in nested location '{parent_key}.{child_key}': {estimated_total_time_seconds}s")
-                                break
+                            for parent_key, child_key in nested_locations:
+                                if preview_data.get(parent_key) and preview_data[parent_key].get(child_key):
+                                    estimated_total_time_seconds = preview_data[parent_key][child_key]
+                                    logger.info(f"[DELEGATION_DECISION] Found time estimate in nested location '{parent_key}.{child_key}': {estimated_total_time_seconds}s")
+                                    break
 
-                if estimated_total_time_seconds and estimated_total_time_seconds > 0:
-                    estimated_minutes = estimated_total_time_seconds / 60.0
-                    should_delegate = estimated_minutes > MAX_SYNC_INVOCATION_TIME_MINUTES
+                    if estimated_total_time_seconds and estimated_total_time_seconds > 0:
+                        estimated_minutes = estimated_total_time_seconds / 60.0
+                        should_delegate = estimated_minutes > MAX_SYNC_INVOCATION_TIME_MINUTES
 
-                    logger.info(f"[DELEGATION_DECISION] Estimated processing time: {estimated_minutes:.1f} minutes")
-                    logger.info(f"[DELEGATION_DECISION] Sync timeout limit: {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f} minutes")
-                    logger.info(f"[DELEGATION_DECISION] Should delegate: {should_delegate}")
-                else:
-                    logger.warning(f"[DELEGATION_DECISION] No valid time estimate found in preview data, using sync processing")
-                    logger.debug(f"[DELEGATION_DECISION] Available preview data keys: {list(preview_data.keys()) if preview_data else 'None'}")
-                    if preview_data:
-                        # Log some field values to help debug
-                        debug_fields = ['estimated_validation_time', 'estimated_total_processing_time', 'estimated_validation_time_minutes']
-                        for field in debug_fields:
-                            if field in preview_data:
-                                logger.debug(f"[DELEGATION_DECISION] {field}: {preview_data[field]}")
-            except Exception as e:
-                logger.error(f"[DELEGATION_DECISION] Error checking delegation criteria: {e}")
+                        logger.info(f"[DELEGATION_DECISION] Estimated processing time: {estimated_minutes:.1f} minutes")
+                        logger.info(f"[DELEGATION_DECISION] Sync timeout limit: {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f} minutes")
+                        logger.info(f"[DELEGATION_DECISION] Should delegate: {should_delegate}")
+                    else:
+                        logger.warning(f"[DELEGATION_DECISION] No valid time estimate found in preview data, using sync processing")
+                        logger.debug(f"[DELEGATION_DECISION] Available preview data keys: {list(preview_data.keys()) if preview_data else 'None'}")
+                        if preview_data:
+                            # Log some field values to help debug
+                            debug_fields = ['estimated_validation_time', 'estimated_total_processing_time', 'estimated_validation_time_minutes']
+                            for field in debug_fields:
+                                if field in preview_data:
+                                    logger.debug(f"[DELEGATION_DECISION] {field}: {preview_data[field]}")
+                except Exception as e:
+                    logger.error(f"[DELEGATION_DECISION] Error checking delegation criteria: {e}")
 
             if should_delegate:
                 # ========== ASYNC DELEGATION WORKFLOW ==========
@@ -2518,94 +2797,135 @@ def handle_main_processing(event, context):
                     )
 
                     if delegation_success:
-                        # Trigger async validator via SQS
-                        async_message = {
-                            'message_type': 'ASYNC_VALIDATION_REQUEST',
-                            'session_id': session_id,
-                            'run_key': run_key,
-                            'async_delegation_request': True,
-                            'excel_s3_key': excel_s3_key,
-                            'config_s3_key': config_s3_key,
-                            'max_rows': max_rows,
-                            'batch_size': batch_size,
-                            'S3_UNIFIED_BUCKET': S3_UNIFIED_BUCKET,
-                            'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME,
-                            'validation_history': None  # Set to None for now - validation_history variables not defined in this scope
-                        }
+                        # ========== USE PRE-GENERATED VALIDATION PAYLOAD ==========
+                        # Use the complete validation payload that was already generated
+                        logger.info(f"[DELEGATION] Using pre-generated validation payload for async processing")
 
-                        try:
-                            # Send message to async validator queue
-                            response = sqs_client.send_message(
-                                QueueUrl=ASYNC_VALIDATOR_QUEUE,
-                                MessageBody=json.dumps(async_message, default=str)
-                            )
-
-                            logger.info(f"[DELEGATION] Successfully triggered async validator via SQS: {response['MessageId']}")
-
-                            # Verify async validator lambda gets triggered within reasonable time
-                            validation_lambda_triggered = verify_async_validation_trigger(
-                                session_id, response['MessageId'], timeout_seconds=10
-                            )
-
-                            if not validation_lambda_triggered:
-                                logger.error(f"[DELEGATION] Async validation lambda was not triggered within 10 seconds!")
-                                logger.error(f"[DELEGATION] SQS Message ID: {response['MessageId']}")
-                                logger.error(f"[DELEGATION] This indicates a problem with SQS event source mapping or lambda permissions")
-
-                                # Send failure notification via WebSocket
-                                try:
-                                    _send_websocket_message(session_id, {
-                                        'type': 'validation_error',
-                                        'status': 'FAILED',
-                                        'error': 'Async validation system failed to start',
-                                        'details': 'The validation lambda was not triggered by the async delegation system',
-                                        'troubleshooting': 'Check SQS event source mapping and lambda permissions',
-                                        'sqs_message_id': response['MessageId'],
-                                        'retry_suggestion': 'Please try your validation again or contact support'
-                                    })
-                                    logger.info(f"[DELEGATION] Sent failure notification via WebSocket for session {session_id}")
-                                except Exception as websocket_error:
-                                    logger.error(f"[DELEGATION] Failed to send WebSocket failure notification: {websocket_error}")
-
-                                # Update run status to indicate delegation failure
-                                try:
-                                    update_run_status(
-                                        session_id=session_id,
-                                        run_key=run_key,
-                                        status='FAILED',
-                                        verbose_status='Async delegation failed - validation lambda not triggered'
-                                    )
-                                except Exception as status_error:
-                                    logger.error(f"[DELEGATION] Failed to update run status: {status_error}")
-
-                                # Continue with sync processing as fallback
-                                logger.info(f"[DELEGATION] Falling back to sync processing due to async delegation failure")
-                                should_delegate = False
-
-                            logger.info(f"[DELEGATION] Async validation lambda successfully triggered and started processing")
-
-                            # Send success notification via WebSocket
-                            try:
-                                _send_websocket_message(session_id, {
-                                    'type': 'delegation_success',
-                                    'status': 'DELEGATED_TO_ASYNC',
-                                    'message': f'Job delegated to async processing (estimated {estimated_minutes:.1f} minutes)',
-                                    'estimated_minutes': estimated_minutes,
-                                    'sqs_message_id': response['MessageId'],
-                                    'info': 'Your validation is now running in the background. You will receive updates as processing progresses.'
-                                })
-                                logger.info(f"[DELEGATION] Sent delegation success notification via WebSocket for session {session_id}")
-                            except Exception as websocket_error:
-                                logger.error(f"[DELEGATION] Failed to send WebSocket success notification: {websocket_error}")
-
-                            # Background handler job is done - async validator will take over
-                            # Don't return HTTP response, just exit gracefully
-                            logger.info(f"[DELEGATION] Background handler completed delegation for session {session_id}")
-                            return
-
-                        except Exception as sqs_error:
-                            logger.error(f"[DELEGATION] Failed to send SQS message: {sqs_error}")
+                        # Check if we have valid payload with rows
+                        payload_rows = complete_validation_payload.get('validation_data', {}).get('rows', [])
+                        if len(payload_rows) == 0:
+                            logger.error(f"[DELEGATION] CRITICAL: Pre-generated payload has no rows!")
+                            logger.error(f"[DELEGATION] This will cause async validation to fail")
                             should_delegate = False  # Fall back to sync processing
+                        else:
+                            logger.info(f"[DELEGATION] Pre-generated payload contains {len(payload_rows)} rows with pre-computed keys")
+
+                            # Add async-specific fields to the pre-generated payload
+                            async_payload = complete_validation_payload.copy()
+                            async_payload.update({
+                                "async_delegation_request": True,  # Flag to indicate async processing
+                                "run_key": run_key,
+                                "S3_UNIFIED_BUCKET": S3_UNIFIED_BUCKET,
+                                "VALIDATOR_LAMBDA_NAME": VALIDATOR_LAMBDA_NAME
+                            })
+
+                        if should_delegate and len(payload_rows) > 0:  # Only proceed if we have valid payload with rows
+
+                            # Store complete payload in S3 for async validator
+                            payload_s3_key = f"async_payloads/{session_id}/{run_key}/complete_validation_payload.json"
+
+                            import boto3
+                            s3_client = boto3.client('s3')
+                            s3_client.put_object(
+                                Bucket=S3_UNIFIED_BUCKET,
+                                Key=payload_s3_key,
+                                Body=json.dumps(async_payload, default=str),
+                                ContentType='application/json'
+                            )
+
+                            logger.info(f"[DELEGATION] Stored complete payload in S3: {payload_s3_key}")
+
+                            # Trigger async validator via SQS with payload S3 key
+                            async_message = {
+                                'message_type': 'ASYNC_VALIDATION_REQUEST',
+                                'session_id': session_id,
+                                'run_key': run_key,
+                                'async_delegation_request': True,
+                                'complete_payload_s3_key': payload_s3_key,  # Key to complete sync-compatible payload
+                                'S3_UNIFIED_BUCKET': S3_UNIFIED_BUCKET,
+                                'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME,
+                                # Legacy fields for backward compatibility (not used by new async validator)
+                                'excel_s3_key': excel_s3_key,
+                                'config_s3_key': config_s3_key,
+                                'max_rows': max_rows,
+                                'batch_size': batch_size,
+                                'validation_history': None
+                            }
+
+                            try:
+                                # Send message to async validator queue
+                                response = sqs_client.send_message(
+                                    QueueUrl=ASYNC_VALIDATOR_QUEUE,
+                                    MessageBody=json.dumps(async_message, default=str)
+                                )
+
+                                logger.info(f"[DELEGATION] Successfully triggered async validator via SQS: {response['MessageId']}")
+
+                                # Verify async validator lambda gets triggered within reasonable time (allow for cold starts)
+                                validation_lambda_triggered = verify_async_validation_trigger(
+                                    session_id, response['MessageId'], run_key=run_key, timeout_seconds=20
+                                )
+
+                                if not validation_lambda_triggered:
+                                    logger.error(f"[DELEGATION] Async validation lambda was not triggered within 20 seconds!")
+                                    logger.error(f"[DELEGATION] SQS Message ID: {response['MessageId']}")
+                                    logger.error(f"[DELEGATION] This indicates a problem with SQS event source mapping or lambda permissions")
+
+                                    # Send failure notification via WebSocket
+                                    try:
+                                        _send_websocket_message(session_id, {
+                                            'type': 'validation_error',
+                                            'status': 'FAILED',
+                                            'error': 'Async validation system failed to start',
+                                            'details': 'The validation lambda was not triggered by the async delegation system',
+                                            'troubleshooting': 'Check SQS event source mapping and lambda permissions',
+                                            'sqs_message_id': response['MessageId'],
+                                            'retry_suggestion': 'Please try your validation again or contact support'
+                                        })
+                                        logger.info(f"[DELEGATION] Sent failure notification via WebSocket for session {session_id}")
+                                    except Exception as websocket_error:
+                                        logger.error(f"[DELEGATION] Failed to send WebSocket failure notification: {websocket_error}")
+
+                                    # Update run status to indicate delegation failure
+                                    try:
+                                        update_run_status(
+                                            session_id=session_id,
+                                            run_key=run_key,
+                                            status='FAILED',
+                                            verbose_status='Async delegation failed - validation lambda not triggered'
+                                        )
+                                    except Exception as status_error:
+                                        logger.error(f"[DELEGATION] Failed to update run status: {status_error}")
+
+                                    # Continue with sync processing as fallback
+                                    logger.info(f"[DELEGATION] Falling back to sync processing due to async delegation failure")
+                                    should_delegate = False
+
+                                else:
+                                    logger.info(f"[DELEGATION] Async validation lambda successfully triggered and started processing")
+
+                                    # Send success notification via WebSocket
+                                    try:
+                                        _send_websocket_message(session_id, {
+                                            'type': 'delegation_success',
+                                            'status': 'DELEGATED_TO_ASYNC',
+                                            'message': f'Job delegated to async processing (estimated {estimated_minutes:.1f} minutes)',
+                                            'estimated_minutes': estimated_minutes,
+                                            'sqs_message_id': response['MessageId'],
+                                            'info': 'Your validation is now running in the background. You will receive updates as processing progresses.'
+                                        })
+                                        logger.info(f"[DELEGATION] Sent delegation success notification via WebSocket for session {session_id}")
+                                    except Exception as websocket_error:
+                                        logger.error(f"[DELEGATION] Failed to send WebSocket success notification: {websocket_error}")
+
+                                    # Background handler job is done - async validator will take over
+                                    # Don't return HTTP response, just exit gracefully
+                                    logger.info(f"[DELEGATION] Background handler completed delegation for session {session_id}")
+                                    return
+
+                            except Exception as sqs_error:
+                                logger.error(f"[DELEGATION] Failed to send SQS message: {sqs_error}")
+                                should_delegate = False  # Fall back to sync processing
                     else:
                         logger.error(f"[DELEGATION] Failed to save context, falling back to sync processing")
                         should_delegate = False
@@ -2624,13 +2944,29 @@ def handle_main_processing(event, context):
                     logger.info("[ASYNC_COMPLETION] Using pre-loaded validation results from async completion")
                     validation_results = event['_validation_results_from_async']
                 else:
-                    # Normal synchronous validation
-                    validation_results = invoke_validator_lambda(
-                        excel_s3_key, config_s3_key, max_rows, batch_size, S3_UNIFIED_BUCKET, VALIDATOR_LAMBDA_NAME,
-                        preview_first_row=False,
-                        session_id=session_id,
-                        update_callback=_update_progress
+                    # Use the same pre-generated payload for sync validation
+                    logger.info("[SYNC_VALIDATION] Using pre-generated validation payload for sync processing")
+
+                    # Call validation lambda directly with the complete payload
+                    import boto3
+                    lambda_client = boto3.client('lambda')
+
+                    # Use environment variable directly to get correct lambda name
+                    validator_lambda_name = os.environ.get('VALIDATOR_LAMBDA_NAME', 'perplexity-validator')
+                    logger.info(f"[SYNC_VALIDATION] Invoking validation lambda: {validator_lambda_name}")
+
+                    # Debug payload before sending
+                    config_targets_count = len(complete_validation_payload.get('config', {}).get('validation_targets', []))
+                    rows_count = len(complete_validation_payload.get('validation_data', {}).get('rows', []))
+                    logger.info(f"[SYNC_VALIDATION] Payload debug - config targets: {config_targets_count}, rows: {rows_count}")
+
+                    response = lambda_client.invoke(
+                        FunctionName=validator_lambda_name,
+                        InvocationType='RequestResponse',
+                        Payload=json.dumps(complete_validation_payload, default=str)
                     )
+
+                    validation_results = json.loads(response['Payload'].read().decode('utf-8'))
 
                 # Check if sync validation returned incomplete status and should be delegated to async
                 if validation_results and validation_results.get('status') == 'incomplete':
@@ -2643,12 +2979,20 @@ def handle_main_processing(event, context):
                 if not validation_results or not isinstance(validation_results, dict):
                     raise Exception("Validation lambda returned empty or invalid results")
 
-                # Check for expected data structure
-                if 'validation_results' not in validation_results:
-                    raise Exception("Validation lambda response missing validation_results field")
+                # Check for expected data structure - validation lambda returns {statusCode, body: {data: {rows: ...}}}
+                if 'body' not in validation_results:
+                    raise Exception("Validation lambda response missing body field")
+
+                body = validation_results.get('body', {})
+                if 'data' not in body:
+                    raise Exception("Validation lambda response body missing data field")
+
+                data = body.get('data', {})
+                if 'rows' not in data:
+                    raise Exception("Validation lambda response data missing rows field")
 
                 # Check if we have meaningful data - enhanced detection for 413 errors
-                val_results = validation_results.get('validation_results', {})
+                val_results = data.get('rows', {})
                 results_count = len(val_results) if isinstance(val_results, dict) else 0
 
                 logger.info(f"[VALIDATION_DEBUG] val_results type: {type(val_results)}, content preview: {str(val_results)[:200] if val_results else 'Empty'}")
@@ -2683,7 +3027,7 @@ def handle_main_processing(event, context):
                     error_type = "Lambda Timeout"
                 elif "empty or invalid results" in error_msg.lower():
                     error_type = "Empty Response"
-                elif "missing validation_results" in error_msg.lower():
+                elif "missing" in error_msg.lower() and ("body" in error_msg.lower() or "data" in error_msg.lower() or "rows" in error_msg.lower()):
                     error_type = "Malformed Response"
 
                 # Prepare comprehensive session data for alert
@@ -2736,17 +3080,24 @@ def handle_main_processing(event, context):
         
         # After invoke_validator_lambda returns
         if validation_results:
-            processed_rows_count = len(validation_results.get('validation_results', {}))
+            # Extract processed rows count from the correct structure
+            body = validation_results.get('body', {})
+            data = body.get('data', {})
+            processed_rows_count = len(data.get('rows', {}))
             run_type_processing = "Preview" if is_preview else "Validation"
             update_run_status_for_session( status='PROCESSING', run_type=run_type_processing, processed_rows=processed_rows_count)
 
-        has_results = (validation_results and 
-                      'validation_results' in validation_results and 
-                      validation_results['validation_results'] is not None)
+        # Check for results based on the correct response structure
+        has_results = (validation_results and
+                      'body' in validation_results and
+                      'data' in validation_results.get('body', {}) and
+                      'rows' in validation_results.get('body', {}).get('data', {}))
         if has_results:
-            real_results = validation_results['validation_results']
-            total_rows = validation_results.get('total_rows', 1)
-            metadata = validation_results.get('metadata', {})
+            body = validation_results.get('body', {})
+            data = body.get('data', {})
+            real_results = data.get('rows', {})
+            total_rows = body.get('metadata', {}).get('total_rows', 1)
+            metadata = body.get('metadata', {})
             token_usage = metadata.get('token_usage', {})
 
             # Extract QC data for full validation

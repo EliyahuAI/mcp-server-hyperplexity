@@ -582,9 +582,9 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         
         # Create clean email body following style guide
         body_html = create_validation_results_email_body(
-            session_id, 
-            total_rows, 
-            fields_validated, 
+            session_id,
+            total_rows,
+            fields_validated,
             confidence_distribution,
             processing_time,
             reference_pin,
@@ -595,17 +595,85 @@ def send_validation_results_email(email_address, excel_content, config_content, 
             preview_email,
             config_id,
             original_confidence_distribution,
-            billing_info
+            billing_info,
+            enhanced_excel_valid=enhanced_excel_valid
         )
         
         # Attach HTML body
         part = MIMEText(body_html, 'html', CHARSET)
         message.attach(part)
         
-        # Attach enhanced Excel file first (this is the main result)
-        part = MIMEApplication(enhanced_excel_content)
-        part.add_header("Content-Disposition", f'attachment; filename="{enhanced_excel_filename}"')
-        message.attach(part)
+        # Validate and attach enhanced Excel file first (this is the main result)
+        enhanced_excel_valid = False
+        if enhanced_excel_content:
+            # Validate the Excel content before attaching
+            try:
+                import openpyxl
+                from io import BytesIO
+
+                wb = openpyxl.load_workbook(BytesIO(enhanced_excel_content), read_only=True, data_only=True)
+
+                # Check for required sheets
+                required_sheets = ['Updated', 'Original', 'Details']
+                missing_sheets = [sheet for sheet in required_sheets if sheet not in wb.sheetnames]
+
+                if missing_sheets:
+                    logger.error(f"[EMAIL] Enhanced Excel missing required sheets: {missing_sheets}")
+                    enhanced_excel_valid = False
+                else:
+                    # Check that Details sheet has content (more than just headers)
+                    details_sheet = wb['Details']
+                    details_row_count = 0
+                    for row in details_sheet.iter_rows():
+                        details_row_count += 1
+                        if details_row_count > 10:  # Just check first 10 rows for efficiency
+                            break
+
+                    if details_row_count <= 1:  # Only header or empty
+                        logger.error(f"[EMAIL] Details sheet has {details_row_count} rows - appears to be empty!")
+                        enhanced_excel_valid = False
+                    else:
+                        # Check Updated sheet also has content
+                        updated_sheet = wb['Updated']
+                        updated_row_count = 0
+                        for row in updated_sheet.iter_rows():
+                            updated_row_count += 1
+                            if updated_row_count > 2:  # At least header + 1 data row
+                                break
+
+                        if updated_row_count <= 1:
+                            logger.error(f"[EMAIL] Updated sheet has {updated_row_count} rows - appears to be empty!")
+                            enhanced_excel_valid = False
+                        else:
+                            # Check Original sheet also has content
+                            original_sheet = wb['Original']
+                            original_row_count = 0
+                            for row in original_sheet.iter_rows():
+                                original_row_count += 1
+                                if original_row_count > 2:  # At least header + 1 data row
+                                    break
+
+                            if original_row_count <= 1:
+                                logger.error(f"[EMAIL] Original sheet has {original_row_count} rows - appears to be empty!")
+                                enhanced_excel_valid = False
+                            else:
+                                logger.info(f"[EMAIL] Enhanced Excel validation passed - Updated: {updated_row_count}+ rows, Original: {original_row_count}+ rows, Details: {details_row_count}+ rows")
+                                enhanced_excel_valid = True
+
+                wb.close()
+
+            except Exception as e:
+                logger.error(f"[EMAIL] Failed to validate enhanced Excel: {e}")
+                enhanced_excel_valid = False
+
+        if enhanced_excel_valid:
+            part = MIMEApplication(enhanced_excel_content)
+            part.add_header("Content-Disposition", f'attachment; filename="{enhanced_excel_filename}"')
+            message.attach(part)
+        else:
+            logger.error(f"[EMAIL] Enhanced Excel validation failed for session {session_id} - will not attach enhanced Excel")
+            # Add a note to the email body about the missing enhanced Excel
+            logger.warning(f"[EMAIL] User will receive email WITHOUT enhanced Excel attachment")
         
         # Attach original input file
         part = MIMEApplication(excel_content)
@@ -785,7 +853,7 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         }
 
 
-def create_validation_results_email_body(session_id, total_rows, fields_validated, confidence_distribution, processing_time=None, reference_pin=None, token_usage=None, enhanced_excel_filename=None, input_filename=None, config_filename=None, preview_email=False, config_id=None, original_confidence_distribution=None, billing_info=None):
+def create_validation_results_email_body(session_id, total_rows, fields_validated, confidence_distribution, processing_time=None, reference_pin=None, token_usage=None, enhanced_excel_filename=None, input_filename=None, config_filename=None, preview_email=False, config_id=None, original_confidence_distribution=None, billing_info=None, enhanced_excel_valid=True):
     """Create clean validation results email body following Eliyahu.AI style guide"""
     
     # Format fields list
@@ -1001,19 +1069,14 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
             
             <div class="attachments">
                 <h3>📎 Attached Files</h3>
+                {"<div style='background: #FFF3CD; border: 2px solid #FFB800; padding: 15px; margin: 15px 0; border-radius: 8px;'><b>⚠️ Important Notice:</b> The enhanced Excel file could not be generated due to a processing error. We have included your original file and you have not been charged for this validation. Please contact support for assistance.</div>" if not enhanced_excel_valid else ""}
                 <ul class="attachment-list">
-                    <li class="primary-file">
-                        📊 <b>{enhanced_excel_filename or 'Validated_Results.xlsx'}</b><br>
-                        <small>Two worksheets: "Updated" (with improved values) and "Original" (fact-checked only). Both are color-coded by confidence level.</small>
-                    </li>
+                    {"<li class='primary-file'>📊 <b>" + (enhanced_excel_filename or 'Validated_Results.xlsx') + "</b><br><small>Two worksheets: 'Updated' (with improved values) and 'Original' (fact-checked only). Both are color-coded by confidence level.</small></li>" if enhanced_excel_valid else ""}
                     <li>
                         📄 <b>{input_filename or 'Original_Table.xlsx'}</b><br>
                         <small>Your original uploaded table (unchanged)</small>
                     </li>
-                    <li>
-                        🧾 <b>Receipt</b><br>
-                        <small>Payment receipt for this validation</small>
-                    </li>
+                    {"<li>🧾 <b>Receipt</b><br><small>Payment receipt for this validation</small></li>" if enhanced_excel_valid else ""}
                 </ul>
                 <p><strong>Configuration Code:</strong> {config_id or 'N/A'}</p>
                 <p><small>Save this code to keep the same settings for future validations.</small></p>

@@ -119,11 +119,11 @@ class QCCostTracker:
                    f"{usage.get('total_tokens', 0)} tokens, {cache_efficiency:.1f}% cache efficiency")
 
         # Debug: Log QC tracking details
-        logger.info(f"QC tracking debug - response keys: {list(qc_response.keys())}")
-        logger.info(f"QC tracking debug - enhanced_data keys: {list(enhanced_data.keys())}")
-        logger.info(f"QC tracking debug - usage: {usage}")
-        logger.info(f"QC tracking debug - costs: {cost_info}")
-        logger.info(f"QC tracking debug - timing: {timing_info}")
+        logger.debug(f"QC tracking debug - response keys: {list(qc_response.keys())}")
+        logger.debug(f"QC tracking debug - enhanced_data keys: {list(enhanced_data.keys())}")
+        logger.debug(f"QC tracking debug - usage: {usage}")
+        logger.debug(f"QC tracking debug - costs: {cost_info}")
+        logger.debug(f"QC tracking debug - timing: {timing_info}")
 
         # Track per-column QC actions for fail rate analysis
         self.track_column_qc_actions(qc_results, qc_metrics)

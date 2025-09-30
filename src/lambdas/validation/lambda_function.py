@@ -17,6 +17,8 @@ import csv
 from io import StringIO
 from pathlib import Path
 import difflib
+import queue
+import threading
 
 from schema_validator_simplified import SimplifiedSchemaValidator
 from perplexity_schema import get_response_format_schema
@@ -69,7 +71,7 @@ if not logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S'))
     logger.addHandler(handler)
-    logger.info("Initialized logger with StreamHandler")
+    logger.debug("Initialized logger with StreamHandler")
 else:
     pass  # logger.info("Logger already has handlers, skipping handler setup")
 
@@ -77,7 +79,7 @@ else:
 try:
     from qc_integration import QCIntegrationManager
     QC_AVAILABLE = True
-    logger.info("QC module imported successfully")
+    logger.debug("QC module imported successfully")
 except ImportError as e:
     QC_AVAILABLE = False
     logger.warning(f"QC module not available: {e}")
@@ -86,7 +88,7 @@ except ImportError as e:
 try:
     from enhanced_batch_manager import EnhancedDynamicBatchSizeManager
     ENHANCED_BATCH_MANAGER_AVAILABLE = True
-    logger.info("✅ Enhanced batch manager available")
+    logger.debug("✅ Enhanced batch manager available")
 except ImportError as e:
     logger.warning(f"Enhanced batch manager not available: {e}")
     ENHANCED_BATCH_MANAGER_AVAILABLE = False
@@ -95,13 +97,13 @@ except ImportError as e:
 try:
     from websocket_client import WebSocketClient
     websocket_client = WebSocketClient()
-    logger.info(f"[WEBSOCKET_DEBUG_VALIDATION] WebSocket client initialized successfully")
+    logger.debug(f"WebSocket client initialized successfully")
 except ImportError as e:
     websocket_client = None
-    logger.error(f"[WEBSOCKET_DEBUG_VALIDATION] WebSocket client import failed: {e}")
+    logger.debug(f"WebSocket client import failed: {e}")
 except Exception as e:
     websocket_client = None
-    logger.error(f"[WEBSOCKET_DEBUG_VALIDATION] WebSocket client initialization failed: {e}")
+    logger.debug(f"WebSocket client initialization failed: {e}")
 
 # Initialize AWS clients with retry configuration
 config = Config(
@@ -359,7 +361,7 @@ def discover_batch_models(rows, validator):
             models.add(model)
             # Found model for search group
     
-    logger.info(f"Found models for batch: {sorted(models)}")
+        logger.debug(f"Found models for batch: {sorted(models)}")
     return models
 
 def get_perplexity_api_key() -> str:
@@ -387,14 +389,14 @@ def get_anthropic_api_key() -> str:
         
         for param_name in param_names:
             try:
-                logger.info(f"Attempting to retrieve Anthropic API key from SSM parameter: {param_name}")
+                logger.debug(f"Attempting to retrieve Anthropic API key from SSM parameter: {param_name}")
                 
                 response = ssm.get_parameter(
                     Name=param_name,
                     WithDecryption=True
                 )
                 api_key = response['Parameter']['Value']
-                logger.info(f"Successfully retrieved Anthropic API key from {param_name}")
+                logger.debug(f"Successfully retrieved Anthropic API key from {param_name}")
                 break
                 
             except Exception as e:
@@ -406,7 +408,7 @@ def get_anthropic_api_key() -> str:
             
             # Try to list parameters to help with debugging
             try:
-                logger.info("Attempting to list SSM parameters for debugging...")
+                logger.debug("Attempting to list SSM parameters for debugging...")
                 params_response = ssm.describe_parameters(
                     ParameterFilters=[
                         {
@@ -417,7 +419,7 @@ def get_anthropic_api_key() -> str:
                     ]
                 )
                 if params_response['Parameters']:
-                    logger.info(f"Found parameters starting with 'Anthropic': {[p['Name'] for p in params_response['Parameters']]}")
+                    logger.debug(f"Found parameters starting with 'Anthropic': {[p['Name'] for p in params_response['Parameters']]}")
                 else:
                     pass  # logger.warning("No parameters found starting with 'Anthropic'")
                     
@@ -426,7 +428,7 @@ def get_anthropic_api_key() -> str:
             
             raise Exception(f"Anthropic API key not found in SSM. Tried parameters: {param_names}")
     else:
-        logger.info("Using Anthropic API key from environment variable")
+        logger.debug("Using Anthropic API key from environment variable")
     return api_key
 
 def determine_api_provider(model: str) -> str:
@@ -991,7 +993,7 @@ def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Di
             # QC processes rows in sequence within a batch, so add total QC time to batch time
             # For preview, we processed actual_batches_processed batches
             qc_time_per_batch = total_qc_time_estimated / len(batches) if len(batches) > 0 else 0.0
-            logger.info(f"[BATCH_TIMING_QC] Adding QC time to batch estimates: {qc_time_per_batch:.2f}s per batch")
+            logger.debug(f"[BATCH_TIMING_QC] Adding QC time to batch estimates: {qc_time_per_batch:.2f}s per batch")
 
             # Add QC time to each batch estimate
             for batch_num in estimated_batch_times:
@@ -1109,8 +1111,8 @@ def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Di
         pass  # logger.info(f"[BATCH_TIMING] Processed {len(batches)} batches with {len(all_enhanced_call_data)} total calls")
         pass  # logger.info(f"[BATCH_TIMING] Preview: {estimated_total_time_preview:.2f}s, Actual total time: {sum(batch_processing_times.values()):.2f}s")
         pass  # logger.info(f"[BATCH_TIMING] Preview average batch size: {avg_actual_batch_size:.1f} rows, Average estimated batch time: {avg_estimated_batch_time:.2f}s")
-        logger.info(f"[BATCH_TIMING] Full validation: {total_rows_in_table} rows ÷ {target_full_validation_batch_size} target batch size = {estimated_batches_for_full_table} batches")
-        logger.info(f"[BATCH_TIMING] Full validation estimate: {estimated_batches_for_full_table} batches × {avg_estimated_batch_time:.2f}s = {estimated_total_time_for_full_validation:.2f}s total")
+        logger.debug(f"[BATCH_TIMING] Full validation: {total_rows_in_table} rows ÷ {target_full_validation_batch_size} target batch size = {estimated_batches_for_full_table} batches")
+        logger.debug(f"[BATCH_TIMING] Full validation estimate: {estimated_batches_for_full_table} batches × {avg_estimated_batch_time:.2f}s = {estimated_total_time_for_full_validation:.2f}s total")
         pass  # logger.info(f"[BATCH_TIMING] Average estimated row processing time: {avg_row_estimated_time:.2f}s (direct calculation over {len(total_row_estimated_times)} rows)")
         
         # Log per-provider cost estimates
@@ -1247,7 +1249,7 @@ def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List
     # If only one model is used, that's our answer
     if len(models_in_group) == 1:
         selected_model = list(models_in_group)[0]
-        logger.info(f"Search group uses consistent model: {selected_model}")
+        logger.debug(f"Search group uses consistent model: {selected_model}")
         return selected_model, warnings
     
     # If we have conflicts, prefer any specified model over default
@@ -1256,7 +1258,7 @@ def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List
     if len(non_default_models) == 1:
         # Only one non-default model, use that
         selected_model = non_default_models[0]
-        logger.info(f"Search group has mixed models, preferring specified model: {selected_model} over default: {validator.default_model}")
+        logger.debug(f"Search group has mixed models, preferring specified model: {selected_model} over default: {validator.default_model}")
         return selected_model, warnings
     
     elif len(non_default_models) > 1:
@@ -1276,7 +1278,7 @@ def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List
     else:
         # Fallback to default (shouldn't reach here given the logic above)
         selected_model = validator.default_model
-        logger.info(f"Search group using default model: {selected_model}")
+        logger.debug(f"Search group using default model: {selected_model}")
         return selected_model, warnings
 
 def resolve_search_group_max_web_searches(targets: List[Any], validator) -> int:
@@ -1315,7 +1317,7 @@ def resolve_search_group_max_web_searches(targets: List[Any], validator) -> int:
             return default_max_searches
     
     # Global default
-    logger.info("Using global default anthropic_max_web_searches: 3")
+    logger.debug("Using global default anthropic_max_web_searches: 3")
     return 3
 
 def resolve_search_group_context_size(targets: List[Any], validator) -> str:
@@ -1348,7 +1350,7 @@ def resolve_search_group_context_size(targets: List[Any], validator) -> str:
                     else:
                         logger.warning(f"Search group {group_id} found but no search_context defined")
         else:
-            logger.info(f"Validator has no search_groups or empty search_groups")
+            logger.debug(f"Validator has no search_groups or empty search_groups")
     
     context_sizes = []
     
@@ -1369,7 +1371,7 @@ def resolve_search_group_context_size(targets: List[Any], validator) -> str:
         # Get the context size with the highest priority
         selected_context_size = max(context_sizes, key=lambda x: priority_map.get(x, 0))
     
-    logger.info(f"Search group context sizes: {context_sizes}, selected: {selected_context_size}")
+    logger.debug(f"Search group context sizes: {context_sizes}, selected: {selected_context_size}")
     return selected_context_size
 
 async def retry_api_call_with_backoff(
@@ -1409,7 +1411,7 @@ async def retry_api_call_with_backoff(
             # Try the API call
             result = await api_call_func()
             if attempt > 0:
-                logger.info(f"API call succeeded on attempt {attempt + 1}")
+                logger.debug(f"API call succeeded on attempt {attempt + 1}")
             return result
             
         except Exception as e:
@@ -1476,7 +1478,7 @@ async def retry_api_call_with_backoff(
 def handle_config_generation_request(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Handle AI configuration generation requests using existing Claude integration."""
     try:
-        logger.info("=== CONFIG GENERATION REQUEST ===")
+        logger.debug("=== CONFIG GENERATION REQUEST ===")
         
         # Extract request parameters
         table_analysis = event.get('table_analysis')
@@ -1494,7 +1496,7 @@ def handle_config_generation_request(event: Dict[str, Any], context: Any) -> Dic
                 })
             }
         
-        logger.info(f"Config generation for session: {session_id}, mode: {generation_mode}")
+        logger.debug(f"Config generation for session: {session_id}, mode: {generation_mode}")
         
         # Get Anthropic API key (reuse existing logic)
         anthropic_api_key = get_anthropic_api_key()
@@ -1797,7 +1799,7 @@ def save_config_to_s3(generated_config: Dict, session_id: str) -> str:
             Metadata={'session_id': session_id}
         )
         
-        logger.info(f"Config uploaded to S3: {key}")
+        logger.debug(f"Config uploaded to S3: {key}")
         return key
         
     except Exception as e:
@@ -1820,7 +1822,7 @@ def create_config_download_url(s3_key: str) -> str:
             ExpiresIn=3600
         )
         
-        logger.info(f"Created download URL for S3 key: {s3_key}")
+        logger.debug(f"Created download URL for S3 key: {s3_key}")
         return download_url
         
     except Exception as e:
@@ -1868,23 +1870,23 @@ def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[
     try:
         enhanced_models = {}
 
-        logger.info(f"[ENHANCED_MODELS_DEBUG] construct_enhanced_models_parameter called")
-        logger.info(f"[ENHANCED_MODELS_DEBUG] all_enhanced_call_data type: {type(all_enhanced_call_data)}, length: {len(all_enhanced_call_data) if all_enhanced_call_data else 0}")
-        logger.info(f"[ENHANCED_MODELS_DEBUG] aggregated_metrics type: {type(aggregated_metrics)}, is_none: {aggregated_metrics is None}")
+        logger.debug(f"[ENHANCED_MODELS_DEBUG] construct_enhanced_models_parameter called")
+        logger.debug(f"[ENHANCED_MODELS_DEBUG] all_enhanced_call_data type: {type(all_enhanced_call_data)}, length: {len(all_enhanced_call_data) if all_enhanced_call_data else 0}")
+        logger.debug(f"[ENHANCED_MODELS_DEBUG] aggregated_metrics type: {type(aggregated_metrics)}, is_none: {aggregated_metrics is None}")
 
         # Get validation targets and group by search group - exclude ID and IGNORED for models array
         all_targets = getattr(validator, 'validation_targets', [])
         validation_targets = [t for t in all_targets if t.importance.upper() not in ["ID", "IGNORED"]]
-        logger.info(f"Enhanced models debug: all_targets count: {len(all_targets)}, validation_targets count: {len(validation_targets)}")
+        logger.debug(f"Enhanced models debug: all_targets count: {len(all_targets)}, validation_targets count: {len(validation_targets)}")
         if not validation_targets:
             logger.warning("No non-ID/IGNORED validation targets found in validator")
             return {}
         
         # Group targets by search group
         grouped_targets = validator.group_columns_by_search_group(validation_targets)
-        logger.info(f"Enhanced models debug: grouped_targets count: {len(grouped_targets)}")
-        logger.info(f"Enhanced models debug: all_enhanced_call_data length: {len(all_enhanced_call_data) if all_enhanced_call_data else 0}")
-        logger.info(f"Enhanced models debug: aggregated_metrics: {aggregated_metrics is not None}")
+        logger.debug(f"Enhanced models debug: grouped_targets count: {len(grouped_targets)}")
+        logger.debug(f"Enhanced models debug: all_enhanced_call_data length: {len(all_enhanced_call_data) if all_enhanced_call_data else 0}")
+        logger.debug(f"Enhanced models debug: aggregated_metrics: {aggregated_metrics is not None}")
         
         # Get overall aggregated metrics for cost/time calculations
         providers_data = aggregated_metrics.get('providers', {}) if aggregated_metrics else {}
@@ -1971,9 +1973,9 @@ def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[
             active_targets = [t for t in targets if t.importance.upper() not in ('ID', 'IGNORED')]
             column_count = len(active_targets)
 
-            logger.info(f"Enhanced models debug: search_group_{search_group_id} has {len(targets)} total targets, {column_count} active targets")
+            logger.debug(f"Enhanced models debug: search_group_{search_group_id} has {len(targets)} total targets, {column_count} active targets")
             if targets:
-                logger.info(f"Enhanced models debug: sample target importance values: {[t.importance for t in targets[:3]]}")
+                logger.debug(f"Enhanced models debug: sample target importance values: {[t.importance for t in targets[:3]]}")
 
             if column_count == 0:
                 logger.warning(f"Enhanced models debug: Skipping search_group_{search_group_id} - no active columns after filtering")
@@ -2068,13 +2070,12 @@ def construct_enhanced_models_parameter(validator, all_enhanced_call_data: List[
             }
         
         # Debug: Log what we constructed
-        logger.info(f"[ENHANCED_MODELS_DEBUG] Constructed enhanced models parameter with {len(enhanced_models)} search groups")
-        logger.info(f"[ENHANCED_MODELS_DEBUG] Enhanced models keys: {list(enhanced_models.keys())}")
-        logger.info(f"[ENHANCED_MODELS_DEBUG] Search group stats found: {list(search_group_stats.keys())}")
+        logger.debug(f"[ENHANCED_MODELS_DEBUG] Constructed enhanced models parameter with {len(enhanced_models)} search groups")
+        logger.debug(f"[ENHANCED_MODELS_DEBUG] Enhanced models keys: {list(enhanced_models.keys())}")
+        logger.debug(f"[ENHANCED_MODELS_DEBUG] Search group stats found: {list(search_group_stats.keys())}")
         for group_id, stats in search_group_stats.items():
-            logger.info(f"[ENHANCED_MODELS_DEBUG] Group {group_id}: calls={stats['call_count']}, cost=${stats['cost_estimated']:.6f}, time={stats['estimated_processing_time']:.2f}")
-
-        logger.info(f"Constructed enhanced models parameter with {len(enhanced_models)} search groups")
+            logger.debug(f"[ENHANCED_MODELS_DEBUG] Group {group_id}: calls={stats['call_count']}, cost=${stats['cost_estimated']:.6f}, time={stats['estimated_processing_time']:.2f}")
+        logger.debug(f"Constructed enhanced models parameter with {len(enhanced_models)} search groups")
         return enhanced_models
         
     except Exception as e:
@@ -2164,9 +2165,45 @@ async def call_anthropic_api_text(session: aiohttp.ClientSession, prompt: str,
             error_text = await response.text()
             raise Exception(f"Anthropic API error: {response.status} - {error_text}")
 
+def progress_sender(progress_queue, session_id):
+    """
+    Worker thread function to send progress updates from a queue.
+
+    This function runs in a separate thread and processes messages from the
+    progress_queue. It ensures that only the latest progress is sent and
+    discards any stale (out-of-order) messages.
+    """
+    last_sent_count = -1
+    while True:
+        try:
+            item = progress_queue.get()
+            if item is None:
+                # Sentinel value received, terminate the thread
+                logger.debug("[PROGRESS_SENDER] Received sentinel, terminating.")
+                break
+
+            count, message, progress_percent = item
+            
+            # The final message has a count of float('inf')
+            is_final_message = count == float('inf')
+
+            if is_final_message or count > last_sent_count:
+                if not is_final_message:
+                    last_sent_count = count
+                
+                logger.debug(f"[PROGRESS_SENDER] Sending progress: count={count}, last_sent={last_sent_count}")
+                send_websocket_progress(session_id, message, progress_percent)
+            else:
+                logger.debug(f"[PROGRESS_SENDER] Skipping stale progress: count={count}, last_sent={last_sent_count}")
+            
+            progress_queue.task_done()
+        except Exception as e:
+            logger.error(f"[PROGRESS_SENDER] Error in progress sender thread: {e}")
+
+
 def send_websocket_progress(session_id: str, message: str, progress: int = None):
     """Send progress update via WebSocket"""
-    logger.info(f"[WEBSOCKET_DEBUG_VALIDATION] send_websocket_progress called: websocket_client={websocket_client is not None}, session_id={session_id}, message={message}, progress={progress}")
+    logger.debug(f"send_websocket_progress called: websocket_client={websocket_client is not None}, session_id={session_id}, message={message}, progress={progress}")
 
     if websocket_client and session_id:
         try:
@@ -2179,50 +2216,50 @@ def send_websocket_progress(session_id: str, message: str, progress: int = None)
             if progress is not None:
                 update_data['progress'] = progress
 
-            logger.info(f"[WEBSOCKET_DEBUG_VALIDATION] Sending data: {update_data}")
+            logger.debug(f"Sending data: {update_data}")
             result = websocket_client.send_to_session(session_id, update_data)
-            logger.info(f"[WEBSOCKET_DEBUG_VALIDATION] Send result: {result}")
+            logger.debug(f"Send result: {result}")
             logger.debug(f"Sent WebSocket progress: {message} to session {session_id}")
         except Exception as e:
-            logger.error(f"[WEBSOCKET_DEBUG_VALIDATION] Failed to send WebSocket progress: {e}")
+            logger.debug(f"Failed to send WebSocket progress: {e}")
             import traceback
-            logger.error(f"[WEBSOCKET_DEBUG_VALIDATION] Full traceback: {traceback.format_exc()}")
+            logger.debug(f"Full traceback: {traceback.format_exc()}")
     else:
-        logger.warning(f"[WEBSOCKET_DEBUG_VALIDATION] Cannot send - websocket_client={websocket_client is not None}, session_id={session_id}")
+        logger.debug(f"Cannot send - websocket_client={websocket_client is not None}, session_id={session_id}")
 
-def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, completed_counter, last_reported_counter):
-    """Thread-safe AI call progress reporting that prevents out-of-order updates"""
-    logger.info(f"[WEBSOCKET_DEBUG_VALIDATION] report_ai_call_progress called: session_id={session_id}, total_expected={total_expected}")
+def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, completed_counter, progress_queue):
+    """Puts an AI call progress update on the queue."""
+    logger.debug(f"report_ai_call_progress called: session_id={session_id}, total_expected={total_expected}")
 
-    if not session_id or total_expected <= 0:
-        return completed_counter[0], last_reported_counter[0]
+    if not session_id or total_expected <= 0 or progress_queue is None:
+        return
     
     with counter_lock:
         completed_counter[0] += 1
         current_count = completed_counter[0]
-        
-        # Only report if count actually increased from last reported value
-        if current_count > last_reported_counter[0]:
-            last_reported_counter[0] = current_count
-            
-            # Calculate progress percentage
-            ai_progress = 5 + (current_count / total_expected) * 85
-            progress_percent = min(90, int(ai_progress))  # Cap at 90%
-            
-            send_websocket_progress(session_id, f"AI call {current_count}/{total_expected} completed", progress_percent)
-            pass  # logger.info(f"[AI PROGRESS] Reported {current_count}/{total_expected} (was {completed_counter[0]-1})")
-        else:
-            pass  # logger.debug(f"[AI PROGRESS] Skipped reporting {current_count}/{total_expected} (already reported)")
     
-    return completed_counter[0], last_reported_counter[0]
+    # Calculate progress percentage
+    ai_progress = 5 + (current_count / total_expected) * 85
+    progress_percent = min(90, int(ai_progress))
+    
+    message = f"AI call {current_count}/{total_expected} completed"
+    
+    try:
+        # Put the progress update on the queue
+        progress_queue.put((current_count, message, progress_percent))
+        logger.debug(f"[AI_PROGRESS] Queued progress update: {current_count}/{total_expected}")
+    except Exception as e:
+        logger.error(f"[AI_PROGRESS] Failed to queue progress update: {e}")
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests and config generation."""
+    progress_thread = None
+    progress_queue = None
     try:
         # ========== SQS EVENT HANDLING FOR SMART DELEGATION SYSTEM ==========
         # Check if this is an SQS event (from Smart Delegation System)
         if 'Records' in event and event['Records']:
-            logger.info(f"[SQS_HANDLER] Processing {len(event['Records'])} SQS message(s)")
+            logger.debug(f"[SQS_HANDLER] Processing {len(event['Records'])} SQS message(s)")
 
             # Process each SQS record
             responses = []
@@ -2231,7 +2268,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     try:
                         # Extract the actual validation request from SQS message body
                         message_body = json.loads(record['body'])
-                        logger.info(f"[SQS_HANDLER] Processing SQS message: {message_body.get('message_type', 'unknown')}")
+                        logger.debug(f"[SQS_HANDLER] Processing SQS message: {message_body.get('message_type', 'unknown')}")
 
                         # Call the same lambda_handler recursively with the extracted event
                         response = lambda_handler(message_body, context)
@@ -2256,9 +2293,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Check if this is an async delegation request from the smart delegation system
         is_async_request = event.get('async_delegation_request', False)
         session_id = event.get('session_id', 'unknown')
+        logger.info(f"[ASYNC_CHECK] Lambda invoked with async_delegation_request={is_async_request}, session_id={session_id}")
 
         # Time monitoring configuration
-        SAFETY_BUFFER_MS = int(os.environ.get('VALIDATOR_SAFETY_BUFFER_MS', '180000'))  # 3 minutes default
+        # FOR TESTING: Set safety buffer to 14 minutes to force continuation after first batch
+        SAFETY_BUFFER_MS = int(os.environ.get('VALIDATOR_SAFETY_BUFFER_MS', '840000'))  # TEST: 14 minutes (was 3 minutes)
         MAX_PROCESSING_TIME_MS = int(os.environ.get('VALIDATOR_MAX_PROCESSING_TIME_MS', '870000'))  # 14.5 minutes default
 
         # Track execution start time
@@ -2273,10 +2312,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 elapsed_ms = (time.time() * 1000) - execution_start_time
                 return MAX_PROCESSING_TIME_MS - elapsed_ms
 
-        def should_continue_processing():
-            """Check if we have enough time to continue processing."""
+        def should_continue_processing(next_batch_estimated_time_ms=None):
+            """Check if we have enough time to continue processing.
+
+            Args:
+                next_batch_estimated_time_ms: Estimated time for next batch in milliseconds.
+                                             If None, just checks safety buffer.
+            """
             remaining_ms = get_remaining_time_ms()
-            return remaining_ms > SAFETY_BUFFER_MS
+
+            if next_batch_estimated_time_ms:
+                # Smart check: Will the next batch finish within safety limits?
+                required_time = next_batch_estimated_time_ms + SAFETY_BUFFER_MS
+                can_continue = remaining_ms > required_time
+
+                if not can_continue:
+                    logger.info(f"[TIME_CHECK] Cannot continue: {remaining_ms}ms left, need {required_time}ms ({next_batch_estimated_time_ms}ms batch + {SAFETY_BUFFER_MS}ms buffer)")
+
+                return can_continue
+            else:
+                # Simple check: Just ensure we have safety buffer
+                return remaining_ms > SAFETY_BUFFER_MS
 
         def save_async_progress(chunks_completed=0, chunks_total=0, rows_processed=0, current_cost=0.0):
             """Save progress to DynamoDB for async processing."""
@@ -2284,7 +2340,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 try:
                     # Import here to avoid circular imports
                     import sys
-                    import os
                     sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
                     from dynamodb_schemas import update_async_progress
 
@@ -2299,7 +2354,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         rows_processed=rows_processed,
                         current_cost=current_cost
                     )
-                    logger.info(f"[ASYNC_PROGRESS] Updated progress: {chunks_completed}/{chunks_total} chunks, {rows_processed} rows, ${current_cost:.2f}")
+                    logger.debug(f"[ASYNC_PROGRESS] Updated progress: {chunks_completed}/{chunks_total} chunks, {rows_processed} rows, ${current_cost:.2f}")
                 except Exception as e:
                     logger.error(f"[ASYNC_PROGRESS] Failed to save progress: {e}")
 
@@ -2311,22 +2366,32 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 sqs_client = boto3.client('sqs')
                 async_validator_queue = os.environ.get('ASYNC_VALIDATOR_QUEUE', 'perplexity-validator-async-queue')
 
+                # Use updated event if available (set during batch processing)
+                current_event = globals().get('_continuation_event', event)
+
                 # Create continuation message with current state
                 continuation_message = {
                     'message_type': 'ASYNC_VALIDATION_CONTINUATION',
                     'session_id': session_id,
-                    'run_key': event.get('run_key', f"AsyncValidation_{int(time.time())}"),
+                    'run_key': current_event.get('run_key', f"AsyncValidation_{int(time.time())}"),
                     'async_delegation_request': True,
                     'is_continuation': True,
-                    'continuation_count': event.get('continuation_count', 0) + 1,
-                    # Pass through original parameters
-                    'excel_s3_key': event.get('excel_s3_key'),
-                    'config_s3_key': event.get('config_s3_key'),
-                    'max_rows': event.get('max_rows'),
-                    'batch_size': event.get('batch_size'),
-                    'S3_UNIFIED_BUCKET': event.get('S3_UNIFIED_BUCKET'),
-                    'VALIDATOR_LAMBDA_NAME': event.get('VALIDATOR_LAMBDA_NAME'),
-                    'validation_history': event.get('validation_history')
+                    'continuation_count': current_event.get('continuation_count', 0) + 1,
+                    # Pass through complete payload key (new method)
+                    'complete_payload_s3_key': current_event.get('complete_payload_s3_key'),
+                    'S3_UNIFIED_BUCKET': current_event.get('S3_UNIFIED_BUCKET'),
+                    'VALIDATOR_LAMBDA_NAME': current_event.get('VALIDATOR_LAMBDA_NAME'),
+                    # Pass batch timing data for smart decisions
+                    'batch_timing_history': current_event.get('batch_timing_history', []),
+                    'last_completed_batch': current_event.get('last_completed_batch', -1),
+                    # Pass continuation chain for tracking
+                    'continuation_chain': current_event.get('continuation_chain', []),
+                    # Legacy parameters for backward compatibility
+                    'excel_s3_key': current_event.get('excel_s3_key'),
+                    'config_s3_key': current_event.get('config_s3_key'),
+                    'max_rows': current_event.get('max_rows'),
+                    'batch_size': current_event.get('batch_size'),
+                    'validation_history': current_event.get('validation_history')
                 }
 
                 # Send continuation message
@@ -2335,7 +2400,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     MessageBody=json.dumps(continuation_message, default=str)
                 )
 
-                logger.info(f"[SELF_TRIGGER] Triggered continuation for session {session_id}: {response['MessageId']}")
+                logger.debug(f"[SELF_TRIGGER] Triggered continuation for session {session_id}: {response['MessageId']}")
                 return True
 
             except Exception as e:
@@ -2343,12 +2408,42 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 return False
 
         def trigger_interface_completion(results_s3_key):
-            """Trigger interface lambda for job completion."""
+            """Trigger interface lambda for job completion and cleanup S3 payload."""
             try:
                 import boto3
 
                 sqs_client = boto3.client('sqs')
                 completion_queue = os.environ.get('INTERFACE_COMPLETION_QUEUE', 'perplexity-validator-completion-queue')
+
+                # If completion_queue is just a queue name (not a URL), convert it to URL
+                if completion_queue and not completion_queue.startswith('https://'):
+                    logger.debug(f"[COMPLETION_TRIGGER] Converting queue name to URL: {completion_queue}")
+                    try:
+                        queue_url_response = sqs_client.get_queue_url(QueueName=completion_queue)
+                        completion_queue = queue_url_response['QueueUrl']
+                        logger.debug(f"[COMPLETION_TRIGGER] Using queue URL: {completion_queue}")
+                    except Exception as e:
+                        logger.error(f"[COMPLETION_TRIGGER] Failed to get queue URL for {completion_queue}: {e}")
+                        return False
+
+                # ========== S3 PAYLOAD CLEANUP ==========
+                # Clean up the complete payload file after successful validation
+                complete_payload_s3_key = event.get('complete_payload_s3_key')
+                if complete_payload_s3_key:
+                    try:
+                        s3_client = boto3.client('s3')
+                        s3_bucket = event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'perplexity-validator-unified'))
+
+                        # Delete the complete payload file
+                        s3_client.delete_object(Bucket=s3_bucket, Key=complete_payload_s3_key)
+                        logger.debug(f"[CLEANUP] Successfully deleted complete payload from S3: {complete_payload_s3_key}")
+
+                    except Exception as cleanup_error:
+                        # Don't fail completion if cleanup fails - just log the error
+                        logger.warning(f"[CLEANUP] Failed to delete complete payload from S3: {cleanup_error}")
+                        logger.warning(f"[CLEANUP] Payload will remain at: {complete_payload_s3_key}")
+                else:
+                    logger.debug(f"[CLEANUP] No complete_payload_s3_key found - no cleanup needed")
 
                 # Create completion message for background handler
                 completion_message = {
@@ -2363,19 +2458,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 }
 
                 # Send completion message
+                logger.info(f"[COMPLETION_TRIGGER] Sending completion message to queue: {completion_queue}")
+                logger.info(f"[COMPLETION_TRIGGER] Message content: {json.dumps(completion_message, indent=2, default=str)}")
+
                 response = sqs_client.send_message(
                     QueueUrl=completion_queue,
                     MessageBody=json.dumps(completion_message, default=str)
                 )
 
-                logger.info(f"[COMPLETION_TRIGGER] Triggered interface completion for session {session_id}: {response['MessageId']}")
+                logger.info(f"[COMPLETION_TRIGGER] Successfully triggered interface completion for session {session_id}: {response['MessageId']}")
                 return True
 
             except Exception as e:
                 logger.error(f"[COMPLETION_TRIGGER] Failed to trigger interface: {e}")
                 return False
 
-        logger.info(f"[TIME_MONITORING] Lambda execution started, safety buffer: {SAFETY_BUFFER_MS}ms, remaining: {get_remaining_time_ms()}ms")
+        logger.debug(f"[TIME_MONITORING] Lambda execution started, safety buffer: {SAFETY_BUFFER_MS}ms, remaining: {get_remaining_time_ms()}ms")
 
         # Continue with normal validation logic
         # Test CloudWatch logging - with extreme verbosity for debugging
@@ -2417,6 +2515,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Explicitly create log group (testing permissions)
         try:
+            import boto3
             logs_client = boto3.client('logs')
             log_group_name = f"/aws/lambda/{context.function_name if context else 'perplexity-validator'}"
             
@@ -2427,21 +2526,115 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 log_group_exists = any(lg['logGroupName'] == log_group_name for lg in log_groups)
                 
                 if log_group_exists:
-                    logger.info(f"Log group exists: {log_group_name}")
+                    logger.debug(f"Log group exists: {log_group_name}")
                 else:
                     # Create log group if it doesn't exist
                     try:
                         logs_client.create_log_group(logGroupName=log_group_name)
-                        logger.info(f"Created log group: {log_group_name}")
+                        logger.debug(f"Created log group: {log_group_name}")
                     except Exception as create_e:
                         pass  # logger.error(f"Failed to create log group: {str(create_e)}")
-                        logger.error("This may indicate a permissions issue with the Lambda execution role")
+                        logger.warning("This may indicate a permissions issue with the Lambda execution role")
             except Exception as e:
                 logger.error(f"Failed to check log group existence: {str(e)}")
         except Exception as logs_e:
             logger.error(f"Error working with CloudWatch logs: {str(logs_e)}")
         
-        # Initialize validator with config
+        # ========== SMART DELEGATION SYSTEM - COMPLETE PAYLOAD LOADING ==========
+        # Check if this is an async delegation request that needs complete payload loaded from S3
+        # NOTE: Don't reset is_async_request here - it's already set above
+        # is_async_request = event.get('async_delegation_request', False)  # BUG: This was overwriting the value
+        complete_payload_s3_key = event.get('complete_payload_s3_key')
+
+        if is_async_request and complete_payload_s3_key:
+            logger.debug(f"[ASYNC_PAYLOAD] Loading complete sync-compatible payload from S3: {complete_payload_s3_key}")
+            try:
+                import boto3
+                s3_client = boto3.client('s3')
+                s3_bucket = event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'perplexity-validator-unified'))
+
+                # Download complete payload from S3
+                response = s3_client.get_object(Bucket=s3_bucket, Key=complete_payload_s3_key)
+                payload_content = response['Body'].read().decode('utf-8')
+                complete_payload = json.loads(payload_content)
+
+                logger.debug(f"[ASYNC_PAYLOAD] Successfully loaded complete payload from S3")
+                logger.debug(f"[ASYNC_PAYLOAD] Payload contains {len(complete_payload.get('validation_data', {}).get('rows', []))} rows")
+                logger.debug(f"[ASYNC_PAYLOAD] Config has {len(complete_payload.get('config', {}).get('validation_targets', []))} targets")
+
+                # Replace the current event with the complete payload for processing
+                # This makes the async validator behave exactly like the sync validator
+                event = complete_payload
+
+                # IMPORTANT: Re-set the async flag after replacing event
+                # The complete_payload has async_delegation_request set, but we need to update our variable
+                is_async_request = event.get('async_delegation_request', False)
+                logger.info(f"[ASYNC_PAYLOAD] After loading payload, is_async_request = {is_async_request}")
+
+            except Exception as payload_error:
+                logger.error(f"[ASYNC_PAYLOAD] Failed to load complete payload from S3 key {complete_payload_s3_key}: {payload_error}")
+                logger.error(f"[ASYNC_PAYLOAD] S3 bucket: {s3_bucket}")
+                # Clean up the problematic payload file
+                try:
+                    import boto3
+                    s3_client = boto3.client('s3')
+                    s3_client.delete_object(Bucket=s3_bucket, Key=complete_payload_s3_key)
+                    logger.warning(f"[CLEANUP] Deleted corrupted payload from S3: {complete_payload_s3_key}")
+                except Exception as cleanup_error:
+                    logger.warning(f"[CLEANUP] Failed to delete corrupted payload: {cleanup_error}")
+
+                # Return error - cannot proceed without complete payload
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({
+                        'error': f'Failed to load validation payload from S3: {str(payload_error)}',
+                        'complete_payload_s3_key': complete_payload_s3_key,
+                        'bucket': s3_bucket
+                    })
+                }
+        elif is_async_request and not complete_payload_s3_key:
+            # Fallback: try legacy config loading for backward compatibility
+            logger.warning(f"[ASYNC_PAYLOAD] Async delegation request missing complete_payload_s3_key, trying legacy config loading")
+            config_s3_key = event.get('config_s3_key')
+            if config_s3_key:
+                try:
+                    import boto3
+                    s3_client = boto3.client('s3')
+                    s3_bucket = event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'perplexity-validator-unified'))
+                    response = s3_client.get_object(Bucket=s3_bucket, Key=config_s3_key)
+                    config_content = response['Body'].read().decode('utf-8')
+                    config = json.loads(config_content)
+                    # Update event config
+                    event['config'] = config
+                    logger.debug(f"[ASYNC_PAYLOAD] Legacy config loaded successfully")
+                except Exception as e:
+                    logger.error(f"[ASYNC_PAYLOAD] Legacy config loading also failed: {e}")
+                    return {
+                        'statusCode': 500,
+                        'body': json.dumps({'error': 'Failed to load validation configuration via legacy method'})
+                    }
+            else:
+                logger.error(f"[ASYNC_PAYLOAD] No complete_payload_s3_key or config_s3_key found")
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({'error': 'Async delegation request missing both complete_payload_s3_key and config_s3_key'})
+                }
+
+        # ========== S3 PAYLOAD CLEANUP HELPER FUNCTION ==========
+        def cleanup_s3_payload_if_needed():
+            """Clean up S3 payload if this is an async request with a complete payload."""
+            complete_payload_s3_key = event.get('complete_payload_s3_key')
+            if complete_payload_s3_key and is_async_request:
+                try:
+                    import boto3
+                    s3_client = boto3.client('s3')
+                    s3_bucket = event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'perplexity-validator-unified'))
+                    s3_client.delete_object(Bucket=s3_bucket, Key=complete_payload_s3_key)
+                    logger.debug(f"[CLEANUP] Deleted complete payload from S3: {complete_payload_s3_key}")
+                except Exception as cleanup_error:
+                    logger.warning(f"[CLEANUP] Failed to delete payload {complete_payload_s3_key}: {cleanup_error}")
+
+        # Initialize validator with config (now loaded from S3 if async, or embedded if sync)
         config = event.get('config', {})
         
         # Log the config for debugging
@@ -2449,7 +2642,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Check if general_notes is present
         if 'general_notes' in config:
-            logger.error(f"General notes included: {config['general_notes'][:200]}...")
+            logger.debug(f"General notes included: {config['general_notes'][:200]}...")
         else:
             pass  # logger.error("WARNING: general_notes NOT found in config!")
             
@@ -2482,7 +2675,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if QC_AVAILABLE:
             try:
                 qc_manager = QCIntegrationManager(config, "prompts.yml")
-                logger.info(f"QC Manager initialized: enabled={qc_manager.is_qc_enabled()}")
+                logger.debug(f"QC Manager initialized: enabled={qc_manager.is_qc_enabled()}")
             except Exception as e:
                 logger.error(f"Failed to initialize QC manager: {e}")
                 qc_manager = None
@@ -2514,24 +2707,73 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 else:
                     needs_perplexity = True
         
-        logger.info(f"API requirements - Perplexity: {needs_perplexity}, Anthropic: {needs_anthropic}")
+        logger.debug(f"API requirements - Perplexity: {needs_perplexity}, Anthropic: {needs_anthropic}")
         
         # Get required API keys
         if needs_anthropic:
             anthropic_api_key = get_anthropic_api_key()
-            logger.info("Retrieved Anthropic API key")
+            logger.debug("Retrieved Anthropic API key")
         if needs_perplexity:
             perplexity_api_key = get_perplexity_api_key()
-            logger.info("Retrieved Perplexity API key")
+            logger.debug("Retrieved Perplexity API key")
             
         s3_bucket = os.environ['S3_CACHE_BUCKET']
         
         # Extract session_id for progress updates
         session_id = event.get('session_id')
-        if session_id:
-            logger.info(f"Session ID for progress updates: {session_id}")
-            send_websocket_progress(session_id, "Starting validation process...", 5)
+
+        # Create a queue and a worker thread for progress updates
+        progress_queue = queue.Queue()
+        progress_thread = None
+        if session_id and websocket_client:
+            logger.debug(f"Session ID for progress updates: {session_id}")
+            progress_thread = threading.Thread(target=progress_sender, args=(progress_queue, session_id))
+            progress_thread.start()
+            progress_queue.put((0, "Starting validation process...", 5))
         
+        # Update DynamoDB run status to indicate async validation has started
+        if is_async_request and session_id != 'unknown':
+            try:
+                import sys
+                sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
+                from dynamodb_schemas import update_run_status
+
+                run_key = event.get('run_key')
+                if run_key:
+                    # Determine if this is initial start or continuation
+                    is_continuation = event.get('is_continuation', False)
+                    continuation_count = event.get('continuation_count', 0)
+
+                    if is_continuation:
+                        status = f'ASYNC_CONTINUATION_{continuation_count}'
+                        verbose_status = f'Async validation continuation #{continuation_count} started'
+                    else:
+                        status = 'ASYNC_PROCESSING_STARTED'
+                        verbose_status = 'Async validation lambda has started processing'
+
+                    # Include continuation tracking in the update
+                    additional_data = {
+                        'continuation_chain': event.get('continuation_chain', []) + [{
+                            'continuation_number': continuation_count,
+                            'started_at': datetime.now(timezone.utc).isoformat(),
+                            'is_continuation': is_continuation,
+                            'last_completed_batch': event.get('last_completed_batch', -1)
+                        }]
+                    }
+
+                    update_run_status(
+                        session_id=session_id,
+                        run_key=run_key,
+                        status=status,
+                        verbose_status=verbose_status,
+                        **additional_data
+                    )
+                    logger.info(f"[ASYNC_START] Updated DynamoDB run status to {status} for session {session_id}")
+                else:
+                    logger.warning(f"[ASYNC_START] No run_key provided in event for session {session_id}")
+            except Exception as e:
+                logger.error(f"[ASYNC_START] Failed to update DynamoDB run status: {e}")
+
         # Process rows
         rows = event.get('validation_data', {}).get('rows', [])
         validation_results = {}
@@ -2541,10 +2783,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         total_single_validations = 0
         
         # Thread-safe counter for AI call progress tracking
-        import threading
+
         ai_call_counter_lock = threading.Lock()
         completed_ai_calls = [0]  # Use list for mutable reference
-        last_reported_count = [0]  # Use list for mutable reference
+
         
         # Calculate total expected AI calls for progress tracking
         # Interface lambda now sends ALL rows at once, so len(rows) = total dataset size
@@ -2557,7 +2799,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if qc_manager and qc_manager.is_qc_enabled():
             qc_expected_calls = len(rows)  # One QC call per row
             total_expected_ai_calls += qc_expected_calls
-            logger.info(f"[AI_PROGRESS] Total expected calls: {search_groups_count * len(rows)} validation + {qc_expected_calls} QC = {total_expected_ai_calls}")
+            logger.debug(f"[AI_PROGRESS] Total expected calls: {search_groups_count * len(rows)} validation + {qc_expected_calls} QC = {total_expected_ai_calls}")
         
         # Processing progress setup completed
         # Expected AI calls calculated
@@ -2587,7 +2829,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'qc_models_used': set()
         }
         
-        async def process_all_rows():
+        async def process_all_rows(progress_queue):
             nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, batch_timing_data, total_batches, total_expected_ai_calls, batches_with_claude, batches_without_claude, batch_manager, search_groups_count, all_qc_results, qc_metrics_summary
             
             # Initialize dynamic batch size manager (enhanced version with CSV config if available)
@@ -2597,10 +2839,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         session_id=session_id,
                         enable_audit_logging=True
                     )
-                    logger.info("🚀 Using EnhancedDynamicBatchSizeManager with CSV configuration")
+                    logger.debug("🚀 Using EnhancedDynamicBatchSizeManager with CSV configuration")
                 except Exception as e:
                     logger.error(f"Failed to initialize enhanced batch manager: {e}")
-                    logger.info("🔄 Falling back to basic DynamicBatchSizeManager")
+                    logger.debug("🔄 Falling back to basic DynamicBatchSizeManager")
                     batch_manager = DynamicBatchSizeManager(
                         initial_batch_size=50,  # Start with 50 rows per batch
                         min_batch_size=10,      # Minimum 10 rows per batch
@@ -2612,7 +2854,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     )
             else:
                 # Fallback to basic batch manager if enhanced version not available
-                logger.info("🔄 Using basic DynamicBatchSizeManager (enhanced version not available)")
+                logger.debug("🔄 Using basic DynamicBatchSizeManager (enhanced version not available)")
                 batch_manager = DynamicBatchSizeManager(
                     initial_batch_size=50,  # Start with 50 rows per batch
                     min_batch_size=10,      # Minimum 10 rows per batch
@@ -2630,7 +2872,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             current_batch_size = batch_manager.get_batch_size_for_models(all_models)
             total_batches = (len(rows) + current_batch_size - 1) // current_batch_size  # Calculate total number of batches
             
-            logger.info(f"🚀 PER-MODEL BATCH PROCESSING: {len(rows)} rows in {total_batches} batches starting with {current_batch_size} rows each")
+            logger.debug(f"🚀 PER-MODEL BATCH PROCESSING: {len(rows)} rows in {total_batches} batches starting with {current_batch_size} rows each")
             pass  # logger.info(f"🔍 Models that will be used: {sorted(all_models) if all_models else ['default']}")
             
             async with aiohttp.ClientSession() as session:
@@ -2654,7 +2896,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     actual_batch_size = len(batch)
                     batch_index = batch_num + 1
                     
-                    logger.info(f"Starting batch {batch_index} with {actual_batch_size} rows")
+                    logger.debug(f"Starting batch {batch_index} with {actual_batch_size} rows")
                     
                     # Log batch manager status every 10 batches
                     if batch_index % 10 == 0:
@@ -2668,7 +2910,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     row_tasks = []
                     for row_idx, row in enumerate(batch):
                         global_row_idx = start_idx + row_idx
-                        task = asyncio.create_task(process_row(session, row, global_row_idx, batch_manager, batch_index))
+                        task = asyncio.create_task(process_row(session, row, global_row_idx, batch_manager, batch_index, progress_queue))
                         row_tasks.append(task)
                     
                     # Wait for all rows in the batch to complete
@@ -2706,9 +2948,81 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             'api_providers': list(batch_api_providers)
                         }
                         batch_timing_data.append(batch_timing_info)
-                        
+
                         logger.debug(f"Completed batch {batch_index} in {batch_processing_time:.2f}s")
-                        
+
+                        # ========== ASYNC MODE: Smart Continuation Check ==========
+                        if is_async_request and batch_index < total_batches - 1:  # Not the last batch
+                            # Calculate average batch time from history
+                            all_batch_times = batch_timing_data + event.get('batch_timing_history', [])
+
+                            if all_batch_times:
+                                avg_batch_time_seconds = sum(bt['processing_time_seconds'] for bt in all_batch_times) / len(all_batch_times)
+                                next_batch_estimated_ms = int(avg_batch_time_seconds * 1000)
+
+                                # Check if we have time for the next batch
+                                if not should_continue_processing(next_batch_estimated_ms):
+                                    logger.info(f"[ASYNC_CONTINUATION] Need to trigger continuation after batch {batch_index}")
+                                    logger.info(f"[ASYNC_CONTINUATION] Avg batch time: {avg_batch_time_seconds:.2f}s, Remaining time insufficient")
+
+                                    # Save progress to DynamoDB
+                                    save_async_progress(
+                                        chunks_completed=batch_index + 1,
+                                        chunks_total=total_batches,
+                                        rows_processed=sum(1 for _ in validation_results),
+                                        current_cost=0.0  # TODO: Calculate actual cost
+                                    )
+
+                                    # Save cumulative results to S3
+                                    cumulative_results = {
+                                        'validation_results': validation_results,
+                                        'batch_timing_data': all_batch_times,
+                                        'continuation_metadata': {
+                                            'batches_completed': batch_index + 1,
+                                            'total_batches': total_batches,
+                                            'is_continuation': event.get('is_continuation', False),
+                                            'continuation_count': event.get('continuation_count', 0)
+                                        }
+                                    }
+
+                                    # Save to S3
+                                    import boto3
+                                    s3_client = boto3.client('s3')
+                                    s3_bucket = event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage'))
+                                    results_s3_key = f"sessions/{session_id}/partial_validation_results_{batch_index + 1}.json"
+
+                                    s3_client.put_object(
+                                        Bucket=s3_bucket,
+                                        Key=results_s3_key,
+                                        Body=json.dumps(cumulative_results, default=str),
+                                        ContentType='application/json'
+                                    )
+
+                                    logger.info(f"[ASYNC_CONTINUATION] Saved partial results to S3: {results_s3_key}")
+
+                                    # Trigger self-continuation with batch timing history
+                                    continuation_event = event.copy()
+                                    continuation_event['batch_timing_history'] = all_batch_times
+                                    continuation_event['last_completed_batch'] = batch_index
+
+                                    # Store event for trigger_self_continuation
+                                    # (This is a bit hacky but needed to pass the updated event)
+                                    globals()['_continuation_event'] = continuation_event
+
+                                    if trigger_self_continuation():
+                                        logger.info(f"[ASYNC_CONTINUATION] Successfully triggered continuation")
+                                        # Exit early - let the next invocation continue
+                                        return {
+                                            'statusCode': 200,
+                                            'body': json.dumps({
+                                                'status': 'continued',
+                                                'batches_completed': batch_index + 1,
+                                                'total_batches': total_batches
+                                            })
+                                        }
+                                    else:
+                                        logger.error(f"[ASYNC_CONTINUATION] Failed to trigger continuation, continuing current execution")
+
                         # Notify batch manager of success with models used
                         batch_manager.on_success(batch_models_used)
                         
@@ -2753,7 +3067,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 except Exception as e:
                                     logger.warning(f"Failed to get result from completed task: {e}")
                         
-                        logger.info(f"Storing {len(completed_results)} partial results from failed batch {batch_index}")
+                        logger.debug(f"Storing {len(completed_results)} partial results from failed batch {batch_index}")
                         for idx, result, _, _ in completed_results:
                             validation_results[idx] = result
                     
@@ -2780,7 +3094,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # API provider statistics logged
                 
         
-        async def process_row(session, row, row_idx, batch_manager=None, batch_number=None):
+        async def process_row(session, row, row_idx, batch_manager=None, batch_number=None, progress_queue=None):
             """Process a single row with progressive multiplexing."""
             nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls, qc_manager, all_qc_results, qc_metrics_summary, validator, config
             
@@ -2794,7 +3108,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Use pre-computed row key if available, otherwise generate it
             if '_row_key' in row:
                 row_key = row['_row_key']
-                logger.info(f"Using pre-computed row key: {row_key}")
+                logger.debug(f"Using pre-computed row key: {row_key}")
                 # Remove _row_key from row data so it doesn't get processed as a column
                 row_data = {k: v for k, v in row.items() if k != '_row_key'}
             else:
@@ -2805,17 +3119,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Get validation history if provided in the event
             validation_history = {}
-            if 'validation_history' in event and row_key in event['validation_history']:
+            if 'validation_history' in event and event['validation_history'] is not None and row_key in event['validation_history']:
                 validation_history = event['validation_history'][row_key]
                 pass  # logger.info(f"Found validation history for row key: {row_key}")
-                logger.info(f"History contains data for {len(validation_history)} fields")
+                logger.debug(f"History contains data for {len(validation_history)} fields")
                 # Log sample history for debugging
                 if validation_history:
                     sample_field = list(validation_history.keys())[0]
                     pass  # logger.info(f"Sample history field '{sample_field}': {validation_history[sample_field][:1]}")
             else:
                 logger.warning(f"No validation history found for row key: {row_key}")
-                if 'validation_history' in event:
+                if 'validation_history' in event and event['validation_history'] is not None:
                     pass  # logger.warning(f"Available history keys: {list(event['validation_history'].keys())[:5]}")
                 else:
                     logger.warning("No validation_history in event at all")
@@ -2826,7 +3140,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Process IGNORED fields
             if ignored_fields:
-                logger.info(f"Adding {len(ignored_fields)} IGNORED fields without processing")
+                logger.debug(f"Adding {len(ignored_fields)} IGNORED fields without processing")
                 for ignored_field in ignored_fields:
                     # Simply copy the original value to the result without validation
                     original_value = row_data.get(ignored_field.column, "")
@@ -2880,13 +3194,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Processing search group
                 
                 # Always use multiplex validation regardless of number of fields
-                is_cached = await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id, row_api_providers)
+                await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id, row_api_providers)
                 total_multiplex_validations += 1
                 
-                # Send AI call progress update via WebSocket using thread-safe counter
-                # but not for cached calls, to avoid slowing down the frontend
-                if not is_cached:
-                    report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, last_reported_count)
+                report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue)
                 
                 # Add this group's results to accumulated results for next groups
                 # Exclude ID fields from accumulated results since they are context only
@@ -2898,7 +3209,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             qc_data = {}
             if qc_manager and qc_manager.is_qc_enabled():
                 try:
-                    logger.info(f"Starting QC processing for row {row_idx}")
+                    logger.debug(f"Starting QC processing for row {row_idx}")
 
                     # Prepare all group results for QC
                     all_group_results = {}
@@ -2971,7 +3282,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     )
 
                     # Report QC call progress
-                    report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, last_reported_count)
+                    report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue)
 
                     # Merge QC results into row_results
                     if qc_results_by_field:
@@ -2995,11 +3306,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 # QC results are stored as metadata only - interface lambda will prioritize QC values for display
 
                     # Store QC results for final response
-                    logger.info(f"[QC_RESULTS_DEBUG] Row {row_idx}: qc_results_by_field = {qc_results_by_field}")
+                    logger.debug(f"[QC_RESULTS_DEBUG] Row {row_idx}: qc_results_by_field = {qc_results_by_field}")
                     if qc_results_by_field:
                         # Store QC results using hash key (for Excel compatibility)
                         all_qc_results[row_key] = qc_results_by_field
-                        logger.info(f"[QC_RESULTS_DEBUG] Stored QC results for row_idx {row_idx} with hash_key {row_key}: {len(qc_results_by_field)} fields")
+                        logger.debug(f"[QC_RESULTS_DEBUG] Stored QC results for row_idx {row_idx} with hash_key {row_key}: {len(qc_results_by_field)} fields")
 
                         # Debug: Show the actual values being stored
                         for field_name, qc_data in qc_results_by_field.items():
@@ -3007,9 +3318,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 original_val = row_data.get(field_name, '')
                                 validated_val = row_results.get(field_name, {}).get('value', '')
                                 qc_val = qc_data.get('qc_entry', '')
-                                logger.info(f"[QC_VALUES_DEBUG] {field_name}: Original='{original_val}' -> Validated='{validated_val}' -> QC='{qc_val}'")
+                                logger.debug(f"[QC_VALUES_DEBUG] {field_name}: Original='{original_val}' -> Validated='{validated_val}' -> QC='{qc_val}'")
                     else:
-                        logger.info(f"[QC_RESULTS_DEBUG] No QC results to store for row {row_idx}")
+                        logger.debug(f"[QC_RESULTS_DEBUG] No QC results to store for row {row_idx}")
 
                     # Update QC metrics summary
                     qc_metrics_summary['total_rows_processed'] += 1
@@ -3029,7 +3340,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         if qc_metrics.get('qc_model_used'):
                             qc_metrics_summary['qc_models_used'].add(qc_metrics['qc_model_used'])
 
-                    logger.info(f"QC processing completed for row {row_idx}: {len(qc_results_by_field)} fields processed")
+                    logger.debug(f"QC processing completed for row {row_idx}: {len(qc_results_by_field)} fields processed")
 
                 except Exception as e:
                     logger.error(f"QC processing failed for row {row_idx}: {str(e)}")
@@ -3059,7 +3370,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # If there are no fields to validate after filtering, just return
             if not validation_targets:
-                logger.info("No non-ID/IGNORED fields to validate in this group")
+                logger.debug("No non-ID/IGNORED fields to validate in this group")
                 return
             
             # Log clear info about what we're processing
@@ -3446,12 +3757,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             logger.info(f"✅ Processed {processed_count}/{len(validation_targets)} columns successfully")
             
-            return is_cached
+            # Function modifies row_results and row_models_used in place - no return needed  
          # Run the async function
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(process_all_rows())
+            loop.run_until_complete(process_all_rows(progress_queue))
             
             # Wait for any remaining tasks to complete (don't cancel them)
             pending = asyncio.all_tasks(loop)
@@ -3566,13 +3877,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 aggregated_metrics = ai_client.aggregate_provider_metrics(all_enhanced_call_data)
 
                 # ========== COST_DEBUG: Raw AI Client Aggregated Metrics ==========
-                logger.info(f"[COST_DEBUG] RAW aggregated_metrics from ai_client: {aggregated_metrics}")
+                logger.debug(f"[COST_DEBUG] RAW aggregated_metrics from ai_client: {aggregated_metrics}")
                 if aggregated_metrics and 'totals' in aggregated_metrics:
                     totals = aggregated_metrics['totals']
-                    logger.info(f"[COST_DEBUG] RAW totals: actual=${totals.get('total_cost_actual', 0):.6f}, estimated=${totals.get('total_cost_estimated', 0):.6f}")
+                    logger.debug(f"[COST_DEBUG] RAW totals: actual=${totals.get('total_cost_actual', 0):.6f}, estimated=${totals.get('total_cost_estimated', 0):.6f}")
                     providers = aggregated_metrics.get('providers', {})
                     for provider, data in providers.items():
-                        logger.info(f"[COST_DEBUG] RAW provider {provider}: calls={data.get('calls', 0)}, tokens={data.get('tokens', 0)}, actual=${data.get('cost_actual', 0):.6f}, estimated=${data.get('cost_estimated', 0):.6f}")
+                        logger.debug(f"[COST_DEBUG] RAW provider {provider}: calls={data.get('calls', 0)}, tokens={data.get('tokens', 0)}, actual=${data.get('cost_actual', 0):.6f}, estimated=${data.get('cost_estimated', 0):.6f}")
 
                 # Log the results of the final aggregation for debugging
                 if aggregated_metrics and 'totals' in aggregated_metrics:
@@ -3619,10 +3930,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 pass  # logger.info(f"[BATCH_SIZE_DEBUG] target_batch_size: {target_batch_size}, mode: {'preview' if is_preview else 'validation'}")
                 
                 # ========== COST_DEBUG: Full Validation Estimates Calculation ==========
-                logger.info(f"[COST_DEBUG] Calculating full validation estimates with:")
-                logger.info(f"[COST_DEBUG] - total_rows_in_table: {total_rows_in_table}")
-                logger.info(f"[COST_DEBUG] - preview_rows_processed: {preview_rows_processed}")
-                logger.info(f"[COST_DEBUG] - target_batch_size: {target_batch_size}")
+                logger.debug(f"[COST_DEBUG] Calculating full validation estimates with:")
+                logger.debug(f"[COST_DEBUG] - total_rows_in_table: {total_rows_in_table}")
+                logger.debug(f"[COST_DEBUG] - preview_rows_processed: {preview_rows_processed}")
+                logger.debug(f"[COST_DEBUG] - target_batch_size: {target_batch_size}")
 
                 full_validation_estimates = calculate_full_validation_estimates_with_batch_timing(
                     aggregated_metrics=aggregated_metrics,
@@ -3635,14 +3946,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 )
 
                 # ========== COST_DEBUG: Full Validation Estimates Result ==========
-                logger.info(f"[COST_DEBUG] full_validation_estimates result: {full_validation_estimates}")
+                logger.debug(f"[COST_DEBUG] full_validation_estimates result: {full_validation_estimates}")
 
                 if 'error' in full_validation_estimates:
                     logger.error(f"[VALIDATOR_SIDE_ERROR] Estimates calculation failed: {full_validation_estimates['error']}")
                     full_validation_estimates = None
                 else:
                     mode_desc = "full validation estimates" if is_preview else "actual validation metrics"
-                    logger.info(f"Generated {mode_desc}: {full_validation_estimates.get('total_estimates', 'N/A')}")
+                    logger.debug(f"Generated {mode_desc}: {full_validation_estimates.get('total_estimates', 'N/A')}")
                     pass  # logger.info(f"[VALIDATOR_SIDE_DEBUG] Calculated estimates object: {json.dumps(full_validation_estimates, indent=2)}")
                     
             except Exception as e:
@@ -3844,10 +4155,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         anthropic_usage = total_token_usage['by_provider']['anthropic']
         
         if perplexity_usage['calls'] > 0:
-            logger.info(f"Perplexity API: {perplexity_usage['prompt_tokens']} prompt + {perplexity_usage['completion_tokens']} completion = {perplexity_usage['total_tokens']} total tokens across {perplexity_usage['calls']} calls, ${perplexity_usage.get('total_cost', 0.0):.6f} cost")
+            logger.debug(f"Perplexity API: {perplexity_usage['prompt_tokens']} prompt + {perplexity_usage['completion_tokens']} completion = {perplexity_usage['total_tokens']} total tokens across {perplexity_usage['calls']} calls, ${perplexity_usage.get('total_cost', 0.0):.6f} cost")
         
         if anthropic_usage['calls'] > 0:
-            logger.info(f"Anthropic API: {anthropic_usage['input_tokens']} input + {anthropic_usage['output_tokens']} output + {anthropic_usage['cache_creation_tokens']} cache_creation + {anthropic_usage['cache_read_tokens']} cache_read = {anthropic_usage['total_tokens']} total tokens across {anthropic_usage['calls']} calls, ${anthropic_usage.get('total_cost', 0.0):.6f} cost")
+            logger.debug(f"Anthropic API: {anthropic_usage['input_tokens']} input + {anthropic_usage['output_tokens']} output + {anthropic_usage['cache_creation_tokens']} cache_creation + {anthropic_usage['cache_read_tokens']} cache_read = {anthropic_usage['total_tokens']} total tokens across {anthropic_usage['calls']} calls, ${anthropic_usage.get('total_cost', 0.0):.6f} cost")
         
         # Log by model
         for model, model_usage in total_token_usage['by_model'].items():
@@ -3892,11 +4203,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.debug(f"  ✅ Total batch processing time: {total_batch_time:.2f}s")
         
         # Calculate validation structure metrics
-        logger.info(f"[VALIDATION_METRICS_DEBUG] Total validation_targets: {len(validator.validation_targets)}")
-        logger.info(f"[VALIDATION_METRICS_DEBUG] Validation targets importance values: {[f'{t.column}:{t.importance}' for t in validator.validation_targets]}")
+        logger.debug(f"[VALIDATION_METRICS_DEBUG] Total validation_targets: {len(validator.validation_targets)}")
+        logger.debug(f"[VALIDATION_METRICS_DEBUG] Validation targets importance values: {[f'{t.column}:{t.importance}' for t in validator.validation_targets]}")
         validation_targets = [t for t in validator.validation_targets if t.importance.upper() not in ["ID", "IGNORED"]]
         validated_columns_count = len(validation_targets)
-        logger.info(f"[VALIDATION_METRICS] Calculated validated_columns_count: {validated_columns_count} from {len(validator.validation_targets)} total targets (after filtering ID/IGNORED)")
+        logger.debug(f"[VALIDATION_METRICS] Calculated validated_columns_count: {validated_columns_count} from {len(validator.validation_targets)} total targets (after filtering ID/IGNORED)")
         grouped_targets = validator.group_columns_by_search_group(validation_targets)
         search_groups_count = len(grouped_targets)
         
@@ -3938,48 +4249,48 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             qc_fail_rates_by_column = qc_manager.cost_tracker.get_qc_fail_rates_by_column()
 
         # ========== COST_DEBUG: Pre-QC Cost Analysis ==========
-        logger.info(f"[COST_DEBUG] all_enhanced_call_data length: {len(all_enhanced_call_data) if all_enhanced_call_data else 0}")
+        logger.debug(f"[COST_DEBUG] all_enhanced_call_data length: {len(all_enhanced_call_data) if all_enhanced_call_data else 0}")
         # Log individual enhanced call data items to see what costs are being passed
         if all_enhanced_call_data:
             for i, call_data in enumerate(all_enhanced_call_data):
-                logger.info(f"[COST_DEBUG] enhanced_call_data[{i}] structure: {call_data}")
+                logger.debug(f"[COST_DEBUG] enhanced_call_data[{i}] structure: {call_data}")
                 # Check if it has provider_metrics structure
                 if 'provider_metrics' in call_data:
                     for provider, metrics in call_data.get('provider_metrics', {}).items():
-                        logger.info(f"[COST_DEBUG] enhanced_call_data[{i}] provider_metrics[{provider}]: {metrics}")
+                        logger.debug(f"[COST_DEBUG] enhanced_call_data[{i}] provider_metrics[{provider}]: {metrics}")
                 else:
-                    logger.info(f"[COST_DEBUG] enhanced_call_data[{i}] missing provider_metrics structure")
-        logger.info(f"[COST_DEBUG] aggregated_metrics keys: {list(aggregated_metrics.keys()) if aggregated_metrics else 'None'}")
+                    logger.debug(f"[COST_DEBUG] enhanced_call_data[{i}] missing provider_metrics structure")
+        logger.debug(f"[COST_DEBUG] aggregated_metrics keys: {list(aggregated_metrics.keys()) if aggregated_metrics else 'None'}")
 
         if aggregated_metrics:
             totals = aggregated_metrics.get('totals', {})
             providers = aggregated_metrics.get('providers', {})
-            logger.info(f"[COST_DEBUG] PRE-QC totals: actual=${totals.get('total_cost_actual', 0):.6f}, estimated=${totals.get('total_cost_estimated', 0):.6f}")
+            logger.debug(f"[COST_DEBUG] PRE-QC totals: actual=${totals.get('total_cost_actual', 0):.6f}, estimated=${totals.get('total_cost_estimated', 0):.6f}")
             for provider, data in providers.items():
-                logger.info(f"[COST_DEBUG] PRE-QC provider {provider}: calls={data.get('calls', 0)}, tokens={data.get('tokens', 0)}, actual=${data.get('cost_actual', 0):.6f}, estimated=${data.get('cost_estimated', 0):.6f}")
+                logger.debug(f"[COST_DEBUG] PRE-QC provider {provider}: calls={data.get('calls', 0)}, tokens={data.get('tokens', 0)}, actual=${data.get('cost_actual', 0):.6f}, estimated=${data.get('cost_estimated', 0):.6f}")
 
-        logger.info(f"[COST_DEBUG] qc_fail_rates_by_column keys: {list(qc_fail_rates_by_column.keys()) if qc_fail_rates_by_column else 'None'}")
+        logger.debug(f"[COST_DEBUG] qc_fail_rates_by_column keys: {list(qc_fail_rates_by_column.keys()) if qc_fail_rates_by_column else 'None'}")
 
         enhanced_models_parameter = construct_enhanced_models_parameter(
             validator, all_enhanced_call_data, aggregated_metrics, qc_fail_rates_by_column
         )
 
         # ========== COST_DEBUG: Enhanced Models Parameter Structure ==========
-        logger.info(f"[COST_DEBUG] enhanced_models_parameter keys: {list(enhanced_models_parameter.keys()) if enhanced_models_parameter else 'None'}")
+        logger.debug(f"[COST_DEBUG] enhanced_models_parameter keys: {list(enhanced_models_parameter.keys()) if enhanced_models_parameter else 'None'}")
         if enhanced_models_parameter:
-            logger.info(f"[COST_DEBUG] enhanced_models_parameter structure: {enhanced_models_parameter}")
+            logger.debug(f"[COST_DEBUG] enhanced_models_parameter structure: {enhanced_models_parameter}")
             # Log model details if models array exists
             models_array = enhanced_models_parameter.get('models', [])
-            logger.info(f"[COST_DEBUG] models array length: {len(models_array)}")
+            logger.debug(f"[COST_DEBUG] models array length: {len(models_array)}")
             for i, model in enumerate(models_array):
-                logger.info(f"[COST_DEBUG] model[{i}]: {model}")
+                logger.debug(f"[COST_DEBUG] model[{i}]: {model}")
                 if 'qc_fail_rates' in model:
-                    logger.info(f"[COST_DEBUG] model[{i}] qc_fail_rates: {model['qc_fail_rates']}")
-        logger.info(f"[COST_DEBUG] qc_fail_rates_by_column passed to enhanced_models: {qc_fail_rates_by_column}")
+                    logger.debug(f"[COST_DEBUG] model[{i}] qc_fail_rates: {model['qc_fail_rates']}")
+        logger.debug(f"[COST_DEBUG] qc_fail_rates_by_column passed to enhanced_models: {qc_fail_rates_by_column}")
         
         # Prepare QC data for response
         qc_response_data = {}
-        logger.info(f"[QC_RESPONSE_DEBUG] Preparing QC response - qc_manager: {qc_manager is not None}, "
+        logger.debug(f"[QC_RESPONSE_DEBUG] Preparing QC response - qc_manager: {qc_manager is not None}, "
                    f"is_enabled: {qc_manager.is_qc_enabled() if qc_manager else 'N/A'}, "
                    f"rows_processed: {qc_metrics_summary.get('total_rows_processed', 0)}, "
                    f"fields_reviewed: {qc_metrics_summary.get('total_fields_reviewed', 0)}")
@@ -4002,15 +4313,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     qc_metrics_summary['total_fields_modified'] = qc_tracker_data['total_fields_modified']
 
             # Add column-level QC analysis
-            logger.info(f"[QC_METRICS_DEBUG] Checking for cost_tracker: hasattr={hasattr(qc_manager, 'cost_tracker')}, qc_manager={qc_manager.__class__.__name__ if qc_manager else None}")
+            logger.debug(f"[QC_METRICS_DEBUG] Checking for cost_tracker: hasattr={hasattr(qc_manager, 'cost_tracker')}, qc_manager={qc_manager.__class__.__name__ if qc_manager else None}")
             if hasattr(qc_manager, 'cost_tracker'):
                 qc_by_column = qc_manager.cost_tracker.get_qc_fail_rates_by_column()
                 qc_metrics_summary['qc_by_column'] = qc_by_column
-                logger.info(f"[QC_METRICS] Added qc_by_column analysis: {len(qc_by_column)} columns - columns: {list(qc_by_column.keys())}")
+                logger.debug(f"[QC_METRICS] Added qc_by_column analysis: {len(qc_by_column)} columns - columns: {list(qc_by_column.keys())}")
             else:
                 # Fallback: try to get qc_by_column from tracker data
                 if qc_tracker_data and 'qc_by_column' in qc_tracker_data:
-                    logger.info(f"[QC_METRICS_DEBUG] Using qc_by_column from tracker_data directly")
+                    logger.debug(f"[QC_METRICS_DEBUG] Using qc_by_column from tracker_data directly")
                     qc_metrics_summary['qc_by_column'] = qc_tracker_data['qc_by_column']
 
             # Convert set to list for JSON serialization
@@ -4019,16 +4330,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'qc_results': all_qc_results,  # May be empty if no modifications
                 'qc_metrics': qc_metrics_summary
             }
-            logger.info(f"QC Summary: {qc_metrics_summary['total_rows_processed']} rows processed, "
+            logger.debug(f"QC Summary: {qc_metrics_summary['total_rows_processed']} rows processed, "
                        f"{qc_metrics_summary['total_fields_reviewed']} fields reviewed, "
                        f"{qc_metrics_summary['total_fields_modified']} fields modified, "
                        f"${qc_metrics_summary.get('total_qc_cost', 0):.4f} cost")
-            logger.info(f"[QC_RESPONSE_DEBUG] Including QC data in response - qc_results count: {len(all_qc_results)}, metrics: {qc_metrics_summary}")
-            logger.info(f"[QC_RESPONSE_DEBUG] all_qc_results keys: {list(all_qc_results.keys())}")
+            logger.debug(f"[QC_RESPONSE_DEBUG] Including QC data in response - qc_results count: {len(all_qc_results)}, metrics: {qc_metrics_summary}")
+            logger.debug(f"[QC_RESPONSE_DEBUG] all_qc_results keys: {list(all_qc_results.keys())}")
             if all_qc_results:
                 sample_key = list(all_qc_results.keys())[0]
                 sample_value = all_qc_results[sample_key]
-                logger.info(f"[QC_RESPONSE_DEBUG] Sample QC result - key: {sample_key}, fields: {list(sample_value.keys()) if isinstance(sample_value, dict) else 'Not a dict'}")
+                logger.debug(f"[QC_RESPONSE_DEBUG] Sample QC result - key: {sample_key}, fields: {list(sample_value.keys()) if isinstance(sample_value, dict) else 'Not a dict'}")
 
             # Log QC fail rate summary if available
             if qc_manager:
@@ -4039,12 +4350,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 qc_tracker_aggregated = qc_manager.get_aggregated_qc_metrics()
                 qc_tracker_totals = qc_tracker_aggregated.get('qc_totals', {})
                 if qc_tracker_totals and any(qc_tracker_totals.get(k, 0) for k in ['total_qc_calls', 'total_fields_reviewed']):
-                    logger.info(f"[QC_RESPONSE_DEBUG] Found QC tracker metrics despite no rows processed: {qc_tracker_totals}")
+                    logger.debug(f"[QC_RESPONSE_DEBUG] Found QC tracker metrics despite no rows processed: {qc_tracker_totals}")
                     # Add qc_by_column if available
                     if hasattr(qc_manager, 'cost_tracker'):
                         qc_by_column = qc_manager.cost_tracker.get_qc_fail_rates_by_column()
                         qc_tracker_totals['qc_by_column'] = qc_by_column
-                        logger.info(f"[QC_METRICS] Added qc_by_column to tracker data: {len(qc_by_column)} columns")
+                        logger.debug(f"[QC_METRICS] Added qc_by_column to tracker data: {len(qc_by_column)} columns")
                     # Include the properly formatted tracker metrics in response
                     qc_response_data = {
                         'qc_results': {},  # Empty results
@@ -4117,10 +4428,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             totals['total_estimated_processing_time'] = totals.get('total_estimated_processing_time', 0.0) + qc_tracker_metrics.get('total_qc_time_estimated', 0.0)
 
             # ========== COST_DEBUG: Post-QC Cost Analysis ==========
-            logger.info(f"[COST_DEBUG] QC tracker metrics: {qc_tracker_metrics}")
-            logger.info(f"[COST_DEBUG] POST-QC totals: actual=${totals.get('total_cost_actual', 0):.6f}, estimated=${totals.get('total_cost_estimated', 0):.6f}")
+            logger.debug(f"[COST_DEBUG] QC tracker metrics: {qc_tracker_metrics}")
+            logger.debug(f"[COST_DEBUG] POST-QC totals: actual=${totals.get('total_cost_actual', 0):.6f}, estimated=${totals.get('total_cost_estimated', 0):.6f}")
             for provider, data in qc_enhanced_aggregated_metrics.get('providers', {}).items():
-                logger.info(f"[COST_DEBUG] POST-QC provider {provider}: calls={data.get('calls', 0)}, tokens={data.get('tokens', 0)}, actual=${data.get('cost_actual', 0):.6f}, estimated=${data.get('cost_estimated', 0):.6f}")
+                logger.debug(f"[COST_DEBUG] POST-QC provider {provider}: calls={data.get('calls', 0)}, tokens={data.get('tokens', 0)}, actual=${data.get('cost_actual', 0):.6f}, estimated=${data.get('cost_estimated', 0):.6f}")
 
             # Update full_validation_estimates to include QC costs (QC TIME already included in batch estimates)
             if full_validation_estimates and qc_tracker_metrics:
@@ -4132,17 +4443,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 if 'total_estimates' in full_validation_estimates:
                     full_validation_estimates['total_estimates']['estimated_total_cost_estimated'] += qc_estimated_full_cost
                     # DON'T add QC time here - already included in batch timing
-                    logger.info(f"[COST_DEBUG] Updated full validation estimates with QC cost: added ${qc_estimated_full_cost:.6f} (${qc_tracker_metrics.get('total_qc_estimated_cost', 0.0):.6f} * {qc_scaling_factor:.1f})")
-                    logger.info(f"[COST_DEBUG] Final estimated_total_cost_estimated: ${full_validation_estimates['total_estimates']['estimated_total_cost_estimated']:.6f}")
-                    logger.info(f"[TIME_DEBUG] QC time already included in batch estimates, not adding separately")
-                    logger.info(f"[TIME_DEBUG] Final estimated_total_processing_time: {full_validation_estimates['total_estimates']['estimated_total_processing_time']:.2f}s")
+                    logger.debug(f"[COST_DEBUG] Updated full validation estimates with QC cost: added ${qc_estimated_full_cost:.6f} (${qc_tracker_metrics.get('total_qc_estimated_cost', 0.0):.6f} * {qc_scaling_factor:.1f})")
+                    logger.debug(f"[COST_DEBUG] Final estimated_total_cost_estimated: ${full_validation_estimates['total_estimates']['estimated_total_cost_estimated']:.6f}")
+                    logger.debug(f"[TIME_DEBUG] QC time already included in batch estimates, not adding separately")
+                    logger.debug(f"[TIME_DEBUG] Final estimated_total_processing_time: {full_validation_estimates['total_estimates']['estimated_total_processing_time']:.2f}s")
 
                 # Note: Not updating timing_estimates or batch_timing_analysis as QC time is already included
 
         # Log the enhanced_models_parameter before including in response
-        logger.info(f"[MODELS_PASSTHROUGH_DEBUG] enhanced_models_parameter being sent in response: {list(enhanced_models_parameter.keys()) if enhanced_models_parameter else 'EMPTY'}")
+        logger.debug(f"[MODELS_PASSTHROUGH_DEBUG] enhanced_models_parameter being sent in response: {list(enhanced_models_parameter.keys()) if enhanced_models_parameter else 'EMPTY'}")
         if enhanced_models_parameter:
-            logger.info(f"[MODELS_PASSTHROUGH_DEBUG] Sample search group data: {list(enhanced_models_parameter.get('search_group_1', {}).keys()) if 'search_group_1' in enhanced_models_parameter else 'No search_group_1'}")
+            logger.debug(f"[MODELS_PASSTHROUGH_DEBUG] Sample search group data: {list(enhanced_models_parameter.get('search_group_1', {}).keys()) if 'search_group_1' in enhanced_models_parameter else 'No search_group_1'}")
 
         # Create a single response
         response = {
@@ -4205,8 +4516,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
         
         # DEBUG: Log what we're actually returning in metadata
-        logger.info(f"[METADATA_RETURN_DEBUG] Metadata keys being returned: {list(response['body']['metadata'].keys())}")
-        logger.info(f"[METADATA_RETURN_DEBUG] validation_metrics in metadata: {response['body']['metadata'].get('validation_metrics', 'NOT FOUND')}")
+        logger.debug(f"[METADATA_RETURN_DEBUG] Metadata keys being returned: {list(response['body']['metadata'].keys())}")
+        logger.debug(f"[METADATA_RETURN_DEBUG] validation_metrics in metadata: {response['body']['metadata'].get('validation_metrics', 'NOT FOUND')}")
 
         # Log what validation lambda is sending back (CALL COUNTS DEBUGGING) - FINAL VERSION
         validation_calls_by_provider = {}
@@ -4220,11 +4531,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if qc_metrics_summary.get('total_rows_processed', 0) > 0:
             qc_calls_total = qc_metrics_summary.get('total_qc_calls', 0)
 
-        logger.info(f"[VALIDATION_LAMBDA_RESPONSE] FINAL - Sending call counts to interface:")
-        logger.info(f"[VALIDATION_LAMBDA_RESPONSE]   Validation calls by provider: {validation_calls_by_provider}")
-        logger.info(f"[VALIDATION_LAMBDA_RESPONSE]   QC calls total: {qc_calls_total}")
-        logger.info(f"[VALIDATION_LAMBDA_RESPONSE]   Grand total calls: {sum(validation_calls_by_provider.values()) + qc_calls_total}")
-        logger.info(f"[METADATA_RETURN_DEBUG] validated_columns_count: {response['body']['metadata'].get('validation_metrics', {}).get('validated_columns_count', 'NOT FOUND')}")
+        logger.debug(f"[VALIDATION_LAMBDA_RESPONSE] FINAL - Sending call counts to interface:")
+        logger.debug(f"[VALIDATION_LAMBDA_RESPONSE]   Validation calls by provider: {validation_calls_by_provider}")
+        logger.debug(f"[VALIDATION_LAMBDA_RESPONSE]   QC calls total: {qc_calls_total}")
+        logger.debug(f"[VALIDATION_LAMBDA_RESPONSE]   Grand total calls: {sum(validation_calls_by_provider.values()) + qc_calls_total}")
+        logger.debug(f"[METADATA_RETURN_DEBUG] validated_columns_count: {response['body']['metadata'].get('validation_metrics', {}).get('validated_columns_count', 'NOT FOUND')}")
         
         # Add the raw responses for debugging if in test_mode
         test_mode = event.get('test_mode', False)
@@ -4240,12 +4551,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 del response['body']['raw_responses']
             
         # Send final progress update
-        if session_id:
+        if progress_thread:
             final_count = completed_ai_calls[0]
-            send_websocket_progress(session_id, f"Validation completed! {final_count} AI calls processed", 100)
+            progress_queue.put((float('inf'), f"Validation completed! {final_count} AI calls processed", 100))
 
         # ========== SAVE CUMULATIVE RESULTS TO S3 ==========
         # Always save complete cumulative results for async processing
+        logger.info(f"[S3_SAVE] Checking if should save to S3: is_async_request={is_async_request}, session_id={session_id}")
         if is_async_request and session_id:
             try:
                 # Create cumulative results structure
@@ -4280,18 +4592,35 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 )
 
-                logger.info(f"[S3_SAVE] Saved cumulative results to s3://{s3_bucket}/{results_s3_key}")
+                logger.debug(f"[S3_SAVE] Saved cumulative results to s3://{s3_bucket}/{results_s3_key}")
 
                 # Check if we should trigger completion or continue
                 remaining_ms = get_remaining_time_ms()
                 should_continue = should_continue_processing()
 
+                # Check if there's more work to do (incomplete validation)
+                total_rows = len(event.get('validation_data', {}).get('rows', []))
+                processed_rows = len(cumulative_results.get('validation_results', {}))
+                has_more_work = processed_rows < total_rows
+
                 if should_continue and remaining_ms > SAFETY_BUFFER_MS:
                     # Still have time and work to do - this was an intermediate save
-                    logger.info(f"[S3_SAVE] Intermediate save completed, processing continues")
+                    logger.debug(f"[S3_SAVE] Intermediate save completed, processing continues")
+                elif not should_continue and has_more_work:
+                    # Running out of time but still have work - trigger continuation
+                    logger.info(f"[S3_SAVE] Running out of time ({remaining_ms}ms left), triggering continuation")
+                    logger.info(f"[S3_SAVE] Processed {processed_rows}/{total_rows} rows so far")
+
+                    # Trigger self-continuation for more processing time
+                    if trigger_self_continuation():
+                        logger.info(f"[S3_SAVE] Successfully triggered continuation for session {session_id}")
+                    else:
+                        logger.error(f"[S3_SAVE] Failed to trigger continuation - falling back to completion")
+                        # Fall back to completion if continuation fails
+                        trigger_interface_completion(results_s3_key)
                 else:
-                    # Final completion - trigger interface
-                    logger.info(f"[S3_SAVE] Final save completed, triggering interface completion")
+                    # Final completion - either all work done or can't continue
+                    logger.debug(f"[S3_SAVE] Final save completed, triggering interface completion")
                     trigger_interface_completion(results_s3_key)
 
             except Exception as e:
@@ -4300,13 +4629,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Return the combined results
         return response
-        
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}")
         logger.error(traceback.format_exc())
+
+        # Clean up S3 payload on error if this is an async request
+        try:
+            cleanup_s3_payload_if_needed()
+        except Exception as cleanup_error:
+            logger.warning(f"[CLEANUP] Error during S3 cleanup in exception handler: {cleanup_error}")
+
         return {
         'statusCode': 500,
         'body': {
             'error': str(e)
         }
-        } 
+        }
+    finally:
+        if progress_thread:
+            if progress_queue:
+                progress_queue.put(None)
+            progress_thread.join()

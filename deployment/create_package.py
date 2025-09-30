@@ -55,10 +55,10 @@ LAMBDA_CONFIG = {
             "S3_RESULTS_BUCKET": "hyperplexity-storage",
             "S3_CONFIG_BUCKET": "hyperplexity-storage",
             "WEBSOCKET_API_URL": "wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod",
-            # Smart Delegation System SQS Queues
-            "ASYNC_VALIDATOR_QUEUE": "https://sqs.us-east-1.amazonaws.com/400232868802/perplexity-validator-async-queue",
-            "INTERFACE_COMPLETION_QUEUE": "https://sqs.us-east-1.amazonaws.com/400232868802/perplexity-validator-completion-queue",
-            "MAX_SYNC_INVOCATION_TIME": "5.0",
+            # Smart Delegation System SQS Queue Names (will be converted to URLs during deployment)
+            "SQS_ASYNC_QUEUE_NAME": "perplexity-validator-async-queue", # Environment-specific queue names will be applied
+            "SQS_COMPLETION_QUEUE_NAME": "perplexity-validator-completion-queue", # Environment-specific queue names will be applied
+            "MAX_SYNC_INVOCATION_TIME": "0.0",
             "VALIDATOR_SAFETY_BUFFER": "3.0"
         }
     },
@@ -267,6 +267,33 @@ def create_zip():
                 arcname = os.path.relpath(file_path, PACKAGE_DIR)
                 zipf.write(file_path, arcname)
 
+def configure_sqs_queue_urls(region):
+    """Configure SQS queue URLs in Lambda environment variables."""
+    try:
+        logger.info("Configuring SQS queue URLs for Smart Delegation System...")
+        sqs_client = boto3.client('sqs', region_name=region)
+
+        # Get environment-specific queue names from Lambda config
+        async_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_ASYNC_QUEUE_NAME', 'perplexity-validator-async-queue')
+        completion_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_COMPLETION_QUEUE_NAME', 'perplexity-validator-completion-queue')
+
+        logger.info(f"Looking up Smart Delegation queues: async={async_queue_name}, completion={completion_queue_name}")
+
+        # Get queue URLs
+        async_queue_url = sqs_client.get_queue_url(QueueName=async_queue_name)['QueueUrl']
+        completion_queue_url = sqs_client.get_queue_url(QueueName=completion_queue_name)['QueueUrl']
+
+        # Set the URLs in Lambda environment variables
+        LAMBDA_CONFIG['Environment']['Variables']['ASYNC_VALIDATOR_QUEUE'] = async_queue_url
+        LAMBDA_CONFIG['Environment']['Variables']['INTERFACE_COMPLETION_QUEUE'] = completion_queue_url
+
+        logger.info(f"Found SQS Async Queue URL: {async_queue_url}")
+        logger.info(f"Found SQS Completion Queue URL: {completion_queue_url}")
+
+    except Exception as e:
+        logger.error(f"Could not retrieve SQS queue URLs. Please ensure queues are created. Error: {e}")
+        logger.warning("Continuing deployment without SQS queue URLs set in environment.")
+
 def configure_sqs_event_source_mappings(lambda_client, function_name, region):
     """Configure SQS event source mappings for Smart Delegation System."""
     try:
@@ -279,17 +306,21 @@ def configure_sqs_event_source_mappings(lambda_client, function_name, region):
         # Define the event source mappings needed for Smart Delegation System
         mappings = []
 
+        # Get environment-specific queue names from lambda config
+        async_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_ASYNC_QUEUE_NAME', 'perplexity-validator-async-queue')
+        completion_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_COMPLETION_QUEUE_NAME', 'perplexity-validator-completion-queue')
+
         # 1. Interface Lambda should listen to completion queue for async completion processing
         if 'interface' in function_name.lower():
             mappings.append({
-                'queue_name': 'perplexity-validator-completion-queue',
+                'queue_name': completion_queue_name,
                 'description': 'Async completion processing for interface lambda'
             })
 
         # 2. Validation Lambda should listen to async queue for async validation requests
         elif 'validator' in function_name.lower() and 'interface' not in function_name.lower():
             mappings.append({
-                'queue_name': 'perplexity-validator-async-queue',
+                'queue_name': async_queue_name,
                 'description': 'Async validation requests for validation lambda'
             })
 
@@ -468,6 +499,9 @@ def deploy_to_lambda(function_name=None, region=None, s3_bucket=None, verify=Fal
             # Set log retention policy
             set_log_retention_policy(LAMBDA_CONFIG["FunctionName"], region)
         
+        # Configure SQS queue URLs for Smart Delegation System
+        configure_sqs_queue_urls(region)
+
         # Configure SQS event source mappings for Smart Delegation System
         configure_sqs_event_source_mappings(lambda_client, LAMBDA_CONFIG["FunctionName"], region)
 

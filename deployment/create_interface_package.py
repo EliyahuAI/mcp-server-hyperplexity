@@ -67,10 +67,10 @@ LAMBDA_CONFIG = {
             "S3_CACHE_BUCKET": "hyperplexity-storage",
             "S3_RESULTS_BUCKET": "hyperplexity-storage",
             "S3_CONFIG_BUCKET": "hyperplexity-storage",
-            # Smart Delegation System SQS Queues
-            "ASYNC_VALIDATOR_QUEUE": "https://sqs.us-east-1.amazonaws.com/400232868802/perplexity-validator-async-queue",
-            "INTERFACE_COMPLETION_QUEUE": "https://sqs.us-east-1.amazonaws.com/400232868802/perplexity-validator-completion-queue",
-            "MAX_SYNC_INVOCATION_TIME": "5.0",
+            # Smart Delegation System SQS Queue Names (will be converted to URLs during deployment)
+            "SQS_ASYNC_QUEUE_NAME": "perplexity-validator-async-queue", # Environment-specific queue names will be applied
+            "SQS_COMPLETION_QUEUE_NAME": "perplexity-validator-completion-queue", # Environment-specific queue names will be applied
+            "MAX_SYNC_INVOCATION_TIME": "0.0",
             "VALIDATOR_SAFETY_BUFFER": "3.0"
         }
     },
@@ -253,17 +253,21 @@ def configure_sqs_event_source_mappings(lambda_client, function_name, region):
         # Define the event source mappings needed for Smart Delegation System
         mappings = []
 
+        # Get environment-specific queue names from lambda config
+        async_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_ASYNC_QUEUE_NAME', 'perplexity-validator-async-queue')
+        completion_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_COMPLETION_QUEUE_NAME', 'perplexity-validator-completion-queue')
+
         # 1. Interface Lambda should listen to completion queue for async completion processing
         if 'interface' in function_name.lower():
             mappings.append({
-                'queue_name': 'perplexity-validator-completion-queue',
+                'queue_name': completion_queue_name,
                 'description': 'Async completion processing for interface lambda'
             })
 
         # 2. Validation Lambda should listen to async queue for async validation requests
         elif 'validator' in function_name.lower() and 'interface' not in function_name.lower():
             mappings.append({
-                'queue_name': 'perplexity-validator-async-queue',
+                'queue_name': async_queue_name,
                 'description': 'Async validation requests for validation lambda'
             })
 
@@ -332,17 +336,26 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, s
         # Use environment-specific queue names from Lambda config if available
         preview_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_PREVIEW_QUEUE_NAME', 'perplexity-validator-preview-queue')
         standard_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_STANDARD_QUEUE_NAME', 'perplexity-validator-standard-queue')
-        
+        async_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_ASYNC_QUEUE_NAME', 'perplexity-validator-async-queue')
+        completion_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_COMPLETION_QUEUE_NAME', 'perplexity-validator-completion-queue')
+
         logger.info(f"Looking up SQS queues: preview={preview_queue_name}, standard={standard_queue_name}")
-        
+        logger.info(f"Looking up Smart Delegation queues: async={async_queue_name}, completion={completion_queue_name}")
+
         preview_queue_url = sqs_client.get_queue_url(QueueName=preview_queue_name)['QueueUrl']
         standard_queue_url = sqs_client.get_queue_url(QueueName=standard_queue_name)['QueueUrl']
-        
+        async_queue_url = sqs_client.get_queue_url(QueueName=async_queue_name)['QueueUrl']
+        completion_queue_url = sqs_client.get_queue_url(QueueName=completion_queue_name)['QueueUrl']
+
         LAMBDA_CONFIG['Environment']['Variables']['PREVIEW_QUEUE_URL'] = preview_queue_url
         LAMBDA_CONFIG['Environment']['Variables']['STANDARD_QUEUE_URL'] = standard_queue_url
-        
+        LAMBDA_CONFIG['Environment']['Variables']['ASYNC_VALIDATOR_QUEUE'] = async_queue_url
+        LAMBDA_CONFIG['Environment']['Variables']['INTERFACE_COMPLETION_QUEUE'] = completion_queue_url
+
         logger.info(f"Found SQS Preview Queue URL: {preview_queue_url}")
         logger.info(f"Found SQS Standard Queue URL: {standard_queue_url}")
+        logger.info(f"Found SQS Async Queue URL: {async_queue_url}")
+        logger.info(f"Found SQS Completion Queue URL: {completion_queue_url}")
     except Exception as e:
         logger.error(f"Could not retrieve SQS queue URLs. Please ensure queues are created. Error: {e}")
         # Decide if you want to fail deployment or continue without SQS integration
@@ -942,15 +955,31 @@ def setup_sqs_queues(region):
     logger.info("Setting up SQS queues...")
     try:
         sqs_client = boto3.client('sqs', region_name=region)
-        
+
         # Get environment-specific queue names from Lambda configuration
         preview_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_PREVIEW_QUEUE_NAME', 'perplexity-validator-preview-queue')
         standard_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_STANDARD_QUEUE_NAME', 'perplexity-validator-standard-queue')
-        
-        # Use 960 seconds for both queues to match Lambda timeout (15 minutes)
+
+        # Smart Delegation System queues (environment-specific)
+        async_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_ASYNC_QUEUE_NAME', 'perplexity-validator-async-queue')
+        completion_queue_name = LAMBDA_CONFIG['Environment']['Variables'].get('SQS_COMPLETION_QUEUE_NAME', 'perplexity-validator-completion-queue')
+
+        # Use 900 seconds (15 minutes) for queue timeout to match Lambda timeout
         queues_to_create = [
+            # Legacy queues
             (preview_queue_name, {"VisibilityTimeout": "960", "MessageRetentionPeriod": "345600"}),
-            (standard_queue_name, {"VisibilityTimeout": "960", "MessageRetentionPeriod": "345600"})
+            (standard_queue_name, {"VisibilityTimeout": "960", "MessageRetentionPeriod": "345600"}),
+            # Smart Delegation System queues
+            (async_queue_name, {
+                "VisibilityTimeout": "900",           # 15 minutes - match lambda timeout
+                "MessageRetentionPeriod": "1209600",  # 14 days - keep messages for retry
+                "ReceiveMessageWaitTimeSeconds": "20" # Long polling to reduce API calls
+            }),
+            (completion_queue_name, {
+                "VisibilityTimeout": "900",           # 15 minutes - match lambda timeout
+                "MessageRetentionPeriod": "86400",    # 1 day - completion messages should be processed quickly
+                "ReceiveMessageWaitTimeSeconds": "20" # Long polling
+            })
         ]
         
         for queue_name, attributes in queues_to_create:
@@ -1085,26 +1114,27 @@ def create_websocket_lambda_package(output_zip_path):
 def deploy_websocket_lambda(zip_path, region):
     """Deploys the WebSocket handler Lambda function."""
     config = WEBSOCKET_LAMBDA_CONFIG
-    logger.info(f"Deploying WebSocket Lambda: {config['FunctionName']}")
+    function_name = "perplexity-validator-ws-handler"
+    logger.info(f"Deploying WebSocket Lambda: {function_name}")
     lambda_client = boto3.client('lambda', region_name=region)
     
     with open(zip_path, 'rb') as zip_file:
         zip_content = zip_file.read()
 
     try:
-        lambda_client.get_function(FunctionName=config['FunctionName'])
+        lambda_client.get_function(FunctionName=function_name)
         logger.info("WebSocket Lambda exists, updating code...")
         response = lambda_client.update_function_code(
-            FunctionName=config['FunctionName'],
+            FunctionName=function_name,
             ZipFile=zip_content,
             Publish=True
         )
-        set_log_retention_policy(config['FunctionName'], region)
+        set_log_retention_policy(function_name, region)
         return response
     except lambda_client.exceptions.ResourceNotFoundException:
         logger.info("WebSocket Lambda does not exist, creating...")
         response = lambda_client.create_function(
-            FunctionName=config['FunctionName'],
+            FunctionName=function_name,
             Runtime=config['Runtime'],
             Role=config['Role'],
             Handler=config['Handler'],
@@ -1113,7 +1143,7 @@ def deploy_websocket_lambda(zip_path, region):
             MemorySize=config['MemorySize'],
             Publish=True
         )
-        set_log_retention_policy(config['FunctionName'], region)
+        set_log_retention_policy(function_name, region)
         return response
 
 def setup_websocket_api(lambda_function_name, region, stage_name="prod"):

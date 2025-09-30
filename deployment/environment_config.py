@@ -107,6 +107,12 @@ def apply_environment_to_lambda_config(base_config: Dict[str, Any], environment:
         config["Environment"]["Variables"]["SQS_PREVIEW_QUEUE_NAME"] = env_config["sqs_preview_queue"]
     if "sqs_standard_queue" in env_config:
         config["Environment"]["Variables"]["SQS_STANDARD_QUEUE_NAME"] = env_config["sqs_standard_queue"]
+
+    # Apply Smart Delegation System queue names
+    if "sqs_async_queue" in env_config:
+        config["Environment"]["Variables"]["SQS_ASYNC_QUEUE_NAME"] = env_config["sqs_async_queue"]
+    if "sqs_completion_queue" in env_config:
+        config["Environment"]["Variables"]["SQS_COMPLETION_QUEUE_NAME"] = env_config["sqs_completion_queue"]
     
     return config
 

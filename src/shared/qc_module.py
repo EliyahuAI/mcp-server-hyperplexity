@@ -165,11 +165,11 @@ class QCModule:
                 metadata = group_metadata[group_name]
                 if metadata.get('group_name'):
                     display_name = metadata['group_name']
-                    logger.info(f"[QC_GROUP_DEBUG] Using descriptive name '{display_name}' for group key '{group_name}'")
+                    logger.debug(f"[QC_GROUP_DEBUG] Using descriptive name '{display_name}' for group key '{group_name}'")
                 else:
-                    logger.info(f"[QC_GROUP_DEBUG] No group_name in metadata for '{group_name}', using key as display name")
+                    logger.debug(f"[QC_GROUP_DEBUG] No group_name in metadata for '{group_name}', using key as display name")
             else:
-                logger.info(f"[QC_GROUP_DEBUG] No metadata found for group '{group_name}', using key as display name")
+                logger.debug(f"[QC_GROUP_DEBUG] No metadata found for group '{group_name}', using key as display name")
 
             group_section = [f"### FIELD GROUP: {display_name}"]
 
@@ -213,9 +213,9 @@ class QCModule:
                 explanation = result.get('explanation', '')
 
                 # Debug logging for citations
-                logger.info(f"[QC_CITATIONS_DEBUG] {column}: Found {len(citations)} citations")
+                logger.debug(f"[QC_CITATIONS_DEBUG] {column}: Found {len(citations)} citations")
                 if citations:
-                    logger.info(f"[QC_CITATIONS_DEBUG] {column}: First citation sample: {citations[0][:100]}..." if len(citations[0]) > 100 else citations[0])
+                    logger.debug(f"[QC_CITATIONS_DEBUG] {column}: First citation sample: {citations[0][:100]}..." if len(citations[0]) > 100 else citations[0])
 
                 # Enhanced field formatting with original and updated values
                 field_output = [
@@ -757,9 +757,9 @@ class QCModule:
                     merged_result['updated_confidence'] = qc_updated_confidence  # Update in place
 
                 # Debug logging to see what QC actually returned
-                logger.info(f"[QC_MERGE_DEBUG] {column}: QC returned entry='{qc_entry}', confidence='{qc_confidence}'")
-                logger.info(f"[QC_MERGE_DEBUG] {column}: Original='{multiplex_result.get('original_value', 'N/A')}', Validated='{merged_result['updated_entry']}', QC='{qc_entry}'")
-                logger.info(f"[QC_MERGE_DEBUG] {column}: Final merged QC fields - qc_applied=True, qc_entry='{qc_entry}', qc_confidence='{qc_confidence}'")
+                logger.debug(f"[QC_MERGE_DEBUG] {column}: QC returned entry='{qc_entry}', confidence='{qc_confidence}'")
+                logger.debug(f"[QC_MERGE_DEBUG] {column}: Original='{multiplex_result.get('original_value', 'N/A')}', Validated='{merged_result['updated_entry']}', QC='{qc_entry}'")
+                logger.debug(f"[QC_MERGE_DEBUG] {column}: Final merged QC fields - qc_applied=True, qc_entry='{qc_entry}', qc_confidence='{qc_confidence}'")
 
                 merged_result.update({
                     'qc_entry': qc_entry,
