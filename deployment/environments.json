@@ -5,10 +5,8 @@
     "s3_download_bucket": "hyperplexity-downloads",
     "api_gateway_stage": "dev",
     "environment_tag": "development",
-    "sqs_preview_queue": "perplexity-validator-preview-queue-dev",
-    "sqs_standard_queue": "perplexity-validator-standard-queue-dev",
-    "sqs_async_queue": "perplexity-validator-async-queue-dev",
-    "sqs_completion_queue": "perplexity-validator-completion-queue-dev"
+    "validator_lambda_name": "perplexity-validator-function-dev",
+    "interface_lambda_name": "perplexity-interface-function-dev"
   },
   "test": {
     "resource_suffix": "-test",
@@ -16,10 +14,8 @@
     "s3_download_bucket": "hyperplexity-downloads-test",
     "api_gateway_stage": "test",
     "environment_tag": "testing",
-    "sqs_preview_queue": "perplexity-validator-preview-queue-test",
-    "sqs_standard_queue": "perplexity-validator-standard-queue-test",
-    "sqs_async_queue": "perplexity-validator-async-queue-test",
-    "sqs_completion_queue": "perplexity-validator-completion-queue-test"
+    "validator_lambda_name": "perplexity-validator-function-test",
+    "interface_lambda_name": "perplexity-interface-function-test"
   },
   "staging": {
     "resource_suffix": "-staging",
@@ -27,10 +23,8 @@
     "s3_download_bucket": "hyperplexity-downloads-staging",
     "api_gateway_stage": "staging",
     "environment_tag": "staging",
-    "sqs_preview_queue": "perplexity-validator-preview-queue-staging",
-    "sqs_standard_queue": "perplexity-validator-standard-queue-staging",
-    "sqs_async_queue": "perplexity-validator-async-queue-staging",
-    "sqs_completion_queue": "perplexity-validator-completion-queue-staging"
+    "validator_lambda_name": "perplexity-validator-function-staging",
+    "interface_lambda_name": "perplexity-interface-function-staging"
   },
   "prod": {
     "resource_suffix": "",
@@ -38,9 +32,7 @@
     "s3_download_bucket": "hyperplexity-downloads",
     "api_gateway_stage": "prod",
     "environment_tag": "production",
-    "sqs_preview_queue": "perplexity-validator-preview-queue",
-    "sqs_standard_queue": "perplexity-validator-standard-queue",
-    "sqs_async_queue": "perplexity-validator-async-queue",
-    "sqs_completion_queue": "perplexity-validator-completion-queue"
+    "validator_lambda_name": "perplexity-validator-function",
+    "interface_lambda_name": "perplexity-interface-function"
   }
 }

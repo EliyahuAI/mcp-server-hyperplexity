@@ -2904,7 +2904,7 @@ def handle_main_processing(event, context):
                             'S3_UNIFIED_BUCKET': S3_UNIFIED_BUCKET,
                             'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME,
                             'table_data': table_data,  # Store table_data for Excel generation
-                            'config_version': config_data.get('config_version', 'v1') if config_data else 'v1'  # Track config version
+                            'config_version': config_data.get('storage_metadata', {}).get('version', 1) if config_data else 1  # Track config version
                         }
                     }
 
@@ -2938,7 +2938,10 @@ def handle_main_processing(event, context):
                                 "async_delegation_request": True,  # Flag to indicate async processing
                                 "run_key": run_key,
                                 "S3_UNIFIED_BUCKET": S3_UNIFIED_BUCKET,
-                                "VALIDATOR_LAMBDA_NAME": VALIDATOR_LAMBDA_NAME
+                                "VALIDATOR_LAMBDA_NAME": VALIDATOR_LAMBDA_NAME,
+                                "email": email,  # Include for S3 path construction
+                                "config_version": config_version,  # Include for S3 path construction
+                                "results_path": results_path  # Include to avoid reconstruction
                             })
 
                         if should_delegate and len(payload_rows) > 0:  # Only proceed if we have valid payload with rows
@@ -2956,8 +2959,14 @@ def handle_main_processing(event, context):
 
                             logger.debug(f"[DELEGATION] Stored complete payload in S3: {payload_s3_key}")
 
-                            # Trigger async validator via SQS with payload S3 key
-                            async_message = {
+                            # Construct results path for continuation chain based on config version
+                            domain = email.split('@')[-1].lower().strip() if email and '@' in email else 'unknown'
+                            email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_plus_')[:20] if email and '@' in email else 'unknown'
+                            config_version = config_data.get('storage_metadata', {}).get('version', 1) if config_data else 1
+                            results_path = f"results/{domain}/{email_prefix}/{session_id}/v{config_version}_results"
+
+                            # Trigger async validator via direct Lambda invocation
+                            async_payload_event = {
                                 'message_type': 'ASYNC_VALIDATION_REQUEST',
                                 'session_id': session_id,
                                 'run_key': run_key,
@@ -2965,7 +2974,10 @@ def handle_main_processing(event, context):
                                 'complete_payload_s3_key': payload_s3_key,  # Key to complete sync-compatible payload
                                 'S3_UNIFIED_BUCKET': S3_UNIFIED_BUCKET,
                                 'VALIDATOR_LAMBDA_NAME': VALIDATOR_LAMBDA_NAME,
-                                # Legacy fields for backward compatibility (not used by new async validator)
+                                'results_path': results_path,  # Pass through for continuation chain
+                                'config_version': config_version,  # Pass through for S3 path construction
+                                'email': email,  # Pass through for S3 path construction
+                                # Legacy fields for backward compatibility
                                 'excel_s3_key': excel_s3_key,
                                 'config_s3_key': config_s3_key,
                                 'max_rows': max_rows,
@@ -2974,23 +2986,35 @@ def handle_main_processing(event, context):
                             }
 
                             try:
-                                # Send message to async validator queue
-                                response = sqs_client.send_message(
-                                    QueueUrl=ASYNC_VALIDATOR_QUEUE,
-                                    MessageBody=json.dumps(async_message, default=str)
+                                # Direct Lambda invocation (async)
+                                response = lambda_client.invoke(
+                                    FunctionName=VALIDATOR_LAMBDA_NAME,
+                                    InvocationType='Event',  # Async invocation
+                                    Payload=json.dumps(async_payload_event, default=str)
                                 )
 
-                                logger.debug(f"[DELEGATION] Successfully triggered async validator via SQS: {response['MessageId']}")
+                                logger.debug(f"[DELEGATION] Successfully triggered async validator via direct invocation, status: {response['StatusCode']}")
 
-                                # Verify async validator lambda gets triggered within reasonable time (allow for cold starts)
-                                validation_lambda_triggered = verify_async_validation_trigger(
-                                    session_id, response['MessageId'], run_key=run_key, timeout_seconds=20
-                                )
+                                # Check if invocation was successful (StatusCode 202 for async invocation)
+                                if response['StatusCode'] == 202:
+                                    logger.debug(f"[DELEGATION] Async validation lambda successfully invoked")
 
-                                if not validation_lambda_triggered:
-                                    logger.error(f"[DELEGATION] Async validation lambda was not triggered within 20 seconds!")
-                                    logger.error(f"[DELEGATION] SQS Message ID: {response['MessageId']}")
-                                    logger.error(f"[DELEGATION] This indicates a problem with SQS event source mapping or lambda permissions")
+                                    # Send success notification via WebSocket
+                                    try:
+                                        _send_websocket_message(session_id, {
+                                            'type': 'delegation_success',
+                                            'status': 'DELEGATED_TO_ASYNC',
+                                            'message': f'Job delegated to async processing (estimated {estimated_minutes:.1f} minutes)',
+                                            'estimated_minutes': estimated_minutes,
+                                            'info': 'Your validation is now running in the background. You will receive updates as processing progresses.'
+                                        })
+                                        logger.debug(f"[DELEGATION] Sent delegation success notification via WebSocket for session {session_id}")
+                                    except Exception as websocket_error:
+                                        logger.error(f"[DELEGATION] Failed to send WebSocket success notification: {websocket_error}")
+
+                                else:
+                                    logger.error(f"[DELEGATION] Async validation lambda invocation failed with status: {response['StatusCode']}")
+                                    logger.error(f"[DELEGATION] This indicates a problem with lambda permissions or configuration")
 
                                     # Send failure notification via WebSocket
                                     try:
@@ -2998,9 +3022,8 @@ def handle_main_processing(event, context):
                                             'type': 'validation_error',
                                             'status': 'FAILED',
                                             'error': 'Async validation system failed to start',
-                                            'details': 'The validation lambda was not triggered by the async delegation system',
-                                            'troubleshooting': 'Check SQS event source mapping and lambda permissions',
-                                            'sqs_message_id': response['MessageId'],
+                                            'details': f'Lambda invocation returned status code {response["StatusCode"]}',
+                                            'troubleshooting': 'Check lambda permissions and configuration',
                                             'retry_suggestion': 'Please try your validation again or contact support'
                                         })
                                         logger.debug(f"[DELEGATION] Sent failure notification via WebSocket for session {session_id}")
@@ -3021,23 +3044,6 @@ def handle_main_processing(event, context):
                                     # Continue with sync processing as fallback
                                     logger.debug(f"[DELEGATION] Falling back to sync processing due to async delegation failure")
                                     should_delegate = False
-
-                                else:
-                                    logger.debug(f"[DELEGATION] Async validation lambda successfully triggered and started processing")
-
-                                    # Send success notification via WebSocket
-                                    try:
-                                        _send_websocket_message(session_id, {
-                                            'type': 'delegation_success',
-                                            'status': 'DELEGATED_TO_ASYNC',
-                                            'message': f'Job delegated to async processing (estimated {estimated_minutes:.1f} minutes)',
-                                            'estimated_minutes': estimated_minutes,
-                                            'sqs_message_id': response['MessageId'],
-                                            'info': 'Your validation is now running in the background. You will receive updates as processing progresses.'
-                                        })
-                                        logger.debug(f"[DELEGATION] Sent delegation success notification via WebSocket for session {session_id}")
-                                    except Exception as websocket_error:
-                                        logger.error(f"[DELEGATION] Failed to send WebSocket success notification: {websocket_error}")
 
                                     # Send final message with timeout information for frontend
                                     max_expected_runtime = max(estimated_minutes * 1.5, 30)  # 1.5x estimated or 30min minimum

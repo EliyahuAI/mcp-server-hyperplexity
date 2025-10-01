@@ -101,19 +101,13 @@ def apply_environment_to_lambda_config(base_config: Dict[str, Any], environment:
     # Add environment tag for identification
     config["Environment"]["Variables"]["DEPLOYMENT_ENVIRONMENT"] = environment
     config["Environment"]["Variables"]["ENVIRONMENT_TAG"] = env_config["environment_tag"]
-    
-    # Apply environment-specific SQS queue names (will be converted to URLs during deployment)
-    if "sqs_preview_queue" in env_config:
-        config["Environment"]["Variables"]["SQS_PREVIEW_QUEUE_NAME"] = env_config["sqs_preview_queue"]
-    if "sqs_standard_queue" in env_config:
-        config["Environment"]["Variables"]["SQS_STANDARD_QUEUE_NAME"] = env_config["sqs_standard_queue"]
 
-    # Apply Smart Delegation System queue names
-    if "sqs_async_queue" in env_config:
-        config["Environment"]["Variables"]["SQS_ASYNC_QUEUE_NAME"] = env_config["sqs_async_queue"]
-    if "sqs_completion_queue" in env_config:
-        config["Environment"]["Variables"]["SQS_COMPLETION_QUEUE_NAME"] = env_config["sqs_completion_queue"]
-    
+    # Apply environment-specific Lambda names for direct invocation
+    if "validator_lambda_name" in env_config:
+        config["Environment"]["Variables"]["VALIDATOR_LAMBDA_NAME"] = env_config["validator_lambda_name"]
+    if "interface_lambda_name" in env_config:
+        config["Environment"]["Variables"]["INTERFACE_LAMBDA_NAME"] = env_config["interface_lambda_name"]
+
     return config
 
 def apply_environment_to_api_gateway_config(base_config: Dict[str, Any], environment: str = "prod") -> Dict[str, Any]:

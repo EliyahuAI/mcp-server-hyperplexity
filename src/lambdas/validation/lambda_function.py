@@ -25,21 +25,6 @@ from perplexity_schema import get_response_format_schema
 from row_key_utils import generate_row_key
 from ai_api_client import ai_client
 
-# ========== CUSTOM EXCEPTIONS FOR ASYNC COORDINATION ==========
-class CoordinationConflictException(Exception):
-    """Raised when another lambda is actively processing this session."""
-    def __init__(self, active_lambda_id: str, message: str = "Another lambda is processing"):
-        self.active_lambda_id = active_lambda_id
-        self.message = message
-        super().__init__(self.message)
-
-class StaleMessageException(Exception):
-    """Raised when processing a message older than the allowed age."""
-    def __init__(self, message_age_seconds: float, max_age_seconds: int = 300):
-        self.message_age_seconds = message_age_seconds
-        self.max_age_seconds = max_age_seconds
-        super().__init__(f"Message age {message_age_seconds}s exceeds max {max_age_seconds}s")
-
 def find_similar_columns(expected_columns: List[str], actual_columns: List[str], similarity_threshold: float = 0.8) -> Dict[str, str]:
     """
     Find column mappings between expected and actual columns using string similarity.
@@ -2267,7 +2252,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests and config generation."""
     progress_thread = None
     progress_queue = None
-    lock_acquired = False  # Initialize at function level for finally block access
     try:
         # ========== SQS EVENT HANDLING FOR SMART DELEGATION SYSTEM ==========
         # Check if this is an SQS event (from Smart Delegation System)
@@ -2373,47 +2357,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.error(f"[ASYNC_PROGRESS] Failed to save progress: {e}")
 
         def trigger_self_continuation():
-            """Trigger self-continuation via SQS for more processing time."""
+            """Trigger self-continuation via direct Lambda invocation for more processing time."""
             try:
                 import boto3
-
-                # CRITICAL: Release lock BEFORE triggering continuation
-                # Update status to show handoff in progress
-                try:
-                    import sys
-                    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
-                    from dynamodb_schemas import update_run_status
-
-                    run_key = event.get('run_key')
-                    if run_key and is_async_request:
-                        current_cont = event.get('continuation_count', 0)
-                        update_run_status(
-                            session_id=session_id,
-                            run_key=run_key,
-                            status=f'ASYNC_CONTINUATION_{current_cont}_HANDOFF',
-                            verbose_status=f'Handing off to continuation #{current_cont + 1}',
-                            active_lambda_id=None,  # RELEASE LOCK
-                            last_heartbeat=datetime.now(timezone.utc).isoformat()
-                        )
-                        logger.info(f"[LOCK_HANDOFF] Released lock with HANDOFF status for continuation #{current_cont + 1}")
-                except Exception as handoff_error:
-                    logger.warning(f"[LOCK_HANDOFF] Failed to update handoff status (will use fallback): {handoff_error}")
-                    # Fallback to direct release
-                    release_coordination_lock()
-
-                sqs_client = boto3.client('sqs')
-                async_validator_queue = os.environ.get('ASYNC_VALIDATOR_QUEUE', 'perplexity-validator-async-queue')
-
-                # If async_validator_queue is just a queue name (not a URL), convert it to URL
-                if async_validator_queue and not async_validator_queue.startswith('https://'):
-                    logger.debug(f"[SELF_TRIGGER] Converting queue name to URL: {async_validator_queue}")
-                    try:
-                        queue_url_response = sqs_client.get_queue_url(QueueName=async_validator_queue)
-                        async_validator_queue = queue_url_response['QueueUrl']
-                        logger.debug(f"[SELF_TRIGGER] Using queue URL: {async_validator_queue}")
-                    except Exception as e:
-                        logger.error(f"[SELF_TRIGGER] Failed to get queue URL for {async_validator_queue}: {e}")
-                        return False
 
                 # Use updated event if available (set during batch processing)
                 current_event = globals().get('_continuation_event', event)
@@ -2421,60 +2367,65 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Get deployment environment
                 deployment_environment = os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod')
 
-                # Generate message deduplication ID to prevent duplicate processing
+                # Save complete payload to S3 for continuation
+                s3_client = boto3.client('s3')
+                s3_bucket = current_event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage-dev'))
+
+                # Generate unique payload key
                 continuation_count = current_event.get('continuation_count', 0) + 1
-                dedup_id = f"{session_id}_{current_event.get('run_key', 'unknown')}_{continuation_count}"
+                payload_timestamp = int(time.time() * 1000)
+
+                # Get results path from event (should be passed by interface lambda)
+                results_path = current_event.get('results_path')
+                if not results_path:
+                    # Fallback to constructing path from email and config_version
+                    domain, email_prefix = get_s3_path_components(current_event)
+                    config_version = current_event.get('config_version', 1)
+                    results_path = f"results/{domain}/{email_prefix}/{session_id}/v{config_version}_results"
+                    logger.warning(f"[S3_PATH] results_path not in event, constructed: {results_path}")
+
+                # SIMPLIFIED: Reuse original payload - no need to create new one
+                # The continuation will load the same payload and skip already-processed rows
+                original_payload_s3_key = current_event.get('complete_payload_s3_key')
+                logger.info(f"[CONTINUATION] Reusing original payload: {original_payload_s3_key}")
 
                 # IMPORTANT: Track progress by ROWS (not batches) to prevent infinite loops
                 # Get current row count from the updated event (set before triggering continuation)
                 current_completed_rows = current_event.get('current_completed_rows', 0)
 
-                # Create continuation message with current state
-                continuation_message = {
+                # Create continuation invocation event - reuse original payload
+                continuation_payload = {
                     'message_type': 'ASYNC_VALIDATION_CONTINUATION',
                     'session_id': session_id,
                     'run_key': current_event.get('run_key', f"AsyncValidation_{int(time.time())}"),
                     'async_delegation_request': True,
                     'is_continuation': True,
                     'continuation_count': continuation_count,
-                    'deployment_environment': deployment_environment,  # Ensure environment matches
-                    # Pass through complete payload key (new method)
-                    'complete_payload_s3_key': current_event.get('complete_payload_s3_key'),
-                    'S3_UNIFIED_BUCKET': current_event.get('S3_UNIFIED_BUCKET'),
+                    'deployment_environment': deployment_environment,
+                    # Reuse ORIGINAL payload - no need for new S3 file
+                    'complete_payload_s3_key': original_payload_s3_key,
+                    'S3_UNIFIED_BUCKET': s3_bucket,
                     'VALIDATOR_LAMBDA_NAME': current_event.get('VALIDATOR_LAMBDA_NAME'),
-                    # Pass batch timing data for smart decisions
-                    'batch_timing_history': current_event.get('batch_timing_history', []),
-                    'last_completed_batch': current_event.get('last_completed_batch', -1),  # Keep for backward compat
-                    # CRITICAL: Track rows processed (not batches) for progress validation
+                    # Pass results path and config version
+                    'results_path': results_path,
+                    'config_version': current_event.get('config_version', 1),
+                    'email': current_event.get('email'),
+                    # Pass minimal tracking data
                     'last_completed_rows': current_completed_rows,
-                    # Pass continuation chain for tracking
-                    'continuation_chain': current_event.get('continuation_chain', []),
-                    # CRITICAL: Pass validation data (rows) and config for continuation to process
-                    'validation_data': current_event.get('validation_data'),
-                    'config': current_event.get('config'),
-                    # Legacy parameters for backward compatibility
-                    'excel_s3_key': current_event.get('excel_s3_key'),
-                    'config_s3_key': current_event.get('config_s3_key'),
-                    'max_rows': current_event.get('max_rows'),
-                    'batch_size': current_event.get('batch_size'),
-                    'validation_history': current_event.get('validation_history')
+                    'continuation_chain': current_event.get('continuation_chain', [])
                 }
 
-                # Send continuation message with deduplication
-                send_params = {
-                    'QueueUrl': async_validator_queue,
-                    'MessageBody': json.dumps(continuation_message, default=str),
-                    'MessageGroupId': session_id  # For FIFO queues
-                }
+                # Direct Lambda invocation (async)
+                lambda_client = boto3.client('lambda')
+                validator_lambda_name = current_event.get('VALIDATOR_LAMBDA_NAME') or os.environ.get('VALIDATOR_LAMBDA_NAME', 'perplexity-validator-function')
 
-                # Add deduplication ID if queue supports it
-                if async_validator_queue.endswith('.fifo'):
-                    send_params['MessageDeduplicationId'] = dedup_id
-                    logger.debug(f"[SELF_TRIGGER] Using dedup ID: {dedup_id}")
+                response = lambda_client.invoke(
+                    FunctionName=validator_lambda_name,
+                    InvocationType='Event',  # Async invocation
+                    Payload=json.dumps(continuation_payload, default=str)
+                )
 
-                response = sqs_client.send_message(**send_params)
-
-                logger.info(f"[SELF_TRIGGER] Triggered continuation #{continuation_count} for session {session_id}: {response['MessageId']}")
+                logger.info(f"[DIRECT_INVOKE] Triggered continuation #{continuation_count} for session {session_id}, status: {response['StatusCode']}")
                 return True
 
             except Exception as e:
@@ -2482,23 +2433,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 return False
 
         def trigger_interface_completion(results_s3_key):
-            """Trigger interface lambda for job completion and cleanup S3 payload."""
+            """Trigger interface lambda for job completion via direct invocation and cleanup S3 payload."""
             try:
                 import boto3
-
-                sqs_client = boto3.client('sqs')
-                completion_queue = os.environ.get('INTERFACE_COMPLETION_QUEUE', 'perplexity-validator-completion-queue')
-
-                # If completion_queue is just a queue name (not a URL), convert it to URL
-                if completion_queue and not completion_queue.startswith('https://'):
-                    logger.debug(f"[COMPLETION_TRIGGER] Converting queue name to URL: {completion_queue}")
-                    try:
-                        queue_url_response = sqs_client.get_queue_url(QueueName=completion_queue)
-                        completion_queue = queue_url_response['QueueUrl']
-                        logger.debug(f"[COMPLETION_TRIGGER] Using queue URL: {completion_queue}")
-                    except Exception as e:
-                        logger.error(f"[COMPLETION_TRIGGER] Failed to get queue URL for {completion_queue}: {e}")
-                        return False
 
                 # ========== S3 PAYLOAD CLEANUP ==========
                 # Clean up the complete payload file after successful validation
@@ -2525,30 +2462,34 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Get S3 bucket from event or environment
                 s3_bucket_for_message = event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage'))
 
-                # Create completion message for background handler
-                completion_message = {
+                # Create completion payload for direct invocation
+                completion_payload = {
                     'async_completion': True,  # Flag for background handler
-                    'message_type': 'ASYNC_VALIDATION_COMPLETE',  # Legacy field
+                    'message_type': 'ASYNC_VALIDATION_COMPLETE',
                     'session_id': session_id,
                     'run_key': event.get('run_key', f"AsyncValidation_{int(time.time())}"),
                     'results_s3_key': results_s3_key,
-                    'S3_UNIFIED_BUCKET': s3_bucket_for_message,  # Include bucket name for interface
+                    'S3_UNIFIED_BUCKET': s3_bucket_for_message,
                     'completion_timestamp': datetime.now(timezone.utc).isoformat(),
                     'total_duration_seconds': (time.time() * 1000 - execution_start_time) / 1000,
                     'background_processing': True,  # Route to background handler
-                    'deployment_environment': deployment_environment  # CRITICAL: Must match interface lambda's environment
+                    'deployment_environment': deployment_environment
                 }
 
-                # Send completion message
-                logger.info(f"[COMPLETION_TRIGGER] Sending completion message to queue: {completion_queue}")
-                logger.info(f"[COMPLETION_TRIGGER] Message content: {json.dumps(completion_message, indent=2, default=str)}")
+                # Direct Lambda invocation (async)
+                lambda_client = boto3.client('lambda')
+                interface_lambda_name = os.environ.get('INTERFACE_LAMBDA_NAME', 'perplexity-interface-function')
 
-                response = sqs_client.send_message(
-                    QueueUrl=completion_queue,
-                    MessageBody=json.dumps(completion_message, default=str)
+                logger.info(f"[COMPLETION_TRIGGER] Sending completion via direct invocation to {interface_lambda_name}")
+                logger.debug(f"[COMPLETION_TRIGGER] Payload: {json.dumps(completion_payload, indent=2, default=str)}")
+
+                response = lambda_client.invoke(
+                    FunctionName=interface_lambda_name,
+                    InvocationType='Event',  # Async invocation
+                    Payload=json.dumps(completion_payload, default=str)
                 )
 
-                logger.info(f"[COMPLETION_TRIGGER] Successfully triggered interface completion for session {session_id}: {response['MessageId']}")
+                logger.info(f"[COMPLETION_TRIGGER] Successfully triggered interface completion for session {session_id}, status: {response['StatusCode']}")
                 return True
 
             except Exception as e:
@@ -2644,9 +2585,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.debug(f"[ASYNC_PAYLOAD] Payload contains {len(complete_payload.get('validation_data', {}).get('rows', []))} rows")
                 logger.debug(f"[ASYNC_PAYLOAD] Config has {len(complete_payload.get('config', {}).get('validation_targets', []))} targets")
 
+                # Preserve critical fields from Lambda invocation event before replacing
+                preserved_fields = {
+                    'results_path': event.get('results_path'),
+                    'config_version': event.get('config_version'),
+                    'email': event.get('email'),
+                    'run_key': event.get('run_key'),
+                    'session_id': event.get('session_id'),
+                    'VALIDATOR_LAMBDA_NAME': event.get('VALIDATOR_LAMBDA_NAME'),
+                    'deployment_environment': event.get('deployment_environment'),
+                    'is_continuation': event.get('is_continuation'),
+                    'continuation_count': event.get('continuation_count'),
+                    'last_completed_rows': event.get('last_completed_rows')
+                }
+
                 # Replace the current event with the complete payload for processing
                 # This makes the async validator behave exactly like the sync validator
                 event = complete_payload
+
+                # Restore preserved fields (only if not None and not already in payload)
+                for field, value in preserved_fields.items():
+                    if value is not None and field not in event:
+                        event[field] = value
+                        logger.debug(f"[ASYNC_PAYLOAD] Restored {field} from invocation event")
 
                 # IMPORTANT: Re-set the async flag after replacing event
                 # The complete_payload has async_delegation_request set, but we need to update our variable
@@ -2818,159 +2779,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         current_lambda_id = context.aws_request_id if context else f"local_{int(time.time() * 1000)}"
         # Note: lock_acquired initialized at function level for finally block scope
 
-        def validate_message_age():
-            """Validate message is not too old (prevents stale processing)."""
-            if not is_async_request:
-                return  # Only validate for async requests
-
-            # Check for SentTimestamp in the event (added by SQS)
-            sent_timestamp = event.get('SentTimestamp')
-            if sent_timestamp:
-                try:
-                    # SentTimestamp is in milliseconds
-                    sent_time = int(sent_timestamp) / 1000
-                    current_time = time.time()
-                    message_age = current_time - sent_time
-
-                    MAX_MESSAGE_AGE = 300  # 5 minutes
-                    if message_age > MAX_MESSAGE_AGE:
-                        logger.warning(f"[MESSAGE_AGE] Message age {message_age:.1f}s exceeds max {MAX_MESSAGE_AGE}s")
-                        raise StaleMessageException(message_age, MAX_MESSAGE_AGE)
-                    else:
-                        logger.debug(f"[MESSAGE_AGE] Message age {message_age:.1f}s is within limits")
-                except ValueError as e:
-                    logger.warning(f"[MESSAGE_AGE] Failed to parse SentTimestamp: {e}")
-
-        def acquire_coordination_lock():
-            """Attempt to acquire DynamoDB coordination lock for this session."""
-            nonlocal lock_acquired
-
-            if not is_async_request or session_id == 'unknown':
-                logger.debug(f"[COORDINATION] Skipping lock for sync request or unknown session")
-                lock_acquired = True  # No lock needed for sync requests
-                return True
-
-            try:
-                import sys
-                sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
-                from dynamodb_schemas import get_run_status, update_run_status
-                import boto3
-                from botocore.exceptions import ClientError
-
-                dynamodb = boto3.resource('dynamodb')
-                table = dynamodb.Table('perplexity-validator-runs')
-                run_key = event.get('run_key')
-
-                if not run_key:
-                    logger.warning(f"[COORDINATION] No run_key - proceeding without lock")
-                    lock_acquired = True
-                    return True
-
-                # Get current lock status
-                current_status = get_run_status(session_id, run_key)
-                active_lambda = current_status.get('active_lambda_id') if current_status else None
-                last_heartbeat = current_status.get('last_heartbeat') if current_status else None
-
-                # Check if lock is stale (5+ minutes old)
-                STALE_LOCK_THRESHOLD = 300  # 5 minutes
-                is_stale = False
-                if active_lambda and last_heartbeat:
-                    try:
-                        # Parse ISO format heartbeat
-                        heartbeat_dt = datetime.fromisoformat(last_heartbeat.replace('Z', '+00:00'))
-                        age_seconds = (datetime.now(timezone.utc) - heartbeat_dt).total_seconds()
-                        is_stale = age_seconds > STALE_LOCK_THRESHOLD
-                        if is_stale:
-                            logger.info(f"[COORDINATION] Detected stale lock: age={age_seconds:.1f}s, lambda={active_lambda}")
-                    except Exception as e:
-                        logger.warning(f"[COORDINATION] Failed to parse heartbeat: {e}")
-
-                # Attempt atomic lock acquisition
-                try:
-                    # Condition: lock must be empty, null, or match current lambda, or be stale
-                    if active_lambda and not is_stale and active_lambda != current_lambda_id:
-                        # Another lambda is actively processing
-                        logger.info(f"[COORDINATION] Active lambda detected: {active_lambda}")
-                        raise CoordinationConflictException(active_lambda, "Another lambda is actively processing")
-
-                    # Acquire/refresh lock
-                    update_expression = "SET active_lambda_id = :lambda_id, last_heartbeat = :heartbeat"
-                    expression_values = {
-                        ':lambda_id': current_lambda_id,
-                        ':heartbeat': datetime.now(timezone.utc).isoformat()
-                    }
-
-                    # Conditional: only update if no active lambda or stale or same lambda
-                    if is_stale:
-                        condition_expression = "attribute_exists(session_id)"  # Allow takeover
-                        logger.info(f"[COORDINATION] Taking over stale lock from {active_lambda}")
-                    elif active_lambda == current_lambda_id:
-                        condition_expression = "active_lambda_id = :lambda_id"  # Refresh our own lock
-                    else:
-                        condition_expression = "attribute_not_exists(active_lambda_id) OR active_lambda_id = :null"
-                        expression_values[':null'] = None
-
-                    table.update_item(
-                        Key={'session_id': session_id, 'run_key': run_key},
-                        UpdateExpression=update_expression,
-                        ConditionExpression=condition_expression,
-                        ExpressionAttributeValues=expression_values
-                    )
-
-                    lock_acquired = True
-                    logger.info(f"[COORDINATION] Lock acquired: lambda_id={current_lambda_id}")
-                    return True
-
-                except ClientError as e:
-                    if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
-                        # Lock conflict - another lambda beat us to it
-                        logger.info(f"[COORDINATION] Lock conflict: unable to acquire lock")
-                        raise CoordinationConflictException(active_lambda or "unknown", "Lock acquisition failed")
-                    raise
-
-            except CoordinationConflictException:
-                raise  # Re-raise to be caught by main handler
-            except Exception as e:
-                logger.error(f"[COORDINATION] Lock acquisition error: {e}")
-                # On error, proceed anyway but log it
-                lock_acquired = True
-                return True
-
-        def release_coordination_lock():
-            """Release the DynamoDB coordination lock."""
-            if not lock_acquired or not is_async_request or session_id == 'unknown':
-                return
-
-            try:
-                import sys
-                sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
-                import boto3
-
-                dynamodb = boto3.resource('dynamodb')
-                table = dynamodb.Table('perplexity-validator-runs')
-                run_key = event.get('run_key')
-
-                if not run_key:
-                    return
-
-                # Only release if we still hold the lock
-                table.update_item(
-                    Key={'session_id': session_id, 'run_key': run_key},
-                    UpdateExpression="SET active_lambda_id = :null, last_heartbeat = :heartbeat",
-                    ConditionExpression="active_lambda_id = :lambda_id",
-                    ExpressionAttributeValues={
-                        ':null': None,
-                        ':lambda_id': current_lambda_id,
-                        ':heartbeat': datetime.now(timezone.utc).isoformat()
-                    }
-                )
-                logger.info(f"[COORDINATION] Lock released: lambda_id={current_lambda_id}")
-
-            except Exception as e:
-                logger.warning(f"[COORDINATION] Failed to release lock: {e}")
-
-        # Validate message age first (reject stale messages)
-        validate_message_age()
+        def get_s3_path_components(event_data):
+            """Extract domain and email_prefix from event for S3 paths."""
+            email = event_data.get('email') or event_data.get('email_address', '')
+            if email and '@' in email:
+                domain = email.split('@')[-1].lower().strip()
+                email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_plus_')[:20]
+            else:
+                logger.warning(f"[S3_PATH] No valid email in event, using defaults")
+                domain = "unknown"
+                email_prefix = "unknown"
+            return domain, email_prefix
 
         # SAFETY: Check for excessive continuation count to prevent infinite chains
         if is_async_request:
@@ -2992,9 +2811,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info(f"[CHAIN-{continuation_count:02d}] Continuation #{continuation_count} starting for session {session_id}")
             else:
                 logger.info(f"[CHAIN-00] Initial async validation starting for session {session_id}")
-
-        # Acquire coordination lock (raises CoordinationConflictException if another lambda is active)
-        acquire_coordination_lock()
 
         # Update DynamoDB run status to indicate async validation has started
         if is_async_request and session_id != 'unknown':
@@ -3053,7 +2869,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 import boto3
                 s3_client = boto3.client('s3')
                 s3_bucket = event.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
-                results_s3_key = f"sessions/{session_id}/complete_validation_results.json"
+
+                # Get results path from event or construct it with config_version
+                results_path = event.get('results_path')
+                if results_path:
+                    results_s3_key = f"{results_path}/complete_validation_results.json"
+                else:
+                    domain, email_prefix = get_s3_path_components(event)
+                    config_version = event.get('config_version', 1)
+                    results_s3_key = f"results/{domain}/{email_prefix}/{session_id}/v{config_version}_results/complete_validation_results.json"
+                    logger.warning(f"[CONTINUATION_LOAD] results_path not in event, constructed path with config_version={config_version}")
 
                 logger.info(f"[CONTINUATION_LOAD] Loading existing results from s3://{s3_bucket}/{results_s3_key}")
 
@@ -3288,11 +3113,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                         }
                                     }
 
-                                    # Save to S3
+                                    # Save to S3 - use same file for append logic
                                     import boto3
                                     s3_client = boto3.client('s3')
                                     s3_bucket = event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage'))
-                                    results_s3_key = f"sessions/{session_id}/partial_validation_results_{batch_index + 1}.json"
+
+                                    # Get results path from event or construct it with config_version
+                                    results_path = event.get('results_path')
+                                    if results_path:
+                                        results_s3_key = f"{results_path}/complete_validation_results.json"
+                                    else:
+                                        domain, email_prefix = get_s3_path_components(event)
+                                        config_version = event.get('config_version', 1)
+                                        results_s3_key = f"results/{domain}/{email_prefix}/{session_id}/v{config_version}_results/complete_validation_results.json"
+                                        logger.warning(f"[CONTINUATION_SAVE] results_path not in event, constructed path with config_version={config_version}")
 
                                     s3_client.put_object(
                                         Bucket=s3_bucket,
@@ -3301,7 +3135,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                         ContentType='application/json'
                                     )
 
-                                    logger.info(f"[ASYNC_CONTINUATION] Saved partial results to S3: {results_s3_key}")
+                                    logger.info(f"[ASYNC_CONTINUATION] Saved results to S3 (for continuation): {results_s3_key}")
 
                                     # Trigger self-continuation with batch timing history
                                     continuation_event = event.copy()
@@ -4902,7 +4736,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Save to S3
                 s3_client = boto3.client('s3')
                 s3_bucket = event.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
-                results_s3_key = f"sessions/{session_id}/complete_validation_results.json"
+
+                # Get results path from event or construct it with config_version
+                results_path = event.get('results_path')
+                if results_path:
+                    results_s3_key = f"{results_path}/complete_validation_results.json"
+                else:
+                    domain, email_prefix = get_s3_path_components(event)
+                    config_version = event.get('config_version', 1)
+                    results_s3_key = f"results/{domain}/{email_prefix}/{session_id}/v{config_version}_results/complete_validation_results.json"
+                    logger.warning(f"[S3_SAVE] results_path not in event, constructed path with config_version={config_version}")
 
                 logger.info(f"[S3_SAVE] About to save to S3: bucket={s3_bucket}, key={results_s3_key}")
 
@@ -5012,28 +4855,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Return the combined results
         return response
-    except CoordinationConflictException as e:
-        # Another lambda is actively processing - return 409 and exit cleanly
-        logger.info(f"[COORDINATION] Conflict detected: {e.message} (active_lambda_id={e.active_lambda_id})")
-        return {
-            'statusCode': 409,
-            'body': json.dumps({
-                'message': 'Another lambda is processing this session',
-                'active_lambda_id': e.active_lambda_id,
-                'conflict_reason': e.message
-            })
-        }
-    except StaleMessageException as e:
-        # Message too old - log and exit cleanly
-        logger.warning(f"[MESSAGE_AGE] Rejecting stale message: {e}")
-        return {
-            'statusCode': 410,
-            'body': json.dumps({
-                'message': 'Message too old to process',
-                'message_age_seconds': e.message_age_seconds,
-                'max_age_seconds': e.max_age_seconds
-            })
-        }
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}")
         logger.error(traceback.format_exc())
@@ -5051,17 +4872,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
         }
     finally:
-        # Always release coordination lock on exit (unless continuation already released it)
-        if lock_acquired:
-            try:
-                # release_coordination_lock is defined inside try block, check if it exists
-                if 'release_coordination_lock' in locals():
-                    release_coordination_lock()
-                else:
-                    logger.debug(f"[CLEANUP] release_coordination_lock not defined, skipping")
-            except Exception as lock_error:
-                logger.warning(f"[CLEANUP] Failed to release lock in finally block: {lock_error}")
-
         if progress_thread:
             if progress_queue:
                 progress_queue.put(None)
