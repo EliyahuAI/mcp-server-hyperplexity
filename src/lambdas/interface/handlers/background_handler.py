@@ -3026,39 +3026,6 @@ def handle_main_processing(event, context):
                                     except Exception as websocket_error:
                                         logger.error(f"[DELEGATION] Failed to send WebSocket success notification: {websocket_error}")
 
-                                else:
-                                    logger.error(f"[DELEGATION] Async validation lambda invocation failed with status: {response['StatusCode']}")
-                                    logger.error(f"[DELEGATION] This indicates a problem with lambda permissions or configuration")
-
-                                    # Send failure notification via WebSocket
-                                    try:
-                                        _send_websocket_message(session_id, {
-                                            'type': 'validation_error',
-                                            'status': 'FAILED',
-                                            'error': 'Async validation system failed to start',
-                                            'details': f'Lambda invocation returned status code {response["StatusCode"]}',
-                                            'troubleshooting': 'Check lambda permissions and configuration',
-                                            'retry_suggestion': 'Please try your validation again or contact support'
-                                        })
-                                        logger.debug(f"[DELEGATION] Sent failure notification via WebSocket for session {session_id}")
-                                    except Exception as websocket_error:
-                                        logger.error(f"[DELEGATION] Failed to send WebSocket failure notification: {websocket_error}")
-
-                                    # Update run status to indicate delegation failure
-                                    try:
-                                        update_run_status(
-                                            session_id=session_id,
-                                            run_key=run_key,
-                                            status='FAILED',
-                                            verbose_status='Async delegation failed - validation lambda not triggered'
-                                        )
-                                    except Exception as status_error:
-                                        logger.error(f"[DELEGATION] Failed to update run status: {status_error}")
-
-                                    # Continue with sync processing as fallback
-                                    logger.debug(f"[DELEGATION] Falling back to sync processing due to async delegation failure")
-                                    should_delegate = False
-
                                     # Send final message with timeout information for frontend
                                     max_expected_runtime = max(estimated_minutes * 1.5, 30)  # 1.5x estimated or 30min minimum
                                     try:
@@ -3078,6 +3045,28 @@ def handle_main_processing(event, context):
                                     # Background handler job is done - async validator will take over
                                     logger.debug(f"[DELEGATION] Background handler completed delegation for session {session_id}")
                                     return
+
+                                else:
+                                    logger.error(f"[DELEGATION] Async validation lambda invocation failed with status: {response['StatusCode']}")
+                                    logger.error(f"[DELEGATION] This indicates a problem with lambda permissions or configuration")
+
+                                    # Send failure notification via WebSocket
+                                    try:
+                                        _send_websocket_message(session_id, {
+                                            'type': 'validation_error',
+                                            'status': 'FAILED',
+                                            'error': 'Async validation system failed to start',
+                                            'details': f'Lambda invocation returned status code {response["StatusCode"]}',
+                                            'troubleshooting': 'Check lambda permissions and configuration',
+                                            'retry_suggestion': 'Please try your validation again or contact support'
+                                        })
+                                        logger.debug(f"[DELEGATION] Sent failure notification via WebSocket for session {session_id}")
+                                    except Exception as websocket_error:
+                                        logger.error(f"[DELEGATION] Failed to send WebSocket failure notification: {websocket_error}")
+
+                                    # Continue with sync processing as fallback
+                                    logger.warning(f"[DELEGATION] Async delegation failed, will fall back to sync processing")
+                                    should_delegate = False
 
                             except Exception as sqs_error:
                                 logger.error(f"[DELEGATION] Failed to send SQS message: {sqs_error}")
