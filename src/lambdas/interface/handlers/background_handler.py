@@ -4111,6 +4111,36 @@ def handle_main_processing(event, context):
                         if validation_failed:
                             logger.error(f"[BILLING_PROTECTION] Skipping charge due to validation failure: {failure_reason}")
                             logger.error(f"[BILLING_PROTECTION] Customer will NOT be charged for failed validation")
+
+                            # Send failure notification via WebSocket
+                            _send_websocket_message_deduplicated(session_id, {
+                                'type': 'validation_failed',
+                                'session_id': session_id,
+                                'progress': 100,
+                                'status': f'❌ Validation failed: {failure_reason}',
+                                'error': failure_reason
+                            })
+
+                            # Mark status as FAILED in DynamoDB
+                            update_run_status_for_session(
+                                status='FAILED',
+                                error_message=failure_reason,
+                                verbose_status=f"❌ Validation failed: {failure_reason}",
+                                validation_incomplete=True
+                            )
+
+                            # Send failure email to user
+                            try:
+                                from email_service import send_validation_error_email
+                                send_validation_error_email(
+                                    email=email,
+                                    session_id=session_id,
+                                    error_message=failure_reason,
+                                    reference_pin=reference_pin
+                                )
+                                logger.info(f"[FAILURE_EMAIL] Sent error notification to {email}")
+                            except Exception as email_error:
+                                logger.error(f"[FAILURE_EMAIL] Failed to send error email: {email_error}")
                         elif not is_preview and charged_cost > 0:
                             logger.info(f"BILLING: Proceeding with charge for {email}: ${charged_cost}, run_key: {run_key}")
                             # Check if user has sufficient balance
