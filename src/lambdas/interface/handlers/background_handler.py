@@ -891,7 +891,10 @@ def handle_async_completion_in_background_handler(event, context):
                     'statusCode': 200,
                     'body': {
                         'data': {
-                            'rows': async_validation_results['validation_results']
+                            'rows': async_validation_results['validation_results'],
+                            # CRITICAL: QC results and metrics must be in body.data to match sync format
+                            'qc_results': async_validation_results.get('qc_results', {}),
+                            'qc_metrics': async_validation_results.get('qc_metrics', {})
                         },
                         'token_usage': async_validation_results.get('token_usage', {}),
                         'metadata': async_validation_results.get('metadata', {})
@@ -900,7 +903,7 @@ def handle_async_completion_in_background_handler(event, context):
                     'validation_results': async_validation_results['validation_results'],
                     'token_usage': async_validation_results.get('token_usage', {}),
                     'metadata': async_validation_results.get('metadata', {}),
-                    # CRITICAL: Preserve QC results and metrics at the top level where they're expected
+                    # Also preserve at top level for backward compatibility
                     'qc_results': async_validation_results.get('qc_results', {}),
                     'qc_metrics': async_validation_results.get('qc_metrics', {})
                 }
