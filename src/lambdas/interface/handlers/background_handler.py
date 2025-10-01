@@ -3477,11 +3477,16 @@ def handle_main_processing(event, context):
                     logger.debug(f"[EARLY_COMPLETENESS_CHECK] Checking validation completeness BEFORE charging user")
 
                     # Extract validation results for completeness check
-                    final_validation_results = validation_results.get('validation_results', {}) if validation_results else {}
+                    # Validator returns {statusCode, body: {data: {rows}, metadata}}
+                    body = validation_results.get('body', {}) if validation_results else {}
+                    data = body.get('data', {})
+                    final_validation_results = data.get('rows', {})
                     expected_row_count = total_rows_in_file
                     actual_results_count = len(final_validation_results) if isinstance(final_validation_results, dict) else 0
 
                     logger.debug(f"[EARLY_COMPLETENESS_CHECK] Expected rows: {expected_row_count}, Actual results: {actual_results_count}")
+                    logger.debug(f"[EARLY_COMPLETENESS_CHECK] validation_results keys: {list(validation_results.keys()) if validation_results else 'None'}")
+                    logger.debug(f"[EARLY_COMPLETENESS_CHECK] body keys: {list(body.keys()) if body else 'None'}")
 
                     # Check for basic completeness
                     is_complete = True
@@ -3499,7 +3504,7 @@ def handle_main_processing(event, context):
 
                     # Check metadata completeness
                     if validation_results:
-                        metadata = validation_results.get('metadata', {})
+                        metadata = body.get('metadata', {})
                         if not metadata or not isinstance(metadata, dict):
                             is_complete = False
                             completeness_issues.append("Missing or invalid metadata")
