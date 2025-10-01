@@ -56,7 +56,7 @@ api_gateway_management_client = None
 
 # ========== SMART DELEGATION SYSTEM CONFIGURATION ==========
 # Configurable sync timeout limit - jobs exceeding this will be delegated to async processing
-MAX_SYNC_INVOCATION_TIME_MINUTES = float(os.environ.get('MAX_SYNC_INVOCATION_TIME', '5.0'))  # Normal: 5 minutes
+MAX_SYNC_INVOCATION_TIME_MINUTES = float(os.environ.get('MAX_SYNC_INVOCATION_TIME', '10.0'))  # Normal: 10 minutes
 VALIDATOR_SAFETY_BUFFER_MINUTES = float(os.environ.get('VALIDATOR_SAFETY_BUFFER', '3.0'))
 
 # SQS Queue Names for async processing

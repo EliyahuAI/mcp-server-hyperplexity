@@ -2305,8 +2305,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Time monitoring configuration
         # Safety buffer ensures Lambda has time to save results and trigger continuation before timeout
-        # Set to 5 minutes to allow safe handoff between continuation chains
-        SAFETY_BUFFER_MS = int(os.environ.get('VALIDATOR_SAFETY_BUFFER_MS', '300000'))  # 5 minutes (300000ms)
+        # Set to 4.5 minutes to allow safe handoff between continuation chains
+        SAFETY_BUFFER_MS = int(os.environ.get('VALIDATOR_SAFETY_BUFFER_MS', '270000'))  # 4.5 minutes (270000ms)
         MAX_PROCESSING_TIME_MS = int(os.environ.get('VALIDATOR_MAX_PROCESSING_TIME_MS', '900000'))  # 15 minutes default
 
         # Track execution start time
