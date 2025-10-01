@@ -3144,8 +3144,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                         # Store results BEFORE checking for continuation
                         logger.debug(f"Storing results for batch {batch_index}: {len(batch_results)} results")
-                        for idx, result, _, batch_num in batch_results:
-                            validation_results[idx] = result
+                        for row_key, result, _, batch_num in batch_results:
+                            # CRITICAL: Use row_key (hash) not integer index for QC matching
+                            validation_results[row_key] = result
 
                         # ========== ASYNC MODE: Smart Continuation Check ==========
                         # Check after EVERY batch if we should continue (including last batch)
@@ -3290,8 +3291,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     logger.warning(f"Failed to get result from completed task: {e}")
                         
                         logger.debug(f"Storing {len(completed_results)} partial results from failed batch {batch_index}")
-                        for idx, result, _, _ in completed_results:
-                            validation_results[idx] = result
+                        for row_key, result, _, _ in completed_results:
+                            # CRITICAL: Use row_key (hash) not integer index for QC matching
+                            validation_results[row_key] = result
                     
                     # Update progress
                     processed_rows = end_idx
@@ -3573,7 +3575,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             row_results['next_check'] = next_check.isoformat() if next_check else None
             row_results['reasons'] = reasons
             
-            return row_idx, row_results, row_models_used, batch_number
+            # CRITICAL: Return row_key (hash) instead of row_idx (integer) for QC matching
+            return row_key, row_results, row_models_used, batch_number
         
         async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False, row_models_used=None, group_id=None, row_api_providers=None):
             """Process a group of columns with a single multiplex AI API call using ai_api_client."""
