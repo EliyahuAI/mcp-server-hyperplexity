@@ -921,6 +921,36 @@ def handle_async_completion_in_background_handler(event, context):
             logger.error(f"[ASYNC_COMPLETION] Failed to load results from s3://{s3_bucket}/{s3_key}: {e}")
             return {'statusCode': 404, 'body': json.dumps({'error': f'Could not load results: {str(e)}'})}
 
+        # CRITICAL: Check if validation failed before proceeding
+        # Failed validations should NOT charge the customer
+        validation_failed = False
+        failure_reason = None
+
+        if isinstance(async_validation_results, dict):
+            # Check for explicit failure status
+            status = async_validation_results.get('status', '')
+            if status in ['FAILED', 'FAILED_INCOMPLETE', 'FAILED_NO_PROGRESS']:
+                validation_failed = True
+                failure_reason = status
+                logger.error(f"[BILLING_PROTECTION] Validation marked as {status} - will NOT charge customer")
+
+            # Check for validation_error field
+            if async_validation_results.get('validation_error'):
+                validation_failed = True
+                failure_reason = async_validation_results.get('validation_error')
+                logger.error(f"[BILLING_PROTECTION] Validation error detected: {failure_reason} - will NOT charge customer")
+
+            # Check if incomplete (rows processed < total rows)
+            validation_results_data = async_validation_results.get('validation_results', {})
+            if isinstance(validation_results_data, dict):
+                rows_processed = len(validation_results_data)
+                # Get total rows from continuation_metadata if available, otherwise from validation_data in context
+                total_rows = async_validation_results.get('continuation_metadata', {}).get('total_rows', 0)
+                if total_rows > 0 and rows_processed < total_rows:
+                    validation_failed = True
+                    failure_reason = f"Incomplete validation: {rows_processed}/{total_rows} rows processed"
+                    logger.error(f"[BILLING_PROTECTION] {failure_reason} - will NOT charge customer")
+
         # Load delegation context from DynamoDB
         try:
             delegation_context = load_delegation_context(session_id)
@@ -972,6 +1002,12 @@ def handle_async_completion_in_background_handler(event, context):
         # Add validation results to event and process with main handler
         reconstructed_event['_validation_results_from_async'] = validation_results
         reconstructed_event['_skip_validation_call'] = True
+
+        # CRITICAL: Pass validation_failed flag to main handler to prevent billing
+        if validation_failed:
+            reconstructed_event['_validation_failed'] = True
+            reconstructed_event['_validation_failure_reason'] = failure_reason
+            logger.error(f"[ASYNC_COMPLETION] Validation failed - passing failure info to main handler: {failure_reason}")
 
         logger.debug(f"[ASYNC_COMPLETION] Calling main handler for completion processing")
 
@@ -4068,7 +4104,14 @@ def handle_main_processing(event, context):
                         logger.debug(f"[BILLING_SECURITY] ✅ Email delivered successfully - proceeding with billing")
 
                         # For full validation, deduct from account balance
-                        if not is_preview and charged_cost > 0:
+                        # CRITICAL: Skip billing if validation failed (from async completion or other sources)
+                        validation_failed = event.get('_validation_failed', False)
+                        failure_reason = event.get('_validation_failure_reason', 'Unknown failure')
+
+                        if validation_failed:
+                            logger.error(f"[BILLING_PROTECTION] Skipping charge due to validation failure: {failure_reason}")
+                            logger.error(f"[BILLING_PROTECTION] Customer will NOT be charged for failed validation")
+                        elif not is_preview and charged_cost > 0:
                             logger.info(f"BILLING: Proceeding with charge for {email}: ${charged_cost}, run_key: {run_key}")
                             # Check if user has sufficient balance
                             current_balance = check_user_balance(email)

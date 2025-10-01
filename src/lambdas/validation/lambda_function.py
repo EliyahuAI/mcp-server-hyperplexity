@@ -3217,7 +3217,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                             'batches_completed': batch_index + 1,
                                             'total_batches': total_batches,
                                             'is_continuation': event.get('is_continuation', False),
-                                            'continuation_count': event.get('continuation_count', 0)
+                                            'continuation_count': event.get('continuation_count', 0),
+                                            'total_rows': len(all_rows)  # CRITICAL: For billing protection completeness check
                                         }
                                     }
 
