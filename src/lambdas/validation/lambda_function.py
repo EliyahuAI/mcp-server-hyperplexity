@@ -3197,10 +3197,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                                     # Trigger continuation NOW (time running low)
                                     if trigger_self_continuation():
-                                        logger.info(f"[ASYNC_CONTINUATION] Successfully triggered continuation - exiting batch loop")
-                                        # Flag to prevent duplicate trigger at end
-                                        globals()['_continuation_already_triggered'] = True
-                                        break  # Exit batch processing loop
+                                        logger.info(f"[ASYNC_CONTINUATION] Successfully triggered continuation - Lambda will exit now")
+                                        # CRITICAL: Return immediately after triggering continuation
+                                        # Do NOT fall through to end-of-function logic which would save again and trigger completion
+                                        return {
+                                            'statusCode': 202,
+                                            'body': {
+                                                'message': 'Continuation triggered - partial results saved to S3',
+                                                'session_id': session_id,
+                                                'rows_processed': len(validation_results),
+                                                'continuation_count': event.get('continuation_count', 0) + 1
+                                            }
+                                        }
                                     else:
                                         logger.error(f"[ASYNC_CONTINUATION] Failed to trigger continuation, continuing current execution")
 
@@ -4874,32 +4882,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         trigger_interface_completion(results_s3_key, delete_payload=False)
                     else:
                         # More work remains but batch loop completed
-                        logger.info(f"[S3_SAVE] More work remains ({processed_rows}/{total_rows} rows processed)")
+                        # This should NOT happen - if batch loop completed normally without triggering continuation,
+                        # all batches should be done (which means all work should be done)
+                        logger.error(f"[S3_SAVE] ERROR: Batch loop completed but work remains!")
+                        logger.error(f"[S3_SAVE] Processed: {processed_rows}/{total_rows} rows, Time remaining: {remaining_ms}ms")
+                        logger.error(f"[S3_SAVE] This indicates a logic error in batch planning")
 
-                        # Check if continuation was already triggered in batch loop (time ran out)
-                        if globals().get('_continuation_already_triggered', False):
-                            logger.info(f"[S3_SAVE] Continuation already triggered in batch loop due to time limit")
-                            logger.info(f"[S3_SAVE] Next continuation will pick up remaining rows")
-                            logger.info(f"[S3_SAVE] This Lambda will exit normally, no action needed here")
-                        else:
-                            # This should NOT happen - if batch loop completed without triggering continuation,
-                            # all batches should be done (which means all work should be done)
-                            logger.error(f"[S3_SAVE] ERROR: Batch loop completed but work remains and no continuation was triggered!")
-                            logger.error(f"[S3_SAVE] This indicates a logic error in batch planning or continuation triggering")
-                            logger.error(f"[S3_SAVE] Processed: {processed_rows}/{total_rows} rows, Time remaining: {remaining_ms}ms")
+                        # Mark as failed and trigger completion
+                        cumulative_results['validation_error'] = 'Batch loop completed but work incomplete - logic error'
+                        cumulative_results['status'] = 'FAILED_INCOMPLETE'
 
-                            # Mark as failed and trigger completion
-                            cumulative_results['validation_error'] = 'Batch loop completed but work incomplete - logic error'
-                            cumulative_results['status'] = 'FAILED_INCOMPLETE'
+                        s3_client.put_object(
+                            Bucket=s3_bucket,
+                            Key=results_s3_key,
+                            Body=json.dumps(cumulative_results, default=str),
+                            ContentType='application/json'
+                        )
 
-                            s3_client.put_object(
-                                Bucket=s3_bucket,
-                                Key=results_s3_key,
-                                Body=json.dumps(cumulative_results, default=str),
-                                ContentType='application/json'
-                            )
-
-                            trigger_interface_completion(results_s3_key, delete_payload=False)
+                        trigger_interface_completion(results_s3_key, delete_payload=False)
                 else:
                     # This should never happen - all cases are covered above
                     logger.error(f"[S3_SAVE] Unexpected state: should_continue={should_continue}, has_more_work={has_more_work}, remaining_ms={remaining_ms}")
