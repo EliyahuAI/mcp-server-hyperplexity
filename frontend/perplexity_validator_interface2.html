@@ -3780,6 +3780,34 @@
                 if (!data || typeof data !== 'object') {
                     return;
                 }
+
+                // Restart inactivity timer if we have an active async process with active progress
+                if (window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
+                    const timeoutInfo = window.asyncTimeouts.get(sessionId);
+                    if (timeoutInfo && timeoutInfo.restartInactivityTimer) {
+                        // Only restart timer if we're in active processing (have progress between 0-100)
+                        const hasActiveProgress = data.progress !== undefined &&
+                                                  data.progress > 0 &&
+                                                  data.progress < 100;
+
+                        const isProgressMessage = data.type === 'progress' ||
+                                                  data.type === 'progress_update' ||
+                                                  data.type === 'status_update';
+
+                        if (hasActiveProgress || isProgressMessage) {
+                            console.log(`[ASYNC_TIMEOUT] Restarting inactivity timer for session ${sessionId} (received: ${data.type}, progress: ${data.progress})`);
+                            timeoutInfo.restartInactivityTimer();
+
+                            // Mark that we're now in active processing
+                            timeoutInfo.activeProcessing = true;
+                        } else if (data.status === 'COMPLETED' || data.progress === 100) {
+                            // Validation completed - cancel all timers
+                            console.log(`[ASYNC_TIMEOUT] Validation completed, canceling all timers for session ${sessionId}`);
+                            if (timeoutInfo.inactivityTimer) clearTimeout(timeoutInfo.inactivityTimer);
+                            window.asyncTimeouts.delete(sessionId);
+                        }
+                    }
+                }
                 
                 // Handle balance updates from WebSocket
                 if (data.type === 'balance_update') {
@@ -3859,10 +3887,76 @@
                     });
                 }
                 
+                // Handle async delegation complete - set up timeout monitoring
+                if (data.type === 'async_delegation_complete') {
+                    console.log(`[ASYNC_TIMEOUT] Setting up timeout monitoring for session ${sessionId}`);
+
+                    // Set up both max timeout and inactivity timeout
+                    const maxTimeoutMinutes = data.max_expected_minutes || 30;
+                    const inactivityTimeoutMs = 2 * 60 * 1000; // 2 minutes of no messages = dead process
+
+                    // Store timeout info for this session
+                    if (!window.asyncTimeouts) window.asyncTimeouts = new Map();
+
+                    // Function to start/restart inactivity timer
+                    const startInactivityTimer = () => {
+                        // Clear existing inactivity timer
+                        const existing = window.asyncTimeouts.get(sessionId);
+                        if (existing && existing.inactivityTimer) {
+                            clearTimeout(existing.inactivityTimer);
+                        }
+
+                        // Start new inactivity timer
+                        const inactivityTimer = setTimeout(() => {
+                            const timeoutInfo = window.asyncTimeouts.get(sessionId);
+
+                            // Only show death warning if we were actually in active processing
+                            if (timeoutInfo && timeoutInfo.activeProcessing) {
+                                console.log(`[ASYNC_TIMEOUT] No messages for 2 minutes during active processing - validator likely died for session ${sessionId}`);
+
+                                // Show immediate failure warning
+                                if (cardHandlers.size > 0) {
+                                    const latestCardId = Array.from(cardHandlers.keys()).pop();
+                                    showValidatorDeathWarning(latestCardId, sessionId);
+                                }
+                            } else {
+                                console.log(`[ASYNC_TIMEOUT] No messages for 2 minutes but no active processing detected for session ${sessionId} - likely just idle`);
+                            }
+
+                            // Clean up
+                            window.asyncTimeouts.delete(sessionId);
+                        }, inactivityTimeoutMs);
+
+                        // Store or update timer info
+                        if (window.asyncTimeouts.has(sessionId)) {
+                            window.asyncTimeouts.get(sessionId).inactivityTimer = inactivityTimer;
+                        } else {
+                            window.asyncTimeouts.set(sessionId, { inactivityTimer });
+                        }
+                    };
+
+                    // Start initial inactivity timer
+                    startInactivityTimer();
+
+                    // Store the restart function for use when messages arrive
+                    window.asyncTimeouts.get(sessionId).restartInactivityTimer = startInactivityTimer;
+
+                    console.log(`[ASYNC_TIMEOUT] Started 2-minute inactivity monitoring for session ${sessionId}`);
+
+                    // Continue to normal routing for the delegation message
+                }
+
                 // Handle completion messages - these need to go to the normal handlers
                 if (data.type === 'config_generation_complete' || data.type === 'config_generation_failed') {
                     globalState.isProcessingConfig = false; // Reset processing state
                     // Continue to normal routing below for completion messages
+                }
+
+                // Cancel timeout if we receive a completion message
+                if (data.status === 'COMPLETED' && window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
+                    console.log(`[ASYNC_TIMEOUT] Validation completed, canceling timeout for session ${sessionId}`);
+                    clearTimeout(window.asyncTimeouts.get(sessionId));
+                    window.asyncTimeouts.delete(sessionId);
                 }
                 
                 // Route ALL messages to the last registered card
@@ -9321,6 +9415,69 @@ Please provide any additional context, or simply proceed to generate your initia
 
         // Note: State restoration is now handled in the main DOMContentLoaded event
         // to avoid conflicts with card initialization
+
+        // Validator timeout warning functions
+        function showValidatorDeathWarning(cardId, sessionId) {
+            console.log(`[ASYNC_TIMEOUT] Showing validator death warning for card ${cardId}`);
+
+            // Complete thinking animation with error
+            completeThinkingInCard(cardId, 'Validator appears to have died');
+
+            // Show error message
+            const errorHtml = `
+                <div style="background: #ffebee; border: 1px solid #f44336; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                    <h4 style="color: #d32f2f; margin: 0 0 8px 0;">⚠️ Validator Process Failed</h4>
+                    <p style="margin: 0 0 8px 0; color: #424242;">
+                        The validation process appears to have died (no progress updates for 2 minutes).
+                    </p>
+                    <p style="margin: 0 0 12px 0; color: #424242;">
+                        This typically happens when the validator lambda encounters an error or timeout.
+                    </p>
+                    <div style="margin-top: 12px;">
+                        <button onclick="location.reload()" style="background: #f44336; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-right: 8px;">
+                            Reload Page
+                        </button>
+                        <button onclick="window.open('mailto:support@eliyahu.ai?subject=Validator Failed&body=Session ID: ${sessionId}', '_blank')"
+                                style="background: #666; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">
+                            Contact Support
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            showMessage(`${cardId}-messages`, errorHtml, 'error');
+        }
+
+        function showTimeoutWarning(cardId, sessionId, timeoutMinutes) {
+            console.log(`[ASYNC_TIMEOUT] Showing timeout warning for card ${cardId}`);
+
+            // Complete thinking animation with warning
+            completeThinkingInCard(cardId, 'Validation taking longer than expected');
+
+            // Show warning message
+            const warningHtml = `
+                <div style="background: #fff3e0; border: 1px solid #ff9800; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                    <h4 style="color: #ef6c00; margin: 0 0 8px 0;">⏰ Validation Timeout</h4>
+                    <p style="margin: 0 0 8px 0; color: #424242;">
+                        The validation process has exceeded the expected runtime of ${timeoutMinutes} minutes.
+                    </p>
+                    <p style="margin: 0 0 12px 0; color: #424242;">
+                        The validator may have failed or be processing a larger dataset than estimated.
+                    </p>
+                    <div style="margin-top: 12px;">
+                        <button onclick="location.reload()" style="background: #ff9800; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-right: 8px;">
+                            Check Status
+                        </button>
+                        <button onclick="window.open('mailto:support@eliyahu.ai?subject=Validation Timeout&body=Session ID: ${sessionId}', '_blank')"
+                                style="background: #666; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">
+                            Contact Support
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            showMessage(`${cardId}-messages`, warningHtml, 'warning');
+        }
 
     })();
    </script>

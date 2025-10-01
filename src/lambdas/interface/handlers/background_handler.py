@@ -56,7 +56,7 @@ api_gateway_management_client = None
 
 # ========== SMART DELEGATION SYSTEM CONFIGURATION ==========
 # Configurable sync timeout limit - jobs exceeding this will be delegated to async processing
-MAX_SYNC_INVOCATION_TIME_MINUTES = float(os.environ.get('MAX_SYNC_INVOCATION_TIME', '0.0'))
+MAX_SYNC_INVOCATION_TIME_MINUTES = float(os.environ.get('MAX_SYNC_INVOCATION_TIME', '5.0'))  # Normal: 5 minutes
 VALIDATOR_SAFETY_BUFFER_MINUTES = float(os.environ.get('VALIDATOR_SAFETY_BUFFER', '3.0'))
 
 # SQS Queue Names for async processing
@@ -798,11 +798,42 @@ def verify_async_validation_trigger(session_id, sqs_message_id, run_key=None, ti
                 logger.debug(f"[VALIDATION_TRIGGER_CHECK] Waiting {check_interval}s before next check...")
 
         # Timeout reached without finding validation lambda activity
+        logger.error(f"[VALIDATION_TRIGGER_CHECK] Async validation lambda failed to start for session {session_id} within {timeout_seconds}s")
         logger.warning(f"[VALIDATION_TRIGGER_CHECK] No validation lambda activity detected for session {session_id} within {timeout_seconds}s")
+
+        # Check if lambda actually failed by checking CloudWatch errors
+        try:
+            cloudwatch = boto3.client('cloudwatch')
+            validator_lambda_name = os.environ.get('VALIDATOR_LAMBDA_NAME', 'perplexity-validator')
+
+            end_time = datetime.now(timezone.utc)
+            start_time = end_time - timedelta(minutes=5)
+
+            error_response = cloudwatch.get_metric_statistics(
+                Namespace='AWS/Lambda',
+                MetricName='Errors',
+                Dimensions=[{'Name': 'FunctionName', 'Value': validator_lambda_name}],
+                StartTime=start_time,
+                EndTime=end_time,
+                Period=60,
+                Statistics=['Sum']
+            )
+
+            total_errors = sum(dp['Sum'] for dp in error_response['Datapoints'])
+            if total_errors > 0:
+                logger.error(f"[VALIDATION_FAILURE] Detected {total_errors} lambda errors in last 5 minutes - validation likely failed")
+                status_msg = f'[ERROR] Async validation lambda failed - {total_errors} errors detected'
+            else:
+                logger.info(f"[VALIDATION_TRIGGER_CHECK] No lambda errors detected - validator may not have been triggered")
+                status_msg = f'[WARNING] Async validation not detected after {timeout_seconds}s - falling back to sync'
+
+        except Exception as metric_error:
+            logger.debug(f"[VALIDATION_TRIGGER_CHECK] Could not check CloudWatch errors: {metric_error}")
+            status_msg = f'[WARNING] Async validation not detected after {timeout_seconds}s - falling back to sync'
 
         _send_websocket_message(session_id, {
             'type': 'status_update',
-            'status': f'[WARNING] Async validation not detected after {timeout_seconds}s - falling back to sync',
+            'status': status_msg,
             'session_id': session_id
         })
 
@@ -3008,8 +3039,23 @@ def handle_main_processing(event, context):
                                     except Exception as websocket_error:
                                         logger.error(f"[DELEGATION] Failed to send WebSocket success notification: {websocket_error}")
 
+                                    # Send final message with timeout information for frontend
+                                    max_expected_runtime = max(estimated_minutes * 1.5, 30)  # 1.5x estimated or 30min minimum
+                                    try:
+                                        _send_websocket_message(session_id, {
+                                            'type': 'async_delegation_complete',
+                                            'status': 'ASYNC_PROCESSING',
+                                            'message': f'Validation running in background (est. {estimated_minutes:.1f}min)',
+                                            'estimated_minutes': estimated_minutes,
+                                            'max_expected_minutes': max_expected_runtime,
+                                            'timeout_warning': f'If no completion message is received within {max_expected_runtime:.0f} minutes, the validator may have failed',
+                                            'instructions': 'This interface will close now. Check your email for completion notification or refresh the page later to check status.'
+                                        })
+                                        logger.info(f"[DELEGATION] Sent final delegation message with {max_expected_runtime:.0f}min timeout warning")
+                                    except Exception as websocket_error:
+                                        logger.error(f"[DELEGATION] Failed to send final delegation message: {websocket_error}")
+
                                     # Background handler job is done - async validator will take over
-                                    # Don't return HTTP response, just exit gracefully
                                     logger.debug(f"[DELEGATION] Background handler completed delegation for session {session_id}")
                                     return
 

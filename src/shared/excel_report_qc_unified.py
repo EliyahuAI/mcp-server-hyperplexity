@@ -189,13 +189,13 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         validated_sheet_name: Name of the sheet that was actually validated (from metadata)
         qc_results: Optional QC results to integrate into the Excel file
     """
-    logger.error("🔥🔥🔥 EXCEL REPORT QC UNIFIED VERSION IS RUNNING 🔥🔥🔥")
+    logger.debug("🔥🔥🔥 EXCEL REPORT QC UNIFIED VERSION IS RUNNING 🔥🔥🔥")
 
     # DEBUG: Log QC results structure for key mapping investigation
     if qc_results:
-        logger.error(f"[QC_EXCEL_DEBUG] QC results provided with {len(qc_results)} entries")
-        logger.error(f"[QC_EXCEL_DEBUG] QC keys sample: {list(qc_results.keys())[:3]}")
-        logger.error(f"[QC_EXCEL_DEBUG] Validation results keys sample: {list(validation_results.keys())[:3] if isinstance(validation_results, dict) else 'Not a dict'}")
+        logger.debug(f"[QC_EXCEL_DEBUG] QC results provided with {len(qc_results)} entries")
+        logger.debug(f"[QC_EXCEL_DEBUG] QC keys sample: {list(qc_results.keys())[:3]}")
+        logger.debug(f"[QC_EXCEL_DEBUG] Validation results keys sample: {list(validation_results.keys())[:3] if isinstance(validation_results, dict) else 'Not a dict'}")
 
         # CREATE QC-TO-EXCEL POSITIONAL MAPPING
         # Both QC and Excel use hash keys, but they might be different hashes
@@ -205,8 +205,8 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
 
         if qc_results:
             qc_keys = list(qc_results.keys())
-            logger.error(f"[QC_KEY_MAPPING] QC has {len(qc_keys)} entries")
-            logger.error(f"[QC_KEY_MAPPING] QC keys sample: {qc_keys[:3]}")
+            logger.debug(f"[QC_KEY_MAPPING] QC has {len(qc_keys)} entries")
+            logger.debug(f"[QC_KEY_MAPPING] QC keys sample: {qc_keys[:3]}")
 
             # We'll create the Excel-to-QC mapping when we process rows
             # For now just store the QC keys in order
@@ -214,7 +214,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         else:
             qc_keys_ordered = []
     else:
-        logger.error("[QC_EXCEL_DEBUG] No QC results provided to Excel function")
+        logger.debug("[QC_EXCEL_DEBUG] No QC results provided to Excel function")
         qc_to_validation_mapping = {}
 
     # Helper function to find QC data for an Excel row by position
@@ -228,8 +228,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
             logger.debug(f"[QC_LOOKUP_SUCCESS] Direct match for row {row_position}: {excel_row_key[:8]}...")
             return qc_results[excel_row_key]
 
-        # If direct lookup fails, log the issue for debugging
-        logger.error(f"[QC_LOOKUP_FAILED] No QC data found for row {row_position}, Excel key: {excel_row_key[:8]}...")
+        # If direct lookup fails, check if this is expected (preview) or unexpected (validation with missing QC)
+        # We need validation_results context to make this distinction
+        logger.debug(f"[QC_LOOKUP_FAILED] No QC data found for row {row_position}, Excel key: {excel_row_key[:8]}...")
         return None
 
     if not EXCEL_ENHANCEMENT_AVAILABLE:
@@ -526,7 +527,14 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 else:
                                     logger.error(f"[QC_NOT_APPLIED] Row {row_key}, Col {col_name}: QC available but not applied - qc_applied={field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
                             else:
-                                logger.error(f"[QC_MISSING] Row {row_key}, Col {col_name}: No QC data found")
+                                # Check if this is validation data (should have QC) vs preview data (expected no QC)
+                                row_validation_data = validation_results.get(row_key) if isinstance(validation_results, dict) else None
+                                if row_validation_data and col_name in row_validation_data:
+                                    # We have validation data but no QC - this is noteworthy
+                                    logger.info(f"[QC_MISSING] Row {row_key}, Col {col_name}: Validation data exists but no QC data found")
+                                else:
+                                    # No validation data either - this is expected for previews
+                                    logger.debug(f"[QC_MISSING] Row {row_key}, Col {col_name}: No QC data found (expected for preview)")
 
                             # If no QC applied, use validation value
                             if not qc_applied and row_validation_data and col_name in row_validation_data:
