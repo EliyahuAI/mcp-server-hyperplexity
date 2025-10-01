@@ -2105,7 +2105,7 @@ def check_user_balance(email: str) -> Optional[Decimal]:
 
 
 def check_run_key_charged(email: str, run_key: str) -> Dict[str, Any]:
-    """Check if a run_key has already been charged for this user.
+    """Check if a run_key has already been charged for this user using strongly consistent read.
 
     Args:
         email: User email address
@@ -2116,30 +2116,34 @@ def check_run_key_charged(email: str, run_key: str) -> Dict[str, Any]:
     """
     try:
         email = email.lower().strip()
-        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.ACCOUNT_TRANSACTIONS_TABLE)
 
-        # Query for transactions with this email and run_key
-        # Use scan with filter since run_key is not part of the key schema
-        response = table.scan(
-            FilterExpression='email = :email AND run_key = :run_key',
-            ExpressionAttributeValues={
-                ':email': email,
-                ':run_key': run_key
-            },
-            Limit=1  # We only need to know if it exists
+        # Use USER_TRACKING_TABLE to store run_key charge locks for atomic checking
+        # This is more reliable than scanning transactions table
+        user_table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.USER_TRACKING_TABLE)
+
+        # Check if this run_key is in the user's charged_run_keys set
+        response = user_table.get_item(
+            Key={'email': email},
+            ConsistentRead=True  # CRITICAL: Strong consistency for duplicate prevention
         )
 
-        if response.get('Items'):
-            logger.info(f"[BILLING_PROTECTION] Found existing charge for run_key {run_key}")
-            return response['Items'][0]
+        if response.get('Item'):
+            user_data = response['Item']
+            charged_run_keys = user_data.get('charged_run_keys', set())
+
+            # DynamoDB returns sets as Python sets
+            if run_key in charged_run_keys:
+                logger.warning(f"[BILLING_PROTECTION] ✅ Found existing charge for run_key {run_key} in user tracking")
+                return {'run_key': run_key, 'found_in': 'user_tracking'}
 
         logger.info(f"[BILLING_PROTECTION] No existing charge found for run_key {run_key}")
         return None
 
     except Exception as e:
         logger.error(f"Error checking run_key charged status: {e}")
-        # On error, allow the charge to proceed (fail open for availability)
-        return None
+        # On error, BLOCK the charge (fail closed for billing protection)
+        logger.error(f"[BILLING_PROTECTION] Blocking charge due to error - better safe than double-charge")
+        return {'error': str(e)}  # Return non-None to block charge
 
 
 def deduct_from_balance(email: str, amount: Decimal, session_id: str, description: str,
@@ -2182,17 +2186,27 @@ def deduct_from_balance(email: str, amount: Decimal, session_id: str, descriptio
             logger.error(f"Insufficient balance for {email}: {current_balance} < {amount}")
             return False
 
-        # Update balance
+        # Update balance AND add run_key to charged set atomically
         new_balance = current_balance - amount
         table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.USER_TRACKING_TABLE)
 
+        # Atomic update: deduct balance AND add run_key to set
+        # This prevents race conditions where two Lambda instances charge simultaneously
+        update_expression = "SET account_balance = :balance, balance_last_updated = :updated"
+        expression_values = {
+            ':balance': new_balance,
+            ':updated': datetime.now(timezone.utc).isoformat()
+        }
+
+        if run_key:
+            # Add run_key to the charged_run_keys set
+            update_expression += " ADD charged_run_keys :run_key_set"
+            expression_values[':run_key_set'] = {run_key}  # DynamoDB set syntax
+
         table.update_item(
             Key={'email': email},
-            UpdateExpression="SET account_balance = :balance, balance_last_updated = :updated",
-            ExpressionAttributeValues={
-                ':balance': new_balance,
-                ':updated': datetime.now(timezone.utc).isoformat()
-            }
+            UpdateExpression=update_expression,
+            ExpressionAttributeValues=expression_values
         )
 
         # Record transaction with run_key for duplicate protection

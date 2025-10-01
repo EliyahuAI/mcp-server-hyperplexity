@@ -2896,6 +2896,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Process rows
         all_rows = event.get('validation_data', {}).get('rows', [])
 
+        # CRITICAL SAFETY CHECK: Detect if preview data was sent to full validation
+        is_continuation = event.get('is_continuation', False)
+        if not is_continuation and is_async_request:
+            # First validation (not continuation) - check if row count matches preview
+            row_count = len(all_rows)
+            logger.info(f"[SAFETY_CHECK] First async validation: {row_count} rows in payload, is_async={is_async_request}")
+
+            # If this looks like preview data (3 rows or less) but is being processed as full validation
+            if row_count <= 3:
+                logger.error(f"[SAFETY_CHECK] ❌ ALERT: Only {row_count} rows in payload for async validation")
+                logger.error(f"[SAFETY_CHECK] This may be preview data incorrectly sent to full validation")
+                logger.error(f"[SAFETY_CHECK] run_key: {event.get('run_key')}, session: {session_id}")
+
         # CRITICAL: For continuations, load existing results from S3 to append to them
         validation_results = {}
         existing_token_usage = {}
