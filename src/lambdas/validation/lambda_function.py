@@ -2248,6 +2248,13 @@ def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, 
     except Exception as e:
         logger.error(f"[AI_PROGRESS] Failed to queue progress update: {e}")
 
+class ContinuationTriggered(Exception):
+    """Exception raised when continuation is triggered to exit Lambda immediately."""
+    def __init__(self, response_data):
+        self.response_data = response_data
+        super().__init__("Continuation triggered")
+
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests and config generation."""
     progress_thread = None
@@ -3141,7 +3148,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             validation_results[idx] = result
 
                         # ========== ASYNC MODE: Smart Continuation Check ==========
-                        if is_async_request and batch_index < total_batches - 1:  # Not the last batch
+                        # Check after EVERY batch if we should continue (including last batch)
+                        # This handles cases where validator receives incomplete data (e.g., preview)
+                        if is_async_request:
                             # Calculate average batch time from history
                             all_batch_times = batch_timing_data + event.get('batch_timing_history', [])
 
@@ -3149,8 +3158,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 avg_batch_time_seconds = sum(bt['processing_time_seconds'] for bt in all_batch_times) / len(all_batch_times)
                                 next_batch_estimated_ms = int(avg_batch_time_seconds * 1000)
 
-                                # Check if we have time for the next batch
-                                if not should_continue_processing(next_batch_estimated_ms):
+                                # Check if we have time for the next batch (or if this is the last batch but work remains)
+                                has_more_batches = batch_index < total_batches - 1
+                                processed_so_far = len(validation_results)
+                                total_rows_in_dataset = len(all_rows)
+                                has_unprocessed_rows = processed_so_far < total_rows_in_dataset
+
+                                should_trigger = False
+                                if has_more_batches and not should_continue_processing(next_batch_estimated_ms):
+                                    # More batches planned, but time is running out
+                                    should_trigger = True
+                                    logger.info(f"[ASYNC_CONTINUATION] Triggering: more batches planned but time low")
+                                elif not has_more_batches and has_unprocessed_rows:
+                                    # Last batch done but rows remain (incomplete data received)
+                                    should_trigger = True
+                                    logger.error(f"[ASYNC_CONTINUATION] Triggering: last batch done but {total_rows_in_dataset - processed_so_far} rows remain!")
+                                    logger.error(f"[ASYNC_CONTINUATION] This indicates validator received incomplete data (likely preview)")
+
+                                if should_trigger:
                                     logger.info(f"[ASYNC_CONTINUATION] Need to trigger continuation after batch {batch_index}")
                                     logger.info(f"[ASYNC_CONTINUATION] Avg batch time: {avg_batch_time_seconds:.2f}s, Remaining time insufficient")
 
@@ -3211,9 +3236,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     # Trigger continuation NOW (time running low)
                                     if trigger_self_continuation():
                                         logger.info(f"[ASYNC_CONTINUATION] Successfully triggered continuation - Lambda will exit now")
-                                        # CRITICAL: Return immediately after triggering continuation
-                                        # Do NOT fall through to end-of-function logic which would save again and trigger completion
-                                        return {
+                                        # CRITICAL: Raise exception to exit entire Lambda handler immediately
+                                        # Return statement only exits async function, not lambda_handler
+                                        raise ContinuationTriggered({
                                             'statusCode': 202,
                                             'body': {
                                                 'message': 'Continuation triggered - partial results saved to S3',
@@ -3221,7 +3246,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                                 'rows_processed': len(validation_results),
                                                 'continuation_count': event.get('continuation_count', 0) + 1
                                             }
-                                        }
+                                        })
                                     else:
                                         logger.error(f"[ASYNC_CONTINUATION] Failed to trigger continuation, continuing current execution")
 
@@ -4928,6 +4953,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Return the combined results
         return response
+    except ContinuationTriggered as ct:
+        # Continuation was triggered - exit Lambda immediately with success response
+        logger.info(f"[LAMBDA_EXIT] Exiting due to continuation trigger")
+        return ct.response_data
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}")
         logger.error(traceback.format_exc())
