@@ -2224,27 +2224,31 @@ def send_websocket_progress(session_id: str, message: str, progress: int = None)
     else:
         logger.debug(f"Cannot send - websocket_client={websocket_client is not None}, session_id={session_id}")
 
-def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, completed_counter, progress_queue):
+def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, completed_counter, progress_queue, continuation_count: int = 0):
     """Puts an AI call progress update on the queue."""
-    logger.debug(f"report_ai_call_progress called: session_id={session_id}, total_expected={total_expected}")
+    logger.debug(f"report_ai_call_progress called: session_id={session_id}, total_expected={total_expected}, continuation={continuation_count}")
 
     if not session_id or total_expected <= 0 or progress_queue is None:
         return
-    
+
     with counter_lock:
         completed_counter[0] += 1
         current_count = completed_counter[0]
-    
+
     # Calculate progress percentage
     ai_progress = 5 + (current_count / total_expected) * 85
     progress_percent = min(90, int(ai_progress))
-    
-    message = f"AI call {current_count}/{total_expected} completed"
-    
+
+    # Include continuation chain number if applicable
+    if continuation_count > 0:
+        message = f"AI call {current_count}/{total_expected} completed (CHAIN-{continuation_count:02d})"
+    else:
+        message = f"AI call {current_count}/{total_expected} completed"
+
     try:
         # Put the progress update on the queue
         progress_queue.put((current_count, message, progress_percent))
-        logger.debug(f"[AI_PROGRESS] Queued progress update: {current_count}/{total_expected}")
+        logger.debug(f"[AI_PROGRESS] Queued progress update: {current_count}/{total_expected} (CHAIN-{continuation_count:02d})")
     except Exception as e:
         logger.error(f"[AI_PROGRESS] Failed to queue progress update: {e}")
 
@@ -2837,9 +2841,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return domain, email_prefix
 
         # SAFETY: Check for excessive continuation count to prevent infinite chains
+        current_continuation_number = 0  # Default for sync mode
         if is_async_request:
             MAX_CONTINUATIONS = int(os.environ.get('MAX_CONTINUATIONS', '20'))
             continuation_count = event.get('continuation_count', 0)
+            current_continuation_number = continuation_count  # For progress reporting
 
             if continuation_count >= MAX_CONTINUATIONS:
                 logger.error(f"[SAFETY] Excessive continuation count ({continuation_count}) >= max ({MAX_CONTINUATIONS}) - aborting")
@@ -3435,7 +3441,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id, row_api_providers)
                 total_multiplex_validations += 1
                 
-                report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue)
+                report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number)
                 
                 # Add this group's results to accumulated results for next groups
                 # Exclude ID fields from accumulated results since they are context only
@@ -3520,7 +3526,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     )
 
                     # Report QC call progress
-                    report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue)
+                    report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number)
 
                     # Merge QC results into row_results
                     if qc_results_by_field:
