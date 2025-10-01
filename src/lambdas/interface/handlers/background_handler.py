@@ -4069,18 +4069,19 @@ def handle_main_processing(event, context):
 
                         # For full validation, deduct from account balance
                         if not is_preview and charged_cost > 0:
-                            logger.info(f"BILLING: Proceeding with charge for {email}: ${charged_cost}")
+                            logger.info(f"BILLING: Proceeding with charge for {email}: ${charged_cost}, run_key: {run_key}")
                             # Check if user has sufficient balance
                             current_balance = check_user_balance(email)
                             if current_balance is not None and current_balance >= Decimal(str(charged_cost)):
-                                # Deduct from balance
+                                # Deduct from balance with run_key protection against duplicate charges
                                 deduct_success = deduct_from_balance(
                                     email=email,
                                     amount=Decimal(str(charged_cost)),
                                     session_id=session_id,
                                     description=f"Full validation - {len(real_results) if real_results else 0} rows processed",
                                     raw_cost=Decimal(str(eliyahu_cost)),
-                                    multiplier=Decimal(str(multiplier))
+                                    multiplier=Decimal(str(multiplier)),
+                                    run_key=run_key  # CRITICAL: Prevents duplicate charges for same run_key
                                 )
                                 if deduct_success:
                                     final_balance = check_user_balance(email)

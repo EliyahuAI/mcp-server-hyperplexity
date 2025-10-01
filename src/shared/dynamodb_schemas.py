@@ -2104,27 +2104,88 @@ def check_user_balance(email: str) -> Optional[Decimal]:
         return None
 
 
-def deduct_from_balance(email: str, amount: Decimal, session_id: str, description: str, 
-                       raw_cost: Decimal = None, multiplier: Decimal = None) -> bool:
-    """Deduct amount from user balance and record transaction."""
+def check_run_key_charged(email: str, run_key: str) -> Dict[str, Any]:
+    """Check if a run_key has already been charged for this user.
+
+    Args:
+        email: User email address
+        run_key: Unique run key to check
+
+    Returns:
+        Dict with transaction details if already charged, None otherwise
+    """
+    try:
+        email = email.lower().strip()
+        table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.ACCOUNT_TRANSACTIONS_TABLE)
+
+        # Query for transactions with this email and run_key
+        # Use scan with filter since run_key is not part of the key schema
+        response = table.scan(
+            FilterExpression='email = :email AND run_key = :run_key',
+            ExpressionAttributeValues={
+                ':email': email,
+                ':run_key': run_key
+            },
+            Limit=1  # We only need to know if it exists
+        )
+
+        if response.get('Items'):
+            logger.info(f"[BILLING_PROTECTION] Found existing charge for run_key {run_key}")
+            return response['Items'][0]
+
+        logger.info(f"[BILLING_PROTECTION] No existing charge found for run_key {run_key}")
+        return None
+
+    except Exception as e:
+        logger.error(f"Error checking run_key charged status: {e}")
+        # On error, allow the charge to proceed (fail open for availability)
+        return None
+
+
+def deduct_from_balance(email: str, amount: Decimal, session_id: str, description: str,
+                       raw_cost: Decimal = None, multiplier: Decimal = None, run_key: str = None) -> bool:
+    """Deduct amount from user balance and record transaction.
+
+    Args:
+        email: User email address
+        amount: Amount to deduct
+        session_id: Session ID for this validation
+        description: Transaction description
+        raw_cost: Raw cost before multiplier
+        multiplier: Pricing multiplier applied
+        run_key: Unique run key to prevent duplicate charges
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
         # Normalize email to lowercase
         email = email.lower().strip()
-        
+
+        # CRITICAL: Check if this run_key has already been charged
+        if run_key:
+            logger.info(f"[BILLING_PROTECTION] Checking if run_key {run_key} has already been charged")
+            existing_transaction = check_run_key_charged(email, run_key)
+            if existing_transaction:
+                logger.warning(f"[BILLING_PROTECTION] ❌ BLOCKING duplicate charge for run_key {run_key}")
+                logger.warning(f"[BILLING_PROTECTION] Original transaction: {existing_transaction.get('transaction_id')} at {existing_transaction.get('timestamp')}")
+                logger.warning(f"[BILLING_PROTECTION] Amount: ${existing_transaction.get('amount', 0)}")
+                return False  # Already charged - prevent duplicate
+
         # Get current balance
         current_balance = check_user_balance(email)
         if current_balance is None:
             logger.error(f"User {email} not found")
             return False
-        
+
         if current_balance < amount:
             logger.error(f"Insufficient balance for {email}: {current_balance} < {amount}")
             return False
-        
+
         # Update balance
         new_balance = current_balance - amount
         table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.USER_TRACKING_TABLE)
-        
+
         table.update_item(
             Key={'email': email},
             UpdateExpression="SET account_balance = :balance, balance_last_updated = :updated",
@@ -2133,8 +2194,8 @@ def deduct_from_balance(email: str, amount: Decimal, session_id: str, descriptio
                 ':updated': datetime.now(timezone.utc).isoformat()
             }
         )
-        
-        # Record transaction
+
+        # Record transaction with run_key for duplicate protection
         import uuid
         transaction_id = str(uuid.uuid4())
         record_account_transaction(
@@ -2147,12 +2208,13 @@ def deduct_from_balance(email: str, amount: Decimal, session_id: str, descriptio
             session_id=session_id,
             description=description,
             raw_cost=raw_cost,
-            multiplier_applied=multiplier
+            multiplier_applied=multiplier,
+            run_key=run_key
         )
-        
-        logger.info(f"Deducted {amount} from {email}, new balance: {new_balance}")
+
+        logger.info(f"[BILLING_SUCCESS] Deducted ${amount} from {email}, new balance: ${new_balance}, run_key: {run_key}")
         return True
-        
+
     except Exception as e:
         logger.error(f"Error deducting from balance: {e}")
         return False
@@ -2692,12 +2754,12 @@ def set_domain_multiplier(domain: str, multiplier: Decimal, admin_email: str, no
 def record_account_transaction(email: str, transaction_id: str, transaction_type: str,
                               amount: Decimal, balance_before: Decimal, balance_after: Decimal,
                               description: str, session_id: str = None, multiplier_applied: Decimal = None,
-                              raw_cost: Decimal = None, payment_method: str = None, 
-                              payment_id: str = None, receipt_url: str = None) -> bool:
+                              raw_cost: Decimal = None, payment_method: str = None,
+                              payment_id: str = None, receipt_url: str = None, run_key: str = None) -> bool:
     """Record a transaction in the account transactions table."""
     try:
         table = boto3.resource('dynamodb', region_name='us-east-1').Table(DynamoDBSchemas.ACCOUNT_TRANSACTIONS_TABLE)
-        
+
         item = {
             'email': email,
             'transaction_id': transaction_id,
@@ -2708,7 +2770,7 @@ def record_account_transaction(email: str, transaction_id: str, transaction_type
             'balance_after': balance_after,
             'description': description
         }
-        
+
         # Add optional fields
         if session_id:
             item['session_id'] = session_id
@@ -2722,10 +2784,12 @@ def record_account_transaction(email: str, transaction_id: str, transaction_type
             item['payment_id'] = payment_id
         if receipt_url:
             item['receipt_url'] = receipt_url
-        
+        if run_key:
+            item['run_key'] = run_key  # For duplicate charge protection
+
         table.put_item(Item=item)
         return True
-        
+
     except Exception as e:
         logger.error(f"Error recording account transaction: {e}")
         return False
