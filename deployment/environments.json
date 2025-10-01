@@ -6,7 +6,9 @@
     "api_gateway_stage": "dev",
     "environment_tag": "development",
     "validator_lambda_name": "perplexity-validator-function-dev",
-    "interface_lambda_name": "perplexity-interface-function-dev"
+    "interface_lambda_name": "perplexity-interface-function-dev",
+    "sqs_preview_queue": "perplexity-validator-preview-queue-dev",
+    "sqs_standard_queue": "perplexity-validator-standard-queue-dev"
   },
   "test": {
     "resource_suffix": "-test",
@@ -15,7 +17,9 @@
     "api_gateway_stage": "test",
     "environment_tag": "testing",
     "validator_lambda_name": "perplexity-validator-function-test",
-    "interface_lambda_name": "perplexity-interface-function-test"
+    "interface_lambda_name": "perplexity-interface-function-test",
+    "sqs_preview_queue": "perplexity-validator-preview-queue-test",
+    "sqs_standard_queue": "perplexity-validator-standard-queue-test"
   },
   "staging": {
     "resource_suffix": "-staging",
@@ -24,7 +28,9 @@
     "api_gateway_stage": "staging",
     "environment_tag": "staging",
     "validator_lambda_name": "perplexity-validator-function-staging",
-    "interface_lambda_name": "perplexity-interface-function-staging"
+    "interface_lambda_name": "perplexity-interface-function-staging",
+    "sqs_preview_queue": "perplexity-validator-preview-queue-staging",
+    "sqs_standard_queue": "perplexity-validator-standard-queue-staging"
   },
   "prod": {
     "resource_suffix": "",
@@ -33,6 +39,8 @@
     "api_gateway_stage": "prod",
     "environment_tag": "production",
     "validator_lambda_name": "perplexity-validator-function",
-    "interface_lambda_name": "perplexity-interface-function"
+    "interface_lambda_name": "perplexity-interface-function",
+    "sqs_preview_queue": "perplexity-validator-preview-queue",
+    "sqs_standard_queue": "perplexity-validator-standard-queue"
   }
 }

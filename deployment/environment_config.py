@@ -108,6 +108,12 @@ def apply_environment_to_lambda_config(base_config: Dict[str, Any], environment:
     if "interface_lambda_name" in env_config:
         config["Environment"]["Variables"]["INTERFACE_LAMBDA_NAME"] = env_config["interface_lambda_name"]
 
+    # Apply environment-specific SQS queue names for interface self-triggering
+    if "sqs_preview_queue" in env_config:
+        config["Environment"]["Variables"]["SQS_PREVIEW_QUEUE_NAME"] = env_config["sqs_preview_queue"]
+    if "sqs_standard_queue" in env_config:
+        config["Environment"]["Variables"]["SQS_STANDARD_QUEUE_NAME"] = env_config["sqs_standard_queue"]
+
     return config
 
 def apply_environment_to_api_gateway_config(base_config: Dict[str, Any], environment: str = "prod") -> Dict[str, Any]:
