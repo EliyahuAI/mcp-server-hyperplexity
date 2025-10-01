@@ -120,7 +120,7 @@ class EnhancedDynamicBatchSizeManager:
                     config.model_pattern = config_dict.get('model_pattern', model)
                     config.min_batch_size = int(config_dict.get('min_batch_size', 10))
                     config.max_batch_size = int(config_dict.get('max_batch_size', 100))
-                    config.initial_batch_size = int(config_dict.get('initial_batch_size', 50))
+                    config.initial_batch_size = int(config_dict.get('initial_batch_size', 3))
                     config.priority = int(config_dict.get('priority', 999))
                     config.weight = float(config_dict.get('weight', 1.0))
                     config.rate_limit_factor = float(config_dict.get('rate_limit_factor', 0.75))
@@ -148,7 +148,7 @@ class EnhancedDynamicBatchSizeManager:
             logger.info(f"   ↳ Pattern: '{config.model_pattern}', priority: {config.priority}, "
                        f"range: [{config.min_batch_size}-{config.max_batch_size}], weight: {config.weight}")
         else:
-            initial_batch_size = 50  # Fallback default
+            initial_batch_size = 3  # Small batch for testing continuations
             logger.info(f"📝 NEW MODEL REGISTERED: {model} with default batch_size={initial_batch_size}")
         
         # Register the model

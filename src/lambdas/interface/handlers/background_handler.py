@@ -1666,7 +1666,7 @@ def handle_main_processing(event, context):
                 processing_time = total_estimated_processing_time if total_estimated_processing_time > 0 else metadata.get('processing_time', 0.0)
                 
                 # Simple batch size extraction for display purposes
-                effective_batch_size = batch_size or 50  # Use configured or default
+                effective_batch_size = batch_size or 3  # Small batch for testing continuations
                 per_model_batch_stats = metadata.get('per_model_batch_stats', {})
                 if per_model_batch_stats:
                     actual_batch_sizes = per_model_batch_stats.get('model_batch_sizes', {})
@@ -2613,7 +2613,7 @@ def handle_main_processing(event, context):
             processed_rows_count = 0
 
             # Ensure batch_size has a default value if None
-            effective_batch_size = batch_size if batch_size is not None else 50
+            effective_batch_size = batch_size if batch_size is not None else 3  # Small batch for testing continuations
             total_batches = (rows_to_process + effective_batch_size - 1) // effective_batch_size
             
             update_run_status_for_session( status='PROCESSING', run_type="Validation", verbose_status=f"Validation preparing to process {rows_to_process} rows in {total_batches} batches.", batch_size=effective_batch_size)
@@ -3570,7 +3570,7 @@ def handle_main_processing(event, context):
                 
                 # Get actual batch size used during validation (same logic as preview)
                 per_model_batch_stats = metadata.get('per_model_batch_stats', {})
-                effective_batch_size = 50  # Default fallback (reasonable default from enhanced batch manager)
+                effective_batch_size = 3  # Small batch for testing continuations
                 
                 if per_model_batch_stats:
                     actual_batch_sizes = per_model_batch_stats.get('model_batch_sizes', {})
@@ -4193,7 +4193,7 @@ def handle_main_processing(event, context):
                     
                     # Get and add the actual batch size used during validation
                     per_model_batch_stats = metadata.get('per_model_batch_stats', {})
-                    effective_batch_size = 50  # Default fallback
+                    effective_batch_size = 3  # Small batch for testing continuations
                     
                     if per_model_batch_stats:
                         actual_batch_sizes = per_model_batch_stats.get('model_batch_sizes', {})
