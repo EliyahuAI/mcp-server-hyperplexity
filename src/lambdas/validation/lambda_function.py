@@ -3249,6 +3249,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                         logger.debug(f"Completed batch {batch_index} in {batch_processing_time:.2f}s")
 
+                        # Store results BEFORE checking for continuation
+                        logger.debug(f"Storing results for batch {batch_index}: {len(batch_results)} results")
+                        for idx, result, _, batch_num in batch_results:
+                            validation_results[idx] = result
+
                         # ========== ASYNC MODE: Smart Continuation Check ==========
                         if is_async_request and batch_index < total_batches - 1:  # Not the last batch
                             # Calculate average batch time from history
@@ -3319,11 +3324,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                         # Notify batch manager of success with models used
                         batch_manager.on_success(batch_models_used)
-                        
-                        # Store results
-                        logger.debug(f"Storing results for batch {batch_index}: {len(batch_results)} results")
-                        for idx, result, _, batch_num in batch_results:
-                            validation_results[idx] = result
                             
                     except Exception as batch_error:
                         batch_success = False
