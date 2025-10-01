@@ -3014,11 +3014,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Discover which models will be used across all rows
             all_models = discover_batch_models(rows, validator)
-            
+
             # Get initial batch size based on discovered models
             current_batch_size = batch_manager.get_batch_size_for_models(all_models)
             total_batches = (len(rows) + current_batch_size - 1) // current_batch_size  # Calculate total number of batches
-            
+
+            logger.info(f"[BATCH_SIZE] Initial batch size: {current_batch_size} rows (models: {sorted(all_models) if all_models else 'none'})")
+            logger.info(f"[BATCH_SIZE] Total batches planned: {total_batches} for {len(rows)} rows")
             logger.debug(f"🚀 PER-MODEL BATCH PROCESSING: {len(rows)} rows in {total_batches} batches starting with {current_batch_size} rows each")
             pass  # logger.info(f"🔍 Models that will be used: {sorted(all_models) if all_models else ['default']}")
             
@@ -3035,14 +3037,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Get current batch size based on models for this batch
                     batch_models = discover_batch_models(potential_batch, validator) if potential_batch else all_models
                     current_batch_size = batch_manager.get_batch_size_for_models(batch_models)
-                    
+
                     # Calculate batch boundaries with updated batch size
                     start_idx = processed_rows
                     end_idx = min(start_idx + current_batch_size, len(rows))
                     batch = rows[start_idx:end_idx]
                     actual_batch_size = len(batch)
                     batch_index = batch_num + 1
-                    
+
+                    logger.info(f"[BATCH_SIZE] Batch {batch_index}/{total_batches}: processing {actual_batch_size} rows (size from manager: {current_batch_size})")
                     logger.debug(f"Starting batch {batch_index} with {actual_batch_size} rows")
                     
                     # Log batch manager status every 10 batches
