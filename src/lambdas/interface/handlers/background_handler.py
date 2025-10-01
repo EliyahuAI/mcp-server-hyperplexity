@@ -2988,6 +2988,10 @@ def handle_main_processing(event, context):
                             }
 
                             try:
+                                # Initialize Lambda client for async invocation
+                                import boto3
+                                lambda_client = boto3.client('lambda')
+
                                 # Log critical delegation parameters before invoking
                                 logger.info(f"[DELEGATION] Invoking async validator with:")
                                 logger.info(f"[DELEGATION]   FunctionName: {VALIDATOR_LAMBDA_NAME}")
