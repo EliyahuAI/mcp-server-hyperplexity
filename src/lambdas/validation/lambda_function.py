@@ -3328,7 +3328,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Add small delay between batches to prevent overwhelming the system
                     if batch_num < total_batches:
                         await asyncio.sleep(0.1)
-                
+
+                # CRITICAL: Log why batch loop exited
+                logger.info(f"[BATCH_LOOP_EXIT] Loop completed: processed_rows={processed_rows}, len(rows)={len(rows)}, validation_results={len(validation_results)}")
+                logger.info(f"[BATCH_LOOP_EXIT] all_rows={len(all_rows)}, skip_count={skip_count}, expected_to_process={len(all_rows)-skip_count}")
+
                 # Log final batch manager statistics
                 final_stats = batch_manager.get_stats()
                 # Final batch statistics logged
@@ -4709,17 +4713,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.debug(f"[MODELS_PASSTHROUGH_DEBUG] Sample search group data: {list(enhanced_models_parameter.get('search_group_1', {}).keys()) if 'search_group_1' in enhanced_models_parameter else 'No search_group_1'}")
 
         # Create a single response
+        # For async requests, don't return full validation_results in response (would exceed 6MB)
+        # Results are already saved to S3 - only return metadata
+        if is_async_request:
+            response_data = {
+                "rows_processed": len(validation_results),
+                "message": "Results saved to S3 - use results_s3_key to retrieve"
+            }
+        else:
+            response_data = {
+                # Map row indices to results
+                "rows": validation_results,
+                # Add QC data if available
+                **qc_response_data
+            }
+
         response = {
             "statusCode": 200,
             "body": {
                 "success": True,
                 "message": "Validation completed",
-                "data": {
-                    # Map row indices to results
-                    "rows": validation_results,
-                    # Add QC data if available
-                    **qc_response_data
-                },
+                "data": response_data,
                 "metadata": {
                     "total_rows": len(rows),
                     "completed_rows": len(validation_results),
