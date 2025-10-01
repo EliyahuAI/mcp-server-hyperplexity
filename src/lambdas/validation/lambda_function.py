@@ -915,7 +915,7 @@ def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Di
     
     Args:
         aggregated_metrics: Output from aggregate_provider_metrics()
-        all_enhanced_call_data: All individual enhanced_data from AI client calls with batch_number, row_idx, search_group
+        all_enhanced_call_data: All individual enhanced_data from AI client calls with batch_number, row_key, search_group
         total_rows_in_table: Total number of rows in the full table
         preview_rows_processed: Number of rows processed in the preview
         batch_processing_times: Actual batch timing measurements (batch_number -> actual_time)
@@ -938,32 +938,32 @@ def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Di
         scaling_factor = total_rows_in_table / preview_rows_processed
         
         # Group enhanced data by batch and row to calculate proper batch timing
-        batches = {}  # batch_number -> {row_idx -> [enhanced_data_items]}
-        
+        batches = {}  # batch_number -> {row_key -> [enhanced_data_items]}
+
         if not all_enhanced_call_data:
             logger.error("calculate_full_validation_estimates: No enhanced call data available")
             return {'error': 'no_enhanced_call_data'}
-        
+
         pass  # logger.info(f"[ESTIMATE_CALCULATION] Processing {len(all_enhanced_call_data)} enhanced call data items")
-        
+
         for enhanced_data in all_enhanced_call_data:
             batch_number = enhanced_data.get('batch_number')
-            row_idx = enhanced_data.get('row_idx')
-            
-            if batch_number is not None and row_idx is not None:
+            row_key = enhanced_data.get('row_key')
+
+            if batch_number is not None and row_key is not None:
                 if batch_number not in batches:
                     batches[batch_number] = {}
-                if row_idx not in batches[batch_number]:
-                    batches[batch_number][row_idx] = []
-                batches[batch_number][row_idx].append(enhanced_data)
+                if row_key not in batches[batch_number]:
+                    batches[batch_number][row_key] = []
+                batches[batch_number][row_key].append(enhanced_data)
         
         # Calculate estimated batch timing using estimated times (not actual times with cache)
         estimated_batch_times = {}
         
         for batch_number, batch_rows in batches.items():
             batch_estimated_times = []  # List of total estimated time per row in this batch
-            
-            for row_idx, row_calls in batch_rows.items():
+
+            for row_key, row_calls in batch_rows.items():
                 # Sum estimated times for all calls in this row (calls per row are sequential)
                 row_estimated_time = 0.0
                 for enhanced_data in row_calls:
@@ -1050,16 +1050,16 @@ def calculate_full_validation_estimates_with_batch_timing(aggregated_metrics: Di
         # This field: avg_estimated_row_processing_time = direct average of estimated times (no cache) across all individual rows
         total_row_estimated_times = []
         for enhanced_data in all_enhanced_call_data:
-            row_idx = enhanced_data.get('row_idx')
-            if row_idx is not None:
+            row_key = enhanced_data.get('row_key')
+            if row_key is not None:
                 # Calculate total estimated time per row by summing all calls for that row
-                row_calls = [ed for ed in all_enhanced_call_data if ed.get('row_idx') == row_idx]
+                row_calls = [ed for ed in all_enhanced_call_data if ed.get('row_key') == row_key]
                 row_estimated_time = sum(
                     ed.get('timing', {}).get('time_estimated_seconds', 0.0)
                     for ed in row_calls
                 )
-                if row_idx not in [r[0] for r in total_row_estimated_times]:  # Avoid duplicates
-                    total_row_estimated_times.append((row_idx, row_estimated_time))
+                if row_key not in [r[0] for r in total_row_estimated_times]:  # Avoid duplicates
+                    total_row_estimated_times.append((row_key, row_estimated_time))
         
         # Calculate the direct average over all rows
         avg_row_estimated_time = sum(time for _, time in total_row_estimated_times) / len(total_row_estimated_times) if total_row_estimated_times else 0.0
@@ -3135,7 +3135,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         # Track models used in this batch
                         batch_models_used = set()
                         batch_api_providers = set()
-                        for row_idx, row_results, row_models, batch_num in batch_results:
+                        for row_key, row_results, row_models, batch_num in batch_results:
                             batch_models_used.update(row_models)
                             # Also track providers for backward compatibility
                             for model in row_models:
@@ -3179,22 +3179,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 avg_batch_time_seconds = sum(bt['processing_time_seconds'] for bt in all_batch_times) / len(all_batch_times)
                                 next_batch_estimated_ms = int(avg_batch_time_seconds * 1000)
 
-                                # Check if we have time for the next batch (or if this is the last batch but work remains)
-                                has_more_batches = batch_index < total_batches - 1
-                                processed_so_far = len(validation_results)
-                                total_rows_in_dataset = len(all_rows)
-                                has_unprocessed_rows = processed_so_far < total_rows_in_dataset
+                                # Check if we have time for the next batch
+                                # CRITICAL: Use actual row counts, not total_batches (which uses initial batch size)
+                                rows_processed_in_this_lambda = end_idx  # How many rows we've processed so far
+                                rows_remaining_to_process = len(rows) - rows_processed_in_this_lambda  # Remaining rows in this Lambda
+                                has_more_rows_to_process = rows_remaining_to_process > 0
 
                                 should_trigger = False
-                                if has_more_batches and not should_continue_processing(next_batch_estimated_ms):
-                                    # More batches planned, but time is running out
+                                if has_more_rows_to_process and not should_continue_processing(next_batch_estimated_ms):
+                                    # More rows to process, but time is running out
                                     should_trigger = True
-                                    logger.info(f"[ASYNC_CONTINUATION] Triggering: more batches planned but time low")
-                                elif not has_more_batches and has_unprocessed_rows:
-                                    # Last batch done but rows remain (incomplete data received)
-                                    should_trigger = True
-                                    logger.error(f"[ASYNC_CONTINUATION] Triggering: last batch done but {total_rows_in_dataset - processed_so_far} rows remain!")
-                                    logger.error(f"[ASYNC_CONTINUATION] This indicates validator received incomplete data (likely preview)")
+                                    logger.info(f"[ASYNC_CONTINUATION] Triggering: {rows_remaining_to_process} rows remain but time low")
+                                    logger.info(f"[ASYNC_CONTINUATION] Processed {rows_processed_in_this_lambda}/{len(rows)} rows in this Lambda")
 
                                 if should_trigger:
                                     logger.info(f"[ASYNC_CONTINUATION] Need to trigger continuation after batch {batch_index}")
@@ -3275,11 +3271,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         batch_manager.on_success(batch_models_used)
                             
                     except Exception as batch_error:
+                        # CRITICAL: Re-raise ContinuationTriggered immediately - don't treat as batch failure
+                        if isinstance(batch_error, ContinuationTriggered):
+                            logger.info(f"[ASYNC_CONTINUATION] Re-raising ContinuationTriggered to exit Lambda")
+                            raise
+
                         batch_success = False
                         batch_end_time = time.time()
                         batch_processing_time = batch_end_time - batch_start_time
                         logger.error(f"❌ Batch {batch_index} failed after {batch_processing_time:.2f}s: {str(batch_error)}")
-                        
+
                         # Check if this was a rate limit error
                         error_str = str(batch_error).lower()
                         is_rate_limit = "rate_limit" in error_str or "429" in error_str
@@ -4079,13 +4080,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         estimated_cost = costs.get('estimated', {}).get('total_cost', 0.0)
                         provider_metrics = enhanced_data.get('provider_metrics', {})
                         
-                        pass  # logger.info(f"[AGG_DEBUG] Row {row_idx}, Response {response_id}: "
+                        pass  # logger.info(f"[AGG_DEBUG] Row {row_key}, Response {response_id}: "
                               # f"Actual cost: ${actual_cost:.6f}, Estimated cost: ${estimated_cost:.6f}, "
                               # f"Provider metrics: {list(provider_metrics.keys())}")
                         
                         # Add row, batch, and search group context for tracking
                         enhanced_data_with_context = enhanced_data.copy()
-                        enhanced_data_with_context['row_idx'] = row_idx
+                        enhanced_data_with_context['row_key'] = row_key
                         enhanced_data_with_context['batch_number'] = batch_number
                         enhanced_data_with_context['search_group'] = search_group_counter  # nth AI call in this row
                         enhanced_data_with_context['response_id'] = response_id
@@ -4093,9 +4094,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         
                         search_group_counter += 1
                     else:
-                        logger.warning(f"[AGG_DEBUG] Row {row_idx}, Response {response_id}: No enhanced_data found")
+                        logger.warning(f"[AGG_DEBUG] Row {row_key}, Response {response_id}: No enhanced_data found")
             else:
-                logger.warning(f"[AGG_DEBUG] Row {row_idx}: No _raw_responses found")
+                logger.warning(f"[AGG_DEBUG] Row {row_key}: No _raw_responses found")
         
         # Initialize batch processing times before any potential exceptions
         batch_processing_times_calculated = {}  # batch_number -> max_processing_time_in_that_batch
@@ -4245,10 +4246,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Use the actual row-to-batch mapping we created above
         # Note: batch_processing_times_calculated is already initialized above
         
-        for row_idx, row_result in validation_results.items():
+        for row_key, row_result in validation_results.items():
             if '_raw_responses' in row_result:
                 # Use actual batch mapping instead of hardcoded calculation
-                batch_number = row_to_batch_mapping.get(row_idx, row_idx // 10)  # Fallback to rough estimate
+                batch_number = row_to_batch_mapping.get(row_key, 0)  # Default to batch 0 if not found
                 if batch_number not in batch_processing_times_calculated:
                     batch_processing_times_calculated[batch_number] = 0.0
                 
@@ -4257,7 +4258,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 # Add a row prefix to each response ID to avoid collisions
                 for response_id, response_data in row_result['_raw_responses'].items():
-                    new_response_id = f"row{row_idx}_{response_id}"
+                    new_response_id = f"row{row_key}_{response_id}"
                     all_raw_responses[new_response_id] = response_data
                     
                     # Count API calls (move this OUTSIDE token usage check)
@@ -4289,14 +4290,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # For parallel processing, the batch time is the maximum time of any row in that batch
                 # (since all rows in a batch are processed in parallel)
                 batch_processing_times_calculated[batch_number] = max(batch_processing_times_calculated[batch_number], row_processing_time)
-                pass  # logger.info(f"Row {row_idx} (batch {batch_number}) total time: {row_processing_time:.3f}s, batch max now: {batch_processing_times_calculated[batch_number]:.3f}s")
+                pass  # logger.info(f"Row {row_key} (batch {batch_number}) total time: {row_processing_time:.3f}s, batch max now: {batch_processing_times_calculated[batch_number]:.3f}s")
         
         # Calculate total processing time as sum of all batch times (since batches are processed sequentially)
         total_processing_time = sum(batch_processing_times_calculated.values())
         logger.debug(f"Calculated parallel processing time: {total_processing_time:.3f}s across {len(batch_processing_times_calculated)} batches")
         
         # Second pass: aggregate provider-specific token usage
-        for row_idx, row_result in validation_results.items():
+        for row_key, row_result in validation_results.items():
             if '_raw_responses' in row_result:
                 for response_id, response_data in row_result['_raw_responses'].items():
                     # Continue with provider-specific token usage aggregation
