@@ -2444,27 +2444,39 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.error(f"[SELF_TRIGGER] Failed to trigger continuation: {e}")
                 return False
 
-        def trigger_interface_completion(results_s3_key):
-            """Trigger interface lambda for job completion via direct invocation and cleanup S3 payload."""
+        def trigger_interface_completion(results_s3_key, delete_payload=True):
+            """Trigger interface lambda for job completion via direct invocation and cleanup S3 payload.
+
+            Args:
+                results_s3_key: S3 key where final results are stored
+                delete_payload: If True, delete the complete_payload_s3_key from S3. Set False for error completions
+                               to avoid race conditions with concurrent continuations.
+            """
             try:
                 import boto3
 
                 # ========== S3 PAYLOAD CLEANUP ==========
                 # Clean up the complete payload file after successful validation
+                # IMPORTANT: Only delete on FINAL completion (all rows done), not on error/fallback completions
+                # This prevents race conditions where one failing continuation deletes the payload while
+                # other continuations are still running and need it.
                 complete_payload_s3_key = event.get('complete_payload_s3_key')
-                if complete_payload_s3_key:
+                if complete_payload_s3_key and delete_payload:
                     try:
                         s3_client = boto3.client('s3')
                         s3_bucket = event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'perplexity-validator-unified'))
 
                         # Delete the complete payload file
                         s3_client.delete_object(Bucket=s3_bucket, Key=complete_payload_s3_key)
-                        logger.debug(f"[CLEANUP] Successfully deleted complete payload from S3: {complete_payload_s3_key}")
+                        logger.info(f"[CLEANUP] Successfully deleted complete payload from S3: {complete_payload_s3_key}")
 
                     except Exception as cleanup_error:
                         # Don't fail completion if cleanup fails - just log the error
                         logger.warning(f"[CLEANUP] Failed to delete complete payload from S3: {cleanup_error}")
                         logger.warning(f"[CLEANUP] Payload will remain at: {complete_payload_s3_key}")
+                elif complete_payload_s3_key and not delete_payload:
+                    logger.info(f"[CLEANUP] Skipping payload deletion (error completion): {complete_payload_s3_key}")
+                    logger.info(f"[CLEANUP] Payload will remain for potential concurrent continuations to use")
                 else:
                     logger.debug(f"[CLEANUP] No complete_payload_s3_key found - no cleanup needed")
 
@@ -3173,7 +3185,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                                     logger.info(f"[ASYNC_CONTINUATION] Saved results to S3 (for continuation): {results_s3_key}")
 
-                                    # Trigger self-continuation with batch timing history
+                                    # Store batch timing history
                                     continuation_event = event.copy()
                                     continuation_event['batch_timing_history'] = all_batch_times
                                     continuation_event['last_completed_batch'] = batch_index
@@ -3181,13 +3193,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     continuation_event['current_completed_rows'] = len(validation_results)
 
                                     # Store event for trigger_self_continuation
-                                    # (This is a bit hacky but needed to pass the updated event)
                                     globals()['_continuation_event'] = continuation_event
 
+                                    # Trigger continuation NOW (time running low)
                                     if trigger_self_continuation():
-                                        logger.info(f"[ASYNC_CONTINUATION] Successfully triggered continuation - will exit after saving partial results")
-                                        # Break out of batch loop to save partial results
-                                        # DO NOT RETURN HERE - need to save results first!
+                                        logger.info(f"[ASYNC_CONTINUATION] Successfully triggered continuation - exiting batch loop")
+                                        # Flag to prevent duplicate trigger at end
+                                        globals()['_continuation_already_triggered'] = True
                                         break  # Exit batch processing loop
                                     else:
                                         logger.error(f"[ASYNC_CONTINUATION] Failed to trigger continuation, continuing current execution")
@@ -4825,9 +4837,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # IMPORTANT: Check if work is complete FIRST, before considering time
                 if not has_more_work:
                     # All work is done - trigger completion regardless of time remaining
+                    # DELETE payload since this is successful final completion
                     logger.info(f"[S3_SAVE] All rows processed ({processed_rows}/{total_rows}), triggering interface completion")
                     logger.info(f"[S3_SAVE] About to call trigger_interface_completion with results_s3_key={results_s3_key}")
-                    trigger_interface_completion(results_s3_key)
+                    trigger_interface_completion(results_s3_key, delete_payload=True)
                     logger.info(f"[S3_SAVE] trigger_interface_completion call completed")
                 elif has_more_work:
                     # More work to do - validate progress was made to prevent infinite loops
@@ -4857,31 +4870,42 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         )
 
                         # Trigger completion (not continuation)
-                        trigger_interface_completion(results_s3_key)
+                        # DON'T delete payload - may have concurrent continuations that need it
+                        trigger_interface_completion(results_s3_key, delete_payload=False)
                     else:
-                        # Progress was made - safe to continue
-                        logger.info(f"[S3_SAVE] More work remains ({processed_rows}/{total_rows} rows processed), triggering continuation")
-                        logger.info(f"[S3_SAVE] Time remaining: {remaining_ms}ms, should_continue={should_continue}")
+                        # More work remains but batch loop completed
+                        logger.info(f"[S3_SAVE] More work remains ({processed_rows}/{total_rows} rows processed)")
 
-                        # Update global continuation event to include current row count
-                        # This is used by trigger_self_continuation to pass progress info
-                        globals()['_continuation_event'] = {
-                            **event,
-                            'current_completed_rows': processed_rows  # Track rows (not batches)
-                        }
-
-                        # Trigger self-continuation for more processing time
-                        if trigger_self_continuation():
-                            logger.info(f"[S3_SAVE] Successfully triggered continuation for session {session_id}")
+                        # Check if continuation was already triggered in batch loop (time ran out)
+                        if globals().get('_continuation_already_triggered', False):
+                            logger.info(f"[S3_SAVE] Continuation already triggered in batch loop due to time limit")
+                            logger.info(f"[S3_SAVE] Next continuation will pick up remaining rows")
+                            logger.info(f"[S3_SAVE] This Lambda will exit normally, no action needed here")
                         else:
-                            logger.error(f"[S3_SAVE] Failed to trigger continuation - falling back to completion")
-                            # Fall back to completion if continuation fails
-                            trigger_interface_completion(results_s3_key)
+                            # This should NOT happen - if batch loop completed without triggering continuation,
+                            # all batches should be done (which means all work should be done)
+                            logger.error(f"[S3_SAVE] ERROR: Batch loop completed but work remains and no continuation was triggered!")
+                            logger.error(f"[S3_SAVE] This indicates a logic error in batch planning or continuation triggering")
+                            logger.error(f"[S3_SAVE] Processed: {processed_rows}/{total_rows} rows, Time remaining: {remaining_ms}ms")
+
+                            # Mark as failed and trigger completion
+                            cumulative_results['validation_error'] = 'Batch loop completed but work incomplete - logic error'
+                            cumulative_results['status'] = 'FAILED_INCOMPLETE'
+
+                            s3_client.put_object(
+                                Bucket=s3_bucket,
+                                Key=results_s3_key,
+                                Body=json.dumps(cumulative_results, default=str),
+                                ContentType='application/json'
+                            )
+
+                            trigger_interface_completion(results_s3_key, delete_payload=False)
                 else:
                     # This should never happen - all cases are covered above
                     logger.error(f"[S3_SAVE] Unexpected state: should_continue={should_continue}, has_more_work={has_more_work}, remaining_ms={remaining_ms}")
                     logger.error(f"[S3_SAVE] Falling back to trigger completion")
-                    trigger_interface_completion(results_s3_key)
+                    # DON'T delete payload - this is an unexpected error state
+                    trigger_interface_completion(results_s3_key, delete_payload=False)
 
             except Exception as e:
                 logger.error(f"[S3_SAVE] Failed to save cumulative results to S3: {e}")
