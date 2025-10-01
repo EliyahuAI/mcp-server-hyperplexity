@@ -2970,23 +2970,37 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         total_single_validations = 0
         
         # Thread-safe counter for AI call progress tracking
-
         ai_call_counter_lock = threading.Lock()
-        completed_ai_calls = [0]  # Use list for mutable reference
 
-        
-        # Calculate total expected AI calls for progress tracking
-        # Interface lambda now sends ALL rows at once, so len(rows) = total dataset size
+        # CRITICAL: For continuations, account for already-completed AI calls
+        # This ensures progress shows correctly (e.g., "50/150" not "0/100")
         validation_targets = [t for t in validator.validation_targets if t.importance.upper() not in ["ID", "IGNORED"]]
         grouped_targets = validator.group_columns_by_search_group(validation_targets)
         search_groups_count = len(grouped_targets)
-        total_expected_ai_calls = search_groups_count * len(rows)
+
+        already_completed_ai_calls = 0
+        if is_continuation and skip_count > 0:
+            # Estimate completed calls from completed rows
+            calls_per_row = search_groups_count
+            if qc_manager and qc_manager.is_qc_enabled():
+                calls_per_row += 1  # One QC call per row
+
+            already_completed_ai_calls = skip_count * calls_per_row
+            logger.info(f"[AI_PROGRESS] Continuation: {skip_count} rows already processed = ~{already_completed_ai_calls} AI calls completed")
+
+        completed_ai_calls = [already_completed_ai_calls]  # Start from already-completed count
+
+        # Calculate total expected AI calls for progress tracking
+        # Use all_rows (full dataset) not rows (remaining after skip)
+        total_expected_ai_calls = search_groups_count * len(all_rows)
 
         # Add QC calls to progress tracking if QC is enabled
         if qc_manager and qc_manager.is_qc_enabled():
-            qc_expected_calls = len(rows)  # One QC call per row
+            qc_expected_calls = len(all_rows)  # One QC call per row in full dataset
             total_expected_ai_calls += qc_expected_calls
-            logger.debug(f"[AI_PROGRESS] Total expected calls: {search_groups_count * len(rows)} validation + {qc_expected_calls} QC = {total_expected_ai_calls}")
+            logger.debug(f"[AI_PROGRESS] Total expected calls for full dataset: {search_groups_count * len(all_rows)} validation + {qc_expected_calls} QC = {total_expected_ai_calls}")
+
+        logger.info(f"[AI_PROGRESS] Progress tracking: starting at {already_completed_ai_calls}/{total_expected_ai_calls}")
         
         # Processing progress setup completed
         # Expected AI calls calculated
