@@ -2617,10 +2617,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'run_key': event.get('run_key'),
                     'session_id': event.get('session_id'),
                     'VALIDATOR_LAMBDA_NAME': event.get('VALIDATOR_LAMBDA_NAME'),
+                    'S3_UNIFIED_BUCKET': event.get('S3_UNIFIED_BUCKET'),
                     'deployment_environment': event.get('deployment_environment'),
                     'is_continuation': event.get('is_continuation'),
                     'continuation_count': event.get('continuation_count'),
-                    'last_completed_rows': event.get('last_completed_rows')
+                    'last_completed_rows': event.get('last_completed_rows'),
+                    'complete_payload_s3_key': event.get('complete_payload_s3_key')  # CRITICAL for continuations
                 }
 
                 # Replace the current event with the complete payload for processing
