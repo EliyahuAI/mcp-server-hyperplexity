@@ -73,7 +73,7 @@ if not logger.handlers:
     logger.addHandler(handler)
     logger.debug("Initialized logger with StreamHandler")
 else:
-    pass  # logger.info("Logger already has handlers, skipping handler setup")
+    pass  # logger.debug("Logger already has handlers, skipping handler setup")
 
 # QC integration imports (after logger is configured)
 try:
@@ -1233,7 +1233,7 @@ def resolve_search_group_model(targets: List[Any], validator) -> Tuple[str, List
                     else:
                         logger.warning(f"Search group {group_id} found but no model defined")
         else:
-            logger.info(f"Validator has no search_groups or empty search_groups")
+            logger.debug(f"Validator has no search_groups or empty search_groups")
     
     models_in_group = set()
     preferred_models = []
@@ -2265,7 +2265,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # ========== SQS EVENT HANDLING FOR SMART DELEGATION SYSTEM ==========
         # Check if this is an SQS event (from Smart Delegation System)
         if 'Records' in event and event['Records']:
-            logger.debug(f"[SQS_HANDLER] Processing {len(event['Records'])} SQS message(s)")
+            logger.info(f"[SQS_HANDLER] Processing {len(event['Records'])} SQS message(s)")
 
             # Process each SQS record
             responses = []
@@ -2279,6 +2279,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         # Call the same lambda_handler recursively with the extracted event
                         response = lambda_handler(message_body, context)
                         responses.append(response)
+
+                        # Debug: Log the full response structure
+                        logger.info(f"[SQS_HANDLER] Recursive call response: {response}")
+                        logger.info(f"[SQS_HANDLER] Response type: {type(response)}")
+                        logger.info(f"[SQS_HANDLER] Response status: {response.get('statusCode')}")
 
                         # If recursive call had coordination conflict, this lambda should exit cleanly
                         # This preserves the SQS continuation mechanism while preventing duplicate processing
@@ -2299,7 +2304,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Check for config generation request first
         if event.get('config_generation_request'):
-            logger.info("Processing config generation request")
+            logger.debug("Processing config generation request")
             return handle_config_generation_request(event, context)
 
         # ========== SMART DELEGATION SYSTEM - TIME MONITORING ==========
@@ -2310,9 +2315,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Debug how this lambda was invoked
         logger.info(f"[INVOCATION_DEBUG] Lambda invoked - async_delegation_request={is_async_request}, session_id={session_id}")
         logger.info(f"[INVOCATION_DEBUG] Event keys: {list(event.keys()) if event else 'None'}")
-        logger.info(f"[INVOCATION_DEBUG] Has complete_payload_s3_key: {event.get('complete_payload_s3_key') is not None}")
-        logger.info(f"[INVOCATION_DEBUG] Has config: {event.get('config') is not None}")
-        logger.info(f"[INVOCATION_DEBUG] Has validation_data: {event.get('validation_data') is not None}")
+        logger.debug(f"[INVOCATION_DEBUG] Has complete_payload_s3_key: {event.get('complete_payload_s3_key') is not None}")
+        logger.debug(f"[INVOCATION_DEBUG] Has config: {event.get('config') is not None}")
+        logger.debug(f"[INVOCATION_DEBUG] Has validation_data: {event.get('validation_data') is not None}")
 
         # Async processing re-enabled with proper safeguards
 
@@ -2363,12 +2368,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 }
             elif continuation_count > 0:
-                logger.error(f"🔗 [CHAIN-{continuation_count:02d}] CONTINUATION #{continuation_count} starting for session {session_id}")
-                logger.info(f"[CONTINUATION] This is continuation #{continuation_count} for session {session_id}")
+                logger.info(f"🔗 [CHAIN-{continuation_count:02d}] CONTINUATION #{continuation_count} starting for session {session_id}")
+                logger.debug(f"[CONTINUATION] This is continuation #{continuation_count} for session {session_id}")
                 # Send WebSocket notification for chain progress
                 _send_chain_notification(session_id, continuation_count, "continuation_started")
             else:
-                logger.error(f"🚀 [CHAIN-00] INITIAL async validation starting for session {session_id}")
+                logger.info(f"🚀 [CHAIN-00] INITIAL async validation starting for session {session_id}")
                 # Send WebSocket notification for initial start
                 _send_chain_notification(session_id, 0, "initial_started")
 
@@ -2409,9 +2414,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if is_async_request and websocket_client and session_id:
             try:
                 # Detailed debugging of WebSocket client state
-                logger.error(f"[WEBSOCKET_DEBUG] websocket_client.client: {websocket_client.client is not None}")
-                logger.error(f"[WEBSOCKET_DEBUG] websocket_url: {getattr(websocket_client, 'websocket_url', 'not set')}")
-                logger.error(f"[WEBSOCKET_DEBUG] session_id: {session_id}")
+                logger.debug(f"[WEBSOCKET_DEBUG] websocket_client.client: {websocket_client.client is not None}")
+                logger.debug(f"[WEBSOCKET_DEBUG] websocket_url: {getattr(websocket_client, 'websocket_url', 'not set')}")
+                logger.debug(f"[WEBSOCKET_DEBUG] session_id: {session_id}")
 
                 # Check connections first
                 try:
@@ -2419,9 +2424,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'shared'))
                     from dynamodb_schemas import get_connections_for_session
                     connections = get_connections_for_session(session_id)
-                    logger.error(f"[WEBSOCKET_DEBUG] Found {len(connections)} connections for session {session_id}: {connections}")
+                    logger.debug(f"[WEBSOCKET_DEBUG] Found {len(connections)} connections for session {session_id}: {connections}")
                 except Exception as conn_error:
-                    logger.error(f"[WEBSOCKET_DEBUG] Failed to get connections: {conn_error}")
+                    logger.debug(f"[WEBSOCKET_DEBUG] Failed to get connections: {conn_error}")
                     connections = []
 
                 from datetime import datetime  # Local import for scope
@@ -2432,9 +2437,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     'timestamp': datetime.now().isoformat()
                 }
                 test_result = websocket_client.send_to_session(session_id, test_message)
-                logger.error(f"[WEBSOCKET_TEST] Connectivity test result: {test_result}")
+                logger.debug(f"[WEBSOCKET_TEST] Connectivity test result: {test_result}")
             except Exception as test_error:
-                logger.error(f"[WEBSOCKET_TEST] Connectivity test failed: {test_error}")
+                logger.debug(f"[WEBSOCKET_TEST] Connectivity test failed: {test_error}")
 
         # Time monitoring configuration
         # Force auto-triggering for testing - will trigger after every batch
@@ -2468,9 +2473,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 can_continue = remaining_ms > required_time
 
                 # FORCE DEBUG: Show time calculations
-                logger.error(f"🕐 [TIME_CHECK] Remaining: {remaining_ms}ms ({remaining_ms/1000:.1f}s)")
-                logger.error(f"🕐 [TIME_CHECK] Required: {required_time}ms = {next_batch_estimated_time_ms}ms batch + {SAFETY_BUFFER_MS}ms buffer")
-                logger.error(f"🕐 [TIME_CHECK] Can continue: {can_continue}")
+                logger.debug(f"🕐 [TIME_CHECK] Remaining: {remaining_ms}ms ({remaining_ms/1000:.1f}s)")
+                logger.debug(f"🕐 [TIME_CHECK] Required: {required_time}ms = {next_batch_estimated_time_ms}ms batch + {SAFETY_BUFFER_MS}ms buffer")
+                logger.debug(f"🕐 [TIME_CHECK] Can continue: {can_continue}")
 
                 if not can_continue:
                     logger.debug(f"[TIME_CHECK] Cannot continue: {remaining_ms}ms left, need {required_time}ms ({next_batch_estimated_time_ms}ms batch + {SAFETY_BUFFER_MS}ms buffer)")
@@ -2558,10 +2563,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 current_event = globals().get('_continuation_event', event)
 
                 # Debug logging for payload key
-                logger.info(f"[SELF_TRIGGER_DEBUG] current_event keys: {list(current_event.keys()) if current_event else 'None'}")
-                logger.info(f"[SELF_TRIGGER_DEBUG] complete_payload_s3_key: {current_event.get('complete_payload_s3_key') if current_event else 'None'}")
-                logger.info(f"[SELF_TRIGGER_DEBUG] original event keys: {list(event.keys()) if event else 'None'}")
-                logger.info(f"[SELF_TRIGGER_DEBUG] original event payload key: {event.get('complete_payload_s3_key') if event else 'None'}")
+                logger.debug(f"[SELF_TRIGGER_DEBUG] current_event keys: {list(current_event.keys()) if current_event else 'None'}")
+                logger.debug(f"[SELF_TRIGGER_DEBUG] complete_payload_s3_key: {current_event.get('complete_payload_s3_key') if current_event else 'None'}")
+                logger.debug(f"[SELF_TRIGGER_DEBUG] original event keys: {list(event.keys()) if event else 'None'}")
+                logger.debug(f"[SELF_TRIGGER_DEBUG] original event payload key: {event.get('complete_payload_s3_key') if event else 'None'}")
 
                 # Get deployment environment
                 deployment_environment = os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod')
@@ -2671,8 +2676,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.error(f"[LOCK_HANDOFF] Failed to release lock during handoff: {handoff_error}")
                     # Continue anyway - the conditional lock in the new lambda will handle conflicts
 
-                logger.info(f"[SELF_TRIGGER] Successfully triggered continuation for session {session_id}: {response['MessageId']}")
-                logger.debug(f"[SELF_TRIGGER] Triggered continuation for session {session_id}: {response['MessageId']}")
+                logger.debug(f"[SELF_TRIGGER] Successfully triggered continuation for session {session_id}: {response['MessageId']}")
                 return True
 
             except Exception as e:
@@ -2747,7 +2751,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 )
 
                 logger.info(f"[COMPLETION_TRIGGER] Successfully triggered interface completion for session {session_id}: {response['MessageId']}")
-                logger.debug(f"[COMPLETION_TRIGGER] Successfully triggered interface completion for session {session_id}: {response['MessageId']}")
                 return True
 
             except Exception as e:
@@ -2961,18 +2964,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     pass  # logger.error(f"Found examples for {target.get('column')}: {target['examples']}")
             pass  # logger.error(f"Found {targets_with_examples} validation targets with examples")
             
-        print(f"LAMBDA_HANDLER: Creating SimplifiedSchemaValidator with config keys: {list(config.keys())}")
-        print(f"LAMBDA_HANDLER: Config has search_groups: {'search_groups' in config}")
-        if 'search_groups' in config:
-            print(f"LAMBDA_HANDLER: Number of search groups: {len(config['search_groups'])}")
-        
-        print(f"LAMBDA_HANDLER: Config has validation_targets: {'validation_targets' in config}")
-        if 'validation_targets' in config:
-            print(f"LAMBDA_HANDLER: Number of validation_targets: {len(config['validation_targets'])}")
-            # Print first validation target for debugging
-            if config['validation_targets']:
-                first_target = config['validation_targets'][0]
-                print(f"LAMBDA_HANDLER: First validation target: {first_target}")
+        # Simplified validator creation - debug logs moved to debug level
         
         validator = SimplifiedSchemaValidator(config)
 
@@ -2986,8 +2978,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.error(f"Failed to initialize QC manager: {e}")
                 qc_manager = None
 
-        print(f"LAMBDA_HANDLER: Validator created with {len(validator.search_groups)} search groups")
-        pass  # logger.error(f"LAMBDA_HANDLER: Validator created with {len(validator.search_groups)} search groups")
+        # Validator created successfully
         
         # Get API keys and S3 bucket - get both keys if we might need mixed models
         perplexity_api_key = None
@@ -3161,7 +3152,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     )
             else:
                 # Using basic batch manager for testing
-                logger.info("🔄 Using basic DynamicBatchSizeManager with TEST batch size 3")
+                logger.debug("🔄 Using basic DynamicBatchSizeManager with TEST batch size 3")
                 batch_manager = DynamicBatchSizeManager(
                     initial_batch_size=3,   # TEST: Careful testing with strong safety limits
                     min_batch_size=3,       # TEST: Careful testing with strong safety limits
@@ -3180,7 +3171,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             total_batches = (len(rows) + current_batch_size - 1) // current_batch_size  # Calculate total number of batches
             
             logger.debug(f"🚀 PER-MODEL BATCH PROCESSING: {len(rows)} rows in {total_batches} batches starting with {current_batch_size} rows each")
-            pass  # logger.info(f"🔍 Models that will be used: {sorted(all_models) if all_models else ['default']}")
+            pass  # logger.debug(f"🔍 Models that will be used: {sorted(all_models) if all_models else ['default']}")
             
             async with aiohttp.ClientSession() as session:
                 # NEW APPROACH: Determine processed rows from actual S3 output
@@ -3195,14 +3186,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         s3_client = boto3.client('s3')
                         s3_bucket = event.get('S3_UNIFIED_BUCKET', os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage'))
 
-                        logger.error(f"🔍 [OUTPUT_TRACKING] Loading existing results from s3://{s3_bucket}/{results_s3_key}")
+                        logger.debug(f"🔍 [OUTPUT_TRACKING] Loading existing results from s3://{s3_bucket}/{results_s3_key}")
                         response = s3_client.get_object(Bucket=s3_bucket, Key=results_s3_key)
                         existing_results_data = json.loads(response['Body'].read().decode('utf-8'))
                         existing_results = existing_results_data.get('validation_results', {})
 
                         # Count how many rows actually have validation results
                         processed_rows = len([k for k in existing_results.keys() if existing_results[k]])
-                        logger.error(f"🔍 [OUTPUT_TRACKING] Found {processed_rows} rows with actual validation results")
+                        logger.info(f"🔍 [OUTPUT_TRACKING] Found {processed_rows} rows with actual validation results")
 
                         # Safety validation
                         if processed_rows > len(rows):
@@ -3213,16 +3204,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             logger.error(f"✅ [ALREADY_COMPLETE] All rows already processed ({processed_rows}/{len(rows)}) - nothing to do")
                             # Continue to completion logic
                         else:
-                            logger.error(f"🔄 [RESUME] Continuation resuming from {processed_rows} actual processed rows, {len(rows) - processed_rows} remaining")
+                            logger.info(f"🔄 [RESUME] Continuation resuming from {processed_rows} actual processed rows, {len(rows) - processed_rows} remaining")
 
                     except Exception as e:
-                        logger.error(f"🔍 [OUTPUT_TRACKING] Could not load existing results (starting fresh): {e}")
-                        logger.error(f"🔍 [OUTPUT_TRACKING] This means either first run or S3 key doesn't exist yet")
+                        logger.debug(f"🔍 [OUTPUT_TRACKING] Could not load existing results (starting fresh): {e}")
+                        logger.debug(f"🔍 [OUTPUT_TRACKING] This means either first run or S3 key doesn't exist yet")
                         processed_rows = 0
                         existing_results = {}
 
                 if processed_rows == 0:
-                    logger.error(f"🚀 [START] Starting fresh validation from row 0/{len(rows)}")
+                    logger.info(f"🚀 [START] Starting fresh validation from row 0/{len(rows)}")
 
                 # LAMBDA COORDINATION: Ensure only one lambda is active at a time
                 if is_async_request:
@@ -3275,11 +3266,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                                 'timestamp': current_time
                                             }
                                             ws_result = websocket_client.send_to_session(session_id, debug_message)
-                                            logger.error(f"[WEBSOCKET_DEBUG] Sent coordination debug message, result: {ws_result}")
+                                            logger.debug(f"[WEBSOCKET_DEBUG] Sent coordination debug message, result: {ws_result}")
                                         else:
-                                            logger.error(f"[WEBSOCKET_DEBUG] Cannot send - websocket_client={websocket_client is not None}, session_id={session_id}")
+                                            logger.debug(f"[WEBSOCKET_DEBUG] Cannot send - websocket_client={websocket_client is not None}, session_id={session_id}")
                                     except Exception as ws_error:
-                                        logger.error(f"[WEBSOCKET_DEBUG] Failed to send debug message: {ws_error}")
+                                        logger.debug(f"[WEBSOCKET_DEBUG] Failed to send debug message: {ws_error}")
 
                                 except dynamodb.meta.client.exceptions.ConditionalCheckFailedException:
                                     # Another lambda is already active - check if it's stale first
@@ -3329,10 +3320,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                         logger.error(f"🚨 [COORDINATION] ATOMIC LOCK FAILED - Another lambda {current_lambda} is already active with status {current_status}")
                                         logger.error(f"🚨 [COORDINATION] This lambda {lambda_id} will exit to prevent conflicts")
                                         logger.error(f"🚨 [COORDINATION] RETURNING 409 NOW - THIS SHOULD END EXECUTION")
-                                        return {
+                                        conflict_response = {
                                             'statusCode': 409,  # Conflict
                                             'body': {'error': 'Another lambda is already processing this session', 'active_lambda': current_lambda}
                                         }
+                                        logger.info(f"[COORDINATION_RETURN] Created conflict response object: {conflict_response}")
+                                        logger.info(f"[COORDINATION_RETURN] About to execute return statement...")
+                                        return conflict_response
+                                        logger.error(f"[COORDINATION_BUG] THIS LINE SHOULD NEVER BE REACHED - return statement failed!")
 
                             except Exception as coord_error:
                                 logger.error(f"[COORDINATION] Atomic coordination failed, falling back to basic check: {coord_error}")
@@ -3369,7 +3364,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         }
 
                 # Merge existing results into validation_results for continuation
-                logger.error(f"🚨 [DEBUG] REACHED MERGE VALIDATION RESULTS - coordination should have prevented this if conflict occurred")
+                logger.debug(f"🚨 [DEBUG] REACHED MERGE VALIDATION RESULTS - coordination should have prevented this if conflict occurred")
                 validation_results.update(existing_results)
 
                 # Send chain start notification to frontend for monitoring
@@ -3423,7 +3418,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Calculate batch index based on rows processed so far
                     batch_index = (processed_rows // current_batch_size) + 1
 
-                    logger.error(f"🔍 [BATCH_DEBUG] start_idx={start_idx}, end_idx={end_idx}, processed_rows={processed_rows}, batch_size={actual_batch_size}")
+                    logger.debug(f"🔍 [BATCH_DEBUG] start_idx={start_idx}, end_idx={end_idx}, processed_rows={processed_rows}, batch_size={actual_batch_size}")
                     logger.debug(f"Starting batch {batch_index} with {actual_batch_size} rows from index {start_idx} to {end_idx}")
                     
                     # Log batch manager status every 10 batches
@@ -3496,12 +3491,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     if processed_rows >= len(rows):
                                         current_chain = event.get('continuation_count', 0)
                                         logger.error(f"✅ [CHAIN-{current_chain:02d}] COMPLETION: All rows processed ({processed_rows}/{len(rows)}) - triggering completion instead of continuation")
-                                        logger.info(f"[ASYNC_COMPLETION] All rows processed ({processed_rows}/{len(rows)}) - triggering completion instead of continuation")
+                                        logger.debug(f"[ASYNC_COMPLETION] All rows processed ({processed_rows}/{len(rows)}) - triggering completion instead of continuation")
                                         break  # Exit the while loop - we're done!
 
                                     current_chain = event.get('continuation_count', 0)
                                     logger.error(f"⏰ [CHAIN-{current_chain:02d}] TIME_LIMIT: Need continuation after batch {batch_index} - {processed_rows}/{len(rows)} rows processed")
-                                    logger.info(f"[ASYNC_CONTINUATION] Need to trigger continuation after batch {batch_index} - {processed_rows}/{len(rows)} rows processed")
+                                    logger.debug(f"[ASYNC_CONTINUATION] Need to trigger continuation after batch {batch_index} - {processed_rows}/{len(rows)} rows processed")
                                     logger.debug(f"[ASYNC_CONTINUATION] Avg batch time: {avg_batch_time_seconds:.2f}s, Remaining time insufficient")
 
                                     # Save progress to DynamoDB
@@ -3550,17 +3545,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     globals()['_continuation_event'] = continuation_event
 
                                     if trigger_self_continuation():
-                                        logger.info(f"[ASYNC_CONTINUATION] Successfully triggered continuation - lambda will exit")
-                                        logger.debug(f"[ASYNC_CONTINUATION] Successfully triggered continuation")
-                                        # Exit early - let the next invocation continue
-                                        return {
-                                            'statusCode': 200,
-                                            'body': json.dumps({
-                                                'status': 'continued',
-                                                'batches_completed': batch_index + 1,
-                                                'total_batches': total_batches
-                                            })
-                                        }
+                                        logger.info(f"[ASYNC_CONTINUATION] Successfully triggered continuation - lambda will exit with partial results")
+                                        # Exit early but return the partial results we completed
+                                        # This ensures the work isn't lost and can be properly tracked
+                                        break  # Exit the processing loop and continue to normal return with validation_results
                                     else:
                                         logger.error(f"[ASYNC_CONTINUATION] Failed to trigger continuation, continuing current execution")
 
@@ -3662,12 +3650,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             validation_history = {}
             if 'validation_history' in event and event['validation_history'] is not None and row_key in event['validation_history']:
                 validation_history = event['validation_history'][row_key]
-                pass  # logger.info(f"Found validation history for row key: {row_key}")
+                pass  # logger.debug(f"Found validation history for row key: {row_key}")
                 logger.debug(f"History contains data for {len(validation_history)} fields")
                 # Log sample history for debugging
                 if validation_history:
                     sample_field = list(validation_history.keys())[0]
-                    pass  # logger.info(f"Sample history field '{sample_field}': {validation_history[sample_field][:1]}")
+                    pass  # logger.debug(f"Sample history field '{sample_field}': {validation_history[sample_field][:1]}")
             else:
                 logger.warning(f"No validation history found for row key: {row_key}")
                 if 'validation_history' in event and event['validation_history'] is not None:
@@ -3698,7 +3686,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Process ID fields - Include original values in results for preview table display
             if id_fields:
-                pass  # logger.info(f"Including {len(id_fields)} ID fields with original values for preview display")
+                pass  # logger.debug(f"Including {len(id_fields)} ID fields with original values for preview display")
                 for id_field in id_fields:
                     # Simply copy the original value to the result without validation
                     original_value = row_data.get(id_field.column, "")
@@ -3917,9 +3905,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             
             # Log clear info about what we're processing
             if len(validation_targets) == 1:
-                pass  # logger.info(f"Processing field '{validation_targets[0].column}' using multiplex format")
+                pass  # logger.debug(f"Processing field '{validation_targets[0].column}' using multiplex format")
                 if is_isolated_validation:
-                    pass  # logger.info(f"This is an ISOLATED validation for field '{validation_targets[0].column}'")
+                    pass  # logger.debug(f"This is an ISOLATED validation for field '{validation_targets[0].column}'")
             else:
                 logger.debug(f"Processing {len(validation_targets)} fields together using multiplex format")
             
@@ -3942,14 +3930,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         filtered_validation_history[target.column] = validation_history[target.column]
                 
                 if filtered_validation_history:
-                    logger.info(f"Including validation history for {len(filtered_validation_history)} fields")
+                    logger.debug(f"Including validation history for {len(filtered_validation_history)} fields")
                     # LOG DETAILED HISTORY INFO
                     for field, history_entries in filtered_validation_history.items():
-                        logger.info(f"  Field '{field}' has {len(history_entries)} history entries")
+                        logger.debug(f"  Field '{field}' has {len(history_entries)} history entries")
                         if history_entries:
-                            pass  # logger.info(f"    First entry: value='{history_entries[0].get('value', 'N/A')}', confidence={history_entries[0].get('confidence_level', 'N/A')}")
+                            pass  # logger.debug(f"    First entry: value='{history_entries[0].get('value', 'N/A')}', confidence={history_entries[0].get('confidence_level', 'N/A')}")
                 else:
-                    logger.info("No relevant validation history found for this group")
+                    logger.debug("No relevant validation history found for this group")
             
             # Generate multiplex prompt
             logger.debug(f"Generating multiplex prompt for {len(validation_targets)} field(s) with context from previous groups")
@@ -4049,7 +4037,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.debug(f"AI client cache hit for model: {model}")
                 else:
                     total_cache_misses += 1
-                    logger.info(f"AI client cache miss, made fresh API call for model: {model}")
+                    logger.debug(f"AI client cache miss, made fresh API call for model: {model}")
                 
             except Exception as e:
                 logger.error(f"AI client call failed: {str(e)}")
@@ -4081,8 +4069,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             actual_columns = list(parsed_results.keys())
 
             logger.debug(f"🔍 RESPONSE ANALYSIS:")
-            logger.info(f"Expected columns: {expected_columns}")
-            logger.info(f"Parsed columns: {actual_columns}")
+            logger.debug(f"Expected columns: {expected_columns}")
+            logger.debug(f"Parsed columns: {actual_columns}")
             logger.debug(f"Expected count: {len(expected_columns)}, Actual count: {len(actual_columns)}")
 
             # [DEBUG] Log detailed column comparison for debugging cache mismatches
@@ -4132,7 +4120,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     total_cache_hits -= 1
                     
                     # Make fresh API call with cache disabled using unified approach
-                    logger.info(f"Making fresh unified API call for {api_provider} with cache disabled")
+                    logger.debug(f"Making fresh unified API call for {api_provider} with cache disabled")
                     
                     # Use the same unified approach for fresh calls with group name
                     if group_name:
@@ -4178,7 +4166,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if exact_missing_fresh:
                         # Try flexible column matching for fresh response as well
                         if len(fresh_actual_columns) == len(expected_columns):
-                            logger.info(f"🔄 FRESH RESPONSE: Attempting flexible column matching")
+                            logger.debug(f"🔄 FRESH RESPONSE: Attempting flexible column matching")
                             fresh_column_mappings = find_similar_columns(expected_columns, fresh_actual_columns, similarity_threshold=0.8)
                             
                             fresh_column_corrections = {}
@@ -4204,7 +4192,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         logger.error(f"This indicates a serious issue with the AI model or prompt generation")
                         raise ValueError(f"Fresh API response still missing required columns: {missing_columns}")
                     
-                    logger.info(f"✅ FRESH API CALL SUCCESS: All {len(expected_columns)} columns now present")
+                    logger.debug(f"✅ FRESH API CALL SUCCESS: All {len(expected_columns)} columns now present")
                     
                     # Update the raw response storage with the fresh response
                     row_results['_raw_responses'][response_id].update({
@@ -4219,7 +4207,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 else:
                     # This was already a fresh API call - try flexible matching one more time
                     if len(actual_columns) == len(expected_columns):
-                        logger.info(f"🔄 FRESH API CALL: Attempting flexible column matching for remaining missing columns")
+                        logger.debug(f"🔄 FRESH API CALL: Attempting flexible column matching for remaining missing columns")
                         column_mappings = find_similar_columns(expected_columns, actual_columns, similarity_threshold=0.8)
                         
                         final_column_corrections = {}
@@ -4241,7 +4229,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             logger.error(f"This indicates a serious issue with the AI model or prompt generation")
                             raise ValueError(f"Fresh API response missing required columns: {remaining_missing_columns}")
                         else:
-                            logger.info(f"✅ FINAL FLEXIBLE MATCHING SUCCESS: All columns matched after similarity corrections")
+                            logger.debug(f"✅ FINAL FLEXIBLE MATCHING SUCCESS: All columns matched after similarity corrections")
                     else:
                         logger.error(f"❌ MISSING COLUMNS IN FRESH API RESPONSE: {list(missing_columns)}")
                         logger.error(f"Column count mismatch: expected {len(expected_columns)}, got {len(actual_columns)}")
@@ -4259,7 +4247,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if column_corrections:
                 logger.debug(f"📋 COLUMN CORRECTIONS SUMMARY:")
                 for actual_col, expected_col in column_corrections.items():
-                    logger.info(f"  • '{actual_col}' -> '{expected_col}'")
+                    logger.debug(f"  • '{actual_col}' -> '{expected_col}'")
             
             # Process results - create proper result structure for each validation target column
             processed_count = 0
@@ -4297,7 +4285,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 else:
                     logger.error(f"❌ COLUMN RESULT MISSING: {target.column} was expected but not found in parsed results")
             
-            logger.info(f"✅ Processed {processed_count}/{len(validation_targets)} columns successfully")
+            logger.debug(f"✅ Processed {processed_count}/{len(validation_targets)} columns successfully")
             
             # Function modifies row_results and row_models_used in place - no return needed  
          # Run the async function
@@ -4309,7 +4297,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Wait for any remaining tasks to complete (don't cancel them)
             pending = asyncio.all_tasks(loop)
             if pending:
-                logger.info(f"Waiting for {len(pending)} remaining tasks to complete...")
+                logger.debug(f"Waiting for {len(pending)} remaining tasks to complete...")
                 loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
                 
         finally:
@@ -4319,7 +4307,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         final_stats = batch_manager.get_stats() if batch_manager else {}
         
         # Ensure we're returning the complete validation results for each row
-        logger.info(f"Returning full validation results for {len(validation_results)} rows")
+        lambda_id = context.aws_request_id if context else f"lambda_unknown"
+        logger.info(f"[FINAL_RETURN] Lambda {lambda_id} returning full validation results for {len(validation_results)} rows")
         
         # Enhanced cost/time data will be extracted from ai_client responses
         # No separate pricing lookup needed - data comes from ai_client.get_enhanced_call_metrics()
@@ -4584,7 +4573,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # For parallel processing, the batch time is the maximum time of any row in that batch
                 # (since all rows in a batch are processed in parallel)
                 batch_processing_times_calculated[batch_number] = max(batch_processing_times_calculated[batch_number], row_processing_time)
-                pass  # logger.info(f"Row {row_idx} (batch {batch_number}) total time: {row_processing_time:.3f}s, batch max now: {batch_processing_times_calculated[batch_number]:.3f}s")
+                pass  # logger.debug(f"Row {row_idx} (batch {batch_number}) total time: {row_processing_time:.3f}s, batch max now: {batch_processing_times_calculated[batch_number]:.3f}s")
         
         # Calculate total processing time as sum of all batch times (since batches are processed sequentially)
         total_processing_time = sum(batch_processing_times_calculated.values())

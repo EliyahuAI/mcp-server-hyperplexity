@@ -15,7 +15,7 @@ class WebSocketClient:
     
     def __init__(self):
         self.websocket_url = os.environ.get('WEBSOCKET_API_URL', '')
-        logger.info(f"Initializing WebSocketClient with URL: {self.websocket_url}")
+        logger.debug(f"Initializing WebSocketClient with URL: {self.websocket_url}")
         
         # Extract API Gateway info from WebSocket URL
         if self.websocket_url.startswith('wss://'):
@@ -25,7 +25,7 @@ class WebSocketClient:
                 self.api_id = parts[0].split('.')[0]
                 self.stage = parts[1]
                 endpoint_url = f'https://{parts[0]}/{self.stage}'
-                logger.info(f"Creating API Gateway Management client with endpoint: {endpoint_url}")
+                logger.debug(f"Creating API Gateway Management client with endpoint: {endpoint_url}")
                 
                 # Create API Gateway Management API client
                 self.client = boto3.client(
@@ -33,7 +33,7 @@ class WebSocketClient:
                     endpoint_url=endpoint_url,
                     region_name='us-east-1'
                 )
-                logger.info("WebSocketClient initialized successfully")
+                logger.debug("WebSocketClient initialized successfully")
             else:
                 logger.error(f"Invalid WebSocket URL format: {self.websocket_url}")
                 self.client = None
@@ -70,7 +70,7 @@ class WebSocketClient:
                 if self._send_to_connection(connection_id, message):
                     success_count += 1
             
-            logger.info(f"Sent WebSocket message to {success_count}/{len(connections)} connections for session {session_id}")
+            logger.debug(f"Sent WebSocket message to {success_count}/{len(connections)} connections for session {session_id}")
             return success_count > 0
             
         except Exception as e:

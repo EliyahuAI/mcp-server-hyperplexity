@@ -3212,7 +3212,7 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
             ExpressionAttributeValues=expression_attribute_values,
             ExpressionAttributeNames=expression_attribute_names
         )
-        logger.info(f"Successfully updated run status for session {session_id}, run_key {run_key}, status: {status}")
+        logger.debug(f"Successfully updated run status for session {session_id}, run_key {run_key}, status: {status}")
         if estimated_validation_time_minutes is not None or qc_metrics is not None or total_provider_calls is not None:
             logger.info(f"[DB_UPDATE_DEBUG] Updated fields - time_minutes: {estimated_validation_time_minutes}, qc_metrics: {qc_metrics is not None}, total_calls: {total_provider_calls}")
     except Exception as e:
