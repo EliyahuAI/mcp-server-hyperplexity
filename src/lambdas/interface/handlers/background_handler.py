@@ -2932,6 +2932,14 @@ def handle_main_processing(event, context):
                         else:
                             logger.debug(f"[DELEGATION] Pre-generated payload contains {len(payload_rows)} rows with pre-computed keys")
 
+                            # Extract config version for S3 path construction
+                            config_version = config_data.get('storage_metadata', {}).get('version', 1) if config_data else 1
+
+                            # Construct results path for continuation chain
+                            domain = email.split('@')[-1].lower().strip() if email and '@' in email else 'unknown'
+                            email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_plus_')[:20] if email and '@' in email else 'unknown'
+                            results_path = f"results/{domain}/{email_prefix}/{session_id}/v{config_version}_results"
+
                             # Add async-specific fields to the pre-generated payload
                             async_payload = complete_validation_payload.copy()
                             async_payload.update({
@@ -2958,12 +2966,6 @@ def handle_main_processing(event, context):
                             )
 
                             logger.debug(f"[DELEGATION] Stored complete payload in S3: {payload_s3_key}")
-
-                            # Construct results path for continuation chain based on config version
-                            domain = email.split('@')[-1].lower().strip() if email and '@' in email else 'unknown'
-                            email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_plus_')[:20] if email and '@' in email else 'unknown'
-                            config_version = config_data.get('storage_metadata', {}).get('version', 1) if config_data else 1
-                            results_path = f"results/{domain}/{email_prefix}/{session_id}/v{config_version}_results"
 
                             # Trigger async validator via direct Lambda invocation
                             async_payload_event = {
