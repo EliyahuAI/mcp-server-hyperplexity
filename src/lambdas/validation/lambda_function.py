@@ -2882,12 +2882,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.error(f"[ASYNC_START] Failed to update DynamoDB run status: {e}")
 
         # Process rows
-        rows = event.get('validation_data', {}).get('rows', [])
+        all_rows = event.get('validation_data', {}).get('rows', [])
 
         # CRITICAL: For continuations, load existing results from S3 to append to them
         validation_results = {}
         existing_token_usage = {}
         existing_enhanced_metrics = {}
+        skip_count = 0
 
         if is_async_request and event.get('is_continuation', False):
             # This is a continuation - need to load existing results from S3
@@ -2916,14 +2917,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 existing_token_usage = existing_results.get('token_usage', {})
                 existing_enhanced_metrics = existing_results.get('enhanced_metrics', {})
 
-                logger.info(f"[CONTINUATION_LOAD] Loaded {len(validation_results)} existing row results")
-                logger.info(f"[CONTINUATION_LOAD] Will append new results to existing ones")
+                # CRITICAL: Skip already-processed rows to avoid duplicate work
+                skip_count = len(validation_results)
+                logger.info(f"[CONTINUATION_LOAD] Loaded {skip_count} existing row results")
+                logger.info(f"[CONTINUATION_LOAD] Will skip first {skip_count} rows and process remaining rows")
 
             except s3_client.exceptions.NoSuchKey:
                 logger.info(f"[CONTINUATION_LOAD] No existing results found - starting fresh")
             except Exception as e:
                 logger.warning(f"[CONTINUATION_LOAD] Failed to load existing results: {e}")
                 logger.warning(f"[CONTINUATION_LOAD] Starting fresh - this may cause data loss!")
+
+        # Skip already-processed rows in continuations
+        rows = all_rows[skip_count:]
+        logger.info(f"[ROW_PROCESSING] Total rows in payload: {len(all_rows)}, Skipping: {skip_count}, Processing: {len(rows)}")
 
         total_cache_hits = 0
         total_cache_misses = 0
