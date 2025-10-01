@@ -2986,6 +2986,18 @@ def handle_main_processing(event, context):
                             }
 
                             try:
+                                # Log critical delegation parameters before invoking
+                                logger.info(f"[DELEGATION] Invoking async validator with:")
+                                logger.info(f"[DELEGATION]   FunctionName: {VALIDATOR_LAMBDA_NAME}")
+                                logger.info(f"[DELEGATION]   session_id: {session_id}")
+                                logger.info(f"[DELEGATION]   run_key: {run_key}")
+                                logger.info(f"[DELEGATION]   complete_payload_s3_key: {payload_s3_key}")
+                                logger.info(f"[DELEGATION]   S3_UNIFIED_BUCKET: {S3_UNIFIED_BUCKET}")
+                                logger.info(f"[DELEGATION]   results_path: {results_path}")
+                                logger.info(f"[DELEGATION]   config_version: {config_version}")
+                                logger.info(f"[DELEGATION]   email: {email}")
+                                logger.debug(f"[DELEGATION] Full payload keys: {list(async_payload_event.keys())}")
+
                                 # Direct Lambda invocation (async)
                                 response = lambda_client.invoke(
                                     FunctionName=VALIDATOR_LAMBDA_NAME,
@@ -2993,7 +3005,7 @@ def handle_main_processing(event, context):
                                     Payload=json.dumps(async_payload_event, default=str)
                                 )
 
-                                logger.debug(f"[DELEGATION] Successfully triggered async validator via direct invocation, status: {response['StatusCode']}")
+                                logger.info(f"[DELEGATION] Successfully triggered async validator via direct invocation, status: {response['StatusCode']}")
 
                                 # Check if invocation was successful (StatusCode 202 for async invocation)
                                 if response['StatusCode'] == 202:
