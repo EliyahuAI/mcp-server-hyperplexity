@@ -4851,8 +4851,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.debug(f"[S3_SAVE] Merged token usage: existing keys={list(existing_token_usage.keys())}, current keys={list(current_token_usage.keys())}, merged keys={list(merged_token_usage.keys())}")
 
                 # Create cumulative results structure
+                # CRITICAL: Use validation_results directly, not from response (async responses don't have 'rows')
                 cumulative_results = {
-                    'validation_results': response['body']['data']['rows'],  # Already includes existing + new rows
+                    'validation_results': validation_results,  # Use actual validation_results dict
                     'token_usage': merged_token_usage,
                     'enhanced_metrics': merged_enhanced_metrics,
                     'metadata': {
@@ -4995,7 +4996,51 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.error(f"[S3_SAVE] Failed to save cumulative results to S3: {e}")
                 logger.error(f"[S3_SAVE] Exception details: {type(e).__name__}: {str(e)}")
                 logger.error(f"[S3_SAVE] Traceback: {traceback.format_exc()}")
-                # Don't fail the entire function - just log the error
+
+                # CRITICAL: Trigger interface completion with error so user gets notified
+                try:
+                    # Try to save minimal error results to S3
+                    error_results = {
+                        'validation_results': validation_results if 'validation_results' in locals() else {},
+                        'validation_error': f'S3 save failed: {type(e).__name__}: {str(e)}',
+                        'status': 'FAILED',
+                        'metadata': {
+                            'error_timestamp': datetime.now(timezone.utc).isoformat(),
+                            'error_type': type(e).__name__,
+                            'error_message': str(e)
+                        }
+                    }
+
+                    # Try to get S3 key for error results
+                    try:
+                        s3_client = boto3.client('s3')
+                        s3_bucket = event.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
+                        results_path = event.get('results_path')
+                        if results_path:
+                            error_s3_key = f"{results_path}/complete_validation_results.json"
+                        else:
+                            domain, email_prefix = get_s3_path_components(event)
+                            config_version = event.get('config_version', 1)
+                            error_s3_key = f"results/{domain}/{email_prefix}/{session_id}/v{config_version}_results/complete_validation_results.json"
+
+                        # Save error results
+                        s3_client.put_object(
+                            Bucket=s3_bucket,
+                            Key=error_s3_key,
+                            Body=json.dumps(error_results, default=str),
+                            ContentType='application/json'
+                        )
+                        logger.error(f"[S3_SAVE] Saved error results to {error_s3_key}")
+
+                        # Trigger interface completion with error
+                        trigger_interface_completion(error_s3_key, delete_payload=False)
+                        logger.error(f"[S3_SAVE] Triggered interface completion with error notification")
+
+                    except Exception as inner_e:
+                        logger.error(f"[S3_SAVE] Failed to save error results or trigger completion: {inner_e}")
+
+                except Exception as outer_e:
+                    logger.error(f"[S3_SAVE] Critical error in error handler: {outer_e}")
 
         # Return the combined results
         return response
