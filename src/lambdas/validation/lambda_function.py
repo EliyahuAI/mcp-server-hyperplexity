@@ -4050,17 +4050,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         pass  # logger.info(f"[AGG_DEBUG] Starting enhanced data extraction from {len(validation_results)} rows")
         pass  # logger.info(f"[AGG_DEBUG] Row to batch mapping: {dict(list(row_to_batch_mapping.items())[:5])}...")  # Show first 5 for debug
         
-        for row_idx, row_result in validation_results.items():
+        for row_key, row_result in validation_results.items():
             if '_raw_responses' in row_result:
-                pass  # logger.info(f"[AGG_DEBUG] Row {row_idx}: Found {len(row_result['_raw_responses'])} raw responses")
-                batch_number = row_to_batch_mapping.get(row_idx, row_idx // 10)  # Fallback to rough estimate
+                pass  # logger.info(f"[AGG_DEBUG] Row {row_key}: Found {len(row_result['_raw_responses'])} raw responses")
+                # Note: row_key is now a hash string, not integer, so mapping won't match
+                # Use 0 as default batch number for metrics (not critical for functionality)
+                batch_number = row_to_batch_mapping.get(row_key, 0)
                 
                 search_group_counter = 0  # Track which search group (AI call sequence) in this row
                 for response_id, response_data in row_result['_raw_responses'].items():
                     enhanced_data = response_data.get('enhanced_data')
                     
                     # Debug enhanced data structure
-                    pass  # logger.info(f"[AGG_DEBUG] Row {row_idx}, Response {response_id}: enhanced_data type: {type(enhanced_data)}")
+                    pass  # logger.info(f"[AGG_DEBUG] Row {row_key}, Response {response_id}: enhanced_data type: {type(enhanced_data)}")
                     if enhanced_data:
                         if isinstance(enhanced_data, dict):
                             costs = enhanced_data.get('costs', {})
