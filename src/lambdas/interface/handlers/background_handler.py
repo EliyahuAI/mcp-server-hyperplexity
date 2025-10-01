@@ -3100,15 +3100,27 @@ def handle_main_processing(event, context):
                     validator_lambda_name = os.environ.get('VALIDATOR_LAMBDA_NAME', 'perplexity-validator')
                     logger.debug(f"[SYNC_VALIDATION] Invoking validation lambda: {validator_lambda_name}")
 
+                    # Add critical fields to sync payload (same as async payload)
+                    sync_payload = complete_validation_payload.copy()
+                    sync_payload.update({
+                        "run_key": run_key,
+                        "S3_UNIFIED_BUCKET": S3_UNIFIED_BUCKET,
+                        "VALIDATOR_LAMBDA_NAME": VALIDATOR_LAMBDA_NAME,
+                        "email": email,
+                        "config_version": config_version,
+                        "results_path": results_path
+                    })
+
                     # Debug payload before sending
-                    config_targets_count = len(complete_validation_payload.get('config', {}).get('validation_targets', []))
-                    rows_count = len(complete_validation_payload.get('validation_data', {}).get('rows', []))
+                    config_targets_count = len(sync_payload.get('config', {}).get('validation_targets', []))
+                    rows_count = len(sync_payload.get('validation_data', {}).get('rows', []))
                     logger.debug(f"[SYNC_VALIDATION] Payload debug - config targets: {config_targets_count}, rows: {rows_count}")
+                    logger.debug(f"[SYNC_VALIDATION] Added fields - email: {email}, config_version: {config_version}, results_path: {results_path}")
 
                     response = lambda_client.invoke(
                         FunctionName=validator_lambda_name,
                         InvocationType='RequestResponse',
-                        Payload=json.dumps(complete_validation_payload, default=str)
+                        Payload=json.dumps(sync_payload, default=str)
                     )
 
                     validation_results = json.loads(response['Payload'].read().decode('utf-8'))
