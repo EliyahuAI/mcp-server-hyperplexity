@@ -353,7 +353,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         if isinstance(validation_results, dict) and validation_results:
             # Use the keys from validation results (these are the hash-based row keys)
             available_keys = list(validation_results.keys())
-            logger.debug(f"[ROW_KEY_EXTRACT] Found {len(available_keys)} pre-computed row keys from validation payload")
+            logger.info(f"[ROW_KEY_EXTRACT] validation_results type: {type(validation_results)}")
+            logger.info(f"[ROW_KEY_EXTRACT] Found {len(available_keys)} pre-computed row keys from validation payload")
+            logger.info(f"[ROW_KEY_EXTRACT] Sample keys: {available_keys[:3]}")
             logger.debug(f"[ROW_KEY_EXTRACT] Sample keys: {[k[:8] + '...' for k in available_keys[:3]]}")
 
             # Match rows_data to validation keys by position
