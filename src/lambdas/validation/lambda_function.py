@@ -2304,9 +2304,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.info(f"[ASYNC_CHECK] Lambda invoked with async_delegation_request={is_async_request}, session_id={session_id}")
 
         # Time monitoring configuration
-        # FOR TESTING: Set safety buffer to 14.8 minutes to force continuation after first batch
-        # This ensures that after processing just one batch, remaining time < buffer, triggering continuation
-        SAFETY_BUFFER_MS = int(os.environ.get('VALIDATOR_SAFETY_BUFFER_MS', '888000'))  # TEST: 14.8 minutes (888000ms)
+        # Safety buffer ensures Lambda has time to save results and trigger continuation before timeout
+        # Set to 5 minutes to allow safe handoff between continuation chains
+        SAFETY_BUFFER_MS = int(os.environ.get('VALIDATOR_SAFETY_BUFFER_MS', '300000'))  # 5 minutes (300000ms)
         MAX_PROCESSING_TIME_MS = int(os.environ.get('VALIDATOR_MAX_PROCESSING_TIME_MS', '900000'))  # 15 minutes default
 
         # Track execution start time
@@ -3044,8 +3044,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             nonlocal validation_results, total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, batch_timing_data, total_batches, total_expected_ai_calls, batches_with_claude, batches_without_claude, batch_manager, search_groups_count, all_qc_results, qc_metrics_summary
             
             # Initialize dynamic batch size manager
-            # TESTING: Disable enhanced manager as it overrides batch size 3 setting with CSV config
-            if False and ENHANCED_BATCH_MANAGER_AVAILABLE:
+            # Use enhanced manager if available for CSV-based batch size configuration
+            if ENHANCED_BATCH_MANAGER_AVAILABLE:
                 try:
                     batch_manager = EnhancedDynamicBatchSizeManager(
                         session_id=session_id,
@@ -3056,25 +3056,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.error(f"Failed to initialize enhanced batch manager: {e}")
                     logger.debug("🔄 Falling back to basic DynamicBatchSizeManager")
                     batch_manager = DynamicBatchSizeManager(
-                        initial_batch_size=3,   # TEST: Force 3 rows per batch for continuation testing
-                        min_batch_size=3,       # TEST: Minimum 3 rows
-                        max_batch_size=3,       # TEST: Maximum 3 rows (fixed size)
-                        success_increase_factor=1.0,      # TEST: No increase
-                        failure_decrease_factor=1.0,      # TEST: No decrease
-                        consecutive_successes_for_increase=999,  # TEST: Never increase
-                        consecutive_failures_for_decrease=999    # TEST: Never decrease
+                        initial_batch_size=10,  # Start with 10 rows per batch
+                        min_batch_size=1,       # Allow down to 1 row if needed
+                        max_batch_size=50,      # Cap at 50 rows per batch
+                        success_increase_factor=1.2,      # Increase by 20% on success
+                        failure_decrease_factor=0.5,      # Cut in half on failure
+                        consecutive_successes_for_increase=3,  # Increase after 3 successes
+                        consecutive_failures_for_decrease=1    # Decrease after 1 failure
                     )
             else:
                 # Fallback to basic batch manager if enhanced version not available
                 logger.debug("🔄 Using basic DynamicBatchSizeManager (enhanced version not available)")
                 batch_manager = DynamicBatchSizeManager(
-                    initial_batch_size=3,   # TEST: Force 3 rows per batch for continuation testing
-                    min_batch_size=3,       # TEST: Minimum 3 rows
-                    max_batch_size=3,       # TEST: Maximum 3 rows (fixed size)
-                    success_increase_factor=1.0,      # TEST: No increase
-                    failure_decrease_factor=1.0,      # TEST: No decrease
-                    consecutive_successes_for_increase=999,  # TEST: Never increase
-                    consecutive_failures_for_decrease=999    # TEST: Never decrease
+                    initial_batch_size=10,  # Start with 10 rows per batch
+                    min_batch_size=1,       # Allow down to 1 row if needed
+                    max_batch_size=50,      # Cap at 50 rows per batch
+                    success_increase_factor=1.2,      # Increase by 20% on success
+                    failure_decrease_factor=0.5,      # Cut in half on failure
+                    consecutive_successes_for_increase=3,  # Increase after 3 successes
+                    consecutive_failures_for_decrease=1    # Decrease after 1 failure
                 )
             
             # Discover which models will be used across all rows
