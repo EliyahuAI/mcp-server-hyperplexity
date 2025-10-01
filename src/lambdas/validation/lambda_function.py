@@ -2358,6 +2358,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         def trigger_self_continuation():
             """Trigger self-continuation via direct Lambda invocation for more processing time."""
+            # VALIDATION: Only async-delegated validations can use continuations
+            if not is_async_request:
+                logger.warning(f"[CONTINUATION] Sync mode cannot use continuations - validation will timeout")
+                logger.warning(f"[CONTINUATION] Interface should have delegated to async based on preview estimates")
+                return False
+
             try:
                 import boto3
 
@@ -2384,9 +2390,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     results_path = f"results/{domain}/{email_prefix}/{session_id}/v{config_version}_results"
                     logger.warning(f"[S3_PATH] results_path not in event, constructed: {results_path}")
 
-                # SIMPLIFIED: Reuse original payload - no need to create new one
-                # The continuation will load the same payload and skip already-processed rows
+                # Get original payload S3 key - REQUIRED for async continuations
                 original_payload_s3_key = current_event.get('complete_payload_s3_key')
+
+                if not original_payload_s3_key:
+                    # Async mode MUST have S3 payload key from interface delegation
+                    logger.error(f"[CONTINUATION] Cannot trigger async continuation without complete_payload_s3_key")
+                    logger.error(f"[CONTINUATION] This indicates the validator was not properly delegated from interface")
+                    return False
+
                 logger.info(f"[CONTINUATION] Reusing original payload: {original_payload_s3_key}")
 
                 # IMPORTANT: Track progress by ROWS (not batches) to prevent infinite loops
@@ -2565,9 +2577,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # ========== SMART DELEGATION SYSTEM - COMPLETE PAYLOAD LOADING ==========
         # Check if this is an async delegation request that needs complete payload loaded from S3
-        # NOTE: Don't reset is_async_request here - it's already set above
-        # is_async_request = event.get('async_delegation_request', False)  # BUG: This was overwriting the value
         complete_payload_s3_key = event.get('complete_payload_s3_key')
+
+        # VALIDATION: Async mode MUST have S3 payload key
+        if is_async_request and not complete_payload_s3_key:
+            logger.error(f"[ASYNC_PAYLOAD] Async delegation request without complete_payload_s3_key")
+            logger.error(f"[ASYNC_PAYLOAD] This indicates improper delegation from interface")
+            logger.error(f"[ASYNC_PAYLOAD] Event keys: {list(event.keys())}")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({
+                    'error': 'Invalid async request: missing complete_payload_s3_key',
+                    'session_id': session_id,
+                    'message': 'Async validations must be properly delegated from interface with S3 payload'
+                })
+            }
 
         if is_async_request and complete_payload_s3_key:
             logger.debug(f"[ASYNC_PAYLOAD] Loading complete sync-compatible payload from S3: {complete_payload_s3_key}")
