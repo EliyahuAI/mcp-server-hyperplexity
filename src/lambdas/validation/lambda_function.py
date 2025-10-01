@@ -2924,6 +2924,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # CRITICAL: For continuations, load existing results from S3 to append to them
         validation_results = {}
+        all_qc_results = {}  # row_key -> field_name -> qc_data (must be initialized here for continuations)
         existing_token_usage = {}
         existing_enhanced_metrics = {}
         skip_count = 0
@@ -2950,10 +2951,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 response_s3 = s3_client.get_object(Bucket=s3_bucket, Key=results_s3_key)
                 existing_results = json.loads(response_s3['Body'].read().decode('utf-8'))
 
-                # Load existing validation results
+                # Load existing validation results and QC data
                 validation_results = existing_results.get('validation_results', {})
+                all_qc_results = existing_results.get('qc_results', {})
                 existing_token_usage = existing_results.get('token_usage', {})
                 existing_enhanced_metrics = existing_results.get('enhanced_metrics', {})
+
+                logger.info(f"[CONTINUATION_LOAD] Loaded {len(all_qc_results)} existing QC result sets")
 
                 # CRITICAL: Skip already-processed rows to avoid duplicate work
                 skip_count = len(validation_results)
@@ -3019,7 +3023,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         batch_manager = None  # Will be set in process_all_rows
 
         # Track QC data across all rows
-        all_qc_results = {}  # row_key -> field_name -> qc_data
+        # NOTE: all_qc_results initialized earlier (line 2927) and loaded from S3 for continuations
         qc_metrics_summary = {
             'total_rows_processed': 0,
             'total_fields_reviewed': 0,
@@ -3207,6 +3211,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     # Save cumulative results to S3
                                     cumulative_results = {
                                         'validation_results': validation_results,
+                                        'qc_results': all_qc_results,  # CRITICAL: Preserve QC data across continuations
                                         'batch_timing_data': all_batch_times,
                                         'continuation_metadata': {
                                             'batches_completed': batch_index + 1,
