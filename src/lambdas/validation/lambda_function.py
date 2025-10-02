@@ -3001,14 +3001,28 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         completed_ai_calls = [already_completed_ai_calls]  # Start from already-completed count
 
         # Calculate total expected AI calls for progress tracking
-        # Use all_rows (full dataset) not rows (remaining after skip)
-        total_expected_ai_calls = search_groups_count * len(all_rows)
+        # NOTE: This is an estimate - actual calls may be higher due to:
+        #   - Retry logic in ai_client
+        #   - Multiple models per search group
+        #   - Provider failover (Perplexity -> Claude)
+        # Progress counter reports per search group, but ai_client tracks actual API calls
+        # This can cause progress to show "x/1668" while actual calls are 2000+
+        calls_per_row_validation = 0
+        for group_id, targets in grouped_targets.items():
+            # Filter out ID/IGNORED fields that don't trigger API calls
+            validation_targets_in_group = [t for t in targets if t.importance.upper() not in ["ID", "IGNORED"]]
+            if validation_targets_in_group:
+                # Each non-empty group makes at least 1 call (but might make more)
+                calls_per_row_validation += 1
+
+        total_expected_ai_calls = calls_per_row_validation * len(all_rows)
+        logger.debug(f"[AI_PROGRESS] Estimated {calls_per_row_validation} validation calls per row (NOTE: actual may be higher)")
 
         # Add QC calls to progress tracking if QC is enabled
         if qc_manager and qc_manager.is_qc_enabled():
             qc_expected_calls = len(all_rows)  # One QC call per row in full dataset
             total_expected_ai_calls += qc_expected_calls
-            logger.debug(f"[AI_PROGRESS] Total expected calls for full dataset: {search_groups_count * len(all_rows)} validation + {qc_expected_calls} QC = {total_expected_ai_calls}")
+            logger.debug(f"[AI_PROGRESS] Total expected calls for full dataset: {calls_per_row_validation} validation calls/row * {len(all_rows)} rows + {qc_expected_calls} QC = {total_expected_ai_calls}")
 
         logger.info(f"[AI_PROGRESS] Progress tracking: starting at {already_completed_ai_calls}/{total_expected_ai_calls}")
         
