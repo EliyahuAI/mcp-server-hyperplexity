@@ -531,7 +531,15 @@ class SimplifiedSchemaValidator:
                         return {}
                 else:
                     return {}
-            
+
+            # Handle different response formats from Perplexity
+            # If it's a dict with 'validation_results' key, extract it (json_schema wrapper)
+            if isinstance(validation_results, dict):
+                if 'validation_results' in validation_results:
+                    validation_results = validation_results['validation_results']
+                else:
+                    return {}
+
             # Ensure it's a list
             if not isinstance(validation_results, list):
                 return {}

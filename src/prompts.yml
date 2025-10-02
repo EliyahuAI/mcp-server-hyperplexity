@@ -95,12 +95,12 @@ qc_validation: |
 
   **YOU MUST PROVIDE QC OUTPUT FOR EVERY SINGLE FIELD** - no exceptions. For each field:
 
-  1. **Always provide your QC answer** - either confirm the updated value or provide a replacement
+  1. **Always provide your QC answer** - either confirm the orignal or updated value or provide a replacement
   2. **Always assign your QC confidence** - your confidence in the QC answer
   3. **Always review and confirm/adjust original_confidence** - ensure hierarchy compliance
-  4. **Always review and confirm/adjust updated_confidence** - ensure hierarchy compliance
-  5. **Always provide qc_reasoning** - explain your QC assessment
-  6. **Always provide qc_citations** - support your QC decision
+  4. **Always provide qc_reasoning** - explain your QC assessment
+  5. **Always provide qc_citations** - support your QC decision
+  6. **Always provide key_citation** - provide a targeted excerpt or reasoning for your answer.
 
   
   === JSON SCHEMA EXAMPLE ===
@@ -109,42 +109,40 @@ qc_validation: |
   === QC GUIDELINES ===
 
   **Core Principles:**
-  * **CONFIDENCE HIERARCHY ENFORCEMENT:** original_confidence ≤ updated_confidence ≤ confidence
-    - You MUST ensure: Original Confidence ≤ Updated Confidence ≤ QC Confidence
+  * **CONFIDENCE HIERARCHY ENFORCEMENT:** original_confidence ≤ confidence
+    - You MUST ensure: Original Confidence ≤ QC Confidence
     - If this hierarchy is violated, you MUST adjust the confidence levels to maintain this order
-    - Example: If Original=HIGH, Updated=MEDIUM, you MUST lower Original to MEDIUM or raise Updated to HIGH
-  * **MANDATORY QC VALUE:** When any QC action is taken, the `answer` field is REQUIRED - it cannot be optional, and you must also explicitly state the confidence of of this entry, and your reviewed confidence of the Updated or Original entry.
-  * Use your judgment to identify inconsistencies across all field groups - what is inconsistent
-  * Ensure final values are consistent with the provided context
+    - Example: If Original=HIGH, QC Confidence=MEDIUM, you MUST lower Original to MEDIUM or raise QC Confidence to HIGH. Generally lower confidences when you are not sure about the inconsistency.
+  * **MANDATORY QC VALUE:** When any QC action is taken, the `answer` field is REQUIRED - it cannot be optional, and you must also explicitly state the confidence of of this entry, and your reviewed confidence of the Original entry.
+  * Use your judgment to identify inconsistencies across all field groups - are these talking about the item identified in the context? Do they make sense together? Individually (use common sense)?
 
   **QC OUTPUT REQUIREMENTS:**
   * Every field gets a complete QC response - no selective QC
   * `answer`: Your QC Entry (either confirmed updated value or replacement value)
-  * `confidence`: Your confidence in your QC Entry
   * `original_confidence`: Final confidence for original value (maintain hierarchy)
-  * `updated_confidence`: Final confidence for updated value (maintain hierarchy)
+  * `confidence`: Final QC confidence for QC value (maintain hierarchy)
   * `qc_reasoning`: Your detailed QC assessment
   * `qc_citations`: Supporting citation for your QC decision
 
-  **Important:** QC can adjust confidence levels or provide replacement values. When adjusting confidence, specify which value's confidence is being changed.
-
+  
   **Response Requirements:**
   * Include exact column name as defined in FIELD input
-  * Use actual URLs in sources arrays (not reference numbers)
-  * Include direct quotes from citations in reasoning when available
+  * Use complete ad real URLs in sources arrays (not reference numbers)
+  * Include direct quotes from citations in key_citation and reasoning when available
   * Use proper newline formatting for Excel cells (bullets, lists, etc.)
   * Assign **None confidence** for blank values that should remain blank
   * Response must be valid JSON array with all required fields
-  * If you have access to web search and you dont have confidence in the current value, you must perform a web search and provide a new citation.
+  * If you have access to web search and you dont have confidence in the current value, perform web search and provide a new citation. **This is critical when the value can be obtained from a web search.** 
+  * Respect original entries when there is not evidence to change them. This is particularly true when you can't find evidence to confirm or reject the initial value - maintain the value and provide a low confidence.
 
 
   **QC Response Fields - ALL MANDATORY FOR EVERY FIELD:**
   * `column`: Field name being QC'd (required)
   * `answer`: The QC Entry **MANDATORY FOR ALL QC RESPONSES**
   * `qc_reasoning`: Detailed explanation of why QC revision was necessary (required)
-  * `confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the QC Entry
-  * `original_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the original value (after any QC adjustments)
-  * `updated_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the updated value (after any QC adjustments)
+  * `confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the QC Entry (must be higher than or equal to the original confidence)
+  * `original_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the original value (must be lower than or equal to the QC confidence)
+  * `updated_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the updated value 
   * `qc_citations`: Key supporting citation - **ABSOLUTELY REQUIRED for EVERY SINGLE FIELD** regardless of whether QC changes are made or not (see formatting below). This field is mandatory for all responses.
 
   
@@ -153,36 +151,28 @@ qc_validation: |
 
   **Option 1: Reference existing validation citations (greatly preferred):**
   * Use the existing citation number (e.g., [1], [2], [3]) from the validation sources shown above
-  * Format: "[Citation#] Source Title - [Key excerpt that supports your QC decision] ... [additional context if needed] (URL)"
 
   **Option 2: Create a new citation from web search (when web search is available and critically needed):**
-  * Perform web search to find more authoritative or recent sources
-  * Format: "[NEW] Source Title - [Key excerpt from your web search] ... [additional context] (URL)"
-  * Use [NEW] prefix to distinguish from validation citations
-  * Use this when existing citations are insufficient or you find better sources
+  * Perform web search to find more authoritative or recent sources, indicate that this a QC citation using the prefix [QC]
 
-  **Citation Formatting:**
-  * Extract the most relevant 1-2 sentences and put them in [brackets] for emphasis
+  **Key Citation Formatting:**
+  * Format: [Citation No / QC Citation No] Source Title - [Additional context if needed]... "Key excerpt from the citation that supports your final answer" ... (URL)
+  * Extract the most relevant 1-2 sentences and put them in for emphasis
   * Use "..." to show truncation of longer quotes or to connect key excerpts
   * Include the full URL in parentheses at the end
   * Keep the entire citation as a single line for Excel cell comments
 
-  **Citation Requirements - MANDATORY FOR ALL FIELDS:**
-  * **Fields WITH citations**: MUST provide `qc_citations` referencing the most relevant numbered citation [1], [2], etc.
-  * **Fields WITHOUT citations (model knowledge)**: MUST still provide `qc_citations` and either:
-    - Reference general knowledge source with format "[KNOWLEDGE] Training data - [Key supporting fact] ... (model knowledge)"
-    - Perform web search to find authoritative sources and provide new numbered citations
-    - If unverifiable, state "[UNVERIFIED] No authoritative source found - [reasoning for uncertainty] ... (requires verification)"
+  **Key Citation Requirements - MANDATORY FOR ALL FIELDS:**
+  * **Fields WITHOUT useful citations**: MUST still provide `qc_citations` and either:
+    - If consistent with your training knowledge, Reference general knowledge source with format "[KNOWLEDGE]  Key supporting fact (your model name, training date)
+    - If unverifiable and not consistent with your training knowledge, state "[UNVERIFIED] No authoritative source found: reasoning for uncertainty (requires verification)
   * **Fields requiring no QC changes**: MUST still provide `qc_citations` confirming the accuracy of existing values
 
-  **Examples:**
-  * **Using existing citation:** "[1] Amazon Q2 2025 Earnings Report - [Net sales increased 13% to $167.7 billion] ... confirming the market cap calculation (https://ir.aboutamazon.com/...)"
-  * **Using web search:** "[NEW] SEC Filing Amazon 10-K 2024 - [Market capitalization as of Dec 31, 2024 was $1.12 trillion] ... based on 10.7B outstanding shares (https://sec.gov/...)"
-
-  **For fields claiming model knowledge without citations:**
-  * Review claim against your training knowledge and current web search capabilities
-  * If verifiable, search for authoritative sources and provide proper citations
-  * If unverifiable or potentially incorrect, lower confidence appropriately
-
-  **Final Value Priority:** QC Value > Updated Value > Original Value
+  **Key Citation Examples:**
+  * **Using existing or QC citation:** [QC 1] Amazon Q2 2025 Earnings Report - [including AWS]... "Net sales increased 13% to $167.7 billion ... confirming the market cap calculation" (https://ir.aboutamazon.com/2025_Earnings_Results)
+  * **Using model knowledge:** [KNOWLEDGE] Amazon provides a range of services including AWS. (Claude 4 Sonnet, Training date: 2025-01-01)
+  * **Unverifyable:** [UNVERIFIED] No authoritative source found: It is not clear that Amazon has a special local market in Uganda, leaving original value as is. (requires verification)
+  
+  
+  **Final Value ('answer') Priority:** QC Value > Updated Value > Original Value
  
