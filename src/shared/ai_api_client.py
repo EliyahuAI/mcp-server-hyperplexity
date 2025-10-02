@@ -10,6 +10,7 @@ import os
 import hashlib
 import aiohttp
 import boto3
+import aioboto3
 import asyncio
 import random
 from datetime import datetime, timezone
@@ -59,8 +60,10 @@ class AIAPIClient:
             self.s3_bucket = s3_bucket or 'perplexity-cache'
             self.use_unified_structure = False
             logger.info(f"AI_API_CLIENT: Using legacy S3 bucket: {self.s3_bucket}")
-        
-        self.s3_client = boto3.client('s3')
+
+        # Use aioboto3 for async S3 operations (non-blocking event loop)
+        self.s3_session = aioboto3.Session()
+        # Keep boto3 client for non-async operations (SSM parameter retrieval)
         self.anthropic_api_key = self._get_anthropic_api_key()
         self.perplexity_api_key = self._get_perplexity_api_key()
 
@@ -1328,16 +1331,19 @@ class AIAPIClient:
         cache_check_start = datetime.now()
         try:
             s3_key = self._get_cache_s3_key(cache_key, api_provider)
-            
+
             logger.info(f"CACHE_CHECK: Checking S3 cache for key: {cache_key[:8]}... in bucket: {self.s3_bucket}, path: {s3_key}")
-            
-            cache_response = self.s3_client.get_object(
-                Bucket=self.s3_bucket,
-                Key=s3_key
-            )
-            
-            # Validate JSON before parsing
-            cache_body = cache_response['Body'].read()
+
+            # Use async S3 client to avoid blocking event loop
+            async with self.s3_session.client('s3') as s3_client:
+                cache_response = await s3_client.get_object(
+                    Bucket=self.s3_bucket,
+                    Key=s3_key
+                )
+
+                # Validate JSON before parsing
+                async with cache_response['Body'] as stream:
+                    cache_body = await stream.read()
             if not cache_body:
                 logger.warning(f"CACHE_REJECT: Empty cache file for key: {cache_key[:8]}... - will make API call")
                 return None
@@ -1418,16 +1424,17 @@ class AIAPIClient:
                            f"read={cache_read_tokens}, creation={cache_creation_tokens} for key: {cache_key[:8]}...")
             
             return cached_data
-            
-        except self.s3_client.exceptions.NoSuchKey:
-            cache_check_time = (datetime.now() - cache_check_start).total_seconds()
-            logger.info(f"CACHE_MISS: No cached response found for key: {cache_key[:8]}... "
-                       f"(check_time: {cache_check_time:.3f}s)")
-            return None
+
         except Exception as e:
             cache_check_time = (datetime.now() - cache_check_start).total_seconds()
+            # Check if it's a NoSuchKey error (cache miss)
+            if 'NoSuchKey' in str(e) or '404' in str(e):
+                logger.info(f"CACHE_MISS: No cached response found for key: {cache_key[:8]}... "
+                           f"(check_time: {cache_check_time:.3f}s)")
+                return None
+            # Other errors
             logger.error(f"CACHE_ERROR: Failed to check cache for key: {cache_key[:8]}... "
-                        f"Error: {str(e)}, check_time: {cache_check_time:.3f}s")
+                        f"Error: {str(e)}, check_time: {cache_check_time:.3f}s)")
             return None
     
     async def _save_to_cache(self, cache_key: str, response: Dict, token_usage: Dict, processing_time: float, model: str, api_provider: str = 'anthropic'):
@@ -1449,14 +1456,18 @@ class AIAPIClient:
                 'enhanced_data': enhanced_metrics  # Add enhanced metrics to cache
                 # NOTE: Deliberately NOT storing 'is_cached' - it's determined at retrieval time
             }
-            
+
             s3_key = self._get_cache_s3_key(cache_key, api_provider)
-            self.s3_client.put_object(
-                Bucket=self.s3_bucket,
-                Key=s3_key,
-                Body=json.dumps(cache_entry),
-                ContentType='application/json'
-            )
+
+            # Use async S3 client to avoid blocking event loop
+            async with self.s3_session.client('s3') as s3_client:
+                await s3_client.put_object(
+                    Bucket=self.s3_bucket,
+                    Key=s3_key,
+                    Body=json.dumps(cache_entry),
+                    ContentType='application/json'
+                )
+
             logger.info(f"Cached API response, key: {cache_key[:8]}...")
         except Exception as e:
             logger.error(f"Failed to cache API response: {str(e)}")
@@ -1514,14 +1525,16 @@ class AIAPIClient:
                 s3_key = f"debug/{api_provider}/{debug_filename}"
             else:
                 s3_key = f"api_debug/{api_provider}/{debug_filename}"
-            
-            self.s3_client.put_object(
-                Bucket=self.s3_bucket,
-                Key=s3_key,
-                Body=json.dumps(debug_entry, indent=2, ensure_ascii=False),
-                ContentType='application/json'
-            )
-            
+
+            # Use async S3 client to avoid blocking event loop
+            async with self.s3_session.client('s3') as s3_client:
+                await s3_client.put_object(
+                    Bucket=self.s3_bucket,
+                    Key=s3_key,
+                    Body=json.dumps(debug_entry, indent=2, ensure_ascii=False),
+                    ContentType='application/json'
+                )
+
             logger.info(f"[DEBUG] Saved debug data to s3://{self.s3_bucket}/{s3_key}")
             
             # Also log key information
