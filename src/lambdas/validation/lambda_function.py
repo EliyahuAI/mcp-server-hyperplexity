@@ -2988,41 +2988,41 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         grouped_targets = validator.group_columns_by_search_group(validation_targets)
         search_groups_count = len(grouped_targets)
 
-        already_completed_ai_calls = 0
-        if is_continuation and skip_count > 0:
-            # Estimate completed calls from completed rows
-            calls_per_row = search_groups_count
-            if qc_manager and qc_manager.is_qc_enabled():
-                calls_per_row += 1  # One QC call per row
-
-            already_completed_ai_calls = skip_count * calls_per_row
-            logger.info(f"[AI_PROGRESS] Continuation: {skip_count} rows already processed = ~{already_completed_ai_calls} AI calls completed")
-
-        completed_ai_calls = [already_completed_ai_calls]  # Start from already-completed count
-
-        # Calculate total expected AI calls for progress tracking
-        # NOTE: This is an estimate - actual calls may be higher due to:
-        #   - Retry logic in ai_client
-        #   - Multiple models per search group
-        #   - Provider failover (Perplexity -> Claude)
-        # Progress counter reports per search group, but ai_client tracks actual API calls
-        # This can cause progress to show "x/1668" while actual calls are 2000+
+        # Calculate actual calls per row by counting only search groups with non-IGNORED fields
+        # CRITICAL: Don't count groups that have only ID/IGNORED fields (they don't trigger API calls)
         calls_per_row_validation = 0
         for group_id, targets in grouped_targets.items():
             # Filter out ID/IGNORED fields that don't trigger API calls
             validation_targets_in_group = [t for t in targets if t.importance.upper() not in ["ID", "IGNORED"]]
             if validation_targets_in_group:
-                # Each non-empty group makes at least 1 call (but might make more)
+                # Each non-empty group makes exactly 1 call
                 calls_per_row_validation += 1
 
+        logger.info(f"[AI_PROGRESS] Counted {calls_per_row_validation} active validation groups (excluding IGNORED-only groups)")
+
+        # Calculate already-completed calls for continuations
+        already_completed_ai_calls = 0
+        if is_continuation and skip_count > 0:
+            # Use the same filtered count for consistency
+            calls_per_row = calls_per_row_validation
+            if qc_manager and qc_manager.is_qc_enabled():
+                calls_per_row += 1  # One QC call per row
+
+            already_completed_ai_calls = skip_count * calls_per_row
+            logger.info(f"[AI_PROGRESS] Continuation: {skip_count} rows already processed × {calls_per_row} calls/row = {already_completed_ai_calls} AI calls completed")
+
+        completed_ai_calls = [already_completed_ai_calls]  # Start from already-completed count
+
+        # Calculate total expected AI calls for progress tracking
         total_expected_ai_calls = calls_per_row_validation * len(all_rows)
-        logger.debug(f"[AI_PROGRESS] Estimated {calls_per_row_validation} validation calls per row (NOTE: actual may be higher)")
 
         # Add QC calls to progress tracking if QC is enabled
         if qc_manager and qc_manager.is_qc_enabled():
             qc_expected_calls = len(all_rows)  # One QC call per row in full dataset
             total_expected_ai_calls += qc_expected_calls
-            logger.debug(f"[AI_PROGRESS] Total expected calls for full dataset: {calls_per_row_validation} validation calls/row * {len(all_rows)} rows + {qc_expected_calls} QC = {total_expected_ai_calls}")
+            logger.info(f"[AI_PROGRESS] Total calls: {calls_per_row_validation} validation + 1 QC = {calls_per_row_validation + 1} calls/row × {len(all_rows)} rows = {total_expected_ai_calls} total")
+        else:
+            logger.info(f"[AI_PROGRESS] Total calls: {calls_per_row_validation} validation calls/row × {len(all_rows)} rows = {total_expected_ai_calls} total")
 
         logger.info(f"[AI_PROGRESS] Progress tracking: starting at {already_completed_ai_calls}/{total_expected_ai_calls}")
         
