@@ -2825,19 +2825,53 @@ def handle_main_processing(event, context):
 
                 logger.debug(f"[PAYLOAD_GENERATION] ID fields for row key generation: {id_fields}")
 
-                # Add pre-computed row keys to each row using FULL ROW hashing
+                # Add pre-computed row keys to each row using HYBRID hashing:
+                # 1. Try ID-field hashing first (for history matching)
+                # 2. For duplicates, use full-row hashing (to distinguish them)
                 from row_key_utils import generate_row_key
                 processed_rows = []
-                for row_data in excel_rows:
-                    # Generate FULL ROW hash (pass None as primary_keys)
-                    row_key = generate_row_key(row_data, primary_keys=None)
-                    logger.debug(f"[PAYLOAD_GENERATION] Generated full-row hash: {row_key}")
+                id_hash_counts = {}  # Track duplicate ID hashes
+
+                # First pass: Generate ID-field hashes and detect duplicates
+                for row_idx, row_data in enumerate(excel_rows):
+                    # Generate ID-field hash
+                    id_hash = generate_row_key(row_data, primary_keys=id_fields if id_fields else None)
+
+                    if id_hash not in id_hash_counts:
+                        id_hash_counts[id_hash] = []
+                    id_hash_counts[id_hash].append(row_idx)
+
+                # Second pass: Assign final row keys (ID-hash or full-row hash for duplicates)
+                for row_idx, row_data in enumerate(excel_rows):
+                    id_hash = generate_row_key(row_data, primary_keys=id_fields if id_fields else None)
+
+                    # If this ID hash appears multiple times, use full-row hash
+                    if len(id_hash_counts[id_hash]) > 1:
+                        row_key = generate_row_key(row_data, primary_keys=None)  # Full-row hash
+                        logger.debug(f"[PAYLOAD_GENERATION] Row {row_idx}: Duplicate ID detected, using full-row hash: {row_key[:8]}...")
+                    else:
+                        row_key = id_hash  # Use ID-field hash
+                        logger.debug(f"[PAYLOAD_GENERATION] Row {row_idx}: Using ID-field hash: {row_key[:8]}...")
 
                     # Add row key to row data
                     row_data['_row_key'] = row_key
                     processed_rows.append(row_data)
 
+                # Log duplicate summary
+                duplicate_id_count = sum(1 for count_list in id_hash_counts.values() if len(count_list) > 1)
+                total_duplicate_rows = sum(len(count_list) for count_list in id_hash_counts.values() if len(count_list) > 1)
+                if duplicate_id_count > 0:
+                    logger.info(f"[PAYLOAD_GENERATION] Found {duplicate_id_count} duplicate ID groups ({total_duplicate_rows} total rows)")
+                    logger.info(f"[PAYLOAD_GENERATION] Duplicate rows will use full-row hashing (history matching disabled for these)")
+                else:
+                    logger.info(f"[PAYLOAD_GENERATION] No duplicate IDs detected, all rows using ID-field hashing")
+
                 logger.debug(f"[PAYLOAD_GENERATION] Added pre-computed row keys to {len(processed_rows)} rows")
+
+                # CRITICAL: Update table_data with row keys so Excel report can access them
+                if table_data and isinstance(table_data, dict) and 'data' in table_data:
+                    table_data['data'] = processed_rows  # Replace with rows that include _row_key
+                    logger.debug(f"[PAYLOAD_GENERATION] Updated table_data with processed rows (including _row_key)")
 
                 # Load validation history if available and we have Excel content (matching invoke_validator_lambda logic)
                 validation_history = {}

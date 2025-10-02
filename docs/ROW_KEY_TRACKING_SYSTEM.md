@@ -14,35 +14,90 @@ The validator uses a **hash-based row tracking system** that replaces sequential
 
 ### What is a Row Key?
 
-A row key is a **SHA-256 hash** generated from a row's primary key field values.
+A row key is a **SHA-256 hash** used to uniquely identify each row. The system uses a **hybrid hashing approach**:
+
+- **ID-field hashing** (primary keys only) - Used for rows with unique IDs
+- **Full-row hashing** (all fields) - Used for rows with duplicate IDs
 
 ```python
 # From row_key_utils.py
 def generate_row_key(row_data: dict, primary_key_fields: list) -> str:
     """
-    Generate deterministic hash from primary key field values.
+    Generate deterministic hash from specified fields.
 
-    Example:
-        row_data = {"supplier_id": "ABC123", "name": "Acme Corp", "city": "NYC"}
-        primary_key_fields = ["supplier_id", "name"]
+    Args:
+        row_data: Row dictionary
+        primary_key_fields: List of ID field names, or None for full-row hash
 
-        Returns: "a7f8d9e2..." (SHA-256 hash of "ABC123||Acme Corp")
+    Returns: SHA-256 hash (64-character hex string)
     """
 ```
 
+### Hybrid Hashing Strategy
+
+**Why Hybrid?**
+- **ID-field hashing** enables history matching (validated values don't affect the hash)
+- **Full-row hashing** distinguishes rows with duplicate IDs
+- **Best of both worlds**: History works for most rows, duplicates are still handled correctly
+
 ### When Are Row Keys Generated?
 
-**Interface Lambda (background_handler.py:2750-2757):**
+**Interface Lambda (background_handler.py:2828-2858):**
 ```python
-for row_data in excel_rows:
-    row_key = generate_row_key(row_data, id_fields)
-    row_data['_row_key'] = row_key  # Added to each row
+# Two-pass hybrid hashing approach
+id_hash_counts = {}
+
+# Pass 1: Detect duplicate IDs
+for row_idx, row_data in enumerate(excel_rows):
+    id_hash = generate_row_key(row_data, primary_keys=id_fields)
+    if id_hash not in id_hash_counts:
+        id_hash_counts[id_hash] = []
+    id_hash_counts[id_hash].append(row_idx)
+
+# Pass 2: Assign final row keys
+for row_idx, row_data in enumerate(excel_rows):
+    id_hash = generate_row_key(row_data, primary_keys=id_fields)
+
+    if len(id_hash_counts[id_hash]) > 1:
+        # Duplicate ID → use full-row hash
+        row_key = generate_row_key(row_data, primary_keys=None)
+    else:
+        # Unique ID → use ID-field hash (enables history matching)
+        row_key = id_hash
+
+    row_data['_row_key'] = row_key
     processed_rows.append(row_data)
 ```
 
 **Timing:** Before sending to validator (both sync and async)
 
 **Result:** All rows arrive at validator with pre-computed `_row_key`
+
+### Example: Hybrid Hashing in Action
+
+```
+Input (278 rows):
+  Row 1: ID=ABC, Name=Acme, City=NYC
+  Row 2: ID=ABC, Name=Acme, City=NYC    (exact duplicate)
+  Row 3: ID=ABC, Name=Acme, City=LA     (same ID, different data)
+  Row 4: ID=DEF, Name=Beta, City=SF
+
+Pass 1 - Detect duplicates:
+  hash(ID=ABC): [0, 1, 2]  # 3 rows with same ID
+  hash(ID=DEF): [3]         # 1 row with unique ID
+
+Pass 2 - Assign row keys:
+  Row 1: Duplicate ID → full-row hash → a7f8d9e2...
+  Row 2: Duplicate ID → full-row hash → a7f8d9e2... (SAME as Row 1!)
+  Row 3: Duplicate ID → full-row hash → b3e1c7a4... (different from Row 1)
+  Row 4: Unique ID    → ID-field hash → c9d2f8b1...
+
+Processed rows:
+  {ID: ABC, ..., _row_key: a7f8d9e2...}  # Row 1
+  {ID: ABC, ..., _row_key: a7f8d9e2...}  # Row 2 (same hash!)
+  {ID: ABC, ..., _row_key: b3e1c7a4...}  # Row 3 (different data)
+  {ID: DEF, ..., _row_key: c9d2f8b1...}  # Row 4 (history matching works!)
+```
 
 ---
 
@@ -78,7 +133,9 @@ payload = {
 }
 ```
 
-**Key Insight:** History lookup uses same hash as current validation → perfect matching
+**Key Insights:**
+- History matching works for rows with **unique IDs** (ID-field hash is stable across validations)
+- Rows with **duplicate IDs** use full-row hashing (history matching disabled - we can't tell which historical entry corresponds to which duplicate)
 
 ---
 
@@ -100,22 +157,49 @@ abandoned_rows_details = []    # Failed rows with identifiers
 
 ### Processing Flow
 
-**Step 1: Initialize Pending Queue (lambda_function.py:3129-3153)**
+**Step 1: Initialize Pending Queue with Deduplication (lambda_function.py:3176-3200)**
 ```python
+duplicate_count = 0
+
 for row in rows:
-    # Extract or generate row_key
+    # Extract pre-computed row_key from interface lambda
     if '_row_key' in row_data:
-        row_key = row_data['_row_key']  # Use pre-computed from interface
+        row_key = row_data['_row_key']  # Hybrid hash from interface
     else:
+        # Fallback: generate ID-field hash
         row_key = generate_row_key(row_data, validator.primary_key)
 
-    # Store mapping
+    # DEDUPLICATION: Detect duplicate row_keys (true duplicates)
+    if row_key in row_key_to_row_data:
+        duplicate_count += 1
+        # Skip - this exact row_key already exists
+        continue
+
+    # Store mapping for unique row_keys only
     row_key_to_row_data[row_key] = row
 
     # Add to pending if not already validated
     if row_key not in validation_results:
         pending_row_keys.append(row_key)
         row_key_retry_count[row_key] = 0
+```
+
+**Deduplication Example:**
+```
+Input: 278 rows with pre-computed _row_key
+  Row 1: _row_key = a7f8d9e2...
+  Row 2: _row_key = a7f8d9e2... (duplicate! same as Row 1)
+  Row 3: _row_key = b3e1c7a4...
+  ...
+
+After deduplication:
+  row_key_to_row_data = {
+    a7f8d9e2...: <Row 1 data>,  # Row 2 skipped (duplicate)
+    b3e1c7a4...: <Row 3 data>,
+    ...
+  }
+
+Validator processes: 239 unique row_keys (not 278 rows)
 ```
 
 **Step 2: Process Batches from Pending Queue (lambda_function.py:3165-3168)**
@@ -243,89 +327,134 @@ validation_results = {
 
 ## 6. Final Excel Creation
 
-### Matching Rows to Results
+### Extracting Row Keys from Rows
 
-**Excel Report (excel_report_new.py:294-302):**
+**Excel Report (excel_report_qc_unified.py:350-380):**
 ```python
-# Iterate Excel rows in ORIGINAL ORDER
-for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
-    # Generate same hash from row data
-    row_key = generate_row_key(row_data, id_fields)
+# CRITICAL: Extract row keys from rows_data (pre-computed by interface lambda)
+# Do NOT regenerate - this would break the matching!
+row_keys = []
 
-    # Lookup validation results by hash (order-independent)
+if rows_data and isinstance(rows_data[0], dict) and '_row_key' in rows_data[0]:
+    # Extract pre-computed row keys from each row
+    for row_idx, row_data in enumerate(rows_data):
+        row_key = row_data.get('_row_key')
+        row_keys.append(row_key)
+    logger.info(f"Extracted {len(row_keys)} pre-computed row keys from rows_data")
+else:
+    # Fallback: extract from validation_results keys (positional matching)
+    logger.warning("No _row_key in rows_data, using fallback")
+```
+
+### Matching All Rows to Results
+
+**Excel Report (excel_report_qc_unified.py:520-530):**
+```python
+# Iterate ALL Excel rows in ORIGINAL ORDER (all 278 rows)
+for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
+    # Lookup validation results by row_key
+    row_validation_data = None
     if row_key in validation_results:
         row_validation_data = validation_results[row_key]
-    elif str(row_idx) in validation_results:  # Fallback for old format
-        row_validation_data = validation_results[str(row_idx)]
+
+    # Write row to Excel (all rows, not just validated ones)
+    # Rows with matching row_keys share the same validation result
 ```
 
 ### Key Points
 
-1. **Excel rows iterate in original order** (from uploaded file)
-2. **Validation results stored in hash-keyed dict** (processing order)
-3. **Matching happens via hash lookup** → order doesn't matter
-4. **Failed rows reordered during processing** → still appear in original position in Excel
+1. **All 278 rows appear in Excel** (original order preserved)
+2. **Row keys extracted from rows_data** (not regenerated!)
+3. **Validation results keyed by row_key** (239 unique hashes)
+4. **Multiple rows can share same row_key** (true duplicates)
+5. **Rows without results shown as unvalidated** (partial validation)
 
-### Example Flow
+### Example Flow with Duplicates
 
 ```
-Excel Upload:
-  Row 1: supplier_id=ABC, name=Acme    → hash: a7f8d9e2...
-  Row 2: supplier_id=DEF, name=Beta    → hash: b3e1c7a4...
-  Row 3: supplier_id=GHI, name=Gamma   → hash: c9d2f8b1...
+Excel Input (278 rows):
+  Row 1: ID=ABC, Name=Acme, City=NYC    → _row_key: a7f8d9e2... (full-row hash)
+  Row 2: ID=ABC, Name=Acme, City=NYC    → _row_key: a7f8d9e2... (SAME! duplicate)
+  Row 3: ID=ABC, Name=Acme, City=LA     → _row_key: b3e1c7a4... (full-row hash)
+  Row 4: ID=DEF, Name=Beta, City=SF     → _row_key: c9d2f8b1... (ID-field hash)
+  ... (274 more rows)
 
-Validation Processing Order (with retry):
-  Batch 1: [a7f8d9e2, b3e1c7a4, c9d2f8b1] → b3e1c7a4 fails
-  Batch 2: [a7f8d9e2, c9d2f8b1, b3e1c7a4] → all succeed
+Validator Processes (after deduplication):
+  239 unique row_keys (not 278 rows!)
 
 Validation Results:
   {
-    "a7f8d9e2...": {...validation_data...},
-    "b3e1c7a4...": {...validation_data...},
-    "c9d2f8b1...": {...validation_data...}
+    "a7f8d9e2...": {validated data},  # Processed once (covers Row 1 AND Row 2)
+    "b3e1c7a4...": {validated data},
+    "c9d2f8b1...": {validated data},
+    ...
   }
 
-Excel Output (original order preserved):
-  Row 1: ABC, Acme    → looks up a7f8d9e2... → validation data
-  Row 2: DEF, Beta    → looks up b3e1c7a4... → validation data
-  Row 3: GHI, Gamma   → looks up c9d2f8b1... → validation data
+Excel Output (all 278 rows displayed):
+  Row 1: _row_key=a7f8d9e2... → validation_results[a7f8d9e2...] ✓
+  Row 2: _row_key=a7f8d9e2... → validation_results[a7f8d9e2...] ✓ (SAME result!)
+  Row 3: _row_key=b3e1c7a4... → validation_results[b3e1c7a4...] ✓
+  Row 4: _row_key=c9d2f8b1... → validation_results[c9d2f8b1...] ✓
+  ... (all 278 rows shown)
 ```
 
 ---
 
-## 7. Benefits of Hash-Based System
+## 7. Benefits of Hybrid Hash-Based System
 
 ### Reliability
 - ✅ Failed rows can be retried without affecting other rows
 - ✅ Rows can be processed in any order
 - ✅ Continuation chains work seamlessly
+- ✅ Automatic deduplication (true duplicates processed once)
 
 ### Consistency
 - ✅ Validation results match QC data (same row_key)
-- ✅ History matches current validation (same row_key)
+- ✅ History matching works for unique ID rows (ID-field hash)
 - ✅ Excel output matches validation (hash lookup)
+- ✅ All 278 rows appear in Excel (duplicates share results)
 
 ### Flexibility
 - ✅ Can reorder rows for retry optimization
 - ✅ Can process rows in parallel (future enhancement)
 - ✅ Can merge results from multiple Lambdas
+- ✅ Handles both unique rows and duplicates intelligently
 
 ### Debugging
 - ✅ Can identify specific failed rows by primary key values
 - ✅ Can track retry attempts per row
 - ✅ Can see which batch processed which row
+- ✅ Clear logging of duplicate ID detection
 
 ---
 
 ## 8. Edge Cases Handled
 
-### Duplicate Rows
-**Problem:** Two rows with identical primary keys
-**Solution:** Same hash → only processed once, result shared
+### Duplicate IDs (Same ID, Different Data)
+**Problem:** Multiple rows with same ID but different data
+**Solution:**
+- All rows with duplicate IDs use **full-row hashing**
+- Different data → different hashes → processed separately
+- History matching disabled for these rows (can't tell which is which)
+
+### True Duplicates (Exact Same Row)
+**Problem:** Two identical rows (same ID AND same data)
+**Solution:**
+- Both get same full-row hash
+- Validator deduplicates → processed once
+- Both rows in Excel show same validation result
+
+### Unique ID Rows
+**Problem:** Need history matching for rows with unique IDs
+**Solution:**
+- Use **ID-field hashing** (validated values don't affect hash)
+- History matching works perfectly across validation runs
 
 ### Missing Primary Keys
-**Problem:** Row has no primary key fields
-**Solution:** Hash first 3 fields as fallback
+**Problem:** No ID fields configured
+**Solution:**
+- All rows use full-row hashing (primary_keys=None)
+- History matching disabled
 
 ### Continuation with Partial Results
 **Problem:** Lambda times out mid-processing
@@ -350,13 +479,15 @@ Excel Output (original order preserved):
 | Component | File | Lines |
 |-----------|------|-------|
 | Row key generation | `row_key_utils.py` | `generate_row_key()` |
-| Interface adds _row_key | `background_handler.py` | 2750-2757 |
+| **Hybrid hash generation** | `background_handler.py` | **2828-2869** |
+| Table data update with _row_key | `background_handler.py` | 2871-2874 |
 | History loading | `utils/history_loader.py` | `load_validation_history_from_excel()` |
-| Validator initialization | `lambda_function.py` | 3129-3153 |
-| Batch processing | `lambda_function.py` | 3165-3242 |
-| Retry logic | `lambda_function.py` | 3417-3442 |
+| Validator initialization + dedup | `lambda_function.py` | 3176-3203 |
+| Batch processing | `lambda_function.py` | 3205-3290 |
+| Retry logic | `lambda_function.py` | 3450-3475 |
 | QC storage | `lambda_function.py` | 3724-3726 |
-| Excel matching | `excel_report_new.py` | 294-302 |
+| **Excel row key extraction** | `excel_report_qc_unified.py` | **350-380** |
+| **Excel row iteration (all 278)** | `excel_report_qc_unified.py` | **520, 730, 910** |
 
 ---
 
@@ -387,11 +518,30 @@ Excel report tries hash lookup first, falls back to integer index if not found.
 
 ## Summary
 
-The hash-based row tracking system provides:
-1. **Deterministic row identification** via primary key hashing
-2. **Order-independent result matching** across validation, QC, history, and Excel
-3. **Robust retry logic** with failed row reordering
-4. **Continuation chain support** with pending state persistence
-5. **Clear error reporting** with primary key identifiers
+The **hybrid hash-based row tracking system** provides:
 
-This architecture enables reliable, scalable validation processing with automatic retry and continuation support.
+1. **Intelligent row identification**
+   - ID-field hashing for unique rows (enables history matching)
+   - Full-row hashing for duplicate IDs (distinguishes different data)
+   - Automatic detection and handling of both cases
+
+2. **Complete Excel output**
+   - All 278 input rows appear in Excel (original order preserved)
+   - Validator processes only 239 unique hashes (automatic deduplication)
+   - True duplicates share validation results
+
+3. **History matching for most rows**
+   - Rows with unique IDs: History works perfectly (ID-field hash is stable)
+   - Rows with duplicate IDs: History disabled (can't disambiguate which is which)
+
+4. **Order-independent processing**
+   - Validation results keyed by row_key (not position)
+   - QC data matches validation via same row_key
+   - Excel lookup via pre-computed row_key (not regenerated)
+
+5. **Robust retry and continuation**
+   - Failed rows reordered without affecting Excel output
+   - Continuation chains preserve pending_row_keys
+   - Clear error reporting with primary key identifiers
+
+This architecture enables reliable, scalable validation processing with intelligent duplicate handling, history matching, and automatic deduplication.

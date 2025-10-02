@@ -307,7 +307,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                         row_data[header] = str(cell_value) if cell_value is not None else ""
                 rows_data.append(row_data)
         
-        # Get ID fields from config for proper row key generation
+        # Extract ID fields for Details sheet (not used for row key generation anymore)
         id_fields = []
         # Build column importance mapping for formula preservation
         column_importance = {}
@@ -346,30 +346,42 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                         return original_formula
             return default_value
         
-        # CRITICAL: Generate row keys from actual Excel row data, not from validation results
-        # This ensures correct hash-based matching even with partial validation results
+        # CRITICAL: Extract row keys from rows_data if available (pre-computed by interface lambda)
+        # Otherwise fall back to extracting from validation_results keys
         row_keys = []
 
-        logger.info(f"[ROW_KEY_GENERATE] Generating row keys for {len(rows_data)} Excel rows using FULL ROW hashing")
-        logger.info(f"[ROW_KEY_GENERATE] Hashing all fields (not just ID fields) to match validator behavior")
+        # First, try to extract _row_key from rows_data (if rows include it)
+        if rows_data and isinstance(rows_data[0], dict) and '_row_key' in rows_data[0]:
+            logger.info(f"[ROW_KEY_EXTRACT] Extracting pre-computed row keys from rows_data")
+            for row_idx, row_data in enumerate(rows_data):
+                row_key = row_data.get('_row_key')
+                if row_key:
+                    row_keys.append(row_key)
+                else:
+                    logger.error(f"[ROW_KEY_EXTRACT] Row {row_idx} missing _row_key!")
+            logger.info(f"[ROW_KEY_EXTRACT] Extracted {len(row_keys)} pre-computed row keys from rows_data")
+            logger.info(f"[ROW_KEY_EXTRACT] Sample keys: {row_keys[:3]}")
+        else:
+            # Fallback: Extract from validation_results keys and match positionally
+            # This assumes validation_results are in the same order as Excel rows
+            logger.warning(f"[ROW_KEY_EXTRACT] No _row_key in rows_data, extracting from validation_results")
+            if isinstance(validation_results, dict) and validation_results:
+                available_keys = list(validation_results.keys())
+                logger.info(f"[ROW_KEY_EXTRACT] Found {len(available_keys)} validation result keys")
 
-        # Generate row key for each Excel row using the same hash function as validator
-        # CRITICAL: Pass None as primary_keys to hash ENTIRE row (matches validator_invoker.py behavior)
-        for row_idx, row_data in enumerate(rows_data):
-            if isinstance(row_data, dict):
-                # Hash entire row to match validator behavior
-                row_key = generate_row_key(row_data, primary_keys=None)
+                # Match positionally - this works if validator preserved row order
+                for row_idx in range(len(rows_data)):
+                    if row_idx < len(available_keys):
+                        row_keys.append(available_keys[row_idx])
+                    else:
+                        # No validation result for this row (partial validation)
+                        row_keys.append(None)
+                logger.info(f"[ROW_KEY_EXTRACT] Matched {len(row_keys)} row keys positionally")
+                logger.info(f"[ROW_KEY_EXTRACT] Sample keys: {[k for k in row_keys[:3] if k]}")
             else:
-                # Shouldn't happen, but handle it
-                logger.warning(f"[ROW_KEY_GENERATE] Row {row_idx} is not a dict: {type(row_data)}")
-                row_data_dict = {f"col_{i}": val for i, val in enumerate(row_data)}
-                row_key = generate_row_key(row_data_dict, primary_keys=None)
-
-            row_keys.append(row_key)
-            logger.debug(f"[ROW_KEY_GENERATE] Row {row_idx}: Generated full-row hash {row_key[:8]}...")
-
-        logger.info(f"[ROW_KEY_GENERATE] Generated {len(row_keys)} full-row hash keys for {len(rows_data)} Excel rows")
-        logger.info(f"[ROW_KEY_GENERATE] Sample keys: {row_keys[:3]}")
+                # No validation results - generate placeholder keys
+                logger.error(f"[ROW_KEY_EXTRACT] No validation_results available, cannot extract row keys!")
+                row_keys = [None] * len(rows_data)
 
         # CRITICAL: Verify Excel will show all input rows (including duplicates)
         unique_hashes = set(row_keys)

@@ -3173,12 +3173,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 else:
                     row_data = {f"col_{i}": val for i, val in enumerate(row)}
 
-                # Check if row already has _row_key (continuations)
+                # Check if row already has _row_key (from interface lambda)
                 if '_row_key' in row_data:
                     row_key = row_data['_row_key']
                 else:
-                    # Generate full-row hash (not just ID fields) for consistency with interface lambda
-                    row_key = generate_row_key(row_data, primary_keys=None)
+                    # Fallback: Use hybrid approach (ID-field hash preferred, full-row for duplicates)
+                    # Try ID-field hash first for history matching
+                    row_key = generate_row_key(row_data, primary_keys=validator.primary_key)
+                    logger.warning(f"No pre-computed _row_key found, generated ID-field hash: {row_key[:8]}...")
+                    # Note: We can't detect duplicates here without scanning all rows first
+                    # Interface lambda should have set _row_key already
 
                 # Detect duplicate rows (same row_key)
                 if row_key in row_key_to_row_data:
@@ -3578,9 +3582,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             else:
                 # Fallback: generate row key if not provided (for backward compatibility)
                 row_data = row
-                # Generate full-row hash for consistency with interface lambda
-                row_key = generate_row_key(row_data, primary_keys=None)
-                logger.warning(f"No pre-computed row key found, generated full-row hash: {row_key[:8]}...")
+                # Fallback: Use ID-field hash for history matching
+                row_key = generate_row_key(row_data, primary_keys=validator.primary_key)
+                logger.warning(f"No pre-computed row key found, generated ID-field hash: {row_key[:8]}...")
             
             # Get validation history if provided in the event
             validation_history = {}
@@ -5165,8 +5169,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if '_row_key' in row_data:
                         row_key = row_data['_row_key']
                     else:
-                        # Generate full-row hash for consistency with interface lambda
-                        row_key = generate_row_key(row_data, primary_keys=None)
+                        # Fallback: Use ID-field hash for history matching
+                        row_key = generate_row_key(row_data, primary_keys=validator.primary_key)
                     expected_unique_keys.add(row_key)
 
                 total_rows = len(expected_unique_keys)  # Use unique row keys, not raw row count
