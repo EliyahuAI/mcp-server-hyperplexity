@@ -3102,27 +3102,70 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info(f"[BATCH_SIZE] Total batches planned: {total_batches} for {len(rows)} rows")
             logger.debug(f"🚀 PER-MODEL BATCH PROCESSING: {len(rows)} rows in {total_batches} batches starting with {current_batch_size} rows each")
             pass  # logger.info(f"🔍 Models that will be used: {sorted(all_models) if all_models else ['default']}")
-            
-            async with aiohttp.ClientSession() as session:
-                processed_rows = 0
-                batch_num = 0
-                
-                while processed_rows < len(rows):
-                    # Discover models for this specific batch
-                    batch_start_idx = processed_rows
-                    batch_end_idx = min(batch_start_idx + batch_manager.get_batch_size_for_models(all_models), len(rows))
-                    potential_batch = rows[batch_start_idx:batch_end_idx]
-                    
-                    # Get current batch size based on models for this batch
-                    batch_models = discover_batch_models(potential_batch, validator) if potential_batch else all_models
-                    current_batch_size = batch_manager.get_batch_size_for_models(batch_models)
 
-                    # Calculate batch boundaries with updated batch size
-                    start_idx = processed_rows
-                    end_idx = min(start_idx + current_batch_size, len(rows))
-                    batch = rows[start_idx:end_idx]
+            # ========== ROW-KEY BASED PROCESSING ==========
+            # Build mapping of row_key → row data for dynamic batch selection
+            # This allows us to retry only incomplete rows instead of sequential batches
+            row_key_to_row_data = {}
+            MAX_ROW_RETRIES = 3
+
+            # Load pending rows and retry counts from previous continuation (if any)
+            if is_continuation and event.get('pending_row_keys'):
+                pending_row_keys = set(event['pending_row_keys'])
+                row_key_retry_count = event.get('row_key_retry_count', {})
+                logger.info(f"[ROW_KEY_INIT] Continuation: Loaded {len(pending_row_keys)} pending rows from previous Lambda")
+                logger.info(f"[ROW_KEY_INIT] Continuation: Loaded {len(row_key_retry_count)} retry counts from previous Lambda")
+            else:
+                pending_row_keys = set()
+                row_key_retry_count = {}
+
+            logger.info(f"[ROW_KEY_INIT] Building row key mappings for {len(rows)} rows")
+            for row in rows:
+                # Generate row key (handles both dict and list rows)
+                if isinstance(row, dict):
+                    row_data = row
+                else:
+                    row_data = {f"col_{i}": val for i, val in enumerate(row)}
+
+                # Check if row already has _row_key (continuations)
+                if '_row_key' in row_data:
+                    row_key = row_data['_row_key']
+                else:
+                    row_key = generate_row_key(row_data, validator.primary_key)
+
+                # Store mapping for all rows (needed for retry logic)
+                row_key_to_row_data[row_key] = row
+
+                # Only add to pending if not already validated (continuations) AND not already in pending set
+                if row_key not in validation_results and row_key not in pending_row_keys:
+                    pending_row_keys.add(row_key)
+                    if row_key not in row_key_retry_count:
+                        row_key_retry_count[row_key] = 0
+                elif row_key in validation_results:
+                    logger.debug(f"[ROW_KEY_INIT] Skipping already validated row: {row_key}")
+
+            logger.info(f"[ROW_KEY_INIT] Pending rows: {len(pending_row_keys)}, Already validated: {len(validation_results)}")
+
+            async with aiohttp.ClientSession() as session:
+                batch_num = 0
+
+                # ========== PROCESS PENDING ROWS UNTIL COMPLETE ==========
+                # Loop until all rows validated or max retries exceeded
+                while pending_row_keys:
+                    # Get current batch size
+                    current_batch_size = batch_manager.get_batch_size_for_models(all_models)
+
+                    # Select rows from pending set (up to batch_size)
+                    batch_row_keys = list(pending_row_keys)[:current_batch_size]
+                    batch = [row_key_to_row_data[rk] for rk in batch_row_keys]
                     actual_batch_size = len(batch)
                     batch_index = batch_num + 1
+
+                    # Discover models for this specific batch
+                    batch_models = discover_batch_models(batch, validator) if batch else all_models
+
+                    logger.info(f"[ROW_KEY_BATCH] Batch {batch_index}: Processing {actual_batch_size} pending rows (total pending: {len(pending_row_keys)})")
+                    logger.debug(f"[ROW_KEY_BATCH] Row keys in batch: {batch_row_keys[:5]}..." if len(batch_row_keys) > 5 else f"[ROW_KEY_BATCH] Row keys: {batch_row_keys}")
 
                     logger.info(f"[BATCH_SIZE] Batch {batch_index}/{total_batches}: processing {actual_batch_size} rows (size from manager: {current_batch_size})")
                     logger.debug(f"Starting batch {batch_index} with {actual_batch_size} rows")
@@ -3138,8 +3181,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     
                     row_tasks = []
                     for row_idx, row in enumerate(batch):
-                        global_row_idx = start_idx + row_idx
-                        task = asyncio.create_task(process_row(session, row, global_row_idx, batch_manager, batch_index, progress_queue))
+                        # row_idx is just for logging within batch (0, 1, 2, ...)
+                        task = asyncio.create_task(process_row(session, row, row_idx, batch_manager, batch_index, progress_queue))
                         row_tasks.append(task)
                     
                     # Wait for all rows in the batch to complete
@@ -3185,6 +3228,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         for row_key, result, _, batch_num in batch_results:
                             # CRITICAL: Use row_key (hash) not integer index for QC matching
                             validation_results[row_key] = result
+                            # Remove from pending set - this row is done
+                            if row_key in pending_row_keys:
+                                pending_row_keys.remove(row_key)
+                                logger.debug(f"[ROW_KEY_SUCCESS] Row {row_key[:16]}... validated successfully")
+
+                        logger.info(f"[ROW_KEY_BATCH] Batch {batch_index} completed: {len(batch_results)}/{actual_batch_size} rows succeeded, {len(pending_row_keys)} rows still pending")
 
                         # ========== ASYNC MODE: Smart Continuation Check ==========
                         # Check after EVERY batch if we should continue (including last batch)
@@ -3198,17 +3247,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 next_batch_estimated_ms = int(avg_batch_time_seconds * 1000)
 
                                 # Check if we have time for the next batch
-                                # CRITICAL: Use actual row counts, not total_batches (which uses initial batch size)
-                                rows_processed_in_this_lambda = end_idx  # How many rows we've processed so far
-                                rows_remaining_to_process = len(rows) - rows_processed_in_this_lambda  # Remaining rows in this Lambda
-                                has_more_rows_to_process = rows_remaining_to_process > 0
+                                # CRITICAL: Use pending_row_keys to determine remaining work
+                                has_more_rows_to_process = len(pending_row_keys) > 0
 
                                 should_trigger = False
                                 if has_more_rows_to_process and not should_continue_processing(next_batch_estimated_ms):
                                     # More rows to process, but time is running out
                                     should_trigger = True
-                                    logger.info(f"[ASYNC_CONTINUATION] Triggering: {rows_remaining_to_process} rows remain but time low")
-                                    logger.info(f"[ASYNC_CONTINUATION] Processed {rows_processed_in_this_lambda}/{len(rows)} rows in this Lambda")
+                                    logger.info(f"[ASYNC_CONTINUATION] Triggering: {len(pending_row_keys)} rows remain but time low")
+                                    logger.info(f"[ASYNC_CONTINUATION] Validated {len(validation_results)} rows, {len(pending_row_keys)} pending")
 
                                 if should_trigger:
                                     logger.info(f"[ASYNC_CONTINUATION] Need to trigger continuation after batch {batch_index}")
@@ -3266,6 +3313,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     continuation_event['last_completed_batch'] = batch_index
                                     # IMPORTANT: Track rows (not batches) for progress validation
                                     continuation_event['current_completed_rows'] = len(validation_results)
+
+                                    # CRITICAL: Store pending row keys and retry counts for next Lambda
+                                    continuation_event['pending_row_keys'] = list(pending_row_keys)
+                                    continuation_event['row_key_retry_count'] = row_key_retry_count.copy()
+                                    logger.info(f"[ASYNC_CONTINUATION] Saving {len(pending_row_keys)} pending rows for next Lambda")
 
                                     # Store event for trigger_self_continuation
                                     globals()['_continuation_event'] = continuation_event
@@ -3336,32 +3388,46 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         logger.error(f"[BATCH_FAILURE] Completed: {len(completed_results)} rows, Failed: {actual_batch_size - len(completed_results)} rows")
                         logger.error(f"[BATCH_FAILURE] Error: {str(batch_error)}")
 
+                        # Store successful partial results and remove from pending
+                        completed_row_keys = set()
                         for row_key, result, _, _ in completed_results:
                             # CRITICAL: Use row_key (hash) not integer index for QC matching
                             validation_results[row_key] = result
+                            completed_row_keys.add(row_key)
+                            if row_key in pending_row_keys:
+                                pending_row_keys.remove(row_key)
+                                logger.debug(f"[ROW_KEY_PARTIAL_SUCCESS] Row {row_key[:16]}... completed despite batch failure")
 
-                        # CRITICAL: Track failed row count for completeness check
-                        failed_row_count = actual_batch_size - len(completed_results)
-                        logger.error(f"[BATCH_FAILURE] {failed_row_count} rows in batch {batch_index} will have NO validation results")
+                        # Handle failed rows - increment retry count, remove if max retries exceeded
+                        failed_row_keys = set(batch_row_keys) - completed_row_keys
+                        rows_abandoned = []
+                        for failed_row_key in failed_row_keys:
+                            row_key_retry_count[failed_row_key] = row_key_retry_count.get(failed_row_key, 0) + 1
+                            if row_key_retry_count[failed_row_key] >= MAX_ROW_RETRIES:
+                                pending_row_keys.discard(failed_row_key)
+                                rows_abandoned.append(failed_row_key)
+                                logger.error(f"[ROW_KEY_ABANDONED] Row {failed_row_key[:16]}... failed {MAX_ROW_RETRIES} times, giving up")
 
-                    # Update progress
-                    processed_rows = end_idx
+                        logger.error(f"[BATCH_FAILURE] {len(completed_results)} rows succeeded, {len(failed_row_keys)} failed")
+                        logger.error(f"[BATCH_FAILURE] {len(rows_abandoned)} rows abandoned (max retries), {len(failed_row_keys) - len(rows_abandoned)} rows will retry")
+                        logger.error(f"[BATCH_FAILURE] Pending rows remaining: {len(pending_row_keys)}")
+
                     batch_num += 1
-                    
+
                     # Add small delay between batches to prevent overwhelming the system
-                    if batch_num < total_batches:
-                        await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.1)
 
-                # CRITICAL: Log why batch loop exited
-                logger.info(f"[BATCH_LOOP_EXIT] Loop completed: processed_rows={processed_rows}, len(rows)={len(rows)}, validation_results={len(validation_results)}")
-                logger.info(f"[BATCH_LOOP_EXIT] all_rows={len(all_rows)}, skip_count={skip_count}, expected_to_process={len(all_rows)-skip_count}")
+                # ========== BATCH LOOP COMPLETED ==========
+                # Loop exited because pending_row_keys is empty
+                logger.info(f"[ROW_KEY_COMPLETE] ✅ All pending rows processed!")
+                logger.info(f"[ROW_KEY_COMPLETE] Total rows: {len(rows)}, Validated: {len(validation_results)}, Pending: {len(pending_row_keys)}")
+                logger.info(f"[ROW_KEY_COMPLETE] Already had: {len(all_rows) - len(rows)} from previous continuations")
 
-                # CRITICAL: Check for missing rows (failed batches)
-                missing_rows = len(rows) - len(validation_results)
-                if missing_rows > 0:
-                    logger.error(f"[BATCH_LOOP_EXIT] ❌ MISSING RESULTS: {missing_rows} rows processed but no results stored")
-                    logger.error(f"[BATCH_LOOP_EXIT] This indicates {missing_rows} rows failed during processing")
-                    logger.error(f"[BATCH_LOOP_EXIT] Check logs above for batch failures (❌ Batch X failed)")
+                # Check for abandoned rows (max retries exceeded)
+                abandoned_count = sum(1 for rk in row_key_retry_count if row_key_retry_count[rk] >= MAX_ROW_RETRIES)
+                if abandoned_count > 0:
+                    logger.error(f"[ROW_KEY_COMPLETE] ⚠️ {abandoned_count} rows abandoned after {MAX_ROW_RETRIES} retries")
+                    logger.error(f"[ROW_KEY_COMPLETE] Check logs above for [ROW_KEY_ABANDONED] entries")
 
                 # Log final batch manager statistics
                 final_stats = batch_manager.get_stats()
