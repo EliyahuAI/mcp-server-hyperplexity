@@ -2825,13 +2825,13 @@ def handle_main_processing(event, context):
 
                 logger.debug(f"[PAYLOAD_GENERATION] ID fields for row key generation: {id_fields}")
 
-                # Add pre-computed row keys to each row (same logic as sync validation)
+                # Add pre-computed row keys to each row using FULL ROW hashing
                 from row_key_utils import generate_row_key
                 processed_rows = []
                 for row_data in excel_rows:
-                    # Generate row key
-                    row_key = generate_row_key(row_data, id_fields)
-                    logger.debug(f"[PAYLOAD_GENERATION] Generated row key: {row_key}")
+                    # Generate FULL ROW hash (pass None as primary_keys)
+                    row_key = generate_row_key(row_data, primary_keys=None)
+                    logger.debug(f"[PAYLOAD_GENERATION] Generated full-row hash: {row_key}")
 
                     # Add row key to row data
                     row_data['_row_key'] = row_key
@@ -4360,248 +4360,293 @@ def handle_main_processing(event, context):
                             logger.error(f"[BILLING_SECURITY] Email result: {email_result}")
                             balance_error_occurred = True  # Mark as error so no charges occur
 
-                    # Send final processing progress update - finalizing (98-100% range)
-                    _send_websocket_message_deduplicated(session_id, {
-                        'type': 'progress_update',
-                        'progress': 99,
-                        'message': '✅ Finalizing download links and completion...',
-                        'status': 'Finalizing download links and completion...',
-                        'session_id': session_id
-                    }, "full_validation_finalizing")
+                            # Send error notification instead of success
+                            error_type = email_result.get('error', 'unknown')
+                            error_message = email_result.get('message', 'Email delivery failed')
 
-                    # Send final completion notification with download URLs
-                    processed_rows_count = len(validation_results.get('validation_results', {}))
-                    total_rows_in_file = validation_results.get('total_rows', processed_rows_count)
+                            # Check if this is a validation failure (empty Details sheet)
+                            if error_type == 'validation_failed':
+                                logger.error(f"[VALIDATION_FAILURE] Enhanced Excel validation failed - will send failure notification to frontend")
+                                _send_websocket_message_deduplicated(session_id, {
+                                    'type': 'validation_failed',
+                                    'session_id': session_id,
+                                    'error': 'Validation processing error - enhanced results appear invalid',
+                                    'message': 'Validation processing encountered an error. You have not been charged. Please contact support.',
+                                    'status': 'FAILED'
+                                }, "validation_failure_notification")
+                            else:
+                                # Email sending failed for other reasons
+                                logger.error(f"[EMAIL_FAILURE] Email sending failed: {error_message}")
+                                _send_websocket_message_deduplicated(session_id, {
+                                    'type': 'email_failed',
+                                    'session_id': session_id,
+                                    'error': error_type,
+                                    'message': 'Failed to send results email. Please contact support.',
+                                    'status': 'EMAIL_FAILED'
+                                }, "email_failure_notification")
 
-                    # No longer creating ZIP - enhanced Excel is stored directly in S3
-                    # Download URLs will be provided for the enhanced Excel file directly
-                    zip_download_url = None  # Kept for backward compatibility but set to None
+                            # Skip the success completion notification below
+                            logger.error(f"[COMPLETION_BLOCKED] Not sending success completion due to email/validation failure")
+
+                    # Only send success completion if email was delivered successfully
+                    if email_result and email_result.get('success', False):
+                        # Send final processing progress update - finalizing (98-100% range)
+                        _send_websocket_message_deduplicated(session_id, {
+                            'type': 'progress_update',
+                            'progress': 99,
+                            'message': '✅ Finalizing download links and completion...',
+                            'status': 'Finalizing download links and completion...',
+                            'session_id': session_id
+                        }, "full_validation_finalizing")
+
+                        # Send final completion notification with download URLs
+                        processed_rows_count = len(validation_results.get('validation_results', {}))
+                        total_rows_in_file = validation_results.get('total_rows', processed_rows_count)
+
+                        # No longer creating ZIP - enhanced Excel is stored directly in S3
+                        # Download URLs will be provided for the enhanced Excel file directly
+                        zip_download_url = None  # Kept for backward compatibility but set to None
                     
-                    # Send completion with download URLs (consistent with preview completion)
-                    completion_payload = {
-                        'status': 'COMPLETED',
-                        'processed_rows': processed_rows_count,
-                        'total_rows': total_rows_in_file,
-                        'verbose_status': 'Validation complete. Results should be in your inbox shortly.',
-                        'percent_complete': 100  # Interface final processing complete: 100%
-                    }
+                        # Send completion with download URLs (consistent with preview completion)
+                        completion_payload = {
+                            'status': 'COMPLETED',
+                            'processed_rows': processed_rows_count,
+                            'total_rows': total_rows_in_file,
+                            'verbose_status': 'Validation complete. Results should be in your inbox shortly.',
+                            'percent_complete': 100  # Interface final processing complete: 100%
+                        }
                     
-                    # Add download URLs if available
-                    if enhanced_download_url:
-                        completion_payload['enhanced_download_url'] = enhanced_download_url
-                    if zip_download_url:
-                        completion_payload['download_url'] = zip_download_url
+                        # Add download URLs if available
+                        if enhanced_download_url:
+                            completion_payload['enhanced_download_url'] = enhanced_download_url
+                        if zip_download_url:
+                            completion_payload['download_url'] = zip_download_url
                     
-                    logger.info(f"Sending completion WebSocket message with download URLs: enhanced={bool(enhanced_download_url)}, zip={bool(zip_download_url)}")
-                    _send_websocket_message(session_id, completion_payload)
+                        logger.info(f"Sending completion WebSocket message with download URLs: enhanced={bool(enhanced_download_url)}, zip={bool(zip_download_url)}")
+                        _send_websocket_message(session_id, completion_payload)
                     
-                    # Get enhanced results S3 key (points to enhanced validation results directory)
-                    enhanced_results_s3_key = results_key  # Default to ZIP file if enhanced path not found
-                    try:
-                        # Try to get the enhanced results directory path instead of ZIP file
-                        config_version = config_data.get('storage_metadata', {}).get('version', 1)
-                        session_path = storage_manager.get_session_path(email, clean_session_id)
-                        enhanced_results_s3_key = f"{session_path}v{config_version}_results/validation_results_enhanced.xlsx"
-                        logger.info(f"Using enhanced results S3 key: {enhanced_results_s3_key}")
-                    except Exception as e:
-                        logger.warning(f"Could not determine enhanced results path, using ZIP path: {e}")
+                        # Get enhanced results S3 key (points to enhanced validation results directory)
+                        enhanced_results_s3_key = results_key  # Default to ZIP file if enhanced path not found
+                        try:
+                            # Try to get the enhanced results directory path instead of ZIP file
+                            config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                            session_path = storage_manager.get_session_path(email, clean_session_id)
+                            enhanced_results_s3_key = f"{session_path}v{config_version}_results/validation_results_enhanced.xlsx"
+                            logger.info(f"Using enhanced results S3 key: {enhanced_results_s3_key}")
+                        except Exception as e:
+                            logger.warning(f"Could not determine enhanced results path, using ZIP path: {e}")
                     
-                    # Update status with both ZIP file and enhanced Excel download URLs
-                    status_update_data = {
-                        'session_id': session_id,
-                        'run_key': run_key,
-                        'status': 'COMPLETED', 
-                        'results_s3_key': enhanced_results_s3_key  # Points to enhanced validation results directory
-                    }
-                    if enhanced_download_url:
-                        status_update_data['enhanced_download_url'] = enhanced_download_url
-                    if zip_download_url:
-                        status_update_data['download_url'] = zip_download_url
+                        # Update status with both ZIP file and enhanced Excel download URLs
+                        status_update_data = {
+                            'session_id': session_id,
+                            'run_key': run_key,
+                            'status': 'COMPLETED', 
+                            'results_s3_key': enhanced_results_s3_key  # Points to enhanced validation results directory
+                        }
+                        if enhanced_download_url:
+                            status_update_data['enhanced_download_url'] = enhanced_download_url
+                        if zip_download_url:
+                            status_update_data['download_url'] = zip_download_url
                     
-                    # Get and add the actual batch size used during validation
-                    per_model_batch_stats = metadata.get('per_model_batch_stats', {})
-                    effective_batch_size = 3  # Small batch for testing continuations
+                        # Get and add the actual batch size used during validation
+                        per_model_batch_stats = metadata.get('per_model_batch_stats', {})
+                        effective_batch_size = 3  # Small batch for testing continuations
                     
-                    if per_model_batch_stats:
-                        actual_batch_sizes = per_model_batch_stats.get('model_batch_sizes', {})
-                        if actual_batch_sizes:
-                            effective_batch_size = min(actual_batch_sizes.values())
-                            logger.info(f"📊 Final status update batch size from validation: {effective_batch_size}")
-                    elif batch_size and batch_size > 0:
-                        effective_batch_size = batch_size
+                        if per_model_batch_stats:
+                            actual_batch_sizes = per_model_batch_stats.get('model_batch_sizes', {})
+                            if actual_batch_sizes:
+                                effective_batch_size = min(actual_batch_sizes.values())
+                                logger.info(f"📊 Final status update batch size from validation: {effective_batch_size}")
+                        elif batch_size and batch_size > 0:
+                            effective_batch_size = batch_size
                     
-                    if effective_batch_size:
-                        status_update_data['batch_size'] = effective_batch_size
+                        if effective_batch_size:
+                            status_update_data['batch_size'] = effective_batch_size
                     
-                    # Add token/cost data to runs table for full runs (similar to preview runs)
-                    # This ensures CSV exports have complete token metrics for both preview and full runs
-                    full_run_data = {
-                        "actual_batch_size": effective_batch_size,
-                        "estimated_validation_batches": math.ceil(total_rows_in_file / effective_batch_size) if effective_batch_size > 0 else 0,
-                        "cost_estimates": {
-                            "preview_cost": 0  # Full runs don't have preview cost
-                        },
-                        "token_usage": {
-                            "total_tokens": token_usage.get('total_tokens', 0),
-                            "by_provider": token_usage.get('by_provider', {}),
-                            "api_calls": token_usage.get('api_calls', 0),
-                            "cached_calls": token_usage.get('cached_calls', 0),
-                            "total_cost": eliyahu_cost
-                        },
-                        "validation_metrics": validation_metrics
-                    }
-                    status_update_data['preview_data'] = full_run_data
+                        # Add token/cost data to runs table for full runs (similar to preview runs)
+                        # This ensures CSV exports have complete token metrics for both preview and full runs
+                        full_run_data = {
+                            "actual_batch_size": effective_batch_size,
+                            "estimated_validation_batches": math.ceil(total_rows_in_file / effective_batch_size) if effective_batch_size > 0 else 0,
+                            "cost_estimates": {
+                                "preview_cost": 0  # Full runs don't have preview cost
+                            },
+                            "token_usage": {
+                                "total_tokens": token_usage.get('total_tokens', 0),
+                                "by_provider": token_usage.get('by_provider', {}),
+                                "api_calls": token_usage.get('api_calls', 0),
+                                "cached_calls": token_usage.get('cached_calls', 0),
+                                "total_cost": eliyahu_cost
+                            },
+                            "validation_metrics": validation_metrics
+                        }
+                        status_update_data['preview_data'] = full_run_data
                     
-                    # Add account tracking fields
-                    status_update_data['account_current_balance'] = float(final_balance) if final_balance else 0
-                    status_update_data['account_sufficient_balance'] = "n/a"
-                    status_update_data['account_credits_needed'] = "n/a" 
-                    status_update_data['account_domain_multiplier'] = float(multiplier)
+                        # Add account tracking fields
+                        status_update_data['account_current_balance'] = float(final_balance) if final_balance else 0
+                        status_update_data['account_sufficient_balance'] = "n/a"
+                        status_update_data['account_credits_needed'] = "n/a" 
+                        status_update_data['account_domain_multiplier'] = float(multiplier)
                     
-                    # Create search group models tracking string - one entry per search group with validated columns count
-                    search_groups_models = []
-                    # validation_metrics should already be defined from metadata.get('validation_metrics', {})
-                    search_groups_count = validation_metrics.get('search_groups_count', 0)
-                    enhanced_context_groups = validation_metrics.get('high_context_search_groups_count', 0)
-                    claude_groups = validation_metrics.get('claude_search_groups_count', 0)
-                    regular_perplexity_groups = search_groups_count - enhanced_context_groups - claude_groups
-                    validated_columns_count = validation_metrics.get('validated_columns_count', 0)
+                        # Create search group models tracking string - one entry per search group with validated columns count
+                        search_groups_models = []
+                        # validation_metrics should already be defined from metadata.get('validation_metrics', {})
+                        search_groups_count = validation_metrics.get('search_groups_count', 0)
+                        enhanced_context_groups = validation_metrics.get('high_context_search_groups_count', 0)
+                        claude_groups = validation_metrics.get('claude_search_groups_count', 0)
+                        regular_perplexity_groups = search_groups_count - enhanced_context_groups - claude_groups
+                        validated_columns_count = validation_metrics.get('validated_columns_count', 0)
                     
-                    # Count actual validation targets per search group from config
-                    validation_targets = config_data.get('validation_targets', [])
-                    columns_per_search_group = {}
+                        # Count actual validation targets per search group from config
+                        validation_targets = config_data.get('validation_targets', [])
+                        columns_per_search_group = {}
                     
-                    # Count validation targets assigned to each search group (excluding ID and IGNORED)
-                    for target in validation_targets:
-                        importance = target.get('importance', '').upper()
-                        if importance not in ["ID", "IGNORED"]:
-                            search_group_id = target.get('search_group', 0)
-                            columns_per_search_group[search_group_id] = columns_per_search_group.get(search_group_id, 0) + 1
+                        # Count validation targets assigned to each search group (excluding ID and IGNORED)
+                        for target in validation_targets:
+                            importance = target.get('importance', '').upper()
+                            if importance not in ["ID", "IGNORED"]:
+                                search_group_id = target.get('search_group', 0)
+                                columns_per_search_group[search_group_id] = columns_per_search_group.get(search_group_id, 0) + 1
                     
-                    # Build search group models by iterating through actual search groups in config
-                    search_groups_list = config_data.get('search_groups', [])
-                    anthropic_default_web_searches = config_data.get('anthropic_max_web_searches_default', 3)
+                        # Build search group models by iterating through actual search groups in config
+                        search_groups_list = config_data.get('search_groups', [])
+                        anthropic_default_web_searches = config_data.get('anthropic_max_web_searches_default', 3)
                     
-                    # Iterate through each search group to get exact models and settings
-                    for search_group in search_groups_list:
-                        search_group_id = search_group.get('group_id', 0)
-                        columns_for_this_group = columns_per_search_group.get(search_group_id, 0)
-                        model = search_group.get('model', 'sonar-pro')
-                        search_context = search_group.get('search_context', 'low')
+                        # Iterate through each search group to get exact models and settings
+                        for search_group in search_groups_list:
+                            search_group_id = search_group.get('group_id', 0)
+                            columns_for_this_group = columns_per_search_group.get(search_group_id, 0)
+                            model = search_group.get('model', 'sonar-pro')
+                            search_context = search_group.get('search_context', 'low')
                         
-                        # Build model display name
-                        if 'claude' in model.lower() or 'anthropic' in model.lower():
-                            # Get anthropic_max_web_searches from this specific search group, or fall back to default
-                            max_web_searches = search_group.get('anthropic_max_web_searches', anthropic_default_web_searches)
-                            if search_context == 'high':
-                                model_display = f"{model} ({max_web_searches}) (high context) X {columns_for_this_group}"
+                            # Build model display name
+                            if 'claude' in model.lower() or 'anthropic' in model.lower():
+                                # Get anthropic_max_web_searches from this specific search group, or fall back to default
+                                max_web_searches = search_group.get('anthropic_max_web_searches', anthropic_default_web_searches)
+                                if search_context == 'high':
+                                    model_display = f"{model} ({max_web_searches}) (high context) X {columns_for_this_group}"
+                                else:
+                                    model_display = f"{model} ({max_web_searches}) X {columns_for_this_group}"
                             else:
-                                model_display = f"{model} ({max_web_searches}) X {columns_for_this_group}"
-                        else:
-                            # Perplexity models
-                            if search_context == 'high':
-                                model_display = f"{model} (high context) X {columns_for_this_group}"
-                            else:
-                                model_display = f"{model} X {columns_for_this_group}"
+                                # Perplexity models
+                                if search_context == 'high':
+                                    model_display = f"{model} (high context) X {columns_for_this_group}"
+                                else:
+                                    model_display = f"{model} X {columns_for_this_group}"
                         
-                        search_groups_models.append(model_display)
+                            search_groups_models.append(model_display)
                     
-                    status_update_data['models'] = json.dumps(enhanced_models_parameter) if enhanced_models_parameter else json.dumps({})
+                        status_update_data['models'] = json.dumps(enhanced_models_parameter) if enhanced_models_parameter else json.dumps({})
                     
-                    # Add input table name and configuration ID
-                    status_update_data['input_table_name'] = input_filename
+                        # Add input table name and configuration ID
+                        status_update_data['input_table_name'] = input_filename
                     
-                    # Get configuration ID for tracking
-                    configuration_id = config_data.get('storage_metadata', {}).get('config_id', 'unknown')
-                    if not configuration_id or configuration_id == 'unknown':
-                        # Fallback to generation metadata
-                        configuration_id = config_data.get('generation_metadata', {}).get('config_id', 'unknown')
+                        # Get configuration ID for tracking
+                        configuration_id = config_data.get('storage_metadata', {}).get('config_id', 'unknown')
+                        if not configuration_id or configuration_id == 'unknown':
+                            # Fallback to generation metadata
+                            configuration_id = config_data.get('generation_metadata', {}).get('config_id', 'unknown')
                     
-                    # If still no config ID, generate one from session and version info
-                    if not configuration_id or configuration_id == 'unknown':
-                        version = config_data.get('storage_metadata', {}).get('version') or config_data.get('generation_metadata', {}).get('version', 'v1')
-                        configuration_id = f"{session_id}_{version}_config"
-                        logger.debug(f"[CONFIG_ID] Generated configuration_id: {configuration_id}")
+                        # If still no config ID, generate one from session and version info
+                        if not configuration_id or configuration_id == 'unknown':
+                            version = config_data.get('storage_metadata', {}).get('version') or config_data.get('generation_metadata', {}).get('version', 'v1')
+                            configuration_id = f"{session_id}_{version}_config"
+                            logger.debug(f"[CONFIG_ID] Generated configuration_id: {configuration_id}")
                     
-                    status_update_data['configuration_id'] = configuration_id
+                        status_update_data['configuration_id'] = configuration_id
                     
-                    # Add total rows count
-                    status_update_data['total_rows'] = total_rows_in_file
+                        # Add total rows count
+                        status_update_data['total_rows'] = total_rows_in_file
                     
-                    # Update verbose status to start with 'Validation' for full validations
-                    status_update_data['verbose_status'] = "Validation complete. Results should be in your inbox shortly."
+                        # Update verbose status to start with 'Validation' for full validations
+                        status_update_data['verbose_status'] = "Validation complete. Results should be in your inbox shortly."
                     
-                    # Add consolidated fields according to new schema
-                    status_update_data['run_type'] = "Validation"
-                    # ========== HARDENED THREE-TIER COST FIELDS ==========
-                    status_update_data['eliyahu_cost'] = eliyahu_cost  # Actual cost paid for full validation (includes caching benefits)
-                    status_update_data['quoted_validation_cost'] = charged_cost  # What user was charged for full validation (with multiplier, rounding, $2 min)
+                        # Add consolidated fields according to new schema
+                        status_update_data['run_type'] = "Validation"
+                        # ========== HARDENED THREE-TIER COST FIELDS ==========
+                        status_update_data['eliyahu_cost'] = eliyahu_cost  # Actual cost paid for full validation (includes caching benefits)
+                        status_update_data['quoted_validation_cost'] = charged_cost  # What user was charged for full validation (with multiplier, rounding, $2 min)
                     
-                    # NOTE: Do NOT overwrite estimated_validation_eliyahu_cost for full validations
-                    # This field should preserve the preview estimate for accuracy comparison
-                    # Log the comparison between preview estimate and actual full validation cost
-                    try:
-                        # Try to retrieve the preview estimate from the existing run record
-                        run_table = boto3.resource('dynamodb', region_name=os.environ.get('AWS_REGION', 'us-east-1')).Table('perplexity-validator-runs')
-                        existing_run = run_table.get_item(Key={'session_id': session_id, 'run_key': run_key})
+                        # NOTE: Do NOT overwrite estimated_validation_eliyahu_cost for full validations
+                        # This field should preserve the preview estimate for accuracy comparison
+                        # Log the comparison between preview estimate and actual full validation cost
+                        try:
+                            # Try to retrieve the preview estimate from the existing run record
+                            run_table = boto3.resource('dynamodb', region_name=os.environ.get('AWS_REGION', 'us-east-1')).Table('perplexity-validator-runs')
+                            existing_run = run_table.get_item(Key={'session_id': session_id, 'run_key': run_key})
                         
-                        if 'Item' in existing_run and 'estimated_validation_eliyahu_cost' in existing_run['Item']:
-                            preview_estimate = float(existing_run['Item']['estimated_validation_eliyahu_cost'])
-                            actual_full_cost_estimated = cost_estimated
-                            estimate_accuracy = ((preview_estimate - actual_full_cost_estimated) / preview_estimate * 100) if preview_estimate > 0 else 0
+                            if 'Item' in existing_run and 'estimated_validation_eliyahu_cost' in existing_run['Item']:
+                                preview_estimate = float(existing_run['Item']['estimated_validation_eliyahu_cost'])
+                                actual_full_cost_estimated = cost_estimated
+                                estimate_accuracy = ((preview_estimate - actual_full_cost_estimated) / preview_estimate * 100) if preview_estimate > 0 else 0
                             
-                            logger.debug(f"[COST_COMPARISON] Preview estimated: ${preview_estimate:.6f} | "
-                                      f"Actual full cost (no cache): ${actual_full_cost_estimated:.6f} | "
-                                      f"Estimate accuracy: {estimate_accuracy:.1f}% | User charged: ${charged_cost:.2f}")
-                        else:
-                            logger.debug(f"[COST_COMPARISON] No preview estimate found | "
-                                      f"Actual full cost (no cache): ${cost_estimated:.6f} | "
+                                logger.debug(f"[COST_COMPARISON] Preview estimated: ${preview_estimate:.6f} | "
+                                          f"Actual full cost (no cache): ${actual_full_cost_estimated:.6f} | "
+                                          f"Estimate accuracy: {estimate_accuracy:.1f}% | User charged: ${charged_cost:.2f}")
+                            else:
+                                logger.debug(f"[COST_COMPARISON] No preview estimate found | "
+                                          f"Actual full cost (no cache): ${cost_estimated:.6f} | "
+                                          f"User charged: ${charged_cost:.2f}")
+                        except Exception as e:
+                            logger.warning(f"[COST_COMPARISON] Could not retrieve preview estimate for comparison: {e}")
+                            logger.debug(f"[COST_COMPARISON] Actual full cost (no cache): ${cost_estimated:.6f} | "
                                       f"User charged: ${charged_cost:.2f}")
-                    except Exception as e:
-                        logger.warning(f"[COST_COMPARISON] Could not retrieve preview estimate for comparison: {e}")
-                        logger.debug(f"[COST_COMPARISON] Actual full cost (no cache): ${cost_estimated:.6f} | "
-                                  f"User charged: ${charged_cost:.2f}")
                     
-                    # Calculate actual validation processing time from DynamoDB record times
-                    validation_processing_time = 0.0
+                        # Calculate actual validation processing time from DynamoDB record times
+                        validation_processing_time = 0.0
                     
-                    # Get the current run's start time from DynamoDB
-                    try:
-                        from dynamodb_schemas import get_run_status
-                        current_run = get_run_status(session_id, run_key)
-                        if current_run and 'start_time' in current_run:
-                            start_time_str = current_run['start_time']
-                            end_time_str = datetime.now(timezone.utc).isoformat()  # Current time as end time
+                        # Get the current run's start time from DynamoDB
+                        try:
+                            from dynamodb_schemas import get_run_status
+                            current_run = get_run_status(session_id, run_key)
+                            if current_run and 'start_time' in current_run:
+                                start_time_str = current_run['start_time']
+                                end_time_str = datetime.now(timezone.utc).isoformat()  # Current time as end time
                             
-                            logger.debug(f"[VALIDATION_TIMING_DEBUG] DynamoDB start_time: {start_time_str}, end_time: {end_time_str}")
+                                logger.debug(f"[VALIDATION_TIMING_DEBUG] DynamoDB start_time: {start_time_str}, end_time: {end_time_str}")
                             
-                            start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
-                            end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
-                            validation_processing_time = (end_time - start_time).total_seconds()
-                            logger.debug(f"[VALIDATION_TIMING_DEBUG] Calculated from DynamoDB times: validation_processing_time={validation_processing_time:.3f}s")
-                        else:
-                            logger.warning(f"[VALIDATION_TIMING_DEBUG] Could not get start_time from DynamoDB run record")
-                    except Exception as db_error:
-                        logger.warning(f"[VALIDATION_TIMING_DEBUG] Failed to get timing from DynamoDB: {db_error}")
-                        
-                        # Fallback to validation_results times if available
-                        start_time_str = validation_results.get('start_time')
-                        end_time_str = validation_results.get('end_time') 
-                        
-                        logger.debug(f"[VALIDATION_TIMING_DEBUG] Fallback start_time: {start_time_str}, end_time: {end_time_str}")
-                        
-                        if start_time_str and end_time_str:
-                            try:
                                 start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
                                 end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
                                 validation_processing_time = (end_time - start_time).total_seconds()
-                                logger.debug(f"[VALIDATION_TIMING_DEBUG] Calculated from start/end times: validation_processing_time={validation_processing_time:.3f}s")
-                            except Exception as e:
-                                logger.warning(f"[VALIDATION_TIMING_DEBUG] Failed to calculate from start/end times: {e}")
-                                # Fallback to other timing sources only if start/end calculation fails
+                                logger.debug(f"[VALIDATION_TIMING_DEBUG] Calculated from DynamoDB times: validation_processing_time={validation_processing_time:.3f}s")
+                            else:
+                                logger.warning(f"[VALIDATION_TIMING_DEBUG] Could not get start_time from DynamoDB run record")
+                        except Exception as db_error:
+                            logger.warning(f"[VALIDATION_TIMING_DEBUG] Failed to get timing from DynamoDB: {db_error}")
+                        
+                            # Fallback to validation_results times if available
+                            start_time_str = validation_results.get('start_time')
+                            end_time_str = validation_results.get('end_time') 
+                        
+                            logger.debug(f"[VALIDATION_TIMING_DEBUG] Fallback start_time: {start_time_str}, end_time: {end_time_str}")
+                        
+                            if start_time_str and end_time_str:
+                                try:
+                                    start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                                    end_time = datetime.fromisoformat(end_time_str.replace('Z', '+00:00'))
+                                    validation_processing_time = (end_time - start_time).total_seconds()
+                                    logger.debug(f"[VALIDATION_TIMING_DEBUG] Calculated from start/end times: validation_processing_time={validation_processing_time:.3f}s")
+                                except Exception as e:
+                                    logger.warning(f"[VALIDATION_TIMING_DEBUG] Failed to calculate from start/end times: {e}")
+                                    # Fallback to other timing sources only if start/end calculation fails
+                                    batch_timing = metadata.get('batch_timing', {})
+                                    validator_processing_time = metadata.get('processing_time', 0.0)
+                                
+                                    if batch_timing and batch_timing.get('total_batch_time_seconds', 0.0) > 0:
+                                        validation_processing_time = batch_timing.get('total_batch_time_seconds', 0.0)
+                                        logger.debug(f"[VALIDATION_TIMING_DEBUG] Fallback to batch_timing: validation_processing_time={validation_processing_time:.3f}s")
+                                    elif validator_processing_time > 0:
+                                        validation_processing_time = validator_processing_time
+                                        logger.debug(f"[VALIDATION_TIMING_DEBUG] Fallback to validator_processing_time: validation_processing_time={validation_processing_time:.3f}s")
+                                    else:
+                                        logger.warning(f"[VALIDATION_TIMING_DEBUG] No valid timing data found - validation_processing_time will be 0")
+                                        validation_processing_time = 0.0
+                            else:
+                                logger.warning(f"[VALIDATION_TIMING_DEBUG] No start/end times available - using fallback timing sources")
+                                # Fallback when start/end times are missing
                                 batch_timing = metadata.get('batch_timing', {})
                                 validator_processing_time = metadata.get('processing_time', 0.0)
-                                
+                            
                                 if batch_timing and batch_timing.get('total_batch_time_seconds', 0.0) > 0:
                                     validation_processing_time = batch_timing.get('total_batch_time_seconds', 0.0)
                                     logger.debug(f"[VALIDATION_TIMING_DEBUG] Fallback to batch_timing: validation_processing_time={validation_processing_time:.3f}s")
@@ -4611,285 +4656,270 @@ def handle_main_processing(event, context):
                                 else:
                                     logger.warning(f"[VALIDATION_TIMING_DEBUG] No valid timing data found - validation_processing_time will be 0")
                                     validation_processing_time = 0.0
-                        else:
-                            logger.warning(f"[VALIDATION_TIMING_DEBUG] No start/end times available - using fallback timing sources")
-                            # Fallback when start/end times are missing
-                            batch_timing = metadata.get('batch_timing', {})
-                            validator_processing_time = metadata.get('processing_time', 0.0)
-                            
-                            if batch_timing and batch_timing.get('total_batch_time_seconds', 0.0) > 0:
-                                validation_processing_time = batch_timing.get('total_batch_time_seconds', 0.0)
-                                logger.debug(f"[VALIDATION_TIMING_DEBUG] Fallback to batch_timing: validation_processing_time={validation_processing_time:.3f}s")
-                            elif validator_processing_time > 0:
-                                validation_processing_time = validator_processing_time
-                                logger.debug(f"[VALIDATION_TIMING_DEBUG] Fallback to validator_processing_time: validation_processing_time={validation_processing_time:.3f}s")
-                            else:
-                                logger.warning(f"[VALIDATION_TIMING_DEBUG] No valid timing data found - validation_processing_time will be 0")
-                                validation_processing_time = 0.0
                     
-                    # Do NOT update estimated_validation_eliyahu_cost - preserve the preview estimate
-                    status_update_data['time_per_row_seconds'] = validation_processing_time / processed_rows_count if processed_rows_count > 0 else 0.0  # Actual time per row
-                    status_update_data['run_time_s'] = validation_processing_time  # Actual validation run time in seconds
-                    status_update_data['actual_processing_time_seconds'] = validation_processing_time  # Same as run_time_s for compatibility
-                    status_update_data['actual_time_per_batch_seconds'] = validation_processing_time  # For single batch validation, same as total time
-                    logger.debug(f"[TIMING_DEBUG] Set actual_processing_time_seconds={validation_processing_time:.3f}, actual_time_per_batch_seconds={validation_processing_time:.3f}")
-                    status_update_data['percent_complete'] = 100  # Mark validation as 100% complete
-                    # estimated_validation_time_minutes will be calculated from actual processing time automatically in update_run_status
+                        # Do NOT update estimated_validation_eliyahu_cost - preserve the preview estimate
+                        status_update_data['time_per_row_seconds'] = validation_processing_time / processed_rows_count if processed_rows_count > 0 else 0.0  # Actual time per row
+                        status_update_data['run_time_s'] = validation_processing_time  # Actual validation run time in seconds
+                        status_update_data['actual_processing_time_seconds'] = validation_processing_time  # Same as run_time_s for compatibility
+                        status_update_data['actual_time_per_batch_seconds'] = validation_processing_time  # For single batch validation, same as total time
+                        logger.debug(f"[TIMING_DEBUG] Set actual_processing_time_seconds={validation_processing_time:.3f}, actual_time_per_batch_seconds={validation_processing_time:.3f}")
+                        status_update_data['percent_complete'] = 100  # Mark validation as 100% complete
+                        # estimated_validation_time_minutes will be calculated from actual processing time automatically in update_run_status
                     
-                    # Use enhanced provider metrics from ai_client aggregation if available, otherwise fallback to token_usage
-                    provider_metrics_for_db = {}
+                        # Use enhanced provider metrics from ai_client aggregation if available, otherwise fallback to token_usage
+                        provider_metrics_for_db = {}
                     
-                    if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
-                        # Use properly aggregated enhanced metrics from validation lambda
-                        providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
+                        if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
+                            # Use properly aggregated enhanced metrics from validation lambda
+                            providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
 
-                        for provider, provider_data in providers.items():
-                            # Skip QC_Costs as it's now in separate qc_metrics field
-                            if provider == 'QC_Costs':
-                                continue
-                            provider_metrics_for_db[provider] = {
-                                'calls': provider_data.get('calls', 0),
-                                'tokens': provider_data.get('tokens', 0),
-                                'cost_actual': provider_data.get('cost_actual', 0.0),
-                                'cost_estimated': provider_data.get('cost_estimated', 0.0),
-                                'processing_time': provider_data.get('time_actual', 0.0),
-                                'cache_hit_tokens': provider_data.get('cache_hit_tokens', 0),
-                                'cost_per_row_actual': provider_data.get('cost_actual', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
-                                'cost_per_row_estimated': provider_data.get('cost_estimated', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
-                                'time_per_row_actual': provider_data.get('time_actual', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
-                                'time_per_row_estimated': provider_data.get('time_estimated', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
-                                'cache_efficiency_percent': provider_data.get('cache_efficiency_percent', 0.0)
-                            }
-                        
-                        logger.debug(f"[VALIDATION_PROVIDER_METRICS] Using enhanced aggregated metrics for provider_metrics_for_db")
-                    else:
-                        # Fallback to legacy token_usage conversion
-                        by_provider = token_usage.get('by_provider', {})
-                        
-                        for provider, provider_usage in by_provider.items():
-                            if provider_usage and isinstance(provider_usage, dict):
-                                # Extract metrics from existing token_usage structure
-                                actual_cost = provider_usage.get('total_cost', 0.0)
-                                total_tokens = provider_usage.get('total_tokens', 0)
-                                api_calls = provider_usage.get('api_calls', 0)
-                                cached_calls = provider_usage.get('cached_calls', 0)
-                                
-                                # Estimate cost without cache benefits (approximate based on cache efficiency)
-                                cache_efficiency = cached_calls / max(api_calls, 1) if api_calls > 0 else 0
-                                cost_estimated = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
-                                
-                                provider_time = processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1))
+                            for provider, provider_data in providers.items():
+                                # Skip QC_Costs as it's now in separate qc_metrics field
+                                if provider == 'QC_Costs':
+                                    continue
                                 provider_metrics_for_db[provider] = {
-                                    'calls': api_calls,
-                                    'tokens': total_tokens,
-                                    'cost_actual': actual_cost,
-                                    'cost_estimated': cost_estimated,
-                                    'processing_time': provider_time,
-                                    'cache_hit_tokens': cached_calls * (total_tokens / max(api_calls, 1)) if api_calls > 0 else 0,
-                                    'cost_per_row_actual': actual_cost / processed_rows_count if processed_rows_count > 0 else 0,
-                                    'cost_per_row_estimated': cost_estimated / processed_rows_count if processed_rows_count > 0 else 0,
-                                    'time_per_row_actual': provider_time / processed_rows_count if processed_rows_count > 0 else 0,
-                                    'time_per_row_estimated': provider_time / processed_rows_count if processed_rows_count > 0 else 0,  # In fallback, use same as actual
-                                    'cache_efficiency_percent': (1 - (actual_cost / max(cost_estimated, 0.000001))) * 100
+                                    'calls': provider_data.get('calls', 0),
+                                    'tokens': provider_data.get('tokens', 0),
+                                    'cost_actual': provider_data.get('cost_actual', 0.0),
+                                    'cost_estimated': provider_data.get('cost_estimated', 0.0),
+                                    'processing_time': provider_data.get('time_actual', 0.0),
+                                    'cache_hit_tokens': provider_data.get('cache_hit_tokens', 0),
+                                    'cost_per_row_actual': provider_data.get('cost_actual', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
+                                    'cost_per_row_estimated': provider_data.get('cost_estimated', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
+                                    'time_per_row_actual': provider_data.get('time_actual', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
+                                    'time_per_row_estimated': provider_data.get('time_estimated', 0.0) / processed_rows_count if processed_rows_count > 0 else 0,
+                                    'cache_efficiency_percent': provider_data.get('cache_efficiency_percent', 0.0)
                                 }
                         
-                        logger.warning(f"[VALIDATION_PROVIDER_METRICS] Falling back to legacy token_usage conversion for provider_metrics_for_db")
-                    
-                    status_update_data['provider_metrics'] = provider_metrics_for_db
-
-                    # Extract QC metrics from validation results if available
-                    qc_metrics_data = validation_results.get('qc_metrics', {})
-                    if qc_metrics_data:
-                        logger.debug(f"[QC_DB_STORAGE] Found QC metrics in validation results: {list(qc_metrics_data.keys())}")
-                        status_update_data['qc_metrics'] = qc_metrics_data
-                    else:
-                        logger.debug(f"[QC_DB_STORAGE] No QC metrics found in validation results")
-
-                    # Calculate total_provider_calls from all providers (QC calls now included in anthropic provider)
-                    total_provider_calls_override = sum(
-                        provider_data.get('calls', 0)
-                        for provider_name, provider_data in provider_metrics_for_db.items()
-                        if not provider_data.get('is_metadata_only', False)  # Exclude QC_Costs metadata-only provider
-                    )
-                    status_update_data['total_provider_calls'] = total_provider_calls_override
-
-                    # Debug logging to verify call counting
-                    anthropic_calls = provider_metrics_for_db.get('anthropic', {}).get('calls', 0)
-                    perplexity_calls = provider_metrics_for_db.get('perplexity', {}).get('calls', 0)
-                    qc_calls_debug = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
-                    logger.debug(f"[FULL_VALIDATION_CALLS] Anthropic calls (incl QC): {anthropic_calls}, Perplexity calls: {perplexity_calls}, QC calls (debug): {qc_calls_debug}, Total: {total_provider_calls_override}")
-
-                    # Record completion time for background handler
-                    background_end_time = datetime.now(timezone.utc).isoformat()
-                    
-                    # Calculate actual background handler processing time
-                    start_time = datetime.fromisoformat(background_start_time.replace('Z', '+00:00'))
-                    end_time = datetime.fromisoformat(background_end_time.replace('Z', '+00:00'))
-                    background_processing_time_seconds = (end_time - start_time).total_seconds()
-                    logger.debug(f"[VALIDATION_TIMING] Background handler processing time: {background_processing_time_seconds:.3f}s")
-                    
-                    # Override timing with actual background handler processing time
-                    status_update_data['end_time'] = background_end_time  # Use background handler completion time
-                    status_update_data['run_time_s'] = background_processing_time_seconds  # Actual background handler processing time
-                    status_update_data['actual_processing_time_seconds'] = background_processing_time_seconds  # Override with background handler time
-                    status_update_data['actual_time_per_batch_seconds'] = background_processing_time_seconds  # Override with background handler time
-                    logger.debug(f"[TIMING_OVERRIDE] Override timing fields with background handler time: {background_processing_time_seconds:.3f}s")
-
-                    # ========== DETAILED VALIDATION COMPLETENESS CHECK ==========
-                    # This is a detailed check that happens AFTER successful billing
-                    # The initial check before billing prevents charges for incomplete results
-                    logger.debug(f"[FINAL_COMPLETENESS_CHECK] Performing detailed validation result completeness check")
-
-                    # Extract validation results for completeness check
-                    final_validation_results = validation_results.get('validation_results', {}) if validation_results else {}
-                    expected_row_count = total_rows_in_file
-                    actual_results_count = len(final_validation_results) if isinstance(final_validation_results, dict) else 0
-
-                    logger.debug(f"[FINAL_COMPLETENESS_CHECK] Expected rows: {expected_row_count}, Actual results: {actual_results_count}")
-
-                    # Check for basic completeness
-                    is_complete = True
-                    completeness_issues = []
-
-                    # Check row count completeness
-                    if actual_results_count < expected_row_count:
-                        is_complete = False
-                        completeness_issues.append(f"Missing results: {actual_results_count}/{expected_row_count} rows")
-
-                    # Check for meaningful data in results
-                    if actual_results_count == 0:
-                        is_complete = False
-                        completeness_issues.append("No validation results found")
-
-                    # Check for expected data structure in a sample of results
-                    if final_validation_results and isinstance(final_validation_results, dict):
-                        # Check first few results for proper structure
-                        sample_keys = list(final_validation_results.keys())[:3]
-                        for row_key in sample_keys:
-                            row_data = final_validation_results.get(row_key, {})
-                            if not isinstance(row_data, dict):
-                                is_complete = False
-                                completeness_issues.append(f"Invalid row data structure for row {row_key}")
-                                break
-
-                            # Check if row has validation results (not just empty dict)
-                            if not any(isinstance(v, dict) and 'value' in v for v in row_data.values()):
-                                is_complete = False
-                                completeness_issues.append(f"Row {row_key} missing validation field data")
-                                break
-
-                    # Check for expected sheets in enhanced Excel (if available)
-                    try:
-                        if enhanced_excel_content:
-                            import openpyxl
-                            import io
-                            wb = openpyxl.load_workbook(io.BytesIO(enhanced_excel_content), read_only=True)
-                            expected_sheets = ['Updated Values', 'Original Values', 'Details']  # Correct expected sheets
-                            missing_sheets = [sheet for sheet in expected_sheets if sheet not in wb.sheetnames]
-                            if missing_sheets:
-                                is_complete = False
-                                completeness_issues.append(f"Enhanced Excel missing sheets: {missing_sheets}")
-                            wb.close()
-                    except Exception as excel_check_error:
-                        logger.warning(f"[FINAL_COMPLETENESS_CHECK] Could not verify enhanced Excel structure: {excel_check_error}")
-
-                    # Check metadata completeness
-                    if validation_results:
-                        metadata = validation_results.get('metadata', {})
-                        if not metadata or not isinstance(metadata, dict):
-                            is_complete = False
-                            completeness_issues.append("Missing or invalid metadata")
+                            logger.debug(f"[VALIDATION_PROVIDER_METRICS] Using enhanced aggregated metrics for provider_metrics_for_db")
                         else:
-                            # Check for essential metadata fields
-                            essential_metadata = ['processing_time', 'completed_rows']
-                            missing_metadata = [field for field in essential_metadata if field not in metadata]
-                            if missing_metadata:
-                                completeness_issues.append(f"Missing metadata fields: {missing_metadata}")
-
-                    # Log completeness results
-                    if is_complete:
-                        logger.debug(f"[FINAL_COMPLETENESS_CHECK] ✅ Validation results are COMPLETE")
-                        # Continue with normal completion flow
-                        update_run_status(**status_update_data)
-                    else:
-                        logger.error(f"[FINAL_COMPLETENESS_CHECK] ❌ Validation results are INCOMPLETE: {'; '.join(completeness_issues)}")
-                        logger.error(f"[FINAL_COMPLETENESS_CHECK] 🚫 STOPPING completion flow - will not charge user or send email")
-
-                        # Mark as FAILED instead of COMPLETED
-                        status_update_data['status'] = 'FAILED'
-                        status_update_data['error_message'] = f"Validation incomplete: {'; '.join(completeness_issues)}"
-                        status_update_data['verbose_status'] = f"❌ Validation failed: {'; '.join(completeness_issues)}"
-                        status_update_data['completeness_issues'] = completeness_issues
-                        status_update_data['validation_incomplete'] = True
-
-                        # Update status as FAILED
-                        update_run_status(**status_update_data)
-
-                        # Send error notification via WebSocket
-                        error_payload = {
-                            'type': 'validation_failed',
-                            'session_id': session_id,
-                            'progress': 100,
-                            'status': f'❌ Validation failed: {completeness_issues[0] if completeness_issues else "Incomplete results"}',
-                            'error': f"Validation incomplete: {'; '.join(completeness_issues)}"
-                        }
-                        _send_websocket_message_deduplicated(session_id, error_payload)
-
-                        # Update session_info.json with failure status and correct config version
-                        try:
-                            storage_manager.update_session_results(
-                                email=email,
-                                session_id=clean_session_id,
-                                operation_type="validation",
-                                config_id=config_id,
-                                version=config_version,
-                                run_key=run_key,
-                                status="failed",
-                                completed_at=datetime.now(timezone.utc).isoformat(),
-                                frontend_payload=error_payload
-                            )
-                            logger.debug(f"[SESSION_TRACKING] Updated session_info.json with validation failure (incomplete results)")
-                        except Exception as e:
-                            logger.error(f"Failed to update session_info.json for validation failure: {e}")
-
-                        # Return early - do NOT continue with billing, email, or completion
-                        return {'statusCode': 500, 'body': json.dumps({
-                            'status': 'validation_failed',
-                            'error': f"Validation incomplete: {'; '.join(completeness_issues)}",
-                            'session_id': session_id
-                        })}
+                            # Fallback to legacy token_usage conversion
+                            by_provider = token_usage.get('by_provider', {})
+                        
+                            for provider, provider_usage in by_provider.items():
+                                if provider_usage and isinstance(provider_usage, dict):
+                                    # Extract metrics from existing token_usage structure
+                                    actual_cost = provider_usage.get('total_cost', 0.0)
+                                    total_tokens = provider_usage.get('total_tokens', 0)
+                                    api_calls = provider_usage.get('api_calls', 0)
+                                    cached_calls = provider_usage.get('cached_calls', 0)
+                                
+                                    # Estimate cost without cache benefits (approximate based on cache efficiency)
+                                    cache_efficiency = cached_calls / max(api_calls, 1) if api_calls > 0 else 0
+                                    cost_estimated = actual_cost * (1 + (cache_efficiency * 1.5))  # Conservative estimate
+                                
+                                    provider_time = processing_time * (api_calls / max(sum(p.get('api_calls', 0) for p in by_provider.values()), 1))
+                                    provider_metrics_for_db[provider] = {
+                                        'calls': api_calls,
+                                        'tokens': total_tokens,
+                                        'cost_actual': actual_cost,
+                                        'cost_estimated': cost_estimated,
+                                        'processing_time': provider_time,
+                                        'cache_hit_tokens': cached_calls * (total_tokens / max(api_calls, 1)) if api_calls > 0 else 0,
+                                        'cost_per_row_actual': actual_cost / processed_rows_count if processed_rows_count > 0 else 0,
+                                        'cost_per_row_estimated': cost_estimated / processed_rows_count if processed_rows_count > 0 else 0,
+                                        'time_per_row_actual': provider_time / processed_rows_count if processed_rows_count > 0 else 0,
+                                        'time_per_row_estimated': provider_time / processed_rows_count if processed_rows_count > 0 else 0,  # In fallback, use same as actual
+                                        'cache_efficiency_percent': (1 - (actual_cost / max(cost_estimated, 0.000001))) * 100
+                                    }
+                        
+                            logger.warning(f"[VALIDATION_PROVIDER_METRICS] Falling back to legacy token_usage conversion for provider_metrics_for_db")
                     
-                    # Track enhanced user metrics for full validation
-                    logger.debug(f"[USER_TRACKING] Tracking full validation request for email: {email}")
-                    try:
-                        track_result = track_user_request(
-                        email=email,
-                        request_type='full',
-                        tokens_used=token_usage.get('total_tokens', 0),
-                        cost_usd=charged_cost,  # Legacy field
-                        perplexity_tokens=token_usage.get('by_provider', {}).get('perplexity', {}).get('total_tokens', 0),
-                        perplexity_cost=token_usage.get('by_provider', {}).get('perplexity', {}).get('total_cost', 0),
-                        anthropic_tokens=token_usage.get('by_provider', {}).get('anthropic', {}).get('total_tokens', 0),
-                        anthropic_cost=token_usage.get('by_provider', {}).get('anthropic', {}).get('total_cost', 0),
-                        # Enhanced metrics
-                        rows_processed=processed_rows_count,
-                        total_rows=total_rows_in_file,
-                        columns_validated=validation_metrics.get('validated_columns_count', 0),
-                        search_groups=validation_metrics.get('search_groups_count', 0),
-                        high_context_search_groups=validation_metrics.get('enhanced_context_search_groups_count', 0),
-                        claude_calls=validation_metrics.get('claude_search_groups_count', 0),
-                        eliyahu_cost=eliyahu_cost,  # Actual cost paid
-                        estimated_cost=cost_estimated,  # Raw cost estimate without caching
-                        quoted_validation_cost=charged_cost,  # This is the quoted cost from preview (what we're charging)
-                        charged_cost=charged_cost,  # Full validation charges user the preview quoted cost
-                        total_api_calls=token_usage.get('api_calls', 0),
-                        total_cached_calls=token_usage.get('cached_calls', 0)
+                        status_update_data['provider_metrics'] = provider_metrics_for_db
+
+                        # Extract QC metrics from validation results if available
+                        qc_metrics_data = validation_results.get('qc_metrics', {})
+                        if qc_metrics_data:
+                            logger.debug(f"[QC_DB_STORAGE] Found QC metrics in validation results: {list(qc_metrics_data.keys())}")
+                            status_update_data['qc_metrics'] = qc_metrics_data
+                        else:
+                            logger.debug(f"[QC_DB_STORAGE] No QC metrics found in validation results")
+
+                        # Calculate total_provider_calls from all providers (QC calls now included in anthropic provider)
+                        total_provider_calls_override = sum(
+                            provider_data.get('calls', 0)
+                            for provider_name, provider_data in provider_metrics_for_db.items()
+                            if not provider_data.get('is_metadata_only', False)  # Exclude QC_Costs metadata-only provider
                         )
-                        logger.debug(f"[USER_TRACKING] Full validation tracking result: {track_result}")
-                    except Exception as e:
-                        logger.error(f"[USER_TRACKING] Failed to track full validation request: {e}")
-                        import traceback
-                        logger.error(f"[USER_TRACKING] Traceback: {traceback.format_exc()}")
+                        status_update_data['total_provider_calls'] = total_provider_calls_override
+
+                        # Debug logging to verify call counting
+                        anthropic_calls = provider_metrics_for_db.get('anthropic', {}).get('calls', 0)
+                        perplexity_calls = provider_metrics_for_db.get('perplexity', {}).get('calls', 0)
+                        qc_calls_debug = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
+                        logger.debug(f"[FULL_VALIDATION_CALLS] Anthropic calls (incl QC): {anthropic_calls}, Perplexity calls: {perplexity_calls}, QC calls (debug): {qc_calls_debug}, Total: {total_provider_calls_override}")
+
+                        # Record completion time for background handler
+                        background_end_time = datetime.now(timezone.utc).isoformat()
+                    
+                        # Calculate actual background handler processing time
+                        start_time = datetime.fromisoformat(background_start_time.replace('Z', '+00:00'))
+                        end_time = datetime.fromisoformat(background_end_time.replace('Z', '+00:00'))
+                        background_processing_time_seconds = (end_time - start_time).total_seconds()
+                        logger.debug(f"[VALIDATION_TIMING] Background handler processing time: {background_processing_time_seconds:.3f}s")
+                    
+                        # Override timing with actual background handler processing time
+                        status_update_data['end_time'] = background_end_time  # Use background handler completion time
+                        status_update_data['run_time_s'] = background_processing_time_seconds  # Actual background handler processing time
+                        status_update_data['actual_processing_time_seconds'] = background_processing_time_seconds  # Override with background handler time
+                        status_update_data['actual_time_per_batch_seconds'] = background_processing_time_seconds  # Override with background handler time
+                        logger.debug(f"[TIMING_OVERRIDE] Override timing fields with background handler time: {background_processing_time_seconds:.3f}s")
+
+                        # ========== DETAILED VALIDATION COMPLETENESS CHECK ==========
+                        # This is a detailed check that happens AFTER successful billing
+                        # The initial check before billing prevents charges for incomplete results
+                        logger.debug(f"[FINAL_COMPLETENESS_CHECK] Performing detailed validation result completeness check")
+
+                        # Extract validation results for completeness check
+                        final_validation_results = validation_results.get('validation_results', {}) if validation_results else {}
+                        expected_row_count = total_rows_in_file
+                        actual_results_count = len(final_validation_results) if isinstance(final_validation_results, dict) else 0
+
+                        logger.debug(f"[FINAL_COMPLETENESS_CHECK] Expected rows: {expected_row_count}, Actual results: {actual_results_count}")
+
+                        # Check for basic completeness
+                        is_complete = True
+                        completeness_issues = []
+
+                        # Check row count completeness
+                        if actual_results_count < expected_row_count:
+                            is_complete = False
+                            completeness_issues.append(f"Missing results: {actual_results_count}/{expected_row_count} rows")
+
+                        # Check for meaningful data in results
+                        if actual_results_count == 0:
+                            is_complete = False
+                            completeness_issues.append("No validation results found")
+
+                        # Check for expected data structure in a sample of results
+                        if final_validation_results and isinstance(final_validation_results, dict):
+                            # Check first few results for proper structure
+                            sample_keys = list(final_validation_results.keys())[:3]
+                            for row_key in sample_keys:
+                                row_data = final_validation_results.get(row_key, {})
+                                if not isinstance(row_data, dict):
+                                    is_complete = False
+                                    completeness_issues.append(f"Invalid row data structure for row {row_key}")
+                                    break
+
+                                # Check if row has validation results (not just empty dict)
+                                if not any(isinstance(v, dict) and 'value' in v for v in row_data.values()):
+                                    is_complete = False
+                                    completeness_issues.append(f"Row {row_key} missing validation field data")
+                                    break
+
+                        # Check for expected sheets in enhanced Excel (if available)
+                        try:
+                            if enhanced_excel_content:
+                                import openpyxl
+                                import io
+                                wb = openpyxl.load_workbook(io.BytesIO(enhanced_excel_content), read_only=True)
+                                expected_sheets = ['Updated Values', 'Original Values', 'Details']  # Correct expected sheets
+                                missing_sheets = [sheet for sheet in expected_sheets if sheet not in wb.sheetnames]
+                                if missing_sheets:
+                                    is_complete = False
+                                    completeness_issues.append(f"Enhanced Excel missing sheets: {missing_sheets}")
+                                wb.close()
+                        except Exception as excel_check_error:
+                            logger.warning(f"[FINAL_COMPLETENESS_CHECK] Could not verify enhanced Excel structure: {excel_check_error}")
+
+                        # Check metadata completeness
+                        if validation_results:
+                            metadata = validation_results.get('metadata', {})
+                            if not metadata or not isinstance(metadata, dict):
+                                is_complete = False
+                                completeness_issues.append("Missing or invalid metadata")
+                            else:
+                                # Check for essential metadata fields
+                                essential_metadata = ['processing_time', 'completed_rows']
+                                missing_metadata = [field for field in essential_metadata if field not in metadata]
+                                if missing_metadata:
+                                    completeness_issues.append(f"Missing metadata fields: {missing_metadata}")
+
+                        # Log completeness results
+                        if is_complete:
+                            logger.debug(f"[FINAL_COMPLETENESS_CHECK] ✅ Validation results are COMPLETE")
+                            # Continue with normal completion flow
+                            update_run_status(**status_update_data)
+                        else:
+                            logger.error(f"[FINAL_COMPLETENESS_CHECK] ❌ Validation results are INCOMPLETE: {'; '.join(completeness_issues)}")
+                            logger.error(f"[FINAL_COMPLETENESS_CHECK] 🚫 STOPPING completion flow - will not charge user or send email")
+
+                            # Mark as FAILED instead of COMPLETED
+                            status_update_data['status'] = 'FAILED'
+                            status_update_data['error_message'] = f"Validation incomplete: {'; '.join(completeness_issues)}"
+                            status_update_data['verbose_status'] = f"❌ Validation failed: {'; '.join(completeness_issues)}"
+                            status_update_data['completeness_issues'] = completeness_issues
+                            status_update_data['validation_incomplete'] = True
+
+                            # Update status as FAILED
+                            update_run_status(**status_update_data)
+
+                            # Send error notification via WebSocket
+                            error_payload = {
+                                'type': 'validation_failed',
+                                'session_id': session_id,
+                                'progress': 100,
+                                'status': f'❌ Validation failed: {completeness_issues[0] if completeness_issues else "Incomplete results"}',
+                                'error': f"Validation incomplete: {'; '.join(completeness_issues)}"
+                            }
+                            _send_websocket_message_deduplicated(session_id, error_payload)
+
+                            # Update session_info.json with failure status and correct config version
+                            try:
+                                storage_manager.update_session_results(
+                                    email=email,
+                                    session_id=clean_session_id,
+                                    operation_type="validation",
+                                    config_id=config_id,
+                                    version=config_version,
+                                    run_key=run_key,
+                                    status="failed",
+                                    completed_at=datetime.now(timezone.utc).isoformat(),
+                                    frontend_payload=error_payload
+                                )
+                                logger.debug(f"[SESSION_TRACKING] Updated session_info.json with validation failure (incomplete results)")
+                            except Exception as e:
+                                logger.error(f"Failed to update session_info.json for validation failure: {e}")
+
+                            # Return early - do NOT continue with billing, email, or completion
+                            return {'statusCode': 500, 'body': json.dumps({
+                                'status': 'validation_failed',
+                                'error': f"Validation incomplete: {'; '.join(completeness_issues)}",
+                                'session_id': session_id
+                            })}
+                    
+                        # Track enhanced user metrics for full validation
+                        logger.debug(f"[USER_TRACKING] Tracking full validation request for email: {email}")
+                        try:
+                            track_result = track_user_request(
+                            email=email,
+                            request_type='full',
+                            tokens_used=token_usage.get('total_tokens', 0),
+                            cost_usd=charged_cost,  # Legacy field
+                            perplexity_tokens=token_usage.get('by_provider', {}).get('perplexity', {}).get('total_tokens', 0),
+                            perplexity_cost=token_usage.get('by_provider', {}).get('perplexity', {}).get('total_cost', 0),
+                            anthropic_tokens=token_usage.get('by_provider', {}).get('anthropic', {}).get('total_tokens', 0),
+                            anthropic_cost=token_usage.get('by_provider', {}).get('anthropic', {}).get('total_cost', 0),
+                            # Enhanced metrics
+                            rows_processed=processed_rows_count,
+                            total_rows=total_rows_in_file,
+                            columns_validated=validation_metrics.get('validated_columns_count', 0),
+                            search_groups=validation_metrics.get('search_groups_count', 0),
+                            high_context_search_groups=validation_metrics.get('enhanced_context_search_groups_count', 0),
+                            claude_calls=validation_metrics.get('claude_search_groups_count', 0),
+                            eliyahu_cost=eliyahu_cost,  # Actual cost paid
+                            estimated_cost=cost_estimated,  # Raw cost estimate without caching
+                            quoted_validation_cost=charged_cost,  # This is the quoted cost from preview (what we're charging)
+                            charged_cost=charged_cost,  # Full validation charges user the preview quoted cost
+                            total_api_calls=token_usage.get('api_calls', 0),
+                            total_cached_calls=token_usage.get('cached_calls', 0)
+                            )
+                            logger.debug(f"[USER_TRACKING] Full validation tracking result: {track_result}")
+                        except Exception as e:
+                            logger.error(f"[USER_TRACKING] Failed to track full validation request: {e}")
+                            import traceback
+                            logger.error(f"[USER_TRACKING] Traceback: {traceback.format_exc()}")
         
         else: # No results
              logger.error(f"[DEBUG] No validation results returned from validator for session {session_id}")

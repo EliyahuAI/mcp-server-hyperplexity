@@ -669,10 +669,15 @@ def send_validation_results_email(email_address, excel_content, config_content, 
             part.add_header("Content-Disposition", f'attachment; filename="{enhanced_excel_filename}"')
             message.attach(part)
         else:
-            logger.error(f"[EMAIL] Enhanced Excel validation failed for session {session_id} - will not attach enhanced Excel")
-            # Add a note to the email body about the missing enhanced Excel
-            logger.warning(f"[EMAIL] User will receive email WITHOUT enhanced Excel attachment")
-        
+            logger.error(f"[EMAIL] Enhanced Excel validation failed for session {session_id} - will not send email, charge user, or report success")
+            logger.warning(f"[EMAIL] This indicates a validation processing failure - returning error to prevent billing")
+            # Return failure immediately - don't send email or charge user
+            return {
+                'success': False,
+                'error': 'validation_failed',
+                'message': f"Enhanced Excel validation failed - Details sheet appears empty or invalid. This indicates a processing error. User will not be charged."
+            }
+
         # Attach original input file
         part = MIMEApplication(excel_content)
         part.add_header("Content-Disposition", f'attachment; filename="{input_filename}"')
