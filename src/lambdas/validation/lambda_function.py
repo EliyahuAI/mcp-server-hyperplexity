@@ -3331,11 +3331,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 except Exception as e:
                                     logger.warning(f"Failed to get result from completed task: {e}")
                         
-                        logger.debug(f"Storing {len(completed_results)} partial results from failed batch {batch_index}")
+                        logger.error(f"[BATCH_FAILURE] ❌ Batch {batch_index} FAILED with {len(completed_results)}/{actual_batch_size} rows completed")
+                        logger.error(f"[BATCH_FAILURE] Row range: {start_idx}-{end_idx-1} (indices in this Lambda's dataset)")
+                        logger.error(f"[BATCH_FAILURE] Completed: {len(completed_results)} rows, Failed: {actual_batch_size - len(completed_results)} rows")
+                        logger.error(f"[BATCH_FAILURE] Error: {str(batch_error)}")
+
                         for row_key, result, _, _ in completed_results:
                             # CRITICAL: Use row_key (hash) not integer index for QC matching
                             validation_results[row_key] = result
-                    
+
+                        # CRITICAL: Track failed row count for completeness check
+                        failed_row_count = actual_batch_size - len(completed_results)
+                        logger.error(f"[BATCH_FAILURE] {failed_row_count} rows in batch {batch_index} will have NO validation results")
+
                     # Update progress
                     processed_rows = end_idx
                     batch_num += 1
@@ -3347,6 +3355,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # CRITICAL: Log why batch loop exited
                 logger.info(f"[BATCH_LOOP_EXIT] Loop completed: processed_rows={processed_rows}, len(rows)={len(rows)}, validation_results={len(validation_results)}")
                 logger.info(f"[BATCH_LOOP_EXIT] all_rows={len(all_rows)}, skip_count={skip_count}, expected_to_process={len(all_rows)-skip_count}")
+
+                # CRITICAL: Check for missing rows (failed batches)
+                missing_rows = len(rows) - len(validation_results)
+                if missing_rows > 0:
+                    logger.error(f"[BATCH_LOOP_EXIT] ❌ MISSING RESULTS: {missing_rows} rows processed but no results stored")
+                    logger.error(f"[BATCH_LOOP_EXIT] This indicates {missing_rows} rows failed during processing")
+                    logger.error(f"[BATCH_LOOP_EXIT] Check logs above for batch failures (❌ Batch X failed)")
 
                 # Log final batch manager statistics
                 final_stats = batch_manager.get_stats()
