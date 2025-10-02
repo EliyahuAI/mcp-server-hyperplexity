@@ -3394,7 +3394,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     logger.warning(f"Failed to get result from completed task: {e}")
                         
                         logger.error(f"[BATCH_FAILURE] ❌ Batch {batch_index} FAILED with {len(completed_results)}/{actual_batch_size} rows completed")
-                        logger.error(f"[BATCH_FAILURE] Row range: {start_idx}-{end_idx-1} (indices in this Lambda's dataset)")
+                        logger.error(f"[BATCH_FAILURE] Batch contained {actual_batch_size} rows from pending queue")
                         logger.error(f"[BATCH_FAILURE] Completed: {len(completed_results)} rows, Failed: {actual_batch_size - len(completed_results)} rows")
                         logger.error(f"[BATCH_FAILURE] Error: {str(batch_error)}")
 
@@ -5021,7 +5021,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     cumulative_results['qc_metrics'] = response['body']['data']['qc_metrics']
 
                 # CRITICAL: Check for abandoned rows and mark validation as failed
+                has_abandoned_rows = False
                 if 'abandoned_rows_details' in locals() and abandoned_rows_details:
+                    has_abandoned_rows = True
                     # Extract primary key values for error message
                     primary_key_fields = validator.primary_key if validator.primary_key else []
                     failed_row_identifiers = []
@@ -5110,16 +5112,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.error(f"[S3_SAVE] Unexpected validation_results type: {type(validation_results_data)}")
                     processed_rows = 0
 
-                has_more_work = processed_rows < total_rows
-                logger.info(f"[S3_SAVE] Work status: processed_rows={processed_rows}, total_rows={total_rows}, has_more_work={has_more_work}")
+                # CRITICAL: Treat abandoned rows as "work complete" not "work incomplete"
+                # If we have abandoned rows, the "missing" rows are actually failed rows (not unprocessed)
+                has_more_work = processed_rows < total_rows and not has_abandoned_rows
+
+                if has_abandoned_rows:
+                    logger.info(f"[S3_SAVE] Work complete with failures: processed={processed_rows}, abandoned={len(abandoned_rows_details) if 'abandoned_rows_details' in locals() else 0}, total={total_rows}")
+                else:
+                    logger.info(f"[S3_SAVE] Work status: processed_rows={processed_rows}, total_rows={total_rows}, has_more_work={has_more_work}")
 
                 # IMPORTANT: Check if work is complete FIRST, before considering time
                 if not has_more_work:
                     # All work is done - trigger completion regardless of time remaining
-                    # DELETE payload since this is successful final completion
-                    logger.info(f"[S3_SAVE] All rows processed ({processed_rows}/{total_rows}), triggering interface completion")
-                    logger.info(f"[S3_SAVE] About to call trigger_interface_completion with results_s3_key={results_s3_key}")
-                    trigger_interface_completion(results_s3_key, delete_payload=True)
+                    # DELETE payload only if successful (not if we have abandoned rows)
+                    if has_abandoned_rows:
+                        logger.info(f"[S3_SAVE] Work complete with {len(abandoned_rows_details) if 'abandoned_rows_details' in locals() else 0} failed rows, triggering interface completion")
+                        logger.info(f"[S3_SAVE] NOT deleting payload due to validation failures")
+                        trigger_interface_completion(results_s3_key, delete_payload=False)
+                    else:
+                        logger.info(f"[S3_SAVE] All rows processed successfully ({processed_rows}/{total_rows}), triggering interface completion")
+                        logger.info(f"[S3_SAVE] About to call trigger_interface_completion with results_s3_key={results_s3_key}")
+                        trigger_interface_completion(results_s3_key, delete_payload=True)
                     logger.info(f"[S3_SAVE] trigger_interface_completion call completed")
                 elif has_more_work:
                     # More work to do - validate progress was made to prevent infinite loops
