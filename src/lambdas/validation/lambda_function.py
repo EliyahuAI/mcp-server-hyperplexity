@@ -3119,6 +3119,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 pending_row_keys = set()
                 row_key_retry_count = {}
 
+            # Track abandoned rows with details for error reporting
+            abandoned_rows_details = []
+
+            # Track which batch each row_key was processed in (for enhanced_data aggregation)
+            row_key_to_batch_mapping = {}
+
             logger.info(f"[ROW_KEY_INIT] Building row key mappings for {len(rows)} rows")
             for row in rows:
                 # Generate row key (handles both dict and list rows)
@@ -3228,6 +3234,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         for row_key, result, _, batch_num in batch_results:
                             # CRITICAL: Use row_key (hash) not integer index for QC matching
                             validation_results[row_key] = result
+                            # Track which batch this row was processed in (for enhanced_data aggregation)
+                            row_key_to_batch_mapping[row_key] = batch_index
                             # Remove from pending set - this row is done
                             if row_key in pending_row_keys:
                                 pending_row_keys.remove(row_key)
@@ -3393,6 +3401,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         for row_key, result, _, _ in completed_results:
                             # CRITICAL: Use row_key (hash) not integer index for QC matching
                             validation_results[row_key] = result
+                            # Track which batch this row was processed in (for enhanced_data aggregation)
+                            row_key_to_batch_mapping[row_key] = batch_index
                             completed_row_keys.add(row_key)
                             if row_key in pending_row_keys:
                                 pending_row_keys.remove(row_key)
@@ -3406,6 +3416,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             if row_key_retry_count[failed_row_key] >= MAX_ROW_RETRIES:
                                 pending_row_keys.discard(failed_row_key)
                                 rows_abandoned.append(failed_row_key)
+
+                                # Capture row details for error reporting
+                                abandoned_row_data = row_key_to_row_data.get(failed_row_key, {})
+                                abandoned_rows_details.append({
+                                    'row_key': failed_row_key,
+                                    'row_data': abandoned_row_data,
+                                    'retry_count': row_key_retry_count[failed_row_key]
+                                })
+
                                 logger.error(f"[ROW_KEY_ABANDONED] Row {failed_row_key[:16]}... failed {MAX_ROW_RETRIES} times, giving up")
 
                         logger.error(f"[BATCH_FAILURE] {len(completed_results)} rows succeeded, {len(failed_row_keys)} failed")
@@ -3424,10 +3443,39 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info(f"[ROW_KEY_COMPLETE] Already had: {len(all_rows) - len(rows)} from previous continuations")
 
                 # Check for abandoned rows (max retries exceeded)
-                abandoned_count = sum(1 for rk in row_key_retry_count if row_key_retry_count[rk] >= MAX_ROW_RETRIES)
-                if abandoned_count > 0:
-                    logger.error(f"[ROW_KEY_COMPLETE] ⚠️ {abandoned_count} rows abandoned after {MAX_ROW_RETRIES} retries")
-                    logger.error(f"[ROW_KEY_COMPLETE] Check logs above for [ROW_KEY_ABANDONED] entries")
+                if abandoned_rows_details:
+                    logger.error(f"[ROW_KEY_ABANDONED] {len(abandoned_rows_details)} rows failed after {MAX_ROW_RETRIES} retries")
+
+                    # Extract primary key values for error message
+                    primary_key_fields = validator.primary_key if validator.primary_key else []
+                    failed_row_identifiers = []
+
+                    for abandoned_row in abandoned_rows_details:
+                        row_data = abandoned_row['row_data']
+                        # Extract _row_key if present (remove it from row_data for identifier extraction)
+                        if '_row_key' in row_data:
+                            clean_row_data = {k: v for k, v in row_data.items() if k != '_row_key'}
+                        else:
+                            clean_row_data = row_data
+
+                        # Build identifier from primary key fields
+                        if primary_key_fields:
+                            identifier_parts = []
+                            for field in primary_key_fields:
+                                value = clean_row_data.get(field, 'N/A')
+                                identifier_parts.append(f"{field}={value}")
+                            identifier = ", ".join(identifier_parts)
+                        else:
+                            # No primary key defined - show first 3 fields
+                            first_fields = list(clean_row_data.items())[:3]
+                            identifier = ", ".join([f"{k}={v}" for k, v in first_fields])
+
+                        failed_row_identifiers.append(identifier)
+                        logger.error(f"[ROW_KEY_ABANDONED] Failed row: {identifier}")
+
+                    # This will be caught by billing protection in interface lambda
+                    logger.error(f"[ROW_KEY_COMPLETE] Validation FAILED - {len(abandoned_rows_details)} rows could not be processed")
+                    logger.error(f"[ROW_KEY_COMPLETE] Failed rows will be included in error notification")
 
                 # Log final batch manager statistics
                 final_stats = batch_manager.get_stats()
@@ -4137,30 +4185,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Collect all enhanced data from ai_client responses and use aggregation methods
         all_enhanced_call_data = []
         
-        # Create row to batch mapping from batch_timing_data collected during processing
-        # Due to dynamic batch sizing, we need to reconstruct which rows were in each batch
-        row_to_batch_mapping = {}
-        current_row = 0
-        for timing_info in batch_timing_data:
-            batch_number = timing_info['batch_number']
-            batch_size = timing_info['batch_size']
-            # Map the next batch_size rows to this batch
-            for i in range(batch_size):
-                if current_row < len(validation_results):
-                    row_to_batch_mapping[current_row] = batch_number
-                    current_row += 1
-                else:
-                    break
-        
+        # Use row_key_to_batch_mapping built during processing
+        # This maps row_key (hash) → batch_number for enhanced_data aggregation
+        row_to_batch_mapping = row_key_to_batch_mapping if 'row_key_to_batch_mapping' in locals() else {}
+
         # Extract enhanced data from all responses
         pass  # logger.info(f"[AGG_DEBUG] Starting enhanced data extraction from {len(validation_results)} rows")
         pass  # logger.info(f"[AGG_DEBUG] Row to batch mapping: {dict(list(row_to_batch_mapping.items())[:5])}...")  # Show first 5 for debug
-        
+
         for row_key, row_result in validation_results.items():
             if '_raw_responses' in row_result:
                 pass  # logger.info(f"[AGG_DEBUG] Row {row_key}: Found {len(row_result['_raw_responses'])} raw responses")
-                # Note: row_key is now a hash string, not integer, so mapping won't match
-                # Use 0 as default batch number for metrics (not critical for functionality)
+                # Use row_key → batch_number mapping built during processing
                 batch_number = row_to_batch_mapping.get(row_key, 0)
                 
                 search_group_counter = 0  # Track which search group (AI call sequence) in this row
@@ -4968,6 +5004,46 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     cumulative_results['qc_results'] = response['body']['data']['qc_results']
                 if 'qc_metrics' in response['body']['data']:
                     cumulative_results['qc_metrics'] = response['body']['data']['qc_metrics']
+
+                # CRITICAL: Check for abandoned rows and mark validation as failed
+                if 'abandoned_rows_details' in locals() and abandoned_rows_details:
+                    # Extract primary key values for error message
+                    primary_key_fields = validator.primary_key if validator.primary_key else []
+                    failed_row_identifiers = []
+
+                    for abandoned_row in abandoned_rows_details:
+                        row_data = abandoned_row['row_data']
+                        # Extract _row_key if present (remove it from row_data for identifier extraction)
+                        if '_row_key' in row_data:
+                            clean_row_data = {k: v for k, v in row_data.items() if k != '_row_key'}
+                        else:
+                            clean_row_data = row_data
+
+                        # Build identifier from primary key fields
+                        if primary_key_fields:
+                            identifier_parts = []
+                            for field in primary_key_fields:
+                                value = clean_row_data.get(field, 'N/A')
+                                identifier_parts.append(f"{field}={value}")
+                            identifier = ", ".join(identifier_parts)
+                        else:
+                            # No primary key defined - show first 3 fields
+                            first_fields = list(clean_row_data.items())[:3]
+                            identifier = ", ".join([f"{k}={v}" for k, v in first_fields])
+
+                        failed_row_identifiers.append(identifier)
+
+                    # Build error message with failed row details
+                    error_message = f"{len(abandoned_rows_details)} row(s) failed after {MAX_ROW_RETRIES} retry attempts. Failed rows: {'; '.join(failed_row_identifiers[:10])}"
+                    if len(failed_row_identifiers) > 10:
+                        error_message += f" ... and {len(failed_row_identifiers) - 10} more"
+
+                    cumulative_results['validation_error'] = error_message
+                    cumulative_results['status'] = 'FAILED'
+                    cumulative_results['failed_rows'] = failed_row_identifiers
+                    cumulative_results['failed_rows_count'] = len(abandoned_rows_details)
+
+                    logger.error(f"[VALIDATION_FAILED] {error_message}")
 
                 # Save to S3
                 s3_client = boto3.client('s3')
