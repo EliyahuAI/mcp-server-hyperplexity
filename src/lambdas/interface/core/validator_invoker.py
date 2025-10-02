@@ -17,6 +17,7 @@ from row_key_utils import generate_row_key
 from interface_lambda.utils.history_loader import load_validation_history_from_excel
 from schema_validator_simplified import SimplifiedSchemaValidator
 from interface_lambda.reporting.markdown_report import create_markdown_table_from_results
+from shared.shared_table_parser import S3TableParser
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -276,7 +277,14 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         logger.info(f"Starting invoke_validator_lambda - preview_first_row: {preview_first_row}")
         logger.info(f"Excel S3 key: {excel_s3_key}")
         logger.info(f"Config S3 key: {config_s3_key}")
-        
+
+        # Get accurate row count using shared_table_parser (robust empty row handling)
+        logger.info(f"Using shared_table_parser to get accurate row count")
+        table_parser = S3TableParser()
+        parsed_data = table_parser.parse_s3_table(S3_CACHE_BUCKET, excel_s3_key)
+        accurate_total_rows = parsed_data['total_rows']
+        logger.info(f"Accurate row count from shared_table_parser: {accurate_total_rows}")
+
         # Download Excel file from S3
         excel_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=excel_s3_key)
         excel_content = excel_response['Body'].read()
@@ -392,11 +400,13 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         
         logger.info(f"Headers found: {headers}")
         logger.info(f"Total columns: {len(headers)}")
-        
+
         # Process data rows
         rows = []
-        total_rows = worksheet.max_row - 1  # Exclude header
-        
+        # Use accurate row count from shared_table_parser (handles empty rows correctly)
+        total_rows = accurate_total_rows
+        logger.info(f"Using accurate row count: {total_rows} (worksheet.max_row was {worksheet.max_row})")
+
         # Limit rows for preview mode or max_rows
         if preview_first_row:
             # For preview mode, we want to load all rows up to preview_max_rows

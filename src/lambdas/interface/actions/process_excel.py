@@ -20,6 +20,7 @@ from dynamodb_schemas import is_email_validated, track_validation_call, create_r
 from interface_lambda.core.sqs_service import send_preview_request, send_full_request
 from interface_lambda.core.validator_invoker import invoke_validator_lambda
 from interface_lambda.reporting.markdown_report import create_markdown_table_from_results
+from shared.shared_table_parser import S3TableParser
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -135,13 +136,16 @@ def _process_files(excel_file, config_file, email_address, params, context):
         return create_response(400, {'error': 'max_rows, batch_size, and preview_max_rows must be valid integers'})
 
     # After uploading files to S3 and before triggering the job
-    
-    # Calculate total rows for the record
+
+    # Calculate total rows for the record using shared_table_parser (robust empty row handling)
     try:
-        import openpyxl
-        workbook = openpyxl.load_workbook(io.BytesIO(excel_file['content']))
-        total_rows = workbook.active.max_row - 1
-    except Exception:
+        logger.info(f"Using shared_table_parser to get accurate row count from s3://{S3_CACHE_BUCKET}/{excel_s3_key}")
+        table_parser = S3TableParser()
+        parsed_data = table_parser.parse_s3_table(S3_CACHE_BUCKET, excel_s3_key)
+        total_rows = parsed_data['total_rows']
+        logger.info(f"Accurate row count from shared_table_parser: {total_rows}")
+    except Exception as e:
+        logger.error(f"Failed to get row count from shared_table_parser: {e}")
         total_rows = -1 # Indicate that we couldn't determine the row count
     
     # Create the initial run record in DynamoDB
