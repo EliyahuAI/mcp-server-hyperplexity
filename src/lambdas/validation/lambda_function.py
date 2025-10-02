@@ -3110,13 +3110,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             MAX_ROW_RETRIES = 3
 
             # Load pending rows and retry counts from previous continuation (if any)
+            # CRITICAL: Use list (not set) to maintain order - failed rows moved to end for retry
             if is_continuation and event.get('pending_row_keys'):
-                pending_row_keys = set(event['pending_row_keys'])
+                pending_row_keys = list(event['pending_row_keys'])
                 row_key_retry_count = event.get('row_key_retry_count', {})
                 logger.info(f"[ROW_KEY_INIT] Continuation: Loaded {len(pending_row_keys)} pending rows from previous Lambda")
                 logger.info(f"[ROW_KEY_INIT] Continuation: Loaded {len(row_key_retry_count)} retry counts from previous Lambda")
             else:
-                pending_row_keys = set()
+                pending_row_keys = []
                 row_key_retry_count = {}
 
             # Track abandoned rows with details for error reporting
@@ -3142,9 +3143,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Store mapping for all rows (needed for retry logic)
                 row_key_to_row_data[row_key] = row
 
-                # Only add to pending if not already validated (continuations) AND not already in pending set
+                # Only add to pending if not already validated (continuations) AND not already in pending list
                 if row_key not in validation_results and row_key not in pending_row_keys:
-                    pending_row_keys.add(row_key)
+                    pending_row_keys.append(row_key)  # Append to end of ordered list
                     if row_key not in row_key_retry_count:
                         row_key_retry_count[row_key] = 0
                 elif row_key in validation_results:
@@ -3161,8 +3162,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     # Get current batch size
                     current_batch_size = batch_manager.get_batch_size_for_models(all_models)
 
-                    # Select rows from pending set (up to batch_size)
-                    batch_row_keys = list(pending_row_keys)[:current_batch_size]
+                    # Select rows from front of pending list (up to batch_size)
+                    # Failed rows are at the end, so this prioritizes fresh/successful rows
+                    batch_row_keys = pending_row_keys[:current_batch_size]
                     batch = [row_key_to_row_data[rk] for rk in batch_row_keys]
                     actual_batch_size = len(batch)
                     batch_index = batch_num + 1
@@ -3408,13 +3410,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 pending_row_keys.remove(row_key)
                                 logger.debug(f"[ROW_KEY_PARTIAL_SUCCESS] Row {row_key[:16]}... completed despite batch failure")
 
-                        # Handle failed rows - increment retry count, remove if max retries exceeded
+                        # Handle failed rows - increment retry count, move to end for later retry
                         failed_row_keys = set(batch_row_keys) - completed_row_keys
                         rows_abandoned = []
+                        rows_moved_to_end = []
+
                         for failed_row_key in failed_row_keys:
                             row_key_retry_count[failed_row_key] = row_key_retry_count.get(failed_row_key, 0) + 1
+
                             if row_key_retry_count[failed_row_key] >= MAX_ROW_RETRIES:
-                                pending_row_keys.discard(failed_row_key)
+                                # Max retries exceeded - abandon this row
+                                if failed_row_key in pending_row_keys:
+                                    pending_row_keys.remove(failed_row_key)
                                 rows_abandoned.append(failed_row_key)
 
                                 # Capture row details for error reporting
@@ -3426,9 +3433,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 })
 
                                 logger.error(f"[ROW_KEY_ABANDONED] Row {failed_row_key[:16]}... failed {MAX_ROW_RETRIES} times, giving up")
+                            else:
+                                # Move failed row to end of list for retry later
+                                # This gives temporary failures more time to resolve
+                                if failed_row_key in pending_row_keys:
+                                    pending_row_keys.remove(failed_row_key)
+                                    pending_row_keys.append(failed_row_key)
+                                    rows_moved_to_end.append(failed_row_key)
+                                    logger.debug(f"[ROW_KEY_RETRY] Row {failed_row_key[:16]}... moved to end for retry (attempt {row_key_retry_count[failed_row_key]}/{MAX_ROW_RETRIES})")
 
                         logger.error(f"[BATCH_FAILURE] {len(completed_results)} rows succeeded, {len(failed_row_keys)} failed")
-                        logger.error(f"[BATCH_FAILURE] {len(rows_abandoned)} rows abandoned (max retries), {len(failed_row_keys) - len(rows_abandoned)} rows will retry")
+                        logger.error(f"[BATCH_FAILURE] {len(rows_abandoned)} rows abandoned (max retries), {len(rows_moved_to_end)} rows moved to end for retry")
                         logger.error(f"[BATCH_FAILURE] Pending rows remaining: {len(pending_row_keys)}")
 
                     batch_num += 1
