@@ -3127,6 +3127,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             row_key_to_batch_mapping = {}
 
             logger.info(f"[ROW_KEY_INIT] Building row key mappings for {len(rows)} rows")
+            duplicate_count = 0
+            skipped_validated_count = 0
             for row in rows:
                 # Generate row key (handles both dict and list rows)
                 if isinstance(row, dict):
@@ -3138,9 +3140,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 if '_row_key' in row_data:
                     row_key = row_data['_row_key']
                 else:
-                    row_key = generate_row_key(row_data, validator.primary_key)
+                    # Generate full-row hash (not just ID fields) for consistency with interface lambda
+                    row_key = generate_row_key(row_data, primary_keys=None)
+
+                # Detect duplicate rows (same row_key)
+                if row_key in row_key_to_row_data:
+                    duplicate_count += 1
+                    logger.debug(f"[ROW_KEY_INIT] Duplicate row detected: {row_key[:16]}... (will be deduplicated)")
 
                 # Store mapping for all rows (needed for retry logic)
+                # NOTE: If duplicate, this overwrites the previous row with same key
                 row_key_to_row_data[row_key] = row
 
                 # Only add to pending if not already validated (continuations) AND not already in pending list
@@ -3149,9 +3158,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if row_key not in row_key_retry_count:
                         row_key_retry_count[row_key] = 0
                 elif row_key in validation_results:
-                    logger.debug(f"[ROW_KEY_INIT] Skipping already validated row: {row_key}")
+                    skipped_validated_count += 1
+                    logger.debug(f"[ROW_KEY_INIT] Skipping already validated row: {row_key[:16]}...")
 
-            logger.info(f"[ROW_KEY_INIT] Pending rows: {len(pending_row_keys)}, Already validated: {len(validation_results)}")
+            if duplicate_count > 0:
+                logger.info(f"[ROW_KEY_INIT] Found {duplicate_count} duplicate rows (same row_key) - these will be deduplicated")
+                logger.info(f"[ROW_KEY_INIT] Input: {len(rows)} rows -> {len(row_key_to_row_data)} unique row keys")
+
+            logger.info(f"[ROW_KEY_INIT] Pending: {len(pending_row_keys)}, Already validated: {skipped_validated_count}, Total unique: {len(row_key_to_row_data)}")
 
             async with aiohttp.ClientSession() as session:
                 batch_num = 0
@@ -3527,8 +3541,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             else:
                 # Fallback: generate row key if not provided (for backward compatibility)
                 row_data = row
-                row_key = generate_row_key(row_data, validator.primary_key)
-                logger.warning(f"No pre-computed row key found, generated: {row_key}")
+                # Generate full-row hash for consistency with interface lambda
+                row_key = generate_row_key(row_data, primary_keys=None)
+                logger.warning(f"No pre-computed row key found, generated full-row hash: {row_key[:8]}...")
             
             # Get validation history if provided in the event
             validation_history = {}
@@ -5098,7 +5113,28 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info(f"[S3_SAVE] Decision point: remaining_ms={remaining_ms}, should_continue={should_continue}")
 
                 # Check if there's more work to do (incomplete validation)
-                total_rows = len(event.get('validation_data', {}).get('rows', []))
+                # CRITICAL: With hash-based validation, we deduplicate rows by row_key
+                # So we must count unique row keys, not total rows in input
+                all_input_rows = event.get('validation_data', {}).get('rows', [])
+
+                # Calculate expected unique row keys from input data
+                expected_unique_keys = set()
+                for row in all_input_rows:
+                    if isinstance(row, dict):
+                        row_data = row
+                    else:
+                        row_data = {f"col_{i}": val for i, val in enumerate(row)}
+
+                    if '_row_key' in row_data:
+                        row_key = row_data['_row_key']
+                    else:
+                        # Generate full-row hash for consistency with interface lambda
+                        row_key = generate_row_key(row_data, primary_keys=None)
+                    expected_unique_keys.add(row_key)
+
+                total_rows = len(expected_unique_keys)  # Use unique row keys, not raw row count
+                logger.info(f"[S3_SAVE] Input had {len(all_input_rows)} rows, {total_rows} unique row keys")
+
                 validation_results_data = cumulative_results.get('validation_results', {})
 
                 # Debug: Check the structure of validation_results

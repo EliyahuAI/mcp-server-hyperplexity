@@ -453,11 +453,15 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 logger.info(f"Looking for ID fields: {id_fields}")
                 for id_field in id_fields:
                     logger.info(f"  {id_field}: '{row_data.get(id_field, 'NOT FOUND')}'")
-            
-            # Generate row key
-            row_key = generate_row_key(row_data, id_fields)
-            logger.debug(f"Generated row key: {row_key}")
-            
+
+            # Generate row key - hash ENTIRE row to ensure duplicates are validated
+            # CRITICAL: We hash all fields, not just ID fields, so that:
+            #   - Rows with same ID but different data get separate validations
+            #   - True duplicates (100% identical) are automatically deduplicated
+            #   - Excel report can match validation results correctly
+            row_key = generate_row_key(row_data, primary_key=None)  # None = hash entire row
+            logger.debug(f"Generated full-row hash key: {row_key}")
+
             row_data['_row_key'] = row_key
             rows.append(row_data)
         

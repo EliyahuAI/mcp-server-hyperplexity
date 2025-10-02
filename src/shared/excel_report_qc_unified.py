@@ -346,54 +346,69 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                         return original_formula
             return default_value
         
-        # Extract row keys from validation results instead of regenerating them
-        # The validation lambda already computed hash-based row keys, use those
+        # CRITICAL: Generate row keys from actual Excel row data, not from validation results
+        # This ensures correct hash-based matching even with partial validation results
         row_keys = []
 
-        if isinstance(validation_results, dict) and validation_results:
-            # Use the keys from validation results (these are the hash-based row keys)
-            available_keys = list(validation_results.keys())
-            logger.info(f"[ROW_KEY_EXTRACT] validation_results type: {type(validation_results)}")
-            logger.info(f"[ROW_KEY_EXTRACT] Found {len(available_keys)} pre-computed row keys from validation payload")
-            logger.info(f"[ROW_KEY_EXTRACT] Sample keys: {available_keys[:3]}")
-            logger.debug(f"[ROW_KEY_EXTRACT] Sample keys: {[k[:8] + '...' for k in available_keys[:3]]}")
+        logger.info(f"[ROW_KEY_GENERATE] Generating row keys for {len(rows_data)} Excel rows using FULL ROW hashing")
+        logger.info(f"[ROW_KEY_GENERATE] Hashing all fields (not just ID fields) to match validator behavior")
 
-            # Match rows_data to validation keys by position
-            for row_idx, row_data in enumerate(rows_data):
-                if row_idx < len(available_keys):
-                    row_key = available_keys[row_idx]
-                    logger.debug(f"[ROW_KEY_EXTRACT] Row {row_idx}: Using validation key {row_key[:8]}...")
-                else:
-                    # If we somehow have more rows than validation results, fall back to generation
-                    logger.warning(f"[ROW_KEY_EXTRACT] Row {row_idx}: No validation key available, using fallback")
-                    row_key = f"MISSING_ROW_{row_idx}"
-                row_keys.append(row_key)
+        # Generate row key for each Excel row using the same hash function as validator
+        # CRITICAL: Pass None as primary_keys to hash ENTIRE row (matches validator_invoker.py behavior)
+        for row_idx, row_data in enumerate(rows_data):
+            if isinstance(row_data, dict):
+                # Hash entire row to match validator behavior
+                row_key = generate_row_key(row_data, primary_keys=None)
+            else:
+                # Shouldn't happen, but handle it
+                logger.warning(f"[ROW_KEY_GENERATE] Row {row_idx} is not a dict: {type(row_data)}")
+                row_data_dict = {f"col_{i}": val for i, val in enumerate(row_data)}
+                row_key = generate_row_key(row_data_dict, primary_keys=None)
+
+            row_keys.append(row_key)
+            logger.debug(f"[ROW_KEY_GENERATE] Row {row_idx}: Generated full-row hash {row_key[:8]}...")
+
+        logger.info(f"[ROW_KEY_GENERATE] Generated {len(row_keys)} full-row hash keys for {len(rows_data)} Excel rows")
+        logger.info(f"[ROW_KEY_GENERATE] Sample keys: {row_keys[:3]}")
+
+        # CRITICAL: Verify Excel will show all input rows (including duplicates)
+        unique_hashes = set(row_keys)
+        duplicate_count = len(row_keys) - len(unique_hashes)
+        if duplicate_count > 0:
+            logger.info(f"[ROW_KEY_DUPLICATE] Found {duplicate_count} duplicate rows (same hash)")
+            logger.info(f"[ROW_KEY_DUPLICATE] Excel will show all {len(row_keys)} rows, duplicates will share validation results")
         else:
-            # Emergency fallback if validation_results is not structured as expected
-            logger.error("[ROW_KEY_EXTRACT] validation_results is not a dict, falling back to generation")
-            # This should not happen in normal operation
-            for row_idx, row_data in enumerate(rows_data):
-                row_key = f"FALLBACK_ROW_{row_idx}"
-                row_keys.append(row_key)
-        
-        # Debug validation_results structure
-        logger.debug(f"[EXCEL_DEBUG] validation_results type: {type(validation_results)}")
-        if isinstance(validation_results, dict):
-            logger.debug(f"[EXCEL_DEBUG] validation_results keys: {list(validation_results.keys())}")
-            if validation_results:
-                sample_key = list(validation_results.keys())[0]
-                sample_value = validation_results[sample_key]
-                logger.debug(f"[EXCEL_DEBUG] Sample key: '{sample_key}', Value type: {type(sample_value)}")
-                if isinstance(sample_value, dict):
-                    logger.debug(f"[EXCEL_DEBUG] Sample value keys: {list(sample_value.keys())}")
-                    for field_name, field_data in sample_value.items():
-                        if isinstance(field_data, dict):
-                            logger.debug(f"[EXCEL_DEBUG] Field '{field_name}' structure: {list(field_data.keys())}")
-                        break
+            logger.info(f"[ROW_KEY_DUPLICATE] All {len(row_keys)} rows are unique")
+
+        # Verify hash matching with validation results
+        if isinstance(validation_results, dict) and validation_results:
+            available_validation_keys = set(validation_results.keys())
+
+            # Count how many UNIQUE hashes have validation results
+            unique_validated = unique_hashes & available_validation_keys
+
+            # Count how many TOTAL rows will have validation results (including duplicates)
+            total_rows_with_validation = sum(1 for key in row_keys if key in available_validation_keys)
+
+            logger.info(f"[ROW_KEY_MATCH] {len(unique_validated)} unique hashes have validation results")
+            logger.info(f"[ROW_KEY_MATCH] {total_rows_with_validation}/{len(row_keys)} total Excel rows will display validation results")
+            logger.debug(f"[ROW_KEY_MATCH] Matching keys sample: {list(unique_validated)[:3]}")
+
+            # Check for partial validation (expected in previews/continuations)
+            if len(unique_validated) < len(unique_hashes):
+                unvalidated_unique = len(unique_hashes) - len(unique_validated)
+                total_unvalidated = len(row_keys) - total_rows_with_validation
+                logger.info(f"[ROW_KEY_MATCH] {unvalidated_unique} unique hashes not validated")
+                logger.info(f"[ROW_KEY_MATCH] {total_unvalidated} total rows without validation (expected for preview/partial)")
+
+            # Detect potential hash mismatch issues
+            if len(unique_validated) == 0 and len(available_validation_keys) > 0:
+                logger.error(f"[ROW_KEY_MATCH] HASH MISMATCH: 0 matching keys despite having {len(available_validation_keys)} validation results!")
+                logger.error(f"[ROW_KEY_MATCH] Excel keys sample: {row_keys[:3]}")
+                logger.error(f"[ROW_KEY_MATCH] Validation keys sample: {list(available_validation_keys)[:3]}")
         else:
-            logger.debug(f"[EXCEL_DEBUG] validation_results is not dict: {validation_results}")
+            logger.warning("[ROW_KEY_MATCH] No validation_results to match against")
         
-        logger.debug(f"[EXCEL_DEBUG] Generated {len(row_keys)} hash-based row keys")
 
         # Log QC vs Excel key comparison for debugging
         if qc_results:
@@ -685,7 +700,16 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                     # No additional columns to write (removed Original Value and Supporting Information)
                     
                     updated_row_idx += 1
-            
+
+            # CRITICAL VERIFICATION: Ensure all input rows were written to Excel
+            total_input_rows = len(rows_data)
+            total_output_rows = updated_row_idx - 1  # Subtract header row
+            logger.info(f"[EXCEL_VERIFICATION] Updated Values sheet: Wrote {total_output_rows} rows (input had {total_input_rows} rows)")
+            if total_output_rows == total_input_rows:
+                logger.info(f"[EXCEL_VERIFICATION] ✅ SUCCESS: All {total_input_rows} input rows written to Excel")
+            else:
+                logger.error(f"[EXCEL_VERIFICATION] ❌ MISMATCH: Input {total_input_rows} rows but wrote {total_output_rows} rows")
+
             # SHEET 2: Original Values
             original_sheet = workbook.add_worksheet('Original Values')
             
