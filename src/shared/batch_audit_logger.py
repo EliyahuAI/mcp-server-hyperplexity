@@ -55,14 +55,16 @@ class BatchAuditLogger:
         Returns:
             str: The audit log entry ID
         """
+        logger.info(f"[BATCH AUDIT] Attempting to log batch size change for {model}: {old_batch_size} → {new_batch_size} ({change_reason})")
+
         try:
             audit_id = str(uuid.uuid4())
             timestamp = datetime.now(timezone.utc).isoformat()
-            
+
             # Calculate change metrics
             change_amount = new_batch_size - old_batch_size
             change_percent = ((new_batch_size - old_batch_size) / old_batch_size * 100) if old_batch_size > 0 else 0
-            
+
             item = {
                 'audit_id': audit_id,
                 'timestamp': timestamp,
@@ -74,16 +76,16 @@ class BatchAuditLogger:
                 'change_reason': change_reason,
                 'session_id': session_id or 'none',
                 'additional_context': json.dumps(additional_context) if additional_context else '{}',
-                
+
                 # TTL: Keep audit logs for 90 days
                 'ttl': int((datetime.now(timezone.utc).timestamp() + (90 * 24 * 60 * 60)))
             }
-            
+
+            logger.info(f"[BATCH AUDIT] Writing to DynamoDB table {self.table_name}: {item}")
             self.table.put_item(Item=item)
-            
-            logger.info(f"[BATCH AUDIT] {model}: {old_batch_size} → {new_batch_size} "
+            logger.info(f"[BATCH AUDIT] Successfully wrote to DynamoDB - {model}: {old_batch_size} → {new_batch_size} "
                        f"({change_amount:+d}, {change_percent:+.1f}%) - {change_reason}")
-            
+
             return audit_id
             
         except Exception as e:
