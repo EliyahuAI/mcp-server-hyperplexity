@@ -824,7 +824,7 @@ def verify_async_validation_trigger(session_id, sqs_message_id, run_key=None, ti
                 logger.error(f"[VALIDATION_FAILURE] Detected {total_errors} lambda errors in last 5 minutes - validation likely failed")
                 status_msg = f'[ERROR] Async validation lambda failed - {total_errors} errors detected'
             else:
-                logger.info(f"[VALIDATION_TRIGGER_CHECK] No lambda errors detected - validator may not have been triggered")
+                logger.debug(f"[VALIDATION_TRIGGER_CHECK] No lambda errors detected - validator may not have been triggered")
                 status_msg = f'[WARNING] Async validation not detected after {timeout_seconds}s - falling back to sync'
 
         except Exception as metric_error:
@@ -1263,7 +1263,7 @@ def handle_main_processing(event, context):
                         completed_at=datetime.now(timezone.utc).isoformat(),
                         frontend_payload=error_payload
                     )
-                    logger.info(f"[SESSION_TRACKING] Updated session_info.json with preview failure (files not found)")
+                    logger.debug(f"[SESSION_TRACKING] Updated session_info.json with preview failure (files not found)")
                 except Exception as e:
                     logger.error(f"Failed to update session_info.json for preview failure: {e}")
 
@@ -1357,7 +1357,7 @@ def handle_main_processing(event, context):
                         completed_at=datetime.now(timezone.utc).isoformat(),
                         frontend_payload=error_payload
                     )
-                    logger.info(f"[SESSION_TRACKING] Updated session_info.json with preview failure ({error_type})")
+                    logger.debug(f"[SESSION_TRACKING] Updated session_info.json with preview failure ({error_type})")
                 except Exception as e:
                     logger.error(f"Failed to update session_info.json for preview failure: {e}")
 
@@ -2568,7 +2568,7 @@ def handle_main_processing(event, context):
                         completed_at=datetime.now(timezone.utc).isoformat(),
                         frontend_payload=error_payload
                     )
-                    logger.info(f"[SESSION_TRACKING] Updated session_info.json with preview failure (no results)")
+                    logger.debug(f"[SESSION_TRACKING] Updated session_info.json with preview failure (no results)")
                 except Exception as e:
                     logger.error(f"Failed to update session_info.json for preview failure: {e}")
             
@@ -3113,15 +3113,15 @@ def handle_main_processing(event, context):
                                 lambda_client = boto3.client('lambda')
 
                                 # Log critical delegation parameters before invoking
-                                logger.info(f"[DELEGATION] Invoking async validator with:")
-                                logger.info(f"[DELEGATION]   FunctionName: {VALIDATOR_LAMBDA_NAME}")
-                                logger.info(f"[DELEGATION]   session_id: {session_id}")
-                                logger.info(f"[DELEGATION]   run_key: {run_key}")
-                                logger.info(f"[DELEGATION]   complete_payload_s3_key: {payload_s3_key}")
-                                logger.info(f"[DELEGATION]   S3_UNIFIED_BUCKET: {S3_UNIFIED_BUCKET}")
-                                logger.info(f"[DELEGATION]   results_path: {results_path}")
-                                logger.info(f"[DELEGATION]   config_version: {config_version}")
-                                logger.info(f"[DELEGATION]   email: {email}")
+                                logger.debug(f"[DELEGATION] Invoking async validator with:")
+                                logger.debug(f"[DELEGATION]   FunctionName: {VALIDATOR_LAMBDA_NAME}")
+                                logger.debug(f"[DELEGATION]   session_id: {session_id}")
+                                logger.debug(f"[DELEGATION]   run_key: {run_key}")
+                                logger.debug(f"[DELEGATION]   complete_payload_s3_key: {payload_s3_key}")
+                                logger.debug(f"[DELEGATION]   S3_UNIFIED_BUCKET: {S3_UNIFIED_BUCKET}")
+                                logger.debug(f"[DELEGATION]   results_path: {results_path}")
+                                logger.debug(f"[DELEGATION]   config_version: {config_version}")
+                                logger.debug(f"[DELEGATION]   email: {email}")
                                 logger.debug(f"[DELEGATION] Full payload keys: {list(async_payload_event.keys())}")
 
                                 # Direct Lambda invocation (async)
@@ -3131,7 +3131,7 @@ def handle_main_processing(event, context):
                                     Payload=json.dumps(async_payload_event, default=str)
                                 )
 
-                                logger.info(f"[DELEGATION] Successfully triggered async validator via direct invocation, status: {response['StatusCode']}")
+                                logger.debug(f"[DELEGATION] Successfully triggered async validator via direct invocation, status: {response['StatusCode']}")
 
                                 # Check if invocation was successful (StatusCode 202 for async invocation)
                                 if response['StatusCode'] == 202:
@@ -3162,7 +3162,7 @@ def handle_main_processing(event, context):
                                             'timeout_warning': f'If no completion message is received within {max_expected_runtime:.0f} minutes, the validator may have failed',
                                             'instructions': 'This interface will close now. Check your email for completion notification or refresh the page later to check status.'
                                         })
-                                        logger.info(f"[DELEGATION] Sent final delegation message with {max_expected_runtime:.0f}min timeout warning")
+                                        logger.debug(f"[DELEGATION] Sent final delegation message with {max_expected_runtime:.0f}min timeout warning")
                                     except Exception as websocket_error:
                                         logger.error(f"[DELEGATION] Failed to send final delegation message: {websocket_error}")
 
@@ -3669,7 +3669,7 @@ def handle_main_processing(event, context):
                 balance_error_occurred = False
                 # CRITICAL FIX: Use charged_cost (actual amount) instead of 0
                 charged_amount = charged_cost
-                logger.info(f"[BILLING_INIT] charged_amount set to charged_cost: ${charged_amount:.2f}")
+                logger.debug(f"[BILLING_INIT] charged_amount set to charged_cost: ${charged_amount:.2f}")
                         
                 
             except Exception as e:
@@ -3814,13 +3814,13 @@ def handle_main_processing(event, context):
                     s3_metadata = s3_response.get('Metadata', {})
                     original_filename = s3_metadata.get('original_filename')
 
-                    logger.info(f"[FILENAME_METADATA] S3 key: {excel_s3_key}")
-                    logger.info(f"[FILENAME_METADATA] S3 metadata keys: {list(s3_metadata.keys())}")
-                    logger.info(f"[FILENAME_METADATA] original_filename from metadata: {original_filename}")
+                    logger.debug(f"[FILENAME_METADATA] S3 key: {excel_s3_key}")
+                    logger.debug(f"[FILENAME_METADATA] S3 metadata keys: {list(s3_metadata.keys())}")
+                    logger.debug(f"[FILENAME_METADATA] original_filename from metadata: {original_filename}")
 
                     if original_filename:
                         input_filename = original_filename
-                        logger.info(f"[FILENAME_SOURCE] Using original filename from S3 metadata: {input_filename}")
+                        logger.debug(f"[FILENAME_SOURCE] Using original filename from S3 metadata: {input_filename}")
                     else:
                         # Fallback to S3 key filename
                         input_filename = excel_s3_key.split('/')[-1]
@@ -4069,7 +4069,7 @@ def handle_main_processing(event, context):
                         providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
                         perplexity_calls = providers.get('perplexity', {}).get('calls', 0)
                         anthropic_calls = providers.get('anthropic', {}).get('calls', 0)
-                        logger.info(f"[API_CALLS_EXTRACT] From enhanced_metrics: Perplexity={perplexity_calls}, Anthropic={anthropic_calls}")
+                        logger.debug(f"[API_CALLS_EXTRACT] From enhanced_metrics: Perplexity={perplexity_calls}, Anthropic={anthropic_calls}")
                     else:
                         # Fallback to token_usage if enhanced_metrics not available
                         by_provider = token_usage.get('by_provider', {})
@@ -4093,19 +4093,19 @@ def handle_main_processing(event, context):
                     original_table_name = input_filename
                     if input_filename and '_input' in input_filename:
                         original_table_name = input_filename.replace('_input', '')
-                        logger.info(f"[FILENAME_CLEAN] Removed _input: '{original_table_name}'")
+                        logger.debug(f"[FILENAME_CLEAN] Removed _input: '{original_table_name}'")
 
                     # Remove excel_ prefix if present (from S3 key fallback)
                     if original_table_name and original_table_name.startswith('excel_'):
                         original_table_name = original_table_name[6:]  # Remove 'excel_' prefix
-                        logger.info(f"[FILENAME_CLEAN] Removed excel_ prefix: '{original_table_name}'")
+                        logger.debug(f"[FILENAME_CLEAN] Removed excel_ prefix: '{original_table_name}'")
 
                     # Ensure .xlsx extension
                     if original_table_name and not original_table_name.endswith('.xlsx'):
                         # Remove any existing extension and add .xlsx
                         base_name = original_table_name.rsplit('.', 1)[0] if '.' in original_table_name else original_table_name
                         original_table_name = f"{base_name}.xlsx"
-                        logger.info(f"[FILENAME_CLEAN] Added .xlsx extension: '{original_table_name}'")
+                        logger.debug(f"[FILENAME_CLEAN] Added .xlsx extension: '{original_table_name}'")
 
                     logger.error(f"[FILENAME_CLEAN_FINAL] original_table_name: '{original_table_name}'")
                     
@@ -4222,7 +4222,7 @@ def handle_main_processing(event, context):
                                     'email': email_address
                                 }
                             )
-                            logger.info(f"[FAILURE_EMAIL] Sent failure notification to {email_address}")
+                            logger.debug(f"[FAILURE_EMAIL] Sent failure notification to {email_address}")
                         except Exception as email_error:
                             logger.error(f"[FAILURE_EMAIL] Failed to send failure email: {email_error}")
 
@@ -4231,7 +4231,7 @@ def handle_main_processing(event, context):
                         # Continue to completion tracking but skip email/billing
                     else:
                         # Validation succeeded - proceed with success email
-                        logger.info(f"[VALIDATION_SUCCESS] Validation succeeded - proceeding with success email and billing")
+                        logger.debug(f"[VALIDATION_SUCCESS] Validation succeeded - proceeding with success email and billing")
 
                         # Send email progress update - sending results (95-98% range)
                         _send_websocket_message_deduplicated(session_id, {
@@ -4848,7 +4848,7 @@ def handle_main_processing(event, context):
                                 completed_at=datetime.now(timezone.utc).isoformat(),
                                 frontend_payload=error_payload
                             )
-                            logger.info(f"[SESSION_TRACKING] Updated session_info.json with validation failure (incomplete results)")
+                            logger.debug(f"[SESSION_TRACKING] Updated session_info.json with validation failure (incomplete results)")
                         except Exception as e:
                             logger.error(f"Failed to update session_info.json for validation failure: {e}")
 
@@ -4969,7 +4969,7 @@ def handle_main_processing(event, context):
                         completed_at=datetime.now(timezone.utc).isoformat(),
                         frontend_payload=error_payload
                     )
-                    logger.info(f"[SESSION_TRACKING] Updated session_info.json with preview failure (no results)")
+                    logger.debug(f"[SESSION_TRACKING] Updated session_info.json with preview failure (no results)")
                 except Exception as e:
                     logger.error(f"Failed to update session_info.json for preview failure: {e}")
 
@@ -5010,7 +5010,7 @@ def handle_main_processing(event, context):
                         completed_at=datetime.now(timezone.utc).isoformat(),
                         frontend_payload=error_payload
                     )
-                    logger.info(f"[SESSION_TRACKING] Updated session_info.json with validation failure (no results)")
+                    logger.debug(f"[SESSION_TRACKING] Updated session_info.json with validation failure (no results)")
                 except Exception as e:
                     logger.error(f"Failed to update session_info.json for validation failure: {e}")
 
