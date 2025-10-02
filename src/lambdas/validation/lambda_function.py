@@ -3326,17 +3326,83 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     logger.debug(f"[ASYNC_CONTINUATION] Need to trigger continuation after batch {batch_index}")
                                     logger.debug(f"[ASYNC_CONTINUATION] Avg batch time: {avg_batch_time_seconds:.2f}s, Remaining time insufficient")
 
-                                    # Save progress to DynamoDB
+                                    # [COST_TRACKING_FIX] Extract cost metrics from validation_results
+                                    # This ensures continuation saves preserve accumulated cost data
+                                    continuation_token_usage = {}
+                                    continuation_enhanced_metrics = {}
+                                    continuation_cost = 0.0
+
+                                    try:
+                                        # Extract all enhanced call data from validation results
+                                        all_enhanced_call_data = []
+                                        for row_key, row_result in validation_results.items():
+                                            if '_raw_responses' in row_result:
+                                                for response_id, response_data in row_result['_raw_responses'].items():
+                                                    if 'enhanced_data' in response_data:
+                                                        enhanced_data = response_data['enhanced_data'].copy()
+                                                        enhanced_data['row_key'] = row_key
+                                                        enhanced_data['response_id'] = response_id
+                                                        all_enhanced_call_data.append(enhanced_data)
+
+                                        # Aggregate metrics using ai_client if we have enhanced data
+                                        if all_enhanced_call_data:
+                                            continuation_enhanced_metrics = ai_client.aggregate_provider_metrics(all_enhanced_call_data)
+
+                                            # Extract total cost from aggregated metrics
+                                            if continuation_enhanced_metrics and 'totals' in continuation_enhanced_metrics:
+                                                continuation_cost = continuation_enhanced_metrics['totals'].get('total_cost', 0.0)
+
+                                            logger.debug(f"[CONTINUATION_COST] Extracted cost from {len(all_enhanced_call_data)} API calls: ${continuation_cost:.4f}")
+
+                                        # Build basic token_usage structure for compatibility
+                                        continuation_token_usage = {
+                                            'total_tokens': 0,
+                                            'api_calls': 0,
+                                            'cached_calls': 0,
+                                            'by_provider': {
+                                                'perplexity': {'calls': 0, 'total_tokens': 0},
+                                                'anthropic': {'calls': 0, 'total_tokens': 0}
+                                            }
+                                        }
+
+                                        # Count calls and tokens from validation results
+                                        for row_key, row_result in validation_results.items():
+                                            if '_raw_responses' in row_result:
+                                                for response_id, response_data in row_result['_raw_responses'].items():
+                                                    is_cached = response_data.get('is_cached', False)
+                                                    if is_cached:
+                                                        continuation_token_usage['cached_calls'] += 1
+                                                    else:
+                                                        continuation_token_usage['api_calls'] += 1
+
+                                                    if 'token_usage' in response_data:
+                                                        usage = response_data['token_usage']
+                                                        if usage:
+                                                            continuation_token_usage['total_tokens'] += usage.get('total_tokens', 0)
+                                                            provider = usage.get('api_provider', 'unknown')
+                                                            if provider in continuation_token_usage['by_provider']:
+                                                                continuation_token_usage['by_provider'][provider]['calls'] += 1
+                                                                continuation_token_usage['by_provider'][provider]['total_tokens'] += usage.get('total_tokens', 0)
+
+                                        logger.debug(f"[CONTINUATION_COST] Token usage: {continuation_token_usage['api_calls']} API calls, {continuation_token_usage['cached_calls']} cached")
+
+                                    except Exception as cost_extract_error:
+                                        logger.warning(f"[CONTINUATION_COST] Failed to extract cost metrics: {cost_extract_error}")
+                                        # Continue with save even if cost extraction fails
+
+                                    # Save progress to DynamoDB with actual cost
                                     save_async_progress(
                                         chunks_completed=batch_index + 1,
                                         chunks_total=total_batches,
                                         rows_processed=sum(1 for _ in validation_results),
-                                        current_cost=0.0  # TODO: Calculate actual cost
+                                        current_cost=continuation_cost
                                     )
 
-                                    # Save cumulative results to S3
+                                    # Save cumulative results to S3 WITH COST TRACKING
                                     cumulative_results = {
                                         'validation_results': validation_results,
+                                        'token_usage': continuation_token_usage,  # [FIX] Include cost tracking
+                                        'enhanced_metrics': continuation_enhanced_metrics,  # [FIX] Include enhanced metrics
                                         'qc_results': all_qc_results,  # CRITICAL: Preserve QC data across continuations
                                         'batch_timing_data': all_batch_times,
                                         'continuation_metadata': {
