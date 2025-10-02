@@ -495,7 +495,9 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
             if excel_s3_key and s3_table_parser:
                 table_data = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
                 if table_data and 'basic_info' in table_data:
-                    total_rows = table_data['basic_info'].get('total_rows', -1)
+                    # Extract from shape[0] - analyze_table_structure returns shape as [rows, cols]
+                    shape = table_data['basic_info'].get('shape', [-1, -1])
+                    total_rows = shape[0] if isinstance(shape, list) and len(shape) >= 1 else -1
                 logger.info(f"Calculated total rows using shared parser: {total_rows}")
         except Exception as e:
             logger.warning(f"Could not calculate total rows: {e}")

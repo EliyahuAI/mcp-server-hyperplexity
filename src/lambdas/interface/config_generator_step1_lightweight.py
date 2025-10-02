@@ -1,163 +1,107 @@
 #!/usr/bin/env python3
 """
-Lightweight Table Analyzer for Lambda - No Pandas
-This is a streamlined version of config_generator_step1.py that avoids pandas to keep Lambda size small.
-Uses only openpyxl and csv modules for file reading.
+Lightweight Table Analyzer for Lambda - Uses Shared Parser
+Refactored to use shared_table_parser.py for consistent row counting and parsing logic.
 """
 
-import csv
 import json
 import os
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import logging
 
-# Try to import openpyxl
-try:
-    from openpyxl import load_workbook
-    OPENPYXL_AVAILABLE = True
-except ImportError:
-    OPENPYXL_AVAILABLE = False
-    logging.warning("openpyxl not available - Excel files won't be supported")
+# Add parent directory to path to import shared modules
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from shared.shared_table_parser import S3TableParser
 
 class LightweightTableAnalyzer:
-    """Lightweight table analyzer without pandas dependency"""
-    
+    """Lightweight table analyzer using shared_table_parser for consistency"""
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-    
+        # Note: We don't initialize S3TableParser here since we work with local files
+
     def analyze_table(self, file_path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Analyze table structure from Excel or CSV file
-        
+
         Args:
             file_path: Path to Excel or CSV file
             sheet_name: Excel sheet name (optional, uses first sheet if not specified)
-            
+
         Returns:
             Analysis dictionary with structure information
         """
         try:
-            if file_path.endswith('.csv'):
-                return self._analyze_csv(file_path)
-            elif file_path.endswith(('.xlsx', '.xls')):
-                if not OPENPYXL_AVAILABLE:
-                    raise ImportError("openpyxl is required for Excel file support")
-                return self._analyze_excel(file_path, sheet_name)
+            # Read the file content
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+
+            filename = os.path.basename(file_path)
+
+            # Use shared parser logic
+            parser = S3TableParser()
+
+            # Determine file type
+            if filename.endswith('.csv'):
+                parsed_data = parser._parse_csv_content(file_content, filename)
+            elif filename.endswith(('.xlsx', '.xls')):
+                parsed_data = parser._parse_excel_content(file_content, filename, sheet_name, extract_formulas=False)
             else:
-                raise ValueError(f"Unsupported file format: {file_path}")
-                
+                raise ValueError(f"Unsupported file format: {filename}")
+
+            # Convert parsed data to analysis format
+            return self._generate_analysis_from_parsed_data(parsed_data)
+
         except Exception as e:
             self.logger.error(f"Error analyzing table: {e}")
             raise
-    
-    def _analyze_csv(self, file_path: str) -> Dict[str, Any]:
-        """Analyze CSV file structure"""
-        data_rows = []
-        column_names = []
-        
-        with open(file_path, 'r', encoding='utf-8', newline='') as csvfile:
-            # Detect delimiter
-            sample = csvfile.read(1024)
-            csvfile.seek(0)
-            sniffer = csv.Sniffer()
-            delimiter = sniffer.sniff(sample).delimiter
-            
-            reader = csv.reader(csvfile, delimiter=delimiter)
-            
-            # Read header
-            column_names = next(reader)
-            
-            # Read data rows (limit to first 100 for analysis)
-            for i, row in enumerate(reader):
-                if i >= 100:  # Limit for performance
-                    break
-                if len(row) == len(column_names):  # Skip malformed rows
-                    data_rows.append(row)
-        
-        total_rows = len(data_rows)
-        
-        return self._generate_analysis(
-            filename=os.path.basename(file_path),
-            column_names=column_names,
-            data_rows=data_rows,
-            total_rows=total_rows
-        )
-    
-    def _analyze_excel(self, file_path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
-        """Analyze Excel file structure"""
-        workbook = load_workbook(file_path, read_only=True, data_only=True)
-        
-        # Get target sheet
-        if sheet_name and sheet_name in workbook.sheetnames:
-            worksheet = workbook[sheet_name]
-        else:
-            worksheet = workbook.active
-            sheet_name = worksheet.title
-        
-        # Read data
-        data_rows = []
-        column_names = []
-        
-        # Get all rows as a list to count total
-        all_rows = list(worksheet.iter_rows(values_only=True))
-        
-        if all_rows:
-            # First row as headers
-            column_names = [str(cell) if cell is not None else f"Column_{i+1}" 
-                          for i, cell in enumerate(all_rows[0])]
-            
-            # Data rows (limit to first 100 for analysis)
-            for i, row in enumerate(all_rows[1:101]):  # Skip header, limit to 100
-                if row and any(cell is not None for cell in row):  # Skip empty rows
-                    # Convert to strings, handling None values
-                    clean_row = [str(cell) if cell is not None else "" for cell in row]
-                    data_rows.append(clean_row)
-        
-        workbook.close()
-        
-        total_rows = len(all_rows) - 1 if all_rows else 0  # Subtract header
-        
-        return self._generate_analysis(
-            filename=os.path.basename(file_path),
-            column_names=column_names,
-            data_rows=data_rows,
-            total_rows=total_rows,
-            sheet_name=sheet_name
-        )
-    
-    def _generate_analysis(self, filename: str, column_names: List[str], 
-                          data_rows: List[List[str]], total_rows: int,
-                          sheet_name: Optional[str] = None) -> Dict[str, Any]:
-        """Generate analysis from extracted data"""
-        
+
+    def _generate_analysis_from_parsed_data(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convert shared_table_parser output to LightweightTableAnalyzer format
+
+        Args:
+            parsed_data: Output from S3TableParser (parse_s3_table format)
+
+        Returns:
+            Analysis dictionary matching original LightweightTableAnalyzer format
+        """
+        filename = parsed_data['filename']
+        total_rows = parsed_data['total_rows']
+        column_names = parsed_data['column_names']
+        all_data = parsed_data['data']
+
+        # Use first 100 rows for analysis (like original implementation)
+        sample_data = all_data[:100]
+
         # Basic info
         basic_info = {
             'filename': filename,
             'shape': (total_rows, len(column_names)),
             'column_names': column_names,
-            'sample_rows_analyzed': len(data_rows)
+            'sample_rows_analyzed': len(sample_data)
         }
-        
-        if sheet_name:
-            basic_info['sheet_name'] = sheet_name
-        
+
+        # Add sheet name if Excel
+        if parsed_data['metadata']['file_type'] == 'excel':
+            basic_info['sheet_name'] = parsed_data['metadata'].get('sheet_name')
+
         # Column analysis
         column_analysis = {}
-        for i, col_name in enumerate(column_names):
-            column_values = []
-            for row in data_rows:
-                if i < len(row):
-                    column_values.append(row[i])
-            
+        for col_name in column_names:
+            # Extract column values from sample data
+            column_values = [row.get(col_name, '') for row in sample_data]
             column_analysis[col_name] = self._analyze_column(column_values)
-        
+
         # Infer domain and groupings
-        domain_info = self._infer_domain(column_names, data_rows)
+        domain_info = self._infer_domain(column_names, sample_data)
         inferred_groupings = self._infer_groupings(column_names, column_analysis)
-        
+
         return {
             'basic_info': basic_info,
             'column_analysis': column_analysis,
@@ -165,7 +109,7 @@ class LightweightTableAnalyzer:
             'inferred_groupings': inferred_groupings,
             'analysis_timestamp': datetime.now().isoformat()
         }
-    
+
     def _analyze_column(self, values: List[str]) -> Dict[str, Any]:
         """Analyze a single column's characteristics"""
         if not values:
@@ -175,13 +119,13 @@ class LightweightTableAnalyzer:
                 'unique_count': 0,
                 'sample_values': []
             }
-        
+
         non_null_values = [v for v in values if v and str(v).strip()]
         unique_values = list(set(non_null_values))
-        
+
         # Simple type detection
         data_type = self._detect_data_type(non_null_values)
-        
+
         return {
             'data_type': data_type,
             'non_null_count': len(non_null_values),
@@ -189,25 +133,25 @@ class LightweightTableAnalyzer:
             'sample_values': unique_values[:10],  # First 10 unique values
             'fill_rate': len(non_null_values) / len(values) if values else 0
         }
-    
+
     def _detect_data_type(self, values: List[str]) -> str:
         """Simple data type detection without pandas"""
         if not values:
             return 'Unknown'
-        
+
         # Check a sample of values
         sample_size = min(10, len(values))
         sample_values = values[:sample_size]
-        
+
         numeric_count = 0
         date_like_count = 0
-        
+
         for value in sample_values:
             if not value or not str(value).strip():
                 continue
-                
+
             str_val = str(value).strip()
-            
+
             # Check for numeric (int or float)
             try:
                 float(str_val.replace(',', ''))  # Handle comma-separated numbers
@@ -215,12 +159,12 @@ class LightweightTableAnalyzer:
                 continue
             except (ValueError, TypeError):
                 pass
-            
+
             # Check for date-like patterns
             if self._looks_like_date(str_val):
                 date_like_count += 1
                 continue
-        
+
         # Determine type based on majority
         if numeric_count >= sample_size * 0.7:
             return 'Number'
@@ -228,7 +172,7 @@ class LightweightTableAnalyzer:
             return 'Date'
         else:
             return 'Text'
-    
+
     def _looks_like_date(self, value: str) -> bool:
         """Simple date detection"""
         date_indicators = [
@@ -236,13 +180,13 @@ class LightweightTableAnalyzer:
             'jan', 'feb', 'mar', 'apr', 'may', 'jun',
             'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
         ]
-        
+
         value_lower = value.lower()
-        
+
         # Check for date separators and month names
         return any(indicator in value_lower for indicator in date_indicators)
-    
-    def _infer_domain(self, column_names: List[str], data_rows: List[List[str]]) -> Dict[str, Any]:
+
+    def _infer_domain(self, column_names: List[str], data_rows: List[Dict[str, str]]) -> Dict[str, Any]:
         """Infer domain/business context from column names and data"""
         domain_keywords = {
             'biotech': ['drug', 'compound', 'clinical', 'phase', 'trial', 'fda', 'indication', 'target'],
@@ -251,27 +195,27 @@ class LightweightTableAnalyzer:
             'clinical': ['patient', 'dose', 'treatment', 'adverse', 'efficacy', 'safety'],
             'regulatory': ['regulatory', 'approval', 'compliance', 'filing', 'submission']
         }
-        
+
         column_text = ' '.join(column_names).lower()
-        
+
         domain_scores = {}
         for domain, keywords in domain_keywords.items():
             score = sum(1 for keyword in keywords if keyword in column_text)
             if score > 0:
                 domain_scores[domain] = score
-        
+
         likely_domain = max(domain_scores.items(), key=lambda x: x[1])[0] if domain_scores else 'general'
-        
+
         return {
             'likely_domain': likely_domain,
             'domain_scores': domain_scores,
             'confidence': max(domain_scores.values()) / len(domain_keywords.get(likely_domain, ['unknown'])) if domain_scores else 0
         }
-    
+
     def _infer_groupings(self, column_names: List[str], column_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Infer logical groupings of columns"""
         groupings = []
-        
+
         # Group by common prefixes/suffixes
         name_groups = {}
         for col_name in column_names:
@@ -280,7 +224,7 @@ class LightweightTableAnalyzer:
             if first_word not in name_groups:
                 name_groups[first_word] = []
             name_groups[first_word].append(col_name)
-        
+
         for group_name, columns in name_groups.items():
             if len(columns) > 1:  # Only groups with multiple columns
                 groupings.append({
@@ -288,7 +232,7 @@ class LightweightTableAnalyzer:
                     'columns': columns,
                     'grouping_reason': 'common_prefix'
                 })
-        
+
         return groupings
 
 # Alias for backward compatibility
