@@ -4183,169 +4183,182 @@ def handle_main_processing(event, context):
                         logger.warning(f"Could not get actual processing time for email, using metadata fallback: {e}")
                         actual_processing_time = metadata.get('processing_time', 0)
                     
-                    # Send email progress update - sending results (95-98% range)
-                    _send_websocket_message_deduplicated(session_id, {
-                        'type': 'progress_update',
-                        'progress': 96,
-                        'message': '📧 Sending validation results to your email...',
-                        'status': 'Sending validation results to your email...',
-                        'session_id': session_id
-                    }, "full_validation_email")
+                    # CRITICAL: Check for validation failures BEFORE sending success email
+                    validation_failed = event.get('_validation_failed', False)
+                    failure_reason = event.get('_validation_failure_reason', 'Unknown failure')
 
-                    # Convert any Decimal objects to float for JSON serialization
-                    def convert_decimals(obj):
-                        if isinstance(obj, dict):
-                            return {k: convert_decimals(v) for k, v in obj.items()}
-                        elif isinstance(obj, list):
-                            return [convert_decimals(item) for item in obj]
-                        elif hasattr(obj, '__class__') and obj.__class__.__name__ == 'Decimal':
-                            return float(obj)
-                        return obj
+                    if validation_failed:
+                        logger.error(f"[VALIDATION_FAILURE_DETECTED] Validation failed: {failure_reason}")
+                        logger.error(f"[VALIDATION_FAILURE_DETECTED] Will NOT send success email or charge customer")
 
-                    safe_config_data = convert_decimals(config_data)
+                        # Send failure notification via WebSocket
+                        _send_websocket_message_deduplicated(session_id, {
+                            'type': 'validation_failed',
+                            'session_id': session_id,
+                            'progress': 100,
+                            'status': f'[ERROR] Validation failed: {failure_reason}',
+                            'error': failure_reason
+                        })
 
-                    # Create clean filenames for email attachments
-                    # Use original_table_name (already cleaned above) for enhanced Excel filename
-                    base_table_name = os.path.splitext(original_table_name)[0] if original_table_name else "Table"
-                    # Use "_Validated" suffix
-                    enhanced_excel_filename_for_email = f"{base_table_name}_Validated.xlsx"
-                    input_filename_for_email = original_table_name or input_filename  # Use clean name for display
+                        # Mark status as FAILED in DynamoDB
+                        update_run_status_for_session(
+                            status='FAILED',
+                            error_message=failure_reason,
+                            verbose_status=f"[ERROR] Validation failed: {failure_reason}",
+                            validation_incomplete=True
+                        )
 
-                    logger.error(f"[EMAIL_FILENAMES] Base: '{base_table_name}', Enhanced: '{enhanced_excel_filename_for_email}', Input: '{input_filename_for_email}'")
-
-                    # DEBUG: Log billing_info before sending email to verify it's populated
-                    logger.error(f"[EMAIL_BILLING_DEBUG] billing_info keys: {list(billing_info.keys()) if billing_info else 'None'}")
-                    if billing_info:
-                        logger.error(f"[EMAIL_BILLING_DEBUG] amount_charged: {billing_info.get('amount_charged')}")
-                        logger.error(f"[EMAIL_BILLING_DEBUG] perplexity_api_calls: {billing_info.get('perplexity_api_calls')}")
-                        logger.error(f"[EMAIL_BILLING_DEBUG] anthropic_api_calls: {billing_info.get('anthropic_api_calls')}")
-                        logger.error(f"[EMAIL_BILLING_DEBUG] qc_api_calls: {billing_info.get('qc_api_calls')}")
-                        logger.error(f"[EMAIL_BILLING_DEBUG] table_name: {billing_info.get('table_name')}")
-
-                    email_result = send_validation_results_email(
-                        email_address=email_address, excel_content=excel_content,
-                        config_content=json.dumps(safe_config_data, indent=2).encode('utf-8'),
-                        enhanced_excel_content=safe_enhanced_excel_content,
-                        input_filename=input_filename_for_email, config_filename=config_filename,
-                        enhanced_excel_filename=enhanced_excel_filename_for_email,
-                        session_id=session_id, summary_data=summary_data,
-                        processing_time=actual_processing_time,
-                        reference_pin=reference_pin, metadata=metadata, preview_email=preview_email,
-                        billing_info=billing_info,
-                        config_id=config_id
-                    )
-
-                    # ========== BILLING AFTER SUCCESSFUL EMAIL DELIVERY ==========
-                    # Only charge the user AFTER the email has been successfully sent
-                    if email_result and email_result.get('success', False):
-                        logger.debug(f"[BILLING_SECURITY] ✅ Email delivered successfully - proceeding with billing")
-
-                        # For full validation, deduct from account balance
-                        # CRITICAL: Skip billing if validation failed (from async completion or other sources)
-                        validation_failed = event.get('_validation_failed', False)
-                        failure_reason = event.get('_validation_failure_reason', 'Unknown failure')
-
-                        if validation_failed:
-                            logger.error(f"[BILLING_PROTECTION] Skipping charge due to validation failure: {failure_reason}")
-                            logger.error(f"[BILLING_PROTECTION] Customer will NOT be charged for failed validation")
-
-                            # Send failure notification via WebSocket
-                            _send_websocket_message_deduplicated(session_id, {
-                                'type': 'validation_failed',
-                                'session_id': session_id,
-                                'progress': 100,
-                                'status': f'❌ Validation failed: {failure_reason}',
-                                'error': failure_reason
-                            })
-
-                            # Mark status as FAILED in DynamoDB
-                            update_run_status_for_session(
-                                status='FAILED',
-                                error_message=failure_reason,
-                                verbose_status=f"❌ Validation failed: {failure_reason}",
-                                validation_incomplete=True
+                        # Send failure email to user (not success email!)
+                        try:
+                            from email_sender import send_validation_failure_alert
+                            send_validation_failure_alert(
+                                session_id=session_id,
+                                email=email_address,
+                                error_type='VALIDATION_FAILURE',
+                                error_msg=failure_reason,
+                                session_data={
+                                    'session_id': session_id,
+                                    'reference_pin': reference_pin,
+                                    'email': email_address
+                                }
                             )
+                            logger.info(f"[FAILURE_EMAIL] Sent failure notification to {email_address}")
+                        except Exception as email_error:
+                            logger.error(f"[FAILURE_EMAIL] Failed to send failure email: {email_error}")
 
-                            # Send failure email to user
-                            try:
-                                from email_service import send_validation_error_email
-                                send_validation_error_email(
-                                    email=email,
-                                    session_id=session_id,
-                                    error_message=failure_reason,
-                                    reference_pin=reference_pin
-                                )
-                                logger.info(f"[FAILURE_EMAIL] Sent error notification to {email}")
-                            except Exception as email_error:
-                                logger.error(f"[FAILURE_EMAIL] Failed to send error email: {email_error}")
-                        elif not is_preview and charged_cost > 0:
-                            logger.info(f"BILLING: Proceeding with charge for {email}: ${charged_cost}, run_key: {run_key}")
-                            # Check if user has sufficient balance
-                            current_balance = check_user_balance(email)
-                            if current_balance is not None and current_balance >= Decimal(str(charged_cost)):
-                                # Deduct from balance with run_key protection against duplicate charges
-                                deduct_success = deduct_from_balance(
-                                    email=email,
-                                    amount=Decimal(str(charged_cost)),
-                                    session_id=session_id,
-                                    description=f"Full validation - {len(real_results) if real_results else 0} rows processed",
-                                    raw_cost=Decimal(str(eliyahu_cost)),
-                                    multiplier=Decimal(str(multiplier)),
-                                    run_key=run_key  # CRITICAL: Prevents duplicate charges for same run_key
-                                )
-                                if deduct_success:
-                                    final_balance = check_user_balance(email)
-                                    charged_amount = charged_cost
-                                    logger.debug(f"[BILLING_SUCCESS] ✅ Successfully charged ${charged_cost:.6f} - new balance: ${final_balance:.6f}")
-                                    # Send balance update via WebSocket
-                                    _send_balance_update(session_id, {
-                                        'type': 'balance_update',
-                                        'new_balance': float(final_balance) if final_balance else 0,
-                                        'transaction': {
-                                            'amount': -float(charged_cost),
-                                            'description': f"Full validation - {len(real_results) if real_results else 0} rows processed",
-                                            'eliyahu_cost': float(eliyahu_cost),
-                                            'multiplier': float(multiplier)
-                                        }
-                                    })
+                        # Early return - do not proceed with success email or billing
+                        logger.error(f"[VALIDATION_FAILURE_DETECTED] Exiting without sending success email or billing")
+                        # Continue to completion tracking but skip email/billing
+                    else:
+                        # Validation succeeded - proceed with success email
+                        logger.info(f"[VALIDATION_SUCCESS] Validation succeeded - proceeding with success email and billing")
+
+                        # Send email progress update - sending results (95-98% range)
+                        _send_websocket_message_deduplicated(session_id, {
+                            'type': 'progress_update',
+                            'progress': 96,
+                            'message': '[SUCCESS] Sending validation results to your email...',
+                            'status': 'Sending validation results to your email...',
+                            'session_id': session_id
+                        }, "full_validation_email")
+
+                        # Convert any Decimal objects to float for JSON serialization
+                        def convert_decimals(obj):
+                            if isinstance(obj, dict):
+                                return {k: convert_decimals(v) for k, v in obj.items()}
+                            elif isinstance(obj, list):
+                                return [convert_decimals(item) for item in obj]
+                            elif hasattr(obj, '__class__') and obj.__class__.__name__ == 'Decimal':
+                                return float(obj)
+                            return obj
+
+                        safe_config_data = convert_decimals(config_data)
+
+                        # Create clean filenames for email attachments
+                        # Use original_table_name (already cleaned above) for enhanced Excel filename
+                        base_table_name = os.path.splitext(original_table_name)[0] if original_table_name else "Table"
+                        # Use "_Validated" suffix
+                        enhanced_excel_filename_for_email = f"{base_table_name}_Validated.xlsx"
+                        input_filename_for_email = original_table_name or input_filename  # Use clean name for display
+
+                        logger.error(f"[EMAIL_FILENAMES] Base: '{base_table_name}', Enhanced: '{enhanced_excel_filename_for_email}', Input: '{input_filename_for_email}'")
+
+                        # DEBUG: Log billing_info before sending email to verify it's populated
+                        logger.error(f"[EMAIL_BILLING_DEBUG] billing_info keys: {list(billing_info.keys()) if billing_info else 'None'}")
+                        if billing_info:
+                            logger.error(f"[EMAIL_BILLING_DEBUG] amount_charged: {billing_info.get('amount_charged')}")
+                            logger.error(f"[EMAIL_BILLING_DEBUG] perplexity_api_calls: {billing_info.get('perplexity_api_calls')}")
+                            logger.error(f"[EMAIL_BILLING_DEBUG] anthropic_api_calls: {billing_info.get('anthropic_api_calls')}")
+                            logger.error(f"[EMAIL_BILLING_DEBUG] qc_api_calls: {billing_info.get('qc_api_calls')}")
+                            logger.error(f"[EMAIL_BILLING_DEBUG] table_name: {billing_info.get('table_name')}")
+
+                        email_result = send_validation_results_email(
+                            email_address=email_address, excel_content=excel_content,
+                            config_content=json.dumps(safe_config_data, indent=2).encode('utf-8'),
+                            enhanced_excel_content=safe_enhanced_excel_content,
+                            input_filename=input_filename_for_email, config_filename=config_filename,
+                            enhanced_excel_filename=enhanced_excel_filename_for_email,
+                            session_id=session_id, summary_data=summary_data,
+                            processing_time=actual_processing_time,
+                            reference_pin=reference_pin, metadata=metadata, preview_email=preview_email,
+                            billing_info=billing_info,
+                            config_id=config_id
+                        )
+
+                        # ========== BILLING AFTER SUCCESSFUL EMAIL DELIVERY ==========
+                        # Only charge the user AFTER the email has been successfully sent
+                        if email_result and email_result.get('success', False):
+                            logger.debug(f"[BILLING_SECURITY] [SUCCESS] Email delivered successfully - proceeding with billing")
+
+                            # For full validation, deduct from account balance
+                            if not is_preview and charged_cost > 0:
+                                logger.info(f"BILLING: Proceeding with charge for {email}: ${charged_cost}, run_key: {run_key}")
+                                # Check if user has sufficient balance
+                                current_balance = check_user_balance(email)
+                                if current_balance is not None and current_balance >= Decimal(str(charged_cost)):
+                                    # Deduct from balance with run_key protection against duplicate charges
+                                    deduct_success = deduct_from_balance(
+                                        email=email,
+                                        amount=Decimal(str(charged_cost)),
+                                        session_id=session_id,
+                                        description=f"Full validation - {len(real_results) if real_results else 0} rows processed",
+                                        raw_cost=Decimal(str(eliyahu_cost)),
+                                        multiplier=Decimal(str(multiplier)),
+                                        run_key=run_key  # CRITICAL: Prevents duplicate charges for same run_key
+                                    )
+                                    if deduct_success:
+                                        final_balance = check_user_balance(email)
+                                        charged_amount = charged_cost
+                                        logger.debug(f"[BILLING_SUCCESS] [SUCCESS] Successfully charged ${charged_cost:.6f} - new balance: ${final_balance:.6f}")
+                                        # Send balance update via WebSocket
+                                        _send_balance_update(session_id, {
+                                            'type': 'balance_update',
+                                            'new_balance': float(final_balance) if final_balance else 0,
+                                            'transaction': {
+                                                'amount': -float(charged_cost),
+                                                'description': f"Full validation - {len(real_results) if real_results else 0} rows processed",
+                                                'eliyahu_cost': float(eliyahu_cost),
+                                                'multiplier': float(multiplier)
+                                            }
+                                        })
+                                    else:
+                                        logger.error(f"[BILLING_ERROR] [ERROR] Failed to deduct ${charged_cost:.6f} from {email} balance")
+                                        balance_error_occurred = True
                                 else:
-                                    logger.error(f"[BILLING_ERROR] ❌ Failed to deduct ${charged_cost:.6f} from {email} balance")
+                                    logger.warning(f"[BILLING_ERROR] [ERROR] Insufficient balance for {email}: {current_balance} < ${charged_cost:.6f}")
                                     balance_error_occurred = True
                             else:
-                                logger.warning(f"[BILLING_ERROR] ❌ Insufficient balance for {email}: {current_balance} < ${charged_cost:.6f}")
-                                balance_error_occurred = True
+                                logger.debug(f"[BILLING_SKIP] Skipping charge - is_preview={is_preview}, charged_cost={charged_cost}")
+
+                            # Track detailed API usage for each provider
+                            by_provider = token_usage.get('by_provider', {})
+                            for provider, provider_usage in by_provider.items():
+                                if provider_usage and isinstance(provider_usage, dict):
+                                    usage_data = {
+                                        'api_calls': provider_usage.get('api_calls', 0),
+                                        'cached_calls': provider_usage.get('cached_calls', 0),
+                                        'total_tokens': provider_usage.get('total_tokens', 0),
+                                        'cost': provider_usage.get('total_cost', 0.0) * multiplier,  # Apply multiplier
+                                        'eliyahu_cost': provider_usage.get('total_cost', 0.0),  # Store eliyahu cost too
+                                        'multiplier_applied': multiplier
+                                    }
+
+                                    # Add provider-specific token fields
+                                    if provider == 'perplexity':
+                                        usage_data.update({
+                                            'prompt_tokens': provider_usage.get('prompt_tokens', 0),
+                                            'completion_tokens': provider_usage.get('completion_tokens', 0)
+                                        })
+                                    elif provider == 'anthropic':
+                                        usage_data.update({
+                                            'input_tokens': provider_usage.get('input_tokens', 0),
+                                            'output_tokens': provider_usage.get('output_tokens', 0),
+                                            'cache_tokens': provider_usage.get('cache_tokens', 0)
+                                        })
                         else:
-                            logger.debug(f"[BILLING_SKIP] Skipping charge - is_preview={is_preview}, charged_cost={charged_cost}")
-
-                        # Track detailed API usage for each provider
-                        by_provider = token_usage.get('by_provider', {})
-                        for provider, provider_usage in by_provider.items():
-                            if provider_usage and isinstance(provider_usage, dict):
-                                usage_data = {
-                                    'api_calls': provider_usage.get('api_calls', 0),
-                                    'cached_calls': provider_usage.get('cached_calls', 0),
-                                    'total_tokens': provider_usage.get('total_tokens', 0),
-                                    'cost': provider_usage.get('total_cost', 0.0) * multiplier,  # Apply multiplier
-                                    'eliyahu_cost': provider_usage.get('total_cost', 0.0),  # Store eliyahu cost too
-                                    'multiplier_applied': multiplier
-                                }
-
-                                # Add provider-specific token fields
-                                if provider == 'perplexity':
-                                    usage_data.update({
-                                        'prompt_tokens': provider_usage.get('prompt_tokens', 0),
-                                        'completion_tokens': provider_usage.get('completion_tokens', 0)
-                                    })
-                                elif provider == 'anthropic':
-                                    usage_data.update({
-                                        'input_tokens': provider_usage.get('input_tokens', 0),
-                                        'output_tokens': provider_usage.get('output_tokens', 0),
-                                        'cache_tokens': provider_usage.get('cache_tokens', 0)
-                                    })
-                    else:
-                        logger.error(f"[BILLING_SECURITY] ❌ Email delivery failed - BLOCKING ALL CHARGES to protect user")
-                        logger.error(f"[BILLING_SECURITY] Email result: {email_result}")
-                        balance_error_occurred = True  # Mark as error so no charges occur
+                            logger.error(f"[BILLING_SECURITY] [ERROR] Email delivery failed - BLOCKING ALL CHARGES to protect user")
+                            logger.error(f"[BILLING_SECURITY] Email result: {email_result}")
+                            balance_error_occurred = True  # Mark as error so no charges occur
 
                     # Send final processing progress update - finalizing (98-100% range)
                     _send_websocket_message_deduplicated(session_id, {
