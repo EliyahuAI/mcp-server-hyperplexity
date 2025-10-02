@@ -459,7 +459,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             #   - Rows with same ID but different data get separate validations
             #   - True duplicates (100% identical) are automatically deduplicated
             #   - Excel report can match validation results correctly
-            row_key = generate_row_key(row_data, primary_key=None)  # None = hash entire row
+            row_key = generate_row_key(row_data, primary_keys=None)  # None = hash entire row
             logger.debug(f"Generated full-row hash key: {row_key}")
 
             row_data['_row_key'] = row_key
