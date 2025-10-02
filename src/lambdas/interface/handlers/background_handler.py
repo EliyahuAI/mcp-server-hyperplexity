@@ -1209,16 +1209,17 @@ def handle_main_processing(event, context):
             
             if not excel_content or not config_data:
                 logger.error(f"Failed to retrieve files from unified storage for preview session {clean_session_id}")
-                
+
                 # Send error WebSocket update
-                _send_websocket_message_deduplicated(session_id, {
+                error_payload = {
                     'type': 'preview_failed',
                     'progress': 100,
                     'status': '❌ Failed to retrieve files for preview',
                     'session_id': session_id,
                     'error': 'Files not found'
-                }, "preview_failed_files")
-                
+                }
+                _send_websocket_message_deduplicated(session_id, error_payload, "preview_failed_files")
+
                 update_run_status_for_session(
                     status='FAILED',
                     run_type="Preview",
@@ -1231,6 +1232,31 @@ def handle_main_processing(event, context):
                     estimated_validation_eliyahu_cost=0.0,
                     time_per_row_seconds=0.0
                 )
+
+                # Update session_info.json with failure status and correct config version
+                try:
+                    # Try to get config version even if config_data is None
+                    config_version = 1
+                    config_id = None
+                    if config_data and isinstance(config_data, dict):
+                        config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                        config_id = config_data.get('storage_metadata', {}).get('config_id')
+
+                    storage_manager.update_session_results(
+                        email=email,
+                        session_id=clean_session_id,
+                        operation_type="preview",
+                        config_id=config_id or f"{clean_session_id}_config_v{config_version}",
+                        version=config_version,
+                        run_key=run_key,
+                        status="failed",
+                        completed_at=datetime.now(timezone.utc).isoformat(),
+                        frontend_payload=error_payload
+                    )
+                    logger.info(f"[SESSION_TRACKING] Updated session_info.json with preview failure (files not found)")
+                except Exception as e:
+                    logger.error(f"Failed to update session_info.json for preview failure: {e}")
+
                 return {'statusCode': 500, 'body': json.dumps({'status': 'failed', 'error': 'Files not found'})}
             
             # Send validation start progress update - interface setup complete, AI work begins (5-90% reserved for validation lambda)
@@ -1295,14 +1321,35 @@ def handle_main_processing(event, context):
                 )
 
                 # Send failure notification via WebSocket
-                _send_websocket_message(session_id, {
+                error_payload = {
                     'type': 'preview_failed',
                     'session_id': session_id,
                     'progress': 100,
                     'status': f'⚠️ Preview failed: {error_type}',
                     'error': error_type.lower().replace(' ', '_'),
                     'message': 'Preview encountered an issue. Please try saving as CSV or check table format.'
-                })
+                }
+                _send_websocket_message(session_id, error_payload)
+
+                # Update session_info.json with failure status and correct config version
+                try:
+                    config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                    config_id = config_data.get('storage_metadata', {}).get('config_id')
+
+                    storage_manager.update_session_results(
+                        email=email,
+                        session_id=clean_session_id,
+                        operation_type="preview",
+                        config_id=config_id or f"{clean_session_id}_config_v{config_version}",
+                        version=config_version,
+                        run_key=run_key,
+                        status="failed",
+                        completed_at=datetime.now(timezone.utc).isoformat(),
+                        frontend_payload=error_payload
+                    )
+                    logger.info(f"[SESSION_TRACKING] Updated session_info.json with preview failure ({error_type})")
+                except Exception as e:
+                    logger.error(f"Failed to update session_info.json for preview failure: {e}")
 
                 # Return error response
                 return {
@@ -2454,21 +2501,22 @@ def handle_main_processing(event, context):
                 # No longer need to save a separate S3 object for previews
             else:
                 # Send failure progress update
-                _send_websocket_message_deduplicated(session_id, {
+                error_payload = {
                     'type': 'preview_failed',
                     'progress': 100,
                     'status': '❌ Preview failed to generate results',
                     'session_id': session_id,
                     'error': 'No validation results returned'
-                }, "preview_failed_no_results")
-                
+                }
+                _send_websocket_message_deduplicated(session_id, error_payload, "preview_failed_no_results")
+
                 # Update session info for failed preview
                 try:
                     from dynamodb_schemas import check_user_balance, get_domain_multiplier
                     initial_balance = check_user_balance(email)
                     email_domain = email.split('@')[-1] if '@' in email else 'unknown'
                     multiplier = float(get_domain_multiplier(email_domain))
-                    
+
                     account_info = {
                         'initial_balance': float(initial_balance) if initial_balance else 0,
                         'final_balance': float(initial_balance) if initial_balance else 0,
@@ -2481,7 +2529,7 @@ def handle_main_processing(event, context):
                     _update_session_info_with_account_data(email, clean_session_id, account_info)
                 except Exception as e:
                     logger.error(f"Failed to update session info for failed preview: {e}")
-                
+
                 update_run_status_for_session(status='FAILED',
                     run_type="Preview",
                     verbose_status="Preview failed to generate results.",
@@ -2490,6 +2538,23 @@ def handle_main_processing(event, context):
                     batch_size=10,  # Default batch size
                     eliyahu_cost=0.0,
                     time_per_row_seconds=0.0)
+
+                # Update session_info.json with failure status and correct config version
+                try:
+                    storage_manager.update_session_results(
+                        email=email,
+                        session_id=clean_session_id,
+                        operation_type="preview",
+                        config_id=config_id,
+                        version=config_version,
+                        run_key=run_key,
+                        status="failed",
+                        completed_at=datetime.now(timezone.utc).isoformat(),
+                        frontend_payload=error_payload
+                    )
+                    logger.info(f"[SESSION_TRACKING] Updated session_info.json with preview failure (no results)")
+                except Exception as e:
+                    logger.error(f"Failed to update session_info.json for preview failure: {e}")
             
             # Return early for preview mode to prevent fallthrough to normal processing
             return {'statusCode': 200, 'body': json.dumps({'status': 'preview_completed', 'session_id': session_id})}
@@ -4676,13 +4741,31 @@ def handle_main_processing(event, context):
                         update_run_status(**status_update_data)
 
                         # Send error notification via WebSocket
-                        _send_websocket_message_deduplicated(session_id, {
+                        error_payload = {
                             'type': 'validation_failed',
                             'session_id': session_id,
                             'progress': 100,
                             'status': f'❌ Validation failed: {completeness_issues[0] if completeness_issues else "Incomplete results"}',
                             'error': f"Validation incomplete: {'; '.join(completeness_issues)}"
-                        })
+                        }
+                        _send_websocket_message_deduplicated(session_id, error_payload)
+
+                        # Update session_info.json with failure status and correct config version
+                        try:
+                            storage_manager.update_session_results(
+                                email=email,
+                                session_id=clean_session_id,
+                                operation_type="validation",
+                                config_id=config_id,
+                                version=config_version,
+                                run_key=run_key,
+                                status="failed",
+                                completed_at=datetime.now(timezone.utc).isoformat(),
+                                frontend_payload=error_payload
+                            )
+                            logger.info(f"[SESSION_TRACKING] Updated session_info.json with validation failure (incomplete results)")
+                        except Exception as e:
+                            logger.error(f"Failed to update session_info.json for validation failure: {e}")
 
                         # Return early - do NOT continue with billing, email, or completion
                         return {'statusCode': 500, 'body': json.dumps({
@@ -4744,11 +4827,15 @@ def handle_main_processing(event, context):
                 logger.error(f"[DEBUG] Entering preview handling for empty results")
                 # Even for empty results, store in versioned folder
                 config_version = 1
+                config_id = None
                 try:
                     logger.debug(f"[DEBUG] Getting latest config for email={email}, session={clean_session_id}")
-                    _, latest_config_key = storage_manager.get_latest_config(email, clean_session_id)
+                    config_data, latest_config_key = storage_manager.get_latest_config(email, clean_session_id)
                     logger.debug(f"[DEBUG] Got latest_config_key: {latest_config_key}")
-                    if latest_config_key:
+                    if config_data:
+                        config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                        config_id = config_data.get('storage_metadata', {}).get('config_id')
+                    elif latest_config_key:
                         config_filename = latest_config_key.split('/')[-1]
                         if config_filename.startswith('v') and '_' in config_filename:
                             config_version = int(config_filename.split('_')[0][1:])
@@ -4756,14 +4843,14 @@ def handle_main_processing(event, context):
                 except Exception as e:
                     logger.warning(f"[DEBUG] Exception getting config version: {e}")
                     pass
-                
+
                 logger.debug(f"[DEBUG] About to store preview results with config_version={config_version}")
                 result = storage_manager.store_results(
-                    email, clean_session_id, config_version, 
+                    email, clean_session_id, config_version,
                     {"status": "preview_completed", "note": "No results"}, 'preview'
                 )
                 logger.debug(f"[DEBUG] Store results completed: {result}")
-                
+
                 if result['success']:
                     preview_results_key = result['s3_key']
                     logger.debug(f"[DEBUG] Store results successful, s3_key: {preview_results_key}")
@@ -4776,13 +4863,74 @@ def handle_main_processing(event, context):
                         Body=json.dumps({"status": "preview_completed", "note": "No results"}),
                         ContentType='application/json'
                     )
+
+                # Update session_info.json with failure status and correct config version
+                try:
+                    error_payload = {
+                        'type': 'preview_failed',
+                        'status': '❌ Preview failed - no results',
+                        'session_id': session_id,
+                        'error': 'No validation results returned'
+                    }
+
+                    storage_manager.update_session_results(
+                        email=email,
+                        session_id=clean_session_id,
+                        operation_type="preview",
+                        config_id=config_id or f"{clean_session_id}_config_v{config_version}",
+                        version=config_version,
+                        run_key=run_key,
+                        status="failed",
+                        completed_at=datetime.now(timezone.utc).isoformat(),
+                        frontend_payload=error_payload
+                    )
+                    logger.info(f"[SESSION_TRACKING] Updated session_info.json with preview failure (no results)")
+                except Exception as e:
+                    logger.error(f"Failed to update session_info.json for preview failure: {e}")
+
                 logger.debug(f"[DEBUG] About to return preview_completed response for session {session_id}")
                 return {'statusCode': 200, 'body': json.dumps({'status': 'preview_completed', 'session_id': session_id})}
              else:
-                # Return error response for non-preview failures
+                # Return error response for non-preview failures (validation)
                 logger.debug(f"[DEBUG] About to return background_failed response for non-preview session {session_id}")
+
+                # Update session_info.json with failure status and correct config version
+                try:
+                    # Try to get config version and config_id
+                    config_version = 1
+                    config_id = None
+                    try:
+                        config_data, _ = storage_manager.get_latest_config(email, clean_session_id)
+                        if config_data:
+                            config_version = config_data.get('storage_metadata', {}).get('version', 1)
+                            config_id = config_data.get('storage_metadata', {}).get('config_id')
+                    except Exception as cfg_err:
+                        logger.warning(f"Could not get config for failed validation: {cfg_err}")
+
+                    error_payload = {
+                        'type': 'validation_failed',
+                        'status': '❌ Validation failed - no results',
+                        'session_id': session_id,
+                        'error': 'No validation results returned'
+                    }
+
+                    storage_manager.update_session_results(
+                        email=email,
+                        session_id=clean_session_id,
+                        operation_type="validation",
+                        config_id=config_id or f"{clean_session_id}_config_v{config_version}",
+                        version=config_version,
+                        run_key=run_key,
+                        status="failed",
+                        completed_at=datetime.now(timezone.utc).isoformat(),
+                        frontend_payload=error_payload
+                    )
+                    logger.info(f"[SESSION_TRACKING] Updated session_info.json with validation failure (no results)")
+                except Exception as e:
+                    logger.error(f"Failed to update session_info.json for validation failure: {e}")
+
                 return {'statusCode': 500, 'body': json.dumps({
-                    'status': 'background_failed', 
+                    'status': 'background_failed',
                     'error': 'No validation results returned',
                     'session_id': session_id
                 })}
