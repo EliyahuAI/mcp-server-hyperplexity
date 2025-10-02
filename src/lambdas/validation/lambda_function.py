@@ -210,10 +210,10 @@ class DynamicBatchSizeManager:
         )
         
         if new_batch_size != self.model_batch_sizes[model]:
-            logger.warning(f"Rate limit hit for {model}")
+            logger.info(f"[BATCH_SIZE] Rate limit - decreasing batch size for {model}: {self.model_batch_sizes[model]} -> {new_batch_size} rows/batch")
             self.model_batch_sizes[model] = new_batch_size
         else:
-            logger.warning(f"Rate limit hit for {model}, at minimum batch size")
+            logger.info(f"[BATCH_SIZE] Rate limit hit for {model}, already at minimum batch size ({self.min_batch_size})")
     
     def on_success(self, models_used: set):
         """
@@ -271,6 +271,7 @@ class DynamicBatchSizeManager:
             
             if new_batch_size != self.model_batch_sizes[model]:
                 # Increasing batch size after success streak
+                logger.info(f"[BATCH_SIZE] Increasing batch size for {model}: {self.model_batch_sizes[model]} -> {new_batch_size} rows/batch (after {self.consecutive_successes_for_increase} consecutive successes)")
                 self.model_batch_sizes[model] = new_batch_size
                 self.model_consecutive_successes[model] = 0
     
@@ -283,7 +284,7 @@ class DynamicBatchSizeManager:
             )
             
             if new_batch_size != self.model_batch_sizes[model]:
-                logger.warning(f"Reducing batch size for {model} after consecutive failures")
+                logger.info(f"[BATCH_SIZE] Decreasing batch size for {model}: {self.model_batch_sizes[model]} -> {new_batch_size} rows/batch (after {self.consecutive_failures_for_decrease} consecutive failures)")
                 self.model_batch_sizes[model] = new_batch_size
                 self.model_consecutive_failures[model] = 0
     
@@ -3135,6 +3136,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             current_batch_size = batch_manager.get_batch_size_for_models(all_models)
             total_batches = (len(rows) + current_batch_size - 1) // current_batch_size  # Calculate total number of batches
 
+            logger.info(f"[BATCH_SIZE] Starting validation with batch size: {current_batch_size} rows/batch for {len(rows)} total rows ({total_batches} batches)")
             logger.debug(f"[BATCH_SIZE] Initial batch size: {current_batch_size} rows (models: {sorted(all_models) if all_models else 'none'})")
             logger.debug(f"[BATCH_SIZE] Total batches planned: {total_batches} for {len(rows)} rows")
             logger.debug(f"🚀 PER-MODEL BATCH PROCESSING: {len(rows)} rows in {total_batches} batches starting with {current_batch_size} rows each")
