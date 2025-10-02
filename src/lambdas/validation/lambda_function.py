@@ -5014,11 +5014,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     }
                 }
 
-                # Include QC data if available
-                if 'qc_results' in response['body']['data']:
-                    cumulative_results['qc_results'] = response['body']['data']['qc_results']
-                if 'qc_metrics' in response['body']['data']:
-                    cumulative_results['qc_metrics'] = response['body']['data']['qc_metrics']
+                # Include QC data if available (use direct variables, not from response)
+                # For async requests, response['body']['data'] doesn't include QC data
+                if all_qc_results:
+                    cumulative_results['qc_results'] = all_qc_results
+                if qc_metrics_summary and qc_metrics_summary.get('total_rows_processed', 0) > 0:
+                    cumulative_results['qc_metrics'] = qc_metrics_summary
 
                 # CRITICAL: Check for abandoned rows and mark validation as failed
                 has_abandoned_rows = False
