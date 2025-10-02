@@ -887,6 +887,16 @@ def handle_async_completion_in_background_handler(event, context):
 
             if isinstance(async_validation_results, dict) and 'validation_results' in async_validation_results:
                 # Wrap async results in sync format
+                # CRITICAL: In S3, enhanced_metrics is at top level, but sync expects it INSIDE metadata
+                metadata_with_enhanced = async_validation_results.get('metadata', {}).copy()
+                if 'enhanced_metrics' in async_validation_results:
+                    metadata_with_enhanced['enhanced_metrics'] = async_validation_results['enhanced_metrics']
+                    # Debug: Verify by_provider data is present
+                    aggregated_metrics = async_validation_results['enhanced_metrics'].get('aggregated_metrics', {})
+                    providers = aggregated_metrics.get('providers', {})
+                    logger.debug(f"[ASYNC_COMPLETION] Added enhanced_metrics to metadata for sync compatibility")
+                    logger.debug(f"[ASYNC_COMPLETION] by_provider data present: {list(providers.keys()) if providers else 'NONE'}")
+
                 validation_results = {
                     'statusCode': 200,
                     'body': {
@@ -897,12 +907,12 @@ def handle_async_completion_in_background_handler(event, context):
                             'qc_metrics': async_validation_results.get('qc_metrics', {})
                         },
                         'token_usage': async_validation_results.get('token_usage', {}),
-                        'metadata': async_validation_results.get('metadata', {})
+                        'metadata': metadata_with_enhanced
                     },
                     # Preserve the original structure for other uses
                     'validation_results': async_validation_results['validation_results'],
                     'token_usage': async_validation_results.get('token_usage', {}),
-                    'metadata': async_validation_results.get('metadata', {}),
+                    'metadata': metadata_with_enhanced,
                     # Also preserve at top level for backward compatibility
                     'qc_results': async_validation_results.get('qc_results', {}),
                     'qc_metrics': async_validation_results.get('qc_metrics', {})
@@ -2068,11 +2078,17 @@ def handle_main_processing(event, context):
                 
                 # Iterate through each search group to get exact models and settings
                 for search_group in search_groups_list:
-                    # Process ALL search groups defined in config, not just those with validation targets
-                    # This ensures we capture models like claude-sonnet-4-0 even if they're in groups without validation targets
-                    
                     search_group_id = search_group.get('group_id', 0)
                     columns_for_this_group = columns_per_search_group.get(search_group_id, 0)
+
+                    # CRITICAL FIX: Skip search groups with no validation targets
+                    # This handles:
+                    # 1. Non-uniform group numbering (gaps like 1,2,3,5)
+                    # 2. Groups with only IGNORED/ID columns (no CRITICAL columns)
+                    if columns_for_this_group == 0:
+                        logger.debug(f"[SEARCH_GROUP_SKIP] Skipping group {search_group_id} - no validation targets")
+                        continue
+
                     model = search_group.get('model', 'sonar-pro')
                     search_context = search_group.get('search_context', 'low')
                     
@@ -3651,7 +3667,9 @@ def handle_main_processing(event, context):
                 initial_balance = check_user_balance(email)
                 final_balance = initial_balance
                 balance_error_occurred = False
-                charged_amount = 0
+                # CRITICAL FIX: Use charged_cost (actual amount) instead of 0
+                charged_amount = charged_cost
+                logger.info(f"[BILLING_INIT] charged_amount set to charged_cost: ${charged_amount:.2f}")
                         
                 
             except Exception as e:
@@ -3796,17 +3814,21 @@ def handle_main_processing(event, context):
                     s3_metadata = s3_response.get('Metadata', {})
                     original_filename = s3_metadata.get('original_filename')
 
+                    logger.info(f"[FILENAME_METADATA] S3 key: {excel_s3_key}")
+                    logger.info(f"[FILENAME_METADATA] S3 metadata keys: {list(s3_metadata.keys())}")
+                    logger.info(f"[FILENAME_METADATA] original_filename from metadata: {original_filename}")
+
                     if original_filename:
                         input_filename = original_filename
-                        logger.info(f"Using original filename from S3 metadata: {input_filename}")
+                        logger.info(f"[FILENAME_SOURCE] Using original filename from S3 metadata: {input_filename}")
                     else:
                         # Fallback to S3 key filename
                         input_filename = excel_s3_key.split('/')[-1]
-                        logger.warning(f"No original filename in S3 metadata, using S3 key: {input_filename}")
+                        logger.warning(f"[FILENAME_SOURCE] No original filename in S3 metadata, using S3 key: {input_filename}")
                 except Exception as e:
                     # Fallback to S3 key filename if metadata read fails
                     input_filename = excel_s3_key.split('/')[-1]
-                    logger.warning(f"Failed to read S3 metadata for original filename: {e}, using S3 key: {input_filename}")
+                    logger.error(f"[FILENAME_SOURCE] Failed to read S3 metadata: {e}, using S3 key: {input_filename}")
                 
                 # Try to get the config lambda filename from metadata, fallback to S3 key
                 config_filename = config_s3_key.split('/')[-1]
@@ -3835,6 +3857,25 @@ def handle_main_processing(event, context):
                     except Exception as e:
                         logger.error(f"Failed to parse table data for Excel: {e}")
                         table_data = None
+
+                # Determine config version and ID BEFORE creating enhanced Excel
+                # This fixes "local variable 'config_version' referenced before assignment" error
+                config_version = 1
+                config_id = "unknown"
+                try:
+                    existing_config, latest_config_key = storage_manager.get_latest_config(email, clean_session_id)
+                    if existing_config and existing_config.get('storage_metadata', {}):
+                        config_version = existing_config['storage_metadata'].get('version', 1)
+                        config_id = existing_config['storage_metadata'].get('config_id', 'unknown')
+                    elif latest_config_key:
+                        # Fallback: try to extract version from filename
+                        config_filename = latest_config_key.split('/')[-1]
+                        if config_filename.startswith('config_v') and '_' in config_filename:
+                            version_part = config_filename.split('_')[1]  # config_v{N}_{source}.json
+                            if version_part.startswith('v'):
+                                config_version = int(version_part[1:])
+                except Exception as e:
+                    logger.warning(f"Could not determine config version for full results: {e}")
 
                 # Create enhanced Excel directly (no ZIP needed)
                 enhanced_excel_content = None
@@ -3890,25 +3931,10 @@ def handle_main_processing(event, context):
                         logger.error(f"Error creating enhanced Excel: {str(e)}")
                         import traceback
                         logger.error(traceback.format_exc())
-                
-                # Determine config version and ID for versioned storage
-                config_version = 1
-                config_id = "unknown"
-                try:
-                    existing_config, latest_config_key = storage_manager.get_latest_config(email, clean_session_id)
-                    if existing_config and existing_config.get('storage_metadata', {}):
-                        config_version = existing_config['storage_metadata'].get('version', 1)
-                        config_id = existing_config['storage_metadata'].get('config_id', 'unknown')
-                    elif latest_config_key:
-                        # Fallback: try to extract version from filename
-                        config_filename = latest_config_key.split('/')[-1]
-                        if config_filename.startswith('config_v') and '_' in config_filename:
-                            version_part = config_filename.split('_')[1]  # config_v{N}_{source}.json
-                            if version_part.startswith('v'):
-                                config_version = int(version_part[1:])
-                except Exception as e:
-                    logger.warning(f"Could not determine config version for full results: {e}")
-                
+
+                # Note: config_version and config_id were already determined above before creating enhanced Excel
+                # This prevents "local variable 'config_version' referenced before assignment" error
+
                 # Store validation results in versioned folder
                 validation_data = {
                     'validation_results': real_results,
@@ -4034,26 +4060,54 @@ def handle_main_processing(event, context):
                     # Ensure enhanced_excel_content is bytes or None (not other types)
                     safe_enhanced_excel_content = enhanced_excel_content if isinstance(enhanced_excel_content, (bytes, type(None))) else None
                     
-                    # Extract API call counts from token usage for receipt
-                    by_provider = token_usage.get('by_provider', {})
-                    perplexity_calls = by_provider.get('perplexity', {}).get('calls', 0)
-                    anthropic_calls = by_provider.get('anthropic', {}).get('calls', 0)
+                    # Extract API call counts from enhanced_metrics (authoritative source)
+                    # FIX: Use aggregated_metrics.providers instead of token_usage.by_provider
+                    perplexity_calls = 0
+                    anthropic_calls = 0
 
-                    # Extract QC call counts from validation results (if available)
+                    if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
+                        providers = enhanced_metrics['aggregated_metrics'].get('providers', {})
+                        perplexity_calls = providers.get('perplexity', {}).get('calls', 0)
+                        anthropic_calls = providers.get('anthropic', {}).get('calls', 0)
+                        logger.info(f"[API_CALLS_EXTRACT] From enhanced_metrics: Perplexity={perplexity_calls}, Anthropic={anthropic_calls}")
+                    else:
+                        # Fallback to token_usage if enhanced_metrics not available
+                        by_provider = token_usage.get('by_provider', {})
+                        perplexity_calls = by_provider.get('perplexity', {}).get('calls', 0)
+                        anthropic_calls = by_provider.get('anthropic', {}).get('calls', 0)
+                        logger.warning(f"[API_CALLS_EXTRACT] Falling back to token_usage: Perplexity={perplexity_calls}, Anthropic={anthropic_calls}")
+
+                    # Extract QC call counts from already-extracted qc_metrics variable (defined around line 3416)
+                    # Using the already-extracted variable instead of re-fetching to avoid stale data
                     qc_calls = 0
-                    if validation_results:
-                        qc_metrics_data = validation_results.get('qc_metrics', {})
-                        qc_calls = qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else 0
+                    if qc_metrics and isinstance(qc_metrics, dict):
+                        qc_calls = qc_metrics.get('total_qc_calls', 0)
                         logger.debug(f"[RECEIPT_QC_CALLS] Extracted QC calls for receipt: {qc_calls}")
+                    else:
+                        logger.warning(f"[RECEIPT_QC_CALLS] qc_metrics not available or not a dict: {type(qc_metrics)}")
                     
                     # Extract original table name (remove _input suffix if present)
+                    # This is used for receipt and email display - should be clean and user-friendly
+                    logger.error(f"[FILENAME_CLEAN_START] input_filename: '{input_filename}'")
+
                     original_table_name = input_filename
                     if input_filename and '_input' in input_filename:
-                        original_table_name = input_filename.replace('_input', '').rsplit('.', 1)[0]
-                        if '.' in original_table_name:  # Add extension back if it had one
-                            original_table_name += '.xlsx'
-                    elif input_filename:
-                        original_table_name = input_filename.rsplit('.', 1)[0] + '.xlsx'
+                        original_table_name = input_filename.replace('_input', '')
+                        logger.info(f"[FILENAME_CLEAN] Removed _input: '{original_table_name}'")
+
+                    # Remove excel_ prefix if present (from S3 key fallback)
+                    if original_table_name and original_table_name.startswith('excel_'):
+                        original_table_name = original_table_name[6:]  # Remove 'excel_' prefix
+                        logger.info(f"[FILENAME_CLEAN] Removed excel_ prefix: '{original_table_name}'")
+
+                    # Ensure .xlsx extension
+                    if original_table_name and not original_table_name.endswith('.xlsx'):
+                        # Remove any existing extension and add .xlsx
+                        base_name = original_table_name.rsplit('.', 1)[0] if '.' in original_table_name else original_table_name
+                        original_table_name = f"{base_name}.xlsx"
+                        logger.info(f"[FILENAME_CLEAN] Added .xlsx extension: '{original_table_name}'")
+
+                    logger.error(f"[FILENAME_CLEAN_FINAL] original_table_name: '{original_table_name}'")
                     
                     # Extract config_id from config metadata (will be added later after config_id is calculated)
                     # This is a placeholder - config_id will be added to billing_info after line 1404
@@ -4150,12 +4204,30 @@ def handle_main_processing(event, context):
 
                     safe_config_data = convert_decimals(config_data)
 
+                    # Create clean filenames for email attachments
+                    # Use original_table_name (already cleaned above) for enhanced Excel filename
+                    base_table_name = os.path.splitext(original_table_name)[0] if original_table_name else "Table"
+                    # Use "_Validated" suffix
+                    enhanced_excel_filename_for_email = f"{base_table_name}_Validated.xlsx"
+                    input_filename_for_email = original_table_name or input_filename  # Use clean name for display
+
+                    logger.error(f"[EMAIL_FILENAMES] Base: '{base_table_name}', Enhanced: '{enhanced_excel_filename_for_email}', Input: '{input_filename_for_email}'")
+
+                    # DEBUG: Log billing_info before sending email to verify it's populated
+                    logger.error(f"[EMAIL_BILLING_DEBUG] billing_info keys: {list(billing_info.keys()) if billing_info else 'None'}")
+                    if billing_info:
+                        logger.error(f"[EMAIL_BILLING_DEBUG] amount_charged: {billing_info.get('amount_charged')}")
+                        logger.error(f"[EMAIL_BILLING_DEBUG] perplexity_api_calls: {billing_info.get('perplexity_api_calls')}")
+                        logger.error(f"[EMAIL_BILLING_DEBUG] anthropic_api_calls: {billing_info.get('anthropic_api_calls')}")
+                        logger.error(f"[EMAIL_BILLING_DEBUG] qc_api_calls: {billing_info.get('qc_api_calls')}")
+                        logger.error(f"[EMAIL_BILLING_DEBUG] table_name: {billing_info.get('table_name')}")
+
                     email_result = send_validation_results_email(
                         email_address=email_address, excel_content=excel_content,
                         config_content=json.dumps(safe_config_data, indent=2).encode('utf-8'),
                         enhanced_excel_content=safe_enhanced_excel_content,
-                        input_filename=input_filename, config_filename=config_filename,
-                        enhanced_excel_filename=f"{os.path.splitext(input_filename)[0].replace('_input', '')}_Validated.xlsx",
+                        input_filename=input_filename_for_email, config_filename=config_filename,
+                        enhanced_excel_filename=enhanced_excel_filename_for_email,
                         session_id=session_id, summary_data=summary_data,
                         processing_time=actual_processing_time,
                         reference_pin=reference_pin, metadata=metadata, preview_email=preview_email,
