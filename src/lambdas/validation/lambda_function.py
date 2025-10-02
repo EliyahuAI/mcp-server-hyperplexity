@@ -2168,8 +2168,9 @@ def progress_sender(progress_queue, session_id):
     Worker thread function to send progress updates from a queue.
 
     This function runs in a separate thread and processes messages from the
-    progress_queue. It ensures that only the latest progress is sent and
-    discards any stale (out-of-order) messages.
+    progress_queue. It batches "AI call x/X completed" updates by waiting 1 second
+    and only sending the highest count, reducing websocket overhead for rapid updates.
+    Other message types are sent immediately.
     """
     last_sent_count = -1
     while True:
@@ -2181,19 +2182,55 @@ def progress_sender(progress_queue, session_id):
                 break
 
             count, message, progress_percent = item
-            
+
             # The final message has a count of float('inf')
             is_final_message = count == float('inf')
+
+            # Check if this is an "AI call x/X completed" message
+            is_ai_call_progress = "AI call" in message and "completed" in message
+
+            # Batch ONLY AI call progress updates: wait 1 second and collect latest
+            if not is_final_message and is_ai_call_progress:
+                time.sleep(1.0)
+
+                # Drain the queue and get the latest AI call update
+                latest_item = (count, message, progress_percent)
+                try:
+                    while True:
+                        newer_item = progress_queue.get_nowait()
+                        if newer_item is None:
+                            # Put sentinel back for next iteration
+                            progress_queue.put(None)
+                            break
+                        newer_count, newer_message, newer_progress = newer_item
+                        if newer_count == float('inf'):
+                            # Put final message back for next iteration
+                            progress_queue.put(newer_item)
+                            break
+                        # Only batch if it's also an AI call message
+                        if "AI call" in newer_message and "completed" in newer_message:
+                            if newer_count > latest_item[0]:
+                                latest_item = newer_item
+                            progress_queue.task_done()
+                        else:
+                            # Non-AI-call message, put it back and stop batching
+                            progress_queue.put(newer_item)
+                            break
+                except queue.Empty:
+                    pass
+
+                count, message, progress_percent = latest_item
+                logger.debug(f"[PROGRESS_SENDER] Batched AI call updates, sending: count={count}")
 
             if is_final_message or count > last_sent_count:
                 if not is_final_message:
                     last_sent_count = count
-                
+
                 logger.debug(f"[PROGRESS_SENDER] Sending progress: count={count}, last_sent={last_sent_count}")
                 send_websocket_progress(session_id, message, progress_percent)
             else:
                 logger.debug(f"[PROGRESS_SENDER] Skipping stale progress: count={count}, last_sent={last_sent_count}")
-            
+
             progress_queue.task_done()
         except Exception as e:
             logger.error(f"[PROGRESS_SENDER] Error in progress sender thread: {e}")
