@@ -309,16 +309,9 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
         def create_run_record(**kwargs): 
             logger.warning("dynamodb_schemas not available - run record creation disabled")
 
-    try:
-        from ..core.sqs_service import send_preview_request, send_full_request
-        SQS_AVAILABLE = True
-        logger.info("✅ SQS service is available - will use async processing")
-    except ImportError as e:
-        SQS_AVAILABLE = False
-        logger.warning(f"❌ SQS service not available - will use sync processing: {e}")
-    except Exception as e:
-        SQS_AVAILABLE = False
-        logger.error(f"❌ Failed to load SQS service - will use sync processing: {e}")
+    # Force async processing for full validation (bypasses time estimate check)
+    FORCE_ASYNC_FULL_VALIDATION = True
+    logger.info(f"FORCE_ASYNC_FULL_VALIDATION: {FORCE_ASYNC_FULL_VALIDATION}")
 
     # Validate email
     if not is_email_validated(email_address):
@@ -333,7 +326,7 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
     preview_email = params.get('preview_email', 'false').lower() == 'true'
     
     logger.info(f"Processing unified request: email={email_address}, session={session_id}, "
-                f"preview={preview}, async_mode={async_mode}, preview_email={preview_email}, SQS_AVAILABLE={SQS_AVAILABLE}")
+                f"preview={preview}, async_mode={async_mode}, preview_email={preview_email}")
 
     # Store files in unified storage if provided
     excel_s3_key = None
@@ -525,42 +518,40 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
         if preview:
             return _handle_preview_request(
                 storage_manager, email_address, session_id, excel_s3_key, config_s3_key,
-                preview_max_rows, async_mode, SQS_AVAILABLE, preview_email, run_key
+                preview_max_rows, async_mode, preview_email, run_key
             )
         else:
             return _handle_full_validation_request(
                 storage_manager, email_address, session_id, excel_s3_key, config_s3_key,
-                max_rows, batch_size, async_mode, SQS_AVAILABLE, preview_email, run_key
+                max_rows, batch_size, FORCE_ASYNC_FULL_VALIDATION, preview_email, run_key
             )
 
     except Exception as e:
         logger.error(f"Error in unified file processing: {str(e)}")
         return create_response(500, {'error': f'File processing failed: {str(e)}'})
 
-def _handle_preview_request(storage_manager, email_address, session_id, excel_s3_key, 
-                          config_s3_key, preview_max_rows, async_mode, SQS_AVAILABLE, preview_email=False, run_key=None):
+def _handle_preview_request(storage_manager, email_address, session_id, excel_s3_key,
+                          config_s3_key, preview_max_rows, async_mode, preview_email=False, run_key=None):
     """Handle preview request using unified storage"""
     from ..utils.helpers import create_response
-    
-    # IMPORTANT: Use unique preview_session_id for WebSocket but keep storage folder consistent
-    # This allows multiple previews from same session without conflicts
-    
-    if async_mode and SQS_AVAILABLE:
-        logger.info(f"Sending preview request to SQS for session {session_id}")
+
+    # Preview always uses async mode via background handler (no SQS direct routing)
+    if async_mode:
+        logger.info(f"Sending preview request to background handler for session {session_id}")
         from ..core.sqs_service import send_preview_request
-        
+
         message_id = send_preview_request(
-            session_id=session_id, excel_s3_key=excel_s3_key, 
-            config_s3_key=config_s3_key, email=email_address, 
+            session_id=session_id, excel_s3_key=excel_s3_key,
+            config_s3_key=config_s3_key, email=email_address,
             reference_pin=session_id.split('_')[-1] if '_' in session_id else session_id[:6],
             preview_max_rows=preview_max_rows, preview_email=preview_email,
             run_key=run_key
         )
-        logger.info(f"SQS preview request sent with MessageId: {message_id}")
-        
+        logger.info(f"Background handler request sent with MessageId: {message_id}")
+
         response_body = {
-            "status": "processing", 
-            "session_id": session_id, 
+            "status": "processing",
+            "session_id": session_id,
             "reference_pin": session_id.split('_')[-1] if '_' in session_id else session_id[:6],
             "storage_path": storage_manager.get_session_path(email_address, session_id)
         }
@@ -571,8 +562,8 @@ def _handle_preview_request(storage_manager, email_address, session_id, excel_s3
             storage_manager, email_address, session_id, excel_s3_key, config_s3_key, preview_max_rows
         )
 
-def _handle_full_validation_request(storage_manager, email_address, session_id, excel_s3_key, 
-                                  config_s3_key, max_rows, batch_size, async_mode, SQS_AVAILABLE, preview_email=False, run_key=None):
+def _handle_full_validation_request(storage_manager, email_address, session_id, excel_s3_key,
+                                  config_s3_key, max_rows, batch_size, force_async, preview_email=False, run_key=None):
     """Handle full validation request using unified storage"""
     from ..utils.helpers import create_response
     
@@ -623,29 +614,30 @@ def _handle_full_validation_request(storage_manager, email_address, session_id, 
             'error_type': 'balance_check_failed'
         })
     
-    if async_mode and SQS_AVAILABLE:
-        logger.info(f"🚀 USING ASYNC PROCESSING: Sending full validation request to SQS for session {session_id} (preview_email={preview_email})")
+    # Force async bypasses Smart Delegation time estimate check in background_handler
+    if force_async:
+        logger.info(f"[SUCCESS] FORCE_ASYNC enabled - sending to background handler for session {session_id} (preview_email={preview_email})")
         from ..core.sqs_service import send_full_request
-        
+
         message_id = send_full_request(
-            session_id=session_id, excel_s3_key=excel_s3_key, 
-            config_s3_key=config_s3_key, email=email_address, 
+            session_id=session_id, excel_s3_key=excel_s3_key,
+            config_s3_key=config_s3_key, email=email_address,
             reference_pin=session_id.split('_')[-1] if '_' in session_id else session_id[:6],
             max_rows=max_rows, batch_size=batch_size, preview_email=preview_email,
             run_key=run_key
         )
-        logger.info(f"SQS full validation request sent with MessageId: {message_id}")
-        
+        logger.info(f"Background handler request sent with MessageId: {message_id}")
+
         response_body = {
-            "status": "processing", 
-            "session_id": session_id, 
+            "status": "processing",
+            "session_id": session_id,
             "reference_pin": session_id.split('_')[-1] if '_' in session_id else session_id[:6],
             "storage_path": storage_manager.get_session_path(email_address, session_id)
         }
         return create_response(200, response_body)
     else:
-        # Synchronous full validation processing
-        logger.warning(f"⚠️ USING SYNC PROCESSING: async_mode={async_mode}, SQS_AVAILABLE={SQS_AVAILABLE}, batch_size={batch_size}")
+        # Synchronous processing - Smart Delegation in background_handler decides sync vs async
+        logger.warning(f"[WARNING] FORCE_ASYNC disabled - Smart Delegation active for batch_size={batch_size}")
         return _process_validation_sync(
             storage_manager, email_address, session_id, excel_s3_key, config_s3_key, max_rows, batch_size
         )
