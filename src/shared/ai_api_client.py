@@ -1332,7 +1332,7 @@ class AIAPIClient:
         try:
             s3_key = self._get_cache_s3_key(cache_key, api_provider)
 
-            logger.info(f"CACHE_CHECK: Checking S3 cache for key: {cache_key[:8]}... in bucket: {self.s3_bucket}, path: {s3_key}")
+            logger.debug(f"CACHE_CHECK: Checking S3 cache for key: {cache_key[:8]}... in bucket: {self.s3_bucket}, path: {s3_key}")
 
             # Use async S3 client to avoid blocking event loop
             async with self.s3_session.client('s3') as s3_client:
@@ -1405,14 +1405,14 @@ class AIAPIClient:
             except:
                 pass
             
-            logger.info(f"CACHE_HIT: Found cached response for key: {cache_key[:8]}... "
+            logger.debug(f"CACHE_HIT: Found cached response for key: {cache_key[:8]}... "
                        f"(cached {cache_age_hours:.1f}h ago, model: {cached_model}, "
                        f"check_time: {cache_check_time:.3f}s)")
             
             # ENHANCED LOGGING: Check for suspiciously fast cache processing times
             cached_processing_time = cached_data.get('processing_time', 0)
             if cached_processing_time < 1.0 and cached_processing_time > 0:
-                logger.info(f"[FAST_CACHED_RESPONSE] Original API call was unusually fast ({cached_processing_time:.3f}s) "
+                logger.debug(f"[FAST_CACHED_RESPONSE] Original API call was unusually fast ({cached_processing_time:.3f}s) "
                            f"for key: {cache_key[:8]}... This might indicate Anthropic cache was hit during original call.")
                 
             # Log cache token information if available
@@ -1420,7 +1420,7 @@ class AIAPIClient:
             cache_read_tokens = cached_token_usage.get('cache_read_tokens', 0)
             cache_creation_tokens = cached_token_usage.get('cache_creation_tokens', 0)
             if cache_read_tokens > 0 or cache_creation_tokens > 0:
-                logger.info(f"[ANTHROPIC_CACHE_TOKENS] Cache tokens in original call: "
+                logger.debug(f"[ANTHROPIC_CACHE_TOKENS] Cache tokens in original call: "
                            f"read={cache_read_tokens}, creation={cache_creation_tokens} for key: {cache_key[:8]}...")
             
             return cached_data
@@ -1429,7 +1429,7 @@ class AIAPIClient:
             cache_check_time = (datetime.now() - cache_check_start).total_seconds()
             # Check if it's a NoSuchKey error (cache miss)
             if 'NoSuchKey' in str(e) or '404' in str(e):
-                logger.info(f"CACHE_MISS: No cached response found for key: {cache_key[:8]}... "
+                logger.debug(f"CACHE_MISS: No cached response found for key: {cache_key[:8]}... "
                            f"(check_time: {cache_check_time:.3f}s)")
                 return None
             # Other errors
@@ -1468,7 +1468,7 @@ class AIAPIClient:
                     ContentType='application/json'
                 )
 
-            logger.info(f"Cached API response, key: {cache_key[:8]}...")
+            logger.debug(f"Cached API response, key: {cache_key[:8]}...")
         except Exception as e:
             logger.error(f"Failed to cache API response: {str(e)}")
     
@@ -1535,7 +1535,7 @@ class AIAPIClient:
                     ContentType='application/json'
                 )
 
-            logger.info(f"[DEBUG] Saved debug data to s3://{self.s3_bucket}/{s3_key}")
+            logger.debug(f"[DEBUG] Saved debug data to s3://{self.s3_bucket}/{s3_key}")
             
             # Also log key information
             if error:
@@ -1544,7 +1544,7 @@ class AIAPIClient:
                 logger.error(f"[DEBUG] Request headers keys: {list(request_data.get('headers', {}).keys())}")
                 logger.error(f"[DEBUG] Request data keys: {list(request_data.get('data', {}).keys())}")
             else:
-                logger.info(f"[DEBUG] API call succeeded - Provider: {api_provider}, Model: {model}")
+                logger.debug(f"[DEBUG] API call succeeded - Provider: {api_provider}, Model: {model}")
                 
         except Exception as e:
             logger.error(f"[DEBUG] Failed to save debug data: {str(e)}")
@@ -1601,20 +1601,20 @@ class AIAPIClient:
             # Auto-add next 2 models from hierarchy as backup
             backup_models = self._get_backup_models(model, 2)
             models_to_try.extend(backup_models)
-            logger.info(f"Auto-selected backup models for {model}: {backup_models}")
+            logger.debug(f"Auto-selected backup models for {model}: {backup_models}")
         else:
             models_to_try = model
         
-        logger.info(f"STRUCTURED_API_CALL: Starting call with {len(models_to_try)} model(s): {models_to_try}, "
-                   f"use_cache: {use_cache}, context: '{context[:50]}...', "
-                   f"prompt_length: {len(prompt)}, schema_keys: {list(schema.keys()) if schema else 'None'}")
+        logger.debug(f"STRUCTURED_API_CALL: Starting call with {len(models_to_try)} model(s): {models_to_try}, "
+                    f"use_cache: {use_cache}, context: '{context[:50]}...', "
+                    f"prompt_length: {len(prompt)}, schema_keys: {list(schema.keys()) if schema else 'None'}")
         
         last_error = None
         
         # Try each model once in sequence
         for model_index, current_model in enumerate(models_to_try):
             try:
-                logger.info(f"[MODEL_TRY] Attempting model {model_index + 1}/{len(models_to_try)}: {current_model}")
+                logger.debug(f"[MODEL_TRY] Attempting model {model_index + 1}/{len(models_to_try)}: {current_model}")
                 
                 # Normalize model for current provider
                 api_provider = self._determine_api_provider(current_model)
@@ -1627,7 +1627,7 @@ class AIAPIClient:
                 if use_cache and cache_key:
                     cached_data = await self._check_cache(cache_key, api_provider)
                     if cached_data:
-                        logger.info(f"[CACHE_HIT] Using cached response for model {current_model}")
+                        logger.debug(f"[CACHE_HIT] Using cached response for model {current_model}")
                         token_usage = cached_data.get('token_usage', {})
                         # Normalize legacy cached token usage for Perplexity
                         if token_usage.get('api_provider') == 'perplexity':
@@ -1686,7 +1686,7 @@ class AIAPIClient:
                                 
                                 actual_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
                                 estimated_cost = enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0)
-                                logger.info(f"Generated enhanced metrics for cached response: actual=${actual_cost:.6f}, estimated=${estimated_cost:.6f}, original_time={original_processing_time:.3f}s")
+                                logger.debug(f"Generated enhanced metrics for cached response: actual=${actual_cost:.6f}, estimated=${estimated_cost:.6f}, original_time={original_processing_time:.3f}s")
                         except Exception as e:
                             logger.warning(f"Failed to generate enhanced metrics for cached response: {e}")
                             enhanced_data = {}
@@ -1695,7 +1695,7 @@ class AIAPIClient:
                         cached_response = cached_data['api_response']
                         if api_provider == 'anthropic':
                             # Convert cached Claude tool response to Perplexity format
-                            logger.info(f"Converting cached Claude response to unified Perplexity format")
+                            logger.debug(f"Converting cached Claude response to unified Perplexity format")
                             structured_data = self.extract_structured_response(cached_response, tool_name)
                             validation_results = structured_data.get('validation_results', structured_data)
 
@@ -1720,7 +1720,7 @@ class AIAPIClient:
                         }
                 
                 # Log that we're making an API call (no cache hit)
-                logger.info(f"API_CALL_PROCEEDING: Making {api_provider} API call for model {current_model} - cache_key: {cache_key[:8] if cache_key else 'N/A'}...")
+                logger.debug(f"API_CALL_PROCEEDING: Making {api_provider} API call for model {current_model} - cache_key: {cache_key[:8] if cache_key else 'N/A'}...")
                 
                 # Make API call based on provider
                 if api_provider == 'anthropic':
@@ -1778,7 +1778,7 @@ class AIAPIClient:
                     # Normalize response format: Convert all responses to Perplexity format for unified parsing
                     if api_provider == 'anthropic':
                         # Convert Claude tool response to Perplexity format
-                        logger.info(f"Converting Claude response to unified Perplexity format")
+                        logger.debug(f"Converting Claude response to unified Perplexity format")
                         claude_response = result['response']
                         structured_data = self.extract_structured_response(claude_response, tool_name)
                         validation_results = structured_data.get('validation_results', structured_data)
@@ -1797,7 +1797,7 @@ class AIAPIClient:
                         # Perplexity response is already in the correct format
                         result['citations'] = self.extract_citations_from_perplexity_response(result.get('response', {}))
                     
-                    logger.info(f"[SUCCESS] Model {current_model} succeeded with unified response format")
+                    logger.debug(f"[SUCCESS] Model {current_model} succeeded with unified response format")
                     return result
                     
             except Exception as e:
@@ -1807,7 +1807,7 @@ class AIAPIClient:
                 
                 # If this is a 529 overload, try next model. For other errors, continue trying too.
                 if "overloaded" in error_msg and "529" in error_msg:
-                    logger.info(f"[OVERLOAD] Model {current_model} overloaded, trying next model")
+                    logger.debug(f"[OVERLOAD] Model {current_model} overloaded, trying next model")
                     continue
                 elif model_index == len(models_to_try) - 1:
                     # This was the last model, re-raise the error
@@ -1845,21 +1845,21 @@ class AIAPIClient:
             if cached_data:
                 token_usage = cached_data.get('token_usage', {})
                 # Debug log the cached token usage structure
-                logger.info(f"DEBUG: Cached token usage keys: {list(token_usage.keys())}")
-                logger.info(f"DEBUG: Cached token usage api_provider: {token_usage.get('api_provider')}")
-                logger.info(f"DEBUG: Cached token usage input_tokens: {token_usage.get('input_tokens')}")
-                logger.info(f"DEBUG: Cached token usage prompt_tokens: {token_usage.get('prompt_tokens')}")
+                logger.debug(f"DEBUG: Cached token usage keys: {list(token_usage.keys())}")
+                logger.debug(f"DEBUG: Cached token usage api_provider: {token_usage.get('api_provider')}")
+                logger.debug(f"DEBUG: Cached token usage input_tokens: {token_usage.get('input_tokens')}")
+                logger.debug(f"DEBUG: Cached token usage prompt_tokens: {token_usage.get('prompt_tokens')}")
                 
                 # Normalize legacy cached token usage for Perplexity
                 if token_usage.get('api_provider') == 'perplexity':
                     if 'input_tokens' not in token_usage and 'prompt_tokens' in token_usage:
                         token_usage['input_tokens'] = token_usage['prompt_tokens']
-                        logger.info(f"DEBUG: Fixed input_tokens: {token_usage['input_tokens']}")
+                        logger.debug(f"DEBUG: Fixed input_tokens: {token_usage['input_tokens']}")
                     if 'output_tokens' not in token_usage and 'completion_tokens' in token_usage:
                         token_usage['output_tokens'] = token_usage['completion_tokens']
-                        logger.info(f"DEBUG: Fixed output_tokens: {token_usage['output_tokens']}")
+                        logger.debug(f"DEBUG: Fixed output_tokens: {token_usage['output_tokens']}")
                     
-                    logger.info(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
+                    logger.debug(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
                 
                 # Generate enhanced metrics for cached response
                 try:
@@ -1892,7 +1892,7 @@ class AIAPIClient:
                         
                         actual_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
                         estimated_cost = enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0)
-                        logger.info(f"Generated enhanced metrics for cached anthropic response: actual=${actual_cost:.6f}, estimated=${estimated_cost:.6f}, original_time={original_processing_time:.3f}s")
+                        logger.debug(f"Generated enhanced metrics for cached anthropic response: actual=${actual_cost:.6f}, estimated=${estimated_cost:.6f}, original_time={original_processing_time:.3f}s")
                 except Exception as e:
                     logger.warning(f"Failed to generate enhanced metrics for cached anthropic response: {e}")
                     enhanced_data = {}
@@ -1907,7 +1907,7 @@ class AIAPIClient:
                 }
         
         # Log that we're making an API call (no cache hit)
-        logger.info(f"API_CALL_PROCEEDING: Making anthropic text API call for model {normalized_model} - cache_key: {cache_key[:8] if cache_key else 'N/A'}...")
+        logger.debug(f"API_CALL_PROCEEDING: Making anthropic text API call for model {normalized_model} - cache_key: {cache_key[:8] if cache_key else 'N/A'}...")
         
         # Make API call
         headers = {
@@ -1951,24 +1951,24 @@ class AIAPIClient:
         if use_cache and cache_key:
             cached_data = await self._check_cache(cache_key, 'perplexity')
             if cached_data:
-                logger.info(f"Smart cache hit for validation key: {cache_key[:8]}... (row: {list(row_data.keys())[:2]})")
+                logger.debug(f"Smart cache hit for validation key: {cache_key[:8]}... (row: {list(row_data.keys())[:2]})")
                 token_usage = cached_data.get('token_usage', {})
                 # Debug log the cached token usage structure
-                logger.info(f"DEBUG: Cached token usage keys: {list(token_usage.keys())}")
-                logger.info(f"DEBUG: Cached token usage api_provider: {token_usage.get('api_provider')}")
-                logger.info(f"DEBUG: Cached token usage input_tokens: {token_usage.get('input_tokens')}")
-                logger.info(f"DEBUG: Cached token usage prompt_tokens: {token_usage.get('prompt_tokens')}")
+                logger.debug(f"DEBUG: Cached token usage keys: {list(token_usage.keys())}")
+                logger.debug(f"DEBUG: Cached token usage api_provider: {token_usage.get('api_provider')}")
+                logger.debug(f"DEBUG: Cached token usage input_tokens: {token_usage.get('input_tokens')}")
+                logger.debug(f"DEBUG: Cached token usage prompt_tokens: {token_usage.get('prompt_tokens')}")
                 
                 # Normalize legacy cached token usage for Perplexity
                 if token_usage.get('api_provider') == 'perplexity':
                     if 'input_tokens' not in token_usage and 'prompt_tokens' in token_usage:
                         token_usage['input_tokens'] = token_usage['prompt_tokens']
-                        logger.info(f"DEBUG: Fixed input_tokens: {token_usage['input_tokens']}")
+                        logger.debug(f"DEBUG: Fixed input_tokens: {token_usage['input_tokens']}")
                     if 'output_tokens' not in token_usage and 'completion_tokens' in token_usage:
                         token_usage['output_tokens'] = token_usage['completion_tokens']
-                        logger.info(f"DEBUG: Fixed output_tokens: {token_usage['output_tokens']}")
+                        logger.debug(f"DEBUG: Fixed output_tokens: {token_usage['output_tokens']}")
                     
-                    logger.info(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
+                    logger.debug(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
                 
                 # Generate enhanced metrics for cached response
                 try:
@@ -2001,7 +2001,7 @@ class AIAPIClient:
                         
                         actual_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
                         estimated_cost = enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0)
-                        logger.info(f"Generated enhanced metrics for cached perplexity smart cache response: actual=${actual_cost:.6f}, estimated=${estimated_cost:.6f}, original_time={original_processing_time:.3f}s")
+                        logger.debug(f"Generated enhanced metrics for cached perplexity smart cache response: actual=${actual_cost:.6f}, estimated=${estimated_cost:.6f}, original_time={original_processing_time:.3f}s")
                 except Exception as e:
                     logger.warning(f"Failed to generate enhanced metrics for cached perplexity smart cache response: {e}")
                     enhanced_data = {}
@@ -2016,7 +2016,7 @@ class AIAPIClient:
                 }
         
         # Log that we're making an API call (no cache hit)
-        logger.info(f"API_CALL_PROCEEDING: Making perplexity smart cache API call for model {model} - cache_key: {cache_key[:8] if cache_key else 'N/A'}...")
+        logger.debug(f"API_CALL_PROCEEDING: Making perplexity smart cache API call for model {model} - cache_key: {cache_key[:8] if cache_key else 'N/A'}...")
         
         # Make API call using the standard method
         result = await self.validate_with_perplexity(prompt, model, search_context_size, use_cache=False, context="")
@@ -2024,7 +2024,7 @@ class AIAPIClient:
         # Cache using the smart key instead of prompt-based key
         if use_cache and cache_key and not result.get('is_cached'):
             await self._save_to_cache(cache_key, result['response'], result['token_usage'], result['processing_time'], model, 'perplexity')
-            logger.info(f"Smart cached validation key: {cache_key[:8]}... (row: {list(row_data.keys())[:2]})")
+            logger.debug(f"Smart cached validation key: {cache_key[:8]}... (row: {list(row_data.keys())[:2]})")
         
         return result
     
@@ -2052,21 +2052,21 @@ class AIAPIClient:
             if cached_data:
                 token_usage = cached_data.get('token_usage', {})
                 # Debug log the cached token usage structure
-                logger.info(f"DEBUG: Cached token usage keys: {list(token_usage.keys())}")
-                logger.info(f"DEBUG: Cached token usage api_provider: {token_usage.get('api_provider')}")
-                logger.info(f"DEBUG: Cached token usage input_tokens: {token_usage.get('input_tokens')}")
-                logger.info(f"DEBUG: Cached token usage prompt_tokens: {token_usage.get('prompt_tokens')}")
+                logger.debug(f"DEBUG: Cached token usage keys: {list(token_usage.keys())}")
+                logger.debug(f"DEBUG: Cached token usage api_provider: {token_usage.get('api_provider')}")
+                logger.debug(f"DEBUG: Cached token usage input_tokens: {token_usage.get('input_tokens')}")
+                logger.debug(f"DEBUG: Cached token usage prompt_tokens: {token_usage.get('prompt_tokens')}")
                 
                 # Normalize legacy cached token usage for Perplexity
                 if token_usage.get('api_provider') == 'perplexity':
                     if 'input_tokens' not in token_usage and 'prompt_tokens' in token_usage:
                         token_usage['input_tokens'] = token_usage['prompt_tokens']
-                        logger.info(f"DEBUG: Fixed input_tokens: {token_usage['input_tokens']}")
+                        logger.debug(f"DEBUG: Fixed input_tokens: {token_usage['input_tokens']}")
                     if 'output_tokens' not in token_usage and 'completion_tokens' in token_usage:
                         token_usage['output_tokens'] = token_usage['completion_tokens']
-                        logger.info(f"DEBUG: Fixed output_tokens: {token_usage['output_tokens']}")
+                        logger.debug(f"DEBUG: Fixed output_tokens: {token_usage['output_tokens']}")
                     
-                    logger.info(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
+                    logger.debug(f"DEBUG: Final token usage: input={token_usage.get('input_tokens')}, output={token_usage.get('output_tokens')}, total={token_usage.get('total_tokens')}")
                 
                 # Generate enhanced metrics for cached response
                 try:
@@ -2099,7 +2099,7 @@ class AIAPIClient:
                         
                         actual_cost = enhanced_data.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
                         estimated_cost = enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0)
-                        logger.info(f"Generated enhanced metrics for cached perplexity response: actual=${actual_cost:.6f}, estimated=${estimated_cost:.6f}, original_time={original_processing_time:.3f}s")
+                        logger.debug(f"Generated enhanced metrics for cached perplexity response: actual=${actual_cost:.6f}, estimated=${estimated_cost:.6f}, original_time={original_processing_time:.3f}s")
                 except Exception as e:
                     logger.warning(f"Failed to generate enhanced metrics for cached perplexity response: {e}")
                     enhanced_data = {}
@@ -2114,7 +2114,7 @@ class AIAPIClient:
                 }
         
         # Log that we're making an API call (no cache hit)
-        logger.info(f"API_CALL_PROCEEDING: Making perplexity API call for model {model} - cache_key: {cache_key[:8] if cache_key else 'N/A'}...")
+        logger.debug(f"API_CALL_PROCEEDING: Making perplexity API call for model {model} - cache_key: {cache_key[:8] if cache_key else 'N/A'}...")
         
         # Make API call
         headers = {
@@ -2166,7 +2166,7 @@ class AIAPIClient:
                         token_usage = self._extract_token_usage(response_json, model, search_context_size)
                         
                         # Log token usage
-                        logger.info(f"Perplexity API Token Usage - Input: {token_usage['input_tokens']}, "
+                        logger.debug(f"Perplexity API Token Usage - Input: {token_usage['input_tokens']}, "
                                    f"Output: {token_usage['output_tokens']}, "
                                    f"Total: {token_usage['total_tokens']}")
                         
@@ -2183,7 +2183,7 @@ class AIAPIClient:
                                 search_context_size=search_context_size,
                                 is_cached=False
                             )
-                            logger.info(f"Generated enhanced metrics for non-cached perplexity response: cost=${enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0):.6f}, time={processing_time:.3f}s")
+                            logger.debug(f"Generated enhanced metrics for non-cached perplexity response: cost=${enhanced_data.get('costs', {}).get('estimated', {}).get('total_cost', 0.0):.6f}, time={processing_time:.3f}s")
                         except Exception as e:
                             logger.warning(f"Failed to generate enhanced metrics for non-cached perplexity response: {e}")
                             enhanced_data = {}
@@ -2319,7 +2319,7 @@ class AIAPIClient:
                                     'encrypted_index': citation.get('encrypted_index', '')
                                 })
             
-            logger.info(f"Extracted {len(citations)} citations from Claude response")
+            logger.debug(f"Extracted &citations from Claude response")
             return citations
             
         except Exception as e:
@@ -2355,7 +2355,7 @@ class AIAPIClient:
                         'last_updated': ''
                     })
             
-            logger.info(f"Extracted {len(citations)} citations from Perplexity response ({len(search_results)} with snippets)")
+            logger.debug(f"Extracted &citations from Perplexity response ({len(search_results)} with snippets)")
             return citations
             
         except Exception as e:
@@ -2393,7 +2393,7 @@ class AIAPIClient:
                             token_usage = self._extract_token_usage(response_json, normalized_model)
                             
                             # Log token usage
-                            logger.info(f"Claude API Token Usage - Input: {token_usage['input_tokens']}, "
+                            logger.debug(f"Claude API Token Usage - Input: {token_usage['input_tokens']}, "
                                        f"Output: {token_usage['output_tokens']}, "
                                        f"Cache Creation: {token_usage['cache_creation_tokens']}, "
                                        f"Cache Read: {token_usage['cache_read_tokens']}, "
@@ -2404,7 +2404,7 @@ class AIAPIClient:
                                 await self._save_to_cache(cache_key, response_json, token_usage, processing_time, normalized_model, 'anthropic')
                             
                             if attempt > 0:
-                                logger.info(f"[SUCCESS] Claude API call succeeded on attempt {attempt + 1}")
+                                logger.debug(f"[SUCCESS] Claude API call succeeded on attempt {attempt + 1}")
                             
                             return {
                                 'response': response_json,
@@ -2531,7 +2531,7 @@ class AIAPIClient:
             'validation_results' in schema['properties']):
             # Extract the actual validation results schema
             actual_schema = schema['properties']['validation_results']
-            logger.info(f"Extracted validation_results schema from tool format for Perplexity API")
+            logger.debug(f"Extracted validation_results schema from tool format for Perplexity API")
         
         # Enforce provider token limits to prevent API errors
         enforced_max_tokens = self._enforce_provider_token_limit(model, max_tokens)
