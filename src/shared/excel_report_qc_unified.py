@@ -223,6 +223,11 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         if not qc_results:
             return None
 
+        # Handle None row keys (can happen for partial validation/preview)
+        if excel_row_key is None:
+            logger.debug(f"[QC_LOOKUP_SKIPPED] Row {row_position} has no row key (partial validation/preview)")
+            return None
+
         # Direct lookup using hash-based keys (should work now with extracted keys)
         if excel_row_key in qc_results:
             logger.debug(f"[QC_LOOKUP_SUCCESS] Direct match for row {row_position}: {excel_row_key[:8]}...")
@@ -426,12 +431,12 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         if qc_results:
             qc_keys_sample = list(qc_results.keys())[:3]
             excel_keys_sample = row_keys[:3]
-            logger.error(f"[KEY_MATCH_DEBUG] QC keys sample: {qc_keys_sample}")
-            logger.error(f"[KEY_MATCH_DEBUG] Excel keys sample: {excel_keys_sample}")
+            logger.debug(f"[KEY_MATCH_DEBUG] QC keys sample: {qc_keys_sample}")
+            logger.debug(f"[KEY_MATCH_DEBUG] Excel keys sample: {excel_keys_sample}")
 
             # Check for exact matches
             matching_keys = set(row_keys) & set(qc_results.keys())
-            logger.error(f"[KEY_MATCH_DEBUG] Found {len(matching_keys)} exact key matches out of {len(row_keys)} Excel rows and {len(qc_results)} QC rows")
+            logger.debug(f"[KEY_MATCH_DEBUG] Found {len(matching_keys)} exact key matches out of {len(row_keys)} Excel rows and {len(qc_results)} QC rows")
 
             if matching_keys:
                 logger.error(f"[KEY_MATCH_SUCCESS] Key matching working correctly!")
@@ -441,7 +446,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                 logger.error(f"[KEY_MATCH_FAILURE] All QC keys: {list(qc_results.keys())}")
                 logger.error(f"[KEY_MATCH_FAILURE] All Excel keys: {row_keys}")
         else:
-            logger.error(f"[KEY_MATCH_DEBUG] No QC results provided to Excel function")
+            logger.debug(f"[KEY_MATCH_DEBUG] No QC results provided to Excel function")
         
         # Load existing Details entries from the original Excel (for history preservation)
         existing_details = []
@@ -517,9 +522,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
             
             # Write all rows to updated sheet (not just rows with changes)
             updated_row_idx = 1
-            logger.error(f"[EXCEL_ROW_DEBUG] Starting to process {len(rows_data)} rows")
-            logger.error(f"[EXCEL_ROW_DEBUG] row_keys sample: {row_keys[:3] if row_keys else 'None'}")
-            logger.error(f"[EXCEL_ROW_DEBUG] validation_results keys sample: {list(validation_results.keys())[:3] if isinstance(validation_results, dict) else 'Not a dict'}")
+            logger.debug(f"[EXCEL_ROW_DEBUG] Starting to process {len(rows_data)} rows")
+            logger.debug(f"[EXCEL_ROW_DEBUG] row_keys sample: {row_keys[:3] if row_keys else 'None'}")
+            logger.debug(f"[EXCEL_ROW_DEBUG] validation_results keys sample: {list(validation_results.keys())[:3] if isinstance(validation_results, dict) else 'Not a dict'}")
 
             for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
                 # Get validation results for this row
@@ -552,7 +557,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 if isinstance(field_qc_data, dict) and field_qc_data.get('qc_applied', False):
                                     updated_value = field_qc_data.get('qc_entry', original_value)
                                     qc_applied = True
-                                    logger.error(f"[QC_APPLIED] Row {row_key}, Col {col_name}: Using QC value '{updated_value}'")
+                                    logger.debug(f"[QC_APPLIED] Row {row_key}, Col {col_name}: Using QC value '{updated_value}'")
                                 else:
                                     logger.error(f"[QC_NOT_APPLIED] Row {row_key}, Col {col_name}: QC available but not applied - qc_applied={field_qc_data.get('qc_applied') if isinstance(field_qc_data, dict) else 'N/A'}")
                             else:
@@ -1312,7 +1317,7 @@ def create_qc_enhanced_excel_for_interface(
                 actual_validation_results = validation_results['validation_results']
                 logger.debug(f"[QC_EXCEL_DEBUG] Using nested validation_results structure")
 
-            logger.error(f"[QC_EXTRACT_DEBUG] Raw qc_results from validation_results.get('qc_results'): {type(qc_results)} = {qc_results}")
+            logger.debug(f"[QC_EXTRACT_DEBUG] Raw qc_results from validation_results.get('qc_results'): {type(qc_results)} = {qc_results}")
             logger.debug(f"[QC_EXCEL_DEBUG] Extracted QC results: {qc_results is not None}")
             if qc_results:
                 logger.debug(f"[QC_EXCEL_DEBUG] QC results keys: {list(qc_results.keys())}")
@@ -1322,12 +1327,12 @@ def create_qc_enhanced_excel_for_interface(
                 logger.debug(f"[QC_EXCEL_DEBUG] validation_results keys: {list(validation_results.keys()) if isinstance(validation_results, dict) else 'Not a dict'}")
                 # Let's see what's actually in the qc_results key
                 raw_qc = validation_results.get('qc_results', 'KEY_NOT_FOUND')
-                logger.error(f"[QC_EXTRACT_DEBUG] Raw content of 'qc_results' key: {raw_qc}")
-                logger.error(f"[QC_EXTRACT_DEBUG] Type of raw qc_results: {type(raw_qc)}")
+                logger.debug(f"[QC_EXTRACT_DEBUG] Raw content of 'qc_results' key: {raw_qc}")
+                logger.debug(f"[QC_EXTRACT_DEBUG] Type of raw qc_results: {type(raw_qc)}")
                 if isinstance(raw_qc, dict):
-                    logger.error(f"[QC_EXTRACT_DEBUG] Raw qc_results has {len(raw_qc)} items")
+                    logger.debug(f"[QC_EXTRACT_DEBUG] Raw qc_results has {len(raw_qc)} items")
                     if raw_qc:
-                        logger.error(f"[QC_EXTRACT_DEBUG] Sample raw qc key: {list(raw_qc.keys())[0] if raw_qc else 'No keys'}")
+                        logger.debug(f"[QC_EXTRACT_DEBUG] Sample raw qc key: {list(raw_qc.keys())[0] if raw_qc else 'No keys'}")
 
         # Call the unified Excel creation function with the actual validation results
         excel_buffer = create_enhanced_excel_with_validation(
