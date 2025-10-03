@@ -1706,7 +1706,7 @@
                 hasInsufficientBalance: false, // Track when user has insufficient balance
                 isProcessingConfig: false, // Track if config generation/refinement is in progress
                 debounceTimers: new Map(), // Track debounce timers by function/card ID
-                isNewUser: false, // Track if user is new (no prior validation history)
+                isNewUser: true, // Track if user is new (no prior validation history) - ALWAYS TRUE FOR NOW
                 userAttemptedProcessing: false, // Track if user tried to process but was blocked by insufficient balance
                 pendingProcessingTrigger: null, // Store function to trigger processing when balance is sufficient
 
@@ -4441,14 +4441,19 @@
                 
                 modal.innerHTML = `
                     <div style="margin-bottom: 16px;">${infoMessage}</div>
-                    <button onclick="this.closest('[style*=\"fixed\"]').remove()" 
-                            style="background: #2d5a27; color: white; border: none; padding: 8px 16px; 
+                    <button id="info-got-it-btn"
+                            style="background: #2d5a27; color: white; border: none; padding: 8px 16px;
                                    border-radius: 4px; cursor: pointer;">Got it</button>
                 `;
-                
+
                 overlay.appendChild(modal);
                 document.body.appendChild(overlay);
-                
+
+                // Close on button click
+                modal.querySelector('#info-got-it-btn').addEventListener('click', () => {
+                    overlay.remove();
+                });
+
                 // Close on backdrop click
                 overlay.addEventListener('click', (e) => {
                     if (e.target === overlay) overlay.remove();
@@ -4582,8 +4587,8 @@
                     
                     if (response.ok && data.success) {
                         if (data.validated) {
-                            // Already validated - store new user status
-                            globalState.isNewUser = data.is_new_user || false;
+                            // Already validated - ALWAYS TREAT AS NEW USER FOR NOW
+                            globalState.isNewUser = true; // Override backend response
                             handleEmailValidated(cardId);
                         } else {
                             // Show code input
@@ -4652,10 +4657,8 @@
                     
                     if (response.ok && data.success) {
                         markButtonSelected(button, '✓ Verified');
-                        // Check if user is new (may not be available in validateEmailCode response)
-                        if (!globalState.hasOwnProperty('isNewUser')) {
-                            globalState.isNewUser = false; // Default for code validation path
-                        }
+                        // ALWAYS TREAT AS NEW USER FOR NOW
+                        globalState.isNewUser = true; // Override - show demo to everyone
                         handleEmailValidated(cardId);
                     } else {
                         showMessage(`${cardId}-messages`, data.message || 'Invalid code', 'error');
