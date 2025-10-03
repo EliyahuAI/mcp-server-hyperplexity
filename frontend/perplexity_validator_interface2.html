@@ -15,6 +15,12 @@
         --primary-hover: #00ff26;
         --secondary-color: #b01bc1;
         --secondary-hover: #e600ff;
+        --tertiary-color: #ff9800;
+        --tertiary-hover: #ff6f00;
+        --quaternary-color: #00bcd4;
+        --quaternary-hover: #00acc1;
+        --quinary-color: #e91e63;
+        --quinary-hover: #c2185b;
         --danger-color: #f44336;
         --warning-color: #ff9800;
         --background-color: #f7f7f7;
@@ -236,7 +242,7 @@
         overflow: hidden;
     }
 
-    .std-button:hover:not(:disabled):not(.primary):not(.secondary) {
+    .std-button:hover:not(:disabled):not(.primary):not(.secondary):not(.tertiary):not(.quaternary):not(.quinary) {
         background-color: #f0f9f0;
         border-color: var(--primary-hover);
         color: var(--primary-color);
@@ -269,6 +275,48 @@
         background-color: #f0f0f9;
         border-color: var(--secondary-hover);
         color: var(--secondary-hover);
+        transform: translateY(-2px);
+    }
+
+    .std-button.tertiary {
+        background-color: white;
+        color: var(--tertiary-color);
+        border-color: var(--tertiary-color);
+        border-width: 3px;
+    }
+
+    .std-button.tertiary:hover:not(:disabled) {
+        background-color: #fff5e6;
+        border-color: var(--tertiary-hover);
+        color: var(--tertiary-hover);
+        transform: translateY(-2px);
+    }
+
+    .std-button.quaternary {
+        background-color: white;
+        color: var(--quaternary-color);
+        border-color: var(--quaternary-color);
+        border-width: 3px;
+    }
+
+    .std-button.quaternary:hover:not(:disabled) {
+        background-color: #e0f7fa;
+        border-color: var(--quaternary-hover);
+        color: var(--quaternary-hover);
+        transform: translateY(-2px);
+    }
+
+    .std-button.quinary {
+        background-color: white;
+        color: var(--quinary-color);
+        border-color: var(--quinary-color);
+        border-width: 3px;
+    }
+
+    .std-button.quinary:hover:not(:disabled) {
+        background-color: #fce4ec;
+        border-color: var(--quinary-hover);
+        color: var(--quinary-hover);
         transform: translateY(-2px);
     }
 
@@ -2411,9 +2459,24 @@
                 const buttonRow = document.createElement('div');
                 buttonRow.className = 'button-row';
 
+                // Color cycle: green, purple, orange, cyan, pink
+                const colorCycle = ['primary', 'secondary', 'tertiary', 'quaternary', 'quinary'];
+
                 buttons.forEach((btnConfig, index) => {
                     const button = document.createElement('button');
-                    button.className = `std-button ${btnConfig.variant || 'primary'}`;
+                    // Use explicit variant if provided, otherwise cycle through colors
+                    // Calculate index from the end so the last button is always green (primary)
+                    let variant;
+                    if (btnConfig.variant) {
+                        variant = btnConfig.variant;
+                    } else {
+                        // Calculate position from the end: last button = 0, second-to-last = 1, etc.
+                        const positionFromEnd = buttons.length - 1 - index;
+                        // Map to color cycle in reverse: last=primary, second-to-last=quinary, etc.
+                        const colorIndex = positionFromEnd % 5;
+                        variant = colorCycle[colorIndex];
+                    }
+                    button.className = `std-button ${variant}`;
                     if (btnConfig.width === 'full') {
                         button.style.width = '100%';
                         button.style.flex = 'none';
@@ -2424,14 +2487,14 @@
                         <span class="button-text">${btnConfig.icon || ''} ${btnConfig.text}</span>
                         <span class="spinner"></span>
                     `;
-                    
+
                     button.onclick = async (e) => {
                         if (button.disabled) return;
-                        
+
                         // Show loading state
                         button.classList.add('loading');
                         button.disabled = true;
-                        
+
                         try {
                             await btnConfig.callback(e);
                         } catch (error) {
@@ -2439,7 +2502,7 @@
                             // Show error state on button
                             button.classList.add('error');
                             button.innerHTML = `
-                                <span class="button-text">❌ Error</span>
+                                <span class="button-text">[ERROR] Error</span>
                                 <span class="spinner"></span>
                             `;
                             // Reset after delay
@@ -2599,7 +2662,7 @@
                     const headerHtml = `
                         <div class="message message-info">
                             <span class="message-icon">ℹ️</span>
-                            <span>The preview below is a light version of the Updated values. A richer preview can be downloaded at the button below.</span>
+                            <span>This preview shows the first 3 rows of Updated values (transposed). A richer preview can be downloaded at the button below.</span>
                         </div>
                     `;
                     
@@ -2615,13 +2678,13 @@
                 const showRevertButton = currentVersion > 1;
 
                 const revertButtonHtml = showRevertButton ?
-                    `<button type="button" class="std-button secondary" data-action="revert-config">
+                    `<button type="button" class="std-button tertiary" data-action="revert-config">
                             ↩️ Revert to Previous
                         </button>` : '';
 
                 const actionsHtml = `
                     <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
-                        <button type="button" class="std-button secondary" data-action="download-preview">
+                        <button type="button" class="std-button primary" data-action="download-preview">
                             📥 Download Rich Preview
                         </button>
                         <button type="button" class="std-button secondary" data-action="refine-config">
@@ -4141,7 +4204,7 @@
                         const showRevertButton = currentVersion > 1;
 
                         const revertButtonHtml = showRevertButton ?
-                            `<button class="std-button secondary" id="${cardId}-revert-btn" style="flex: 1;">
+                            `<button class="std-button quaternary" id="${cardId}-revert-btn" style="flex: 1;">
                                     <span class="button-text">↩️ Revert to Previous</span>
                                 </button>` : '';
 
@@ -4173,7 +4236,7 @@
                             </div>
                             <div style="display: flex; gap: 10px; margin-top: 0.5rem;">
                                 ${revertButtonHtml}
-                                <button class="std-button secondary" onclick="window.resetPage()" style="flex: 1;">
+                                <button class="std-button tertiary" onclick="window.resetPage()" style="flex: 1;">
                                     <span class="button-text">🔄 New Validation</span>
                                 </button>
                             </div>
@@ -5156,9 +5219,14 @@
                         return;
                     }
 
-                    // Create demo buttons
-                    const demosHtml = result.demos.map(demo => `
-                        <button class="std-button primary" style="width: 100%; text-align: left; padding: 16px;"
+                    // Create demo buttons with cycling colors (last button always green)
+                    const colorCycle = ['primary', 'secondary', 'tertiary', 'quaternary', 'quinary'];
+                    const demosHtml = result.demos.map((demo, index) => {
+                        // Calculate position from the end so last demo is always green
+                        const positionFromEnd = result.demos.length - 1 - index;
+                        const colorIndex = positionFromEnd % 5;
+                        return `
+                        <button class="std-button ${colorCycle[colorIndex]}" style="width: 100%; text-align: left; padding: 16px;"
                                 onclick="selectDemo('${cardId}', '${demo.name}', this)">
                             <div style="display: flex; flex-direction: column; gap: 4px; text-align: left; align-items: flex-start; width: 100%;">
                                 <div style="font-weight: bold; font-size: var(--font-size-base); text-align: left; width: 100%;">
@@ -5171,7 +5239,8 @@
                                 </div>
                             </div>
                         </button>
-                    `).join('');
+                        `;
+                    }).join('');
 
                     demosList.innerHTML = demosHtml;
 
@@ -9353,7 +9422,8 @@ Please provide any additional context, or simply proceed to generate your initia
 
         // Simple beforeunload warning - no custom modals
         window.addEventListener('beforeunload', (e) => {
-            if (hasValuableData() && !isDownloading) {
+            // Don't warn if user explicitly clicked "New Validation" or is downloading
+            if (hasValuableData() && !isDownloading && !window.isResetting) {
                 // Save state for navigation (not refresh)
                 if (typeof saveApplicationState === 'function') {
                     saveApplicationState();
@@ -9369,6 +9439,11 @@ Please provide any additional context, or simply proceed to generate your initia
             if (isDownloading) {
                 console.log('[NAV] Beforeunload triggered during download - allowing without warning');
                 isDownloading = false;
+            }
+
+            // Log if resetting
+            if (window.isResetting) {
+                console.log('[NAV] Beforeunload triggered during reset - allowing without warning');
             }
         });
 
