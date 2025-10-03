@@ -2678,16 +2678,21 @@
                 const showRevertButton = currentVersion > 1;
 
                 const revertButtonHtml = showRevertButton ?
-                    `<button type="button" class="std-button tertiary" data-action="revert-config">
+                    `<button type="button" class="std-button quaternary" data-action="revert-config">
                             ↩️ Revert to Previous
                         </button>` : '';
 
+                // Fixed colors for preview card buttons
+                // Download = orange, Refine = purple, Revert = cyan (when shown), Process = green
+                const downloadColor = 'tertiary';  // orange
+                const refineColor = 'secondary';   // purple
+
                 const actionsHtml = `
                     <div style="display: flex; gap: 10px; margin-bottom: 20px; justify-content: center;">
-                        <button type="button" class="std-button primary" data-action="download-preview">
+                        <button type="button" class="std-button ${downloadColor}" data-action="download-preview">
                             📥 Download Rich Preview
                         </button>
-                        <button type="button" class="std-button secondary" data-action="refine-config">
+                        <button type="button" class="std-button ${refineColor}" data-action="refine-config">
                             🔧 Refine Configuration
                         </button>
                         ${revertButtonHtml}
@@ -4203,8 +4208,16 @@
                         const currentVersion = data.config_version || globalState.currentConfig?.config_version || 1;
                         const showRevertButton = currentVersion > 1;
 
+                        // Calculate button colors based on reverse cycle (last button = green)
+                        // With revert (4 buttons): quaternary, tertiary, secondary, primary
+                        // Without revert (3 buttons): tertiary, secondary, primary
+                        const downloadColor = showRevertButton ? 'quaternary' : 'tertiary';
+                        const refineColor = showRevertButton ? 'tertiary' : 'secondary';
+                        const revertColor = 'secondary';
+                        const newValidationColor = 'primary';
+
                         const revertButtonHtml = showRevertButton ?
-                            `<button class="std-button quaternary" id="${cardId}-revert-btn" style="flex: 1;">
+                            `<button class="std-button ${revertColor}" id="${cardId}-revert-btn" style="flex: 1;">
                                     <span class="button-text">↩️ Revert to Previous</span>
                                 </button>` : '';
 
@@ -4227,16 +4240,16 @@
                                 </div>
                             </div>
                             <div style="display: flex; gap: 10px; margin-top: 1rem;">
-                                <button class="std-button primary" id="${cardId}-download-btn" style="flex: 1;" disabled>
+                                <button class="std-button ${downloadColor}" id="${cardId}-download-btn" style="flex: 1;" disabled>
                                     <span class="button-text">📥 Preparing Download...</span>
                                 </button>
-                                <button class="std-button secondary" id="${cardId}-refine-btn" style="flex: 1;">
+                                <button class="std-button ${refineColor}" id="${cardId}-refine-btn" style="flex: 1;">
                                     <span class="button-text">🔧 Refine Configuration</span>
                                 </button>
                             </div>
                             <div style="display: flex; gap: 10px; margin-top: 0.5rem;">
                                 ${revertButtonHtml}
-                                <button class="std-button tertiary" onclick="window.resetPage()" style="flex: 1;">
+                                <button class="std-button ${newValidationColor}" onclick="window.resetPage()" style="flex: 1;">
                                     <span class="button-text">🔄 New Validation</span>
                                 </button>
                             </div>
