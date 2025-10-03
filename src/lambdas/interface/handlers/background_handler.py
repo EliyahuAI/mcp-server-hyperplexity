@@ -1934,9 +1934,9 @@ def handle_main_processing(event, context):
                     "token_usage": token_usage,
                     "validation_metrics": validation_metrics,
                     "account_info": {
-                        "current_balance": float(current_balance) if current_balance else 0,
-                        "sufficient_balance": float(current_balance) >= effective_cost if current_balance else False,
-                        "credits_needed": max(0, effective_cost - (float(current_balance) if current_balance else 0)),
+                        "current_balance": float(current_balance) if current_balance is not None else 0,
+                        "sufficient_balance": float(current_balance if current_balance is not None else 0) >= effective_cost,
+                        "credits_needed": max(0, effective_cost - (float(current_balance) if current_balance is not None else 0)),
                         "domain_multiplier": float(multiplier),
                         "email_domain": email_domain
                     }
