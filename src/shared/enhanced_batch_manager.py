@@ -73,14 +73,24 @@ class EnhancedDynamicBatchSizeManager:
         # Initialize audit logging
         if enable_audit_logging:
             try:
-                from shared.batch_audit_logger import BatchAuditLogger
+                # Try importing from shared module (when called from lambda)
+                try:
+                    from shared.batch_audit_logger import BatchAuditLogger
+                    logger.info("✅ Imported BatchAuditLogger from shared.batch_audit_logger")
+                except ImportError:
+                    # Fallback: try importing from same directory
+                    from batch_audit_logger import BatchAuditLogger
+                    logger.info("✅ Imported BatchAuditLogger from batch_audit_logger")
+
                 self.audit_logger = BatchAuditLogger()
-                logger.info("✅ Batch audit logging enabled")
+                logger.info("✅ Batch audit logging enabled successfully")
             except ImportError as e:
-                logger.warning(f"Audit logger not available: {e}")
+                logger.error(f"❌ Audit logger import failed: {e}")
                 self.enable_audit_logging = False
             except Exception as e:
-                logger.warning(f"Failed to initialize audit logger: {e}")
+                logger.error(f"❌ Failed to initialize audit logger: {e}")
+                import traceback
+                logger.error(f"❌ Traceback: {traceback.format_exc()}")
                 self.enable_audit_logging = False
         
         # Per-model tracking dictionaries

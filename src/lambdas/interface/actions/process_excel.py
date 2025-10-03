@@ -20,7 +20,7 @@ from dynamodb_schemas import is_email_validated, track_validation_call, create_r
 from interface_lambda.core.sqs_service import send_preview_request, send_full_request
 from interface_lambda.core.validator_invoker import invoke_validator_lambda
 from interface_lambda.reporting.markdown_report import create_markdown_table_from_results
-from shared.shared_table_parser import S3TableParser
+from shared_table_parser import S3TableParser
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

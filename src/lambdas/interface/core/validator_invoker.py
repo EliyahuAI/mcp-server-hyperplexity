@@ -17,7 +17,7 @@ from row_key_utils import generate_row_key
 from interface_lambda.utils.history_loader import load_validation_history_from_excel
 from schema_validator_simplified import SimplifiedSchemaValidator
 from interface_lambda.reporting.markdown_report import create_markdown_table_from_results
-from shared.shared_table_parser import S3TableParser
+from shared_table_parser import S3TableParser
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
