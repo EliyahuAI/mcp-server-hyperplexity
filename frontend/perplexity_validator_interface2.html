@@ -3365,6 +3365,16 @@
                                         showMessage(containerId, `🎉 Balance updated! Auto-starting validation...`, 'success', false, 'auto-process');
                                     }
 
+                                    // Disable all Process Table buttons immediately to prevent double-clicking
+                                    const allButtons = document.querySelectorAll('button');
+                                    allButtons.forEach(button => {
+                                        const buttonText = button.querySelector('.button-text, span');
+                                        if (buttonText && buttonText.textContent.includes('Process Table')) {
+                                            button.disabled = true;
+                                            buttonText.textContent = 'Processing...';
+                                        }
+                                    });
+
                                     // Trigger the pending processing after a brief delay
                                     setTimeout(() => {
                                         const triggerFunc = globalState.pendingProcessingTrigger;
