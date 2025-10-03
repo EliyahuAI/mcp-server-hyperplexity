@@ -20,7 +20,9 @@
       "Bash(aws logs get-log-events:*)",
       "Read(//mnt/c/Users/ellio/OneDrive/**)",
       "Bash(aws sqs get-queue-attributes:*)",
-      "Bash(gemini:*)"
+      "Bash(gemini:*)",
+      "Bash(aws s3 cp:*)",
+      "Bash(aws s3 ls:*)"
     ],
     "deny": []
   }
