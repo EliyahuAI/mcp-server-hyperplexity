@@ -3938,14 +3938,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         filtered_validation_history[target.column] = validation_history[target.column]
                 
                 if filtered_validation_history:
-                    logger.info(f"Including validation history for {len(filtered_validation_history)} fields")
+                    logger.debug(f"Including validation history for {len(filtered_validation_history)} fields")
                     # LOG DETAILED HISTORY INFO
                     for field, history_entries in filtered_validation_history.items():
-                        logger.info(f"  Field '{field}' has {len(history_entries)} history entries")
+                        logger.debug(f"  Field '{field}' has {len(history_entries)} history entries")
                         if history_entries:
                             pass  # logger.info(f"    First entry: value='{history_entries[0].get('value', 'N/A')}', confidence={history_entries[0].get('confidence_level', 'N/A')}")
                 else:
-                    logger.info("No relevant validation history found for this group")
+                    logger.debug("No relevant validation history found for this group")
             
             # Generate multiplex prompt
             logger.debug(f"Generating multiplex prompt for {len(validation_targets)} field(s) with context from previous groups")
@@ -4045,7 +4045,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.debug(f"AI client cache hit for model: {model}")
                 else:
                     total_cache_misses += 1
-                    logger.info(f"AI client cache miss, made fresh API call for model: {model}")
+                    logger.debug(f"AI client cache miss, made fresh API call for model: {model}")
                 
             except Exception as e:
                 logger.error(f"AI client call failed: {str(e)}")
