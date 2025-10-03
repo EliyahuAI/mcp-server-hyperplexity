@@ -1807,9 +1807,10 @@ def handle_main_processing(event, context):
                     discount = calculate_discount(session_id, config_version, quoted_full_cost)
                     effective_cost = max(0.0, quoted_full_cost - discount)
 
-                    logger.debug(f"[DISCOUNT] Discount calculation:")
-                    logger.debug(f"[DISCOUNT]   quoted_cost=${quoted_full_cost:.2f}, discount=${discount:.2f}, effective_cost=${effective_cost:.2f}")
-                    logger.debug(f"[DISCOUNT]   session_id={session_id}, config_version={config_version}")
+                    logger.info(f"[DISCOUNT] Discount calculation:")
+                    logger.info(f"[DISCOUNT]   quoted_cost=${quoted_full_cost:.2f}, discount=${discount:.2f}, effective_cost=${effective_cost:.2f}")
+                    logger.info(f"[DISCOUNT]   session_id={session_id}, config_version={config_version}")
+                    logger.info(f"[DISCOUNT]   current_balance=${current_balance:.2f}, sufficient={float(current_balance) >= effective_cost}, credits_needed=${max(0, effective_cost - float(current_balance)):.2f}")
                     
                     # Validation and audit logging
                     if 'error' in multiplier_result:

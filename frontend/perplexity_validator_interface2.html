@@ -2745,6 +2745,16 @@
                 const accountInfo = previewData.account_info;
                 const sufficientBalance = accountInfo ? accountInfo.sufficient_balance : true; // Default to true if no account info
                 const estimatedCost = previewData.cost_estimates ? (previewData.cost_estimates.quoted_validation_cost || previewData.cost_estimates.quoted_full_cost) : 0;
+
+                // Debug logging for discount and balance
+                console.log('[DISCOUNT_DEBUG] Preview account info:', {
+                    current_balance: accountInfo?.current_balance,
+                    sufficient_balance: accountInfo?.sufficient_balance,
+                    credits_needed: accountInfo?.credits_needed,
+                    quoted_cost: estimatedCost,
+                    discount: previewData.discount || previewData.cost_estimates?.discount,
+                    effective_cost: previewData.effective_cost || previewData.cost_estimates?.effective_cost
+                });
                 
                 // Add event listeners for the buttons above estimates
                 setTimeout(() => {
