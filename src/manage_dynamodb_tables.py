@@ -137,8 +137,9 @@ RUNS_TABLE_COLUMNS = [
     
     # CONSOLIDATED: Cost and timing fields (ordered by importance)
     'eliyahu_cost',
-    'estimated_validation_eliyahu_cost', 
+    'estimated_validation_eliyahu_cost',
     'quoted_validation_cost',
+    'discount',  # Discount applied to quoted cost
     'time_per_row_seconds',
     'estimated_validation_time_minutes',
     'run_time_s',

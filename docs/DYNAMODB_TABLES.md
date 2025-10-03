@@ -65,7 +65,8 @@ The system uses 10 DynamoDB tables to manage validation sessions, user data, fin
   
   // CONSOLIDATED: Cost and timing fields
   "eliyahu_cost": 0.17357700,              // NEW: Actual cost incurred for this run (replaces preview_cost)
-  "quoted_validation_cost": 6.595926,      // NEW: What user will pay for full validation (replaces quoted_full_cost)
+  "quoted_validation_cost": 6.595926,      // NEW: What user will pay for full validation BEFORE discount (replaces quoted_full_cost)
+  "discount": 0.0,                         // NEW: Discount applied to quoted cost (e.g., 100% for demo sessions with v1 config)
   "estimated_validation_eliyahu_cost": 5.125, // NEW: Raw eliyahu cost estimate without multiplier or rounding
   "time_per_row_seconds": 2.5,             // NEW: Time per row - estimated for preview, measured for validation (renamed from actual_time_per_row_seconds)
   "estimated_validation_time_minutes": 12.3,    // Total estimated validation time in minutes only
@@ -142,11 +143,15 @@ The system uses 10 DynamoDB tables to manage validation sessions, user data, fin
 
 **Consolidated Cost Tracking:**
 1. **`eliyahu_cost`**: What we actually paid for this specific run (includes caching savings) - **ACTUAL COST PER RUN**
-2. **`quoted_validation_cost`**: What user will pay/was charged for full validation - **USER CHARGE AMOUNT**
+2. **`quoted_validation_cost`**: What user will pay for full validation BEFORE discount - **QUOTED PRICE BEFORE DISCOUNT**
    - For Preview: Estimated cost for full validation (what user would pay, with multiplier + rounding)
-   - For Validation: Amount actually charged to user (should match eliyahu_cost with multiplier)
+   - For Validation: Amount from preview (locked in price before discount)
    - For Config Generation: 0 (free service)
-3. **`estimated_validation_eliyahu_cost`**: Raw eliyahu cost estimate without multiplier or rounding - **RAW COST ESTIMATE**
+3. **`discount`**: Discount amount applied to quoted cost - **DISCOUNT AMOUNT**
+   - Demo sessions with v1 config: 100% discount (discount = quoted_validation_cost)
+   - All other sessions: 0 discount
+   - User actually pays: max(0, quoted_validation_cost - discount)
+4. **`estimated_validation_eliyahu_cost`**: Raw eliyahu cost estimate without multiplier or rounding - **RAW COST ESTIMATE**
    - For Preview: What full validation would cost us (no multiplier, no rounding, assumes no caching)
    - For Validation: The estimate from the last preview (not actual cost - that's eliyahu_cost)
    - For Config Generation: null (not applicable)
@@ -523,7 +528,8 @@ This comprehensive table shows how each variable is calculated across different 
 | **Variable Name** | **Preview** | **Full Validation** | **Configuration** | **Sent To** | **Source/Calculation** |
 |---|---|---|---|---|---|
 | **`eliyahu_cost`** | Actual cost paid for preview processing (with caching benefits) | Actual cost paid for full validation (with caching benefits) | Actual cost paid for AI config generation | DynamoDB | `totals.get('total_cost_actual', 0.0)` from enhanced_metrics with provider sum fallback: `perplexity_eliyahu_cost + anthropic_eliyahu_cost` |
-| **`quoted_validation_cost`** | **What user will pay for full validation** (estimated cost × multiplier × scaling + business logic) | **Amount actually charged to user** (from preview estimate, locked in) | 0.0 (config generation is free to users) | DynamoDB + Frontend | Preview: `max(2.0, math.ceil(cost_estimated × multiplier × scaling_factor))` <br/> Full: Fixed value from preview <br/> Config: 0.0 |
+| **`quoted_validation_cost`** | **What user will pay for full validation BEFORE discount** (estimated cost × multiplier × scaling + business logic) | **Amount from preview BEFORE discount** (locked in price before discount) | 0.0 (config generation is free to users) | DynamoDB + Frontend | Preview: `max(2.0, math.ceil(cost_estimated × multiplier × scaling_factor))` <br/> Full: Fixed value from preview <br/> Config: 0.0 |
+| **`discount`** | Discount amount (e.g., 100% for demo + v1 config) | Discount amount from preview | 0.0 (no discount for config generation) | DynamoDB + Frontend | `calculate_discount(session_id, config_version, quoted_cost)` <br/> User pays: `max(0, quoted_validation_cost - discount)` |
 | **`estimated_validation_eliyahu_cost`** | Raw cost estimate for full table without caching benefit (no multiplier, no rounding) | Previous preview estimate (for comparison with actual cost) | null (not applicable) | DynamoDB + Frontend | `total_estimates.get('estimated_total_cost_estimated')` from full validation estimates |
 | **`time_per_row_seconds`** | Estimated time per row for projecting to full validation | Measured time per row from actual processing | null (not applicable) | DynamoDB | Preview: `estimated_total_time_seconds / max(1, total_rows)` <br/> Full: `actual_processing_time / total_rows_processed` |
 | **`estimated_validation_time_minutes`** | Estimated total time for full validation in minutes | Actual measured full validation time in minutes | null (not applicable) | DynamoDB + Frontend | `round(estimated_total_time_seconds / 60, 1)` |

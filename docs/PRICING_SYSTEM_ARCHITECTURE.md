@@ -45,31 +45,49 @@ The system operates on a three-tier cost model that separates internal costs, ra
   - After Preview: $3.80 (projected full table cost without cache)
   - After Full Validation: $3.80 (preserved original estimate for comparison)
 
-### Tier 3: Quoted Validation Cost (User-Facing Charge)
-- **Definition**: What users are charged for the current operation
+### Tier 3: Quoted Validation Cost (User-Facing Charge BEFORE Discount)
+- **Definition**: What users would be charged for the current operation BEFORE any discounts
 - **Preview Operations**: Always $0.00 (previews are free to users)
-- **Full Validation Operations**: Actual charge based on preview quote
-- **Includes**: 
+- **Full Validation Operations**: Base charge before discount application
+- **Includes**:
   - Domain-specific multipliers (1.0x - 100.0x)
   - $2.00 minimum charge
   - Rounded up to nearest dollar
 - **Field**: `quoted_validation_cost`
-- **Example**: 
+- **Example**:
   - Preview: $0.00 (free)
   - Full Validation: $12.00 (based on preview estimate × multiplier + rounding)
+
+### Discount System (Optional Cost Reduction)
+- **Definition**: Amount subtracted from quoted cost based on business rules
+- **Business Rules**:
+  - Demo sessions (session name contains "demo") with v1 config: 100% discount (discount = quoted_validation_cost)
+  - All other sessions: $0 discount
+- **Calculation**: `discount = quoted_validation_cost` if (is_demo AND is_v1_config) else `0.0`
+- **Final User Charge**: `effective_cost = max(0, quoted_validation_cost - discount)`
+- **Field**: `discount`
+- **Example**:
+  - Demo + v1: quoted=$12.00, discount=$12.00, effective_cost=$0.00
+  - Production: quoted=$12.00, discount=$0.00, effective_cost=$12.00
 
 ### Operation-Specific Business Logic Flow
 
 #### Preview Flow:
 ```
-Preview Actual Cost → Projected Full Cost (no cache) → Quoted Full Cost → User Quote (Preview = $0)
-      $0.05         →        $3.80                   →      $12.00      →       $0.00
+Preview Actual Cost → Projected Full Cost (no cache) → Quoted Full Cost → Discount → Effective Cost (Preview = $0)
+      $0.05         →        $3.80                   →      $12.00      →   $0.00   →       $0.00
 ```
 
-#### Full Validation Flow:
+#### Full Validation Flow (Standard):
 ```
-Full Actual Cost → Preserve Preview Estimate → Charge Preview Quote
-     $1.50       →        $3.80             →      $12.00
+Full Actual Cost → Preserve Preview Estimate → Charge Preview Quote → Apply Discount → Effective Cost
+     $1.50       →        $3.80             →      $12.00         →      $0.00      →     $12.00
+```
+
+#### Full Validation Flow (Demo + v1):
+```
+Full Actual Cost → Preserve Preview Estimate → Charge Preview Quote → Apply Discount → Effective Cost
+     $1.50       →        $3.80             →      $12.00         →     $12.00      →      $0.00
 ```
 
 ### Critical Semantic Rules
@@ -218,11 +236,16 @@ def get_domain_multiplier(domain):
 eliyahu_cost DECIMAL(10,6),                    -- Tier 1: Actual cost for current operation
                                                --   Preview: Cost of preview rows only
                                                --   Full: Cost of entire table validation
-                                               
-quoted_validation_cost DECIMAL(10,2),          -- Tier 3: User charge for current operation
+
+quoted_validation_cost DECIMAL(10,2),          -- Tier 3: User charge BEFORE discount
                                                --   Preview: Always $0.00 (free)
-                                               --   Full: Actual charge (based on preview quote)
-                                               
+                                               --   Full: Base charge (based on preview quote)
+
+discount DECIMAL(10,2),                        -- Discount amount applied to quoted cost
+                                               --   Preview: $0.00
+                                               --   Full: $0.00 (standard) or equals quoted_validation_cost (demo+v1)
+                                               --   User actually pays: max(0, quoted_validation_cost - discount)
+
 estimated_validation_eliyahu_cost DECIMAL(10,6), -- Tier 2: ALWAYS full validation estimate
                                                  --   Preview: Projected full table cost (no cache)
                                                  --   Full: PRESERVED preview estimate (never overwritten)
@@ -239,16 +262,29 @@ run_type STRING,                              -- "Preview" or "Validation" for c
 ```sql
 eliyahu_cost = 0.05                           -- Actual cost for 100 preview rows
 quoted_validation_cost = 0.00                 -- User pays nothing for preview
+discount = 0.00                               -- No discount for preview
 estimated_validation_eliyahu_cost = 3.80      -- Projected cost for full 10,000 rows
 run_type = "Preview"
 ```
 
-#### Full Validation Operation Record:
+#### Full Validation Operation Record (Standard):
 ```sql
 eliyahu_cost = 1.50                           -- Actual cost for 10,000 full rows
-quoted_validation_cost = 12.00                -- User charged based on preview quote
+quoted_validation_cost = 12.00                -- Base charge before discount
+discount = 0.00                               -- No discount for standard sessions
 estimated_validation_eliyahu_cost = 3.80      -- PRESERVED preview estimate for comparison
 run_type = "Validation"
+-- User pays: max(0, 12.00 - 0.00) = $12.00
+```
+
+#### Full Validation Operation Record (Demo + v1 Config):
+```sql
+eliyahu_cost = 1.50                           -- Actual cost for 10,000 full rows
+quoted_validation_cost = 12.00                -- Base charge before discount
+discount = 12.00                              -- 100% discount for demo+v1
+estimated_validation_eliyahu_cost = 3.80      -- PRESERVED preview estimate for comparison
+run_type = "Validation"
+-- User pays: max(0, 12.00 - 12.00) = $0.00
 ```
 
 ### Domain Multipliers Table

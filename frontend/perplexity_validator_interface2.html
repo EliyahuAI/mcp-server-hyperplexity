@@ -2741,7 +2741,16 @@
                         }
                         
                         estimatesHtml += `<div class="cost-item"><span class="cost-label">Est. Time</span><span class="cost-value">${Math.ceil(estimatedTime / 60)} min</span></div>`;
-                        estimatesHtml += `<div class="cost-item"><span class="cost-label">Cost</span><span class="cost-value">$${estimatedCost.toFixed(2)}</span></div>`;
+
+                        // Display cost with discount if applicable
+                        const discount = previewData.cost_estimates.discount || previewData.discount || 0;
+                        const effectiveCost = previewData.cost_estimates.effective_cost || (estimatedCost - discount);
+
+                        if (discount > 0) {
+                            estimatesHtml += `<div class="cost-item"><span class="cost-label">Cost → Discounted</span><span class="cost-value"><span style="text-decoration: line-through; color: #999;">$${estimatedCost.toFixed(2)}</span> → $${effectiveCost.toFixed(2)}</span></div>`;
+                        } else {
+                            estimatesHtml += `<div class="cost-item"><span class="cost-label">Cost</span><span class="cost-value">$${estimatedCost.toFixed(2)}</span></div>`;
+                        }
                         
                         // Domain multiplier is hidden from frontend display
                         
@@ -2761,9 +2770,11 @@
                         }
                         
                         estimatesEl.innerHTML = estimatesHtml;
-                        
+
                         // Store cost and balance info for button logic
                         globalState.estimatedCost = estimatedCost;
+                        globalState.discount = discount;
+                        globalState.effectiveCost = effectiveCost;
                         globalState.accountInfo = previewData.account_info || null;
                         
                     }
@@ -2811,10 +2822,24 @@
                 }, 100);
 
                 // Show single Process Table button at bottom
+                // Calculate discount and effectiveCost from preview data (recalculate to ensure we have fresh values)
+                const buttonDiscount = previewData.cost_estimates?.discount || previewData.discount || 0;
+                const buttonEffectiveCost = previewData.cost_estimates?.effective_cost || (estimatedCost - buttonDiscount);
+
+                let buttonCostText = '';
+                if (estimatedCost) {
+                    if (buttonDiscount > 0) {
+                        // Show strikethrough original cost → discounted price (same format as cost display)
+                        buttonCostText = ` (<span style="text-decoration: line-through;">$${estimatedCost.toFixed(2)}</span> → $${buttonEffectiveCost.toFixed(2)})`;
+                    } else {
+                        buttonCostText = ` ($${estimatedCost.toFixed(2)})`;
+                    }
+                }
+
                 createButtonRow(`${cardId}-buttons`, [
                     {
-                        text: sufficientBalance 
-                            ? `Process Table${estimatedCost ? ` ($${estimatedCost.toFixed(2)})` : ''}` 
+                        text: sufficientBalance
+                            ? `Process Table${buttonCostText}`
                             : `Add Credits ($${Math.ceil(accountInfo?.credits_needed || 0).toFixed(2)})`,
                         icon: sufficientBalance ? '✨' : '💳',
                         variant: sufficientBalance ? 'primary' : 'secondary',
@@ -9081,7 +9106,8 @@ Please provide any additional context, or simply proceed to generate your initia
                 // Use extracted values or fall back to global state
                 const currentBalance = extractedBalance || globalState.accountBalance || 0;
                 const estimatedCost = extractedCost || globalState.estimatedCost || 0;
-                const sufficientBalance = currentBalance >= estimatedCost;
+                const effectiveCost = globalState.effectiveCost || estimatedCost; // Use effective cost (after discount)
+                const sufficientBalance = currentBalance >= effectiveCost;
 
                 // Update global state with extracted values
                 if (extractedCost > 0) globalState.estimatedCost = extractedCost;
@@ -9277,10 +9303,24 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 // Reuse existing button creation logic (same as in preview cards)
                 const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
+
+                // Use effectiveCost already declared at line 9110
+                const discount = globalState.discount || 0;
+
+                let buttonCostText = '';
+                if (estimatedCost) {
+                    if (discount > 0) {
+                        // Show strikethrough original cost → discounted price (same format as cost display)
+                        buttonCostText = ` (<span style="text-decoration: line-through;">$${estimatedCost.toFixed(2)}</span> → $${effectiveCost.toFixed(2)})`;
+                    } else {
+                        buttonCostText = ` ($${estimatedCost.toFixed(2)})`;
+                    }
+                }
+
                 createButtonRow(`${cardId}-buttons`, [
                     {
                         text: sufficientBalance
-                            ? `Process Table${estimatedCost ? ` ($${estimatedCost.toFixed(2)})` : ''}`
+                            ? `Process Table${buttonCostText}`
                             : `Add Credits ($${Math.ceil(creditsNeeded).toFixed(2)})`,
                         icon: sufficientBalance ? '✨' : '💳',
                         variant: sufficientBalance ? 'primary' : 'secondary',

@@ -420,6 +420,40 @@ def _apply_domain_multiplier_with_validation(email: str, base_cost: float, sessi
             'error': str(e)
         }
 
+def calculate_discount(session_id: str, config_version: int, quoted_validation_cost: float) -> float:
+    """
+    Calculate discount based on session type and configuration version.
+
+    Business Rules:
+    - Demo sessions (session_id contains 'demo') with v1 configs get 100% discount
+    - All other sessions get 0 discount
+
+    Args:
+        session_id: Session identifier
+        config_version: Configuration version number (1, 2, etc.)
+        quoted_validation_cost: The quoted cost before discount
+
+    Returns:
+        Discount amount (0.0 or quoted_validation_cost for full discount)
+    """
+    try:
+        # Check if this is a demo session with v1 config
+        is_demo = 'demo' in session_id.lower() if session_id else False
+        is_v1_config = (config_version == 1) or (str(config_version) == '1')
+
+        if is_demo and is_v1_config:
+            discount = float(quoted_validation_cost)
+            logger.info(f"[DISCOUNT] Demo session with v1 config - applying 100% discount: ${discount:.2f}")
+            logger.info(f"[DISCOUNT]   session_id='{session_id}', config_version={config_version}")
+            return discount
+        else:
+            logger.debug(f"[DISCOUNT] No discount applied - is_demo={is_demo}, is_v1={is_v1_config}")
+            return 0.0
+
+    except Exception as e:
+        logger.error(f"[DISCOUNT_ERROR] Failed to calculate discount: {e}")
+        return 0.0  # Safe fallback - no discount on error
+
 def _create_fallback_preview_excel(validation_results, config_data, input_filename, is_full=False):
     """Create a basic Excel file using openpyxl when xlsxwriter is not available."""
     try:
@@ -1763,9 +1797,19 @@ def handle_main_processing(event, context):
                     # Cost with multiplier and business logic applied (what user will pay)
                     cost_with_multiplier = multiplier_result['cost_with_multiplier']
                     quoted_full_cost = multiplier_result['quoted_cost']
-                    
+
                     logger.debug(f"[MULTIPLIER_DEBUG] Domain multiplier result: domain={domain}, multiplier={multiplier}, "
                               f"cost_with_multiplier=${cost_with_multiplier:.6f}, quoted_cost=${quoted_full_cost:.2f}")
+
+                    # ========== DISCOUNT CALCULATION ==========
+                    # Calculate discount based on session type and config version
+                    config_version = config_data.get('storage_metadata', {}).get('version', 1) if config_data else 1
+                    discount = calculate_discount(session_id, config_version, quoted_full_cost)
+                    effective_cost = max(0.0, quoted_full_cost - discount)
+
+                    logger.debug(f"[DISCOUNT] Discount calculation:")
+                    logger.debug(f"[DISCOUNT]   quoted_cost=${quoted_full_cost:.2f}, discount=${discount:.2f}, effective_cost=${effective_cost:.2f}")
+                    logger.debug(f"[DISCOUNT]   session_id={session_id}, config_version={config_version}")
                     
                     # Validation and audit logging
                     if 'error' in multiplier_result:
@@ -1890,8 +1934,8 @@ def handle_main_processing(event, context):
                     "validation_metrics": validation_metrics,
                     "account_info": {
                         "current_balance": float(current_balance) if current_balance else 0,
-                        "sufficient_balance": float(current_balance) >= quoted_full_cost if current_balance else False,
-                        "credits_needed": max(0, quoted_full_cost - (float(current_balance) if current_balance else 0)),
+                        "sufficient_balance": float(current_balance) >= effective_cost if current_balance else False,
+                        "credits_needed": max(0, effective_cost - (float(current_balance) if current_balance else 0)),
                         "domain_multiplier": float(multiplier),
                         "email_domain": email_domain
                     }
@@ -1955,16 +1999,20 @@ def handle_main_processing(event, context):
                 preview_payload['cost_estimates'].update({
                     "quoted_validation_cost": quoted_full_cost,  # What user will pay for full validation (rounded up)
                     "estimated_validation_eliyahu_cost": estimated_total_cost_raw,  # Raw eliyahu cost estimate for full table (no multiplier)
+                    "discount": discount,  # Discount amount applied
+                    "effective_cost": effective_cost,  # Cost after discount (what user actually pays)
                     "estimated_total_processing_time": estimated_total_time_seconds,  # Keep for backward compatibility
                     "estimated_validation_time": estimated_total_time_seconds, # Explicitly pass the full validation time estimate
                     "total_provider_cost_estimated": totals.get('total_cost_estimated', 0.0),  # Total estimated cost across all providers
                     "total_provider_calls": totals.get('total_calls', 0) + qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else totals.get('total_calls', 0)  # Total calls including QC
                 })
-                
+
                 # Add fields at top level for backward compatibility and easy access
                 preview_payload.update({
                     "quoted_validation_cost": quoted_full_cost,  # What user will pay for full validation (rounded up)
-                    "estimated_validation_eliyahu_cost": estimated_total_cost_raw  # Raw eliyahu cost estimate for full table (no multiplier)
+                    "estimated_validation_eliyahu_cost": estimated_total_cost_raw,  # Raw eliyahu cost estimate for full table (no multiplier)
+                    "discount": discount,  # Discount amount
+                    "effective_cost": effective_cost  # Cost after discount
                 })
                 
                 # Generate enhanced Excel download link and add to preview payload
@@ -2339,6 +2387,8 @@ def handle_main_processing(event, context):
                     "total_rows": preview_payload.get("total_rows", 0),
                     "cost_estimates": {
                         "quoted_validation_cost": quoted_full_cost,
+                        "discount": discount,
+                        "effective_cost": effective_cost,
                         "estimated_validation_time": estimated_total_time_seconds
                     },
                     "validation_metrics": {
@@ -2348,8 +2398,8 @@ def handle_main_processing(event, context):
                     },
                     "account_info": {
                         "current_balance": float(current_balance) if current_balance else 0,
-                        "sufficient_balance": float(current_balance) >= quoted_full_cost if current_balance else False,
-                        "credits_needed": max(0, quoted_full_cost - (float(current_balance) if current_balance else 0))
+                        "sufficient_balance": float(current_balance) >= effective_cost if current_balance else False,
+                        "credits_needed": max(0, effective_cost - (float(current_balance) if current_balance else 0))
                     }
                 }
                 
@@ -2371,6 +2421,7 @@ def handle_main_processing(event, context):
                     batch_size=batch_size_used,
                     eliyahu_cost=eliyahu_cost,  # Actual cost paid (with caching benefits)
                     quoted_validation_cost=quoted_full_cost,  # What user will pay for full validation (with multiplier, rounding, $2 min)
+                    discount=discount,  # Discount applied
                     estimated_validation_eliyahu_cost=estimated_total_cost_raw,  # Raw cost estimate for full table without caching benefit
                     time_per_row_seconds=time_per_row,
                     estimated_validation_time_minutes=estimated_time_minutes,
@@ -3664,9 +3715,46 @@ def handle_main_processing(event, context):
                 logger.info(f"  - Eliyahu (actual): ${eliyahu_cost:.6f}")
                 logger.info(f"  - Estimated (current): ${cost_estimated:.6f}")
                 logger.info(f"  - Multiplier: {multiplier}x")
-                logger.info(f"  - User Charged: ${charged_cost:.6f}")
+                logger.info(f"  - User Charged (before discount): ${charged_cost:.6f}")
                 logger.info(f"  - Fallback would be: ${multiplier_result['quoted_cost']:.2f}")
-                logger.info(f"BILLING DEBUG: is_preview={is_preview}, charged_cost={charged_cost}, session_id={session_id}")
+
+                # ========== DISCOUNT CALCULATION FOR FULL VALIDATION ==========
+                # Calculate discount - try to get from preview first, otherwise recalculate
+                discount = 0.0
+                effective_cost = charged_cost
+
+                try:
+                    # Try to get discount from preview data
+                    if preview_data:
+                        preview_discount = preview_data.get('discount', None)
+                        if preview_discount is not None:
+                            discount = float(preview_discount)
+                            logger.info(f"[DISCOUNT] Using discount from preview: ${discount:.2f}")
+                        else:
+                            # Discount not in preview, recalculate
+                            config_data_for_discount, _ = storage_manager.get_latest_config(email, clean_session_id)
+                            config_version = config_data_for_discount.get('storage_metadata', {}).get('version', 1) if config_data_for_discount else 1
+                            discount = calculate_discount(session_id, config_version, charged_cost)
+                            logger.info(f"[DISCOUNT] Recalculated discount for full validation: ${discount:.2f}")
+                    else:
+                        # No preview data, recalculate discount
+                        config_data_for_discount, _ = storage_manager.get_latest_config(email, clean_session_id)
+                        config_version = config_data_for_discount.get('storage_metadata', {}).get('version', 1) if config_data_for_discount else 1
+                        discount = calculate_discount(session_id, config_version, charged_cost)
+                        logger.info(f"[DISCOUNT] Calculated discount (no preview data): ${discount:.2f}")
+
+                    # Calculate effective cost after discount
+                    effective_cost = max(0.0, charged_cost - discount)
+                    logger.info(f"[DISCOUNT] Full validation: quoted=${charged_cost:.2f}, discount=${discount:.2f}, effective=${effective_cost:.2f}")
+
+                except Exception as e:
+                    logger.error(f"[DISCOUNT_ERROR] Failed to calculate discount for full validation: {e}")
+                    discount = 0.0
+                    effective_cost = charged_cost
+
+                # Update charged_cost to effective_cost for actual billing
+                charged_amount = effective_cost
+                logger.info(f"BILLING DEBUG: is_preview={is_preview}, charged_cost={charged_cost:.2f}, discount={discount:.2f}, effective_cost={effective_cost:.2f}, session_id={session_id}")
 
                 # ========== EARLY COMPLETENESS CHECK BEFORE CHARGING ==========
                 # Check validation completeness BEFORE charging the user
@@ -4368,44 +4456,46 @@ def handle_main_processing(event, context):
                             logger.debug(f"[BILLING_SECURITY] [SUCCESS] Email delivered successfully - proceeding with billing")
 
                             # For full validation, deduct from account balance
-                            if not is_preview and charged_cost > 0:
-                                logger.info(f"BILLING: Proceeding with charge for {email}: ${charged_cost}, run_key: {run_key}")
+                            # IMPORTANT: Use effective_cost (after discount) for actual billing
+                            if not is_preview and effective_cost > 0:
+                                logger.info(f"BILLING: Proceeding with charge for {email}: ${effective_cost:.2f} (quoted: ${charged_cost:.2f}, discount: ${discount:.2f}), run_key: {run_key}")
                                 # Check if user has sufficient balance
                                 current_balance = check_user_balance(email)
-                                if current_balance is not None and current_balance >= Decimal(str(charged_cost)):
+                                if current_balance is not None and current_balance >= Decimal(str(effective_cost)):
                                     # Deduct from balance with run_key protection against duplicate charges
                                     deduct_success = deduct_from_balance(
                                         email=email,
-                                        amount=Decimal(str(charged_cost)),
+                                        amount=Decimal(str(effective_cost)),  # Use effective_cost (after discount)
                                         session_id=session_id,
-                                        description=f"Full validation - {len(real_results) if real_results else 0} rows processed",
+                                        description=f"Full validation - {len(real_results) if real_results else 0} rows processed" + (f" (${discount:.2f} discount applied)" if discount > 0 else ""),
                                         raw_cost=Decimal(str(eliyahu_cost)),
                                         multiplier=Decimal(str(multiplier)),
                                         run_key=run_key  # CRITICAL: Prevents duplicate charges for same run_key
                                     )
                                     if deduct_success:
                                         final_balance = check_user_balance(email)
-                                        charged_amount = charged_cost
-                                        logger.debug(f"[BILLING_SUCCESS] [SUCCESS] Successfully charged ${charged_cost:.6f} - new balance: ${final_balance:.6f}")
+                                        charged_amount = effective_cost
+                                        logger.debug(f"[BILLING_SUCCESS] [SUCCESS] Successfully charged ${effective_cost:.2f} - new balance: ${final_balance:.6f}")
                                         # Send balance update via WebSocket
                                         _send_balance_update(session_id, {
                                             'type': 'balance_update',
                                             'new_balance': float(final_balance) if final_balance else 0,
                                             'transaction': {
-                                                'amount': -float(charged_cost),
+                                                'amount': -float(effective_cost),
                                                 'description': f"Full validation - {len(real_results) if real_results else 0} rows processed",
                                                 'eliyahu_cost': float(eliyahu_cost),
-                                                'multiplier': float(multiplier)
+                                                'multiplier': float(multiplier),
+                                                'discount': float(discount)
                                             }
                                         })
                                     else:
-                                        logger.error(f"[BILLING_ERROR] [ERROR] Failed to deduct ${charged_cost:.6f} from {email} balance")
+                                        logger.error(f"[BILLING_ERROR] [ERROR] Failed to deduct ${effective_cost:.2f} from {email} balance")
                                         balance_error_occurred = True
                                 else:
-                                    logger.warning(f"[BILLING_ERROR] [ERROR] Insufficient balance for {email}: {current_balance} < ${charged_cost:.6f}")
+                                    logger.warning(f"[BILLING_ERROR] [ERROR] Insufficient balance for {email}: {current_balance} < ${effective_cost:.2f}")
                                     balance_error_occurred = True
                             else:
-                                logger.debug(f"[BILLING_SKIP] Skipping charge - is_preview={is_preview}, charged_cost={charged_cost}")
+                                logger.debug(f"[BILLING_SKIP] Skipping charge - is_preview={is_preview}, effective_cost={effective_cost}")
 
                             # Track detailed API usage for each provider
                             by_provider = token_usage.get('by_provider', {})
@@ -4642,7 +4732,9 @@ def handle_main_processing(event, context):
                         status_update_data['run_type'] = "Validation"
                         # ========== HARDENED THREE-TIER COST FIELDS ==========
                         status_update_data['eliyahu_cost'] = eliyahu_cost  # Actual cost paid for full validation (includes caching benefits)
-                        status_update_data['quoted_validation_cost'] = charged_cost  # What user was charged for full validation (with multiplier, rounding, $2 min)
+                        status_update_data['quoted_validation_cost'] = charged_cost  # What user would pay without discount (with multiplier, rounding, $2 min)
+                        status_update_data['discount'] = discount  # Discount applied
+                        # Note: effective_cost = charged_cost - discount is what user actually paid
                     
                         # NOTE: Do NOT overwrite estimated_validation_eliyahu_cost for full validations
                         # This field should preserve the preview estimate for accuracy comparison
@@ -4987,8 +5079,8 @@ def handle_main_processing(event, context):
                             claude_calls=validation_metrics.get('claude_search_groups_count', 0),
                             eliyahu_cost=eliyahu_cost,  # Actual cost paid
                             estimated_cost=cost_estimated,  # Raw cost estimate without caching
-                            quoted_validation_cost=charged_cost,  # This is the quoted cost from preview (what we're charging)
-                            charged_cost=charged_cost,  # Full validation charges user the preview quoted cost
+                            quoted_validation_cost=charged_cost,  # This is the quoted cost before discount
+                            charged_cost=effective_cost,  # Full validation charges user the effective cost (after discount)
                             total_api_calls=token_usage.get('api_calls', 0),
                             total_cached_calls=token_usage.get('cached_calls', 0)
                             )
