@@ -1801,6 +1801,13 @@ def handle_main_processing(event, context):
                     logger.debug(f"[MULTIPLIER_DEBUG] Domain multiplier result: domain={domain}, multiplier={multiplier}, "
                               f"cost_with_multiplier=${cost_with_multiplier:.6f}, quoted_cost=${quoted_full_cost:.2f}")
 
+                    # Get account balance for tracking (no charges for preview) - MOVED BEFORE DISCOUNT CALCULATION
+                    current_balance = check_user_balance(email)
+                    initial_balance = current_balance
+                    final_balance = initial_balance  # No change for preview
+                    balance_error_occurred = False  # Preview doesn't charge
+                    charged_amount = 0  # No charges for preview
+
                     # ========== DISCOUNT CALCULATION ==========
                     # Calculate discount based on session type and config version
                     config_version = config_data.get('storage_metadata', {}).get('version', 1) if config_data else 1
@@ -1810,22 +1817,16 @@ def handle_main_processing(event, context):
                     logger.info(f"[DISCOUNT] Discount calculation:")
                     logger.info(f"[DISCOUNT]   quoted_cost=${quoted_full_cost:.2f}, discount=${discount:.2f}, effective_cost=${effective_cost:.2f}")
                     logger.info(f"[DISCOUNT]   session_id={session_id}, config_version={config_version}")
-                    logger.info(f"[DISCOUNT]   current_balance=${current_balance:.2f}, sufficient={float(current_balance) >= effective_cost}, credits_needed=${max(0, effective_cost - float(current_balance)):.2f}")
-                    
+                    logger.info(f"[DISCOUNT]   current_balance=${float(current_balance) if current_balance is not None else 0:.2f}, sufficient={float(current_balance if current_balance is not None else 0) >= effective_cost}, credits_needed=${max(0, effective_cost - float(current_balance if current_balance is not None else 0)):.2f}")
+
                     # Validation and audit logging
                     if 'error' in multiplier_result:
                         logger.error(f"[MULTIPLIER_ERROR] Preview domain multiplier error: {multiplier_result['error']}")
-                    
+
                     logger.debug(f"[COST_AUDIT] Preview processed {total_rows_processed} rows - "
                                f"Preview actual: ${eliyahu_cost:.6f}, Preview estimated: ${cost_estimated:.6f}, "
                                f"Scaled eliyahu cost: ${cost_for_multiplier:.6f}, "
                                f"Domain: {domain}, Multiplier: {multiplier}x, Quoted: ${quoted_full_cost:.2f}")
-                    
-                    # Get account balance for tracking (no charges for preview)
-                    initial_balance = check_user_balance(email)
-                    final_balance = initial_balance  # No change for preview
-                    balance_error_occurred = False  # Preview doesn't charge
-                    charged_amount = 0  # No charges for preview
                     
                     # Track preview cost (actual cost for your tracking, estimated cost for user display)
                     track_preview_cost(session_id, email, Decimal(str(cost_estimated)), Decimal(str(multiplier)), total_tokens)
