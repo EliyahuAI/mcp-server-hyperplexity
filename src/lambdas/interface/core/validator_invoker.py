@@ -448,15 +448,17 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         logger.info(f"ID fields for row key generation: {id_fields}")
         
         # Process data rows using Excel format (works for both original Excel and converted CSV)
+        # Extract all rows first, then apply hybrid hashing
+        excel_rows = []
         for row_idx in range(2, min(2 + max_process_rows, worksheet.max_row + 1)):
             row_data = {}
-            
+
             # Extract cell values
             for col_idx, header in enumerate(headers):
                 if header:  # Skip empty headers
                     cell_value = worksheet.cell(row=row_idx, column=col_idx + 1).value
                     row_data[header] = str(cell_value) if cell_value is not None else ""
-            
+
             # Debug: Log first row's data to see what we're getting
             if row_idx == 2:  # First data row
                 logger.info(f"First row data extracted: {json.dumps(row_data)}")
@@ -464,16 +466,45 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 for id_field in id_fields:
                     logger.info(f"  {id_field}: '{row_data.get(id_field, 'NOT FOUND')}'")
 
-            # Generate row key - hash ENTIRE row to ensure duplicates are validated
-            # CRITICAL: We hash all fields, not just ID fields, so that:
-            #   - Rows with same ID but different data get separate validations
-            #   - True duplicates (100% identical) are automatically deduplicated
-            #   - Excel report can match validation results correctly
-            row_key = generate_row_key(row_data, primary_keys=None)  # None = hash entire row
-            logger.debug(f"Generated full-row hash key: {row_key}")
+            excel_rows.append(row_data)
+
+        # HYBRID ROW KEY GENERATION (matches async validation flow)
+        # 1. Try ID-field hashing first (for history matching)
+        # 2. For duplicates, use full-row hashing (to distinguish them)
+        id_hash_counts = {}  # Track duplicate ID hashes
+
+        # First pass: Generate ID-field hashes and detect duplicates
+        for row_idx, row_data in enumerate(excel_rows):
+            # Generate ID-field hash
+            id_hash = generate_row_key(row_data, primary_keys=id_fields if id_fields else None)
+
+            if id_hash not in id_hash_counts:
+                id_hash_counts[id_hash] = []
+            id_hash_counts[id_hash].append(row_idx)
+
+        # Second pass: Assign final row keys (ID-hash or full-row hash for duplicates)
+        for row_idx, row_data in enumerate(excel_rows):
+            id_hash = generate_row_key(row_data, primary_keys=id_fields if id_fields else None)
+
+            # If this ID hash appears multiple times, use full-row hash
+            if len(id_hash_counts[id_hash]) > 1:
+                row_key = generate_row_key(row_data, primary_keys=None)  # Full-row hash
+                logger.debug(f"Row {row_idx}: Duplicate ID detected, using full-row hash: {row_key[:8]}...")
+            else:
+                row_key = id_hash  # Use ID-field hash
+                logger.debug(f"Row {row_idx}: Using ID-field hash: {row_key[:8]}...")
 
             row_data['_row_key'] = row_key
             rows.append(row_data)
+
+        # Log duplicate summary
+        duplicate_id_count = sum(1 for count_list in id_hash_counts.values() if len(count_list) > 1)
+        total_duplicate_rows = sum(len(count_list) for count_list in id_hash_counts.values() if len(count_list) > 1)
+        if duplicate_id_count > 0:
+            logger.info(f"[PREVIEW_HYBRID_HASH] Found {duplicate_id_count} duplicate ID groups ({total_duplicate_rows} total rows)")
+            logger.info(f"[PREVIEW_HYBRID_HASH] Duplicate rows will use full-row hashing")
+        else:
+            logger.info(f"[PREVIEW_HYBRID_HASH] No duplicate IDs detected, all rows using ID-field hashing")
         
         # Show sample row data to understand what keys will be generated
         if rows and len(rows) > 0:

@@ -1970,7 +1970,11 @@ def handle_main_processing(event, context):
                                 table_parser = S3TableParser()
                                 table_data = table_parser.parse_s3_table(S3_UNIFIED_BUCKET, excel_s3_key, extract_formulas=True)
                                 validated_sheet = table_data.get('metadata', {}).get('sheet_name') if isinstance(table_data, dict) else None
-                                
+
+                                # NOTE: Row keys are NOT in table_data for preview (they're only in validation_results.keys())
+                                # The Excel function has fallback logic to extract keys from validation_results
+                                logger.debug(f"[PREVIEW_EXCEL] table_data parsed, Excel function will extract row keys from validation_results")
+
                                 excel_buffer = create_qc_enhanced_excel_for_interface(
                                     table_data, validation_results, config_data, session_id, validated_sheet_name=validated_sheet
                                 )
@@ -2005,8 +2009,9 @@ def handle_main_processing(event, context):
                                 
                                 # Store enhanced Excel in versioned results folder
                                 enhanced_result = storage_manager.store_enhanced_files(
-                                    email, clean_session_id, config_version, 
-                                    enhanced_excel_content, None
+                                    email, clean_session_id, config_version,
+                                    enhanced_excel_content, None,
+                                    result_type='preview'
                                 )
                                 
                                 if enhanced_result['success']:

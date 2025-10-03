@@ -373,17 +373,33 @@ class UnifiedS3Manager:
             }
     
     def store_enhanced_files(self, email: str, session_id: str, config_version: int,
-                           enhanced_excel_content: bytes = None, summary_text: str = None) -> Dict[str, Any]:
-        """Store enhanced Excel and summary text in versioned results folder"""
+                           enhanced_excel_content: bytes = None, summary_text: str = None,
+                           result_type: str = 'validation') -> Dict[str, Any]:
+        """Store enhanced Excel and summary text in versioned results folder
+
+        Args:
+            email: User email
+            session_id: Session ID
+            config_version: Config version number
+            enhanced_excel_content: Excel file content bytes
+            summary_text: Summary text content
+            result_type: 'preview' or 'validation' - determines filename
+        """
         try:
             session_path = self.get_session_path(email, session_id)
             results_folder = f"{session_path}v{config_version}_results/"
-            
+
             stored_files = []
-            
+
             # Store enhanced Excel if provided
             if enhanced_excel_content:
-                excel_key = f"{results_folder}enhanced_validation.xlsx"
+                # Use different filenames for preview vs validation
+                if result_type == 'preview':
+                    excel_filename = "enhanced_preview.xlsx"
+                else:
+                    excel_filename = "enhanced_validation.xlsx"
+
+                excel_key = f"{results_folder}{excel_filename}"
                 self.s3_client.put_object(
                     Bucket=self.bucket_name,
                     Key=excel_key,
@@ -391,8 +407,8 @@ class UnifiedS3Manager:
                     ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
                 stored_files.append(excel_key)
-                logger.info(f"Stored enhanced Excel: {excel_key}")
-            
+                logger.info(f"Stored enhanced {result_type} Excel: {excel_key}")
+
             # Store summary text if provided
             if summary_text:
                 summary_key = f"{results_folder}validation_summary.txt"
@@ -404,7 +420,7 @@ class UnifiedS3Manager:
                 )
                 stored_files.append(summary_key)
                 logger.info(f"Stored summary text: {summary_key}")
-            
+
             return {
                 'success': True,
                 'stored_files': stored_files,
