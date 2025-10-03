@@ -2703,7 +2703,19 @@
 
                         // Display cost with discount if applicable
                         const discount = previewData.cost_estimates.discount || previewData.discount || 0;
-                        const effectiveCost = previewData.cost_estimates.effective_cost || (estimatedCost - discount);
+                        const effectiveCost = previewData.cost_estimates.effective_cost !== undefined
+                            ? previewData.cost_estimates.effective_cost
+                            : Math.max(0, estimatedCost - discount);
+
+                        console.log('[COST_DEBUG] Cost calculation:', {
+                            estimatedCost,
+                            discount,
+                            effectiveCost,
+                            cost_estimates_discount: previewData.cost_estimates.discount,
+                            cost_estimates_effective: previewData.cost_estimates.effective_cost,
+                            top_level_discount: previewData.discount,
+                            top_level_effective: previewData.effective_cost
+                        });
 
                         if (discount > 0) {
                             estimatesHtml += `<div class="cost-item"><span class="cost-label">Cost → Discounted</span><span class="cost-value"><span style="text-decoration: line-through; color: #999;">$${estimatedCost.toFixed(2)}</span> → $${effectiveCost.toFixed(2)}</span></div>`;
@@ -2793,7 +2805,9 @@
                 // Show single Process Table button at bottom
                 // Calculate discount and effectiveCost from preview data (recalculate to ensure we have fresh values)
                 const buttonDiscount = previewData.cost_estimates?.discount || previewData.discount || 0;
-                const buttonEffectiveCost = previewData.cost_estimates?.effective_cost || (estimatedCost - buttonDiscount);
+                const buttonEffectiveCost = previewData.cost_estimates?.effective_cost !== undefined
+                    ? previewData.cost_estimates.effective_cost
+                    : Math.max(0, estimatedCost - buttonDiscount);
 
                 let buttonCostText = '';
                 if (estimatedCost) {
