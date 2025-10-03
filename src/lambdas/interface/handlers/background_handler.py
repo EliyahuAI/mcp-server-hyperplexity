@@ -1268,7 +1268,50 @@ def handle_main_processing(event, context):
                     logger.error(f"Failed to update session_info.json for preview failure: {e}")
 
                 return {'statusCode': 500, 'body': json.dumps({'status': 'failed', 'error': 'Files not found'})}
-            
+
+            # Parse table_data ONCE at the beginning (don't re-parse later for Excel)
+            from shared_table_parser import S3TableParser
+            from row_key_utils import generate_row_key
+            table_parser = S3TableParser()
+            table_data = table_parser.parse_s3_table(storage_manager.bucket_name, actual_excel_s3_key, extract_formulas=True)
+
+            # Add row keys to table_data using hybrid hashing (same logic as async validation)
+            if table_data and isinstance(table_data, dict) and 'data' in table_data:
+                excel_rows = table_data['data']
+
+                # Extract ID fields from config
+                id_fields = []
+                for target in config_data.get('validation_targets', []):
+                    if target.get('importance', '').upper() == 'ID':
+                        field_name = target.get('name') or target.get('column')
+                        if field_name:
+                            id_fields.append(field_name)
+
+                logger.debug(f"[PREVIEW_TABLE_DATA] Using ID fields for hybrid hashing: {id_fields}")
+
+                # Hybrid hashing: ID-field for unique rows, full-row for duplicates
+                id_hash_counts = {}
+
+                # First pass: detect duplicates
+                for row_idx, row_data in enumerate(excel_rows):
+                    id_hash = generate_row_key(row_data, primary_keys=id_fields if id_fields else None)
+                    if id_hash not in id_hash_counts:
+                        id_hash_counts[id_hash] = []
+                    id_hash_counts[id_hash].append(row_idx)
+
+                # Second pass: assign row keys
+                for row_idx, row_data in enumerate(excel_rows):
+                    id_hash = generate_row_key(row_data, primary_keys=id_fields if id_fields else None)
+
+                    if len(id_hash_counts[id_hash]) > 1:
+                        row_key = generate_row_key(row_data, primary_keys=None)  # Full-row hash
+                    else:
+                        row_key = id_hash  # ID-field hash
+
+                    row_data['_row_key'] = row_key
+
+                logger.info(f"[PREVIEW_TABLE_DATA] Added row keys to {len(excel_rows)} rows in table_data")
+
             # Send validation start progress update - interface setup complete, AI work begins (5-90% reserved for validation lambda)
             _send_websocket_message_deduplicated(session_id, {
                 'type': 'preview_progress',
@@ -1965,15 +2008,10 @@ def handle_main_processing(event, context):
                         
                         if EXCEL_ENHANCEMENT_AVAILABLE:
                             try:
-                                # Use shared_table_parser to get structured data
-                                from shared_table_parser import S3TableParser
-                                table_parser = S3TableParser()
-                                table_data = table_parser.parse_s3_table(S3_UNIFIED_BUCKET, excel_s3_key, extract_formulas=True)
+                                # Reuse table_data that was parsed earlier with row keys already added
                                 validated_sheet = table_data.get('metadata', {}).get('sheet_name') if isinstance(table_data, dict) else None
 
-                                # NOTE: Row keys are NOT in table_data for preview (they're only in validation_results.keys())
-                                # The Excel function has fallback logic to extract keys from validation_results
-                                logger.debug(f"[PREVIEW_EXCEL] table_data parsed, Excel function will extract row keys from validation_results")
+                                logger.debug(f"[PREVIEW_EXCEL] Reusing table_data with {len(table_data.get('data', []))} rows (row keys already added)")
 
                                 excel_buffer = create_qc_enhanced_excel_for_interface(
                                     table_data, validation_results, config_data, session_id, validated_sheet_name=validated_sheet
