@@ -1617,7 +1617,6 @@
                 environment = getEnvironmentFromURL();
                 if (environment && ENV_CONFIGS[environment]) {
                     detectionMethod = 'URL parameter';
-                    console.log(`[INFO] Environment detected from ${detectionMethod}: ${environment}`);
                     
                     // Save to localStorage for future visits
                     try {
@@ -1633,7 +1632,6 @@
                 environment = detectEnvironmentFromPageName();
                 if (environment && ENV_CONFIGS[environment]) {
                     detectionMethod = 'page name';
-                    console.log(`[INFO] Environment detected from ${detectionMethod}: ${environment}`);
                     return environment;
                 }
                 
@@ -1641,12 +1639,10 @@
                 environment = getStoredEnvironment();
                 if (environment && ENV_CONFIGS[environment]) {
                     detectionMethod = 'stored preference';
-                    console.log(`[INFO] Environment detected from ${detectionMethod}: ${environment}`);
                     return environment;
                 }
                 
                 // Default: Production
-                console.log('[INFO] Using default environment: prod');
                 return 'prod';
             }
             
@@ -1659,8 +1655,6 @@
                 
                 try {
                     localStorage.setItem('hyperplexity_environment', env);
-                    console.log(`[INFO] Environment preference saved: ${env}`);
-                    console.log('[INFO] Reload the page to use the new environment');
                     return true;
                 } catch (e) {
                     console.error('[ERROR] Could not save environment preference:', e);
@@ -1672,7 +1666,6 @@
             function clearEnvironmentPreference() {
                 try {
                     localStorage.removeItem('hyperplexity_environment');
-                    console.log('[INFO] Environment preference cleared. Reload to use default detection.');
                 } catch (e) {
                     console.error('[ERROR] Could not clear environment preference:', e);
                 }
@@ -1698,9 +1691,6 @@
             const WEBSOCKET_API_URL = ENV_CONFIG.websocketUrl;
             
             // Display environment info in console
-            console.log(`[CONFIG] Environment: ${CURRENT_ENV}`);
-            console.log(`[CONFIG] API Base: ${API_BASE}`);
-            console.log(`[CONFIG] WebSocket URL: ${WEBSOCKET_API_URL}`);
 
             // ============================================
             // GLOBAL STATE (Minimal)
@@ -1755,13 +1745,11 @@
 
                 // Force new user mode for testing
                 if (urlParams.get('force_new_user') === 'true') {
-                    console.log('[TESTING] Forcing new user mode via URL parameter');
                     globalState.isNewUser = true;
                 }
 
                 // Force returning user mode for testing
                 if (urlParams.get('force_returning_user') === 'true') {
-                    console.log('[TESTING] Forcing returning user mode via URL parameter');
                     globalState.isNewUser = false;
                 }
             }
@@ -1769,23 +1757,18 @@
             // Make testing functions available globally for console use
             window.testingUtils = {
                 forceNewUser: () => {
-                    console.log('[TESTING] Forcing new user mode');
                     globalState.isNewUser = true;
                 },
                 forceReturningUser: () => {
-                    console.log('[TESTING] Forcing returning user mode');
                     globalState.isNewUser = false;
                 },
                 showDemoCard: () => {
-                    console.log('[TESTING] Creating demo selection card');
                     createSelectDemoCard();
                 },
                 showUploadOrDemoCard: () => {
-                    console.log('[TESTING] Creating upload or demo choice card');
                     createUploadOrDemoCard();
                 },
                 checkNewUserStatus: () => {
-                    console.log(`[TESTING] Current new user status: ${globalState.isNewUser}`);
                     return globalState.isNewUser;
                 },
                 clearUserHistory: async (email = null) => {
@@ -1796,7 +1779,6 @@
                     }
 
                     try {
-                        console.log(`[TESTING] Clearing validation history for ${userEmail}...`);
                         const response = await fetch(`${API_BASE}/validate`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -1809,8 +1791,6 @@
                         const result = await response.json();
 
                         if (result.success) {
-                            console.log(`[TESTING] Successfully cleared ${result.runs_cleared} validation runs`);
-                            console.log(`[TESTING] ${userEmail} is now treated as a new user`);
                         } else {
                             console.error(`[TESTING] Failed to clear history: ${result.error}`);
                         }
@@ -1823,17 +1803,13 @@
                 },
                 // Quick test sequence
                 testNewUserFlow: async () => {
-                    console.log('[TESTING] Starting new user flow test...');
 
                     // Force new user mode
                     globalState.isNewUser = true;
-                    console.log('[TESTING] Set as new user');
 
                     // Show the choice card
                     createUploadOrDemoCard();
-                    console.log('[TESTING] Created upload or demo choice card');
 
-                    console.log('[TESTING] Test complete. You should see the welcome card with demo option.');
                 }
             };
 
@@ -1947,7 +1923,6 @@
                     return false;
                 }
 
-                console.log(`[CREDITS] Adding ${quantity} credits to cart...`);
 
                 // Find the quantity input
                 const quantityInput = document.querySelector('input[name="quantity-input"]');
@@ -1965,7 +1940,6 @@
 
                 // Set the quantity
                 quantityInput.value = quantity;
-                console.log(`[CREDITS] Set quantity to ${quantity}`);
 
                 // Trigger input events to make sure the UI updates
                 const inputEvent = new Event('input', { bubbles: true });
@@ -1976,7 +1950,6 @@
                 // Click the add-to-cart button
                 setTimeout(() => {
                     addToCartButton.click();
-                    console.log('[CREDITS] Clicked add-to-cart button');
                 }, 500);
 
                 return true;
@@ -1994,19 +1967,16 @@
                     return;
                 }
 
-                console.log(`[CREDITS] Adding ${quantity} credits and redirecting to cart...`);
 
                 const success = addCreditsToCart(quantity);
 
                 if (success) {
                     // Wait for cart to update, then open cart in new tab
                     setTimeout(() => {
-                        console.log('[CREDITS] Opening cart in new tab...');
                         window.open('https://eliyahu.ai/cart', '_blank');
                     }, 1500);
                 } else {
                     // Fallback: open cart in new tab
-                    console.log('[CREDITS] Product component not found, opening cart in new tab');
                     window.open('https://eliyahu.ai/cart', '_blank');
                 }
             }
@@ -2016,7 +1986,6 @@
              * @param {number} quantity - Number of credits needed
              */
             function needCredits(quantity) {
-                console.log(`[CREDITS] User needs ${quantity} credits - initiating purchase flow`);
                 addCreditsAndGoToCart(quantity);
             }
 
@@ -2030,14 +1999,8 @@
                 const increaseBtn = document.querySelector('.increase-button');
                 const decreaseBtn = document.querySelector('.decrease-button');
 
-                console.log('[CREDITS] Product component check:');
-                console.log('- Quantity input:', quantityInput ? 'Found' : 'NOT FOUND');
-                console.log('- Add-to-cart button:', addButton ? 'Found' : 'NOT FOUND');
-                console.log('- Increase button:', increaseBtn ? 'Found' : 'NOT FOUND');
-                console.log('- Decrease button:', decreaseBtn ? 'Found' : 'NOT FOUND');
 
                 if (quantityInput) {
-                    console.log('- Current quantity:', quantityInput.value);
                 }
 
                 return !!(quantityInput && addButton);
@@ -2058,16 +2021,12 @@
             window.checkProductComponent = checkProductComponent;
 
             // Log availability of credit purchasing system
-            console.log('[CREDITS] Credit purchasing system loaded');
-            console.log('[CREDITS] Available functions: needCredits(qty), addCreditsToCart(qty), checkProductComponent()');
 
             // Check if product component is available on page load
             setTimeout(() => {
                 const componentAvailable = checkProductComponent();
                 if (componentAvailable) {
-                    console.log('[CREDITS] Product component detected - automatic purchasing enabled');
                 } else {
-                    console.log('[CREDITS] No product component found - will use manual store navigation');
                 }
             }, 1000);
 
@@ -2859,7 +2818,6 @@
                                 // Mark that user attempted processing from preview
                                 globalState.userAttemptedProcessing = true;
                                 globalState.pendingProcessingTrigger = () => {
-                                    console.log('[AUTO-PROCESS] Triggering delayed processing from preview after balance update');
                                     globalState.activePreviewCard = null;
 
                                     // Find and click the Process Table button to trigger normal processing
@@ -3181,7 +3139,6 @@
                 // Domain multiplier hidden from frontend
                 const shortfall = Math.max(0, minCost - balance);
 
-                console.log(`[BALANCE_DEBUG] Insufficient balance dialog - Balance: $${balance.toFixed(4)}, Cost: $${minCost.toFixed(4)}, Shortfall: $${shortfall.toFixed(4)}`);
                 
                 // Calculate recommended purchase amounts
                 const recommendedMinimum = Math.ceil(shortfall); // Round up to nearest dollar
@@ -3245,7 +3202,6 @@
 
                 if (hasProductComponent && recommendedAmount) {
                     // Use automatic credit purchasing if component is available
-                    console.log(`[CREDITS] Using automatic purchase for ${recommendedAmount} credits`);
 
                     // Use the needCredits function for automatic purchasing
                     setTimeout(() => {
@@ -3312,7 +3268,6 @@
                     }
                     lastFocusTime = now;
 
-                    console.log('[FOCUS] Tab gained focus, checking balance...');
 
                     if (globalState.awaitingBalanceRefresh) {
                         globalState.awaitingBalanceRefresh = false;
@@ -3344,14 +3299,12 @@
 
                         // Only check for new orders if we don't have sufficient balance
                         if (!hasSufficientBalance) {
-                            console.log('[FOCUS] Insufficient balance, checking for new Squarespace orders...');
                             try {
                                 await checkForNewOrders('messages', false); // Don't show status message
                             } catch (error) {
                                 console.error('[FOCUS] Error checking orders:', error);
                             }
                         } else {
-                            console.log('[FOCUS] Sufficient balance, skipping order check');
                         }
 
                         // Get balance again in case orders were processed
@@ -3359,14 +3312,12 @@
                         const newBalance = globalState.accountBalance;
 
                         if (oldBalance !== newBalance) {
-                            console.log(`[FOCUS] Balance changed from $${oldBalance || 0} to $${newBalance || 0}`);
 
                             // Update all balance displays
                             updateAllBalanceDisplays();
 
                             // If balance improved and user had insufficient balance, update buttons
                             if (globalState.hasInsufficientBalance && newBalance > oldBalance) {
-                                console.log('[FOCUS] Balance improved - updating interface');
                                 globalState.hasInsufficientBalance = false;
 
                                 // Check if we can auto-trigger processing
@@ -3374,7 +3325,6 @@
                                 const canProcess = newBalance >= estimatedCost;
 
                                 if (canProcess && globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger) {
-                                    console.log('[FOCUS] Balance sufficient and user previously attempted - auto-triggering processing');
 
                                     // Clear blue message and show green success message
                                     const messageContainers = document.querySelectorAll('[id$="-messages"]');
@@ -3441,14 +3391,12 @@
                             console.error('[BALANCE_CHECK] Order check failed:', orderError);
                         }
                     } else {
-                        console.log('[BALANCE_CHECK] Sufficient balance, skipping order check');
                     }
 
                     // Refresh balance again after order check
                     await refreshCurrentBalance();
                     const newBalance = globalState.accountBalance || 0;
 
-                    console.log(`[BALANCE_CHECK] Balance: $${oldBalance} → $${newBalance}`);
 
                     // Update all displays
                     updateAllBalanceDisplays();
@@ -3456,7 +3404,6 @@
                     if (newBalance !== oldBalance) {
                         // Balance changed - update interface
                         if (globalState.hasInsufficientBalance && newBalance > oldBalance) {
-                            console.log('[BALANCE_CHECK] Balance improved - updating interface');
                             globalState.hasInsufficientBalance = false;
 
                             // Update preview cards
@@ -3497,10 +3444,8 @@
 
             // Manual order check function for testing
             window.manualOrderCheck = async function() {
-                console.log('[MANUAL] Starting manual order check...');
                 try {
                     const result = await checkForNewOrders('messages', true);
-                    console.log('[MANUAL] Order check result:', result);
                     return result;
                 } catch (error) {
                     console.error('[MANUAL] Order check failed:', error);
@@ -3860,14 +3805,6 @@
             function routeMessage(data, sessionId) {
 
                 // Debug logging for all WebSocket messages
-                console.log(`[WEBSOCKET_DEBUG] Received message:`, {
-                    type: data.type,
-                    message: data.message,
-                    status: data.status,
-                    progress: data.progress,
-                    session_id: data.session_id,
-                    timestamp: data.timestamp
-                });
 
                 // Safety check: ensure data is valid
                 if (!data || typeof data !== 'object') {
@@ -3888,14 +3825,12 @@
                                                   data.type === 'status_update';
 
                         if (hasActiveProgress || isProgressMessage) {
-                            console.log(`[ASYNC_TIMEOUT] Restarting inactivity timer for session ${sessionId} (received: ${data.type}, progress: ${data.progress})`);
                             timeoutInfo.restartInactivityTimer();
 
                             // Mark that we're now in active processing
                             timeoutInfo.activeProcessing = true;
                         } else if (data.status === 'COMPLETED' || data.progress === 100) {
                             // Validation completed - cancel all timers
-                            console.log(`[ASYNC_TIMEOUT] Validation completed, canceling all timers for session ${sessionId}`);
                             if (timeoutInfo.inactivityTimer) clearTimeout(timeoutInfo.inactivityTimer);
                             window.asyncTimeouts.delete(sessionId);
                         }
@@ -3912,7 +3847,6 @@
                 if (data.type === 'error' || data.type === 'validation_failed' || data.type === 'preview_failed' ||
                     data.type === 'config_generation_failed' || data.status === 'FAILED' || data.status === 'ERROR') {
 
-                    console.log(`[WEBSOCKET_DEBUG] General error handler processing:`, data);
 
                     // Find the most recent card to show the error
                     if (cardHandlers.size > 0) {
@@ -3952,37 +3886,20 @@
 
                 if (isProgressType && hasProgress) {
 
-                    console.log(`[WEBSOCKET_DEBUG] Progress update matched:`, {
-                        type: data.type,
-                        progress: data.progress,
-                        message: data.status || data.message,
-                        cardHandlers_size: cardHandlers.size
-                    });
 
                     // Find the card with progress indicator and update it
                     for (const [cardId, handlerInfo] of cardHandlers) {
                         if (handlerInfo && cardId) {
                             const message = data.status || data.message || null;
-                            console.log(`[WEBSOCKET_DEBUG] Updating progress for card ${cardId}:`, {
-                                progress: data.progress,
-                                message: message
-                            });
                             updateThinkingProgress(cardId, data.progress, message);
                         }
                     }
                     return; // Progress messages don't need further routing to completion handlers
                 } else if (isProgressType) {
-                    console.log(`[WEBSOCKET_DEBUG] Progress type message but no progress field:`, {
-                        type: data.type,
-                        progress: data.progress,
-                        message: data.status || data.message,
-                        hasProgress: hasProgress
-                    });
                 }
                 
                 // Handle async delegation complete - set up timeout monitoring
                 if (data.type === 'async_delegation_complete') {
-                    console.log(`[ASYNC_TIMEOUT] Setting up timeout monitoring for session ${sessionId}`);
 
                     // Set up both max timeout and inactivity timeout
                     const maxTimeoutMinutes = data.max_expected_minutes || 30;
@@ -4005,7 +3922,6 @@
 
                             // Only show death warning if we were actually in active processing
                             if (timeoutInfo && timeoutInfo.activeProcessing) {
-                                console.log(`[ASYNC_TIMEOUT] No messages for 2 minutes during active processing - validator likely died for session ${sessionId}`);
 
                                 // Show immediate failure warning
                                 if (cardHandlers.size > 0) {
@@ -4013,7 +3929,6 @@
                                     showValidatorDeathWarning(latestCardId, sessionId);
                                 }
                             } else {
-                                console.log(`[ASYNC_TIMEOUT] No messages for 2 minutes but no active processing detected for session ${sessionId} - likely just idle`);
                             }
 
                             // Clean up
@@ -4034,7 +3949,6 @@
                     // Store the restart function for use when messages arrive
                     window.asyncTimeouts.get(sessionId).restartInactivityTimer = startInactivityTimer;
 
-                    console.log(`[ASYNC_TIMEOUT] Started 2-minute inactivity monitoring for session ${sessionId}`);
 
                     // Continue to normal routing for the delegation message
                 }
@@ -4047,7 +3961,6 @@
 
                 // Cancel timeout if we receive a completion message
                 if (data.status === 'COMPLETED' && window.asyncTimeouts && window.asyncTimeouts.has(sessionId)) {
-                    console.log(`[ASYNC_TIMEOUT] Validation completed, canceling timeout for session ${sessionId}`);
                     clearTimeout(window.asyncTimeouts.get(sessionId));
                     window.asyncTimeouts.delete(sessionId);
                 }
@@ -4350,9 +4263,6 @@
                     globalState.excelFileUploaded = true;
                     
                     // DEBUG: Log data structure for clarifying questions
-                    console.log('🔍 FRONTEND_DEBUG: Config generation complete - looking for clarifying questions');
-                    console.log('🔍 FRONTEND_DEBUG: data keys:', Object.keys(data));
-                    console.log('🔍 FRONTEND_DEBUG: data.clarifying_questions:', !!data.clarifying_questions, data.clarifying_questions ? data.clarifying_questions.length : 'N/A');
                     if (data.config_data) console.log('🔍 FRONTEND_DEBUG: data.config_data keys:', Object.keys(data.config_data));
                     if (data.config) console.log('🔍 FRONTEND_DEBUG: data.config keys:', Object.keys(data.config));
                     if (data.response_data) console.log('🔍 FRONTEND_DEBUG: data.response_data keys:', Object.keys(data.response_data));
@@ -4361,25 +4271,19 @@
                     let questions = null;
                     if (data.clarifying_questions) {
                         questions = data.clarifying_questions;
-                        console.log('🔍 FRONTEND_DEBUG: Found questions in data.clarifying_questions');
                     } else if (data.config_data && data.config_data.clarifying_questions) {
                         questions = data.config_data.clarifying_questions;
-                        console.log('🔍 FRONTEND_DEBUG: Found questions in data.config_data.clarifying_questions');
                     } else if (data.config && data.config.clarifying_questions) {
                         questions = data.config.clarifying_questions;
-                        console.log('🔍 FRONTEND_DEBUG: Found questions in data.config.clarifying_questions');
                     } else if (data.response_data && data.response_data.clarifying_questions) {
                         questions = data.response_data.clarifying_questions;
-                        console.log('🔍 FRONTEND_DEBUG: Found questions in data.response_data.clarifying_questions');
                     // Config data should now come directly from API response
                     } else {
-                        console.log('🔍 FRONTEND_DEBUG: No clarifying questions found in any location');
                     }
                     
                     if (questions) {
                         globalState.savedQuestions = questions;
                     } else {
-                        console.log('🔍 FRONTEND_DEBUG: No clarifying questions in WebSocket response, will rely on backend fallback when needed');
                     }
 
                     let aiMessage = data.ai_summary || data.ai_response || 'Configuration generated successfully!';
@@ -4603,7 +4507,7 @@
                             <div class="privacy-checkbox">
                                 <input type="checkbox" id="${cardId}-privacy">
                                 <label for="${cardId}-privacy">
-                                    I accept the <a href="${ENV_CONFIG.privacyUrl}" target="_blank">Privacy Notice</a>
+                                    I accept the <a href="${ENV_CONFIG.privacyUrl}" target="_blank" style="color: var(--primary-color); text-decoration: underline;">Privacy Notice</a>
                                 </label>
                             </div>
                             <div class="form-row">
@@ -5299,7 +5203,6 @@
             }
 
             async function selectDemo(cardId, demoName, buttonElement) {
-                console.log('selectDemo called with:', { cardId, demoName, buttonElement }); // Debug log
                 markButtonSelected(buttonElement, '🚀 Loading Demo...');
 
                 try {
@@ -5325,8 +5228,6 @@
                         requestBody.session_id = globalState.sessionId;
                     }
 
-                    console.log('Request body:', requestBody); // Debug log
-                    console.log('JSON.stringify(requestBody):', JSON.stringify(requestBody)); // Debug log
 
                     const response = await fetch(`${API_BASE}/validate`, {
                         method: 'POST',
@@ -5339,7 +5240,6 @@
                     if (!result.success) {
                         // Check if it's a session-related error
                         const errorMsg = result.error || 'Failed to load demo';
-                        console.log('Backend error:', errorMsg); // Debug log
 
                         // Only clear session data for actual session errors, not other backend errors
                         if (errorMsg.toLowerCase().includes('session') && (errorMsg.toLowerCase().includes('expired') || errorMsg.toLowerCase().includes('invalid'))) {
@@ -5358,7 +5258,6 @@
                         globalState.sessionId = result.session_id;
                         // Store new session ID in localStorage for persistence
                         localStorage.setItem('sessionId', result.session_id);
-                        console.log(`Demo created new session: ${result.session_id}`);
                     }
 
                     // Set global state as if user uploaded files
@@ -6556,13 +6455,8 @@
                 const cardId = generateCardId();
 
                 // DEBUG: Check what questions are available right now
-                console.log('🔍 FRONTEND_DEBUG: createRefinementCard called');
-                console.log('🔍 FRONTEND_DEBUG: globalState.savedQuestions:', !!globalState.savedQuestions, globalState.savedQuestions ? globalState.savedQuestions.length : 'N/A');
-                console.log('🔍 FRONTEND_DEBUG: globalState.currentConfig:', !!globalState.currentConfig);
                 if (globalState.currentConfig) {
-                    console.log('🔍 FRONTEND_DEBUG: currentConfig.clarifying_questions:', !!globalState.currentConfig.clarifying_questions);
                     if (globalState.currentConfig.clarifying_questions) {
-                        console.log('🔍 FRONTEND_DEBUG: currentConfig questions length:', globalState.currentConfig.clarifying_questions.length);
                     }
                 }
                 
@@ -6615,20 +6509,15 @@
                 // Add initial AI message with questions if available
                 
                 let questionsToShow = null;
-                console.log('🔍 FRONTEND_DEBUG: Looking for questions to show in refinement card');
                 if (globalState.savedQuestions) {
                     questionsToShow = globalState.savedQuestions;
-                    console.log('🔍 FRONTEND_DEBUG: Using globalState.savedQuestions:', questionsToShow.length);
                 } else if (globalState.currentConfig?.clarifying_questions) {
                     questionsToShow = globalState.currentConfig.clarifying_questions;
-                    console.log('🔍 FRONTEND_DEBUG: Using currentConfig.clarifying_questions:', questionsToShow.length);
                 } else {
-                    console.log('🔍 FRONTEND_DEBUG: No questions found in primary locations');
                 }
 
                 // If no questions found anywhere, try to fetch from backend as fallback
                 if (!questionsToShow && globalState.email && globalState.sessionId) {
-                    console.log('🔍 FRONTEND_DEBUG: No questions found locally, attempting backend fallback...');
                     try {
                         const backendResult = await fetchClarifyingQuestionsFromBackend(
                             globalState.email,
@@ -6636,7 +6525,6 @@
                         );
                         if (backendResult && backendResult.questions) {
                             questionsToShow = backendResult.questions;
-                            console.log('🔍 FRONTEND_DEBUG: Successfully retrieved questions from backend fallback:', questionsToShow.length);
                             // Also save to global state for future use
                             globalState.savedQuestions = questionsToShow;
                         }
@@ -7117,7 +7005,6 @@ Please provide any additional context, or simply proceed to generate your initia
             // Helper function to fetch clarifying questions from backend
             async function fetchClarifyingQuestionsFromBackend(email, sessionId, configId = null) {
                 try {
-                    console.log('🔍 FRONTEND_DEBUG: Fetching clarifying questions from backend', {email: !!email, sessionId: !!sessionId, configId: !!configId});
 
                     const payload = {
                         action: 'getAiSummary',
@@ -7144,13 +7031,9 @@ Please provide any additional context, or simply proceed to generate your initia
                     const data = await response.json();
 
                     // DEBUG: Log full response to understand what we're getting
-                    console.log('🔍 FRONTEND_DEBUG: Backend response keys:', Object.keys(data));
-                    console.log('🔍 FRONTEND_DEBUG: data.success:', data.success);
-                    console.log('🔍 FRONTEND_DEBUG: data.clarifying_questions:', !!data.clarifying_questions, data.clarifying_questions ? data.clarifying_questions.length : 'N/A');
                     if (data.error) console.log('🔍 FRONTEND_DEBUG: Backend error:', data.error);
 
                     if (data.success && data.clarifying_questions) {
-                        console.log('🔍 FRONTEND_DEBUG: Successfully retrieved clarifying questions from backend:', data.clarifying_questions.length);
                         return {
                             questions: data.clarifying_questions,
                             urgency: data.clarification_urgency || 0,
@@ -7158,7 +7041,6 @@ Please provide any additional context, or simply proceed to generate your initia
                             configVersion: data.config_version || 1
                         };
                     } else {
-                        console.log('🔍 FRONTEND_DEBUG: No clarifying questions returned from backend');
                         return null;
                     }
                 } catch (error) {
@@ -7224,31 +7106,23 @@ Please provide any additional context, or simply proceed to generate your initia
                 
                 
                 // Priority: saved questions from WebSocket response, then current config questions directly, then config change log
-                console.log('🔍 FRONTEND_DEBUG: Searching for questions in refinement - priority order');
                 if (globalState.savedQuestions) {
                     questionsToShow = globalState.savedQuestions;
-                    console.log('🔍 FRONTEND_DEBUG: Found in globalState.savedQuestions:', questionsToShow.length);
                 } else if (globalState.currentConfig && globalState.currentConfig.clarifying_questions) {
                     questionsToShow = globalState.currentConfig.clarifying_questions;
-                    console.log('🔍 FRONTEND_DEBUG: Found in currentConfig.clarifying_questions:', questionsToShow.length);
                 } else {
-                    console.log('🔍 FRONTEND_DEBUG: No questions in primary sources, checking config change log');
                     // Only try change log if we have an actual config structure
                     const changeLogQuestions = actualConfig ? getQuestionsFromChangeLog(actualConfig) : null;
                     if (changeLogQuestions) {
                         questionsToShow = changeLogQuestions;
-                        console.log('🔍 FRONTEND_DEBUG: Found in change log:', questionsToShow.length);
                     } else if (actualConfig && actualConfig.clarifying_questions) {
                         questionsToShow = actualConfig.clarifying_questions;
-                        console.log('🔍 FRONTEND_DEBUG: Found in actualConfig.clarifying_questions:', questionsToShow.length);
                     } else {
-                        console.log('🔍 FRONTEND_DEBUG: No questions found anywhere');
                     }
                 }
 
                 // If no questions found anywhere, try to fetch from backend as fallback
                 if (!questionsToShow && globalState.email && globalState.sessionId) {
-                    console.log('🔍 FRONTEND_DEBUG: No questions found locally in refinement, attempting backend fallback...');
                     try {
                         const backendResult = await fetchClarifyingQuestionsFromBackend(
                             globalState.email,
@@ -7256,7 +7130,6 @@ Please provide any additional context, or simply proceed to generate your initia
                         );
                         if (backendResult && backendResult.questions) {
                             questionsToShow = backendResult.questions;
-                            console.log('🔍 FRONTEND_DEBUG: Successfully retrieved questions from backend fallback in refinement:', questionsToShow.length);
                             // Also save to global state for future use
                             globalState.savedQuestions = questionsToShow;
                         }
@@ -7560,7 +7433,6 @@ Please provide any additional context, or simply proceed to generate your initia
 
                     // Auto-generate preview immediately after refinement
                     setTimeout(() => {
-                        console.log('[REFINEMENT] Auto-generating preview after refinement (balance state reset)...');
                         // Clear any existing preview card state to allow new preview
                         globalState.activePreviewCard = null;
                         createPreviewCard();
@@ -7671,15 +7543,12 @@ Please provide any additional context, or simply proceed to generate your initia
 
             // 5. Preview Card - Fixed to ensure consistent card ID and prevent duplicates
             function createPreviewCard() {
-                console.log('[PREVIEW] createPreviewCard() called');
 
                 // Check if a preview card already exists
                 if (globalState.activePreviewCard) {
-                    console.log('[PREVIEW] Preview card already exists, skipping:', globalState.activePreviewCard);
                     return;
                 }
 
-                console.log('[PREVIEW] Creating new preview card...');
 
                 // Generate the card ID FIRST
                 const cardId = generateCardId();
@@ -7865,17 +7734,14 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 // If balance seems wrong, refresh it
                 if (currentBalance === 0 || currentBalance === undefined) {
-                    console.log('[SECURITY] Balance appears stale, refreshing...');
                     try {
                         await refreshCurrentBalance();
                         currentBalance = globalState.accountBalance || 0;
-                        console.log(`[SECURITY] Refreshed balance: $${currentBalance.toFixed(4)}`);
                     } catch (error) {
                         console.error('[SECURITY] Could not refresh balance:', error);
                     }
                 }
 
-                console.log(`[SECURITY] Processing validation - Balance: $${currentBalance.toFixed(4)}, Cost: $${estimatedCost.toFixed(4)}`);
 
                 if (currentBalance < estimatedCost) {
                     console.warn(`[SECURITY] Payment bypass attempt blocked - insufficient balance`);
@@ -7884,7 +7750,6 @@ Please provide any additional context, or simply proceed to generate your initia
                     // Mark that user attempted processing
                     globalState.userAttemptedProcessing = true;
                     globalState.pendingProcessingTrigger = () => {
-                        console.log('[AUTO-PROCESS] Triggering delayed processing after balance update');
 
                         // Find and click the Process Table button to trigger normal processing
                         const buttons = document.querySelectorAll('button');
@@ -8545,7 +8410,6 @@ Please provide any additional context, or simply proceed to generate your initia
 
                     // Skip blank or nearly empty cards (must have at least 5 meaningful characters)
                     if (cleanTitle.length < 2 && cleanContent.length < 5) {
-                        console.log('[INFO] Skipping save of blank/minimal card:', card.id, {title: cleanTitle, content: cleanContent});
                         return;
                     }
 
@@ -8560,12 +8424,6 @@ Please provide any additional context, or simply proceed to generate your initia
 
                     // Debug logging for preview cards
                     if (card.id === 'card-4' || title.includes('Preview')) {
-                        console.log(`[DEBUG] Saving ${card.id} content:`, {
-                            title: title,
-                            contentLength: content.length,
-                            hasButtons: content.includes('Process Table'),
-                            contentPreview: content.substring(0, 200) + '...'
-                        });
                     }
 
                     // Save form data within this card
@@ -8638,7 +8496,6 @@ Please provide any additional context, or simply proceed to generate your initia
 
                             // Skip blank or invalid cards - require meaningful content
                             if (!hasValidId || (cleanTitle.length < 2 && cleanContent.length < 5)) {
-                                console.log('[INFO] Skipping blank/invalid card:', cardData.id, {title: cleanTitle, content: cleanContent});
                                 return;
                             }
 
@@ -8686,11 +8543,9 @@ Please provide any additional context, or simply proceed to generate your initia
                     });
 
                     // Log restoration results
-                    console.log(`[INFO] Restored ${validCardsRestored} valid cards out of ${state.cards.length} saved cards`);
 
                     // If no valid cards were restored, fall back to normal initialization
                     if (validCardsRestored === 0) {
-                        console.log('[INFO] No valid cards to restore, allowing normal initialization');
                         window.isRestoringState = false;
                         return false;
                     }
@@ -8746,7 +8601,6 @@ Please provide any additional context, or simply proceed to generate your initia
                 }
 
                 // Show a brief notification that state was restored
-                console.log('[SUCCESS] Application state restored from previous session');
 
                 // Clear the restoration flag after a delay to allow normal card creation
                 setTimeout(() => {
@@ -8822,7 +8676,6 @@ Please provide any additional context, or simply proceed to generate your initia
 
                     // Check if state is recent (within 1 hour)
                     if (Date.now() - state.timestamp > oneHour) {
-                        console.log(`[AUTO] Saved state is too old (${Math.round((Date.now() - state.timestamp) / 60000)} minutes) - clearing`);
                         sessionStorage.removeItem('hyperplexity_app_state');
                         return false;
                     }
@@ -8832,16 +8685,13 @@ Please provide any additional context, or simply proceed to generate your initia
                         if (performance && performance.getEntriesByType) {
                             const navEntries = performance.getEntriesByType('navigation');
                             if (navEntries.length > 0 && navEntries[0].type === 'reload') {
-                                console.log(`[REFRESH] Page refresh detected - NOT auto-restoring ${cardCount} cards`);
                                 return false;
                             }
                         }
 
                         // Auto-restore for navigation back/forward
-                        console.log(`[AUTO] Auto-restoring ${cardCount} cards (navigation back)`);
                         return restoreApplicationState();
                     } else {
-                        console.log(`[AUTO] Only ${cardCount} saved cards - clearing state`);
                         sessionStorage.removeItem('hyperplexity_app_state');
                         return false;
                     }
@@ -8877,13 +8727,6 @@ Please provide any additional context, or simply proceed to generate your initia
 
                     // Debug logging for Process Table button detection
                     if (cardId === 'card-4' || buttonText.toLowerCase().includes('process')) {
-                        console.log(`[DEBUG] Button found in ${cardId}:`, {
-                            text: buttonText,
-                            class: buttonClass,
-                            id: button.id,
-                            dataAction: dataAction,
-                            disabled: button.disabled
-                        });
                     }
 
                     // Email validation buttons
@@ -9039,7 +8882,6 @@ Please provide any additional context, or simply proceed to generate your initia
                 // Try to fix buttons on all cards - let the function decide what to do
                 recreateProcessTableButton(cardElement, cardId);
 
-                console.log(`[INFO] Reinitialized all functionality for card: ${cardId}`);
             } catch (error) {
                 console.warn(`[WARN] Could not reinitialize card functionality ${cardId}:`, error);
             }
@@ -9050,7 +8892,6 @@ Please provide any additional context, or simply proceed to generate your initia
         // Special function to recreate Process Table button for preview cards
         function recreateProcessTableButton(cardElement, cardId) {
             try {
-                console.log(`[RESTORE] Simple restore for ${cardId} - checking for existing buttons`);
 
                 // SIMPLE APPROACH: If the card already has working buttons, don't touch them
                 const existingButtons = cardElement.querySelectorAll('button');
@@ -9059,7 +8900,6 @@ Please provide any additional context, or simply proceed to generate your initia
                 );
 
                 if (hasWorkingDownload) {
-                    console.log(`[RESTORE] Card ${cardId} already has working download button - skipping`);
                     return;
                 }
 
@@ -9069,11 +8909,9 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 if (hasCostEstimate) {
                     // This is a preview card - create process/credits button with balance checking
-                    console.log(`[RESTORE] Card ${cardId} has cost estimates - creating process button`);
                     createProcessTableButtonWithBalance(cardElement, cardId);
                 } else {
                     // Not a preview card - leave it alone unless it's clearly broken
-                    console.log(`[RESTORE] Card ${cardId} appears to be complete or not a preview - skipping button creation`);
                 }
 
             } catch (error) {
@@ -9093,14 +8931,12 @@ Please provide any additional context, or simply proceed to generate your initia
                 const costMatch = cardContent.match(/Cost[^$]*\$(\d+\.?\d*)/);
                 if (costMatch) {
                     extractedCost = parseFloat(costMatch[1]);
-                    console.log(`[RESTORE] Extracted cost from card content: $${extractedCost}`);
                 }
 
                 // Look for balance in the card content (e.g., "Your Balance\n$0.00")
                 const balanceMatch = cardContent.match(/Your Balance[^$]*\$(\d+\.?\d*)/);
                 if (balanceMatch) {
                     extractedBalance = parseFloat(balanceMatch[1]);
-                    console.log(`[RESTORE] Extracted balance from card content: $${extractedBalance}`);
                 }
 
                 // Use extracted values or fall back to global state
@@ -9113,19 +8949,15 @@ Please provide any additional context, or simply proceed to generate your initia
                 if (extractedCost > 0) globalState.estimatedCost = extractedCost;
                 if (extractedBalance >= 0) globalState.accountBalance = extractedBalance;
 
-                console.log(`[RESTORE] Initial button calculation for ${cardId}: Balance $${currentBalance.toFixed(4)} vs Cost $${estimatedCost.toFixed(4)} = ${sufficientBalance ? 'SUFFICIENT' : 'INSUFFICIENT'}`);
 
                 // Check for updated balance and pending orders during restore
                 setTimeout(async () => {
                     try {
                         // Skip if no email available
                         if (!globalState.email) {
-                            console.log(`[RESTORE] Skipping balance/order check - no email available`);
                             return;
                         }
 
-                        console.log(`[RESTORE] Checking for balance updates and pending orders for ${cardId}...`);
-                        console.log(`[RESTORE] Available data: email=${!!globalState.email}, sessionId=${!!globalState.sessionId}`);
 
                         // Check for balance update - but only call if we have necessary data
                         if (globalState.sessionId && globalState.email) {
@@ -9152,37 +8984,24 @@ Please provide any additional context, or simply proceed to generate your initia
                                             const oldBalance = globalState.accountBalance || 0;
 
                                             if (Math.abs(newBalance - oldBalance) > 0.001) {
-                                                console.log(`[RESTORE] Balance updated from $${oldBalance.toFixed(2)} to $${newBalance.toFixed(2)}`);
                                                 globalState.accountBalance = newBalance;
 
                                                 // Check if balance became sufficient and user previously attempted processing
                                                 const newSufficientBalance = newBalance >= estimatedCost;
-                                                console.log(`[RESTORE] Updated calculation: Balance $${newBalance.toFixed(4)} vs Cost $${estimatedCost.toFixed(4)} = ${newSufficientBalance ? 'SUFFICIENT' : 'INSUFFICIENT'}`);
 
-                                                console.log(`[RESTORE-DEBUG] Auto-processing check:`, {
-                                                    newSufficientBalance,
-                                                    oldSufficientBalance: sufficientBalance,
-                                                    userAttemptedProcessing: globalState.userAttemptedProcessing,
-                                                    hasPendingTrigger: !!globalState.pendingProcessingTrigger,
-                                                    shouldAutoProcess: newSufficientBalance && !sufficientBalance && globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger
-                                                });
 
                                                 if (newSufficientBalance && !sufficientBalance && globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger) {
-                                                    console.log(`[RESTORE-DEBUG] Triggering auto-processing...`);
 
                                                     // Clear blue message and show green success message (same as tab focus)
                                                     const messageContainers = document.querySelectorAll('[id$="-messages"]');
-                                                    console.log(`[RESTORE-DEBUG] Found ${messageContainers.length} message containers`);
 
                                                     if (messageContainers.length > 0) {
                                                         const lastContainer = messageContainers[messageContainers.length - 1];
                                                         const containerId = lastContainer.id;
-                                                        console.log(`[RESTORE-DEBUG] Using container: ${containerId}`);
 
                                                         // Clear existing messages
                                                         const container = document.getElementById(containerId);
                                                         if (container) {
-                                                            console.log(`[RESTORE-DEBUG] Clearing messages, current content: ${container.innerHTML.substring(0, 100)}...`);
                                                             container.innerHTML = '';
                                                         }
 
@@ -9190,12 +9009,9 @@ Please provide any additional context, or simply proceed to generate your initia
                                                     }
 
                                                     // Trigger auto-processing (same as tab focus)
-                                                    console.log(`[RESTORE-DEBUG] Setting 1-second timer for auto-processing...`);
                                                     setTimeout(() => {
-                                                        console.log(`[RESTORE-DEBUG] Timer fired - calling pendingProcessingTrigger`);
                                                         try {
                                                             globalState.pendingProcessingTrigger();
-                                                            console.log(`[RESTORE-DEBUG] Auto-processing trigger completed successfully`);
                                                         } catch (error) {
                                                             console.error(`[RESTORE-DEBUG] Auto-processing trigger failed:`, error);
                                                         }
@@ -9206,7 +9022,6 @@ Please provide any additional context, or simply proceed to generate your initia
                                                     return; // Exit early, processing will start automatically
                                                 } else if (newSufficientBalance !== sufficientBalance) {
                                                     // Balance status changed but no auto-processing - just recreate button
-                                                    console.log(`[RESTORE] Balance status changed - recreating button`);
                                                     recreateProcessTableButton(cardElement, cardId);
                                                     return;
                                                 }
@@ -9236,13 +9051,11 @@ Please provide any additional context, or simply proceed to generate your initia
                             if (orderResponse.ok) {
                                 const orderData = await orderResponse.json();
                                 if (orderData.success && orderData.new_orders_found) {
-                                    console.log(`[RESTORE] New orders found - balance may have updated`);
 
                                     // Update balance if provided in the response
                                     if (typeof orderData.new_balance === 'number') {
                                         const oldBalance = globalState.accountBalance || 0;
                                         globalState.accountBalance = orderData.new_balance;
-                                        console.log(`[RESTORE] Balance updated from orders: $${oldBalance.toFixed(2)} to $${orderData.new_balance.toFixed(2)}`);
 
                                         // Check for auto-processing trigger (same logic as balance check)
                                         const orderSufficientBalance = orderData.new_balance >= estimatedCost;
@@ -9350,7 +9163,6 @@ Please provide any additional context, or simply proceed to generate your initia
                     showMessage(`${cardId}-messages`, `💳 Click button to add credits. After purchase, return to this tab for auto-processing.`, 'info', false, 'add-credits-instruction');
                 }
 
-                console.log(`[INFO] Recreated ${sufficientBalance ? 'Process Table' : 'Add Credits'} button for ${cardId}`);
             } catch (error) {
                 console.warn(`[WARN] Could not recreate button for ${cardId}:`, error);
             }
@@ -9369,7 +9181,6 @@ Please provide any additional context, or simply proceed to generate your initia
                 // Clear saved state multiple times to ensure it's gone
                 sessionStorage.removeItem('hyperplexity_app_state');
                 sessionStorage.clear(); // Clear all session storage just to be sure
-                console.log('[SUCCESS] Page state cleared');
 
                 // Force reload with cache bypass
                 window.location.reload(true);
@@ -9414,7 +9225,6 @@ Please provide any additional context, or simply proceed to generate your initia
         // Console helper function
         window.clearState = function() {
             sessionStorage.removeItem('hyperplexity_app_state');
-            console.log('[SUCCESS] Saved state cleared. Reload page to start fresh.');
         };
 
         // Debug function to inspect saved state
@@ -9426,13 +9236,6 @@ Please provide any additional context, or simply proceed to generate your initia
                     state.cards.forEach((card, i) => {
                         const cleanTitle = (card.title || '').replace(/<[^>]*>/g, '').trim();
                         const cleanContent = (card.content || '').replace(/<[^>]*>/g, '').trim();
-                        console.log(`[DEBUG] Card ${i+1} (${card.id}):`, {
-                            title: cleanTitle,
-                            titleLength: cleanTitle.length,
-                            content: cleanContent,
-                            contentLength: cleanContent.length,
-                            wouldBeSkipped: cleanTitle.length < 2 && cleanContent.length < 5
-                        });
                     });
                 }
             } else {
@@ -9440,13 +9243,6 @@ Please provide any additional context, or simply proceed to generate your initia
         };
 
         // Show available reset methods in console
-        console.log('[INFO] Reset methods available:');
-        console.log('- Click the red ↻ button (top-right corner)');
-        console.log('- Press Ctrl+Shift+R (or Cmd+Shift+R on Mac)');
-        console.log('- Run resetPage() in console (standard reset)');
-        console.log('- Run hardReset() in console (aggressive reset)');
-        console.log('- Run clearState() in console (then reload manually)');
-        console.log('- Run inspectState() in console (debug saved data)');
 
         // ============================================
         // NAVIGATION PROTECTION & RESTORE SYSTEM
@@ -9465,11 +9261,9 @@ Please provide any additional context, or simply proceed to generate your initia
         // Helper function to mark download start
         window.markDownloadStart = function() {
             isDownloading = true;
-            console.log('[NAV] Download started - disabling navigation warnings');
             // Reset flag after a short delay in case download doesn't trigger beforeunload
             setTimeout(() => {
                 isDownloading = false;
-                console.log('[NAV] Download flag reset');
             }, 3000);
         };
 
@@ -9490,25 +9284,21 @@ Please provide any additional context, or simply proceed to generate your initia
 
             // Reset download flag regardless
             if (isDownloading) {
-                console.log('[NAV] Beforeunload triggered during download - allowing without warning');
                 isDownloading = false;
             }
 
             // Log if resetting
             if (window.isResetting) {
-                console.log('[NAV] Beforeunload triggered during reset - allowing without warning');
             }
         });
 
         // Handle page visibility changes (back/forward navigation)
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
-                console.log('[NAV] Page became visible - checking for restore');
 
                 // Small delay to ensure state is ready
                 setTimeout(() => {
                     if (hasValuableData()) {
-                        console.log('[NAV] Has valuable data - no restore needed');
                         return;
                     }
 
@@ -9520,13 +9310,11 @@ Please provide any additional context, or simply proceed to generate your initia
                             const oneHour = 60 * 60 * 1000;
 
                             if (Date.now() - state.timestamp <= oneHour && state.cards && state.cards.length > 1) {
-                                console.log('[NAV] Auto-restoring from page visibility change');
                                 // Auto-restore without modal
                                 if (typeof restoreApplicationState === 'function') {
                                     restoreApplicationState();
                                 }
                             } else if (Date.now() - state.timestamp > oneHour) {
-                                console.log('[NAV] Clearing old state from visibility change');
                                 sessionStorage.removeItem('hyperplexity_app_state');
                             }
                         } catch (error) {
@@ -9539,14 +9327,12 @@ Please provide any additional context, or simply proceed to generate your initia
 
 
 
-        console.log('[NAV] Navigation protection system initialized');
 
         // Note: State restoration is now handled in the main DOMContentLoaded event
         // to avoid conflicts with card initialization
 
         // Validator timeout warning functions
         function showValidatorDeathWarning(cardId, sessionId) {
-            console.log(`[ASYNC_TIMEOUT] Showing validator death warning for card ${cardId}`);
 
             // Complete thinking animation with error
             completeThinkingInCard(cardId, 'Validator appears to have died');
@@ -9577,7 +9363,6 @@ Please provide any additional context, or simply proceed to generate your initia
         }
 
         function showTimeoutWarning(cardId, sessionId, timeoutMinutes) {
-            console.log(`[ASYNC_TIMEOUT] Showing timeout warning for card ${cardId}`);
 
             // Complete thinking animation with warning
             completeThinkingInCard(cardId, 'Validation taking longer than expected');

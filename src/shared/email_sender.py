@@ -987,7 +987,6 @@ def create_validation_results_email_body(session_id, total_rows, fields_validate
                 padding: 30px;
                 text-align: center;
                 border-radius: 8px 8px 0 0;
-                border-bottom: 3px solid #4CAF50;
             }}
             .content {{
                 background: #ffffff;
@@ -1143,7 +1142,7 @@ def send_validation_code_email(email_address: str, validation_code: str):
         message = MIMEMultipart()
         message["From"] = SENDER
         message["To"] = email_address
-        message["Subject"] = "Perplexity Validator - Email Verification Code"
+        message["Subject"] = "🟩 Email Verification Code - Hyperplexity"
         
         # Create email body with validation code
         body_html = f"""
@@ -1151,7 +1150,7 @@ def send_validation_code_email(email_address: str, validation_code: str):
         <html>
         <head>
             <meta charset="UTF-8">
-            <title>Email Verification - Perplexity Validator</title>
+            <title>Email Verification - Hyperplexity</title>
             <style>
                 body {{
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -1163,8 +1162,8 @@ def send_validation_code_email(email_address: str, validation_code: str):
                     background-color: #ffffff;
                 }}
                 .header {{
-                    background: #000000;
-                    color: white;
+                    background: #ffffff;
+                    color: #333333;
                     padding: 30px;
                     text-align: center;
                     border-radius: 8px 8px 0 0;
@@ -1294,58 +1293,45 @@ def send_validation_code_email(email_address: str, validation_code: str):
                     color: #4CAF50;
                     font-weight: bold;
                 }}
+                a {{
+                    color: #000000;
+                    text-decoration: none;
+                    border-bottom: 2px solid #4CAF50;
+                }}
+                a:hover {{
+                    background-color: #4CAF50;
+                    color: #000000;
+                }}
             </style>
 
         </head>
         <body>
             <div class="header">
-                <h1>🔐 Email Verification</h1>
-                <p>Perplexity Validator Access Request</p>
+                <h1>Email Verification</h1>
+                <p>Verify your email to access Hyperplexity</p>
             </div>
             
             <div class="content">
-                <h2>Verify Your Email Address</h2>
-                <p>You have requested access to the Perplexity Validator service. Use the verification code below to complete your registration:</p>
+                <p>Enter this verification code to access Hyperplexity:</p>
                 
                 <div class="verification-code">
                     {validation_code}
                 </div>
-                
-                <div class="privacy-notice">
-                    <p><strong>📋 Privacy Notice Acceptance Required</strong></p>
-                    <p><strong>⚠️ IMPORTANT: Entering and submitting this verification code in the Perplexity Validator interface constitutes your explicit acceptance of our <a href="https://eliyahu.ai/privacy-notice" target="_blank" class="privacy-link">Privacy Notice</a> and consent to data processing.</strong></p>
-                    
-                    <div class="privacy-link-container">
-                        <a href="https://eliyahu.ai/privacy-notice" target="_blank" class="privacy-button">
-                            📖 Read Our Privacy Notice
-                        </a>
-                    </div>
-                    
-                    <p class="acceptance-warning"><strong>🔒 By proceeding with email verification, you acknowledge that you have read and agree to our Privacy Notice.</strong></p>
-                </div>
-                
+
                 <div class="warning">
-                    <strong>⏰ Important:</strong> This verification code will expire in <strong>10 minutes</strong>.
-                    You have up to 3 attempts to enter the correct code.
+                    <strong>Important:</strong> This code expires in <strong>10 minutes</strong>. You have up to 3 attempts.
                 </div>
-                
-                <h3>How to Use Your Code:</h3>
-                <ol>
-                    <li>Copy the 6-digit verification code above</li>
-                    <li>Return to the Perplexity Validator interface</li>
-                    <li>Enter the code and click "Verify Email"</li>
-                </ol>
-                
-                <p><strong>If you didn't request this verification,</strong> you can safely ignore this email. The code will expire automatically.</p>
-                
+
+                <p><strong>If you didn't request this verification,</strong> you can safely ignore this email.</p>
+
                 <p><strong>Need help?</strong> Reply to this email and our team will assist you.</p>
             </div>
             
             <div class="footer">
                 <p>Best regards,<br>
-                The <span class="logo">Eliyahu.AI</span> Team</p>
-                
-                <p><small>This is an automated security email for Perplexity Validator access verification.</small></p>
+                The <a href="https://eliyahu.ai/hyperplexity">Eliyahu.AI</a> Team</p>
+
+                <p><small>This email was sent because you requested access to Hyperplexity.</small></p>
             </div>
         </body>
         </html>
