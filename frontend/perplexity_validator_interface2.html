@@ -750,8 +750,8 @@
     }
 
     .thinking-square-wrapper {
-        width: 30px;
-        height: 30px;
+        width: 37.5px;
+        height: 37.5px;
         border: 3px solid #333;
         position: relative;
         box-sizing: border-box;
@@ -759,8 +759,8 @@
     }
 
     .thinking-square {
-        width: 18px;
-        height: 18px;
+        width: 22.5px;
+        height: 22.5px;
         background-color: #2DFF45;
         position: absolute;
         top: 50%;
@@ -768,6 +768,16 @@
         left: 50%;
         transform: translate(-50%, -50%);
         animation: thinkingPulse 1.2s infinite;
+    }
+
+    /* Faster heartbeat when stuck */
+    .thinking-square.stuck {
+        animation: thinkingPulseFast 0.6s infinite;
+    }
+
+    /* Spinning animation when waiting */
+    .thinking-square-wrapper.spinning {
+        animation: spinWrapper 2s ease-in-out;
     }
 
     .thinking-text {
@@ -796,6 +806,81 @@
             background-color: #2DFF45;
             transform: translate(-50%, -50%) scale(1);
             box-shadow: 0 0 0px rgba(45, 255, 69, 0);
+        }
+    }
+
+    /* Faster pulse when progress stalls */
+    @keyframes thinkingPulseFast {
+        0% {
+            background-color: #2DFF45;
+            transform: translate(-50%, -50%) scale(1);
+            box-shadow: 0 0 0px rgba(45, 255, 69, 0);
+        }
+        15% {
+            background-color: #00FF1D;
+            transform: translate(-50%, -50%) scale(1.08);
+            box-shadow: 0 0 6px rgba(45, 255, 69, 0.6);
+        }
+        45% {
+            background-color: #00FF1D;
+            transform: translate(-50%, -50%) scale(1.04);
+            box-shadow: 0 0 3px rgba(45, 255, 69, 0.4);
+        }
+        100% {
+            background-color: #2DFF45;
+            transform: translate(-50%, -50%) scale(1);
+            box-shadow: 0 0 0px rgba(45, 255, 69, 0);
+        }
+    }
+
+    /* Spin animation for wrapper */
+    @keyframes spinWrapper {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* Color flash animations */
+    @keyframes flashPurple {
+        0%, 100% {
+            background-color: #2DFF45;
+        }
+        50% {
+            background-color: #b01bc1;
+            box-shadow: 0 0 8px rgba(176, 27, 193, 0.7);
+        }
+    }
+
+    @keyframes flashOrange {
+        0%, 100% {
+            background-color: #2DFF45;
+        }
+        50% {
+            background-color: #ff9800;
+            box-shadow: 0 0 8px rgba(255, 152, 0, 0.7);
+        }
+    }
+
+    @keyframes flashCyan {
+        0%, 100% {
+            background-color: #2DFF45;
+        }
+        50% {
+            background-color: #00bcd4;
+            box-shadow: 0 0 8px rgba(0, 188, 212, 0.7);
+        }
+    }
+
+    @keyframes flashPink {
+        0%, 100% {
+            background-color: #2DFF45;
+        }
+        50% {
+            background-color: #e91e63;
+            box-shadow: 0 0 8px rgba(233, 30, 99, 0.7);
         }
     }
 
@@ -897,10 +982,10 @@
 
     .progress-square-wrapper {
         position: absolute;
-        top: -13px;
-        left: -15px;
-        width: 30px;
-        height: 30px;
+        top: -16.25px;
+        left: -18.75px;
+        width: 37.5px;
+        height: 37.5px;
         border: 3px solid #333;
         box-sizing: border-box;
         transition: left 0.3s ease-out;
@@ -908,9 +993,13 @@
         /* Animate the entire wrapper as one unit */
     }
 
+    .progress-square-wrapper.spinning {
+        animation: spinWrapper 2s ease-in-out;
+    }
+
     .progress-square {
-        width: 18px;
-        height: 18px;
+        width: 22.5px;
+        height: 22.5px;
         background-color: #2DFF45;
         position: absolute;
         top: 50%;
@@ -918,6 +1007,10 @@
         transform: translate(-50%, -50%);
         animation: thinkingPulse 1.2s infinite;
         /* No separate positioning - moves with wrapper */
+    }
+
+    .progress-square.stuck {
+        animation: thinkingPulseFast 0.6s infinite;
     }
 
     .progress-square.error {
@@ -1527,10 +1620,52 @@
         }
     }
 
+    /* Ticker Row Styles */
+    .ticker-container {
+        background: linear-gradient(90deg, #f0f0f0 0%, #ffffff 50%, #f0f0f0 100%);
+        border-bottom: 2px solid #4CAF50;
+        padding: 0.75rem 1rem;
+        margin: 0 -1rem 1rem -1rem;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .ticker-content {
+        font-size: var(--font-size-small);
+        color: var(--text-color);
+        white-space: nowrap;
+        animation: ticker-scroll 20s linear infinite;
+    }
+
+    @keyframes ticker-scroll {
+        0% {
+            transform: translateX(100%);
+        }
+        100% {
+            transform: translateX(-100%);
+        }
+    }
+
+    .ticker-content:hover {
+        animation-play-state: paused;
+    }
+
+    @media (max-width: 768px) {
+        .ticker-container {
+            padding: 0.5rem 0.75rem;
+            margin: 0 -0.75rem 0.75rem -0.75rem;
+        }
+    }
+
     </style>
 </head>
 <body>
     <div class="validator-container">
+
+        <!-- Ticker Row for High-Priority Updates -->
+        <div id="tickerContainer" class="ticker-container" style="display: none;">
+            <div class="ticker-content" id="tickerContent"></div>
+        </div>
 
         <!-- Dynamic card container -->
         <div id="cardContainer"></div>
@@ -1704,6 +1839,9 @@
                 excelFileUploaded: false, // Track if Excel file has been uploaded to unified storage
                 configStored: false, // Track if config has been stored
                 hasInsufficientBalance: false, // Track when user has insufficient balance
+                tickerMessages: [], // Priority queue for ticker messages
+                tickerVisible: false, // Whether ticker is currently visible
+                currentValidationState: null, // Track if preview or full validation is running
                 isProcessingConfig: false, // Track if config generation/refinement is in progress
                 debounceTimers: new Map(), // Track debounce timers by function/card ID
                 isNewUser: true, // Track if user is new (no prior validation history) - ALWAYS TRUE FOR NOW
@@ -2074,31 +2212,162 @@
             function showThinkingInCard(cardId, message = 'Processing...', withProgress = false) {
                 const card = document.getElementById(cardId);
                 if (!card) return;
-                
+
                 // Remove existing thinking indicator
                 const existing = document.getElementById(`${cardId}-thinking`);
                 if (existing) existing.remove();
-                
+
                 // Add new thinking indicator
                 const indicator = createThinkingIndicator(cardId, message, withProgress);
                 card.appendChild(indicator);
-                
+
                 // Reset any error state on the square and wrapper
                 const square = indicator.querySelector('.thinking-square, .progress-square');
-                const wrapper = indicator.querySelector('.progress-square-wrapper');
+                const wrapper = indicator.querySelector('.progress-square-wrapper, .thinking-square-wrapper');
                 if (square) {
                     square.classList.remove('error');
                 }
                 if (wrapper) {
                     wrapper.classList.remove('error');
                 }
-                
+
                 // Animate in
                 setTimeout(() => {
                     indicator.classList.add('active');
                 }, 50);
-                
+
+                // Start dynamic animations
+                startDynamicAnimations(cardId);
+
                 return indicator;
+            }
+
+            // ============================================
+            // DYNAMIC PROGRESS ANIMATIONS
+            // ============================================
+
+            // Track animation state for each card
+            const cardAnimationState = new Map();
+
+            function startDynamicAnimations(cardId) {
+                // Clear any existing animation state
+                stopDynamicAnimations(cardId);
+
+                const state = {
+                    lastProgressUpdate: Date.now(),
+                    isStuck: false,
+                    intervals: []
+                };
+
+                cardAnimationState.set(cardId, state);
+
+                // Check for stalled progress every 5 seconds
+                const stuckCheckInterval = setInterval(() => {
+                    const timeSinceUpdate = Date.now() - state.lastProgressUpdate;
+                    const indicator = document.getElementById(`${cardId}-thinking`);
+                    if (!indicator) {
+                        clearInterval(stuckCheckInterval);
+                        return;
+                    }
+
+                    const square = indicator.querySelector('.thinking-square, .progress-square');
+                    if (!square) return;
+
+                    // Speed up heartbeat if stuck for more than 10 seconds
+                    if (timeSinceUpdate > 10000 && !state.isStuck) {
+                        square.classList.add('stuck');
+                        state.isStuck = true;
+                    } else if (timeSinceUpdate <= 10000 && state.isStuck) {
+                        square.classList.remove('stuck');
+                        state.isStuck = false;
+                    }
+                }, 5000);
+
+                state.intervals.push(stuckCheckInterval);
+
+                // Random color flashes (10% chance every 3 seconds)
+                const colorFlashInterval = setInterval(() => {
+                    const indicator = document.getElementById(`${cardId}-thinking`);
+                    if (!indicator) {
+                        clearInterval(colorFlashInterval);
+                        return;
+                    }
+
+                    const square = indicator.querySelector('.thinking-square, .progress-square');
+                    if (!square) return;
+
+                    // 10% chance to flash a color
+                    if (Math.random() < 0.1) {
+                        const colors = ['flashPurple', 'flashOrange', 'flashCyan', 'flashPink'];
+                        const randomColor = colors[Math.floor(Math.random() * colors.length)];
+
+                        // Save current animation
+                        const oldAnimation = square.style.animation;
+
+                        // Flash color (0.8s duration)
+                        square.style.animation = `${randomColor} 0.8s ease-in-out`;
+
+                        // Restore original animation after flash
+                        setTimeout(() => {
+                            square.style.animation = oldAnimation;
+                        }, 800);
+                    }
+                }, 3000);
+
+                state.intervals.push(colorFlashInterval);
+
+                // Random spinning (15% chance every 8 seconds, more likely if stuck)
+                const spinInterval = setInterval(() => {
+                    const indicator = document.getElementById(`${cardId}-thinking`);
+                    if (!indicator) {
+                        clearInterval(spinInterval);
+                        return;
+                    }
+
+                    const wrapper = indicator.querySelector('.progress-square-wrapper, .thinking-square-wrapper');
+                    if (!wrapper) return;
+
+                    // Higher chance to spin if stuck
+                    const spinChance = state.isStuck ? 0.3 : 0.15;
+
+                    if (Math.random() < spinChance) {
+                        wrapper.classList.add('spinning');
+
+                        // Remove spinning class after animation completes (2s)
+                        setTimeout(() => {
+                            wrapper.classList.remove('spinning');
+                        }, 2000);
+                    }
+                }, 8000);
+
+                state.intervals.push(spinInterval);
+            }
+
+            function stopDynamicAnimations(cardId) {
+                const state = cardAnimationState.get(cardId);
+                if (state) {
+                    state.intervals.forEach(interval => clearInterval(interval));
+                    cardAnimationState.delete(cardId);
+                }
+            }
+
+            function updateProgressTimestamp(cardId) {
+                const state = cardAnimationState.get(cardId);
+                if (state) {
+                    state.lastProgressUpdate = Date.now();
+
+                    // Reset stuck state
+                    if (state.isStuck) {
+                        const indicator = document.getElementById(`${cardId}-thinking`);
+                        if (indicator) {
+                            const square = indicator.querySelector('.thinking-square, .progress-square');
+                            if (square) {
+                                square.classList.remove('stuck');
+                            }
+                        }
+                        state.isStuck = false;
+                    }
+                }
             }
 
             function updateThinkingInCard(cardId, message) {
@@ -2107,6 +2376,8 @@
                     const textEl = indicator.querySelector('.thinking-text');
                     if (textEl) textEl.textContent = message;
                 }
+                // Update timestamp to prevent stuck state
+                updateProgressTimestamp(cardId);
             }
             
             // Dummy progress messages for when WebSocket is quiet
@@ -2218,38 +2489,41 @@
             function updateThinkingProgress(cardId, progress, message = null) {
                 const indicator = document.getElementById(`${cardId}-thinking`);
                 if (!indicator || !indicator.classList.contains('with-progress')) return;
-                
+
                 // Mark that we got a real update
                 markRealProgressUpdate(cardId);
-                
+
+                // Update dynamic animation timestamp
+                updateProgressTimestamp(cardId);
+
                 // Clamp progress between 0 and 100
                 progress = Math.max(0, Math.min(100, progress));
-                
+
                 // Never go backward - use the maximum of current and new progress
                 const currentProgress = cardCurrentProgress.get(cardId) || 0;
                 const finalProgress = Math.max(currentProgress, progress);
                 cardCurrentProgress.set(cardId, finalProgress);
-                
+
                 // Update progress square position (0% = left edge, 100% = right edge)
                 const progressWrapper = indicator.querySelector('.progress-square-wrapper');
                 const progressSquare = indicator.querySelector('.progress-square');
                 const progressText = indicator.querySelector('.progress-text');
                 const track = indicator.querySelector('.progress-track');
-                
+
                 if (progressWrapper && progressSquare && progressText && track) {
                     // Calculate position: 0% = left edge, 100% = right edge
                     const trackWidth = 120; // matches shorter CSS width
-                    const wrapperOffset = 15; // half of wrapper width to center it
+                    const wrapperOffset = 18.75; // half of 37.5px wrapper width to center it
                     const leftPosition = (finalProgress / 100) * trackWidth - wrapperOffset;
-                    
+
                     // Move the entire wrapper (black square + green center together)
                     progressWrapper.style.left = `${leftPosition}px`;
-                    
+
                     // Update message if provided (show WebSocket message, not percentage)
                     if (message) {
                         progressText.textContent = message;
                     }
-                    
+
                     // Keep consistent green color throughout progress - batch with other updates
                     requestAnimationFrame(() => {
                         progressSquare.style.backgroundColor = '#2DFF45'; // Always green
@@ -2261,26 +2535,29 @@
                 // Stop any dummy progress and clean up progress tracking
                 stopDummyProgress(cardId);
                 cardCurrentProgress.delete(cardId);
-                
+
+                // Stop dynamic animations
+                stopDynamicAnimations(cardId);
+
                 const indicator = document.getElementById(`${cardId}-thinking`);
                 if (indicator) {
                     // Update message
                     updateThinkingInCard(cardId, finalMessage);
-                    
+
                     // Detect if this is an error message
-                    const isError = finalMessage.toLowerCase().includes('failed') || 
-                                   finalMessage.toLowerCase().includes('error') || 
+                    const isError = finalMessage.toLowerCase().includes('failed') ||
+                                   finalMessage.toLowerCase().includes('error') ||
                                    finalMessage.toLowerCase().includes('upload failed') ||
                                    finalMessage.toLowerCase().includes('generation failed') ||
                                    finalMessage.toLowerCase().includes('validation failed') ||
                                    finalMessage.toLowerCase().includes('refinement failed') ||
                                    finalMessage.toLowerCase().includes('preview failed') ||
                                    finalMessage.toLowerCase().includes('processing failed');
-                    
+
                     // Play appropriate animation
                     const square = indicator.querySelector('.thinking-square, .progress-square');
                     const wrapper = indicator.querySelector('.progress-square-wrapper');
-                    
+
                     if (square) {
                         if (isError) {
                             square.classList.add('error');
@@ -2298,7 +2575,7 @@
                             }
                         }
                     }
-                    
+
                     // Hide after delay
                     setTimeout(() => {
                         indicator.classList.remove('active');
@@ -2310,6 +2587,9 @@
             }
 
             function hideThinkingInCard(cardId) {
+                // Stop dynamic animations
+                stopDynamicAnimations(cardId);
+
                 const indicator = document.getElementById(`${cardId}-thinking`);
                 if (indicator) {
                     indicator.classList.remove('active');
@@ -3877,6 +4157,12 @@
                     return; // Balance updates don't need routing to card handlers
                 }
 
+                // Handle ticker updates
+                if (data.type === 'ticker_update') {
+                    handleTickerUpdate(data);
+                    return; // Ticker updates don't need routing to card handlers
+                }
+
                 // General error handler - handles all error message types
                 if (data.type === 'error' || data.type === 'validation_failed' || data.type === 'preview_failed' ||
                     data.type === 'config_generation_failed' || data.status === 'FAILED' || data.status === 'ERROR') {
@@ -4025,8 +4311,77 @@
                 }
             }
 
+            // ============================================
+            // TICKER FUNCTIONS
+            // ============================================
+
+            function handleTickerUpdate(data) {
+                // Handle ticker_update WebSocket messages
+                const tickerMessage = {
+                    priority: data.priority || 4,
+                    row_ids: data.row_ids || '',
+                    column: data.column || '',
+                    final_value: data.final_value || '',
+                    confidence_emoji: data.confidence_emoji || '🟢',
+                    timestamp: data.timestamp || new Date().toISOString()
+                };
+
+                // Add to ticker messages (sorted by priority)
+                globalState.tickerMessages.push(tickerMessage);
+                globalState.tickerMessages.sort((a, b) => b.priority - a.priority);
+
+                // Keep only top 10 messages
+                if (globalState.tickerMessages.length > 10) {
+                    globalState.tickerMessages = globalState.tickerMessages.slice(0, 10);
+                }
+
+                // Update ticker display
+                updateTickerDisplay();
+
+                // Show ticker if validation is running
+                if (globalState.currentValidationState === 'preview' || globalState.currentValidationState === 'full') {
+                    showTicker();
+                }
+            }
+
+            function updateTickerDisplay() {
+                const tickerContent = document.getElementById('tickerContent');
+                if (!tickerContent || globalState.tickerMessages.length === 0) return;
+
+                // Format all messages as: "row_ids, column? emoji value |"
+                const formattedMessages = globalState.tickerMessages.map(msg => {
+                    // Add ? if column doesn't end with one
+                    const column = msg.column.trim();
+                    const columnWithQuestion = column.endsWith('?') ? column : column + '?';
+
+                    return `${msg.row_ids}, ${columnWithQuestion} ${msg.confidence_emoji} ${msg.final_value} |`;
+                });
+
+                // Join all messages with spacing
+                tickerContent.textContent = formattedMessages.join('   ');
+            }
+
+            function showTicker() {
+                const tickerContainer = document.getElementById('tickerContainer');
+                if (tickerContainer && !globalState.tickerVisible) {
+                    tickerContainer.style.display = 'block';
+                    globalState.tickerVisible = true;
+                }
+            }
+
+            function hideTicker() {
+                const tickerContainer = document.getElementById('tickerContainer');
+                if (tickerContainer && globalState.tickerVisible) {
+                    tickerContainer.style.display = 'none';
+                    globalState.tickerVisible = false;
+                    // Clear messages when hiding
+                    globalState.tickerMessages = [];
+                    updateTickerDisplay();
+                }
+            }
+
             // Removed shouldHandleMessage - routing to last registered card regardless of message type
-            
+
             function isWebSocketHealthy(ws) {
                 // Simplified health check - only check readyState
                 if (!ws) return false;
@@ -4126,8 +4481,12 @@
             function handleProcessingWebSocketMessage(data, cardId) {
 
                 if (data.status === 'PROCESSING') {
+                    // Show ticker when validation processing starts
+                    globalState.currentValidationState = 'full';
+                    showTicker();
+
                     let message = data.verbose_status || 'Processing...';
-                    
+
                     // If we have batch information, format it nicely
                     if (data.current_batch !== undefined && data.total_batches !== undefined) {
                         message = `Processing batch ${data.current_batch} of ${data.total_batches}`;
@@ -4135,7 +4494,7 @@
                             message += ` (${data.processed_rows} rows processed)`;
                         }
                     }
-                    
+
                     // Update both text and progress if we have percent_complete
                     if (data.percent_complete !== undefined) {
                         updateThinkingProgress(cardId, data.percent_complete, message);
@@ -4143,8 +4502,11 @@
                         updateThinkingInCard(cardId, message);
                     }
                     // Progress routed to card level;
-                    
+
                 } else if (data.status === 'COMPLETED') {
+                    // Hide ticker when validation completes
+                    globalState.currentValidationState = null;
+                    hideTicker();
                     // Store completion data for download
                     globalState.completionData = data;
 
@@ -7704,6 +8066,10 @@ Please provide any additional context, or simply proceed to generate your initia
             function handlePreviewWebSocketMessage(data, cardId) {
 
                 if (data.status === 'PROCESSING') {
+                    // Show ticker when preview starts
+                    globalState.currentValidationState = 'preview';
+                    showTicker();
+
                     const message = data.verbose_status || 'Processing...';
                     // Update both text and progress if we have percent_complete
                     if (data.percent_complete !== undefined) {
@@ -7713,6 +8079,9 @@ Please provide any additional context, or simply proceed to generate your initia
                     }
                     // Progress routed to card level;
                 } else if (data.status === 'COMPLETED') {
+                    // Hide ticker when preview completes
+                    globalState.currentValidationState = null;
+                    hideTicker();
                     // First update to 100% if we have a progress bar
                     const indicator = document.getElementById(`${cardId}-thinking`);
                     if (indicator && indicator.classList.contains('with-progress')) {
