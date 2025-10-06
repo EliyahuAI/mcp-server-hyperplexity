@@ -757,6 +757,7 @@
         box-sizing: border-box;
         margin-right: 10px;
         transform-style: preserve-3d;
+        backface-visibility: visible;
     }
 
     .thinking-square {
@@ -1139,6 +1140,7 @@
         transition: left 0.3s ease-out;
         z-index: 1;
         transform-style: preserve-3d;
+        backface-visibility: visible;
         /* Animate the entire wrapper as one unit */
     }
 
@@ -1154,7 +1156,12 @@
         /* No separate positioning - moves with wrapper */
     }
 
-    .progress-square.stuck {
+    .progress-square.stuck,
+    .progress-square.fast-heartbeat {
+        animation: thinkingPulseFast 0.6s infinite;
+    }
+
+    .thinking-square.fast-heartbeat {
         animation: thinkingPulseFast 0.6s infinite;
     }
 
@@ -2476,18 +2483,22 @@
 
                     // 10% chance to trigger heartbeat speed up and flip sequence
                     if (Math.random() < 0.1) {
+                        console.log('[FLIP] Starting flip animation sequence');
                         // Phase 1: Wait/anticipation - normal heartbeat continues (1s)
                         setTimeout(() => {
                             // Phase 2: Speed up heartbeat (faster pulse) - 1.5 seconds
-                            square.style.animation = 'thinkingPulseFast 0.6s infinite';
+                            console.log('[FLIP] Phase 2: Speeding up heartbeat');
+                            square.classList.add('fast-heartbeat');
 
                             setTimeout(() => {
                                 // Phase 3: Flip wrapper while heartbeat continues fast - 0.8s
+                                console.log('[FLIP] Phase 3: Flipping');
                                 wrapper.classList.add('flipping');
 
                                 setTimeout(() => {
                                     // Phase 4: Calm down - return to normal heartbeat
-                                    square.style.animation = 'thinkingPulse 1.2s infinite';
+                                    console.log('[FLIP] Phase 4: Calming down');
+                                    square.classList.remove('fast-heartbeat');
                                     wrapper.classList.remove('flipping');
                                 }, 800); // After flip completes
                             }, 1500); // After heartbeat speeds up
