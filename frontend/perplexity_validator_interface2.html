@@ -4229,6 +4229,7 @@
 
                 // Handle ticker updates
                 if (data.type === 'ticker_update') {
+                    console.log('[TICKER] Intercepted ticker_update in routeMessage - NOT routing to handlers');
                     handleTickerUpdate(data);
                     return; // Ticker updates don't need routing to card handlers
                 }
@@ -4387,6 +4388,8 @@
 
             function handleTickerUpdate(data) {
                 // Handle ticker_update WebSocket messages
+                console.log('[TICKER] Received ticker update:', data);
+
                 const tickerMessage = {
                     priority: data.priority || 4,
                     row_ids: data.row_ids || '',
@@ -4405,12 +4408,17 @@
                     globalState.tickerMessages = globalState.tickerMessages.slice(0, 10);
                 }
 
+                console.log('[TICKER] Queue now has', globalState.tickerMessages.length, 'messages');
+
                 // Update ticker display
                 updateTickerDisplay();
 
                 // Show ticker if validation is running
+                console.log('[TICKER] Current validation state:', globalState.currentValidationState);
                 if (globalState.currentValidationState === 'preview' || globalState.currentValidationState === 'full') {
                     showTicker();
+                } else {
+                    console.log('[TICKER] NOT showing ticker - validation state is:', globalState.currentValidationState);
                 }
             }
 
@@ -4433,9 +4441,11 @@
 
             function showTicker() {
                 const tickerContainer = document.getElementById('tickerContainer');
+                console.log('[TICKER] showTicker called - container exists:', !!tickerContainer, 'already visible:', globalState.tickerVisible);
                 if (tickerContainer && !globalState.tickerVisible) {
                     tickerContainer.style.display = 'block';
                     globalState.tickerVisible = true;
+                    console.log('[TICKER] Ticker is now visible');
                 }
             }
 
@@ -4552,6 +4562,7 @@
 
                 if (data.status === 'PROCESSING') {
                     // Show ticker when validation processing starts
+                    console.log('[TICKER] Setting validation state to FULL');
                     globalState.currentValidationState = 'full';
                     showTicker();
 
@@ -4575,6 +4586,7 @@
 
                 } else if (data.status === 'COMPLETED') {
                     // Hide ticker when validation completes
+                    console.log('[TICKER] Setting validation state to NULL (completed)');
                     globalState.currentValidationState = null;
                     hideTicker();
                     // Store completion data for download
@@ -8137,6 +8149,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 if (data.status === 'PROCESSING') {
                     // Show ticker when preview starts
+                    console.log('[TICKER] Setting validation state to PREVIEW');
                     globalState.currentValidationState = 'preview';
                     showTicker();
 
@@ -8150,6 +8163,7 @@ Please provide any additional context, or simply proceed to generate your initia
                     // Progress routed to card level;
                 } else if (data.status === 'COMPLETED') {
                     // Hide ticker when preview completes
+                    console.log('[TICKER] Setting validation state to NULL (preview completed)');
                     globalState.currentValidationState = null;
                     hideTicker();
                     // First update to 100% if we have a progress bar
