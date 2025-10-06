@@ -1685,10 +1685,9 @@
     .ticker-row {
         background: transparent;
         padding: 0.5rem 0;
-        margin: 8px auto 0 auto;
+        margin: 8px 1rem 0 1rem; /* Use card padding for width */
         overflow: hidden;
         position: relative;
-        max-width: 400px; /* Match progress track width */
         text-align: center;
     }
 
@@ -1698,7 +1697,7 @@
         top: 0;
         left: 50%;
         transform: translateX(-50%);
-        width: 90%;
+        width: 95%;
         height: 1px;
         background: linear-gradient(to right, transparent, #ddd 20%, #ddd 80%, transparent);
     }
@@ -1708,15 +1707,15 @@
         font-size: var(--font-size-small); /* 14px - matches progress-text */
         font-weight: 500;
         white-space: nowrap;
-        animation: ticker-scroll-visible 15s linear infinite;
+        animation: ticker-scroll-visible 40s linear infinite;
         padding-top: 8px;
         display: inline-block;
     }
 
-    /* Start from visible position and scroll smoothly */
+    /* Start from visible position and scroll slowly */
     @keyframes ticker-scroll-visible {
         0% {
-            transform: translateX(50%);
+            transform: translateX(30%);
         }
         100% {
             transform: translateX(-100%);
@@ -1731,10 +1730,11 @@
     @media (max-width: 768px) {
         .ticker-row {
             padding: 0.4rem 0;
-            max-width: 300px;
+            margin: 8px 0.5rem 0 0.5rem;
         }
         .ticker-content {
             font-size: calc(var(--font-size-small) * 0.9);
+            animation: ticker-scroll-visible 30s linear infinite;
         }
     }
 

@@ -3839,6 +3839,48 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if target.column in row_results and target.importance.upper() != "ID":
                         accumulated_results[target.column] = row_results[target.column]
 
+            # === VALIDATION TICKER UPDATES (before QC) ===
+            # Send low-priority ticker messages for high-confidence updates with low-confidence originals
+            if websocket_client and session_id:
+                try:
+                    # Get ID fields for row identifier
+                    id_fields = validator.get_id_fields()
+                    row_id_values = []
+                    for id_field in id_fields:
+                        value = row_data.get(id_field.column, '')
+                        if value:
+                            row_id_values.append(str(value))
+                    row_ids = ' - '.join(row_id_values) if row_id_values else 'Unknown'
+
+                    # Check each validated field
+                    for field_name, field_result in row_results.items():
+                        if isinstance(field_result, dict):
+                            # Get confidence levels
+                            updated_confidence = field_result.get('confidence_level', field_result.get('confidence', ''))
+                            original_confidence = field_result.get('original_confidence', '')
+
+                            # Check if HIGH confidence update from LOW/MEDIUM original
+                            if (updated_confidence == 'HIGH' and
+                                original_confidence in ['LOW', 'MEDIUM']):
+
+                                # Determine priority based on original confidence
+                                priority = 2 if original_confidence == 'LOW' else 3
+
+                                final_value = field_result.get('value', '')
+
+                                logger.info(f"[TICKER] Sending validation ticker: {field_name} upgraded from {original_confidence} to {updated_confidence}")
+                                websocket_client.send_ticker_update(
+                                    session_id=session_id,
+                                    priority=priority,
+                                    row_ids=row_ids,
+                                    column=field_name,
+                                    final_value=final_value,
+                                    confidence=updated_confidence,
+                                    explanation=f"Validation upgraded confidence from {original_confidence}"
+                                )
+                except Exception as ticker_error:
+                    logger.warning(f"Failed to send validation ticker update: {ticker_error}")
+
             # === QC PROCESSING (after all groups complete) ===
             qc_data = {}
             if qc_manager and qc_manager.is_qc_enabled():
