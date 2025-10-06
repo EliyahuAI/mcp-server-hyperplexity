@@ -298,13 +298,13 @@ class SimplifiedSchemaValidator:
         id_fields = self.get_id_fields()
 
         # Debug logging for ID fields
-        logger.info(f"Total validation targets: {len(self.validation_targets)}")
-        logger.info(f"ID fields found: {len(id_fields)}")
+        logger.debug(f"Total validation targets: {len(self.validation_targets)}")
+        logger.debug(f"ID fields found: {len(id_fields)}")
         for target in self.validation_targets:
-            logger.info(f"Target: {target.column}, importance: {target.importance}")
+            logger.debug(f"Target: {target.column}, importance: {target.importance}")
 
         if id_fields:
-            logger.info(f"Processing {len(id_fields)} ID fields for context")
+            logger.debug(f"Processing {len(id_fields)} ID fields for context")
             for id_field in id_fields:
                 field_value = row.get(id_field.column, '')
                 context_line = f"{id_field.column}: {field_value}"

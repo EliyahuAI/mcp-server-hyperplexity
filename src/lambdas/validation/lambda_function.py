@@ -1574,7 +1574,7 @@ async def generate_config_automatic(table_analysis: Dict, api_key: str, session_
             config_response = await call_anthropic_api_structured(
                 session, prompt, api_key, 
                 schema=get_config_generation_schema(),
-                model="claude-sonnet-4-0"
+                model="claude-sonnet-4-5"
             )
         
         # Extract generated config from response
@@ -1631,7 +1631,7 @@ async def generate_config_interview(table_analysis: Dict, api_key: str, session_
         # Call Claude using existing infrastructure
         async with aiohttp.ClientSession() as session:
             response = await call_anthropic_api_text(
-                session, prompt, api_key, model="claude-sonnet-4-0"
+                session, prompt, api_key, model="claude-sonnet-4-5"
             )
         
         ai_response = response.get('content', 'Interview response generated')
@@ -2133,7 +2133,7 @@ def extract_config_from_claude_response(response: Dict) -> Dict:
         raise
 
 async def call_anthropic_api_structured(session: aiohttp.ClientSession, prompt: str, 
-                                       api_key: str, schema: Dict, model: str = "claude-sonnet-4-0") -> Dict:
+                                       api_key: str, schema: Dict, model: str = "claude-sonnet-4-5") -> Dict:
     """Call Anthropic API with structured output (tool use)."""
     headers = {
         'Content-Type': 'application/json',
@@ -2163,7 +2163,7 @@ async def call_anthropic_api_structured(session: aiohttp.ClientSession, prompt: 
             raise Exception(f"Anthropic API error: {response.status} - {error_text}")
 
 async def call_anthropic_api_text(session: aiohttp.ClientSession, prompt: str, 
-                                 api_key: str, model: str = "claude-sonnet-4-0") -> Dict:
+                                 api_key: str, model: str = "claude-sonnet-4-5") -> Dict:
     """Call Anthropic API for text response (interview mode)."""
     headers = {
         'Content-Type': 'application/json',
@@ -2280,7 +2280,7 @@ def send_websocket_progress(session_id: str, message: str, progress: int = None,
                 update_data['progress'] = progress
             if confidence_score is not None:
                 update_data['confidence_score'] = confidence_score
-                logger.info(f"[WEBSOCKET_CONFIDENCE] Sending confidence_score={confidence_score} with message='{message}'")
+                logger.debug(f"[WEBSOCKET_CONFIDENCE] Sending confidence_score={confidence_score} with message='{message}'")
 
             logger.debug(f"Sending data: {update_data}")
             result = websocket_client.send_to_session(session_id, update_data)
@@ -3895,7 +3895,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                                 final_value = field_result.get('value', '')
 
-                                logger.info(f"[TICKER] Sending validation ticker: {field_name} upgraded from {original_confidence} to {updated_confidence}")
+                                logger.debug(f"[TICKER] Sending validation ticker: {field_name} upgraded from {original_confidence} to {updated_confidence}")
                                 websocket_client.send_ticker_update(
                                     session_id=session_id,
                                     priority=priority,
@@ -3996,7 +3996,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                     qc_confidence_score = calculate_confidence_average(qc_confidences) if qc_confidences else None
 
-                    logger.info(f"[QC_CONFIDENCE_AVG] Row {row_idx}: qc_confidences={qc_confidences}, average={qc_confidence_score}")
+                    logger.debug(f"[QC_CONFIDENCE_AVG] Row {row_idx}: qc_confidences={qc_confidences}, average={qc_confidence_score}")
                     logger.debug(f"[AI_PROGRESS] Calling report_ai_call_progress after QC (row {row_idx}) with confidence_score={qc_confidence_score}")
                     report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number, qc_confidence_score)
 
@@ -4080,7 +4080,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                         confidence = qc_field_data.get('qc_confidence', 'MEDIUM')
                                         explanation = qc_field_data.get('update_importance_explanation', '')
 
-                                        logger.info(f"[TICKER] Sending ticker update for {field_name} with importance {importance_level}")
+                                        logger.debug(f"[TICKER] Sending ticker update for {field_name} with importance {importance_level}")
                                         websocket_client.send_ticker_update(
                                             session_id=session_id,
                                             priority=importance_level,
@@ -4303,8 +4303,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             actual_columns = list(parsed_results.keys())
 
             logger.debug(f"🔍 RESPONSE ANALYSIS:")
-            logger.info(f"Expected columns: {expected_columns}")
-            logger.info(f"Parsed columns: {actual_columns}")
+            logger.debug(f"Expected columns: {expected_columns}")
+            logger.debug(f"Parsed columns: {actual_columns}")
             logger.debug(f"Expected count: {len(expected_columns)}, Actual count: {len(actual_columns)}")
 
             # [DEBUG] Log detailed column comparison for debugging cache mismatches

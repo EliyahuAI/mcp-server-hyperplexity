@@ -55,7 +55,7 @@ class BatchAuditLogger:
         Returns:
             str: The audit log entry ID
         """
-        logger.info(f"[BATCH AUDIT] Attempting to log batch size change for {model}: {old_batch_size} → {new_batch_size} ({change_reason})")
+        logger.debug(f"[BATCH AUDIT] Attempting to log batch size change for {model}: {old_batch_size} → {new_batch_size} ({change_reason})")
 
         try:
             audit_id = str(uuid.uuid4())
@@ -81,9 +81,9 @@ class BatchAuditLogger:
                 'ttl': int((datetime.now(timezone.utc).timestamp() + (90 * 24 * 60 * 60)))
             }
 
-            logger.info(f"[BATCH AUDIT] Writing to DynamoDB table {self.table_name}: {item}")
+            logger.debug(f"[BATCH AUDIT] Writing to DynamoDB table {self.table_name}: {item}")
             self.table.put_item(Item=item)
-            logger.info(f"[BATCH AUDIT] Successfully wrote to DynamoDB - {model}: {old_batch_size} → {new_batch_size} "
+            logger.debug(f"[BATCH AUDIT] Successfully wrote to DynamoDB - {model}: {old_batch_size} → {new_batch_size} "
                        f"({change_amount:+d}, {change_percent:+.1f}%) - {change_reason}")
 
             return audit_id

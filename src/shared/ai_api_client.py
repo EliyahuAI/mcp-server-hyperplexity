@@ -31,9 +31,10 @@ class AIAPIClient:
     
     # Model hierarchy from best to most basic
     MODEL_HIERARCHY = [
+        "claude-sonnet-4-5",
+        "claude-sonnet-4-5",
         "claude-opus-4-1",
         "claude-opus-4-0",
-        "claude-sonnet-4-0",
         "sonar-pro",
         "claude-3-7-sonnet-latest",
         "sonar",
@@ -476,7 +477,7 @@ class AIAPIClient:
                     
                     if loaded_count > 0:
                         load_source = f"dynamodb_{loaded_count}_configs"
-                        logger.info(f"ai_api_client.load_pricing_data: Successfully loaded {loaded_count} pricing configurations from DynamoDB")
+                        logger.debug(f"ai_api_client.load_pricing_data: Successfully loaded {loaded_count} pricing configurations from DynamoDB")
                         break
                     else:
                         logger.warning("ai_api_client.load_pricing_data: No valid configurations loaded from DynamoDB")
@@ -505,10 +506,10 @@ class AIAPIClient:
         # Always ensure fallback exists
         if '*' not in pricing_data:
             pricing_data['*'] = default_pricing
-        
+
         # Log final status
-        logger.info(f"ai_api_client.load_pricing_data: Final result - {len(pricing_data)} patterns loaded from {load_source}")
-        
+        logger.debug(f"ai_api_client.load_pricing_data: Final result - {len(pricing_data)} patterns loaded from {load_source}")
+
         return pricing_data
     
     def calculate_token_costs(self, token_usage: Dict[str, Any], pricing_data: Dict[str, Dict[str, float]] = None) -> Dict[str, float]:
@@ -717,15 +718,15 @@ class AIAPIClient:
             input_cost = round(input_cost, 6)
             output_cost = round(output_cost, 6)
             total_cost = round(total_cost, 6)
-        
+
         # Log calculation details for debugging high-cost scenarios
         if total_cost > 1.0:  # Log expensive calls
-            logger.info(f"ai_api_client.calculate_token_costs: High cost calculation - Model: {model}, "
+            logger.debug(f"ai_api_client.calculate_token_costs: High cost calculation - Model: {model}, "
                        f"Input: {input_tokens} tokens (${input_cost:.6f}), "
                        f"Output: {output_tokens} tokens (${output_cost:.6f}), "
                        f"Total: ${total_cost:.6f}, Source: {pricing_source}")
-        
-        
+
+
         return {
             'input_cost': input_cost,
             'output_cost': output_cost, 
