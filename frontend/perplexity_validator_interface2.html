@@ -775,11 +775,6 @@
         animation: thinkingPulseFast 0.6s infinite;
     }
 
-    /* Spinning animation when waiting */
-    .thinking-square-wrapper.spinning {
-        animation: spinWrapper 2s ease-in-out;
-    }
-
     .thinking-text {
         font-size: 14px;
         color: #666;
@@ -833,7 +828,7 @@
         }
     }
 
-    /* Spin animation for wrapper */
+    /* Spin animations for wrapper - scaled to heartbeat speed */
     @keyframes spinWrapper {
         0% {
             transform: rotate(0deg);
@@ -841,6 +836,24 @@
         100% {
             transform: rotate(360deg);
         }
+    }
+
+    /* Normal spin: 3 heartbeats = 3.6s (3 x 1.2s) */
+    .thinking-square-wrapper.spinning {
+        animation: spinWrapper 3.6s ease-in-out;
+    }
+
+    .progress-square-wrapper.spinning {
+        animation: spinWrapper 3.6s ease-in-out;
+    }
+
+    /* Fast spin when stuck: 2 heartbeats = 1.2s (2 x 0.6s) */
+    .thinking-square-wrapper.spinning.stuck {
+        animation: spinWrapper 1.2s ease-in-out;
+    }
+
+    .progress-square-wrapper.spinning.stuck {
+        animation: spinWrapper 1.2s ease-in-out;
     }
 
     /* Color pulse animations - softer transitions with gradient */
@@ -1043,10 +1056,6 @@
         transition: left 0.3s ease-out;
         z-index: 1;
         /* Animate the entire wrapper as one unit */
-    }
-
-    .progress-square-wrapper.spinning {
-        animation: spinWrapper 2s ease-in-out;
     }
 
     .progress-square {
@@ -2387,10 +2396,17 @@
                     if (Math.random() < spinChance) {
                         wrapper.classList.add('spinning');
 
-                        // Remove spinning class after animation completes (2s)
+                        // Add stuck class if currently stuck (for faster spin)
+                        if (state.isStuck) {
+                            wrapper.classList.add('stuck');
+                        }
+
+                        // Remove spinning class after animation completes
+                        // Normal: 3.6s, Stuck: 1.2s
+                        const spinDuration = state.isStuck ? 1200 : 3600;
                         setTimeout(() => {
-                            wrapper.classList.remove('spinning');
-                        }, 2000);
+                            wrapper.classList.remove('spinning', 'stuck');
+                        }, spinDuration);
                     }
                 }, 8000);
 
