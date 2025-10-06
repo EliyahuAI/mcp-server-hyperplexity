@@ -3664,8 +3664,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         async def process_row(session, row, row_idx, batch_manager=None, batch_number=None, progress_queue=None):
             """Process a single row with progressive multiplexing."""
-            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls, qc_manager, all_qc_results, qc_metrics_summary, validator, config
-            
+            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls, qc_manager, all_qc_results, qc_metrics_summary, validator, config, missing_columns_by_group, missing_columns_lock
+
             # Track which models and API providers were used for this row
             row_models_used = set()
             row_api_providers = set()
@@ -3759,15 +3759,47 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 targets = grouped_targets[group_id]
                 if not targets:
                     continue
-                
+
                 # Processing search group
-                
+
+                # Extract proactive guidance for this group from shared tracker
+                proactive_guidance = ""
+                if group_id is not None:
+                    with missing_columns_lock:
+                        if group_id in missing_columns_by_group:
+                            known_issues = missing_columns_by_group[group_id]
+                            if known_issues:
+                                warnings = []
+                                for col_name, issue_info in known_issues.items():
+                                    past_cols = issue_info.get('past_columns', [])
+                                    count = issue_info.get('count', 0)
+                                    warnings.append(
+                                        f"**IMPORTANT: Field '{col_name}' was not found in {count} previous "
+                                        f"response(s) for this validation group. Previous responses included: "
+                                        f"{', '.join(past_cols)}. Please ensure '{col_name}' is included in your output.**"
+                                    )
+                                if warnings:
+                                    proactive_guidance = "\n\n**PROACTIVE GUIDANCE BASED ON RECENT ISSUES:**\n" + "\n".join(warnings)
+                                    logger.warning(f"[PROACTIVE_WARNING] Prepared guidance with {len(warnings)} known issues for group {group_id}")
+
                 # Always use multiplex validation regardless of number of fields
-                await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id, row_api_providers, missing_columns_by_group, missing_columns_lock)
+                missing_column_info = await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id, row_api_providers, proactive_guidance)
                 total_multiplex_validations += 1
-                
+
+                # Update tracker with any missing columns detected
+                if missing_column_info and group_id is not None:
+                    with missing_columns_lock:
+                        if group_id not in missing_columns_by_group:
+                            missing_columns_by_group[group_id] = {}
+                        for col_name, col_info in missing_column_info.items():
+                            if col_name not in missing_columns_by_group[group_id]:
+                                missing_columns_by_group[group_id][col_name] = {'past_columns': [], 'count': 0}
+                            missing_columns_by_group[group_id][col_name]['past_columns'] = col_info['past_columns']
+                            missing_columns_by_group[group_id][col_name]['count'] += 1
+                        logger.warning(f"[TRACKER_UPDATE] Recorded {len(missing_column_info)} missing columns for group {group_id}")
+
                 report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number)
-                
+
                 # Add this group's results to accumulated results for next groups
                 # Exclude ID fields from accumulated results since they are context only
                 for target in targets:
@@ -3958,16 +3990,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # CRITICAL: Return row_key (hash) instead of row_idx (integer) for QC matching
             return row_key, row_results, row_models_used, batch_number
         
-        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False, row_models_used=None, group_id=None, row_api_providers=None, missing_columns_tracker=None, missing_columns_lock=None):
-            """Process a group of columns with a single multiplex AI API call using ai_api_client."""
+        async def process_multiplex_group(session, row, row_results, targets, previous_results=None, validation_history=None, is_isolated_validation=False, row_models_used=None, group_id=None, row_api_providers=None, proactive_guidance=""):
+            """
+            Process a group of columns with a single multiplex AI API call using ai_api_client.
+
+            Returns:
+                Dict of missing column info {column_name: {'past_columns': [list]}} or None if all successful
+            """
             nonlocal total_cache_hits, total_cache_misses
 
-            # Initialize missing columns tracking if not provided
-            if missing_columns_tracker is None:
-                missing_columns_tracker = {}
-            if missing_columns_lock is None:
-                missing_columns_lock = threading.Lock()
-            
+            # Track missing columns to return to caller
+            missing_column_info = {}
+
             # Initialize row_models_used if not provided
             if row_models_used is None:
                 row_models_used = set()
@@ -4028,24 +4062,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history)
 
-            # Check for known missing columns in this search group and add proactive warnings
-            if group_id is not None:
-                with missing_columns_lock:
-                    if group_id in missing_columns_tracker:
-                        known_issues = missing_columns_tracker[group_id]
-                        if known_issues:
-                            proactive_warnings = []
-                            for col_name, issue_info in known_issues.items():
-                                past_cols = issue_info.get('past_columns', [])
-                                count = issue_info.get('count', 0)
-                                proactive_warnings.append(
-                                    f"**CRITICAL: Previous attempts for this search group missed '{col_name}' "
-                                    f"({count} times). Past outputs had: {', '.join(past_cols)}. "
-                                    f"Ensure '{col_name}' is included!**"
-                                )
-                            if proactive_warnings:
-                                prompt += "\n\n**PROACTIVE WARNINGS BASED ON PREVIOUS FAILURES:**\n" + "\n".join(proactive_warnings)
-                                logger.warning(f"[PROACTIVE_WARNING] Added {len(proactive_warnings)} known issue warnings for group {group_id}")
+            # Append proactive guidance if provided
+            if proactive_guidance:
+                prompt += proactive_guidance
 
             # Set up shared result variable for wrapper functions
             shared_client_result = None
@@ -4316,17 +4335,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 False  # consistent_with_model_knowledge
                             )
 
-                        # Record missing columns in shared tracker for proactive warnings
-                        if group_id is not None:
-                            with missing_columns_lock:
-                                if group_id not in missing_columns_tracker:
-                                    missing_columns_tracker[group_id] = {}
-                                for missing_col in missing_columns:
-                                    if missing_col not in missing_columns_tracker[group_id]:
-                                        missing_columns_tracker[group_id][missing_col] = {'past_columns': [], 'count': 0}
-                                    missing_columns_tracker[group_id][missing_col]['past_columns'] = list(updated_fresh_columns if 'updated_fresh_columns' in locals() else fresh_actual_columns)
-                                    missing_columns_tracker[group_id][missing_col]['count'] += 1
-                            logger.warning(f"[TRACKER_UPDATE] Recorded {len(missing_columns)} missing columns for group {group_id} in shared tracker")
+                        # Collect missing column info to return to caller
+                        for missing_col in missing_columns:
+                            missing_column_info[missing_col] = {
+                                'past_columns': list(updated_fresh_columns if 'updated_fresh_columns' in locals() else fresh_actual_columns)
+                            }
+                        logger.warning(f"[MISSING_COLUMNS_DETECTED] Found {len(missing_columns)} missing columns to report")
 
                     logger.info(f"✅ FRESH API CALL SUCCESS: All {len(expected_columns)} columns now present")
                     
@@ -4381,17 +4395,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     False  # consistent_with_model_knowledge
                                 )
 
-                            # Record missing columns in shared tracker for proactive warnings
-                            if group_id is not None:
-                                with missing_columns_lock:
-                                    if group_id not in missing_columns_tracker:
-                                        missing_columns_tracker[group_id] = {}
-                                    for missing_col in remaining_missing_columns:
-                                        if missing_col not in missing_columns_tracker[group_id]:
-                                            missing_columns_tracker[group_id][missing_col] = {'past_columns': [], 'count': 0}
-                                        missing_columns_tracker[group_id][missing_col]['past_columns'] = list(final_actual_columns)
-                                        missing_columns_tracker[group_id][missing_col]['count'] += 1
-                                logger.warning(f"[TRACKER_UPDATE] Recorded {len(remaining_missing_columns)} missing columns for group {group_id} in shared tracker")
+                            # Collect missing column info to return to caller
+                            for missing_col in remaining_missing_columns:
+                                missing_column_info[missing_col] = {
+                                    'past_columns': list(final_actual_columns)
+                                }
+                            logger.warning(f"[MISSING_COLUMNS_DETECTED] Found {len(remaining_missing_columns)} missing columns to report")
                         else:
                             logger.info(f"[SUCCESS] [FLEXIBLE_MATCH] All columns matched after similarity corrections")
                     else:
@@ -4415,17 +4424,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 False  # consistent_with_model_knowledge
                             )
 
-                        # Record missing columns in shared tracker for proactive warnings
-                        if group_id is not None:
-                            with missing_columns_lock:
-                                if group_id not in missing_columns_tracker:
-                                    missing_columns_tracker[group_id] = {}
-                                for missing_col in missing_columns:
-                                    if missing_col not in missing_columns_tracker[group_id]:
-                                        missing_columns_tracker[group_id][missing_col] = {'past_columns': [], 'count': 0}
-                                    missing_columns_tracker[group_id][missing_col]['past_columns'] = list(actual_columns)
-                                    missing_columns_tracker[group_id][missing_col]['count'] += 1
-                            logger.warning(f"[TRACKER_UPDATE] Recorded {len(missing_columns)} missing columns for group {group_id} in shared tracker")
+                        # Collect missing column info to return to caller
+                        for missing_col in missing_columns:
+                            missing_column_info[missing_col] = {
+                                'past_columns': list(actual_columns)
+                            }
+                        logger.warning(f"[MISSING_COLUMNS_DETECTED] Found {len(missing_columns)} missing columns to report")
 
             # Check for unexpected columns (warning only) - use current parsed_results keys
             current_actual_columns = list(parsed_results.keys())
@@ -4477,8 +4481,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     logger.error(f"❌ COLUMN RESULT MISSING: {target.column} was expected but not found in parsed results")
             
             logger.info(f"✅ Processed {processed_count}/{len(validation_targets)} columns successfully")
-            
-            # Function modifies row_results and row_models_used in place - no return needed  
+
+            # Return missing column info for tracker update (or None if all successful)
+            return missing_column_info if missing_column_info else None
+
          # Run the async function
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
