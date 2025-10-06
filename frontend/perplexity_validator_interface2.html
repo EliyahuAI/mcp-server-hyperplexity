@@ -4419,12 +4419,30 @@
                 }
 
                 console.log('[TICKER] Queue now has', globalState.tickerMessages.length, 'messages');
-                console.log('[TICKER] Active card:', globalState.activeCardId);
+                console.log('[TICKER] Active card from state:', globalState.activeCardId);
+
+                // Find active card (one with visible thinking indicator)
+                let cardId = globalState.activeCardId;
+                if (!cardId) {
+                    // Find card with visible thinking indicator
+                    const allThinkingIndicators = document.querySelectorAll('.thinking-indicator');
+                    console.log('[TICKER] Found', allThinkingIndicators.length, 'thinking indicators');
+                    for (const indicator of allThinkingIndicators) {
+                        if (indicator.offsetParent !== null) { // visible
+                            cardId = indicator.id.replace('-thinking', '');
+                            console.log('[TICKER] Found visible indicator, card:', cardId);
+                            break;
+                        }
+                    }
+                }
 
                 // Update ticker display for active card
-                if (globalState.activeCardId) {
-                    updateTickerDisplay(globalState.activeCardId);
-                    showTicker(globalState.activeCardId);
+                if (cardId) {
+                    console.log('[TICKER] Updating ticker for card:', cardId);
+                    updateTickerDisplay(cardId);
+                    showTicker(cardId);
+                } else {
+                    console.log('[TICKER] No active card found!');
                 }
             }
 
