@@ -95,8 +95,8 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
     # Create transposed table: fields as rows, data rows as columns
     table_lines = []
     
-    # Add legend as a separate sentence before the table - ID first
-    legend = "**Confidence Legend:** 🔵 ID/Input • 🟢 High • 🟡 Medium • 🔴 Low\n\n"
+    # Add legend as a separate sentence before the table
+    legend = "**Confidence Legend:** 🔵 ID/Skipped • 🟢 High • 🟡 Medium • 🔴 Low\n\n"
     
     # Create header row - no search group column
     header = "| Field"
@@ -126,15 +126,15 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
         
         row_line = f"| {display_field:<24}"
         
-        # Check if this is an ID field
+        # Check if this is an ID or IGNORED field
         config = field_config_map.get(field_name, {})
-        is_id_field = config.get('importance') == 'ID'
-        
+        is_id_or_ignored_field = config.get('importance') in ['ID', 'IGNORED']
+
         # Add values for each data row
         for row_key in sorted_row_keys:
             row_results = validation_results[row_key]
             field_result = row_results.get(field_name, {})
-            
+
             if isinstance(field_result, dict) and field_result:
                 # Check for QC data first (highest priority) but hide QC visibility from user
                 confidence = field_result.get('confidence_level', 'UNKNOWN')
@@ -153,6 +153,10 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
                                 confidence = qc_confidence
                             if qc_value:
                                 value = qc_value
+
+                # Override confidence for IGNORED fields to show blue emoji (after QC check)
+                if config.get('importance') == 'IGNORED':
+                    confidence = 'ID'
 
                 # Get confidence emoji (use normal validation style - no QC indicators visible to user)
                 emoji = get_confidence_emoji(confidence)
