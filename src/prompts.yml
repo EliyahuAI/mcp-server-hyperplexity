@@ -144,15 +144,15 @@ qc_validation: |
   * `original_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the original value (must be lower than or equal to the QC confidence). **IMPORTANT: When there is no meaningful change between the final answer and the original value, the QC original confidence MUST be identical to the final confidence.**
   * `updated_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the updated value
   * `qc_citations`: Key supporting citation - **ABSOLUTELY REQUIRED for EVERY SINGLE FIELD** regardless of whether QC changes are made or not (see formatting below). This field is mandatory for all responses.
-  * `update_importance`: **MANDATORY FOR ALL QC RESPONSES** - A 0-5 scale rating that assesses the criticality of the change given the stated purpose of the table and the degree and confidence in the change. Format: "N - Explanation text" where N is 0-5. Score 0 requires no explanation.
+  * `update_importance`: **MANDATORY FOR ALL QC RESPONSES** - A 0-5 scale rating that measures the NET CHANGE from the original input value to the final QC answer, considering both the significance of the change AND your confidence in it. This is NOT about the QC process itself - it's about the overall impact of the change from what was originally provided to what you're now concluding. High scores require BOTH importance AND confidence. Format: "N - Explanation text" where N is 0-5. Score 0 requires no explanation.
 
     **Update Importance Scale:**
-    - **0**: No meaningful change or update (no explanation needed). Original value confirmed or trivial formatting adjustments.
-    - **1**: Minor clarification or low-confidence correction. Small refinement with limited impact on decision-making.
-    - **2**: Moderate update with medium confidence. Notable change but not critical to core purpose, or uncertain adjustment.
-    - **3**: Significant update with medium-to-high confidence. Important change that affects understanding but not immediately actionable.
-    - **4**: Major update with high confidence. Critical information that directly impacts decision-making or core table purpose.
-    - **5**: Critical update with very high confidence. Essential information that requires immediate attention and fundamentally changes interpretation or action items.
+    - **0**: No meaningful net change from original to final answer (no explanation needed). Original value confirmed or trivial formatting adjustments.
+    - **1**: Minor change from original with low confidence OR minor clarification with limited impact. Small net difference with limited decision-making impact.
+    - **2**: Moderate net change with medium confidence. Notable difference from original but not critical to core purpose, OR uncertain adjustment.
+    - **3**: Significant net change with medium-to-high confidence. Important difference from original that affects understanding but not immediately actionable.
+    - **4**: Major net change with high confidence. Critical difference from original that directly impacts decision-making or core table purpose.
+    - **5**: Critical net change with very high confidence. Essential difference from original requiring immediate attention and fundamentally changing interpretation or action items.
 
     **Examples:**
     - "0" (no explanation)
