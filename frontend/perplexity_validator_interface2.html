@@ -4189,6 +4189,7 @@
             function routeMessage(data, sessionId) {
 
                 // Debug logging for all WebSocket messages
+                console.log('[WS] Received message:', data.type || data.status, data);
 
                 // Safety check: ensure data is valid
                 if (!data || typeof data !== 'object') {
