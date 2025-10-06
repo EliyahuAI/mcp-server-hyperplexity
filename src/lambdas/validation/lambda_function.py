@@ -3830,6 +3830,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if new_issues_found:
                         logger.warning(f"[TRACKER_UPDATE] New issues discovered: {new_issues_found} for group {group_id}")
 
+                logger.debug(f"[AI_PROGRESS] Calling report_ai_call_progress after group validation (row {row_idx}, group {group_id})")
                 report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number)
 
                 # Add this group's results to accumulated results for next groups
@@ -3915,6 +3916,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     )
 
                     # Report QC call progress
+                    logger.debug(f"[AI_PROGRESS] Calling report_ai_call_progress after QC (row {row_idx})")
                     report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number)
 
                     # Merge QC results into row_results
