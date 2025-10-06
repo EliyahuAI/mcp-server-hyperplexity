@@ -3304,20 +3304,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     try:
                         batch_results = await asyncio.gather(*row_tasks)
 
-                        # Update tracker with missing columns found in this batch
-                        with missing_columns_lock:
-                            for row_key, row_results_data, row_models, batch_num in batch_results:
-                                if '_missing_columns_by_group' in row_results_data:
-                                    for group_id, missing_column_info in row_results_data['_missing_columns_by_group'].items():
-                                        if group_id not in missing_columns_by_group:
-                                            missing_columns_by_group[group_id] = {}
-                                        for col_name, col_info in missing_column_info.items():
-                                            if col_name not in missing_columns_by_group[group_id]:
-                                                missing_columns_by_group[group_id][col_name] = {'past_columns': [], 'count': 0}
-                                            missing_columns_by_group[group_id][col_name]['past_columns'] = col_info['past_columns']
-                                            missing_columns_by_group[group_id][col_name]['count'] += 1
-                                    logger.info(f"[TRACKER_UPDATE] Updated tracker with missing columns from batch {batch_index}")
-
                         batch_end_time = time.time()
                         batch_processing_time = batch_end_time - batch_start_time
 
@@ -3695,9 +3681,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         async def process_row(session, row, row_idx, batch_manager=None, batch_number=None, progress_queue=None, guidance_by_group=None):
             """Process a single row with progressive multiplexing."""
-            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls, qc_manager, all_qc_results, qc_metrics_summary, validator, config
+            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls, qc_manager, all_qc_results, qc_metrics_summary, validator, config, missing_columns_by_group, missing_columns_lock
 
-            # Initialize guidance dict if not provided
+            # Initialize guidance dict if not provided (fallback for backward compatibility)
             if guidance_by_group is None:
                 guidance_by_group = {}
 
@@ -3797,18 +3783,43 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                 # Processing search group
 
-                # Get pre-built guidance for this group (built once per batch, fast lookup)
+                # Get latest guidance for this group (checks tracker for within-batch updates)
                 proactive_guidance = guidance_by_group.get(group_id, "")
+
+                # Check tracker for any updates from other rows in this batch (fast read lock)
+                if group_id is not None:
+                    with missing_columns_lock:
+                        if group_id in missing_columns_by_group:
+                            # Build fresh guidance from current tracker state
+                            known_issues = missing_columns_by_group[group_id]
+                            if known_issues:
+                                warnings = []
+                                for col_name, issue_info in known_issues.items():
+                                    past_cols = issue_info.get('past_columns', [])
+                                    count = issue_info.get('count', 0)
+                                    warnings.append(
+                                        f"**IMPORTANT: Field '{col_name}' was not found in {count} previous "
+                                        f"response(s) for this validation group. Previous responses included: "
+                                        f"{', '.join(past_cols)}. Please ensure '{col_name}' is included in your output.**"
+                                    )
+                                if warnings:
+                                    proactive_guidance = "\n\n**PROACTIVE GUIDANCE BASED ON RECENT ISSUES:**\n" + "\n".join(warnings)
 
                 # Always use multiplex validation regardless of number of fields
                 missing_column_info = await process_multiplex_group(session, row_data, row_results, targets, accumulated_results, validation_history, False, row_models_used, group_id, row_api_providers, proactive_guidance)
                 total_multiplex_validations += 1
 
-                # Store missing column info for batch-level tracker update (collected per row, updated per batch)
+                # Update tracker immediately so later rows in batch can benefit (write lock, fast when no issues)
                 if missing_column_info and group_id is not None:
-                    if '_missing_columns_by_group' not in row_results:
-                        row_results['_missing_columns_by_group'] = {}
-                    row_results['_missing_columns_by_group'][group_id] = missing_column_info
+                    with missing_columns_lock:
+                        if group_id not in missing_columns_by_group:
+                            missing_columns_by_group[group_id] = {}
+                        for col_name, col_info in missing_column_info.items():
+                            if col_name not in missing_columns_by_group[group_id]:
+                                missing_columns_by_group[group_id][col_name] = {'past_columns': [], 'count': 0}
+                            missing_columns_by_group[group_id][col_name]['past_columns'] = col_info['past_columns']
+                            missing_columns_by_group[group_id][col_name]['count'] += 1
+                        logger.warning(f"[TRACKER_UPDATE] Updated tracker immediately: {len(missing_column_info)} missing columns for group {group_id}")
 
                 report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number)
 
