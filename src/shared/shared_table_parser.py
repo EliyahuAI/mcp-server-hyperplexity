@@ -28,7 +28,32 @@ class S3TableParser:
     def __init__(self):
         self.s3_client = boto3.client('s3')
         self.logger = logging.getLogger(__name__)
-    
+
+    def _normalize_column_name(self, col_name: str) -> str:
+        """
+        Normalize column names by converting special Unicode characters to ASCII equivalents.
+        This prevents mismatches when AI generates configs (AI often loses special chars).
+        """
+        if not col_name:
+            return col_name
+
+        # Replace special Unicode dashes with regular hyphen
+        normalized = col_name.replace('\u2013', '-')  # en dash -> hyphen
+        normalized = normalized.replace('\u2014', '-')  # em dash -> hyphen
+        normalized = normalized.replace('\u2212', '-')  # minus sign -> hyphen
+
+        # Replace special Unicode quotes with regular quotes
+        normalized = normalized.replace('\u2018', "'")  # left single quote
+        normalized = normalized.replace('\u2019', "'")  # right single quote
+        normalized = normalized.replace('\u201C', '"')  # left double quote
+        normalized = normalized.replace('\u201D', '"')  # right double quote
+
+        # Replace special spaces
+        normalized = normalized.replace('\u00A0', ' ')  # non-breaking space -> space
+        normalized = normalized.replace('\u2009', ' ')  # thin space -> space
+
+        return normalized
+
     def parse_s3_table(self, bucket: str, key: str, sheet_name: Optional[str] = None, extract_formulas: bool = False) -> Dict[str, Any]:
         """
         Parse Excel/CSV from S3 into standard JSON format
@@ -115,7 +140,7 @@ class S3TableParser:
             data_rows = self._clean_data_rows_csv(data_rows, len(headers))
             
             # Clean headers
-            clean_headers = [str(header).strip() if header else f"Column_{i+1}" 
+            clean_headers = [self._normalize_column_name(str(header).strip()) if header else f"Column_{i+1}"
                            for i, header in enumerate(headers)]
             
             # Convert to structured format
@@ -193,7 +218,7 @@ class S3TableParser:
                 data_rows = self._clean_data_rows(data_rows, len(headers))
                 
                 # Clean headers
-                clean_headers = [str(header).strip() if header is not None else f"Column_{i+1}" 
+                clean_headers = [self._normalize_column_name(str(header).strip()) if header is not None else f"Column_{i+1}"
                                for i, header in enumerate(headers)]
                 
                 # Convert to structured format

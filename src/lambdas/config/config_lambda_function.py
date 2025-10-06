@@ -167,9 +167,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
 async def generate_config_unified(table_analysis: Dict, existing_config: Dict = None,
                                  instructions: str = '', session_id: str = 'unknown',
-                                 latest_validation_results: Dict = None, conversation_history: list = None) -> Dict:
+                                 latest_validation_results: Dict = None, conversation_history: list = None, retry_count: int = 0) -> Dict:
     """Unified config generation - always returns both updated config and clarifying questions."""
-    print(f"🚨 CONFIG LAMBDA ENTRY POINT - Session: {session_id}, Instructions: {instructions[:50]}...")
+    MAX_RETRIES = 3
+
+    print(f"🚨 CONFIG LAMBDA ENTRY POINT - Session: {session_id}, Instructions: {instructions[:50]}..., Retry: {retry_count}")
     print(f"🚨 GENERATE_CONFIG_UNIFIED_PARAMS: existing_config={bool(existing_config)}, latest_validation_results={bool(latest_validation_results)}")
     if existing_config:
         if isinstance(existing_config, dict):
@@ -181,7 +183,7 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
             # Convert to None since we can't use a non-dict config
             existing_config = None
 
-    logger.info(f"Config generation started for session {session_id}")
+    logger.info(f"Config generation started for session {session_id} (retry {retry_count}/{MAX_RETRIES})")
     send_websocket_progress(session_id, "Generating new configuration... (~70s)", 55)
     
     # Debug logging for existing config and conversation history
@@ -285,32 +287,36 @@ async def generate_config_unified(table_analysis: Dict, existing_config: Dict = 
         # Validate the AI-generated config before proceeding
         if updated_config:
             is_valid, errors, warnings = validate_config_complete(updated_config, table_analysis)
-            
+
             if not is_valid:
-                logger.warning(f"AI generated invalid config, attempting retry with validation errors")
-                # Retry with validation errors as refinement instructions
-                error_instructions = f"The previous configuration had validation errors. Please fix these issues:\n\nErrors:\n" + "\n".join(f"- {error}" for error in errors)
-                if warnings:
-                    error_instructions += f"\n\nWarnings:\n" + "\n".join(f"- {warning}" for warning in warnings)
-                
-                # Recursive call to fix the config
-                retry_result = await generate_config_unified(
-                    table_analysis=table_analysis,
-                    existing_config=updated_config,  # Use the invalid config as base
-                    instructions=error_instructions,
-                    session_id=f"{session_id}_retry",
-                    latest_validation_results=latest_validation_results
-                )
-                
-                if retry_result.get('success') and retry_result.get('updated_config'):
-                    logger.info("Successfully fixed config validation errors on retry")
-                    updated_config = retry_result['updated_config']
-                    # Merge retry information
-                    reasoning += f"\n\nRetry: {retry_result.get('reasoning', '')}"
-                    ai_summary += f"\n\nRetry Summary: {retry_result.get('ai_summary', '')}"
-                    technical_ai_summary += f"\n\nRetry Technical Summary: {retry_result.get('technical_ai_summary', '')}"
+                if retry_count >= MAX_RETRIES:
+                    logger.error(f"Max retries ({MAX_RETRIES}) reached, returning invalid config with errors")
                 else:
-                    logger.error("Failed to fix config validation errors on retry")
+                    logger.warning(f"AI generated invalid config, attempting retry {retry_count + 1}/{MAX_RETRIES} with validation errors")
+                    # Retry with validation errors as refinement instructions
+                    error_instructions = f"The previous configuration had validation errors. Please fix these issues:\n\nErrors:\n" + "\n".join(f"- {error}" for error in errors)
+                    if warnings:
+                        error_instructions += f"\n\nWarnings:\n" + "\n".join(f"- {warning}" for warning in warnings)
+
+                    # Recursive call to fix the config
+                    retry_result = await generate_config_unified(
+                        table_analysis=table_analysis,
+                        existing_config=updated_config,  # Use the invalid config as base
+                        instructions=error_instructions,
+                        session_id=session_id,
+                        latest_validation_results=latest_validation_results,
+                        retry_count=retry_count + 1
+                    )
+
+                    if retry_result.get('success') and retry_result.get('updated_config'):
+                        logger.info(f"Successfully fixed config validation errors on retry {retry_count + 1}")
+                        updated_config = retry_result['updated_config']
+                        # Merge retry information
+                        reasoning += f"\n\nRetry: {retry_result.get('reasoning', '')}"
+                        ai_summary += f"\n\nRetry Summary: {retry_result.get('ai_summary', '')}"
+                        technical_ai_summary += f"\n\nRetry Technical Summary: {retry_result.get('technical_ai_summary', '')}"
+                    else:
+                        logger.error(f"Failed to fix config validation errors on retry {retry_count + 1}")
         
         # Config lambda returns clean structured response - interface lambda handles metadata and conversation tracking
         logger.info("Config generation complete - returning clean config to interface lambda")

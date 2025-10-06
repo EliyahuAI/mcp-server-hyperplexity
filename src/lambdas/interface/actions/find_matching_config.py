@@ -860,20 +860,44 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
             }
         
         logger.info(f"Checking configs in order of recency, starting with: {successfully_used_configs[0] if successfully_used_configs else 'none'}")
-        
+
         matches = []
         perfect_matches = []
         configs_processed = 0
-        
+        max_configs = 30  # Limit total configs processed
+        max_failed_loads = 10  # Limit consecutive failed config loads
+        max_total_attempts = 20  # Limit total attempts (processed + failed)
+        failed_loads = 0
+        total_attempts = 0
+
         # Process configs in order of recency - STOP on first perfect match
         for config_id in successfully_used_configs:
+            # Check total attempts limit
+            if total_attempts >= max_total_attempts:
+                logger.warning(f"[FIND_CONFIG] Reached max total attempts limit ({max_total_attempts}), stopping search")
+                break
+
+            # Check max configs limit
+            if configs_processed >= max_configs:
+                logger.warning(f"[FIND_CONFIG] Reached max configs limit ({max_configs}), stopping search")
+                break
+
+            # Check failed loads limit
+            if failed_loads >= max_failed_loads:
+                logger.warning(f"[FIND_CONFIG] Reached max failed loads limit ({max_failed_loads}), stopping search")
+                break
+
+            total_attempts += 1
             try:
                 # Load config using the clean lookup system
                 config_data, config_key = storage_manager.find_config_by_id(config_id, email)
                 if not config_data:
                     logger.warning(f"Could not load config: {config_id}")
+                    failed_loads += 1
                     continue
-                
+
+                # Successfully loaded config - reset consecutive failure counter
+                failed_loads = 0
                 configs_processed += 1
                 
                 # Extract validation targets
@@ -923,6 +947,7 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
                 
             except Exception as e:
                 logger.error(f"Error processing config {config_id}: {e}")
+                failed_loads += 1
                 continue
         
         # Sort and return results
