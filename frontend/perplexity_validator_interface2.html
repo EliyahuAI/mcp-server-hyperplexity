@@ -4424,16 +4424,21 @@
 
                 // Show ticker if validation is running
                 console.log('[TICKER] Current validation state:', globalState.currentValidationState);
-                if (globalState.currentValidationState === 'preview' || globalState.currentValidationState === 'full') {
-                    showTicker();
-                } else {
-                    console.log('[TICKER] NOT showing ticker - validation state is:', globalState.currentValidationState);
-                }
+                console.log('[TICKER] Checking: is preview?', globalState.currentValidationState === 'preview', 'is full?', globalState.currentValidationState === 'full');
+
+                // ALWAYS show ticker when importance 4-5 messages arrive (regardless of state)
+                // The backend only sends these during validation anyway
+                showTicker();
             }
 
             function updateTickerDisplay() {
                 const tickerContent = document.getElementById('tickerContent');
-                if (!tickerContent || globalState.tickerMessages.length === 0) return;
+                console.log('[TICKER] updateTickerDisplay - content element exists:', !!tickerContent, 'messages:', globalState.tickerMessages.length);
+
+                if (!tickerContent || globalState.tickerMessages.length === 0) {
+                    console.log('[TICKER] Cannot update display - no content element or no messages');
+                    return;
+                }
 
                 // Format all messages as: "row_ids, column? emoji value |"
                 const formattedMessages = globalState.tickerMessages.map(msg => {
@@ -4445,7 +4450,9 @@
                 });
 
                 // Join all messages with spacing
-                tickerContent.textContent = formattedMessages.join('   ');
+                const displayText = formattedMessages.join('   ');
+                tickerContent.textContent = displayText;
+                console.log('[TICKER] Updated display with text:', displayText.substring(0, 100) + '...');
             }
 
             function showTicker() {
