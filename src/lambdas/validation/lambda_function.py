@@ -3815,15 +3815,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                 # Update tracker immediately so later rows in batch can benefit (write lock, fast when no issues)
                 if missing_column_info and group_id is not None:
+                    new_issues_found = []
                     with tracker_lock:
                         if group_id not in missing_columns_tracker:
                             missing_columns_tracker[group_id] = {}
                         for col_name, col_info in missing_column_info.items():
+                            # Only record if this is a new issue (not already tracked)
                             if col_name not in missing_columns_tracker[group_id]:
-                                missing_columns_tracker[group_id][col_name] = {'past_columns': [], 'count': 0}
-                            missing_columns_tracker[group_id][col_name]['past_columns'] = col_info['past_columns']
-                            missing_columns_tracker[group_id][col_name]['count'] += 1
-                        logger.warning(f"[TRACKER_UPDATE] Updated tracker immediately: {len(missing_column_info)} missing columns for group {group_id}")
+                                missing_columns_tracker[group_id][col_name] = {
+                                    'past_columns': col_info['past_columns'],
+                                    'count': 1
+                                }
+                                new_issues_found.append(col_name)
+                    if new_issues_found:
+                        logger.warning(f"[TRACKER_UPDATE] New issues discovered: {new_issues_found} for group {group_id}")
 
                 report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number)
 
@@ -4342,11 +4347,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         missing_columns = set()
                     
                     if missing_columns:
-                        logger.error(f"[ERROR] [MISSING_COLUMNS] Missing columns even in fresh API response after flexible matching: {list(missing_columns)}")
-                        logger.error(f"[ERROR] [MISSING_COLUMNS] Expected columns: {expected_columns}")
-                        logger.error(f"[ERROR] [MISSING_COLUMNS] Received columns: {updated_fresh_columns if 'updated_fresh_columns' in locals() else fresh_actual_columns}")
-                        logger.error(f"[ERROR] [MISSING_COLUMNS] Note: Enhanced prompt with missing column information was used for this retry.")
-                        logger.warning(f"[PARTIAL_SUCCESS] Creating error placeholders for {len(missing_columns)} missing columns. Processing {len(parsed_results)} successful columns.")
+                        actual_cols = updated_fresh_columns if 'updated_fresh_columns' in locals() else fresh_actual_columns
+                        logger.error(f"[MISSING_COLUMNS] {list(missing_columns)} not found after retry + flexible matching. Expected: {expected_columns}, Got: {actual_cols}. Creating error placeholders for {len(missing_columns)} columns, processing {len(parsed_results)} successful columns.")
 
                         # Create error placeholders for missing columns instead of failing the entire row
                         for missing_col in missing_columns:
@@ -4355,7 +4357,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 "LOW",  # confidence
                                 [],  # sources
                                 "LOW",  # confidence_level
-                                f"This column was not returned by the AI model despite retries and enhanced prompts. Expected: '{missing_col}', Received: {', '.join(updated_fresh_columns if 'updated_fresh_columns' in locals() else fresh_actual_columns)}",  # reasoning
+                                f"This column was not returned by the AI model despite retries and enhanced prompts. Expected: '{missing_col}', Received: {', '.join(actual_cols)}",  # reasoning
                                 "",  # main_source
                                 None,  # original_confidence
                                 f"Column validation failed - AI response missing required field '{missing_col}'",  # explanation
@@ -4365,9 +4367,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         # Collect missing column info to return to caller
                         for missing_col in missing_columns:
                             missing_column_info[missing_col] = {
-                                'past_columns': list(updated_fresh_columns if 'updated_fresh_columns' in locals() else fresh_actual_columns)
+                                'past_columns': list(actual_cols)
                             }
-                        logger.warning(f"[MISSING_COLUMNS_DETECTED] Found {len(missing_columns)} missing columns to report")
 
                     logger.info(f"✅ FRESH API CALL SUCCESS: All {len(expected_columns)} columns now present")
                     
@@ -4402,11 +4403,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         remaining_missing_columns = set(expected_columns) - set(final_actual_columns)
                         
                         if remaining_missing_columns:
-                            logger.error(f"[ERROR] [MISSING_COLUMNS] Missing columns in fresh API response after flexible matching: {list(remaining_missing_columns)}")
-                            logger.error(f"[ERROR] [MISSING_COLUMNS] Expected columns: {expected_columns}")
-                            logger.error(f"[ERROR] [MISSING_COLUMNS] Received columns: {final_actual_columns}")
-                            logger.error(f"[ERROR] [MISSING_COLUMNS] Suggestion: Verify field names match exactly in config. Enhanced flexible matching with parentheses stripping was attempted.")
-                            logger.warning(f"[PARTIAL_SUCCESS] Creating error placeholders for {len(remaining_missing_columns)} missing columns. Processing {len(parsed_results)} successful columns.")
+                            logger.error(f"[MISSING_COLUMNS] {list(remaining_missing_columns)} not found despite flexible matching + parentheses stripping. Expected: {expected_columns}, Got: {final_actual_columns}. Creating error placeholders for {len(remaining_missing_columns)} columns, processing {len(parsed_results)} successful columns.")
 
                             # Create error placeholders for missing columns instead of failing the entire row
                             for missing_col in remaining_missing_columns:
@@ -4427,15 +4424,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                 missing_column_info[missing_col] = {
                                     'past_columns': list(final_actual_columns)
                                 }
-                            logger.warning(f"[MISSING_COLUMNS_DETECTED] Found {len(remaining_missing_columns)} missing columns to report")
                         else:
                             logger.info(f"[SUCCESS] [FLEXIBLE_MATCH] All columns matched after similarity corrections")
                     else:
-                        logger.error(f"[ERROR] [MISSING_COLUMNS] Missing columns in fresh API response: {list(missing_columns)}")
-                        logger.error(f"[ERROR] [MISSING_COLUMNS] Column count mismatch: expected {len(expected_columns)}, got {len(actual_columns)}")
-                        logger.error(f"[ERROR] [MISSING_COLUMNS] Expected columns: {expected_columns}")
-                        logger.error(f"[ERROR] [MISSING_COLUMNS] Received columns: {actual_columns}")
-                        logger.warning(f"[PARTIAL_SUCCESS] Creating error placeholders for {len(missing_columns)} missing columns. Processing {len(parsed_results)} successful columns.")
+                        logger.error(f"[MISSING_COLUMNS] {list(missing_columns)} missing (column count mismatch: expected {len(expected_columns)}, got {len(actual_columns)}). Expected: {expected_columns}, Got: {actual_columns}. Creating error placeholders for {len(missing_columns)} columns, processing {len(parsed_results)} successful columns.")
 
                         # Create error placeholders for missing columns instead of failing the entire row
                         for missing_col in missing_columns:
@@ -4456,7 +4448,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             missing_column_info[missing_col] = {
                                 'past_columns': list(actual_columns)
                             }
-                        logger.warning(f"[MISSING_COLUMNS_DETECTED] Found {len(missing_columns)} missing columns to report")
 
             # Check for unexpected columns (warning only) - use current parsed_results keys
             current_actual_columns = list(parsed_results.keys())
