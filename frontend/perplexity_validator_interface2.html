@@ -756,6 +756,7 @@
         position: relative;
         box-sizing: border-box;
         margin-right: 10px;
+        transform-style: preserve-3d;
     }
 
     .thinking-square {
@@ -830,13 +831,13 @@
         }
     }
 
-    /* Flip animation for wrapper - rotates on Y axis */
+    /* Flip animation for wrapper - rotates on Y axis with perspective */
     @keyframes flipWrapper {
         0% {
-            transform: rotateY(0deg);
+            transform: perspective(1000px) rotateY(0deg);
         }
         100% {
-            transform: rotateY(360deg);
+            transform: perspective(1000px) rotateY(360deg);
         }
     }
 
@@ -1074,6 +1075,7 @@
         box-sizing: border-box;
         transition: left 0.3s ease-out;
         z-index: 1;
+        transform-style: preserve-3d;
         /* Animate the entire wrapper as one unit */
     }
 
@@ -4596,13 +4598,18 @@
                 // Show first message immediately
                 updateTickerDisplay(cardId);
 
-                // Cycle through messages every 3.5s (3s display + 0.5s transition)
-                globalState.tickerInterval = setInterval(() => {
-                    globalState.currentTickerIndex++;
-                    updateTickerDisplay(cardId);
-                }, 3500);
+                // Only cycle if there are multiple messages
+                if (globalState.tickerMessages.length > 1) {
+                    // Cycle through messages every 3.5s (3s display + 0.5s transition)
+                    globalState.tickerInterval = setInterval(() => {
+                        globalState.currentTickerIndex++;
+                        updateTickerDisplay(cardId);
+                    }, 3500);
 
-                console.log('[TICKER] Started ticker cycle with', globalState.tickerMessages.length, 'messages');
+                    console.log('[TICKER] Started ticker cycle with', globalState.tickerMessages.length, 'messages');
+                } else {
+                    console.log('[TICKER] Only 1 message, not cycling');
+                }
             }
 
             function stopTickerCycle() {
@@ -4623,9 +4630,16 @@
                     console.log('[TICKER] Ticker is now visible for card:', cardId);
                 }
 
-                // Start cycling if not already cycling
-                if (!globalState.tickerInterval && globalState.tickerMessages.length > 0) {
-                    startTickerCycle(cardId);
+                // Start or restart cycling based on message count
+                if (globalState.tickerMessages.length > 0) {
+                    // If we have > 1 message and no interval, start cycling
+                    // If we have > 1 message and had 1 before, restart to enable cycling
+                    if (globalState.tickerMessages.length > 1 && !globalState.tickerInterval) {
+                        startTickerCycle(cardId);
+                    } else if (!globalState.tickerInterval && globalState.tickerMessages.length === 1) {
+                        // Just show the single message, don't cycle
+                        startTickerCycle(cardId);
+                    }
                 }
             }
 
