@@ -1686,9 +1686,9 @@
         background: transparent;
         padding: 0.5rem 0;
         margin: 8px 1rem 0 1rem; /* Use card padding for width */
-        overflow: hidden;
         position: relative;
         text-align: center;
+        min-height: 50px; /* Space for 2 lines */
     }
 
     .ticker-row::before {
@@ -1706,35 +1706,27 @@
         color: #666;
         font-size: var(--font-size-small); /* 14px - matches progress-text */
         font-weight: 500;
-        white-space: nowrap;
-        animation: ticker-scroll-visible 40s linear infinite;
         padding-top: 8px;
-        display: inline-block;
+        opacity: 0;
+        transition: opacity 0.5s ease-in-out;
+        white-space: normal; /* Allow wrapping */
+        max-width: 100%;
+        line-height: 1.4;
+        word-wrap: break-word;
     }
 
-    /* Start from visible position and scroll slowly */
-    @keyframes ticker-scroll-visible {
-        0% {
-            transform: translateX(30%);
-        }
-        100% {
-            transform: translateX(-100%);
-        }
-    }
-
-    .ticker-content:hover {
-        animation-play-state: paused;
-        color: #333;
+    .ticker-content.visible {
+        opacity: 1;
     }
 
     @media (max-width: 768px) {
         .ticker-row {
             padding: 0.4rem 0;
             margin: 8px 0.5rem 0 0.5rem;
+            min-height: 45px;
         }
         .ticker-content {
             font-size: calc(var(--font-size-small) * 0.9);
-            animation: ticker-scroll-visible 30s linear infinite;
         }
     }
 
@@ -1925,6 +1917,8 @@
                 hasInsufficientBalance: false, // Track when user has insufficient balance
                 tickerMessages: [], // Priority queue for ticker messages
                 activeCardId: null, // Track which card is currently processing (for ticker display)
+                tickerInterval: null, // Interval for cycling ticker messages
+                currentTickerIndex: 0, // Current message being displayed
                 currentValidationState: null, // Track if preview or full validation is running
                 isProcessingConfig: false, // Track if config generation/refinement is in progress
                 debounceTimers: new Map(), // Track debounce timers by function/card ID
@@ -4459,7 +4453,6 @@
                 // Update ticker display for active card
                 if (cardId) {
                     console.log('[TICKER] Updating ticker for card:', cardId);
-                    updateTickerDisplay(cardId);
                     showTicker(cardId);
                 } else {
                     console.log('[TICKER] No active card found!');
@@ -4472,24 +4465,67 @@
                 const tickerContent = document.getElementById(`${cardId}-ticker-content`);
                 console.log('[TICKER] updateTickerDisplay for card:', cardId, 'element exists:', !!tickerContent, 'messages:', globalState.tickerMessages.length);
 
-                if (!tickerContent || globalState.tickerMessages.length === 0) {
-                    console.log('[TICKER] Cannot update display - no content element or no messages');
+                if (!tickerContent) {
+                    console.log('[TICKER] Cannot update display - no content element');
                     return;
                 }
 
-                // Format all messages as: "row_ids, column? emoji value |"
-                const formattedMessages = globalState.tickerMessages.map(msg => {
-                    // Add ? if column doesn't end with one
-                    const column = msg.column.trim();
-                    const columnWithQuestion = column.endsWith('?') ? column : column + '?';
+                if (globalState.tickerMessages.length === 0) {
+                    // No messages - hide ticker content
+                    tickerContent.classList.remove('visible');
+                    tickerContent.textContent = '';
+                    return;
+                }
 
-                    return `${msg.row_ids}, ${columnWithQuestion} ${msg.confidence_emoji} ${msg.final_value} |`;
-                });
+                // Show current message from queue
+                const msg = globalState.tickerMessages[globalState.currentTickerIndex % globalState.tickerMessages.length];
 
-                // Join all messages with spacing
-                const displayText = formattedMessages.join('   ');
-                tickerContent.textContent = displayText;
-                console.log('[TICKER] Updated display with text:', displayText.substring(0, 100) + '...');
+                // Add ? if column doesn't end with one
+                const column = msg.column.trim();
+                const columnWithQuestion = column.endsWith('?') ? column : column + '?';
+
+                const displayText = `${msg.row_ids}, ${columnWithQuestion} ${msg.confidence_emoji} ${msg.final_value}`;
+
+                // Fade out
+                tickerContent.classList.remove('visible');
+
+                // Wait for fade out, then update text and fade in
+                setTimeout(() => {
+                    tickerContent.textContent = displayText;
+                    tickerContent.classList.add('visible');
+                    console.log('[TICKER] Showing message', globalState.currentTickerIndex + 1, 'of', globalState.tickerMessages.length, ':', displayText.substring(0, 80));
+                }, 500); // Match CSS transition duration
+            }
+
+            function startTickerCycle(cardId) {
+                if (!cardId) return;
+
+                // Clear any existing interval
+                if (globalState.tickerInterval) {
+                    clearInterval(globalState.tickerInterval);
+                }
+
+                // Reset index
+                globalState.currentTickerIndex = 0;
+
+                // Show first message immediately
+                updateTickerDisplay(cardId);
+
+                // Cycle through messages every 3.5s (3s display + 0.5s transition)
+                globalState.tickerInterval = setInterval(() => {
+                    globalState.currentTickerIndex++;
+                    updateTickerDisplay(cardId);
+                }, 3500);
+
+                console.log('[TICKER] Started ticker cycle with', globalState.tickerMessages.length, 'messages');
+            }
+
+            function stopTickerCycle() {
+                if (globalState.tickerInterval) {
+                    clearInterval(globalState.tickerInterval);
+                    globalState.tickerInterval = null;
+                    console.log('[TICKER] Stopped ticker cycle');
+                }
             }
 
             function showTicker(cardId) {
@@ -4501,10 +4537,18 @@
                     tickerRow.style.display = 'block';
                     console.log('[TICKER] Ticker is now visible for card:', cardId);
                 }
+
+                // Start cycling if not already cycling
+                if (!globalState.tickerInterval && globalState.tickerMessages.length > 0) {
+                    startTickerCycle(cardId);
+                }
             }
 
             function hideTicker(cardId) {
                 if (!cardId) return;
+
+                // Stop cycling
+                stopTickerCycle();
 
                 const tickerRow = document.getElementById(`${cardId}-ticker`);
                 if (tickerRow) {
@@ -4638,11 +4682,11 @@
                     // Progress routed to card level;
 
                 } else if (data.status === 'COMPLETED') {
-                    // Clear ticker and active card when validation completes
-                    console.log('[TICKER] Clearing active card and hiding ticker');
+                    // Hide ticker but KEEP messages for next validation
+                    console.log('[TICKER] Validation completed - hiding ticker but keeping messages');
                     globalState.currentValidationState = null;
                     hideTicker(cardId);
-                    globalState.tickerMessages = []; // Clear messages
+                    // DON'T clear messages - keep them for full validation after preview
                     if (globalState.activeCardId === cardId) {
                         globalState.activeCardId = null;
                     }
@@ -8219,11 +8263,11 @@ Please provide any additional context, or simply proceed to generate your initia
                     }
                     // Progress routed to card level;
                 } else if (data.status === 'COMPLETED') {
-                    // Clear ticker and active card when preview completes
-                    console.log('[TICKER] Clearing active card and hiding ticker');
+                    // Hide ticker but KEEP messages for full validation
+                    console.log('[TICKER] Preview completed - hiding ticker but keeping messages for full validation');
                     globalState.currentValidationState = null;
                     hideTicker(cardId);
-                    globalState.tickerMessages = []; // Clear messages
+                    // DON'T clear messages - keep them for full validation
                     if (globalState.activeCardId === cardId) {
                         globalState.activeCardId = null;
                     }
