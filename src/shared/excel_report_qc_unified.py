@@ -897,7 +897,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
             if INCLUDE_QC_COLUMNS:
                 detail_headers.extend(["Column", "Original Value", "Updated Value", "QC Value",
                                 "QC Original Confidence", "QC Updated Confidence", "QC Confidence",
-                                "QC Applied", "QC Reasoning", "QC Sources", "QC Citations",
+                                "QC Applied", "QC Reasoning", "Update Importance", "QC Sources", "QC Citations",
                                 "Final Value", "Reasoning", "Sources", "Citations",
                                 "Explanation", "Consistent with Model", "Model", "Timestamp", "New"])
             else:
@@ -1104,6 +1104,15 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 details_sheet.write(detail_row, col_idx, '')  # Write empty on error
                             col_idx += 1
 
+                            # Update Importance column
+                            update_importance = ''
+                            if row_qc_data and field_name in row_qc_data:
+                                field_qc_data = row_qc_data[field_name]
+                                if isinstance(field_qc_data, dict):
+                                    update_importance = str(field_qc_data.get('update_importance', '0'))
+                            details_sheet.write(detail_row, col_idx, safe_for_excel(update_importance))  # Update Importance
+                            col_idx += 1
+
                             # QC Sources column with safe joining
                             try:
                                 # Filter out empty sources and ensure all are strings
@@ -1233,7 +1242,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                     # Standard columns (map old field names to new ones)
                     standard_columns = ['Column', 'Original Value', 'Updated Value', 'QC Value',
                                       'QC Original Confidence', 'QC Updated Confidence', 'QC Confidence',
-                                      'QC Applied', 'QC Reasoning', 'QC Sources', 'QC Citations',
+                                      'QC Applied', 'QC Reasoning', 'Update Importance', 'QC Sources', 'QC Citations',
                                       'Final Value', 'Reasoning', 'Sources', 'Citations', 'Explanation',
                                       'Consistent with Model', 'Model', 'Timestamp', 'New']
 
