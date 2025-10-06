@@ -2280,6 +2280,7 @@ def send_websocket_progress(session_id: str, message: str, progress: int = None,
                 update_data['progress'] = progress
             if confidence_score is not None:
                 update_data['confidence_score'] = confidence_score
+                logger.info(f"[WEBSOCKET_CONFIDENCE] Sending confidence_score={confidence_score} with message='{message}'")
 
             logger.debug(f"Sending data: {update_data}")
             result = websocket_client.send_to_session(session_id, update_data)
