@@ -4893,7 +4893,9 @@
                     
                     // First update to 100% if we have a progress bar
                     const indicator = document.getElementById(`${cardId}-thinking`);
-                    if (indicator && indicator.classList.contains('with-progress')) {
+                    const hasProgress = indicator && indicator.classList.contains('with-progress');
+
+                    if (hasProgress) {
                         updateThinkingProgress(cardId, 100, 'Validation complete!');
                         setTimeout(() => {
                             completeThinkingInCard(cardId, 'Validation complete!');
@@ -4906,9 +4908,13 @@
                     globalState.processedRows = data.processed_rows || 0;
                     globalState.totalRows = data.total_rows || 0;
 
-                    // Show success message in the same card instead of creating new one
-                    const messagesContainer = document.getElementById(`${cardId}-messages`);
-                    if (messagesContainer) {
+                    // Show success message after shrink animation completes (if progress bar present)
+                    // 500ms + 300ms (move to 100%) + 600ms (completion) + 1000ms (shrink) = 2400ms
+                    const showResultsDelay = hasProgress ? 2400 : 0;
+
+                    setTimeout(() => {
+                        const messagesContainer = document.getElementById(`${cardId}-messages`);
+                        if (messagesContainer) {
                         // Show full results interface immediately, but with disabled download button
                         const balanceText = globalState.accountBalance !== undefined ? 
                             `• Remaining balance: $${globalState.accountBalance.toFixed(2)}` : 
@@ -5021,9 +5027,9 @@
                                 }
                             }, 5000); // 5 second delay for download to be ready
                         }, 100);
-                    }
+                        }
+                    }, showResultsDelay);
                 }
-            }
 
             async function handleConfigWebSocketMessage(data, cardId) {
                 
@@ -5089,10 +5095,11 @@
                     globalState.configIsAI = true;
                     
                     
-                    // Auto-generate preview after a brief delay to show completion
+                    // Auto-generate preview after progress bar shrink animation completes
+                    // Animation timing: 300ms move to 100% + 600ms completion + 1000ms shrink = 1900ms
                     setTimeout(() => {
                         createPreviewCard();
-                    }, 1500);
+                    }, 2000);
 
                 } else if (data.type === 'config_generation_failed' || data.error || data.type === 'error') {
                     completeThinkingInCard(cardId, 'Generation failed');
@@ -8471,14 +8478,22 @@ Please provide any additional context, or simply proceed to generate your initia
                         setTimeout(() => {
                             completeThinkingInCard(cardId, 'Preview complete!');
                         }, 500);
+
+                        // Wait for shrink animation to complete before showing results
+                        // 500ms + 300ms (move to 100%) + 600ms (completion) + 1000ms (shrink) = 2400ms
+                        if (data.preview_data) {
+                            setTimeout(() => {
+                                showPreviewResults(cardId, data.preview_data);
+                            }, 2400);
+                        }
                     } else {
                         completeThinkingInCard(cardId, 'Preview complete!');
+                        // No progress bar, show results immediately
+                        if (data.preview_data) {
+                            showPreviewResults(cardId, data.preview_data);
+                        }
                     }
                     // Progress routed to card level;
-
-                    if (data.preview_data) {
-                        showPreviewResults(cardId, data.preview_data);
-                    }
                 } else if (data.status === 'FAILED' || data.status === 'ERROR') {
                     completeThinkingInCard(cardId, 'Preview failed');
                     // Progress routed to card level;
