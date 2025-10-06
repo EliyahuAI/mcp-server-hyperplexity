@@ -2011,6 +2011,7 @@
                 tickerInterval: null, // Interval for cycling ticker messages
                 currentTickerIndex: 0, // Current message being displayed
                 currentConfidenceScore: null, // Track current confidence score (0-100) for progress color
+                confidenceScores: [], // Array of all confidence scores received during current validation
                 currentValidationState: null, // Track if preview or full validation is running
                 isProcessingConfig: false, // Track if config generation/refinement is in progress
                 debounceTimers: new Map(), // Track debounce timers by function/card ID
@@ -2469,7 +2470,7 @@
 
                 state.intervals.push(stuckCheckInterval);
 
-                // Heartbeat speed up and flip animation (10% chance every 10 seconds)
+                // Heartbeat speed up and flip animation (50% chance every 5 seconds)
                 const heartbeatFlipInterval = setInterval(() => {
                     const indicator = document.getElementById(`${cardId}-thinking`);
                     if (!indicator) {
@@ -2481,12 +2482,12 @@
                     const square = indicator.querySelector('.progress-square, .thinking-square');
                     if (!wrapper || !square) return;
 
-                    // 10% chance to trigger heartbeat speed up and flip sequence
-                    if (Math.random() < 0.1) {
+                    // 50% chance to trigger heartbeat speed up and flip sequence
+                    if (Math.random() < 0.5) {
                         console.log('[FLIP] Starting flip animation sequence');
-                        // Phase 1: Wait/anticipation - normal heartbeat continues (1s)
+                        // Phase 1: Wait/anticipation - normal heartbeat continues (0.5s)
                         setTimeout(() => {
-                            // Phase 2: Speed up heartbeat (faster pulse) - 1.5 seconds
+                            // Phase 2: Speed up heartbeat (faster pulse) - 0.8 seconds
                             console.log('[FLIP] Phase 2: Speeding up heartbeat');
                             square.classList.add('fast-heartbeat');
 
@@ -2501,10 +2502,10 @@
                                     square.classList.remove('fast-heartbeat');
                                     wrapper.classList.remove('flipping');
                                 }, 800); // After flip completes
-                            }, 1500); // After heartbeat speeds up
-                        }, 1000); // Initial wait
+                            }, 800); // After heartbeat speeds up
+                        }, 500); // Initial wait
                     }
-                }, 10000);
+                }, 5000);
 
                 state.intervals.push(heartbeatFlipInterval);
             }
@@ -2739,8 +2740,9 @@
                 stopDummyProgress(cardId);
                 cardCurrentProgress.delete(cardId);
 
-                // Reset confidence score for next validation (return to purple default)
+                // Reset confidence score and history for next validation (return to green default)
                 globalState.currentConfidenceScore = null;
+                globalState.confidenceScores = [];
 
                 // Stop dynamic animations
                 stopDynamicAnimations(cardId);
@@ -4422,10 +4424,18 @@
 
                 if (isProgressType && hasProgress) {
 
-                    // Extract confidence score if present
+                    // Extract confidence score if present and calculate running average
                     if (data.confidence_score !== undefined) {
-                        globalState.currentConfidenceScore = data.confidence_score;
-                        console.log('[CONFIDENCE] Received confidence_score:', data.confidence_score, 'from message:', data.message);
+                        // Add individual score to array
+                        globalState.confidenceScores.push(data.confidence_score);
+
+                        // Calculate running average
+                        const sum = globalState.confidenceScores.reduce((a, b) => a + b, 0);
+                        const runningAverage = Math.round(sum / globalState.confidenceScores.length);
+
+                        globalState.currentConfidenceScore = runningAverage;
+                        console.log('[CONFIDENCE] Received:', data.confidence_score, '| Running avg:', runningAverage,
+                                    '(based on', globalState.confidenceScores.length, 'scores) | Message:', data.message);
                     }
 
                     // Find the card with progress indicator and update it
@@ -4855,6 +4865,10 @@
                     console.log('[TICKER] Setting active card to:', cardId);
                     globalState.activeCardId = cardId;
                     globalState.currentValidationState = 'full';
+
+                    // Clear confidence scores for fresh running average
+                    globalState.confidenceScores = [];
+                    globalState.currentConfidenceScore = null;
 
                     let message = data.verbose_status || 'Processing...';
 
@@ -8454,6 +8468,10 @@ Please provide any additional context, or simply proceed to generate your initia
                     console.log('[TICKER] Setting active card to:', cardId);
                     globalState.activeCardId = cardId;
                     globalState.currentValidationState = 'preview';
+
+                    // Clear confidence scores for fresh running average
+                    globalState.confidenceScores = [];
+                    globalState.currentConfidenceScore = null;
 
                     const message = data.verbose_status || 'Processing...';
                     // Update both text and progress if we have percent_complete
