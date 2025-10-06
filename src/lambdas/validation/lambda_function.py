@@ -3296,7 +3296,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     row_tasks = []
                     for row_idx, row in enumerate(batch):
                         # row_idx is just for logging within batch (0, 1, 2, ...)
-                        task = asyncio.create_task(process_row(session, row, row_idx, batch_manager, batch_index, progress_queue, guidance_by_group))
+                        task = asyncio.create_task(process_row(session, row, row_idx, batch_manager, batch_index, progress_queue, guidance_by_group, missing_columns_by_group, missing_columns_lock))
                         row_tasks.append(task)
                     
                     # Wait for all rows in the batch to complete
@@ -3679,13 +3679,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # API provider statistics logged
                 
         
-        async def process_row(session, row, row_idx, batch_manager=None, batch_number=None, progress_queue=None, guidance_by_group=None):
+        async def process_row(session, row, row_idx, batch_manager=None, batch_number=None, progress_queue=None, guidance_by_group=None, missing_columns_tracker=None, tracker_lock=None):
             """Process a single row with progressive multiplexing."""
-            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls, qc_manager, all_qc_results, qc_metrics_summary, validator, config, missing_columns_by_group, missing_columns_lock
+            nonlocal total_cache_hits, total_cache_misses, total_multiplex_validations, total_single_validations, total_expected_ai_calls, qc_manager, all_qc_results, qc_metrics_summary, validator, config
 
-            # Initialize guidance dict if not provided (fallback for backward compatibility)
+            # Initialize guidance dict and tracker if not provided (fallback for backward compatibility)
             if guidance_by_group is None:
                 guidance_by_group = {}
+            if missing_columns_tracker is None:
+                missing_columns_tracker = {}
+            if tracker_lock is None:
+                tracker_lock = threading.Lock()
 
             # Track which models and API providers were used for this row
             row_models_used = set()
@@ -3788,10 +3792,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                 # Check tracker for any updates from other rows in this batch (fast read lock)
                 if group_id is not None:
-                    with missing_columns_lock:
-                        if group_id in missing_columns_by_group:
+                    with tracker_lock:
+                        if group_id in missing_columns_tracker:
                             # Build fresh guidance from current tracker state
-                            known_issues = missing_columns_by_group[group_id]
+                            known_issues = missing_columns_tracker[group_id]
                             if known_issues:
                                 warnings = []
                                 for col_name, issue_info in known_issues.items():
@@ -3811,14 +3815,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                 # Update tracker immediately so later rows in batch can benefit (write lock, fast when no issues)
                 if missing_column_info and group_id is not None:
-                    with missing_columns_lock:
-                        if group_id not in missing_columns_by_group:
-                            missing_columns_by_group[group_id] = {}
+                    with tracker_lock:
+                        if group_id not in missing_columns_tracker:
+                            missing_columns_tracker[group_id] = {}
                         for col_name, col_info in missing_column_info.items():
-                            if col_name not in missing_columns_by_group[group_id]:
-                                missing_columns_by_group[group_id][col_name] = {'past_columns': [], 'count': 0}
-                            missing_columns_by_group[group_id][col_name]['past_columns'] = col_info['past_columns']
-                            missing_columns_by_group[group_id][col_name]['count'] += 1
+                            if col_name not in missing_columns_tracker[group_id]:
+                                missing_columns_tracker[group_id][col_name] = {'past_columns': [], 'count': 0}
+                            missing_columns_tracker[group_id][col_name]['past_columns'] = col_info['past_columns']
+                            missing_columns_tracker[group_id][col_name]['count'] += 1
                         logger.warning(f"[TRACKER_UPDATE] Updated tracker immediately: {len(missing_column_info)} missing columns for group {group_id}")
 
                 report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number)
