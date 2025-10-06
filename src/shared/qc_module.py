@@ -748,6 +748,25 @@ class QCModule:
                 qc_original_confidence = qc_result.get('original_confidence', '')
                 qc_updated_confidence = qc_result.get('updated_confidence', '')
 
+                # Check if QC entry is the same as original value (normalized comparison)
+                # If same, enforce original_confidence == qc_confidence
+                original_value_from_multiplex = multiplex_result.get('original_value', '')
+
+                def normalize_for_comparison(value):
+                    """Normalize value for comparison: strip whitespace, lowercase, remove punctuation"""
+                    import string
+                    if value is None:
+                        return ''
+                    value_str = str(value).strip().lower()
+                    # Remove punctuation
+                    value_str = value_str.translate(str.maketrans('', '', string.punctuation))
+                    return value_str
+
+                if normalize_for_comparison(qc_entry) == normalize_for_comparison(original_value_from_multiplex):
+                    # No meaningful change - enforce original confidence == qc confidence
+                    logger.debug(f"[QC_CONFIDENCE_ENFORCEMENT] {column}: No meaningful change detected, enforcing original_confidence == qc_confidence ({qc_confidence})")
+                    qc_original_confidence = qc_confidence  # Override to match QC confidence
+
                 # Update confidence levels if QC provided revisions
                 if qc_original_confidence:
                     merged_result['qc_original_confidence'] = qc_original_confidence
@@ -761,6 +780,23 @@ class QCModule:
                 logger.debug(f"[QC_MERGE_DEBUG] {column}: Original='{multiplex_result.get('original_value', 'N/A')}', Validated='{merged_result['updated_entry']}', QC='{qc_entry}'")
                 logger.debug(f"[QC_MERGE_DEBUG] {column}: Final merged QC fields - qc_applied=True, qc_entry='{qc_entry}', qc_confidence='{qc_confidence}'")
 
+                # Parse update_importance (format: "N - Explanation text")
+                update_importance_raw = qc_result.get('update_importance', '0')
+                update_importance_level = 0
+                update_importance_explanation = ''
+
+                try:
+                    if ' - ' in update_importance_raw:
+                        parts = update_importance_raw.split(' - ', 1)
+                        update_importance_level = int(parts[0].strip())
+                        update_importance_explanation = parts[1].strip()
+                    else:
+                        # If no explanation, just parse the number
+                        update_importance_level = int(update_importance_raw.strip())
+                except (ValueError, AttributeError):
+                    logger.warning(f"Could not parse update_importance: {update_importance_raw}")
+                    update_importance_level = 0
+
                 merged_result.update({
                     'qc_entry': qc_entry,
                     'qc_confidence': qc_confidence,
@@ -768,13 +804,19 @@ class QCModule:
                     'qc_sources': qc_result.get('qc_sources', []),  # QC sources from AI API client
                     'qc_citations': qc_result.get('qc_citations', ''),  # QC citations for cell comments
                     'qc_original_confidence': merged_result.get('qc_original_confidence', ''),  # QC-revised original confidence
-                    'qc_updated_confidence': merged_result.get('qc_updated_confidence', '')     # QC-revised updated confidence
+                    'qc_updated_confidence': merged_result.get('qc_updated_confidence', ''),     # QC-revised updated confidence
+                    'update_importance': update_importance_raw,  # Full string with explanation
+                    'update_importance_level': update_importance_level,  # Numeric level 0-5
+                    'update_importance_explanation': update_importance_explanation  # Just the explanation text
                 })
             else:
                 # No QC changes - QC entry same as updated entry
                 merged_result.update({
                     'qc_entry': merged_result['updated_entry'],
-                    'qc_confidence': merged_result['updated_confidence']
+                    'qc_confidence': merged_result['updated_confidence'],
+                    'update_importance': '0',  # No update importance when QC not applied
+                    'update_importance_level': 0,
+                    'update_importance_explanation': ''
                 })
 
             merged_results[column] = merged_result

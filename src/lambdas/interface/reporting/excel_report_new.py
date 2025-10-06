@@ -282,9 +282,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
             
             # SHEET 1: Updated Values
             updated_sheet = workbook.add_worksheet('Updated Values')
-            
-            # Headers for updated values sheet (no additional columns)
-            updated_headers = headers
+
+            # Headers for updated values sheet (add Update Importance column)
+            updated_headers = headers + ['Update Importance']
             for col_idx, col_name in enumerate(updated_headers):
                 updated_sheet.write(0, col_idx, col_name, header_format)
                 updated_sheet.set_column(col_idx, col_idx, 20)
@@ -374,9 +374,26 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                                            {'width': 300, 'height': 150})
                             except Exception as e:
                                 logger.warning(f"Could not add comment to Updated Values sheet: {e}")
-                    
-                    # No additional columns to write (removed Original Value and Supporting Information)
-                    
+
+                    # Write Update Importance column (last column)
+                    # Find the highest importance level across all fields in this row
+                    max_importance_level = 0
+                    max_importance_text = '0'
+
+                    if row_validation_data:
+                        for col_name, field_data in row_validation_data.items():
+                            if isinstance(field_data, dict):
+                                importance_str = field_data.get('update_importance', '0')
+                                importance_level = field_data.get('update_importance_level', 0)
+
+                                if importance_level > max_importance_level:
+                                    max_importance_level = importance_level
+                                    max_importance_text = importance_str
+
+                    # Write the highest importance to the Update Importance column
+                    importance_col_idx = len(headers)  # Last column after all original columns
+                    updated_sheet.write(updated_row_idx, importance_col_idx, safe_for_excel(max_importance_text))
+
                     updated_row_idx += 1
             
             # SHEET 2: Original Values

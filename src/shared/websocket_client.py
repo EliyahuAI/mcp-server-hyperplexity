@@ -156,5 +156,46 @@ class WebSocketClient:
         
         return self.send_to_session(session_id, message)
 
+    def send_ticker_update(self, session_id: str, priority: int, row_ids: str,
+                          column: str, final_value: str, confidence: str,
+                          explanation: str = "") -> bool:
+        """
+        Send a ticker update notification via WebSocket
+
+        Args:
+            session_id: Session ID to send to
+            priority: Importance level (4 or 5) for ticker priority
+            row_ids: Row identifier(s) (e.g., "Amazon - Home Products")
+            column: Column name
+            final_value: Final validated value
+            confidence: Confidence level (HIGH/MEDIUM/LOW) for emoji selection
+            explanation: Importance explanation (optional, for priority tracking)
+
+        Returns:
+            bool: True if message was sent successfully
+        """
+        # Map confidence to emoji
+        emoji_map = {
+            'HIGH': '🟢',
+            'MEDIUM': '🟡',
+            'LOW': '🔴'
+        }
+        confidence_emoji = emoji_map.get(confidence.upper() if confidence else '', '🟢')
+
+        message = {
+            'type': 'ticker_update',
+            'session_id': session_id,
+            'priority': priority,
+            'row_ids': row_ids,
+            'column': column,
+            'final_value': final_value,
+            'confidence': confidence,
+            'confidence_emoji': confidence_emoji,
+            'explanation': explanation,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        return self.send_to_session(session_id, message)
+
 # Global instance
 websocket_client = WebSocketClient()

@@ -141,9 +141,26 @@ qc_validation: |
   * `answer`: The QC Entry **MANDATORY FOR ALL QC RESPONSES**
   * `qc_reasoning`: Detailed explanation of why QC revision was necessary (required)
   * `confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the QC Entry (must be higher than or equal to the original confidence)
-  * `original_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the original value (must be lower than or equal to the QC confidence)
-  * `updated_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the updated value 
+  * `original_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the original value (must be lower than or equal to the QC confidence). **IMPORTANT: When there is no meaningful change between the final answer and the original value, the QC original confidence MUST be identical to the final confidence.**
+  * `updated_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the updated value
   * `qc_citations`: Key supporting citation - **ABSOLUTELY REQUIRED for EVERY SINGLE FIELD** regardless of whether QC changes are made or not (see formatting below). This field is mandatory for all responses.
+  * `update_importance`: **MANDATORY FOR ALL QC RESPONSES** - A 0-5 scale rating that assesses the criticality of the change given the stated purpose of the table and the degree and confidence in the change. Format: "N - Explanation text" where N is 0-5. Score 0 requires no explanation.
+
+    **Update Importance Scale:**
+    - **0**: No meaningful change or update (no explanation needed). Original value confirmed or trivial formatting adjustments.
+    - **1**: Minor clarification or low-confidence correction. Small refinement with limited impact on decision-making.
+    - **2**: Moderate update with medium confidence. Notable change but not critical to core purpose, or uncertain adjustment.
+    - **3**: Significant update with medium-to-high confidence. Important change that affects understanding but not immediately actionable.
+    - **4**: Major update with high confidence. Critical information that directly impacts decision-making or core table purpose.
+    - **5**: Critical update with very high confidence. Essential information that requires immediate attention and fundamentally changes interpretation or action items.
+
+    **Examples:**
+    - "0" (no explanation)
+    - "1 - Minor formatting correction to match style guide"
+    - "2 - Updated revenue estimate based on limited data"
+    - "3 - Corrected product category affecting market segmentation"
+    - "4 - Volatility in market price for Amazon results in hold investment recommendation"
+    - "5 - Company bankruptcy filing changes investment status to immediate sell"
 
   
   **Key Citation Formatting (`qc_citations`):**

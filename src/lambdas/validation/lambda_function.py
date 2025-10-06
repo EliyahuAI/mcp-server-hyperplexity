@@ -28,38 +28,65 @@ from ai_api_client import ai_client
 def find_similar_columns(expected_columns: List[str], actual_columns: List[str], similarity_threshold: float = 0.8) -> Dict[str, str]:
     """
     Find column mappings between expected and actual columns using string similarity.
-    
+    Enhanced to handle parentheses by trying matches with and without them.
+
     Args:
         expected_columns: List of expected column names
         actual_columns: List of actual column names from API response
         similarity_threshold: Minimum similarity ratio (0.0 to 1.0) for a match
-        
+
     Returns:
         Dictionary mapping actual column names to expected column names
         Only includes mappings above the similarity threshold
     """
+    import re
+
+    def strip_parentheses(text: str) -> str:
+        """Remove parentheses and their contents from text."""
+        return re.sub(r'\s*\([^)]*\)', '', text).strip()
+
     column_mappings = {}
     used_actual_columns = set()
-    
+
     for expected_col in expected_columns:
         best_match = None
         best_ratio = 0.0
-        
+
+        # Try matching with original names
         for actual_col in actual_columns:
             if actual_col in used_actual_columns:
                 continue
-                
+
             # Calculate similarity ratio using difflib
             ratio = difflib.SequenceMatcher(None, expected_col.lower(), actual_col.lower()).ratio()
-            
+
             if ratio > best_ratio and ratio >= similarity_threshold:
                 best_match = actual_col
                 best_ratio = ratio
-        
+
+        # If no match found, try matching without parentheses
+        if not best_match:
+            expected_stripped = strip_parentheses(expected_col)
+            for actual_col in actual_columns:
+                if actual_col in used_actual_columns:
+                    continue
+
+                actual_stripped = strip_parentheses(actual_col)
+
+                # Calculate similarity ratio without parentheses
+                ratio = difflib.SequenceMatcher(None, expected_stripped.lower(), actual_stripped.lower()).ratio()
+
+                if ratio > best_ratio and ratio >= similarity_threshold:
+                    best_match = actual_col
+                    best_ratio = ratio
+
+            if best_match:
+                logger.info(f"[FLEXIBLE_MATCH] Matched '{best_match}' to '{expected_col}' after stripping parentheses (ratio: {best_ratio:.2f})")
+
         if best_match:
             column_mappings[best_match] = expected_col
             used_actual_columns.add(best_match)
-    
+
     return column_mappings
 
 # Configure logging
@@ -3879,6 +3906,41 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                     logger.debug(f"QC processing completed for row {row_idx}: {len(qc_results_by_field)} fields processed")
 
+                    # Send ticker updates for high-importance changes (4-5)
+                    if qc_results_by_field and websocket_client and session_id:
+                        try:
+                            # Get ID fields for row identifier
+                            id_fields = validator.get_id_fields()
+                            row_id_values = []
+                            for id_field in id_fields:
+                                value = row_data.get(id_field.column, '')
+                                if value:
+                                    row_id_values.append(str(value))
+                            row_ids = ' - '.join(row_id_values) if row_id_values else 'Unknown'
+
+                            # Check each field for high importance
+                            for field_name, qc_field_data in qc_results_by_field.items():
+                                if isinstance(qc_field_data, dict):
+                                    importance_level = qc_field_data.get('update_importance_level', 0)
+                                    if importance_level >= 4:
+                                        # Send ticker update
+                                        final_value = qc_field_data.get('qc_entry', '')
+                                        confidence = qc_field_data.get('qc_confidence', 'MEDIUM')
+                                        explanation = qc_field_data.get('update_importance_explanation', '')
+
+                                        logger.info(f"[TICKER] Sending ticker update for {field_name} with importance {importance_level}")
+                                        websocket_client.send_ticker_update(
+                                            session_id=session_id,
+                                            priority=importance_level,
+                                            row_ids=row_ids,
+                                            column=field_name,
+                                            final_value=final_value,
+                                            confidence=confidence,
+                                            explanation=explanation
+                                        )
+                        except Exception as ticker_error:
+                            logger.warning(f"Failed to send ticker update: {ticker_error}")
+
                 except Exception as e:
                     logger.error(f"QC processing failed for row {row_idx}: {str(e)}")
                     # Continue without QC data on error
@@ -4122,14 +4184,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 if is_cached:
                     logger.error(f"❌ MISSING COLUMNS IN CACHED RESPONSE: {list(missing_columns)}")
                     logger.error(f"🔄 CACHE REJECTED: Making fresh API call due to incomplete cached response")
-                    
+
                     # Adjust cache counters - this is actually a cache miss
                     total_cache_misses += 1
                     total_cache_hits -= 1
-                    
+
+                    # Enhance prompt with missing column information
+                    missing_column_names = list(missing_columns)
+                    past_column_names = list(actual_columns)
+                    enhanced_prompt = prompt + f"\n\n**IMPORTANT RETRY INSTRUCTION:**\n"
+                    for missing_col in missing_column_names:
+                        enhanced_prompt += f"**Important! No field exactly matching '{missing_col}' was identified in your past output (past output columns: {', '.join(past_column_names)}). Make sure it is included this time!**\n"
+                    logger.info(f"Enhanced prompt with missing column information: {missing_column_names}")
+
                     # Make fresh API call with cache disabled using unified approach
                     logger.info(f"Making fresh unified API call for {api_provider} with cache disabled")
-                    
+
                     # Use the same unified approach for fresh calls with group name
                     if group_name:
                         safe_group_name = group_name.replace(' ', '_').replace('-', '_')[:20]
@@ -4142,9 +4212,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         if len(field_names) <= 3:
                             safe_fields = [field.replace(' ', '_')[:15] for field in field_names]
                             fresh_debug_name = f"validation_fresh_group_{group_str}_{'-'.join(safe_fields)}"
-                    
+
                     shared_client_result = await ai_client.call_structured_api(
-                        prompt=prompt,
+                        prompt=enhanced_prompt,
                         model=model, 
                         schema=tool_schema,
                         tool_name="validate_data",
@@ -4196,9 +4266,25 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         missing_columns = set()
                     
                     if missing_columns:
-                        logger.error(f"❌ MISSING COLUMNS EVEN IN FRESH API RESPONSE AFTER FLEXIBLE MATCHING: {list(missing_columns)}")
-                        logger.error(f"This indicates a serious issue with the AI model or prompt generation")
-                        raise ValueError(f"Fresh API response still missing required columns: {missing_columns}")
+                        logger.error(f"[ERROR] [MISSING_COLUMNS] Missing columns even in fresh API response after flexible matching: {list(missing_columns)}")
+                        logger.error(f"[ERROR] [MISSING_COLUMNS] Expected columns: {expected_columns}")
+                        logger.error(f"[ERROR] [MISSING_COLUMNS] Received columns: {updated_fresh_columns if 'updated_fresh_columns' in locals() else fresh_actual_columns}")
+                        logger.error(f"[ERROR] [MISSING_COLUMNS] Note: Enhanced prompt with missing column information was used for this retry.")
+                        logger.warning(f"[PARTIAL_SUCCESS] Creating error placeholders for {len(missing_columns)} missing columns. Processing {len(parsed_results)} successful columns.")
+
+                        # Create error placeholders for missing columns instead of failing the entire row
+                        for missing_col in missing_columns:
+                            parsed_results[missing_col] = (
+                                "[ERROR: Column missing from AI response]",  # value
+                                "LOW",  # confidence
+                                [],  # sources
+                                "LOW",  # confidence_level
+                                f"This column was not returned by the AI model despite retries and enhanced prompts. Expected: '{missing_col}', Received: {', '.join(updated_fresh_columns if 'updated_fresh_columns' in locals() else fresh_actual_columns)}",  # reasoning
+                                "",  # main_source
+                                None,  # original_confidence
+                                f"Column validation failed - AI response missing required field '{missing_col}'",  # explanation
+                                False  # consistent_with_model_knowledge
+                            )
                     
                     logger.info(f"✅ FRESH API CALL SUCCESS: All {len(expected_columns)} columns now present")
                     
@@ -4233,15 +4319,32 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         remaining_missing_columns = set(expected_columns) - set(final_actual_columns)
                         
                         if remaining_missing_columns:
-                            logger.error(f"❌ MISSING COLUMNS IN FRESH API RESPONSE AFTER FLEXIBLE MATCHING: {list(remaining_missing_columns)}")
-                            logger.error(f"This indicates a serious issue with the AI model or prompt generation")
-                            raise ValueError(f"Fresh API response missing required columns: {remaining_missing_columns}")
+                            logger.error(f"[ERROR] [MISSING_COLUMNS] Missing columns in fresh API response after flexible matching: {list(remaining_missing_columns)}")
+                            logger.error(f"[ERROR] [MISSING_COLUMNS] Expected columns: {expected_columns}")
+                            logger.error(f"[ERROR] [MISSING_COLUMNS] Received columns: {final_actual_columns}")
+                            logger.error(f"[ERROR] [MISSING_COLUMNS] Suggestion: Verify field names match exactly in config. Enhanced flexible matching with parentheses stripping was attempted.")
+                            logger.warning(f"[PARTIAL_SUCCESS] Creating error placeholders for {len(remaining_missing_columns)} missing columns. Processing {len(parsed_results)} successful columns.")
+
+                            # Create error placeholders for missing columns instead of failing the entire row
+                            for missing_col in remaining_missing_columns:
+                                parsed_results[missing_col] = (
+                                    "[ERROR: Column missing from AI response]",  # value
+                                    "LOW",  # confidence
+                                    [],  # sources
+                                    "LOW",  # confidence_level
+                                    f"This column was not returned by the AI model despite retries and enhanced prompts. Expected: '{missing_col}', Received: {', '.join(final_actual_columns)}",  # reasoning
+                                    "",  # main_source
+                                    None,  # original_confidence
+                                    f"Column validation failed - AI response missing required field '{missing_col}'",  # explanation
+                                    False  # consistent_with_model_knowledge
+                                )
                         else:
-                            logger.info(f"✅ FINAL FLEXIBLE MATCHING SUCCESS: All columns matched after similarity corrections")
+                            logger.info(f"[SUCCESS] [FLEXIBLE_MATCH] All columns matched after similarity corrections")
                     else:
-                        logger.error(f"❌ MISSING COLUMNS IN FRESH API RESPONSE: {list(missing_columns)}")
-                        logger.error(f"Column count mismatch: expected {len(expected_columns)}, got {len(actual_columns)}")
-                        logger.error(f"This indicates a serious issue with the AI model or prompt generation")
+                        logger.error(f"[ERROR] [MISSING_COLUMNS] Missing columns in fresh API response: {list(missing_columns)}")
+                        logger.error(f"[ERROR] [MISSING_COLUMNS] Column count mismatch: expected {len(expected_columns)}, got {len(actual_columns)}")
+                        logger.error(f"[ERROR] [MISSING_COLUMNS] Expected columns: {expected_columns}")
+                        logger.error(f"[ERROR] [MISSING_COLUMNS] Received columns: {actual_columns}")
                         raise ValueError(f"Fresh API response missing required columns: {missing_columns}")
             
             # Check for unexpected columns (warning only) - use current parsed_results keys

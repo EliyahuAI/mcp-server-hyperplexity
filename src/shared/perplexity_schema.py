@@ -97,9 +97,13 @@ def get_qc_response_format_schema():
                 "qc_citations": {
                     "type": "string",
                     "description": "Key source citation with most important part summarized for cell comments (format: 'title [key_excerpt] ... full_context URL')"
+                },
+                "update_importance": {
+                    "type": "string",
+                    "description": "0-5 scale rating of change criticality given table purpose, degree of change, and confidence. Format: 'N - Explanation text' where N is 0-5 (score 0 needs no explanation). High importance (4-5) = meaningful changes with high final confidence. Example: '4 - Volatility in market price for Amazon results in hold investment recommendation'"
                 }
             },
-            "required": ["column", "qc_reasoning", "answer", "confidence", "original_confidence", "updated_confidence", "qc_citations"]
+            "required": ["column", "qc_reasoning", "answer", "confidence", "original_confidence", "updated_confidence", "qc_citations", "update_importance"]
         }
     }
 
