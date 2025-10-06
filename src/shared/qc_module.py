@@ -12,12 +12,76 @@ from datetime import datetime, timezone
 import yaml
 import copy
 from pathlib import Path
+import difflib
+import re
 
 # Import shared modules
 from ai_api_client import ai_client
 from perplexity_schema import get_qc_response_format_schema, MULTIPLEX_RESPONSE_SCHEMA, ADDITIONAL_QC_FIELDS
 
 logger = logging.getLogger(__name__)
+
+def find_similar_columns(expected_columns: List[str], actual_columns: List[str], similarity_threshold: float = 0.8) -> Dict[str, str]:
+    """
+    Find column mappings between expected and actual columns using string similarity.
+    Enhanced to handle parentheses by trying matches with and without them.
+
+    Args:
+        expected_columns: List of expected column names
+        actual_columns: List of actual column names from API response
+        similarity_threshold: Minimum similarity ratio (0.0 to 1.0) for a match
+
+    Returns:
+        Dictionary mapping actual column names to expected column names
+        Only includes mappings above the similarity threshold
+    """
+    def strip_parentheses(text: str) -> str:
+        """Remove parentheses and their contents from text."""
+        return re.sub(r'\s*\([^)]*\)', '', text).strip()
+
+    column_mappings = {}
+    used_actual_columns = set()
+
+    for expected_col in expected_columns:
+        best_match = None
+        best_ratio = 0.0
+
+        # Try matching with original names
+        for actual_col in actual_columns:
+            if actual_col in used_actual_columns:
+                continue
+
+            # Calculate similarity ratio using difflib
+            ratio = difflib.SequenceMatcher(None, expected_col.lower(), actual_col.lower()).ratio()
+
+            if ratio > best_ratio and ratio >= similarity_threshold:
+                best_match = actual_col
+                best_ratio = ratio
+
+        # If no match found, try matching without parentheses
+        if not best_match:
+            expected_stripped = strip_parentheses(expected_col)
+            for actual_col in actual_columns:
+                if actual_col in used_actual_columns:
+                    continue
+
+                actual_stripped = strip_parentheses(actual_col)
+
+                # Calculate similarity ratio without parentheses
+                ratio = difflib.SequenceMatcher(None, expected_stripped.lower(), actual_stripped.lower()).ratio()
+
+                if ratio > best_ratio and ratio >= similarity_threshold:
+                    best_match = actual_col
+                    best_ratio = ratio
+
+            if best_match:
+                logger.info(f"[QC_FLEXIBLE_MATCH] Matched '{best_match}' to '{expected_col}' after stripping parentheses (ratio: {best_ratio:.2f})")
+
+        if best_match:
+            column_mappings[best_match] = expected_col
+            used_actual_columns.add(best_match)
+
+    return column_mappings
 
 class QCModule:
     """
@@ -486,6 +550,59 @@ class QCModule:
                 qc_results = structured_data.get('qc_results', []) if isinstance(structured_data, dict) else []
                 logger.info(f"QC returned {len(qc_results)} field modifications across all groups")
 
+                # Apply flexible column matching to QC results
+                if qc_results and validation_targets:
+                    # Get expected column names from non-ID validation targets
+                    expected_columns = [t.column for t in validation_targets if hasattr(t, 'importance') and t.importance.upper() != 'ID']
+                    actual_columns = [result.get('column', '') for result in qc_results if result.get('column')]
+
+                    # Check for missing columns
+                    exact_missing = set(expected_columns) - set(actual_columns)
+
+                    if exact_missing:
+                        logger.warning(f"[QC_COLUMN_CHECK] QC response missing columns: {list(exact_missing)}")
+                        logger.info(f"[QC_COLUMN_CHECK] Attempting flexible column matching for QC results")
+
+                        # Apply flexible matching
+                        column_mappings = find_similar_columns(expected_columns, actual_columns, similarity_threshold=0.8)
+
+                        # Create a lookup for quick access
+                        qc_results_by_column = {result.get('column', ''): result for result in qc_results}
+
+                        # Apply corrections
+                        corrected_qc_results = []
+                        for expected_col in expected_columns:
+                            matched = False
+                            for actual_col, mapped_expected_col in column_mappings.items():
+                                if mapped_expected_col == expected_col and actual_col in qc_results_by_column:
+                                    result = qc_results_by_column[actual_col].copy()
+                                    result['column'] = expected_col  # Correct the column name
+                                    corrected_qc_results.append(result)
+                                    logger.warning(f"[QC_COLUMN_CORRECTION] '{actual_col}' -> '{expected_col}' (similarity matching)")
+                                    matched = True
+                                    break
+
+                            # If exact match exists, use it
+                            if not matched and expected_col in qc_results_by_column:
+                                corrected_qc_results.append(qc_results_by_column[expected_col])
+                                matched = True
+
+                            # If still no match, create error placeholder
+                            if not matched:
+                                logger.error(f"[QC_MISSING_COLUMN] QC response missing column '{expected_col}' even after flexible matching")
+                                corrected_qc_results.append({
+                                    'column': expected_col,
+                                    'answer': '[ERROR: QC did not return this field]',
+                                    'confidence': 'LOW',
+                                    'original_confidence': 'LOW',
+                                    'qc_reasoning': f"QC response did not include field '{expected_col}'. Received columns: {', '.join(actual_columns)}",
+                                    'qc_citations': '[ERROR] QC field missing',
+                                    'update_importance': '0'
+                                })
+
+                        qc_results = corrected_qc_results
+                        logger.info(f"[QC_FLEXIBLE_MATCH] After flexible matching: {len(qc_results)} QC results aligned with expected columns")
+
                 # Debug QC API response
                 logger.info(f"QC API structured extraction successful: found {len(qc_results)} QC responses (comprehensive)")
 
@@ -634,6 +751,60 @@ class QCModule:
                 structured_data = ai_client.extract_structured_response(qc_response['response'], "qc_validation")
                 qc_results = structured_data.get('qc_results', []) if isinstance(structured_data, dict) else []
                 logger.info(f"QC returned {len(qc_results)} field modifications")
+
+                # Apply flexible column matching to QC results
+                if qc_results and validation_targets:
+                    # Get expected column names from non-ID validation targets
+                    expected_columns = [t.column for t in validation_targets if hasattr(t, 'importance') and t.importance.upper() != 'ID']
+                    actual_columns = [result.get('column', '') for result in qc_results if result.get('column')]
+
+                    # Check for missing columns
+                    exact_missing = set(expected_columns) - set(actual_columns)
+
+                    if exact_missing:
+                        logger.warning(f"[QC_COLUMN_CHECK] QC response missing columns: {list(exact_missing)}")
+                        logger.info(f"[QC_COLUMN_CHECK] Attempting flexible column matching for QC results")
+
+                        # Apply flexible matching
+                        column_mappings = find_similar_columns(expected_columns, actual_columns, similarity_threshold=0.8)
+
+                        # Create a lookup for quick access
+                        qc_results_by_column = {result.get('column', ''): result for result in qc_results}
+
+                        # Apply corrections
+                        corrected_qc_results = []
+                        for expected_col in expected_columns:
+                            matched = False
+                            for actual_col, mapped_expected_col in column_mappings.items():
+                                if mapped_expected_col == expected_col and actual_col in qc_results_by_column:
+                                    result = qc_results_by_column[actual_col].copy()
+                                    result['column'] = expected_col  # Correct the column name
+                                    corrected_qc_results.append(result)
+                                    logger.warning(f"[QC_COLUMN_CORRECTION] '{actual_col}' -> '{expected_col}' (similarity matching)")
+                                    matched = True
+                                    break
+
+                            # If exact match exists, use it
+                            if not matched and expected_col in qc_results_by_column:
+                                corrected_qc_results.append(qc_results_by_column[expected_col])
+                                matched = True
+
+                            # If still no match, create error placeholder
+                            if not matched:
+                                logger.error(f"[QC_MISSING_COLUMN] QC response missing column '{expected_col}' even after flexible matching")
+                                corrected_qc_results.append({
+                                    'column': expected_col,
+                                    'answer': '[ERROR: QC did not return this field]',
+                                    'confidence': 'LOW',
+                                    'original_confidence': 'LOW',
+                                    'qc_reasoning': f"QC response did not include field '{expected_col}'. Received columns: {', '.join(actual_columns)}",
+                                    'qc_citations': '[ERROR] QC field missing',
+                                    'qc_sources': [],
+                                    'update_importance': '0'
+                                })
+
+                        qc_results = corrected_qc_results
+                        logger.info(f"[QC_FLEXIBLE_MATCH] After flexible matching: {len(qc_results)} QC results aligned with expected columns")
 
                 # Extract QC sources from AI API response metadata (like validation does)
                 qc_api_citations = qc_response.get('citations', [])
