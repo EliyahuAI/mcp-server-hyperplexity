@@ -1681,21 +1681,35 @@
         }
     }
 
-    /* Ticker Row Styles (inside progress card) */
+    /* Ticker Row Styles (integrated with progress indicator) */
     .ticker-row {
-        background: linear-gradient(90deg, #f0f0f0 0%, #ffffff 50%, #f0f0f0 100%);
-        border-top: 1px solid #ddd;
-        border-bottom: 2px solid #4CAF50;
-        padding: 0.5rem 1rem;
-        margin-top: 0.75rem;
+        background: transparent;
+        padding: 0.5rem 0;
+        margin-top: 8px;
         overflow: hidden;
-        font-size: var(--font-size-small);
+        position: relative;
+        text-align: center;
+    }
+
+    .ticker-row::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 80%;
+        height: 1px;
+        background: linear-gradient(to right, transparent, #ddd 20%, #ddd 80%, transparent);
     }
 
     .ticker-content {
-        color: var(--text-color);
+        color: #666;
+        font-size: var(--font-size-small); /* 14px - matches progress-text */
+        font-weight: 500;
         white-space: nowrap;
-        animation: ticker-scroll 20s linear infinite;
+        animation: ticker-scroll 25s linear infinite;
+        padding-top: 8px;
+        display: inline-block;
     }
 
     @keyframes ticker-scroll {
@@ -1709,11 +1723,14 @@
 
     .ticker-content:hover {
         animation-play-state: paused;
+        color: #333;
     }
 
     @media (max-width: 768px) {
         .ticker-row {
-            padding: 0.4rem 0.75rem;
+            padding: 0.4rem 0;
+        }
+        .ticker-content {
             font-size: calc(var(--font-size-small) * 0.9);
         }
     }
