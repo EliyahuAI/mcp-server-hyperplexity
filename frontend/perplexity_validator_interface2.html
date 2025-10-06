@@ -783,22 +783,18 @@
 
     @keyframes thinkingPulse {
         0% {
-            background-color: #2DFF45;
             transform: translate(-50%, -50%) scale(1);
             box-shadow: 0 0 0px rgba(45, 255, 69, 0);
         }
         15% {
-            background-color: #00FF1D;
             transform: translate(-50%, -50%) scale(1.05);
             box-shadow: 0 0 4px rgba(45, 255, 69, 0.5);
         }
         45% {
-            background-color: #00FF1D;
             transform: translate(-50%, -50%) scale(1.02);
             box-shadow: 0 0 2px rgba(45, 255, 69, 0.3);
         }
         100% {
-            background-color: #2DFF45;
             transform: translate(-50%, -50%) scale(1);
             box-shadow: 0 0 0px rgba(45, 255, 69, 0);
         }
@@ -807,22 +803,18 @@
     /* Faster pulse when progress stalls */
     @keyframes thinkingPulseFast {
         0% {
-            background-color: #2DFF45;
             transform: translate(-50%, -50%) scale(1);
             box-shadow: 0 0 0px rgba(45, 255, 69, 0);
         }
         15% {
-            background-color: #00FF1D;
             transform: translate(-50%, -50%) scale(1.08);
             box-shadow: 0 0 6px rgba(45, 255, 69, 0.6);
         }
         45% {
-            background-color: #00FF1D;
             transform: translate(-50%, -50%) scale(1.04);
             box-shadow: 0 0 3px rgba(45, 255, 69, 0.4);
         }
         100% {
-            background-color: #2DFF45;
             transform: translate(-50%, -50%) scale(1);
             box-shadow: 0 0 0px rgba(45, 255, 69, 0);
         }
@@ -835,6 +827,16 @@
         }
         100% {
             transform: rotate(360deg);
+        }
+    }
+
+    /* Flip animation for wrapper - rotates on Y axis */
+    @keyframes flipWrapper {
+        0% {
+            transform: rotateY(0deg);
+        }
+        100% {
+            transform: rotateY(360deg);
         }
     }
 
@@ -854,6 +856,23 @@
 
     .progress-square-wrapper.spinning.stuck {
         animation: spinWrapper 1.2s ease-in-out;
+    }
+
+    /* Flip animation */
+    .thinking-square-wrapper.flipping {
+        animation: flipWrapper 0.8s ease-in-out;
+    }
+
+    .progress-square-wrapper.flipping {
+        animation: flipWrapper 0.8s ease-in-out;
+    }
+
+    /* Pause pulse animation during rotation/flip to prevent appearance of growing */
+    .thinking-square-wrapper.spinning .thinking-square,
+    .progress-square-wrapper.spinning .progress-square,
+    .thinking-square-wrapper.flipping .thinking-square,
+    .progress-square-wrapper.flipping .progress-square {
+        animation-play-state: paused;
     }
 
     /* Color pulse animations - softer transitions with gradient */
@@ -1061,7 +1080,7 @@
     .progress-square {
         width: 22.5px;
         height: 22.5px;
-        background-color: #2DFF45;
+        background-color: #2DFF45; /* Green default until confidence scores arrive */
         position: absolute;
         top: 50%;
         left: 50%;
@@ -1919,6 +1938,7 @@
                 activeCardId: null, // Track which card is currently processing (for ticker display)
                 tickerInterval: null, // Interval for cycling ticker messages
                 currentTickerIndex: 0, // Current message being displayed
+                currentConfidenceScore: null, // Track current confidence score (0-100) for progress color
                 currentValidationState: null, // Track if preview or full validation is running
                 isProcessingConfig: false, // Track if config generation/refinement is in progress
                 debounceTimers: new Map(), // Track debounce timers by function/card ID
@@ -2369,71 +2389,40 @@
 
                 state.intervals.push(stuckCheckInterval);
 
-                // Random color flashes (10% chance every 3 seconds)
-                const colorFlashInterval = setInterval(() => {
+                // Heartbeat speed up and flip animation (10% chance every 10 seconds)
+                const heartbeatFlipInterval = setInterval(() => {
                     const indicator = document.getElementById(`${cardId}-thinking`);
                     if (!indicator) {
-                        clearInterval(colorFlashInterval);
-                        return;
-                    }
-
-                    const square = indicator.querySelector('.thinking-square, .progress-square');
-                    if (!square) return;
-
-                    // 10% chance to flash a color
-                    if (Math.random() < 0.1) {
-                        const colors = ['pulsePurple', 'pulseOrange', 'pulseCyan', 'pulsePink'];
-                        const randomColor = colors[Math.floor(Math.random() * colors.length)];
-
-                        // Random number of beats (1-3)
-                        const numBeats = Math.floor(Math.random() * 3) + 1;
-                        const duration = numBeats * 1.2; // 1.2s per beat
-
-                        // Apply colored pulse animation
-                        square.style.animation = `${randomColor} 1.2s ease-in-out infinite`;
-
-                        // Restore green after specified beats with smooth transition
-                        setTimeout(() => {
-                            // Smoothly transition back to green
-                            square.style.animation = 'thinkingPulse 1.2s ease-in-out infinite';
-                        }, duration * 1000);
-                    }
-                }, 3000);
-
-                state.intervals.push(colorFlashInterval);
-
-                // Random spinning (15% chance every 8 seconds, more likely if stuck)
-                const spinInterval = setInterval(() => {
-                    const indicator = document.getElementById(`${cardId}-thinking`);
-                    if (!indicator) {
-                        clearInterval(spinInterval);
+                        clearInterval(heartbeatFlipInterval);
                         return;
                     }
 
                     const wrapper = indicator.querySelector('.progress-square-wrapper, .thinking-square-wrapper');
-                    if (!wrapper) return;
+                    const square = indicator.querySelector('.progress-square, .thinking-square');
+                    if (!wrapper || !square) return;
 
-                    // Higher chance to spin if stuck
-                    const spinChance = state.isStuck ? 0.3 : 0.15;
-
-                    if (Math.random() < spinChance) {
-                        wrapper.classList.add('spinning');
-
-                        // Add stuck class if currently stuck (for faster spin)
-                        if (state.isStuck) {
-                            wrapper.classList.add('stuck');
-                        }
-
-                        // Remove spinning class after animation completes
-                        // Normal: 3.6s, Stuck: 1.2s
-                        const spinDuration = state.isStuck ? 1200 : 3600;
+                    // 10% chance to trigger heartbeat speed up and flip sequence
+                    if (Math.random() < 0.1) {
+                        // Phase 1: Wait/anticipation - normal heartbeat continues (1s)
                         setTimeout(() => {
-                            wrapper.classList.remove('spinning', 'stuck');
-                        }, spinDuration);
-                    }
-                }, 8000);
+                            // Phase 2: Speed up heartbeat (faster pulse) - 1.5 seconds
+                            square.style.animation = 'thinkingPulseFast 0.6s infinite';
 
-                state.intervals.push(spinInterval);
+                            setTimeout(() => {
+                                // Phase 3: Flip wrapper while heartbeat continues fast - 0.8s
+                                wrapper.classList.add('flipping');
+
+                                setTimeout(() => {
+                                    // Phase 4: Calm down - return to normal heartbeat
+                                    square.style.animation = 'thinkingPulse 1.2s infinite';
+                                    wrapper.classList.remove('flipping');
+                                }, 800); // After flip completes
+                            }, 1500); // After heartbeat speeds up
+                        }, 1000); // Initial wait
+                    }
+                }, 10000);
+
+                state.intervals.push(heartbeatFlipInterval);
             }
 
             function stopDynamicAnimations(cardId) {
@@ -2579,6 +2568,39 @@
                 }
             }
 
+            function getConfidenceColor(confidenceScore) {
+                /**
+                 * Convert confidence score (0-100) to gradient color
+                 * null/undefined -> green (default until confidence arrives)
+                 * 0-50: red-yellow gradient
+                 * 50-100: yellow-green gradient
+                 */
+                if (confidenceScore === null || confidenceScore === undefined) {
+                    return '#2DFF45'; // Green default
+                }
+
+                // Clamp to 0-100 range
+                confidenceScore = Math.max(0, Math.min(100, confidenceScore));
+
+                let r, g, b;
+
+                if (confidenceScore <= 50) {
+                    // Red to Yellow gradient (0-50)
+                    const t = confidenceScore / 50; // 0 to 1
+                    r = 255;
+                    g = Math.round(255 * t); // 0 to 255
+                    b = 0;
+                } else {
+                    // Yellow to Green gradient (50-100)
+                    const t = (confidenceScore - 50) / 50; // 0 to 1
+                    r = Math.round(255 * (1 - t)); // 255 to 0
+                    g = 255;
+                    b = Math.round(69 * t); // 0 to 69 (matching #2DFF45)
+                }
+
+                return `rgb(${r}, ${g}, ${b})`;
+            }
+
             function updateThinkingProgress(cardId, progress, message = null) {
                 const indicator = document.getElementById(`${cardId}-thinking`);
                 if (!indicator || !indicator.classList.contains('with-progress')) return;
@@ -2617,9 +2639,10 @@
                         progressText.textContent = message;
                     }
 
-                    // Keep consistent green color throughout progress - batch with other updates
+                    // Apply confidence-based color (purple default until scores arrive)
                     requestAnimationFrame(() => {
-                        progressSquare.style.backgroundColor = '#2DFF45'; // Always green
+                        const color = getConfidenceColor(globalState.currentConfidenceScore);
+                        progressSquare.style.backgroundColor = color;
                     });
                 }
             }
@@ -2628,6 +2651,9 @@
                 // Stop any dummy progress and clean up progress tracking
                 stopDummyProgress(cardId);
                 cardCurrentProgress.delete(cardId);
+
+                // Reset confidence score for next validation (return to purple default)
+                globalState.currentConfidenceScore = null;
 
                 // Stop dynamic animations
                 stopDynamicAnimations(cardId);
@@ -4301,6 +4327,10 @@
 
                 if (isProgressType && hasProgress) {
 
+                    // Extract confidence score if present
+                    if (data.confidence_score !== undefined) {
+                        globalState.currentConfidenceScore = data.confidence_score;
+                    }
 
                     // Find the card with progress indicator and update it
                     for (const [cardId, handlerInfo] of cardHandlers) {
@@ -4420,12 +4450,44 @@
                     column: data.column || '',
                     final_value: data.final_value || '',
                     confidence_emoji: data.confidence_emoji || '🟢',
-                    timestamp: data.timestamp || new Date().toISOString()
+                    timestamp: data.timestamp || new Date().toISOString(),
+                    key: `${data.row_ids || ''}|${data.column || ''}`, // Unique key for deduplication
+                    seen: false // Track if message has been displayed
                 };
 
-                // Add to ticker messages (sorted by priority)
-                globalState.tickerMessages.push(tickerMessage);
-                globalState.tickerMessages.sort((a, b) => b.priority - a.priority);
+                // Deduplicate: check if message with same key already exists
+                const existingIndex = globalState.tickerMessages.findIndex(msg => msg.key === tickerMessage.key);
+
+                if (existingIndex !== -1) {
+                    // Message exists - replace if new one has higher priority or is more recent
+                    const existing = globalState.tickerMessages[existingIndex];
+                    if (tickerMessage.priority > existing.priority ||
+                        (tickerMessage.priority === existing.priority && tickerMessage.timestamp > existing.timestamp)) {
+                        console.log('[TICKER] Replacing existing message for', tickerMessage.key);
+                        // Preserve 'seen' status - if old message was seen, keep it seen
+                        tickerMessage.seen = existing.seen;
+                        globalState.tickerMessages[existingIndex] = tickerMessage;
+                    } else {
+                        console.log('[TICKER] Ignoring duplicate message for', tickerMessage.key);
+                    }
+                } else {
+                    // New message - add to queue
+                    globalState.tickerMessages.push(tickerMessage);
+                }
+
+                // Sort: unseen first, then by priority (high to low), then by timestamp (newest first)
+                globalState.tickerMessages.sort((a, b) => {
+                    // Unseen messages come first
+                    if (a.seen !== b.seen) {
+                        return a.seen ? 1 : -1;
+                    }
+                    // Within same seen status, sort by priority
+                    if (a.priority !== b.priority) {
+                        return b.priority - a.priority;
+                    }
+                    // Within same priority, sort by timestamp (newest first)
+                    return b.timestamp.localeCompare(a.timestamp);
+                });
 
                 // Keep only top 10 messages
                 if (globalState.tickerMessages.length > 10) {
@@ -4459,6 +4521,16 @@
                 }
             }
 
+            function isPortraitMode() {
+                // Check if device is in portrait orientation (matches CSS media query)
+                return window.innerWidth < 768 && window.matchMedia('(orientation: portrait)').matches;
+            }
+
+            function truncateTickerText(text, maxLength) {
+                if (text.length <= maxLength) return text;
+                return text.substring(0, maxLength - 3) + '...';
+            }
+
             function updateTickerDisplay(cardId) {
                 if (!cardId) return;
 
@@ -4480,11 +4552,24 @@
                 // Show current message from queue
                 const msg = globalState.tickerMessages[globalState.currentTickerIndex % globalState.tickerMessages.length];
 
-                // Add ? if column doesn't end with one
-                const column = msg.column.trim();
-                const columnWithQuestion = column.endsWith('?') ? column : column + '?';
+                // Mark this message as seen
+                if (!msg.seen) {
+                    msg.seen = true;
+                    console.log('[TICKER] Marked message as seen:', msg.key);
+                }
 
-                const displayText = `${msg.row_ids}, ${columnWithQuestion} ${msg.confidence_emoji} ${msg.final_value}`;
+                // Set character limits based on orientation
+                const isPortrait = isPortraitMode();
+                const maxRowIdsLength = isPortrait ? 40 : 80;
+                const maxColumnLength = isPortrait ? 30 : 60;
+                const maxValueLength = isPortrait ? 30 : 60;
+
+                // Truncate components
+                const rowIds = truncateTickerText(msg.row_ids, maxRowIdsLength);
+                const column = truncateTickerText(msg.column.trim(), maxColumnLength);
+                const finalValue = truncateTickerText(msg.final_value, maxValueLength);
+
+                const displayText = `${rowIds}, ${column}: ${msg.confidence_emoji} ${finalValue}`;
 
                 // Fade out
                 tickerContent.classList.remove('visible');

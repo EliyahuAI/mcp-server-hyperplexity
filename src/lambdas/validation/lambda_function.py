@@ -2209,7 +2209,7 @@ def progress_sender(progress_queue, session_id):
                 logger.debug("[PROGRESS_SENDER] Received sentinel, terminating.")
                 break
 
-            count, message, progress_percent = item
+            count, message, progress_percent, confidence_score = item
 
             # The final message has a count of float('inf')
             is_final_message = count == float('inf')
@@ -2222,7 +2222,7 @@ def progress_sender(progress_queue, session_id):
                 time.sleep(1.0)
 
                 # Drain the queue and get the latest AI call update
-                latest_item = (count, message, progress_percent)
+                latest_item = (count, message, progress_percent, confidence_score)
                 try:
                     while True:
                         newer_item = progress_queue.get_nowait()
@@ -2230,7 +2230,7 @@ def progress_sender(progress_queue, session_id):
                             # Put sentinel back for next iteration
                             progress_queue.put(None)
                             break
-                        newer_count, newer_message, newer_progress = newer_item
+                        newer_count, newer_message, newer_progress, newer_confidence = newer_item
                         if newer_count == float('inf'):
                             # Put final message back for next iteration
                             progress_queue.put(newer_item)
@@ -2247,15 +2247,15 @@ def progress_sender(progress_queue, session_id):
                 except queue.Empty:
                     pass
 
-                count, message, progress_percent = latest_item
-                logger.debug(f"[PROGRESS_SENDER] Batched AI call updates, sending: count={count}")
+                count, message, progress_percent, confidence_score = latest_item
+                logger.debug(f"[PROGRESS_SENDER] Batched AI call updates, sending: count={count} confidence_score={confidence_score}")
 
             if is_final_message or count > last_sent_count:
                 if not is_final_message:
                     last_sent_count = count
 
-                logger.debug(f"[PROGRESS_SENDER] Sending progress: count={count}, last_sent={last_sent_count}")
-                send_websocket_progress(session_id, message, progress_percent)
+                logger.debug(f"[PROGRESS_SENDER] Sending progress: count={count}, last_sent={last_sent_count}, confidence_score={confidence_score}")
+                send_websocket_progress(session_id, message, progress_percent, confidence_score)
             else:
                 logger.debug(f"[PROGRESS_SENDER] Skipping stale progress: count={count}, last_sent={last_sent_count}")
 
@@ -2264,9 +2264,9 @@ def progress_sender(progress_queue, session_id):
             logger.error(f"[PROGRESS_SENDER] Error in progress sender thread: {e}")
 
 
-def send_websocket_progress(session_id: str, message: str, progress: int = None):
-    """Send progress update via WebSocket"""
-    logger.debug(f"send_websocket_progress called: websocket_client={websocket_client is not None}, session_id={session_id}, message={message}, progress={progress}")
+def send_websocket_progress(session_id: str, message: str, progress: int = None, confidence_score: int = None):
+    """Send progress update via WebSocket with optional confidence score (0-100)"""
+    logger.debug(f"send_websocket_progress called: websocket_client={websocket_client is not None}, session_id={session_id}, message={message}, progress={progress}, confidence_score={confidence_score}")
 
     if websocket_client and session_id:
         try:
@@ -2278,20 +2278,44 @@ def send_websocket_progress(session_id: str, message: str, progress: int = None)
             }
             if progress is not None:
                 update_data['progress'] = progress
+            if confidence_score is not None:
+                update_data['confidence_score'] = confidence_score
 
             logger.debug(f"Sending data: {update_data}")
             result = websocket_client.send_to_session(session_id, update_data)
             logger.debug(f"Send result: {result}")
-            logger.debug(f"Sent WebSocket progress: {message} to session {session_id}")
+            logger.debug(f"Sent WebSocket progress: {message} to session {session_id} confidence={confidence_score}")
         except Exception as e:
             logger.debug(f"Failed to send WebSocket progress: {e}")
             logger.debug(f"Full traceback: {traceback.format_exc()}")
     else:
         logger.debug(f"Cannot send - websocket_client={websocket_client is not None}, session_id={session_id}")
 
-def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, completed_counter, progress_queue, continuation_count: int = 0):
-    """Puts an AI call progress update on the queue."""
-    logger.debug(f"report_ai_call_progress called: session_id={session_id}, total_expected={total_expected}, continuation={continuation_count}")
+def calculate_confidence_average(confidences: List[str]) -> int:
+    """
+    Calculate numeric average of confidence levels (0-100 scale).
+
+    Args:
+        confidences: List of confidence strings ('HIGH', 'MEDIUM', 'LOW')
+
+    Returns:
+        Average confidence on 0-100 scale (LOW=33, MEDIUM=66, HIGH=100)
+    """
+    if not confidences:
+        return None
+
+    # Map to 0-100 scale
+    confidence_map = {'HIGH': 100, 'MEDIUM': 66, 'LOW': 33}
+
+    # Convert to numbers and calculate average
+    numeric_values = [confidence_map.get(c.upper(), 66) for c in confidences]
+    average = sum(numeric_values) / len(numeric_values)
+
+    return int(round(average))
+
+def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, completed_counter, progress_queue, continuation_count: int = 0, confidence_score: int = None):
+    """Puts an AI call progress update on the queue with optional confidence score (0-100)."""
+    logger.debug(f"report_ai_call_progress called: session_id={session_id}, total_expected={total_expected}, continuation={continuation_count}, confidence_score={confidence_score}")
 
     if not session_id or total_expected <= 0 or progress_queue is None:
         return
@@ -2311,9 +2335,9 @@ def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, 
         message = f"AI call {current_count}/{total_expected} completed"
 
     try:
-        # Put the progress update on the queue
-        progress_queue.put((current_count, message, progress_percent))
-        logger.debug(f"[AI_PROGRESS] Queued progress update: {current_count}/{total_expected} (CHAIN-{continuation_count:02d})")
+        # Put the progress update on the queue with confidence score
+        progress_queue.put((current_count, message, progress_percent, confidence_score))
+        logger.debug(f"[AI_PROGRESS] Queued progress update: {current_count}/{total_expected} (CHAIN-{continuation_count:02d}) confidence_score={confidence_score}")
     except Exception as e:
         logger.error(f"[AI_PROGRESS] Failed to queue progress update: {e}")
 
@@ -2886,7 +2910,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.debug(f"Session ID for progress updates: {session_id}")
             progress_thread = threading.Thread(target=progress_sender, args=(progress_queue, session_id))
             progress_thread.start()
-            progress_queue.put((0, "Starting validation process...", 5))
+            progress_queue.put((0, "Starting validation process...", 5, None))
 
         # ========== ASYNC COORDINATION SYSTEM ==========
         # DynamoDB-based locking to ensure only ONE lambda processes this session at a time
@@ -3830,8 +3854,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if new_issues_found:
                         logger.warning(f"[TRACKER_UPDATE] New issues discovered: {new_issues_found} for group {group_id}")
 
-                logger.debug(f"[AI_PROGRESS] Calling report_ai_call_progress after group validation (row {row_idx}, group {group_id})")
-                report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number)
+                # Get average confidence score from this group's results
+                group_confidences = []
+                for target in targets:
+                    if target.column in row_results:
+                        conf = row_results[target.column].get('confidence_level', row_results[target.column].get('confidence', ''))
+                        if conf:
+                            group_confidences.append(conf.upper())
+
+                confidence_score = calculate_confidence_average(group_confidences) if group_confidences else None
+
+                logger.debug(f"[AI_PROGRESS] Calling report_ai_call_progress after group validation (row {row_idx}, group {group_id}) with confidence_score={confidence_score}")
+                report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number, confidence_score)
 
                 # Add this group's results to accumulated results for next groups
                 # Exclude ID fields from accumulated results since they are context only
@@ -3957,9 +3991,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         group_metadata=group_metadata
                     )
 
-                    # Report QC call progress
-                    logger.debug(f"[AI_PROGRESS] Calling report_ai_call_progress after QC (row {row_idx})")
-                    report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number)
+                    # Report QC call progress with average QC confidence score
+                    qc_confidences = []
+                    if qc_results_by_field:
+                        for field_name, qc_field_data in qc_results_by_field.items():
+                            if isinstance(qc_field_data, dict):
+                                qc_conf = qc_field_data.get('qc_confidence', '')
+                                if qc_conf:
+                                    qc_confidences.append(qc_conf.upper())
+                                    logger.debug(f"[QC_CONFIDENCE] Row {row_idx}, field {field_name}: qc_confidence={qc_conf}")
+
+                    qc_confidence_score = calculate_confidence_average(qc_confidences) if qc_confidences else None
+
+                    logger.info(f"[QC_CONFIDENCE_AVG] Row {row_idx}: qc_confidences={qc_confidences}, average={qc_confidence_score}")
+                    logger.debug(f"[AI_PROGRESS] Calling report_ai_call_progress after QC (row {row_idx}) with confidence_score={qc_confidence_score}")
+                    report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number, qc_confidence_score)
 
                     # Merge QC results into row_results
                     if qc_results_by_field:
@@ -5342,7 +5388,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Send final progress update
         if progress_thread:
             final_count = completed_ai_calls[0]
-            progress_queue.put((float('inf'), f"Validation completed! {final_count} AI calls processed", 100))
+            progress_queue.put((float('inf'), f"Validation completed! {final_count} AI calls processed", 100, None))
 
         # ========== SAVE CUMULATIVE RESULTS TO S3 ==========
         # Always save complete cumulative results for async processing
