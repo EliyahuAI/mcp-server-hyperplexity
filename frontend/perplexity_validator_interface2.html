@@ -876,6 +876,68 @@
         animation-play-state: paused;
     }
 
+    /* Progress bar start/end animations */
+    @keyframes progressTrackGrow {
+        0% {
+            transform: scaleX(0);
+            opacity: 0;
+        }
+        100% {
+            transform: scaleX(1);
+            opacity: 1;
+        }
+    }
+
+    @keyframes progressSquareGrow {
+        0% {
+            transform: scale(0);
+            opacity: 0;
+        }
+        100% {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
+    @keyframes progressTrackShrink {
+        0% {
+            transform: scaleX(1);
+            opacity: 1;
+        }
+        100% {
+            transform: scaleX(0);
+            opacity: 0;
+        }
+    }
+
+    @keyframes progressSquareShrink {
+        0% {
+            transform: scale(1);
+            opacity: 1;
+        }
+        100% {
+            transform: scale(0);
+            opacity: 0;
+        }
+    }
+
+    .progress-track.growing {
+        animation: progressTrackGrow 0.5s ease-out forwards;
+    }
+
+    .progress-square-wrapper.growing {
+        animation: progressSquareGrow 0.5s ease-out 0.5s forwards;
+        opacity: 0; /* Start hidden until animation starts */
+    }
+
+    .progress-track.shrinking {
+        animation: progressTrackShrink 0.5s ease-in 0.5s forwards;
+    }
+
+    .progress-square-wrapper.shrinking {
+        animation: progressSquareShrink 0.5s ease-in forwards;
+    }
+
     /* Color pulse animations - softer transitions with gradient */
     @keyframes pulsePurple {
         0% {
@@ -1043,6 +1105,7 @@
         position: relative;
         margin: 0 auto 5px auto; /* Less margin since text is below */
         box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+        transform-origin: center center;
     }
 
     .progress-track::before,
@@ -2337,6 +2400,14 @@
                     wrapper.classList.remove('error');
                 }
 
+                // Trigger progress bar grow animation if this has progress
+                if (withProgress) {
+                    const track = indicator.querySelector('.progress-track');
+                    const progressWrapper = indicator.querySelector('.progress-square-wrapper');
+                    if (track) track.classList.add('growing');
+                    if (progressWrapper) progressWrapper.classList.add('growing');
+                }
+
                 // Animate in
                 setTimeout(() => {
                     indicator.classList.add('active');
@@ -2678,6 +2749,7 @@
                     // Play appropriate animation
                     const square = indicator.querySelector('.thinking-square, .progress-square');
                     const wrapper = indicator.querySelector('.progress-square-wrapper');
+                    const track = indicator.querySelector('.progress-track');
 
                     if (square) {
                         if (isError) {
@@ -2690,6 +2762,12 @@
                                 updateThinkingProgress(cardId, 100);
                                 setTimeout(() => {
                                     square.style.animation = 'thinkingComplete 0.6s 1';
+
+                                    // Trigger progress bar shrink animation after completion
+                                    setTimeout(() => {
+                                        if (wrapper) wrapper.classList.add('shrinking');
+                                        if (track) track.classList.add('shrinking');
+                                    }, 600); // After completion animation
                                 }, 300);
                             } else {
                                 square.style.animation = 'thinkingComplete 0.6s 1';
@@ -2697,13 +2775,14 @@
                         }
                     }
 
-                    // Hide after delay
+                    // Hide after delay (extended if progress bar to allow shrink animation)
+                    const totalDelay = indicator.classList.contains('with-progress') && !isError ? hideDelay + 1000 : hideDelay;
                     setTimeout(() => {
                         indicator.classList.remove('active');
                         setTimeout(() => {
                             indicator.remove();
                         }, 300);
-                    }, hideDelay);
+                    }, totalDelay);
                 }
             }
 
