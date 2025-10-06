@@ -1681,18 +1681,18 @@
         }
     }
 
-    /* Ticker Row Styles */
-    .ticker-container {
+    /* Ticker Row Styles (inside progress card) */
+    .ticker-row {
         background: linear-gradient(90deg, #f0f0f0 0%, #ffffff 50%, #f0f0f0 100%);
+        border-top: 1px solid #ddd;
         border-bottom: 2px solid #4CAF50;
-        padding: 0.75rem 1rem;
-        margin: 0 -1rem 1rem -1rem;
+        padding: 0.5rem 1rem;
+        margin-top: 0.75rem;
         overflow: hidden;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        font-size: var(--font-size-small);
     }
 
     .ticker-content {
-        font-size: var(--font-size-small);
         color: var(--text-color);
         white-space: nowrap;
         animation: ticker-scroll 20s linear infinite;
@@ -1712,9 +1712,9 @@
     }
 
     @media (max-width: 768px) {
-        .ticker-container {
-            padding: 0.5rem 0.75rem;
-            margin: 0 -0.75rem 0.75rem -0.75rem;
+        .ticker-row {
+            padding: 0.4rem 0.75rem;
+            font-size: calc(var(--font-size-small) * 0.9);
         }
     }
 
@@ -1722,11 +1722,6 @@
 </head>
 <body>
     <div class="validator-container">
-
-        <!-- Ticker Row for High-Priority Updates -->
-        <div id="tickerContainer" class="ticker-container" style="display: none;">
-            <div class="ticker-content" id="tickerContent"></div>
-        </div>
 
         <!-- Dynamic card container -->
         <div id="cardContainer"></div>
@@ -1909,7 +1904,7 @@
                 configStored: false, // Track if config has been stored
                 hasInsufficientBalance: false, // Track when user has insufficient balance
                 tickerMessages: [], // Priority queue for ticker messages
-                tickerVisible: false, // Whether ticker is currently visible
+                activeCardId: null, // Track which card is currently processing (for ticker display)
                 currentValidationState: null, // Track if preview or full validation is running
                 isProcessingConfig: false, // Track if config generation/refinement is in progress
                 debounceTimers: new Map(), // Track debounce timers by function/card ID
@@ -2256,7 +2251,7 @@
                 const indicator = document.createElement('div');
                 indicator.className = withProgress ? 'thinking-indicator with-progress' : 'thinking-indicator';
                 indicator.id = `${cardId}-thinking`;
-                
+
                 if (withProgress) {
                     indicator.innerHTML = `
                         <div class="thinking-text">${message}</div>
@@ -2266,6 +2261,9 @@
                             </div>
                         </div>
                         <div class="progress-text">${message}</div>
+                        <div class="ticker-row" id="${cardId}-ticker" style="display: none;">
+                            <div class="ticker-content" id="${cardId}-ticker-content"></div>
+                        </div>
                     `;
                 } else {
                     indicator.innerHTML = `
@@ -2273,6 +2271,9 @@
                             <div class="thinking-square"></div>
                         </div>
                         <div class="thinking-text">${message}</div>
+                        <div class="ticker-row" id="${cardId}-ticker" style="display: none;">
+                            <div class="ticker-content" id="${cardId}-ticker-content"></div>
+                        </div>
                     `;
                 }
                 return indicator;
@@ -4418,22 +4419,20 @@
                 }
 
                 console.log('[TICKER] Queue now has', globalState.tickerMessages.length, 'messages');
+                console.log('[TICKER] Active card:', globalState.activeCardId);
 
-                // Update ticker display
-                updateTickerDisplay();
-
-                // Show ticker if validation is running
-                console.log('[TICKER] Current validation state:', globalState.currentValidationState);
-                console.log('[TICKER] Checking: is preview?', globalState.currentValidationState === 'preview', 'is full?', globalState.currentValidationState === 'full');
-
-                // ALWAYS show ticker when importance 4-5 messages arrive (regardless of state)
-                // The backend only sends these during validation anyway
-                showTicker();
+                // Update ticker display for active card
+                if (globalState.activeCardId) {
+                    updateTickerDisplay(globalState.activeCardId);
+                    showTicker(globalState.activeCardId);
+                }
             }
 
-            function updateTickerDisplay() {
-                const tickerContent = document.getElementById('tickerContent');
-                console.log('[TICKER] updateTickerDisplay - content element exists:', !!tickerContent, 'messages:', globalState.tickerMessages.length);
+            function updateTickerDisplay(cardId) {
+                if (!cardId) return;
+
+                const tickerContent = document.getElementById(`${cardId}-ticker-content`);
+                console.log('[TICKER] updateTickerDisplay for card:', cardId, 'element exists:', !!tickerContent, 'messages:', globalState.tickerMessages.length);
 
                 if (!tickerContent || globalState.tickerMessages.length === 0) {
                     console.log('[TICKER] Cannot update display - no content element or no messages');
@@ -4455,24 +4454,24 @@
                 console.log('[TICKER] Updated display with text:', displayText.substring(0, 100) + '...');
             }
 
-            function showTicker() {
-                const tickerContainer = document.getElementById('tickerContainer');
-                console.log('[TICKER] showTicker called - container exists:', !!tickerContainer, 'already visible:', globalState.tickerVisible);
-                if (tickerContainer && !globalState.tickerVisible) {
-                    tickerContainer.style.display = 'block';
-                    globalState.tickerVisible = true;
-                    console.log('[TICKER] Ticker is now visible');
+            function showTicker(cardId) {
+                if (!cardId) return;
+
+                const tickerRow = document.getElementById(`${cardId}-ticker`);
+                console.log('[TICKER] showTicker called for card:', cardId, 'element exists:', !!tickerRow);
+                if (tickerRow && tickerRow.style.display === 'none') {
+                    tickerRow.style.display = 'block';
+                    console.log('[TICKER] Ticker is now visible for card:', cardId);
                 }
             }
 
-            function hideTicker() {
-                const tickerContainer = document.getElementById('tickerContainer');
-                if (tickerContainer && globalState.tickerVisible) {
-                    tickerContainer.style.display = 'none';
-                    globalState.tickerVisible = false;
-                    // Clear messages when hiding
-                    globalState.tickerMessages = [];
-                    updateTickerDisplay();
+            function hideTicker(cardId) {
+                if (!cardId) return;
+
+                const tickerRow = document.getElementById(`${cardId}-ticker`);
+                if (tickerRow) {
+                    tickerRow.style.display = 'none';
+                    console.log('[TICKER] Ticker hidden for card:', cardId);
                 }
             }
 
@@ -4577,10 +4576,10 @@
             function handleProcessingWebSocketMessage(data, cardId) {
 
                 if (data.status === 'PROCESSING') {
-                    // Show ticker when validation processing starts
-                    console.log('[TICKER] Setting validation state to FULL');
+                    // Set this card as active for ticker display
+                    console.log('[TICKER] Setting active card to:', cardId);
+                    globalState.activeCardId = cardId;
                     globalState.currentValidationState = 'full';
-                    showTicker();
 
                     let message = data.verbose_status || 'Processing...';
 
@@ -4601,10 +4600,14 @@
                     // Progress routed to card level;
 
                 } else if (data.status === 'COMPLETED') {
-                    // Hide ticker when validation completes
-                    console.log('[TICKER] Setting validation state to NULL (completed)');
+                    // Clear ticker and active card when validation completes
+                    console.log('[TICKER] Clearing active card and hiding ticker');
                     globalState.currentValidationState = null;
-                    hideTicker();
+                    hideTicker(cardId);
+                    globalState.tickerMessages = []; // Clear messages
+                    if (globalState.activeCardId === cardId) {
+                        globalState.activeCardId = null;
+                    }
                     // Store completion data for download
                     globalState.completionData = data;
 
@@ -8164,10 +8167,10 @@ Please provide any additional context, or simply proceed to generate your initia
             function handlePreviewWebSocketMessage(data, cardId) {
 
                 if (data.status === 'PROCESSING') {
-                    // Show ticker when preview starts
-                    console.log('[TICKER] Setting validation state to PREVIEW');
+                    // Set this card as active for ticker display
+                    console.log('[TICKER] Setting active card to:', cardId);
+                    globalState.activeCardId = cardId;
                     globalState.currentValidationState = 'preview';
-                    showTicker();
 
                     const message = data.verbose_status || 'Processing...';
                     // Update both text and progress if we have percent_complete
@@ -8178,10 +8181,14 @@ Please provide any additional context, or simply proceed to generate your initia
                     }
                     // Progress routed to card level;
                 } else if (data.status === 'COMPLETED') {
-                    // Hide ticker when preview completes
-                    console.log('[TICKER] Setting validation state to NULL (preview completed)');
+                    // Clear ticker and active card when preview completes
+                    console.log('[TICKER] Clearing active card and hiding ticker');
                     globalState.currentValidationState = null;
-                    hideTicker();
+                    hideTicker(cardId);
+                    globalState.tickerMessages = []; // Clear messages
+                    if (globalState.activeCardId === cardId) {
+                        globalState.activeCardId = null;
+                    }
                     // First update to 100% if we have a progress bar
                     const indicator = document.getElementById(`${cardId}-thinking`);
                     if (indicator && indicator.classList.contains('with-progress')) {
