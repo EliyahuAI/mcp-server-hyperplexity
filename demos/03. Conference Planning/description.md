@@ -1,3 +1,3 @@
-# Conference Planning
+# Plan Conference Attendance
 
-Gather comprehensive details about upcoming conferences in the AI space.
+Gather comprehensive details about upcoming AI conferences for strategic planning.

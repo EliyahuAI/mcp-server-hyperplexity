@@ -35,7 +35,6 @@ def get_qc_enhanced_detail_headers(id_fields: List[str]) -> List[str]:
         "QC Action",
         "QC Reasoning",
         "Update Importance",
-        "Update Importance Explanation",
         "Final Confidence",
         "Original Confidence",
         "Quote",
@@ -88,7 +87,6 @@ def format_qc_result_for_excel(
         'qc_action': 'Comprehensive QC',  # Since all fields now get full QC
         'qc_reasoning': merged_qc_result.get('qc_reasoning', ''),
         'update_importance': merged_qc_result.get('update_importance', '0'),
-        'update_importance_explanation': merged_qc_result.get('update_importance_explanation', ''),
         'final_confidence': final_confidence,
         'original_confidence': merged_qc_result.get('original_confidence', ''),
         'quote': merged_qc_result.get('updated_reasoning', ''),
@@ -118,8 +116,7 @@ def get_qc_enhanced_column_widths() -> List[int]:
         12,  # QC Applied
         20,  # QC Action
         50,  # QC Reasoning
-        18,  # Update Importance
-        50,  # Update Importance Explanation
+        50,  # Update Importance
         15,  # Final Confidence
         15,  # Original Confidence
         50,  # Quote
@@ -207,8 +204,6 @@ def write_qc_enhanced_detail_row(
     worksheet.write(row_num, col_idx, formatted_result.get('qc_reasoning', ''))
     col_idx += 1
     worksheet.write(row_num, col_idx, formatted_result.get('update_importance', '0'))
-    col_idx += 1
-    worksheet.write(row_num, col_idx, formatted_result.get('update_importance_explanation', ''))
     col_idx += 1
     worksheet.write(row_num, col_idx, formatted_result.get('final_confidence', ''))
     col_idx += 1

@@ -1,3 +1,3 @@
-# Investment Research
+# Track Investment Opportunities
 
-Monitor stocks for latest news, projections, and investment recommendations. 
+Follow latest news, projections, and investment recommendations for portfolio stocks.

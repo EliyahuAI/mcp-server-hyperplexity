@@ -182,22 +182,37 @@ class DemoValidator:
             # Parse metadata from markdown (simple format)
             desc_data = {'description': content}
 
-            # Look for title/display name in first heading
+            # Look for title/display name in first heading or bold text
             lines = content.split('\n')
             for line in lines:
                 if line.startswith('# '):
                     desc_data['display_name'] = line[2:].strip()
                     break
+                elif line.strip().startswith('**') and line.strip().endswith('**'):
+                    # Handle **Title** format
+                    desc_data['display_name'] = line.strip()[2:-2].strip()
+                    break
 
-            # Extract description (everything after first heading or full content)
+            # Extract description (only first paragraph after heading/title)
             desc_lines = []
             skip_first_heading = False
+            in_first_paragraph = False
+
             for line in lines:
-                if line.startswith('# ') and not skip_first_heading:
+                # Skip heading line (either # or **)
+                if (line.startswith('# ') or (line.strip().startswith('**') and line.strip().endswith('**'))) and not skip_first_heading:
                     skip_first_heading = True
                     continue
-                if skip_first_heading or not line.startswith('# '):
-                    desc_lines.append(line)
+
+                if skip_first_heading:
+                    # Start collecting the first paragraph
+                    if line.strip():  # Non-empty line
+                        if not in_first_paragraph:
+                            in_first_paragraph = True
+                        desc_lines.append(line)
+                    elif in_first_paragraph:
+                        # Empty line after paragraph content - stop here
+                        break
 
             if desc_lines:
                 desc_data['description'] = '\n'.join(desc_lines).strip()

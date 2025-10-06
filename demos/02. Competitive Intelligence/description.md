@@ -1,3 +1,3 @@
-# Competitive Intelligence
+# Gather Competitive Intelligence
 
-Survey a dynamic landscape for pharmaceutical products for new developments. 
+Scan the pharmaceutical industry for competitive product developments and market shifts.

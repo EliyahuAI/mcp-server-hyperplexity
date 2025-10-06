@@ -108,21 +108,36 @@ def get_demo_metadata(bucket_name: str, demo_name: str) -> Optional[Dict]:
 
         if description_content:
             lines = description_content.strip().split('\n')
-            # Look for title in first heading
+            # Look for title in first heading or bold text
             for line in lines:
                 if line.startswith('# '):
                     display_name = line[2:].strip()
                     break
+                elif line.strip().startswith('**') and line.strip().endswith('**'):
+                    # Handle **Title** format
+                    display_name = line.strip()[2:-2].strip()
+                    break
 
-            # Get description (everything after first heading or full content)
+            # Get description (only first paragraph after heading/title)
             desc_lines = []
             skip_first_heading = False
+            in_first_paragraph = False
+
             for line in lines:
-                if line.startswith('# ') and not skip_first_heading:
+                # Skip heading line (either # or **)
+                if (line.startswith('# ') or (line.strip().startswith('**') and line.strip().endswith('**'))) and not skip_first_heading:
                     skip_first_heading = True
                     continue
-                if skip_first_heading or not line.startswith('# '):
-                    desc_lines.append(line)
+
+                if skip_first_heading:
+                    # Start collecting the first paragraph
+                    if line.strip():  # Non-empty line
+                        if not in_first_paragraph:
+                            in_first_paragraph = True
+                        desc_lines.append(line)
+                    elif in_first_paragraph:
+                        # Empty line after paragraph content - stop here
+                        break
 
             if desc_lines:
                 description = '\n'.join(desc_lines).strip()

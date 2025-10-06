@@ -43,13 +43,14 @@ The `description.md` file should follow this format:
 
 Brief description of what this demo validates and what users can learn from it.
 
-Can include multiple paragraphs explaining:
-- What type of data is included
-- What validation rules are applied
-- What insights users can gain
+This second paragraph will be ignored.
+Only the first paragraph after the heading is used.
 ```
 
-The first heading (`# ...`) becomes the display name in the UI. The rest becomes the description.
+**Important**:
+- The first heading (`# ...`) becomes the display name in the UI
+- Only the **first paragraph** after the heading is used as the description
+- Any subsequent paragraphs (after a blank line) are ignored
 
 ## Setting Up Demos
 
