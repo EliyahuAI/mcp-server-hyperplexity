@@ -2484,21 +2484,17 @@
 
                     // 50% chance to trigger heartbeat speed up and flip sequence
                     if (Math.random() < 0.5) {
-                        console.log('[FLIP] Starting flip animation sequence');
                         // Phase 1: Wait/anticipation - normal heartbeat continues (0.5s)
                         setTimeout(() => {
                             // Phase 2: Speed up heartbeat (faster pulse) - 0.8 seconds
-                            console.log('[FLIP] Phase 2: Speeding up heartbeat');
                             square.classList.add('fast-heartbeat');
 
                             setTimeout(() => {
                                 // Phase 3: Flip wrapper while heartbeat continues fast - 0.8s
-                                console.log('[FLIP] Phase 3: Flipping');
                                 wrapper.classList.add('flipping');
 
                                 setTimeout(() => {
                                     // Phase 4: Calm down - return to normal heartbeat
-                                    console.log('[FLIP] Phase 4: Calming down');
                                     square.classList.remove('fast-heartbeat');
                                     wrapper.classList.remove('flipping');
                                 }, 800); // After flip completes
@@ -2661,7 +2657,6 @@
                  * 50-100: yellow-green gradient
                  */
                 if (confidenceScore === null || confidenceScore === undefined) {
-                    console.log('[CONFIDENCE] Using default green (no score)');
                     return '#2DFF45'; // Green default
                 }
 
@@ -2684,9 +2679,7 @@
                     b = Math.round(69 * t); // 0 to 69 (matching #2DFF45)
                 }
 
-                const color = `rgb(${r}, ${g}, ${b})`;
-                console.log(`[CONFIDENCE] Score ${confidenceScore} -> Color ${color}`);
-                return color;
+                return `rgb(${r}, ${g}, ${b})`;
             }
 
             function updateThinkingProgress(cardId, progress, message = null) {
@@ -4376,7 +4369,6 @@
 
                 // Handle ticker updates
                 if (data.type === 'ticker_update') {
-                    console.log('[TICKER] Intercepted ticker_update in routeMessage - NOT routing to handlers');
                     handleTickerUpdate(data);
                     return; // Ticker updates don't need routing to card handlers
                 }
@@ -4434,8 +4426,6 @@
                         const runningAverage = Math.round(sum / globalState.confidenceScores.length);
 
                         globalState.currentConfidenceScore = runningAverage;
-                        console.log('[CONFIDENCE] Received:', data.confidence_score, '| Running avg:', runningAverage,
-                                    '(based on', globalState.confidenceScores.length, 'scores) | Message:', data.message);
                     }
 
                     // Find the card with progress indicator and update it
@@ -4548,8 +4538,6 @@
 
             function handleTickerUpdate(data) {
                 // Handle ticker_update WebSocket messages
-                console.log('[TICKER] Received ticker update:', data);
-
                 const tickerMessage = {
                     priority: data.priority || 4,
                     row_ids: data.row_ids || '',
@@ -4569,12 +4557,9 @@
                     const existing = globalState.tickerMessages[existingIndex];
                     if (tickerMessage.priority > existing.priority ||
                         (tickerMessage.priority === existing.priority && tickerMessage.timestamp > existing.timestamp)) {
-                        console.log('[TICKER] Replacing existing message for', tickerMessage.key);
                         // Preserve 'seen' status - if old message was seen, keep it seen
                         tickerMessage.seen = existing.seen;
                         globalState.tickerMessages[existingIndex] = tickerMessage;
-                    } else {
-                        console.log('[TICKER] Ignoring duplicate message for', tickerMessage.key);
                     }
                 } else {
                     // New message - add to queue
@@ -4600,19 +4585,14 @@
                     globalState.tickerMessages = globalState.tickerMessages.slice(0, 10);
                 }
 
-                console.log('[TICKER] Queue now has', globalState.tickerMessages.length, 'messages');
-                console.log('[TICKER] Active card from state:', globalState.activeCardId);
-
                 // Find active card (one with visible thinking indicator)
                 let cardId = globalState.activeCardId;
                 if (!cardId) {
                     // Find card with visible thinking indicator
                     const allThinkingIndicators = document.querySelectorAll('.thinking-indicator');
-                    console.log('[TICKER] Found', allThinkingIndicators.length, 'thinking indicators');
                     for (const indicator of allThinkingIndicators) {
                         if (indicator.offsetParent !== null) { // visible
                             cardId = indicator.id.replace('-thinking', '');
-                            console.log('[TICKER] Found visible indicator, card:', cardId);
                             break;
                         }
                     }
@@ -4620,10 +4600,7 @@
 
                 // Update ticker display for active card
                 if (cardId) {
-                    console.log('[TICKER] Updating ticker for card:', cardId);
                     showTicker(cardId);
-                } else {
-                    console.log('[TICKER] No active card found!');
                 }
             }
 
@@ -4641,10 +4618,8 @@
                 if (!cardId) return;
 
                 const tickerContent = document.getElementById(`${cardId}-ticker-content`);
-                console.log('[TICKER] updateTickerDisplay for card:', cardId, 'element exists:', !!tickerContent, 'messages:', globalState.tickerMessages.length);
 
                 if (!tickerContent) {
-                    console.log('[TICKER] Cannot update display - no content element');
                     return;
                 }
 
@@ -4661,7 +4636,6 @@
                 // Mark this message as seen
                 if (!msg.seen) {
                     msg.seen = true;
-                    console.log('[TICKER] Marked message as seen:', msg.key);
                 }
 
                 // Set character limits based on orientation
@@ -4684,7 +4658,6 @@
                 setTimeout(() => {
                     tickerContent.textContent = displayText;
                     tickerContent.classList.add('visible');
-                    console.log('[TICKER] Showing message', globalState.currentTickerIndex + 1, 'of', globalState.tickerMessages.length, ':', displayText.substring(0, 80));
                 }, 500); // Match CSS transition duration
             }
 
@@ -4709,10 +4682,6 @@
                         globalState.currentTickerIndex++;
                         updateTickerDisplay(cardId);
                     }, 3500);
-
-                    console.log('[TICKER] Started ticker cycle with', globalState.tickerMessages.length, 'messages');
-                } else {
-                    console.log('[TICKER] Only 1 message, not cycling');
                 }
             }
 
@@ -4720,7 +4689,6 @@
                 if (globalState.tickerInterval) {
                     clearInterval(globalState.tickerInterval);
                     globalState.tickerInterval = null;
-                    console.log('[TICKER] Stopped ticker cycle');
                 }
             }
 
@@ -4728,10 +4696,8 @@
                 if (!cardId) return;
 
                 const tickerRow = document.getElementById(`${cardId}-ticker`);
-                console.log('[TICKER] showTicker called for card:', cardId, 'element exists:', !!tickerRow);
                 if (tickerRow && tickerRow.style.display === 'none') {
                     tickerRow.style.display = 'block';
-                    console.log('[TICKER] Ticker is now visible for card:', cardId);
                 }
 
                 // Start or restart cycling based on message count
@@ -4756,7 +4722,6 @@
                 const tickerRow = document.getElementById(`${cardId}-ticker`);
                 if (tickerRow) {
                     tickerRow.style.display = 'none';
-                    console.log('[TICKER] Ticker hidden for card:', cardId);
                 }
             }
 
@@ -4862,7 +4827,6 @@
 
                 if (data.status === 'PROCESSING') {
                     // Set this card as active for ticker display
-                    console.log('[TICKER] Setting active card to:', cardId);
                     globalState.activeCardId = cardId;
                     globalState.currentValidationState = 'full';
 
@@ -4890,7 +4854,6 @@
 
                 } else if (data.status === 'COMPLETED') {
                     // Hide ticker but KEEP messages for next validation
-                    console.log('[TICKER] Validation completed - hiding ticker but keeping messages');
                     globalState.currentValidationState = null;
                     hideTicker(cardId);
                     // DON'T clear messages - keep them for full validation after preview
@@ -8465,7 +8428,6 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 if (data.status === 'PROCESSING') {
                     // Set this card as active for ticker display
-                    console.log('[TICKER] Setting active card to:', cardId);
                     globalState.activeCardId = cardId;
                     globalState.currentValidationState = 'preview';
 
@@ -8483,7 +8445,6 @@ Please provide any additional context, or simply proceed to generate your initia
                     // Progress routed to card level;
                 } else if (data.status === 'COMPLETED') {
                     // Hide ticker but KEEP messages for full validation
-                    console.log('[TICKER] Preview completed - hiding ticker but keeping messages for full validation');
                     globalState.currentValidationState = null;
                     hideTicker(cardId);
                     // DON'T clear messages - keep them for full validation
