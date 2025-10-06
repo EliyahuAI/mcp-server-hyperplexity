@@ -3855,18 +3855,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     if new_issues_found:
                         logger.warning(f"[TRACKER_UPDATE] New issues discovered: {new_issues_found} for group {group_id}")
 
-                # Get average confidence score from this group's results
-                group_confidences = []
-                for target in targets:
-                    if target.column in row_results:
-                        conf = row_results[target.column].get('confidence_level', row_results[target.column].get('confidence', ''))
-                        if conf:
-                            group_confidences.append(conf.upper())
-
-                confidence_score = calculate_confidence_average(group_confidences) if group_confidences else None
-
-                logger.debug(f"[AI_PROGRESS] Calling report_ai_call_progress after group validation (row {row_idx}, group {group_id}) with confidence_score={confidence_score}")
-                report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number, confidence_score)
+                # Don't send confidence score for validation calls - only QC confidence matters
+                # (Validation confidence is preliminary and will be overridden by QC)
+                logger.debug(f"[AI_PROGRESS] Calling report_ai_call_progress after group validation (row {row_idx}, group {group_id}) - no confidence sent (QC only)")
+                report_ai_call_progress(session_id, total_expected_ai_calls, ai_call_counter_lock, completed_ai_calls, progress_queue, current_continuation_number, None)
 
                 # Add this group's results to accumulated results for next groups
                 # Exclude ID fields from accumulated results since they are context only
