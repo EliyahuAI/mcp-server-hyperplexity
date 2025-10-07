@@ -3159,21 +3159,34 @@
                 `;
                 previewContent.innerHTML += actionsHtml;
 
+                // Calculate cost values ONCE before display and button logic to ensure consistency
+                const estimatedCost = previewData.cost_estimates ? (previewData.cost_estimates.quoted_validation_cost || previewData.cost_estimates.quoted_full_cost) : 0;
+                const discount = previewData.cost_estimates?.discount || previewData.discount || 0;
+                const effectiveCost = previewData.cost_estimates?.effective_cost !== undefined
+                    ? previewData.cost_estimates.effective_cost
+                    : Math.max(0, estimatedCost - discount);
+                const accountInfo = previewData.account_info;
+                const currentBalance = accountInfo?.current_balance || 0;
+                // TRUST THE BACKEND - use its balance calculations, don't recalculate
+                const sufficientBalance = accountInfo?.sufficient_balance ?? true;
+                const creditsNeeded = accountInfo?.credits_needed || 0;
+
+                // Store in global state for later use
+                globalState.estimatedCost = estimatedCost;
+                globalState.discount = discount;
+                globalState.effectiveCost = effectiveCost;
+                globalState.accountInfo = accountInfo;
+
                 // Show cost estimates
                 if (previewData.cost_estimates && previewData.validation_metrics) {
                     const costEl = document.getElementById(`${cardId}-cost-estimate`);
                     const estimatesEl = document.getElementById(`${cardId}-estimates`);
-                    
+
                     if (costEl && estimatesEl) {
                         costEl.style.display = 'block';
-                        
+
                         const metrics = previewData.validation_metrics;
                         const totalRows = previewData.total_rows || 0;
-                        
-                        // DEBUG: Log cost estimates to identify field name issue
-                        
-                        // Fix field name mismatch: backend uses quoted_validation_cost, frontend was looking for quoted_full_cost
-                        const estimatedCost = previewData.cost_estimates.quoted_validation_cost || previewData.cost_estimates.quoted_full_cost || 0;
                         const estimatedTime = previewData.cost_estimates.estimated_validation_time || 0;
                         
                         let estimatesHtml = '';
@@ -3201,12 +3214,7 @@
                         
                         estimatesHtml += `<div class="cost-item"><span class="cost-label">Est. Time</span><span class="cost-value">${Math.ceil(estimatedTime / 60)} min</span></div>`;
 
-                        // Display cost with discount if applicable
-                        const discount = previewData.cost_estimates.discount || previewData.discount || 0;
-                        const effectiveCost = previewData.cost_estimates.effective_cost !== undefined
-                            ? previewData.cost_estimates.effective_cost
-                            : Math.max(0, estimatedCost - discount);
-
+                        // Display cost with discount if applicable (using pre-calculated values)
                         if (discount > 0) {
                             estimatesHtml += `<div class="cost-item"><span class="cost-label">Cost → Discounted</span><span class="cost-value"><span style="text-decoration: line-through; color: #999;">$${estimatedCost.toFixed(2)}</span> → $${effectiveCost.toFixed(2)}</span></div>`;
                         } else {
@@ -3215,14 +3223,8 @@
                         
                         // Domain multiplier is hidden from frontend display
                         
-                        // Add account balance information if available
-                        if (previewData.account_info) {
-                            const accountInfo = previewData.account_info;
-                            const currentBalance = accountInfo.current_balance || 0;
-                            // Use effective cost (after discount) for balance checks, not gross cost
-                            const sufficientBalance = currentBalance >= effectiveCost;
-                            const creditsNeeded = Math.max(0, effectiveCost - currentBalance);
-
+                        // Add account balance information if available (using pre-calculated values)
+                        if (accountInfo) {
                             estimatesHtml += `<hr style="margin: 10px 0; border: none; border-top: 1px solid #eee;">`;
                             estimatesHtml += `<div class="cost-item"><span class="cost-label">Your Balance</span><span class="cost-value">$${currentBalance.toFixed(2)}</span></div>`;
 
@@ -3230,30 +3232,15 @@
                                 estimatesHtml += `<div class="cost-item"><span class="cost-label" style="color: #f44336;">Credits Needed</span><span class="cost-value" style="color: #f44336;">$${creditsNeeded.toFixed(2)}</span></div>`;
                             }
                         }
-                        
-                        estimatesEl.innerHTML = estimatesHtml;
 
-                        // Store cost and balance info for button logic
-                        globalState.estimatedCost = estimatedCost;
-                        globalState.discount = discount;
-                        globalState.effectiveCost = effectiveCost;
-                        globalState.accountInfo = previewData.account_info || null;
+                        estimatesEl.innerHTML = estimatesHtml;
                         
                     }
                 }
 
                 const card = document.getElementById(cardId);
 
-                // Determine if user has sufficient balance using EFFECTIVE cost (after discount)
-                const accountInfo = previewData.account_info;
-                const estimatedCost = previewData.cost_estimates ? (previewData.cost_estimates.quoted_validation_cost || previewData.cost_estimates.quoted_full_cost) : 0;
-                const discount = previewData.cost_estimates?.discount || previewData.discount || 0;
-                const effectiveCost = previewData.cost_estimates?.effective_cost !== undefined
-                    ? previewData.cost_estimates.effective_cost
-                    : Math.max(0, estimatedCost - discount);
-                const currentBalance = accountInfo?.current_balance || 0;
-                const sufficientBalance = accountInfo ? (currentBalance >= effectiveCost) : true; // Use effective cost, not gross cost
-                const creditsNeeded = Math.max(0, effectiveCost - currentBalance);
+                // Values already calculated above and stored in outer scope, ready for use
 
                 // Add event listeners for the buttons above estimates
                 setTimeout(() => {
