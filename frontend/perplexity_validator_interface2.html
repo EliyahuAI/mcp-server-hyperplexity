@@ -3171,6 +3171,10 @@
                 const sufficientBalance = accountInfo?.sufficient_balance ?? true;
                 const creditsNeeded = accountInfo?.credits_needed || 0;
 
+                // DEBUG: Log what we got from backend
+                console.log('[PREVIEW] Backend account_info:', accountInfo);
+                console.log('[PREVIEW] sufficientBalance:', sufficientBalance, 'creditsNeeded:', creditsNeeded);
+
                 // Store in global state for later use
                 globalState.estimatedCost = estimatedCost;
                 globalState.discount = discount;
