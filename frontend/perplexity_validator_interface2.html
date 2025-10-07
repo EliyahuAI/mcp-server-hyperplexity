@@ -825,10 +825,10 @@
     /* Spin animations for wrapper - scaled to heartbeat speed */
     @keyframes spinWrapper {
         0% {
-            transform: rotate(0deg);
+            transform: rotate3d(0, 0, 1, 0deg);
         }
         100% {
-            transform: rotate(360deg);
+            transform: rotate3d(0, 0, 1, 360deg);
         }
     }
 
@@ -842,22 +842,22 @@
         }
     }
 
-    /* Normal spin: continuous rotation while class is applied */
+    /* Normal spin: single rotation */
     .thinking-square-wrapper.spinning {
-        animation: spinWrapper 2s linear infinite;
+        animation: spinWrapper 2s ease-in-out;
     }
 
     .progress-square-wrapper.spinning {
-        animation: spinWrapper 2s linear infinite;
+        animation: spinWrapper 2s ease-in-out;
     }
 
-    /* Fast spin when stuck: faster continuous rotation */
+    /* Fast spin when stuck */
     .thinking-square-wrapper.spinning.stuck {
-        animation: spinWrapper 1s linear infinite;
+        animation: spinWrapper 1.2s ease-in-out;
     }
 
     .progress-square-wrapper.spinning.stuck {
-        animation: spinWrapper 1s linear infinite;
+        animation: spinWrapper 1.2s ease-in-out;
     }
 
     /* Flip animation */
@@ -1142,6 +1142,14 @@
         transform-style: preserve-3d;
         backface-visibility: visible;
         /* Animate the entire wrapper as one unit */
+    }
+
+    /* Override transition when spinning/flipping to allow animation */
+    .progress-square-wrapper.spinning,
+    .thinking-square-wrapper.spinning,
+    .progress-square-wrapper.flipping,
+    .thinking-square-wrapper.flipping {
+        transition: none !important;
     }
 
     .progress-square {
@@ -2485,23 +2493,27 @@
                     setTimeout(() => {
                         square.classList.add('fast-heartbeat');
 
-                        // Phase 2: Start continuous rotation after heartbeat speeds up (1s later)
+                        // Phase 2: Start rotation after heartbeat speeds up (1s later)
                         setTimeout(() => {
+                            // Remove growing animation to allow spinning to work
+                            const wasGrowing = wrapper.classList.contains('growing');
+                            wrapper.classList.remove('growing');
                             wrapper.classList.add('spinning');
 
-                            // Phase 3: Stop rotation after 3 seconds of spinning
+                            // Phase 3: Remove spinning class after animation completes (2s)
                             setTimeout(() => {
                                 wrapper.classList.remove('spinning');
+                                if (wasGrowing) wrapper.classList.add('growing');
 
                                 // Phase 4: Calm down heartbeat (0.5s later)
                                 setTimeout(() => {
                                     square.classList.remove('fast-heartbeat');
                                 }, 500);
-                            }, 3000); // Spin for 3 seconds
+                            }, 2000); // Animation is 2s
                         }, 1000);
                     }, 3000);
 
-                }, 7500); // Full cycle: 3s rest + 1s speedup + 3s spin + 0.5s calm = 7.5s
+                }, 6500); // Full cycle: 3s rest + 1s speedup + 2s spin + 0.5s calm = 6.5s
 
                 state.intervals.push(animationCycleInterval);
             }
@@ -2513,6 +2525,100 @@
                     cardAnimationState.delete(cardId);
                 }
             }
+
+            // Debug function accessible from console
+            window.testSpin = function(option = 1) {
+                const wrapper = document.querySelector('.progress-square-wrapper, .thinking-square-wrapper');
+                const square = document.querySelector('.progress-square, .thinking-square');
+
+                if (!wrapper) {
+                    console.log('[SPIN_TEST] No wrapper found - start a validation first!');
+                    return;
+                }
+
+                console.log('[SPIN_TEST] Found wrapper:', wrapper.className);
+                console.log('[SPIN_TEST] Current animation:', getComputedStyle(wrapper).animation);
+                console.log('[SPIN_TEST] Current transform:', getComputedStyle(wrapper).transform);
+
+                // Remove any existing classes first (including growing which blocks other animations)
+                wrapper.classList.remove('spinning', 'flipping', 'growing');
+                wrapper.style.animation = '';
+                wrapper.style.transform = '';
+                if (square) square.classList.remove('fast-heartbeat');
+
+                switch(option) {
+                    case 1:
+                        console.log('[SPIN_TEST] Option 1: Add spinning class for 3s');
+                        wrapper.classList.add('spinning');
+                        setTimeout(() => {
+                            wrapper.classList.remove('spinning');
+                            console.log('[SPIN_TEST] Spinning removed');
+                        }, 3000);
+                        break;
+
+                    case 2:
+                        console.log('[SPIN_TEST] Option 2: Add flipping class for 3s');
+                        wrapper.classList.add('flipping');
+                        setTimeout(() => {
+                            wrapper.classList.remove('flipping');
+                            console.log('[SPIN_TEST] Flipping removed');
+                        }, 3000);
+                        break;
+
+                    case 3:
+                        console.log('[SPIN_TEST] Option 3: Inline animation spinWrapper 2s');
+                        wrapper.style.animation = 'spinWrapper 2s linear infinite';
+                        setTimeout(() => {
+                            wrapper.style.animation = '';
+                            console.log('[SPIN_TEST] Inline animation removed');
+                        }, 3000);
+                        break;
+
+                    case 4:
+                        console.log('[SPIN_TEST] Option 4: Inline animation flipWrapper 0.8s');
+                        wrapper.style.animation = 'flipWrapper 0.8s ease-in-out infinite';
+                        setTimeout(() => {
+                            wrapper.style.animation = '';
+                            console.log('[SPIN_TEST] Inline animation removed');
+                        }, 3000);
+                        break;
+
+                    case 5:
+                        console.log('[SPIN_TEST] Option 5: Direct transform rotation (90deg steps)');
+                        let angle = 0;
+                        const rotateInterval = setInterval(() => {
+                            angle += 90;
+                            wrapper.style.transform = `rotate(${angle}deg)`;
+                            console.log('[SPIN_TEST] Rotated to', angle, 'degrees');
+                            if (angle >= 360) {
+                                clearInterval(rotateInterval);
+                                wrapper.style.transform = '';
+                                console.log('[SPIN_TEST] Rotation complete');
+                            }
+                        }, 500);
+                        break;
+
+                    case 6:
+                        console.log('[SPIN_TEST] Option 6: Smooth transform animation');
+                        wrapper.style.transition = 'transform 2s linear';
+                        wrapper.style.transform = 'rotate(360deg)';
+                        setTimeout(() => {
+                            wrapper.style.transition = '';
+                            wrapper.style.transform = '';
+                            console.log('[SPIN_TEST] Smooth rotation complete');
+                        }, 2000);
+                        break;
+
+                    default:
+                        console.log('[SPIN_TEST] Usage: testSpin(1-6)\n' +
+                                  '1: spinning class\n' +
+                                  '2: flipping class\n' +
+                                  '3: inline spinWrapper\n' +
+                                  '4: inline flipWrapper\n' +
+                                  '5: direct transform (90deg steps)\n' +
+                                  '6: smooth transform animation');
+                }
+            };
 
             function updateProgressTimestamp(cardId) {
                 const state = cardAnimationState.get(cardId);
