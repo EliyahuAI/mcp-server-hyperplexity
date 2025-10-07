@@ -31,10 +31,10 @@ class AIAPIClient:
     
     # Model hierarchy from best to most basic
     MODEL_HIERARCHY = [
-        "claude-sonnet-4-5",
-        "claude-sonnet-4-5",
         "claude-opus-4-1",
         "claude-opus-4-0",
+        "claude-sonnet-4-5",
+        "claude-sonnet-4-0",
         "sonar-pro",
         "claude-3-7-sonnet-latest",
         "sonar",

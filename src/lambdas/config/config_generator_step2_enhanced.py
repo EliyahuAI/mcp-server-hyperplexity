@@ -4,7 +4,7 @@ Config Generator - Step 2 Enhanced: Claude 4 with Multiple Prompt Strategies
 Testing different prompt approaches to improve config generation quality
 
 This enhanced version:
-1. Uses Claude 4 (claude-sonnet-4-0)
+1. Uses Claude 4 (claude-sonnet-4-5)
 2. Tests multiple prompt strategies
 3. Provides better domain-specific guidance
 4. Includes iterative improvement capabilities

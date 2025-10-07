@@ -99,7 +99,7 @@ class ConversationalConfigSystem:
             'current_directive': current_directive,
             'group_restructuring_strategy': 'Analyze current groups and create smaller, more focused groups based on actual data source patterns and search efficiency',
             'notes_clarification_strategy': 'Remove technical implementation details from general notes, focus on business guidance and validation priorities',
-            'model_optimization_strategy': 'Use sonar-pro as default for most fields. Use claude-sonnet-4-0 sparingly only for complex analysis requiring domain expertise. High context only when nuanced interpretation is essential.',
+            'model_optimization_strategy': 'Use sonar-pro as default for most fields. Use claude-sonnet-4-5 sparingly only for complex analysis requiring domain expertise. High context only when nuanced interpretation is essential.',
             'column_improvement_strategy': 'Refine column notes for clarity, update examples to be more representative, ensure format specifications are precise',
             'domain_industry': inferred_domain.title() if inferred_domain != 'general' else 'Data validation',
             'domain_focus': domain_info.get('inferred_purpose', 'General data validation and quality assurance'),

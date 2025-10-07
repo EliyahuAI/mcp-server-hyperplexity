@@ -113,9 +113,9 @@ class QCIntegrationManager:
 
         # Track QC costs and metrics using merged results for proper comparison
         if qc_results or qc_metrics:
-            model_used = qc_metrics.get('qc_model_used', 'claude-sonnet-4-0')
+            model_used = qc_metrics.get('qc_model_used', 'claude-sonnet-4-5')
             if isinstance(model_used, list):
-                model_used = model_used[0] if model_used else 'claude-sonnet-4-0'
+                model_used = model_used[0] if model_used else 'claude-sonnet-4-5'
 
             api_provider = 'anthropic'  # QC uses Claude models
 
@@ -224,9 +224,9 @@ class QCIntegrationManager:
 
         # Track QC costs and metrics using merged results for proper comparison
         if qc_results or qc_metrics:
-            model_used = qc_metrics.get('qc_model_used', 'claude-sonnet-4-0')
+            model_used = qc_metrics.get('qc_model_used', 'claude-sonnet-4-5')
             if isinstance(model_used, list):
-                model_used = model_used[0] if model_used else 'claude-sonnet-4-0'
+                model_used = model_used[0] if model_used else 'claude-sonnet-4-5'
 
             api_provider = 'anthropic'  # QC uses Claude models
 

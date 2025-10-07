@@ -105,13 +105,13 @@ class QCModule:
         self.enabled = self.qc_settings.get('enable_qc', True)
 
         # QC-specific configuration - ensure model is a string, not a list
-        default_model = config.get('model', ['claude-sonnet-4-0'])
+        default_model = config.get('model', ['claude-sonnet-4-5'])
         if isinstance(default_model, list):
-            default_model = default_model[0] if default_model else 'claude-sonnet-4-0'
+            default_model = default_model[0] if default_model else 'claude-sonnet-4-5'
 
         qc_model_setting = self.qc_settings.get('model', default_model)
         if isinstance(qc_model_setting, list):
-            self.qc_model = qc_model_setting[0] if qc_model_setting else 'claude-sonnet-4-0'
+            self.qc_model = qc_model_setting[0] if qc_model_setting else 'claude-sonnet-4-5'
         else:
             self.qc_model = qc_model_setting
         self.qc_max_tokens = self.qc_settings.get('max_tokens_default', 8000)
