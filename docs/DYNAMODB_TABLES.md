@@ -589,7 +589,7 @@ The `qc_metrics` field contains comprehensive Quality Control metrics separate f
     "total_qc_tokens": 15420,              // Total tokens consumed by QC
     "total_qc_time_actual": 0.003,         // Actual time spent on QC (with cache benefits)
     "total_qc_time_estimated": 4.67,       // Estimated time without cache (for scaling)
-    "qc_models_used": ["claude-sonnet-4-0"], // AI models used for QC processing
+    "qc_models_used": ["claude-sonnet-4-5"], // AI models used for QC processing
 
     // Per-column QC tracking for analysis
     "qc_by_column": {

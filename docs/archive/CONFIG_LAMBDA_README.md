@@ -88,14 +88,14 @@ The lambda accepts multiple table input formats:
         "clarification_urgency": 0.7,
         "reasoning": "Updated search groups because...",
         "version": 3,
-        "model_used": "claude-sonnet-4-0"
+        "model_used": "claude-sonnet-4-5"
       }
     ],
     "generation_metadata": {
       "version": 3,
       "last_updated": "2025-01-17T...",
       "total_interactions": 3,
-      "model_used": "claude-sonnet-4-0"
+      "model_used": "claude-sonnet-4-5"
     }
   },
   "clarifying_questions": "1. Should we prioritize regulatory sources over company press releases?\n2. For the Status column, should this include regulatory milestones?\n3. What specific timeframe should we focus on for launch projections?",
@@ -163,7 +163,7 @@ All Claude API calls use the centralized `ai_api_client.py` with features:
 - **Multiple provider support** (Claude, Perplexity)
 
 ### Model Usage
-- **Primary model**: `claude-sonnet-4-0` for config generation
+- **Primary model**: `claude-sonnet-4-5` for config generation
 - **Alternative models**: `sonar-pro` for simpler validation tasks
 - **Model selection**: Can be overridden per search group or validation target
 
@@ -235,7 +235,7 @@ Instead of external conversation storage, the system embeds conversation history
     "clarification_urgency": 0.6,
     "reasoning": "Created search groups based on regulatory vs commercial data sources",
     "version": 1,
-    "model_used": "claude-sonnet-4-0"
+    "model_used": "claude-sonnet-4-5"
   },
   {
     "timestamp": "2025-01-17T14:25:15Z", 
@@ -246,7 +246,7 @@ Instead of external conversation storage, the system embeds conversation history
     "clarification_urgency": 0.3,
     "reasoning": "Enhanced regulatory search group with FDA milestone tracking",
     "version": 2,
-    "model_used": "claude-sonnet-4-0"
+    "model_used": "claude-sonnet-4-5"
   }
 ]
 ```
@@ -257,7 +257,7 @@ Instead of external conversation storage, the system embeds conversation history
   "version": 2,
   "last_updated": "2025-01-17T14:25:15Z",
   "total_interactions": 2,
-  "model_used": "claude-sonnet-4-0"
+  "model_used": "claude-sonnet-4-5"
 }
 ```
 

@@ -1,0 +1,225 @@
+{
+  "default_model": "sonar",
+  "default_search_context_size": "high",
+  "anthropic_max_web_searches_default": 1,
+  "general_notes": "Configuration for competitive benchmarking table used by product strategists to analyze AI/data vendors across capabilities, integrations, and go-to-market strategies. Focus on current market positioning and documented capabilities.",
+  "qc_settings": {
+    "enable_qc": true,
+    "model": "claude-sonnet-4-5",
+    "max_tokens_default": 8000,
+    "tokens_per_validated_column_default": 4000,
+    "anthropic_max_web_searches": 0
+  },
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Vendor Identity",
+      "description": "Primary vendor identification for context",
+      "model": "sonar",
+      "search_context": "low"
+    },
+    {
+      "group_id": 1,
+      "group_name": "Market Positioning",
+      "description": "Vendor category and ecosystem positioning information typically found in company descriptions and market analysis",
+      "model": "sonar",
+      "search_context": "high"
+    },
+    {
+      "group_id": 2,
+      "group_name": "Technical Capabilities",
+      "description": "Product capabilities and integration breadth typically documented together in technical specifications",
+      "model": "sonar",
+      "search_context": "high"
+    },
+    {
+      "group_id": 3,
+      "group_name": "Go-to-Market Strategy",
+      "description": "Buyer profiles and deployment patterns typically found in sales and marketing materials",
+      "model": "sonar",
+      "search_context": "high"
+    },
+    {
+      "group_id": 4,
+      "group_name": "Compliance & Risk Assessment",
+      "description": "Compliance documentation and risk factors typically found in security and governance materials",
+      "model": "sonar",
+      "search_context": "high"
+    },
+    {
+      "group_id": 5,
+      "group_name": "Competitive Analysis",
+      "description": "Strengths and risks typically found in analyst reports and competitive assessments",
+      "model": "sonar-pro",
+      "search_context": "high"
+    }
+  ],
+  "validation_targets": [
+    {
+      "column": "Vendor",
+      "description": "Company or vendor name being analyzed",
+      "importance": "ID",
+      "format": "String",
+      "examples": [
+        "AWS",
+        "Anthropic",
+        "Azure"
+      ],
+      "search_group": 0,
+      "notes": "Primary identifier for the competitive analysis row"
+    },
+    {
+      "column": "Category",
+      "description": "Market category or segment classification for the vendor",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "AI Platform",
+        "AI/Open",
+        "Cloud/AI"
+      ],
+      "search_group": 1,
+      "notes": "Market positioning category, should reflect current industry classifications"
+    },
+    {
+      "column": "Capability Coverage",
+      "description": "Key products, services, or capabilities offered by the vendor",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "Bedrock, SageMaker",
+        "Data cloud, AI",
+        "Lakehouse, ML"
+      ],
+      "search_group": 2,
+      "notes": "Comma-separated list of major capabilities or product names"
+    },
+    {
+      "column": "Integrations Breadth",
+      "description": "Types of integration options and connectivity approaches available",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "APIs",
+        "APIs, SDKs, partners",
+        "APIs, partner tools"
+      ],
+      "search_group": 2,
+      "notes": "Integration methods available, typically including APIs, SDKs, and partner integrations"
+    },
+    {
+      "column": "Ecosystem Posture",
+      "description": "Vendor's approach to ecosystem participation and openness",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "Cloud platform",
+        "Community/open",
+        "Open ecosystem"
+      ],
+      "search_group": 1,
+      "notes": "Describes whether vendor operates as closed platform, open ecosystem, or hybrid approach"
+    },
+    {
+      "column": "Typical Buyer",
+      "description": "Primary buyer personas or decision-maker roles that purchase from this vendor",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "CIO/Data",
+        "CIO/IT",
+        "CTO/Product"
+      ],
+      "search_group": 3,
+      "notes": "Executive roles or departments that typically make purchasing decisions"
+    },
+    {
+      "column": "Deployment Pattern",
+      "description": "Common deployment models or hosting approaches for the vendor's solutions",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "Cloud",
+        "Cloud/API",
+        "Cloud/OSS"
+      ],
+      "search_group": 3,
+      "notes": "Deployment options such as cloud-hosted, on-premises, hybrid, or API-based"
+    },
+    {
+      "column": "Compliance Notes",
+      "description": "Compliance certifications, security attestations, or governance documentation available",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "Cloud compliance",
+        "Constitutional AI docs",
+        "Docs available"
+      ],
+      "search_group": 4,
+      "notes": "Brief description of compliance posture and available documentation"
+    },
+    {
+      "column": "Perceived Strengths",
+      "description": "Key competitive advantages or strengths recognized in the market",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "Breadth of OSS",
+        "Data governance",
+        "Data+ML integration"
+      ],
+      "search_group": 5,
+      "notes": "Market-recognized strengths, often from analyst reports or customer feedback"
+    },
+    {
+      "column": "Risks / Watchouts",
+      "description": "Potential risks, limitations, or concerns when considering this vendor",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "Complexity for small teams",
+        "Compute costs",
+        "Enterprise support variance"
+      ],
+      "search_group": 5,
+      "notes": "Known risks or limitations, often from analyst reports or customer experiences"
+    }
+  ],
+  "clarifying_questions": "I configured this as a competitive intelligence system focused on current market positioning and documented capabilities. I set up searches to find information from company websites, analyst reports, and technical documentation. I used the standard 'sonar' model for most searches with 'sonar-pro' for the competitive analysis section that requires deeper synthesis of market intelligence. Would you prefer more aggressive search settings to capture the latest market developments, or should I focus on well-established, documented capabilities to ensure consistency across vendors?",
+  "clarification_urgency": 0.3,
+  "config_change_log": [
+    {
+      "timestamp": "2025-10-06T19:01:11.870714",
+      "action": "unified_generation",
+      "session_id": "session_20251006_185946_b77db788",
+      "instructions": "Generate an optimal configuration for this data validation scenario. User provided these answers to clarifying questions: **Competitive Benchmarks**\n\nCompare competitors across capabilities, integrations, and go-to-market motions.\n\nProduct strategists use this 10\u00d710 table to benchmark competitors qualitatively without asserting volatile metrics. Rows are real vendors across AI/data. Columns capture capability coverage, integration breadth, ecosystem posture, typical buyers, deployment patterns, compliance attestations, reference architectures, partner depth, perceived strengths, and risks. Hyperplexity scales this with doc mining and citation-linked evidence. Internal notes guide product gaps and partnership bets.",
+      "clarifying_questions": "I configured this as a competitive intelligence system focused on current market positioning and documented capabilities. I set up searches to find information from company websites, analyst reports, and technical documentation. I used the standard 'sonar' model for most searches with 'sonar-pro' for the competitive analysis section that requires deeper synthesis of market intelligence. Would you prefer more aggressive search settings to capture the latest market developments, or should I focus on well-established, documented capabilities to ensure consistency across vendors?",
+      "clarification_urgency": 0.3,
+      "reasoning": "",
+      "ai_summary": "Set up comprehensive competitive intelligence searches across six focused areas: vendor identification, market positioning, technical capabilities, sales approach, compliance documentation, and competitive analysis. The system will look for current information from company websites, analyst reports, and technical documentation to build complete competitive profiles. Used enhanced analysis for competitive strengths and risks that require synthesizing multiple market perspectives.",
+      "technical_ai_summary": "**Table Purpose**: Competitive benchmarking matrix for AI/data vendors used by product strategists for market analysis and strategic planning.\n\n**Unique Identifiers**: Vendor column serves as the primary identifier for each competitive analysis row.\n\n**Search Groups Strategy**:\n- Group 0: Vendor Identity (ID only, provides context)\n- Group 1: Market Positioning (Category, Ecosystem Posture) - information typically found together in company positioning materials\n- Group 2: Technical Capabilities (Capability Coverage, Integrations Breadth) - technical specs usually documented together\n- Group 3: Go-to-Market Strategy (Typical Buyer, Deployment Pattern) - sales and marketing information typically co-located\n- Group 4: Compliance & Risk Assessment (Compliance Notes) - governance materials typically standalone\n- Group 5: Competitive Analysis (Perceived Strengths, Risks/Watchouts) - analyst insights requiring synthesis, using sonar-pro for deeper reasoning\n\n**Model Selection**: Using 'sonar' as default for factual lookups with 'sonar-pro' for Group 5 competitive analysis that requires synthesis of multiple market perspectives. High search context across all groups to capture comprehensive market intelligence.\n\n**Column Classifications**: All 10 columns marked as CRITICAL except Vendor (ID). This reflects the strategic importance of competitive intelligence where all data points inform product and partnership decisions.\n\n**Key Assumptions**: \n- Vendors are established companies with documented market presence\n- Information sources include company websites, analyst reports, and technical documentation\n- Focus on current market positioning rather than historical data\n- Competitive strengths/risks require synthesis from multiple sources\n\n**Clarification Assessment (0.3 - LOW)**: Configuration has solid foundation with logical groupings. Minor refinements around search aggressiveness vs. consistency could optimize results, but core structure should work well for competitive intelligence gathering.",
+      "version": 1,
+      "model_used": "claude-sonnet-4-5",
+      "config_filename": "",
+      "entry_type": "ai_response"
+    }
+  ],
+  "storage_metadata": {
+    "version": 1,
+    "source": "copied_from_previous",
+    "session_id": "session_20251006_190258_57379efc",
+    "email": "eliyahu@eliyahu.ai",
+    "stored_at": "2025-10-06T19:03:08.826305",
+    "created_at": "2025-10-06T19:03:08.826305",
+    "config_id": "session_20251006_190258_57379efc_session_20251006_185946_b77db788_config_v1_ai_generated_config_v1_ai_generated",
+    "description": "Configuration for competitive benchmarking table used by product strategists to analyze AI/data vendors across capabilities, integrations, and go-to-market strategies. Focus on current market positioning and documented capabilities.",
+    "original_name": "session_20251006_185946_b77db788_config_v1_ai_generated",
+    "source_session": "session_20251006_185946_b77db788_config_v1_ai_generated",
+    "content_hash": "451717fab4e4aebc6f5c9951b64dcdf8",
+    "creation_method": "copied_from_previous",
+    "usage_count": 0,
+    "first_created": "2025-10-06T19:01:12.028781",
+    "metadata_version": "2.0"
+  }
+}

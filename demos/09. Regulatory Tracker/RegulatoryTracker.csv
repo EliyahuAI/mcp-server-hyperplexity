@@ -1,0 +1,11 @@
+Framework / Law,Region,Status,Scope (short),Covered Entities,Obligation Themes,Artifacts Needed,Impact Level (L/M/H),Nearest Milestone,Internal Owner
+EU AI Act,EU,Adopted,AI systems risk-tiered,Providers/Deployers,"Risk mgmt, data, transparency","Risk register, tech docs",H,Implementation planning,Policy + Eng
+NIST AI RMF 1.0,US,Published,Voluntary risk mgmt,AI Orgs,"Govern, map, measure, manage","Policies, metrics",M,Internal alignment,Risk + Product
+GDPR,EU,In force,Personal data protection,Controllers/Processors,"Lawful basis, rights","Records, DPIA",H,Ongoing audits,Legal + Security
+HIPAA,US,In force,Health info privacy,Covered entities,"Safeguards, BAAs","Policies, BAAs",H,Annual review,Compliance + IT
+DSA,EU,In force,Online intermediaries,Platforms,"Transparency, risk assessments","Reports, audits",M,Next report window,Policy + Ops
+DMA,EU,In force,Digital gatekeepers,Large platforms,"Interoperability, anti-tying",Compliance reports,M,Obligations review,Legal + Product
+SEC Cyber Disclosure,US,In force,Material incidents disclosure,Public companies,"4-day disclosure, board oversight","Playbooks, board briefs",M,Board briefing,Legal + SecOps
+CCPA/CPRA,US-CA,In force,California privacy,Businesses,"Notices, opt-out, rights","Policies, DSAR process",M,DSAR KPI review,Privacy + Eng
+FDA SaMD Guidance,US,Final/Guidance,Software as Medical Device,Manufacturers,"Quality, validation",QMS docs,H,Pre-sub consult,Reg Affairs + Eng
+ISO 27001:2022,Global,Standard,ISMS,Organizations,"Risk mgmt, controls",ISMS docs,M,Next surveillance audit,Security

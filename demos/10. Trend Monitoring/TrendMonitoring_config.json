@@ -1,0 +1,219 @@
+{
+  "default_model": "sonar",
+  "default_search_context_size": "high",
+  "anthropic_max_web_searches_default": 1,
+  "general_notes": "Configuration for trend monitoring table tracking cross-domain topics, engagement patterns, and strategic insights for communications and strategy teams. Focus on current platform data, sentiment analysis, and actionable intelligence. Prioritize recent data sources and social media analytics platforms for accurate trend metrics.",
+  "qc_settings": {
+    "enable_qc": true,
+    "model": "claude-sonnet-4-5",
+    "max_tokens_default": 8000,
+    "tokens_per_validated_column_default": 4000,
+    "anthropic_max_web_searches": 3
+  },
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Topic Identification",
+      "description": "Core topic identifiers used for context - not validated but essential for row identification",
+      "model": "sonar",
+      "search_context": "high"
+    },
+    {
+      "group_id": 1,
+      "group_name": "Platform Distribution",
+      "description": "Primary platforms where topic engagement occurs - focus on current social media and news platform activity patterns",
+      "model": "sonar-pro",
+      "search_context": "high"
+    },
+    {
+      "group_id": 2,
+      "group_name": "Engagement Metrics",
+      "description": "Baseline engagement levels - requires recent analytics data from social platforms",
+      "model": "sonar-pro",
+      "search_context": "high",
+      "anthropic_max_web_searches": 2
+    },
+    {
+      "group_id": 3,
+      "group_name": "Voice and Sentiment Analysis",
+      "description": "Key influencers, sentiment scores, and geographic activity patterns - usually reported together in social listening tools",
+      "model": "sonar-pro",
+      "search_context": "high"
+    },
+    {
+      "group_id": 4,
+      "group_name": "Strategic Intelligence",
+      "description": "Narrative summaries, risk assessments, and recommended actions - strategic insights that build on engagement data",
+      "model": "sonar-pro",
+      "search_context": "high"
+    }
+  ],
+  "validation_targets": [
+    {
+      "column": "Topic",
+      "description": "Enduring cross-domain themes being monitored (e.g., AI Safety, AgriTech, CRISPR Therapies)",
+      "importance": "ID",
+      "format": "String",
+      "examples": [
+        "AI Safety",
+        "AgriTech",
+        "CRISPR Therapies"
+      ],
+      "search_group": 0,
+      "notes": "Primary identifier for trend monitoring rows - represents persistent themes rather than fleeting topics"
+    },
+    {
+      "column": "Platform Mix",
+      "description": "Primary platforms where topic engagement is occurring, listed in order of activity",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "LinkedIn/News",
+        "News/LinkedIn",
+        "News/X/YouTube"
+      ],
+      "search_group": 1,
+      "notes": "Platform combinations should be separated by forward slashes, ordered by engagement volume. Focus on current social media platform activity and news coverage patterns."
+    },
+    {
+      "column": "Baseline Engagement",
+      "description": "Typical engagement level for this topic across monitored platforms",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "High",
+        "Med",
+        "Low"
+      ],
+      "search_group": 2,
+      "notes": "Standardized engagement categories: High/Med/Low based on platform-specific metrics and recent social media analytics"
+    },
+    {
+      "column": "7d Delta (%)",
+      "description": "Percentage change in engagement over the past 7 days",
+      "importance": "IGNORED",
+      "format": "String",
+      "examples": [
+        "+2",
+        "+3",
+        "+4"
+      ],
+      "search_group": 2,
+      "notes": "This field is ignored per user request - not validated by AI systems"
+    },
+    {
+      "column": "Notable Voices",
+      "description": "Key influencers, organizations, or publication types driving conversation",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "Aerospace cos",
+        "Ag startups",
+        "Bio journals, biotech"
+      ],
+      "search_group": 3,
+      "notes": "Abbreviated format acceptable, focus on entity types or specific influential voices currently active in the topic discussion"
+    },
+    {
+      "column": "Sentiment (-2\u2026+2)",
+      "description": "Overall sentiment score on a scale from -2 (very negative) to +2 (very positive)",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "+0",
+        "+1",
+        "+2"
+      ],
+      "search_group": 3,
+      "notes": "Always include + or - sign, even for zero values. Scale: -2 to +2. Based on recent social media sentiment analysis."
+    },
+    {
+      "column": "Regions Active",
+      "description": "Geographic regions showing significant engagement activity",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "EU/US",
+        "IN/AF",
+        "US"
+      ],
+      "search_group": 3,
+      "notes": "Use standard region codes separated by forward slashes, ordered by activity level based on current geographic engagement patterns"
+    },
+    {
+      "column": "Narrative Snapshot",
+      "description": "Brief summary of the dominant narrative or conversation themes",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "AI for detection",
+        "Clinical milestone chatter",
+        "Continuous monitoring interest"
+      ],
+      "search_group": 4,
+      "notes": "Concise phrase capturing the main conversation thread or angle currently trending in discussions"
+    },
+    {
+      "column": "Risk/Watchout",
+      "description": "Potential risks, concerns, or negative developments to monitor",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "Compliance fatigue",
+        "Cost barriers",
+        "Data accuracy"
+      ],
+      "search_group": 4,
+      "notes": "Brief risk identification, focus on actionable concerns emerging from current discussions and trends"
+    },
+    {
+      "column": "Suggested Action",
+      "description": "Recommended strategic response or communication approach",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "Case studies",
+        "Clarify timelines",
+        "Evidence-led brief"
+      ],
+      "search_group": 4,
+      "notes": "Actionable recommendations for communications or strategy teams based on current trend analysis"
+    }
+  ],
+  "clarifying_questions": "I've set the 7d Delta column to be ignored as requested, and increased the QC web search capability to provide broader research coverage for the remaining fields. The system will now skip validating the 7-day engagement changes entirely while using more comprehensive web searches for quality control - would you like me to also increase the web search intensity for the main validation groups to ensure we're capturing the most comprehensive trend data available?",
+  "clarification_urgency": 0.1,
+  "config_change_log": [
+    {
+      "timestamp": "2025-10-06T19:34:59.948251",
+      "action": "unified_generation",
+      "session_id": "session_20251006_192254_2d18c7bc",
+      "instructions": "Ignore 7d delta, use broad web search.",
+      "clarifying_questions": "I've set the 7d Delta column to be ignored as requested, and increased the QC web search capability to provide broader research coverage for the remaining fields. The system will now skip validating the 7-day engagement changes entirely while using more comprehensive web searches for quality control - would you like me to also increase the web search intensity for the main validation groups to ensure we're capturing the most comprehensive trend data available?",
+      "clarification_urgency": 0.1,
+      "reasoning": "",
+      "ai_summary": "Removed the 7-day engagement change tracking from validation as requested, so the system will skip trying to find that information entirely. Also increased the research depth by giving the quality control system access to more web sources for better overall accuracy on the remaining trend monitoring fields.",
+      "technical_ai_summary": "**Changes Made Based on User Request:**\n\n**Primary Change - Ignored 7d Delta Column**: \n- Changed \"7d Delta (%)\" column importance from \"CRITICAL\" to \"IGNORED\" per user request\n- Updated column notes to explicitly state \"This field is ignored per user request - not validated by AI systems\"\n- Removed reference to 7d Delta from search group 2 description, now focusing only on baseline engagement\n\n**Enhanced Web Search Coverage**:\n- Increased QC web search capability from 1 to 3 searches (anthropic_max_web_searches: 3) to implement \"broad web search\" request\n- This provides more comprehensive research coverage during quality control validation\n\n**Preserved Existing Structure**:\n- Maintained all other search group configurations and model assignments that were working well\n- Kept the enhanced sonar-pro models and existing web search settings for main validation groups\n- Preserved all other column configurations and importance levels\n\n**Assessment**: The configuration now skips the problematic 7d Delta field entirely while providing broader web search coverage through enhanced QC. This should reduce validation costs for the ignored field while improving overall research comprehensiveness. The existing search group structure remains intact since it was performing well for other fields.",
+      "version": 1,
+      "model_used": "claude-sonnet-4-5",
+      "config_filename": "",
+      "entry_type": "ai_response"
+    }
+  ],
+  "storage_metadata": {
+    "version": 3,
+    "source": "ai_generated",
+    "session_id": "session_20251006_192254_2d18c7bc",
+    "email": "eliyahu@eliyahu.ai",
+    "stored_at": "2025-10-06T19:35:00.094928",
+    "created_at": "2025-10-06T19:35:00.094928",
+    "config_id": "session_20251006_192254_2d18c7bc_config_v3_ai_generated",
+    "description": "Configuration for trend monitoring table tracking cross-domain topics, engagement patterns, and strategic insights for communications and strategy teams. Focus on current platform data, sentiment analysis, and actionable intelligence. Prioritize recent data sources and social media analytics platforms for accurate trend metrics.",
+    "original_name": null,
+    "source_session": null,
+    "content_hash": "95fc486454e3c10f3317f9b9099c4506",
+    "creation_method": "ai_generated",
+    "usage_count": 0,
+    "first_created": "2025-10-06T19:35:00.094928",
+    "metadata_version": "2.0"
+  }
+}

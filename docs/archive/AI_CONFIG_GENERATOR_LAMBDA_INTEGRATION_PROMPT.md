@@ -247,7 +247,7 @@ for src_file, dest_subdir in ai_config_files:
 ### Performance:
 - Async processing for large Excel files
 - Caching of table analysis results
-- Optimized model selection (sonar-pro vs claude-sonnet-4-0)
+- Optimized model selection (sonar-pro vs claude-sonnet-4-5)
 - Progress tracking for long-running operations
 
 ### Monitoring:

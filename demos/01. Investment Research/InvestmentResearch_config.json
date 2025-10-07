@@ -5,7 +5,7 @@
   "anthropic_max_web_searches_default": 1,
   "qc_settings": {
     "enable_qc": true,
-    "model": "claude-sonnet-4-0",
+    "model": "claude-sonnet-4-5",
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 4000,
     "anthropic_max_web_searches": 1
@@ -43,7 +43,7 @@
       "group_id": 4,
       "group_name": "Investment Synthesis",
       "description": "Investment recommendations requiring synthesis of all previous validated information",
-      "model": "claude-sonnet-4-0",
+      "model": "claude-sonnet-4-5",
       "search_context": "high",
       "anthropic_max_web_searches": 0
     }
@@ -218,7 +218,7 @@
       "clarification_urgency": 0.2,
       "reasoning": "",
       "ai_summary": "Upgraded the financial data searches to use more powerful models to get confident stock prices and market data. Reorganized news and projections to be formatted as bulleted lists with dates, sources, and reliability ratings. Set up the investment recommendations to analyze all the previous information and provide comprehensive reasoning for buy/sell/hold decisions.",
-      "technical_ai_summary": "**Changes Made for Refinement:**\n\n1. **Upgraded Financial Metrics Group**: Changed Group 1 from `sonar` to `sonar-pro` to address low confidence issues with Current_Price, Market_Cap_B, and PE_Ratio. Added specific notes requiring confident values even if delayed.\n\n2. **Restructured Search Groups**: Split news and projections into separate groups (Groups 2 and 3) to allow focused formatting requirements for each, as they need different structured outputs.\n\n3. **Added Investment Synthesis Group**: Created Group 4 using `claude-sonnet-4-0` with no web search to synthesize all previously validated information for investment recommendations, as requested.\n\n4. **Enhanced Column Notes**: Updated financial metric notes to explicitly require confident values and specify acceptable delay parameters. Added detailed formatting requirements for news and projections with reliability indicators.\n\n5. **Improved QC Settings**: Added web search capability to QC (anthropic_max_web_searches: 1) to help validate the complex structured outputs.\n\n6. **Updated Examples**: Provided new examples showing the bulleted format with date, source, and reliability indicators for news and projections.\n\nThe configuration now addresses the specific user requirements: confident financial metrics (even if delayed), structured news/projections with reliability measures, and synthesized investment recommendations. The low confidence financial metrics should improve with the sonar-pro model upgrade and enhanced search context.",
+      "technical_ai_summary": "**Changes Made for Refinement:**\n\n1. **Upgraded Financial Metrics Group**: Changed Group 1 from `sonar` to `sonar-pro` to address low confidence issues with Current_Price, Market_Cap_B, and PE_Ratio. Added specific notes requiring confident values even if delayed.\n\n2. **Restructured Search Groups**: Split news and projections into separate groups (Groups 2 and 3) to allow focused formatting requirements for each, as they need different structured outputs.\n\n3. **Added Investment Synthesis Group**: Created Group 4 using `claude-sonnet-4-5` with no web search to synthesize all previously validated information for investment recommendations, as requested.\n\n4. **Enhanced Column Notes**: Updated financial metric notes to explicitly require confident values and specify acceptable delay parameters. Added detailed formatting requirements for news and projections with reliability indicators.\n\n5. **Improved QC Settings**: Added web search capability to QC (anthropic_max_web_searches: 1) to help validate the complex structured outputs.\n\n6. **Updated Examples**: Provided new examples showing the bulleted format with date, source, and reliability indicators for news and projections.\n\nThe configuration now addresses the specific user requirements: confident financial metrics (even if delayed), structured news/projections with reliability measures, and synthesized investment recommendations. The low confidence financial metrics should improve with the sonar-pro model upgrade and enhanced search context.",
       "version": 2,
       "model_used": "claude-opus-4-1",
       "config_filename": "MarketResearch_Results_input_config_V02.json"

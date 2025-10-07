@@ -161,7 +161,7 @@ Preview Results → Cache Analysis → Cost Projection → Domain Multiplier →
   "output_tokens": 800,
   "cache_read_tokens": 500,
   "total_tokens": 2300,
-  "model": "claude-sonnet-4-0"
+  "model": "claude-sonnet-4-5"
 }
 ```
 
@@ -224,7 +224,7 @@ def get_domain_multiplier(domain):
 ```
 
 ### Pattern Matching
-- **Exact Match**: `claude-sonnet-4-0` matches exactly
+- **Exact Match**: `claude-sonnet-4-5` matches exactly
 - **Wildcard Match**: `claude*` matches all Claude models
 - **Priority System**: Lower numbers = higher priority
 

@@ -1,0 +1,211 @@
+{
+  "default_model": "sonar",
+  "default_search_context_size": "high",
+  "anthropic_max_web_searches_default": 1,
+  "general_notes": "Configuration for new client prospecting table validation. Focuses on verifying company information, tech stack signals, and market positioning data that growth teams use for targeted outreach. Prioritize accuracy and current information for all fields.",
+  "qc_settings": {
+    "enable_qc": true,
+    "model": "claude-sonnet-4-0",
+    "max_tokens_default": 8000,
+    "tokens_per_validated_column_default": 4000,
+    "anthropic_max_web_searches": 1
+  },
+  "search_groups": [
+    {
+      "group_id": 0,
+      "group_name": "Company Identification",
+      "description": "Primary company identifier used for context in all other searches",
+      "model": "sonar",
+      "search_context": "low"
+    },
+    {
+      "group_id": 1,
+      "group_name": "Company Fundamentals",
+      "description": "Basic company information typically found together in company profiles and directories - sector, region, and current employee count",
+      "model": "sonar-pro",
+      "search_context": "high"
+    },
+    {
+      "group_id": 2,
+      "group_name": "Technology Intelligence",
+      "description": "Technical signals and pain points derived from tech blogs, job postings, and engineering content",
+      "model": "sonar-pro",
+      "search_context": "high"
+    },
+    {
+      "group_id": 3,
+      "group_name": "Sales Intelligence",
+      "description": "Strategic assessments and outreach recommendations requiring synthesis of multiple data points",
+      "model": "sonar-pro",
+      "search_context": "high"
+    }
+  ],
+  "validation_targets": [
+    {
+      "column": "Prospect",
+      "description": "Company name - primary identifier for the prospective client organization",
+      "importance": "ID",
+      "format": "String",
+      "examples": [
+        "Bytedance (TikTok)",
+        "Datadog",
+        "HSBC"
+      ],
+      "search_group": 0,
+      "notes": "Company name should match official business name or widely recognized brand name"
+    },
+    {
+      "column": "Sector",
+      "description": "Industry sector or business vertical the company operates in",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "Banking",
+        "Biotech",
+        "Data Cloud"
+      ],
+      "search_group": 1,
+      "notes": "Should reflect primary business focus or industry classification. Verify against current company information and official descriptions."
+    },
+    {
+      "column": "HQ Region",
+      "description": "Geographic region where company headquarters is located",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "APAC",
+        "EU",
+        "EU/NA"
+      ],
+      "search_group": 1,
+      "notes": "Use standard regional abbreviations (APAC, EU, NA, etc.). Verify current headquarters location from official company sources."
+    },
+    {
+      "column": "Employees (band)",
+      "description": "Employee count range indicating company size",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "10k+",
+        "2k\u20135k",
+        "5k\u201310k"
+      ],
+      "search_group": 1,
+      "notes": "Use consistent format with 'k' for thousands and ranges with en-dash (\u2013). CRITICAL: Verify current employee count from recent sources (LinkedIn, company reports, news articles from last 6 months). Employee counts change frequently - prioritize the most recent and authoritative sources. If multiple sources conflict, use the most recent credible source and note the date."
+    },
+    {
+      "column": "Tech Signals",
+      "description": "Technology indicators or technical characteristics observed from company's tech presence",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "At-scale content",
+        "Cloud-native, integrations",
+        "Data marketplace"
+      ],
+      "search_group": 2,
+      "notes": "Should reflect observable technical patterns from job postings, tech blogs, or public tech stack information. Look for specific, current technology indicators."
+    },
+    {
+      "column": "Likely Pain Point",
+      "description": "Inferred business or technical challenges the company likely faces",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "Alert fatigue",
+        "Analytics bottlenecks",
+        "Data harmonization"
+      ],
+      "search_group": 2,
+      "notes": "Should be specific, actionable pain points that can be addressed by solutions. Base on current company challenges evident from recent news, job postings, or technical content."
+    },
+    {
+      "column": "Solution Fit Rationale",
+      "description": "Reasoning for how solutions could address the company's specific needs",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "AI model registry + audits",
+        "Embed LLM triage over telemetry",
+        "Eval/safety taxonomy mapping"
+      ],
+      "search_group": 3,
+      "notes": "Should connect specific solutions to identified pain points with technical specificity. Ensure recommendations are grounded in actual company context and challenges."
+    },
+    {
+      "column": "ICP Score (0-100)",
+      "description": "Ideal Customer Profile score rating how well the prospect fits target criteria",
+      "importance": "CRITICAL",
+      "format": "Number",
+      "examples": [
+        "70",
+        "71",
+        "72"
+      ],
+      "search_group": 3,
+      "notes": "Integer score from 0-100, higher scores indicate better fit. Score should reflect company size, tech maturity, sector fit, and growth indicators based on validated company data."
+    },
+    {
+      "column": "First-Touch Angle",
+      "description": "Recommended initial outreach approach or value proposition for first contact",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "Data-product accelerator deck",
+        "Governance starter kit",
+        "Lab documentation pilot"
+      ],
+      "search_group": 3,
+      "notes": "Should be specific, actionable first-touch strategies tailored to the prospect's current situation and validated pain points."
+    },
+    {
+      "column": "Next Action",
+      "description": "Recommended next step or action item for sales team follow-up",
+      "importance": "CRITICAL",
+      "format": "String",
+      "examples": [
+        "BDR email + call",
+        "Exec briefing request",
+        "Intro via partner"
+      ],
+      "search_group": 3,
+      "notes": "Should specify concrete next steps for sales team execution based on company profile and accessibility."
+    }
+  ],
+  "clarifying_questions": "I've made several improvements to address accuracy issues:\n\n**Changes Made:**\n1. **Upgraded Company Fundamentals search** - I switched Group 1 from basic 'sonar' to 'sonar-pro' to improve accuracy for employee counts and company details, since the preview showed medium confidence on employee bands.\n\n2. **Enhanced Quality Control** - I enabled web searches for the QC layer (was disabled before) so it can verify the validation results more thoroughly, particularly for the employee count field that had a 33% failure rate.\n\n3. **Strengthened Employee Count validation** - I added explicit guidance to prioritize recent sources (last 6 months) and handle conflicting data, since this field showed the highest QC failure rate.\n\n4. **Improved column notes** - Added more specific guidance about verifying current information and using authoritative sources across multiple fields.\n\n**Questions:**\n- The employee count field is still showing some uncertainty - would you like me to create a dedicated search group just for company size verification, or break it out to use Claude Sonnet with web searches for more thorough research?\n\n- I've increased costs modestly by upgrading Group 1 to sonar-pro and enabling QC web searches - are you comfortable with this tradeoff for better accuracy, or should I explore other approaches?",
+  "clarification_urgency": 0.2,
+  "config_change_log": [
+    {
+      "timestamp": "2025-10-07T01:38:40.616831",
+      "action": "unified_generation",
+      "session_id": "session_demo_20251007_013608_8cf7a411",
+      "instructions": "do better",
+      "clarifying_questions": "I've made several improvements to address accuracy issues:\n\n**Changes Made:**\n1. **Upgraded Company Fundamentals search** - I switched Group 1 from basic 'sonar' to 'sonar-pro' to improve accuracy for employee counts and company details, since the preview showed medium confidence on employee bands.\n\n2. **Enhanced Quality Control** - I enabled web searches for the QC layer (was disabled before) so it can verify the validation results more thoroughly, particularly for the employee count field that had a 33% failure rate.\n\n3. **Strengthened Employee Count validation** - I added explicit guidance to prioritize recent sources (last 6 months) and handle conflicting data, since this field showed the highest QC failure rate.\n\n4. **Improved column notes** - Added more specific guidance about verifying current information and using authoritative sources across multiple fields.\n\n**Questions:**\n- The employee count field is still showing some uncertainty - would you like me to create a dedicated search group just for company size verification, or break it out to use Claude Sonnet with web searches for more thorough research?\n\n- I've increased costs modestly by upgrading Group 1 to sonar-pro and enabling QC web searches - are you comfortable with this tradeoff for better accuracy, or should I explore other approaches?",
+      "clarification_urgency": 0.2,
+      "reasoning": "",
+      "ai_summary": "I've made your prospect research more accurate by upgrading the AI model that looks up basic company information (sector, location, employee count) to a more powerful version, since the employee count field was getting wrong answers about a third of the time. I also turned on web searching for the quality control layer so it can double-check the results against current sources instead of relying only on what it already knows. Finally, I added specific instructions to prioritize recent sources when checking employee counts since those numbers change frequently. These changes will cost slightly more but should significantly improve accuracy.",
+      "technical_ai_summary": "**Refinement Context**: User requested \"do better\" after preview results showed medium confidence on several fields and a 33.3% QC failure rate on the \"Employees (band)\" field.\n\n**Changes Made:**\n\n1. **Upgraded Search Group 1 Model** (Company Fundamentals): Changed from `sonar` to `sonar-pro`\n   - **Reason**: The employee count field showed 33% QC failure rate and medium confidence in preview results. This group handles sector, HQ region, and employee bands - all showed some uncertainty in the preview. Sonar-pro provides better synthesis of multiple sources for more accurate company data.\n   - **Cost Impact**: Increases Group 1 cost from ~$0.0015/row to ~$0.008/row\n\n2. **Enabled QC Web Searches**: Changed `anthropic_max_web_searches` from 0 to 1 in QC settings\n   - **Reason**: QC layer was operating on cached knowledge only, limiting its ability to verify current company information. With web search enabled, QC can cross-check validation results against current sources, particularly important for the employee count field that's failing.\n   - **Cost Impact**: Modest increase in QC costs, but should significantly improve accuracy\n\n3. **Enhanced Column Notes for Employee Count**: Added explicit guidance about prioritizing recent sources (last 6 months), handling conflicting data, and noting dates\n   - **Reason**: Direct response to the 33% QC failure rate - this field needs more specific validation guidance since employee counts change frequently\n\n4. **Improved General and Column Notes**: Added emphasis on accuracy and current information throughout\n   - **Reason**: General quality improvement to address \"do better\" feedback\n\n**Preserved Decisions:**\n- Kept search group structure (4 groups) - this organization is working well\n- Maintained sonar-pro for Groups 2 and 3 - these showed good results in preview\n- Kept high search context throughout - appropriate for this research-intensive task\n- Preserved all column assignments and importance levels\n\n**Further Refinement Needed?**: LOW (0.2) - The configuration now has stronger models and QC capabilities. If employee count accuracy remains an issue, next step would be creating a dedicated search group or using Claude Sonnet with web searches for that specific field.",
+      "version": 1,
+      "model_used": "claude-sonnet-4-5",
+      "config_filename": "",
+      "entry_type": "ai_response"
+    }
+  ],
+  "storage_metadata": {
+    "version": 2,
+    "source": "ai_generated",
+    "session_id": "session_demo_20251007_013608_8cf7a411",
+    "email": "eliyahu@eliyahu.ai",
+    "stored_at": "2025-10-07T01:38:40.774029",
+    "created_at": "2025-10-07T01:38:40.774029",
+    "config_id": "session_demo_20251007_013608_8cf7a411_config_v2_ai_generated",
+    "description": "Configuration for new client prospecting table validation. Focuses on verifying company information, tech stack signals, and market positioning data that growth teams use for targeted outreach. Prioritize accuracy and current information for all fields.",
+    "original_name": null,
+    "source_session": null,
+    "content_hash": "2b9e1d56f72c84837c9471b8e098f4e9",
+    "creation_method": "ai_generated",
+    "usage_count": 0,
+    "first_created": "2025-10-07T01:38:40.774029",
+    "metadata_version": "2.0"
+  }
+}

@@ -100,7 +100,7 @@ QC provides enhanced citation tracking using the same architecture as validation
 ```json
 {
   "qc_settings": {
-    "model": ["claude-sonnet-4-0", "claude-opus-4-1"],
+    "model": ["claude-sonnet-4-5", "claude-opus-4-1"],
     "max_tokens_default": 8000,
     "tokens_per_validated_column_default": 4000,
     "anthropic_max_web_searches": 0
@@ -109,7 +109,7 @@ QC provides enhanced citation tracking using the same architecture as validation
 ```
 
 **Default Settings**:
-- **Model**: `claude-sonnet-4-0` (same as validation)
+- **Model**: `claude-sonnet-4-5` (same as validation)
 - **Tokens**: 8K baseline + 4K per field
 - **Web searches**: Disabled by default (cost efficiency)
   - Enable for better QC citations when accuracy is critical
@@ -359,7 +359,7 @@ qc_result = {
     "total_qc_cost_estimated": 0.077319, // Estimated cost without cache
     "total_qc_calls": 3,               // API calls made for QC
     "total_qc_tokens": 15420,          // Total tokens consumed
-    "qc_models_used": ["claude-sonnet-4-0"],
+    "qc_models_used": ["claude-sonnet-4-5"],
     "total_qc_time_actual": 0.003,     // Actual time (with cache)
     "total_qc_time_estimated": 4.67,   // Estimated time (without cache)
     "qc_by_column": {                  // Per-column tracking
