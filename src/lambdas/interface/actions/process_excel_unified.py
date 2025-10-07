@@ -63,9 +63,10 @@ def _calculate_intelligent_cost_estimate(email: str, session_id: str, storage_ma
                     
                     # Extract cost estimates from preview
                     cost_estimates = preview_data.get('cost_estimates', {})
-                    preview_quoted_cost = cost_estimates.get('quoted_validation_cost', 0.0)
-                    
-                    if preview_quoted_cost > 0:
+                    preview_quoted_cost = cost_estimates.get('quoted_validation_cost')
+
+                    # Use preview cost if it exists (including $0 for 100% discounts)
+                    if preview_quoted_cost is not None:
                         logger.info(f"[COST_ESTIMATE] Using preview quoted cost: ${preview_quoted_cost:.2f} from v{version}")
                         return Decimal(str(preview_quoted_cost))
                         
