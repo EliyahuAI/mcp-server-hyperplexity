@@ -3219,12 +3219,13 @@
                         if (previewData.account_info) {
                             const accountInfo = previewData.account_info;
                             const currentBalance = accountInfo.current_balance || 0;
-                            const sufficientBalance = accountInfo.sufficient_balance;
-                            const creditsNeeded = accountInfo.credits_needed || 0;
-                            
+                            // Use effective cost (after discount) for balance checks, not gross cost
+                            const sufficientBalance = currentBalance >= effectiveCost;
+                            const creditsNeeded = Math.max(0, effectiveCost - currentBalance);
+
                             estimatesHtml += `<hr style="margin: 10px 0; border: none; border-top: 1px solid #eee;">`;
                             estimatesHtml += `<div class="cost-item"><span class="cost-label">Your Balance</span><span class="cost-value">$${currentBalance.toFixed(2)}</span></div>`;
-                            
+
                             if (!sufficientBalance && creditsNeeded > 0) {
                                 estimatesHtml += `<div class="cost-item"><span class="cost-label" style="color: #f44336;">Credits Needed</span><span class="cost-value" style="color: #f44336;">$${creditsNeeded.toFixed(2)}</span></div>`;
                             }
@@ -3243,10 +3244,16 @@
 
                 const card = document.getElementById(cardId);
 
-                // Determine if user has sufficient balance
+                // Determine if user has sufficient balance using EFFECTIVE cost (after discount)
                 const accountInfo = previewData.account_info;
-                const sufficientBalance = accountInfo ? accountInfo.sufficient_balance : true; // Default to true if no account info
                 const estimatedCost = previewData.cost_estimates ? (previewData.cost_estimates.quoted_validation_cost || previewData.cost_estimates.quoted_full_cost) : 0;
+                const discount = previewData.cost_estimates?.discount || previewData.discount || 0;
+                const effectiveCost = previewData.cost_estimates?.effective_cost !== undefined
+                    ? previewData.cost_estimates.effective_cost
+                    : Math.max(0, estimatedCost - discount);
+                const currentBalance = accountInfo?.current_balance || 0;
+                const sufficientBalance = accountInfo ? (currentBalance >= effectiveCost) : true; // Use effective cost, not gross cost
+                const creditsNeeded = Math.max(0, effectiveCost - currentBalance);
 
                 // Add event listeners for the buttons above estimates
                 setTimeout(() => {
@@ -3303,13 +3310,13 @@
                     {
                         text: sufficientBalance
                             ? `Process Table${buttonCostText}`
-                            : `Add Credits ($${Math.ceil(accountInfo?.credits_needed || 0).toFixed(2)})`,
+                            : `Add Credits ($${Math.ceil(creditsNeeded).toFixed(2)})`,
                         icon: sufficientBalance ? '✨' : '💳',
                         variant: sufficientBalance ? 'primary' : 'secondary',
                         width: 'full',
                         callback: async (e) => {
                             const button = e.target.closest('button');
-                            
+
                             if (sufficientBalance) {
                                 // User has sufficient balance - proceed with processing
                                 globalState.hasInsufficientBalance = false;
@@ -3335,7 +3342,7 @@
                                     }
                                 };
                                 markButtonSelected(button, '💳 Opening store...');
-                                const creditsNeeded = accountInfo?.credits_needed || estimatedCost;
+                                // Use effective cost-based creditsNeeded (already calculated above using effectiveCost)
                                 const recommendedAmount = Math.ceil(creditsNeeded); // Round up to nearest dollar
                                 openAddCreditsPage(recommendedAmount, `${cardId}-messages`);
 
