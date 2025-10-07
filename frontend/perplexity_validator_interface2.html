@@ -8523,6 +8523,10 @@ Please provide any additional context, or simply proceed to generate your initia
                 const estimatedCost = globalState.estimatedCost || 0;
                 const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
 
+                // DEBUG: Log security check values
+                console.log('[SECURITY] currentBalance:', currentBalance, 'effectiveCost:', effectiveCost, 'estimatedCost:', estimatedCost);
+                console.log('[SECURITY] globalState.effectiveCost:', globalState.effectiveCost);
+
                 // If balance seems wrong, refresh it
                 if (currentBalance === 0 || currentBalance === undefined) {
                     try {
@@ -8535,7 +8539,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
 
                 if (currentBalance < effectiveCost) {
-                    console.warn(`[SECURITY] Payment bypass attempt blocked - insufficient balance`);
+                    console.warn(`[SECURITY] Payment bypass attempt blocked - insufficient balance (balance: ${currentBalance}, effectiveCost: ${effectiveCost})`);
                     completeThinkingInCard(cardId, 'Insufficient Balance');
 
                     // Mark that user attempted processing
