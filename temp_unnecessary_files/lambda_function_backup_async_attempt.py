@@ -1548,7 +1548,7 @@ async def generate_config_automatic(table_analysis: Dict, api_key: str, session_
             config_response = await call_anthropic_api_structured(
                 session, prompt, api_key, 
                 schema=get_config_generation_schema(),
-                model="claude-sonnet-4-0"
+                model="claude-sonnet-4-5"
             )
         
         # Extract generated config from response
@@ -1605,7 +1605,7 @@ async def generate_config_interview(table_analysis: Dict, api_key: str, session_
         # Call Claude using existing infrastructure
         async with aiohttp.ClientSession() as session:
             response = await call_anthropic_api_text(
-                session, prompt, api_key, model="claude-sonnet-4-0"
+                session, prompt, api_key, model="claude-sonnet-4-5"
             )
         
         ai_response = response.get('content', 'Interview response generated')
@@ -2108,7 +2108,7 @@ def extract_config_from_claude_response(response: Dict) -> Dict:
         raise
 
 async def call_anthropic_api_structured(session: aiohttp.ClientSession, prompt: str, 
-                                       api_key: str, schema: Dict, model: str = "claude-sonnet-4-0") -> Dict:
+                                       api_key: str, schema: Dict, model: str = "claude-sonnet-4-5") -> Dict:
     """Call Anthropic API with structured output (tool use)."""
     headers = {
         'Content-Type': 'application/json',
@@ -2138,7 +2138,7 @@ async def call_anthropic_api_structured(session: aiohttp.ClientSession, prompt: 
             raise Exception(f"Anthropic API error: {response.status} - {error_text}")
 
 async def call_anthropic_api_text(session: aiohttp.ClientSession, prompt: str, 
-                                 api_key: str, model: str = "claude-sonnet-4-0") -> Dict:
+                                 api_key: str, model: str = "claude-sonnet-4-5") -> Dict:
     """Call Anthropic API for text response (interview mode)."""
     headers = {
         'Content-Type': 'application/json',
