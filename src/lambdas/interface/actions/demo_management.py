@@ -201,10 +201,10 @@ def copy_demo_to_session(demo_name: str, email: str, old_session_id: str) -> Dic
         domain = email.split('@')[1].lower()
         session_prefix = f'results/{domain}/{email_prefix}/{new_session_id}/'
 
-        # Copy data file using standard naming pattern that system expects
+        # Copy data file preserving original filename
         data_source_key = demo_metadata['data_file']['s3_key']
-        original_extension = demo_metadata['data_file']['name'].split('.')[-1]
-        data_dest_key = f"{session_prefix}excel_file.{original_extension}"
+        original_filename = demo_metadata['data_file']['name']
+        data_dest_key = f"{session_prefix}{original_filename}"
 
         s3_client.copy_object(
             Bucket=bucket_name,
