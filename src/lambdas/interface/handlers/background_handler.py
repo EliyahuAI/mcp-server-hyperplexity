@@ -3696,12 +3696,12 @@ def handle_main_processing(event, context):
                     if preview_data:
                         # First try account_info (nested location)
                         preview_quoted_cost = preview_data.get('account_info', {}).get('quoted_validation_cost')
-                        
-                        # If not found, try top level (direct location)  
-                        if not preview_quoted_cost:
+
+                        # If not found, try top level (direct location)
+                        if preview_quoted_cost is None:
                             preview_quoted_cost = preview_data.get('quoted_validation_cost')
-                    
-                    if preview_quoted_cost:
+
+                    if preview_quoted_cost is not None:
                         charged_cost = float(preview_quoted_cost)
                         logger.debug(f"[BILLING_PATH] ✅ Using preview quoted cost for full validation: ${charged_cost:.6f}")
                     else:
