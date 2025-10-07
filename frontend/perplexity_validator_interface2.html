@@ -3036,27 +3036,28 @@
                 // Use global state values
                 const currentBalance = globalState.accountBalance || 0;
                 const estimatedCost = globalState.estimatedCost || 0;
-                const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
-                const sufficientBalance = currentBalance >= estimatedCost;
-                
+                const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
+                const creditsNeeded = Math.max(0, effectiveCost - currentBalance);
+                const sufficientBalance = currentBalance >= effectiveCost;
+
                 // Find all buttons that need updating
                 const buttons = document.querySelectorAll('button');
                 buttons.forEach(button => {
                     const buttonText = button.textContent || '';
-                    
+
                     // Check if this is a credits/process button
-                    if (buttonText.includes('💳') || buttonText.includes('Add') && buttonText.includes('Credits') || 
+                    if (buttonText.includes('💳') || buttonText.includes('Add') && buttonText.includes('Credits') ||
                         buttonText.includes('Process Table') || buttonText.includes('Opening store')) {
-                        
+
                         // Check if it's in a preview card
                         const card = button.closest('.card');
                         if (card && (card.textContent.includes('Your Balance') || card.textContent.includes('Est. Cost'))) {
                             // Reset button state
                             markButtonUnselected(button);
-                            
+
                             if (sufficientBalance) {
                                 // Show process button with cost
-                                button.innerHTML = `<span class="button-text">🔍 Process Table ($${estimatedCost.toFixed(2)})</span>`;
+                                button.innerHTML = `<span class="button-text">🔍 Process Table ($${effectiveCost.toFixed(2)})</span>`;
                                 button.className = 'std-button primary';
                                 button.setAttribute('data-action', 'process');
                                 
@@ -3791,28 +3792,27 @@
                             setTimeout(() => startOrderPolling(messageContainer), 2000);
                         }
                     } else {
-                        // Always check balance when returning to tab
-                        const oldBalance = globalState.accountBalance;
+                        // Check balance once when returning to tab
                         await refreshCurrentBalance();
+                        const oldBalance = globalState.accountBalance || 0;
 
                         // Check if we have sufficient balance before checking for orders
                         const currentBalance = globalState.accountBalance || 0;
                         const estimatedCost = globalState.estimatedCost || 0;
-                        const hasSufficientBalance = currentBalance >= estimatedCost;
+                        const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
+                        const hasSufficientBalance = currentBalance >= effectiveCost;
 
                         // Only check for new orders if we don't have sufficient balance
                         if (!hasSufficientBalance) {
                             try {
-                                await checkForNewOrders('messages', false); // Don't show status message
+                                await checkForNewOrders('messages', false); // Don't show status message (will refresh balance if orders found)
                             } catch (error) {
                                 console.error('[FOCUS] Error checking orders:', error);
                             }
-                        } else {
                         }
 
-                        // Get balance again in case orders were processed
-                        await refreshCurrentBalance();
-                        const newBalance = globalState.accountBalance;
+                        // Get new balance (may have been updated by checkForNewOrders)
+                        const newBalance = globalState.accountBalance || 0;
 
                         if (oldBalance !== newBalance) {
 
@@ -3825,7 +3825,8 @@
 
                                 // Check if we can auto-trigger processing
                                 const estimatedCost = globalState.estimatedCost || 0;
-                                const canProcess = newBalance >= estimatedCost;
+                                const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
+                                const canProcess = newBalance >= effectiveCost;
 
                                 if (canProcess && globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger) {
 
@@ -3888,26 +3889,26 @@
                 buttonElement.disabled = true;
 
                 try {
-                    const oldBalance = globalState.accountBalance || 0;
+                    // Refresh balance once
                     await refreshCurrentBalance();
+                    const oldBalance = globalState.accountBalance || 0;
 
                     // Check if we have sufficient balance before checking for orders
                     const estimatedCost = globalState.estimatedCost || 0;
-                    const hasSufficientBalance = oldBalance >= estimatedCost;
+                    const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
+                    const hasSufficientBalance = oldBalance >= effectiveCost;
 
                     // Only check for new orders if we don't have sufficient balance
                     if (!hasSufficientBalance) {
                         buttonText.textContent = '🔍 Checking orders...';
                         try {
-                            await checkForNewOrders('messages', false);
+                            await checkForNewOrders('messages', false); // Will refresh balance if orders found
                         } catch (orderError) {
                             console.error('[BALANCE_CHECK] Order check failed:', orderError);
                         }
-                    } else {
                     }
 
-                    // Refresh balance again after order check
-                    await refreshCurrentBalance();
+                    // Get new balance (may have been updated by checkForNewOrders)
                     const newBalance = globalState.accountBalance || 0;
 
 
@@ -3966,65 +3967,80 @@
                 }
             };
 
-            // Order polling state
-            let orderPollingInterval = null;
+            // Order polling state with exponential backoff
+            let orderPollingTimeout = null;
             let pollingAttempts = 0;
-            const MAX_POLLING_ATTEMPTS = 10; // Poll for ~2 minutes
+            const MAX_POLLING_ATTEMPTS = 12; // With exponential backoff: 2s, 4s, 8s, 16s, 32s, 60s... = ~5 minutes total
+            const INITIAL_POLL_DELAY = 2000; // Start with 2 seconds
+            const MAX_POLL_DELAY = 60000; // Cap at 60 seconds
 
             function startOrderPolling(messageContainer = 'messages') {
                 // Clear any existing polling
-                if (orderPollingInterval) {
-                    clearInterval(orderPollingInterval);
-                }
-                
+                stopOrderPolling();
+
                 pollingAttempts = 0;
-                
-                orderPollingInterval = setInterval(async () => {
-                    pollingAttempts++;
-                    
-                    try {
-                        // Always check but only show status messages occasionally to reduce spam
-                        const shouldShowMessage = pollingAttempts % 3 === 1;
-                        const foundCredits = await checkForNewOrders(messageContainer, shouldShowMessage);
-                        
-                        if (foundCredits) {
-                            stopOrderPolling();
-                            return;
-                        }
-                        
-                        if (pollingAttempts >= MAX_POLLING_ATTEMPTS) {
-                            const timeoutEl = showMessage(messageContainer, '⏰ Checkout soon to not lose your work! We\'ll continue checking in the background. When ready for complete analysis, click here.', 'info', false, 'polling-timeout');
-                            
-                            // Make the timeout message clickable to retry validation
-                            if (timeoutEl) {
-                                timeoutEl.style.cursor = 'pointer';
-                                timeoutEl.onclick = () => {
-                                    // Clear the timeout message and try to find a retry button or validation card
-                                    timeoutEl.remove();
-                                    const validationCards = document.querySelectorAll('.validation-card');
-                                    if (validationCards.length > 0) {
-                                        const lastCard = validationCards[validationCards.length - 1];
-                                        const processButton = lastCard.querySelector('button[data-action*="process"], button:contains("Process")');
-                                        if (processButton) {
-                                            processButton.click();
-                                        }
-                                    }
-                                };
-                            }
-                            
-                            stopOrderPolling();
-                        }
-                        
-                    } catch (error) {
-                        console.error('[POLLING] Error during polling:', error);
-                    }
-                }, 5000); // Check every 5 seconds
+
+                // Start first poll immediately
+                pollForOrders(messageContainer);
             }
-            
+
+            async function pollForOrders(messageContainer) {
+                pollingAttempts++;
+
+                try {
+                    // Always check but only show status messages occasionally to reduce spam
+                    const shouldShowMessage = pollingAttempts % 3 === 1;
+                    const foundCredits = await checkForNewOrders(messageContainer, shouldShowMessage);
+
+                    if (foundCredits) {
+                        stopOrderPolling();
+                        return;
+                    }
+
+                    if (pollingAttempts >= MAX_POLLING_ATTEMPTS) {
+                        const timeoutEl = showMessage(messageContainer, '⏰ Complete your purchase when ready! Return to this tab after checkout to continue.', 'info', false, 'polling-timeout');
+
+                        // Make the timeout message clickable to retry validation
+                        if (timeoutEl) {
+                            timeoutEl.style.cursor = 'pointer';
+                            timeoutEl.onclick = () => {
+                                // Clear the timeout message and try to find a retry button or validation card
+                                timeoutEl.remove();
+                                const validationCards = document.querySelectorAll('.validation-card');
+                                if (validationCards.length > 0) {
+                                    const lastCard = validationCards[validationCards.length - 1];
+                                    const processButton = lastCard.querySelector('button[data-action*="process"], button:contains("Process")');
+                                    if (processButton) {
+                                        processButton.click();
+                                    }
+                                }
+                            };
+                        }
+
+                        stopOrderPolling();
+                        return;
+                    }
+
+                    // Calculate next delay with exponential backoff
+                    const delay = Math.min(INITIAL_POLL_DELAY * Math.pow(2, pollingAttempts - 1), MAX_POLL_DELAY);
+                    console.log(`[POLLING] Next order check in ${delay / 1000}s (attempt ${pollingAttempts}/${MAX_POLLING_ATTEMPTS})`);
+
+                    // Schedule next poll
+                    orderPollingTimeout = setTimeout(() => pollForOrders(messageContainer), delay);
+
+                } catch (error) {
+                    console.error('[POLLING] Error during polling:', error);
+
+                    // On error, retry with exponential backoff
+                    const delay = Math.min(INITIAL_POLL_DELAY * Math.pow(2, pollingAttempts - 1), MAX_POLL_DELAY);
+                    orderPollingTimeout = setTimeout(() => pollForOrders(messageContainer), delay);
+                }
+            }
+
             function stopOrderPolling() {
-                if (orderPollingInterval) {
-                    clearInterval(orderPollingInterval);
-                    orderPollingInterval = null;
+                if (orderPollingTimeout) {
+                    clearTimeout(orderPollingTimeout);
+                    orderPollingTimeout = null;
                 }
                 pollingAttempts = 0;
             }
@@ -4069,7 +4085,8 @@
                             await refreshCurrentBalance();
                             const currentBalance = globalState.accountBalance || 0;
                             const estimatedCost = globalState.estimatedCost || 0;
-                            const hasSufficientBalance = currentBalance >= estimatedCost;
+                            const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
+                            const hasSufficientBalance = currentBalance >= effectiveCost;
 
                             // Show appropriate message based on balance sufficiency
                             if (hasSufficientBalance) {
@@ -4077,7 +4094,7 @@
                                 // Stop any ongoing polling since we have sufficient balance
                                 stopOrderPolling();
                             } else {
-                                const additionalNeeded = estimatedCost - currentBalance;
+                                const additionalNeeded = effectiveCost - currentBalance;
                                 showMessage(messageContainer, `Balance updated: $${currentBalance.toFixed(2)}, purchase $${Math.ceil(additionalNeeded).toFixed(2)} credit to process table`, 'success');
                             }
 
@@ -4124,13 +4141,15 @@
                         break;
                     }
                 }
-                
+
                 // Fallback to global state if not found in preview
                 if (estimatedCost === 0) {
                     estimatedCost = globalState.estimatedCost || 0;
                 }
-                
-                const sufficientBalance = currentBalance >= estimatedCost;
+
+                // Use effective cost (net cost after discount) for balance checks
+                const effectiveCost = globalState.effectiveCost || estimatedCost;
+                const sufficientBalance = currentBalance >= effectiveCost;
                 
                 // Find and update the balance line
                 for (const item of costItems) {
@@ -4160,14 +4179,14 @@
                             item.style.display = ''; // Show credits needed line
                             const valueEl = item.querySelector('.cost-value');
                             if (valueEl) {
-                                const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
+                                const creditsNeeded = Math.max(0, effectiveCost - currentBalance);
                                 valueEl.textContent = `$${creditsNeeded.toFixed(2)}`;
                             }
                         }
                         break;
                     }
                 }
-                
+
                 // Update the main action button
                 const cardElement = previewCard.closest('.card');
                 if (cardElement) {
@@ -4180,17 +4199,17 @@
                             const text = btn.textContent;
                             return text.includes('Process Table') || text.includes('Add Credits');
                         });
-                        
+
                         if (mainButton) {
                             const buttonText = mainButton.querySelector('.button-text');
                             if (buttonText) {
                                 if (sufficientBalance) {
                                     // Update to Process button
-                                    buttonText.textContent = `🔍 Process Table ($${estimatedCost.toFixed(2)})`;
+                                    buttonText.textContent = `🔍 Process Table ($${effectiveCost.toFixed(2)})`;
                                     mainButton.className = mainButton.className.replace('secondary', 'primary');
                                 } else {
                                     // Update to Add Credits button
-                                    const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
+                                    const creditsNeeded = Math.max(0, effectiveCost - currentBalance);
                                     buttonText.textContent = `💳 Add $${creditsNeeded.toFixed(2)} Credits`;
                                     mainButton.className = mainButton.className.replace('primary', 'secondary');
                                     
@@ -8504,6 +8523,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 // SECURITY: Get fresh balance before processing to prevent payment bypass
                 let currentBalance = globalState.accountBalance || 0;
                 const estimatedCost = globalState.estimatedCost || 0;
+                const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
 
                 // If balance seems wrong, refresh it
                 if (currentBalance === 0 || currentBalance === undefined) {
@@ -8516,7 +8536,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 }
 
 
-                if (currentBalance < estimatedCost) {
+                if (currentBalance < effectiveCost) {
                     console.warn(`[SECURITY] Payment bypass attempt blocked - insufficient balance`);
                     completeThinkingInCard(cardId, 'Insufficient Balance');
 
@@ -8541,11 +8561,11 @@ Please provide any additional context, or simply proceed to generate your initia
                         processingButtons.forEach(buttonText => {
                             if (buttonText.textContent.includes('Processing...')) {
                                 // Find what the button text should be based on balance
-                                const sufficientBalance = currentBalance >= estimatedCost;
+                                const sufficientBalance = currentBalance >= effectiveCost;
                                 if (sufficientBalance) {
-                                    buttonText.textContent = `✨ Process Table${estimatedCost ? ` ($${estimatedCost.toFixed(2)})` : ''}`;
+                                    buttonText.textContent = `✨ Process Table${effectiveCost ? ` ($${effectiveCost.toFixed(2)})` : ''}`;
                                 } else {
-                                    const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
+                                    const creditsNeeded = Math.max(0, effectiveCost - currentBalance);
                                     const recommendedAmount = Math.ceil(creditsNeeded);
                                     buttonText.textContent = `💳 Add Credits ($${recommendedAmount.toFixed(2)})`;
                                 }
@@ -8556,7 +8576,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
                     showInsufficientBalanceError({
                         current_balance: currentBalance,
-                        estimated_minimum_cost: estimatedCost
+                        estimated_minimum_cost: effectiveCost
                     }, cardId);
                     return;
                 }
@@ -9760,7 +9780,7 @@ Please provide any additional context, or simply proceed to generate your initia
                                                 globalState.accountBalance = newBalance;
 
                                                 // Check if balance became sufficient and user previously attempted processing
-                                                const newSufficientBalance = newBalance >= estimatedCost;
+                                                const newSufficientBalance = newBalance >= effectiveCost;
 
 
                                                 if (newSufficientBalance && !sufficientBalance && globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger) {
@@ -9831,7 +9851,7 @@ Please provide any additional context, or simply proceed to generate your initia
                                         globalState.accountBalance = orderData.new_balance;
 
                                         // Check for auto-processing trigger (same logic as balance check)
-                                        const orderSufficientBalance = orderData.new_balance >= estimatedCost;
+                                        const orderSufficientBalance = orderData.new_balance >= effectiveCost;
                                         if (orderSufficientBalance && !sufficientBalance && globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger) {
                                             // Show success message and trigger auto-processing
                                             const messageContainers = document.querySelectorAll('[id$="-messages"]');
@@ -9888,9 +9908,9 @@ Please provide any additional context, or simply proceed to generate your initia
                 }
 
                 // Reuse existing button creation logic (same as in preview cards)
-                const creditsNeeded = Math.max(0, estimatedCost - currentBalance);
+                const creditsNeeded = Math.max(0, effectiveCost - currentBalance);
 
-                // Use effectiveCost already declared at line 9110
+                // Use effectiveCost already declared at line 9726
                 const discount = globalState.discount || 0;
 
                 let buttonCostText = '';
