@@ -842,22 +842,22 @@
         }
     }
 
-    /* Normal spin: 3 heartbeats = 3.6s (3 x 1.2s) */
+    /* Normal spin: continuous rotation while class is applied */
     .thinking-square-wrapper.spinning {
-        animation: spinWrapper 3.6s ease-in-out;
+        animation: spinWrapper 2s linear infinite;
     }
 
     .progress-square-wrapper.spinning {
-        animation: spinWrapper 3.6s ease-in-out;
+        animation: spinWrapper 2s linear infinite;
     }
 
-    /* Fast spin when stuck: 2 heartbeats = 1.2s (2 x 0.6s) */
+    /* Fast spin when stuck: faster continuous rotation */
     .thinking-square-wrapper.spinning.stuck {
-        animation: spinWrapper 1.2s ease-in-out;
+        animation: spinWrapper 1s linear infinite;
     }
 
     .progress-square-wrapper.spinning.stuck {
-        animation: spinWrapper 1.2s ease-in-out;
+        animation: spinWrapper 1s linear infinite;
     }
 
     /* Flip animation */
@@ -2462,11 +2462,11 @@
 
                 state.intervals.push(stuckCheckInterval);
 
-                // Heartbeat speed up and flip animation (50% chance every 5 seconds)
-                const heartbeatFlipInterval = setInterval(() => {
+                // Animation cycle: rest → heartbeat speeds up → rotation → calm down → repeat
+                const animationCycleInterval = setInterval(() => {
                     const indicator = document.getElementById(`${cardId}-thinking`);
                     if (!indicator) {
-                        clearInterval(heartbeatFlipInterval);
+                        clearInterval(animationCycleInterval);
                         return;
                     }
 
@@ -2474,28 +2474,36 @@
                     const square = indicator.querySelector('.progress-square, .thinking-square');
                     if (!wrapper || !square) return;
 
-                    // 50% chance to trigger heartbeat speed up and flip sequence
-                    if (Math.random() < 0.5) {
-                        // Phase 1: Wait/anticipation - normal heartbeat continues (0.5s)
+                    // Animation sequence:
+                    // 0-3s: Rest (no rotation, normal heartbeat)
+                    // 3-4s: Heartbeat speeds up (no rotation yet)
+                    // 4-7s: Fast heartbeat + continuous rotation (3s of spinning)
+                    // 7-7.5s: Calm down (stop rotation, slow heartbeat)
+                    // Then immediately restart with rest phase
+
+                    // Phase 1: Speed up heartbeat (after 3s rest)
+                    setTimeout(() => {
+                        square.classList.add('fast-heartbeat');
+
+                        // Phase 2: Start continuous rotation after heartbeat speeds up (1s later)
                         setTimeout(() => {
-                            // Phase 2: Speed up heartbeat (faster pulse) - 0.8 seconds
-                            square.classList.add('fast-heartbeat');
+                            wrapper.classList.add('spinning');
 
+                            // Phase 3: Stop rotation after 3 seconds of spinning
                             setTimeout(() => {
-                                // Phase 3: Flip wrapper while heartbeat continues fast - 0.8s
-                                wrapper.classList.add('flipping');
+                                wrapper.classList.remove('spinning');
 
+                                // Phase 4: Calm down heartbeat (0.5s later)
                                 setTimeout(() => {
-                                    // Phase 4: Calm down - return to normal heartbeat
                                     square.classList.remove('fast-heartbeat');
-                                    wrapper.classList.remove('flipping');
-                                }, 800); // After flip completes
-                            }, 800); // After heartbeat speeds up
-                        }, 500); // Initial wait
-                    }
-                }, 5000);
+                                }, 500);
+                            }, 3000); // Spin for 3 seconds
+                        }, 1000);
+                    }, 3000);
 
-                state.intervals.push(heartbeatFlipInterval);
+                }, 7500); // Full cycle: 3s rest + 1s speedup + 3s spin + 0.5s calm = 7.5s
+
+                state.intervals.push(animationCycleInterval);
             }
 
             function stopDynamicAnimations(cardId) {
@@ -3188,16 +3196,6 @@
                             ? previewData.cost_estimates.effective_cost
                             : Math.max(0, estimatedCost - discount);
 
-                        console.log('[COST_DEBUG] Cost calculation:', {
-                            estimatedCost,
-                            discount,
-                            effectiveCost,
-                            cost_estimates_discount: previewData.cost_estimates.discount,
-                            cost_estimates_effective: previewData.cost_estimates.effective_cost,
-                            top_level_discount: previewData.discount,
-                            top_level_effective: previewData.effective_cost
-                        });
-
                         if (discount > 0) {
                             estimatesHtml += `<div class="cost-item"><span class="cost-label">Cost → Discounted</span><span class="cost-value"><span style="text-decoration: line-through; color: #999;">$${estimatedCost.toFixed(2)}</span> → $${effectiveCost.toFixed(2)}</span></div>`;
                         } else {
@@ -3239,16 +3237,6 @@
                 const sufficientBalance = accountInfo ? accountInfo.sufficient_balance : true; // Default to true if no account info
                 const estimatedCost = previewData.cost_estimates ? (previewData.cost_estimates.quoted_validation_cost || previewData.cost_estimates.quoted_full_cost) : 0;
 
-                // Debug logging for discount and balance
-                console.log('[DISCOUNT_DEBUG] Preview account info:', {
-                    current_balance: accountInfo?.current_balance,
-                    sufficient_balance: accountInfo?.sufficient_balance,
-                    credits_needed: accountInfo?.credits_needed,
-                    quoted_cost: estimatedCost,
-                    discount: previewData.discount || previewData.cost_estimates?.discount,
-                    effective_cost: previewData.effective_cost || previewData.cost_estimates?.effective_cost
-                });
-                
                 // Add event listeners for the buttons above estimates
                 setTimeout(() => {
                     const downloadBtn = card.querySelector('[data-action="download-preview"]');
@@ -4318,9 +4306,6 @@
             }
 
             function routeMessage(data, sessionId) {
-
-                // Debug logging for all WebSocket messages
-                console.log('[WS] Received message:', data.type || data.status, data);
 
                 // Safety check: ensure data is valid
                 if (!data || typeof data !== 'object') {
