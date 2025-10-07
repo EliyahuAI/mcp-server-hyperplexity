@@ -23,7 +23,8 @@
       "Bash(gemini:*)",
       "Bash(aws s3 cp:*)",
       "Bash(aws s3 ls:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": []
   }
