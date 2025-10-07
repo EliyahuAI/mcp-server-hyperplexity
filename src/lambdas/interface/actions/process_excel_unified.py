@@ -45,34 +45,134 @@ def _calculate_intelligent_cost_estimate(email: str, session_id: str, storage_ma
         
         # Ensure multiplier is a float (DynamoDB may return Decimal)
         multiplier = float(multiplier) if multiplier is not None else 1.0
-        
-        # Try to get cost estimate from existing preview results
+
+        # First get the configuration_id being used
+        try:
+            # Get the current config to know which configuration_id we're using
+            config_data, config_version = storage_manager.get_latest_config(email, session_id)
+            if config_data:
+                # Extract configuration_id - it might be a full path or just an ID
+                configuration_id = config_data.get('configuration_id', '')
+
+                # If it looks like a path, extract just the filename part
+                if '/' in configuration_id:
+                    # Extract just the config filename from the path
+                    configuration_id = configuration_id.split('/')[-1]
+                    # Remove .json extension if present
+                    if configuration_id.endswith('.json'):
+                        configuration_id = configuration_id[:-5]
+                    # Add the _ai_generated suffix if not present
+                    if not configuration_id.endswith('_ai_generated'):
+                        configuration_id = f"{configuration_id}_ai_generated"
+                elif not configuration_id:
+                    # Fallback to constructing from version
+                    configuration_id = f"config_v{config_version}_ai_generated" if config_version else None
+            else:
+                configuration_id = None
+                config_version = None
+
+            logger.info(f"[COST_ESTIMATE] Looking for preview with configuration_id: {configuration_id}")
+
+        except Exception as e:
+            logger.debug(f"[COST_ESTIMATE] Could not determine configuration: {e}")
+            configuration_id = None
+            config_version = None
+
+        # Try DynamoDB runs table for matching preview
+        if configuration_id:
+            try:
+                from boto3.dynamodb.conditions import Key, Attr
+                import boto3
+
+                dynamodb = boto3.resource('dynamodb')
+                runs_table = dynamodb.Table('perplexity-validator-runs')
+
+                # Get the base session ID (without _async suffix)
+                base_session_id = session_id.replace('_async', '')
+
+                # Scan for preview runs with matching configuration_id
+                # We need to scan because configuration_id is not a key
+                response = runs_table.scan(
+                    FilterExpression=Attr('session_id').begins_with(base_session_id[:30]) &
+                                     Attr('run_type').eq('Preview') &
+                                     Attr('configuration_id').eq(configuration_id)
+                )
+
+                preview_runs = response.get('Items', [])
+
+                if preview_runs:
+                    # Get the most recent preview with matching config
+                    latest_preview = sorted(preview_runs, key=lambda x: x.get('start_time', ''), reverse=True)[0]
+
+                    # Extract costs from DynamoDB
+                    preview_quoted_cost = latest_preview.get('quoted_validation_cost')
+                    preview_discount = latest_preview.get('discount', 0.0)
+
+                    logger.info(f"[COST_ESTIMATE] ✅ DynamoDB preview found with matching configuration_id={configuration_id}: quoted=${preview_quoted_cost}, discount=${preview_discount}")
+
+                    if preview_quoted_cost is not None:
+                        # Calculate effective cost after discount
+                        effective_cost = max(0.0, float(preview_quoted_cost) - float(preview_discount))
+                        logger.info(f"[COST_ESTIMATE] Using DynamoDB preview costs: quoted=${preview_quoted_cost:.2f}, discount=${preview_discount:.2f}, effective=${effective_cost:.2f}")
+                        return Decimal(str(effective_cost))
+
+            except Exception as dynamo_error:
+                logger.debug(f"[COST_ESTIMATE] DynamoDB lookup failed: {dynamo_error}")
+
+        # Try to get cost estimate from S3 preview results
         try:
             # Look for existing preview results in this session
             session_path = storage_manager.get_session_path(email, session_id)
-            
-            # Try to find preview results in different config versions
-            for version in range(5, 0, -1):  # Check versions 5 down to 1
+
+            # Build the list of versions to try - prioritize the matching config version
+            versions_to_try = []
+            if config_version:
+                versions_to_try.append(config_version)
+                # Then try other versions as fallback
+                for v in range(5, 0, -1):
+                    if v != config_version:
+                        versions_to_try.append(v)
+            else:
+                # No specific version, try all from 5 down to 1
+                versions_to_try = list(range(5, 0, -1))
+
+            # Try to find preview results in order of priority
+            for version in versions_to_try:
                 try:
-                    preview_key = f"{session_path}/results/v{version}/preview_results.json"
+                    # Match the path structure used in background_handler.py
+                    preview_key = f"{session_path}v{version}_results/preview_results.json"
                     response = storage_manager.s3_client.get_object(
                         Bucket=storage_manager.bucket_name,
                         Key=preview_key
                     )
                     preview_data = json.loads(response['Body'].read().decode('utf-8'))
-                    
+
                     # Extract cost estimates from preview
                     cost_estimates = preview_data.get('cost_estimates', {})
                     preview_quoted_cost = cost_estimates.get('quoted_validation_cost')
+                    preview_discount = cost_estimates.get('discount', 0.0)
+
+                    is_matching_version = (version == config_version) if config_version else False
+
+                    logger.info(f"[COST_ESTIMATE] v{version} preview found (target v{config_version}, match={is_matching_version}) - quoted_validation_cost: {preview_quoted_cost}, discount: {preview_discount}")
 
                     # Use preview cost if it exists (including $0 for 100% discounts)
                     if preview_quoted_cost is not None:
-                        logger.info(f"[COST_ESTIMATE] Using preview quoted cost: ${preview_quoted_cost:.2f} from v{version}")
-                        return Decimal(str(preview_quoted_cost))
-                        
+                        # Calculate effective cost after discount
+                        effective_cost = max(0.0, float(preview_quoted_cost) - float(preview_discount))
+
+                        if is_matching_version:
+                            logger.info(f"[COST_ESTIMATE] ✅ Using preview costs from matching v{version}: quoted=${preview_quoted_cost:.2f}, discount=${preview_discount:.2f}, effective=${effective_cost:.2f}")
+                        else:
+                            logger.info(f"[COST_ESTIMATE] ⚠️ Using preview costs from different v{version} (wanted v{config_version}): quoted=${preview_quoted_cost:.2f}, discount=${preview_discount:.2f}, effective=${effective_cost:.2f}")
+
+                        return Decimal(str(effective_cost))
+                    else:
+                        logger.warning(f"[COST_ESTIMATE] ❌ v{version} has None quoted_validation_cost, trying next version")
+
                 except Exception:
                     continue  # Try next version
-                    
+
         except Exception as preview_error:
             logger.debug(f"[COST_ESTIMATE] No preview data found: {preview_error}")
         

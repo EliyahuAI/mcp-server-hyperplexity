@@ -2694,8 +2694,11 @@ def handle_main_processing(event, context):
                 preview_data = storage_manager_temp.get_latest_preview_results(email, clean_session_id)
 
                 if preview_data and preview_data.get('cost_estimates'):
-                    estimated_cost = preview_data['cost_estimates'].get('quoted_validation_cost', 0.01)
-                    logger.debug(f"[SECURITY] Using quoted cost from preview: ${estimated_cost:.6f}")
+                    quoted_cost = preview_data['cost_estimates'].get('quoted_validation_cost', 0.01)
+                    discount = preview_data['cost_estimates'].get('discount', 0.0)
+                    # Use effective cost (after discount) for balance check
+                    estimated_cost = max(0.0, float(quoted_cost) - float(discount))
+                    logger.debug(f"[SECURITY] Using preview costs: quoted=${quoted_cost:.6f}, discount=${discount:.6f}, effective=${estimated_cost:.6f}")
                 else:
                     # Fallback: calculate estimated cost using domain multiplier
                     email_domain = email.split('@')[-1] if '@' in email else 'unknown'
