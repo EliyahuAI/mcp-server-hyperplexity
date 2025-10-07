@@ -3036,7 +3036,7 @@
                 // Use global state values
                 const currentBalance = globalState.accountBalance || 0;
                 const estimatedCost = globalState.estimatedCost || 0;
-                const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
+                const effectiveCost = globalState.effectiveCost ?? estimatedCost; // Use ?? not || so 0 doesn't fall back
                 const creditsNeeded = Math.max(0, effectiveCost - currentBalance);
                 const sufficientBalance = currentBalance >= effectiveCost;
 
@@ -3170,10 +3170,6 @@
                 // TRUST THE BACKEND - use its balance calculations, don't recalculate
                 const sufficientBalance = accountInfo?.sufficient_balance ?? true;
                 const creditsNeeded = accountInfo?.credits_needed || 0;
-
-                // DEBUG: Log what we got from backend
-                console.log('[PREVIEW] Backend account_info:', accountInfo);
-                console.log('[PREVIEW] sufficientBalance:', sufficientBalance, 'creditsNeeded:', creditsNeeded);
 
                 // Store in global state for later use
                 globalState.estimatedCost = estimatedCost;
@@ -3797,7 +3793,7 @@
                         // Check if we have sufficient balance before checking for orders
                         const currentBalance = globalState.accountBalance || 0;
                         const estimatedCost = globalState.estimatedCost || 0;
-                        const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
+                        const effectiveCost = globalState.effectiveCost ?? estimatedCost; // Use ?? not || so 0 doesn't fall back
                         const hasSufficientBalance = currentBalance >= effectiveCost;
 
                         // Only check for new orders if we don't have sufficient balance
@@ -3823,7 +3819,7 @@
 
                                 // Check if we can auto-trigger processing
                                 const estimatedCost = globalState.estimatedCost || 0;
-                                const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
+                                const effectiveCost = globalState.effectiveCost ?? estimatedCost; // Use ?? not || so 0 doesn't fall back
                                 const canProcess = newBalance >= effectiveCost;
 
                                 if (canProcess && globalState.userAttemptedProcessing && globalState.pendingProcessingTrigger) {
@@ -3893,7 +3889,7 @@
 
                     // Check if we have sufficient balance before checking for orders
                     const estimatedCost = globalState.estimatedCost || 0;
-                    const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
+                    const effectiveCost = globalState.effectiveCost ?? estimatedCost; // Use ?? not || so 0 doesn't fall back
                     const hasSufficientBalance = oldBalance >= effectiveCost;
 
                     // Only check for new orders if we don't have sufficient balance
@@ -4083,7 +4079,7 @@
                             await refreshCurrentBalance();
                             const currentBalance = globalState.accountBalance || 0;
                             const estimatedCost = globalState.estimatedCost || 0;
-                            const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
+                            const effectiveCost = globalState.effectiveCost ?? estimatedCost; // Use ?? not || so 0 doesn't fall back
                             const hasSufficientBalance = currentBalance >= effectiveCost;
 
                             // Show appropriate message based on balance sufficiency
@@ -4146,7 +4142,7 @@
                 }
 
                 // Use effective cost (net cost after discount) for balance checks
-                const effectiveCost = globalState.effectiveCost || estimatedCost;
+                const effectiveCost = globalState.effectiveCost ?? estimatedCost; // Use ?? not || so 0 doesn't fall back
                 const sufficientBalance = currentBalance >= effectiveCost;
                 
                 // Find and update the balance line
@@ -8521,11 +8517,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 // SECURITY: Get fresh balance before processing to prevent payment bypass
                 let currentBalance = globalState.accountBalance || 0;
                 const estimatedCost = globalState.estimatedCost || 0;
-                const effectiveCost = globalState.effectiveCost || estimatedCost; // Use net cost after discount
-
-                // DEBUG: Log security check values
-                console.log('[SECURITY] currentBalance:', currentBalance, 'effectiveCost:', effectiveCost, 'estimatedCost:', estimatedCost);
-                console.log('[SECURITY] globalState.effectiveCost:', globalState.effectiveCost);
+                const effectiveCost = globalState.effectiveCost ?? estimatedCost; // Use ?? not || so 0 doesn't fall back
 
                 // If balance seems wrong, refresh it
                 if (currentBalance === 0 || currentBalance === undefined) {
@@ -9737,7 +9729,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 // Use extracted values or fall back to global state
                 const currentBalance = extractedBalance || globalState.accountBalance || 0;
                 const estimatedCost = extractedCost || globalState.estimatedCost || 0;
-                const effectiveCost = globalState.effectiveCost || estimatedCost; // Use effective cost (after discount)
+                const effectiveCost = globalState.effectiveCost ?? estimatedCost; // Use ?? not || so 0 doesn't fall back
                 const sufficientBalance = currentBalance >= effectiveCost;
 
                 // Update global state with extracted values
