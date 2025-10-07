@@ -1187,7 +1187,7 @@
         text-align: center;
         font-size: var(--font-size-small); /* 14px - matches standardized small text */
         color: #666;
-        margin-top: 8px; /* Below the line */
+        margin-top: 15px; /* Below the line - lowered for more spacing */
         font-weight: 500;
     }
 
@@ -1784,7 +1784,7 @@
     .ticker-row {
         background: transparent;
         padding: 0.5rem 0;
-        margin: 8px 1rem 0 1rem; /* Use card padding for width */
+        margin: 12px 1rem 0 1rem; /* Use card padding for width - lowered slightly */
         position: relative;
         text-align: center;
         min-height: 50px; /* Space for 2 lines */
@@ -2483,37 +2483,35 @@
                     if (!wrapper || !square) return;
 
                     // Animation sequence:
-                    // 0-3s: Rest (no rotation, normal heartbeat)
-                    // 3-4s: Heartbeat speeds up (no rotation yet)
-                    // 4-7s: Fast heartbeat + continuous rotation (3s of spinning)
-                    // 7-7.5s: Calm down (stop rotation, slow heartbeat)
+                    // 0-2s: Rest (no rotation, normal heartbeat)
+                    // 2-5s: Heartbeat speeds up gradually (3s ramp up)
+                    // 5-7s: Fast heartbeat + rotation (2s of spinning)
+                    // 7-10s: Calm down (stop rotation, slow heartbeat, 3s ramp down)
                     // Then immediately restart with rest phase
 
-                    // Phase 1: Speed up heartbeat (after 3s rest)
+                    // Phase 1: Speed up heartbeat (after 2s rest)
                     setTimeout(() => {
                         square.classList.add('fast-heartbeat');
 
-                        // Phase 2: Start rotation after heartbeat speeds up (1s later)
+                        // Phase 2: Start rotation after heartbeat speeds up (3s later for gradual ramp)
                         setTimeout(() => {
-                            // Remove growing animation to allow spinning to work
-                            const wasGrowing = wrapper.classList.contains('growing');
+                            // Remove growing animation to allow spinning to work (don't restore it to avoid re-triggering)
                             wrapper.classList.remove('growing');
                             wrapper.classList.add('spinning');
 
                             // Phase 3: Remove spinning class after animation completes (2s)
                             setTimeout(() => {
                                 wrapper.classList.remove('spinning');
-                                if (wasGrowing) wrapper.classList.add('growing');
 
-                                // Phase 4: Calm down heartbeat (0.5s later)
+                                // Phase 4: Calm down heartbeat (3s longer ramp down)
                                 setTimeout(() => {
                                     square.classList.remove('fast-heartbeat');
-                                }, 500);
+                                }, 3000);
                             }, 2000); // Animation is 2s
-                        }, 1000);
-                    }, 3000);
+                        }, 3000);
+                    }, 2000);
 
-                }, 6500); // Full cycle: 3s rest + 1s speedup + 2s spin + 0.5s calm = 6.5s
+                }, 10000); // Full cycle: 2s rest + 3s speedup + 2s spin + 3s calm = 10s
 
                 state.intervals.push(animationCycleInterval);
             }
@@ -4914,7 +4912,7 @@
                                         • Notice the Updated and Original sheets, color coded by confidence with green/yellow/red meaning high/medium/low confidence
                                     </div>
                                     <div style="margin-bottom: 8px;">
-                                        • Key citations and sources are in cell comments - enable editing to view on hover.
+                                        • Enable editing to see key citations and sources in cell comments when hovering.
                                     </div>
                                     <div style="margin-bottom: 8px;">
                                         • If you want to change anything, refine the configuration and check out the preview
