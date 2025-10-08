@@ -196,15 +196,24 @@ def copy_demo_to_session(demo_name: str, email: str, old_session_id: str) -> Dic
         unique_id = str(uuid.uuid4())[:8]
         new_session_id = f"session_demo_{timestamp}_{unique_id}"
 
-        # Determine NEW session folder path
-        email_prefix = email.split('@')[0].lower()
-        domain = email.split('@')[1].lower()
-        session_prefix = f'results/{domain}/{email_prefix}/{new_session_id}/'
+        # Determine NEW session folder path using UnifiedS3Manager for consistency
+        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+        storage_manager = UnifiedS3Manager()
+        session_prefix = storage_manager.get_session_path(email, new_session_id)
 
-        # Copy data file preserving original filename
+        # Copy data file with _input suffix for consistency with standard pattern
         data_source_key = demo_metadata['data_file']['s3_key']
         original_filename = demo_metadata['data_file']['name']
-        data_dest_key = f"{session_prefix}{original_filename}"
+
+        # Add _input suffix to filename
+        name_parts = original_filename.rsplit('.', 1)
+        if len(name_parts) == 2:
+            base_name, extension = name_parts
+            input_filename = f"{base_name}_input.{extension}"
+        else:
+            input_filename = f"{original_filename}_input"
+
+        data_dest_key = f"{session_prefix}{input_filename}"
 
         s3_client.copy_object(
             Bucket=bucket_name,
@@ -218,8 +227,6 @@ def copy_demo_to_session(demo_name: str, email: str, old_session_id: str) -> Dic
         config_content = json.loads(config_response['Body'].read().decode('utf-8'))
 
         # Use proper versioning system to store config (this creates config_v1_demo.json)
-        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
-        storage_manager = UnifiedS3Manager()
 
         config_result = storage_manager.store_config_file(
             email=email,
@@ -276,7 +283,8 @@ def copy_demo_to_session(demo_name: str, email: str, old_session_id: str) -> Dic
             'demo': demo_metadata,
             'files': {
                 'data_file': {
-                    'name': demo_metadata['data_file']['name'],
+                    'name': input_filename,  # Use the new filename with _input suffix
+                    'original_name': original_filename,  # Preserve original name for reference
                     's3_key': data_dest_key
                 },
                 'config_file': {
