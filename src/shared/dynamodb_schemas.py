@@ -3313,13 +3313,38 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
 def save_delegation_context(session_id: str, run_key: str, context_data: dict,
                           estimated_minutes: float, sync_timeout_minutes: float = 5.0,
                           reason: str = "estimated_time_exceeds_sync_limit") -> bool:
-    """Save complete context for async delegation workflow."""
+    """Save complete context for async delegation workflow to S3 (not DynamoDB to prevent bloat)."""
     from datetime import datetime, timezone
+    import boto3
+    import json
+    import os
 
     try:
         delegation_timestamp = datetime.now(timezone.utc).isoformat()
 
-        # Update run status to ASYNC_DELEGATED - NO LONGER WRITING async_context (dead code, never read)
+        # Save async_context to S3 instead of DynamoDB to prevent DB bloat
+        s3_client = boto3.client('s3')
+        s3_bucket = os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
+
+        # Extract email and config_version from context for S3 path construction
+        email = context_data.get('request_context', {}).get('email', 'unknown')
+        domain = email.split('@')[-1].lower().strip() if email and '@' in email else 'unknown'
+        email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_plus_')[:20] if email and '@' in email else 'unknown'
+        config_version = context_data.get('processing_metadata', {}).get('config_version', 1)
+
+        # Store context in version-specific results directory for easy cleanup after completion
+        context_s3_key = f"results/{domain}/{email_prefix}/{session_id}/v{config_version}_results/async_context.json"
+
+        s3_client.put_object(
+            Bucket=s3_bucket,
+            Key=context_s3_key,
+            Body=json.dumps(context_data, default=str),
+            ContentType='application/json'
+        )
+
+        logger.info(f"[DELEGATION] Saved async_context to S3: s3://{s3_bucket}/{context_s3_key}")
+
+        # Update run status to ASYNC_DELEGATED with S3 reference (not the full context)
         update_run_status(
             session_id=session_id,
             run_key=run_key,
@@ -3329,11 +3354,11 @@ def save_delegation_context(session_id: str, run_key: str, context_data: dict,
             estimated_processing_minutes=estimated_minutes,
             sync_timeout_limit_minutes=sync_timeout_minutes,
             delegation_reason=reason,
-            # async_context=context_data,  # REMOVED: Never read, causes DB bloat
+            async_context_s3_key=context_s3_key,  # Store S3 reference instead of full context
             verbose_status=f"Delegated to async processing (estimated {estimated_minutes:.1f} minutes)"
         )
 
-        logger.info(f"[DELEGATION] Session {session_id}: Saved context for async processing "
+        logger.info(f"[DELEGATION] Session {session_id}: Saved context to S3 for async processing "
                    f"(estimated {estimated_minutes:.1f}min > {sync_timeout_minutes:.1f}min limit)")
         return True
 
@@ -3398,7 +3423,11 @@ def update_async_progress(session_id: str, run_key: str, chunks_completed: int =
 
 
 def load_delegation_context(session_id: str, run_key: str = None) -> Optional[dict]:
-    """Load saved delegation context from DynamoDB."""
+    """Load saved delegation context from S3 (not DynamoDB to avoid bloat)."""
+    import boto3
+    import json
+    import os
+
     try:
         table = dynamodb.Table(VALIDATION_RUNS_TABLE_NAME)
 
@@ -3425,13 +3454,23 @@ def load_delegation_context(session_id: str, run_key: str = None) -> Optional[di
         else:
             return None
 
-        async_context = item.get('async_context', {})
-        if not async_context:
-            logger.warning(f"[DELEGATION] No async_context found for session {session_id}")
+        # Get S3 key for async_context from run record
+        context_s3_key = item.get('async_context_s3_key')
+        if not context_s3_key:
+            logger.warning(f"[DELEGATION] No async_context_s3_key found for session {session_id}")
             return None
 
-        logger.info(f"[DELEGATION] Loaded context for session {session_id} from run {item.get('run_key')}")
-        return dict(async_context)
+        # Load context from S3
+        s3_client = boto3.client('s3')
+        s3_bucket = os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
+
+        logger.debug(f"[DELEGATION] Loading async_context from S3: s3://{s3_bucket}/{context_s3_key}")
+
+        s3_response = s3_client.get_object(Bucket=s3_bucket, Key=context_s3_key)
+        async_context = json.loads(s3_response['Body'].read().decode('utf-8'))
+
+        logger.info(f"[DELEGATION] Loaded context for session {session_id} from S3 (run {item.get('run_key')})")
+        return async_context
 
     except Exception as e:
         logger.error(f"[DELEGATION] Failed to load delegation context for session {session_id}: {e}")

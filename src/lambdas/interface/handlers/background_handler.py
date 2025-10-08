@@ -1056,7 +1056,27 @@ def handle_async_completion_in_background_handler(event, context):
         logger.debug(f"[ASYNC_COMPLETION] Calling main handler for completion processing")
 
         # Process the reconstructed event through the main handler (without async completion check)
-        return handle_main_processing(reconstructed_event, context)
+        result = handle_main_processing(reconstructed_event, context)
+
+        # Cleanup: Delete async_context.json from S3 after successful completion
+        try:
+            # Get the async_context_s3_key from DynamoDB run record
+            from dynamodb_schemas import get_run_status
+            run_record = get_run_status(session_id, event.get('run_key'))
+            if run_record and run_record.get('async_context_s3_key'):
+                context_s3_key = run_record['async_context_s3_key']
+                logger.debug(f"[ASYNC_COMPLETION] Cleaning up async_context from S3: {context_s3_key}")
+
+                s3_client.delete_object(
+                    Bucket=s3_bucket,
+                    Key=context_s3_key
+                )
+                logger.info(f"[ASYNC_COMPLETION] Successfully deleted async_context: s3://{s3_bucket}/{context_s3_key}")
+        except Exception as cleanup_error:
+            # Don't fail the whole completion if cleanup fails
+            logger.warning(f"[ASYNC_COMPLETION] Failed to cleanup async_context from S3: {cleanup_error}")
+
+        return result
 
     except Exception as e:
         logger.error(f"[ASYNC_COMPLETION] Failed to handle async completion: {e}")
@@ -3365,7 +3385,8 @@ def handle_main_processing(event, context):
                         "VALIDATOR_LAMBDA_NAME": VALIDATOR_LAMBDA_NAME,
                         "email": email,
                         "config_version": config_version,
-                        "results_path": results_path
+                        "results_path": results_path,
+                        "async_delegation_request": False  # CRITICAL: Tell validator this is sync mode (don't trigger completion)
                     })
 
                     # Debug payload before sending

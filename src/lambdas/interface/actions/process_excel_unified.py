@@ -410,10 +410,8 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
         def create_run_record(**kwargs): 
             logger.warning("dynamodb_schemas not available - run record creation disabled")
 
-    # Force async processing for full validation (bypasses time estimate check)
-    FORCE_ASYNC_FULL_VALIDATION = False
-    if FORCE_ASYNC_FULL_VALIDATION:
-        logger.info(f"FORCE_ASYNC_FULL_VALIDATION: {FORCE_ASYNC_FULL_VALIDATION}")
+    # All full validations now go through SQS to background_handler per SMART_DELEGATION_SYSTEM spec
+    # The background_handler decides sync vs async based on preview time estimates
 
     # Validate email
     if not is_email_validated(email_address):
@@ -627,7 +625,7 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
         else:
             return _handle_full_validation_request(
                 storage_manager, email_address, session_id, excel_s3_key, config_s3_key,
-                max_rows, batch_size, FORCE_ASYNC_FULL_VALIDATION, preview_email, run_key
+                max_rows, batch_size, preview_email, run_key
             )
 
     except Exception as e:
@@ -667,7 +665,7 @@ def _handle_preview_request(storage_manager, email_address, session_id, excel_s3
         )
 
 def _handle_full_validation_request(storage_manager, email_address, session_id, excel_s3_key,
-                                  config_s3_key, max_rows, batch_size, force_async, preview_email=False, run_key=None):
+                                  config_s3_key, max_rows, batch_size, preview_email=False, run_key=None):
     """Handle full validation request using unified storage"""
     from ..utils.helpers import create_response
     
@@ -718,33 +716,27 @@ def _handle_full_validation_request(storage_manager, email_address, session_id, 
             'error_type': 'balance_check_failed'
         })
     
-    # Force async bypasses Smart Delegation time estimate check in background_handler
-    if force_async:
-        logger.info(f"[SUCCESS] FORCE_ASYNC enabled - sending to background handler for session {session_id} (preview_email={preview_email})")
-        from ..core.sqs_service import send_full_request
+    # ALWAYS send full validations through SQS to background_handler per SMART_DELEGATION_SYSTEM spec
+    # The background_handler decides sync vs async based on preview time estimates from DynamoDB
+    logger.info(f"[SUCCESS] Sending full validation to background handler for session {session_id} (preview_email={preview_email})")
+    from ..core.sqs_service import send_full_request
 
-        message_id = send_full_request(
-            session_id=session_id, excel_s3_key=excel_s3_key,
-            config_s3_key=config_s3_key, email=email_address,
-            reference_pin=session_id.split('_')[-1] if '_' in session_id else session_id[:6],
-            max_rows=max_rows, batch_size=batch_size, preview_email=preview_email,
-            run_key=run_key
-        )
-        logger.info(f"Background handler request sent with MessageId: {message_id}")
+    message_id = send_full_request(
+        session_id=session_id, excel_s3_key=excel_s3_key,
+        config_s3_key=config_s3_key, email=email_address,
+        reference_pin=session_id.split('_')[-1] if '_' in session_id else session_id[:6],
+        max_rows=max_rows, batch_size=batch_size, preview_email=preview_email,
+        run_key=run_key
+    )
+    logger.info(f"Background handler request sent with MessageId: {message_id}")
 
-        response_body = {
-            "status": "processing",
-            "session_id": session_id,
-            "reference_pin": session_id.split('_')[-1] if '_' in session_id else session_id[:6],
-            "storage_path": storage_manager.get_session_path(email_address, session_id)
-        }
-        return create_response(200, response_body)
-    else:
-        # Synchronous processing - Smart Delegation in background_handler decides sync vs async
-        logger.warning(f"[WARNING] FORCE_ASYNC disabled - Smart Delegation active for batch_size={batch_size}")
-        return _process_validation_sync(
-            storage_manager, email_address, session_id, excel_s3_key, config_s3_key, max_rows, batch_size
-        )
+    response_body = {
+        "status": "processing",
+        "session_id": session_id,
+        "reference_pin": session_id.split('_')[-1] if '_' in session_id else session_id[:6],
+        "storage_path": storage_manager.get_session_path(email_address, session_id)
+    }
+    return create_response(200, response_body)
 
 def _process_preview_sync(storage_manager, email_address, session_id, excel_s3_key, 
                         config_s3_key, preview_max_rows):
