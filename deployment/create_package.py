@@ -58,7 +58,7 @@ LAMBDA_CONFIG = {
             # Smart Delegation System SQS Queue Names (will be converted to URLs during deployment)
             "SQS_ASYNC_QUEUE_NAME": "perplexity-validator-async-queue", # Environment-specific queue names will be applied
             "SQS_COMPLETION_QUEUE_NAME": "perplexity-validator-completion-queue", # Environment-specific queue names will be applied
-            "MAX_SYNC_INVOCATION_TIME": "0.0",
+            "MAX_SYNC_INVOCATION_TIME": "10.0",  # Jobs longer than 10 minutes use async delegation
             "VALIDATOR_SAFETY_BUFFER": "3.0"
         }
     },
