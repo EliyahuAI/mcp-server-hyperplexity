@@ -39,6 +39,14 @@ BATCH_AUDIT_TABLE = "perplexity-validator-batch-audit"
 MODEL_CONFIG_TABLE = "perplexity-validator-model-config"
 PROVIDER_LIMITS_TABLE = "perplexity-validator-provider-limits"
 
+# Fields to exclude from CSV exports (temporary async processing fields)
+RUNS_TABLE_EXCLUDED_FIELDS = [
+    'preview_data',  # Flattened into separate columns
+    'async_context',  # Temporary field - huge nested data only needed during async processing
+    'async_progress',  # Temporary progress tracking
+    'async_input_files',  # Temporary file references
+]
+
 # Logical column ordering for CSV exports
 USER_VALIDATION_COLUMNS = [
     # Identity
@@ -1283,8 +1291,9 @@ def export_table_to_csv(table_name, output_dir="events", limit=None):
             enhanced_items = []
             for item in items:
                 enhanced_item = dict(item)
-                # Remove the original preview_data field to avoid duplication
-                enhanced_item.pop('preview_data', None)
+                # Remove excluded fields (preview_data is flattened, async fields are temporary)
+                for field in RUNS_TABLE_EXCLUDED_FIELDS:
+                    enhanced_item.pop(field, None)
                 # Add flattened preview data
                 enhanced_item.update(flatten_preview_data(item))
                 enhanced_items.append(enhanced_item)
@@ -1392,8 +1401,9 @@ def export_all_tables_to_csv(output_dir="events", limit=None):
                 enhanced_items = []
                 for item in items:
                     enhanced_item = dict(item)
-                    # Remove the original preview_data field to avoid duplication
-                    enhanced_item.pop('preview_data', None)
+                    # Remove excluded fields (preview_data is flattened, async fields are temporary)
+                    for field in RUNS_TABLE_EXCLUDED_FIELDS:
+                        enhanced_item.pop(field, None)
                     # Add flattened preview data
                     enhanced_item.update(flatten_preview_data(item))
                     enhanced_items.append(enhanced_item)

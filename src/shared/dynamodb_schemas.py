@@ -3319,7 +3319,7 @@ def save_delegation_context(session_id: str, run_key: str, context_data: dict,
     try:
         delegation_timestamp = datetime.now(timezone.utc).isoformat()
 
-        # Update run status to ASYNC_DELEGATED with full context
+        # Update run status to ASYNC_DELEGATED - NO LONGER WRITING async_context (dead code, never read)
         update_run_status(
             session_id=session_id,
             run_key=run_key,
@@ -3329,7 +3329,7 @@ def save_delegation_context(session_id: str, run_key: str, context_data: dict,
             estimated_processing_minutes=estimated_minutes,
             sync_timeout_limit_minutes=sync_timeout_minutes,
             delegation_reason=reason,
-            async_context=context_data,
+            # async_context=context_data,  # REMOVED: Never read, causes DB bloat
             verbose_status=f"Delegated to async processing (estimated {estimated_minutes:.1f} minutes)"
         )
 

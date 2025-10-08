@@ -411,8 +411,9 @@ def _process_files_unified(excel_file, config_file, email_address, session_id, p
             logger.warning("dynamodb_schemas not available - run record creation disabled")
 
     # Force async processing for full validation (bypasses time estimate check)
-    FORCE_ASYNC_FULL_VALIDATION = True
-    logger.info(f"FORCE_ASYNC_FULL_VALIDATION: {FORCE_ASYNC_FULL_VALIDATION}")
+    FORCE_ASYNC_FULL_VALIDATION = False
+    if FORCE_ASYNC_FULL_VALIDATION:
+        logger.info(f"FORCE_ASYNC_FULL_VALIDATION: {FORCE_ASYNC_FULL_VALIDATION}")
 
     # Validate email
     if not is_email_validated(email_address):
