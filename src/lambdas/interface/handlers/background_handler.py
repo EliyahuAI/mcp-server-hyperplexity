@@ -1363,12 +1363,27 @@ def handle_main_processing(event, context):
                     start_time=background_start_time,  # Use background handler start time
                     percent_complete=5
                 )
-            
+
+            # Extract validation history once for both preview and full mode
+            validation_history = {}
+            try:
+                logger.debug(f"[PREVIEW_HISTORY] Extracting validation history from {actual_excel_s3_key}")
+                history_data = table_parser.extract_validation_history(
+                    storage_manager.bucket_name,
+                    actual_excel_s3_key,
+                    parsed_data=table_data
+                )
+                validation_history = history_data.get('validation_history', {})
+                logger.debug(f"[PREVIEW_HISTORY] Extracted history for {len(validation_history)} row keys")
+            except Exception as e:
+                logger.warning(f"[PREVIEW_HISTORY] Failed to extract validation history: {e}")
+                validation_history = {}
+
             try:
                 validation_results = invoke_validator_lambda(
                     actual_excel_s3_key, actual_config_s3_key, max_rows, batch_size, S3_UNIFIED_BUCKET, VALIDATOR_LAMBDA_NAME,
                     preview_first_row=True, preview_max_rows=preview_max_rows, sequential_call=sequential_call_num,
-                    session_id=session_id
+                    session_id=session_id, validation_history=validation_history
                 )
 
                 # Validate preview results (less strict than full validation)

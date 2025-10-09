@@ -258,8 +258,12 @@ def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, 
             logger.error(f"[RETRY_TRACKER] NOT_RETRYING - Non-timeout errors are not retried")
             raise
 
-def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S3_CACHE_BUCKET, VALIDATOR_LAMBDA_NAME, preview_first_row=False, preview_max_rows=5, sequential_call=None, session_id=None, update_callback=None, special_request=None):
-    """Invoke the core validator Lambda with Excel data."""
+def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S3_CACHE_BUCKET, VALIDATOR_LAMBDA_NAME, preview_first_row=False, preview_max_rows=5, sequential_call=None, session_id=None, update_callback=None, special_request=None, validation_history=None):
+    """Invoke the core validator Lambda with Excel data.
+
+    Args:
+        validation_history: Pre-extracted validation history dict (optional, should be passed by caller)
+    """
     
     function_start_time = time.time()
     logger.info(">>> ENTER invoke_validator_lambda <<<")
@@ -512,47 +516,14 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             for id_field in id_fields:
                 value = sample_row.get(id_field, 'NOT FOUND')
                 logger.info(f"  {id_field}: {value}")
-        
-        # Load validation history using new extract_validation_history method
-        validation_history = {}
-        if not preview_first_row:  # Load validation history for all files (now all are Excel format)
-            try:
-                # Use S3TableParser to extract validation history from Updated Values sheet
-                # Pass parsed rows data so row keys match (includes deduplication)
-                parsed_rows_data = {'data': rows}  # rows already have _row_key
-                history_data = table_parser.extract_validation_history(
-                    S3_CACHE_BUCKET,
-                    excel_s3_key,
-                    parsed_data=parsed_rows_data
-                )
 
-                # Extract the validation_history dict from the returned structure
-                original_validation_history = history_data.get('validation_history', {})
+        # Use validation history passed by caller (already extracted by background_handler)
+        if validation_history is None:
+            validation_history = {}
+            logger.info("No validation history provided by caller")
+        else:
+            logger.info(f"Using validation history from caller: {len(validation_history)} row keys")
 
-                logger.info(f"Loaded validation history for {len(original_validation_history)} row keys from Excel")
-
-                if original_validation_history:
-                    validation_history = original_validation_history
-
-                    # Log matching summary
-                    matched_count = 0
-                    for row in rows:
-                        payload_key = row.get('_row_key', '')
-                        if payload_key and payload_key in validation_history:
-                            matched_count += 1
-
-                    logger.info(f"Matched {matched_count} out of {len(rows)} rows with validation history")
-
-                    if matched_count == 0 and len(validation_history) > 0:
-                        logger.warning("No rows matched with validation history - may be using different primary keys")
-                        logger.info(f"Current primary keys: {id_fields}")
-
-            except Exception as e:
-                logger.warning(f"Could not load validation history: {e}")
-                import traceback
-                traceback.print_exc()
-                validation_history = {}
-        
         # Initialize aggregated metadata
         aggregated_metadata = {
             'total_rows': total_rows,
