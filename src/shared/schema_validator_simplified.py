@@ -257,7 +257,7 @@ class SimplifiedSchemaValidator:
             model_usage[model].append(target.column)
         return model_usage
     
-    def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None, validation_history: Dict[str, List[Dict[str, Any]]] = None) -> str:
+    def generate_multiplex_prompt(self, row: Dict[str, Any], targets: List[ValidationTarget], previous_results: Dict[str, Dict[str, Any]] = None, validation_history: Dict[str, Dict[str, Any]] = None) -> str:
         """Generate a validation prompt for multiple targets (multiplex) using prompts.yml template."""
         # Debug validation history
         if validation_history:
@@ -335,55 +335,44 @@ class SimplifiedSchemaValidator:
             field_parts.append(f"----- FIELD {i}: {target.column} -----")
             field_parts.append(f"Current Value: {row.get(target.column, '')}")
             field_parts.append(f"Description: {target.description}")
-            
+
             if target.format:
                 field_parts.append(f"Format: {target.format}")
-                
+
             field_parts.append(f"Importance: {target.importance}")
-            
-            if target.notes:
-                field_parts.append(f"Notes: {target.notes}")
-            
-            # Include field validation history if available
-            if validation_history and target.column in validation_history:
-                field_parts.append("Previous validation entries:")
-                
-                # Sort entries by timestamp (newest first)
-                entries = sorted(
-                    validation_history[target.column],
-                    key=lambda x: x.get('timestamp', ''),
-                    reverse=True
-                )
-                
-                # Add the entries (limit to most recent 3)
-                for entry in entries[:3]:
-                    timestamp = entry.get('timestamp', 'Unknown date')
-                    try:
-                        if isinstance(timestamp, str) and timestamp:
-                            dt_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                            formatted_date = dt_timestamp.strftime('%Y-%m-%d')
-                        else:
-                            formatted_date = "Unknown date"
-                    except (ValueError, TypeError):
-                        formatted_date = str(timestamp)[:10]
-                        
-                    value = entry.get('value', '')
-                    confidence = entry.get('confidence_level', 'UNKNOWN')
-                    quote = entry.get('quote', '')
-                    
-                    history_entry = f"  - [{formatted_date}] Value: {value} (Confidence: {confidence})"
-                    if quote:
-                        shortened_quote = quote[:100] + ("..." if len(quote) > 100 else "")
-                        history_entry += f" - Source quote: \"{shortened_quote}\""
-                    
-                    field_parts.append(history_entry)
-            
-            # Include examples if available
+
+            # Add examples after importance
             if target.examples:
-                field_parts.append("Examples:")
+                field_parts.append("\nExamples:")
                 for example in target.examples:
                     field_parts.append(f"  - {example}")
-            
+
+            # Include current value validation context if available
+            if validation_history and target.column in validation_history:
+                field_history = validation_history[target.column]
+
+                # Current value validation context (from most recent validation)
+                if field_history.get('prior_value'):  # 'prior' in history = current in prompt
+                    prior_ts = field_history.get('prior_timestamp', 'unknown')
+                    field_parts.append(f"\nCurrent Value validation context (from validation on {prior_ts}):")
+
+                    if field_history.get('prior_confidence'):
+                        field_parts.append(f"  Confidence: {field_history['prior_confidence']}")
+
+                    if field_history.get('original_key_citation'):
+                        field_parts.append(f"  Key Citation: {field_history['original_key_citation']}")
+
+                    if field_history.get('original_sources'):
+                        sources_str = ', '.join(field_history['original_sources'])
+                        field_parts.append(f"  Sources: {sources_str}")
+
+                # Prior value (from Original Values sheet - older validation)
+                if field_history.get('original_value'):
+                    field_parts.append(f"\nPrior Value (from Original Values sheet): {field_history['original_value']}")
+
+            if target.notes:
+                field_parts.append(f"\nNotes: {target.notes}")
+
             fields_parts.append("\n".join(field_parts))
         
         fields_to_validate = "\n\n".join(fields_parts)
@@ -495,12 +484,13 @@ class SimplifiedSchemaValidator:
         
         # LOG IF HISTORY IS IN THE PROMPT
         if validation_history:
-            history_included = "Previous validation entries:" in prompt
+            history_included = "Current Value validation context" in prompt or "Prior Value (from Original Values sheet)" in prompt
             logger.info(f"Validation history included in prompt: {history_included}")
             if history_included:
-                # Count how many history entries are in the prompt
-                history_count = prompt.count("- [20")  # Dates start with [20xx
-                logger.info(f"Number of history entries in prompt: {history_count}")
+                # Count how many fields have validation context
+                context_count = prompt.count("Current Value validation context")
+                prior_count = prompt.count("Prior Value (from Original Values sheet)")
+                logger.info(f"Fields with validation context: {context_count}, Fields with prior values: {prior_count}")
             else:
                 logger.warning("Validation history was provided but NOT included in prompt!")
             

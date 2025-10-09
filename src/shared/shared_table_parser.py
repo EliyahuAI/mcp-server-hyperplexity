@@ -928,5 +928,353 @@ class S3TableParser:
 
         return base_description
 
+    def extract_validation_history(self, bucket: str, key: str) -> Dict:
+        """
+        Extract validation history from Updated Values sheet + Validation Record.
+
+        Args:
+            bucket: S3 bucket name
+            key: S3 object key for previously validated Excel file
+
+        Returns:
+            {
+                'validation_history': {
+                    row_key: {
+                        column: {
+                            'prior_value': str,
+                            'prior_confidence': str,
+                            'prior_timestamp': str,
+                            'original_value': str,
+                            'original_confidence': str,
+                            'original_key_citation': str,
+                            'original_sources': list[str],
+                            'original_timestamp': str
+                        }
+                    }
+                },
+                'file_timestamp': str
+            }
+        """
+        try:
+            self.logger.info(f"Extracting validation history from s3://{bucket}/{key}")
+
+            # Load timestamps from Validation Record sheet
+            timestamps = self._load_validation_timestamps(bucket, key)
+
+            # Create temporary file to load the Excel workbook
+            response = self.s3_client.get_object(Bucket=bucket, Key=key)
+            file_content = response['Body'].read()
+
+            with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
+                temp_file.write(file_content)
+                temp_file_path = temp_file.name
+
+            try:
+                # Load workbook without read_only to access comments
+                if not OPENPYXL_AVAILABLE:
+                    raise ImportError("openpyxl is required for Excel history extraction")
+
+                workbook = load_workbook(temp_file_path, data_only=True)
+
+                # Check if Updated Values sheet exists
+                if 'Updated Values' not in workbook.sheetnames:
+                    self.logger.warning(f"No 'Updated Values' sheet found in {key}")
+                    return {
+                        'validation_history': {},
+                        'file_timestamp': timestamps.get('file_timestamp', '')
+                    }
+
+                worksheet = workbook['Updated Values']
+
+                # Read header row
+                rows = list(worksheet.iter_rows(values_only=False))
+                if not rows:
+                    self.logger.warning(f"Empty Updated Values sheet in {key}")
+                    return {
+                        'validation_history': {},
+                        'file_timestamp': timestamps.get('file_timestamp', '')
+                    }
+
+                # Find header row
+                header_row_idx = 0
+                headers = []
+                for idx, row in enumerate(rows):
+                    row_values = [cell.value for cell in row]
+                    if any(val and str(val).strip() for val in row_values):
+                        headers = [self._normalize_column_name(str(cell.value).strip()) if cell.value else f"Column_{i+1}"
+                                   for i, cell in enumerate(row)]
+                        header_row_idx = idx
+                        break
+
+                # Extract validation history from data rows
+                validation_history = {}
+
+                for row_idx in range(header_row_idx + 1, len(rows)):
+                    row = rows[row_idx]
+                    row_values = [cell.value for cell in row]
+
+                    # Skip empty rows
+                    if not any(val and str(val).strip() for val in row_values):
+                        continue
+
+                    # Create row key (using first column or row number)
+                    first_col_value = str(row_values[0]).strip() if row_values and row_values[0] else f"Row_{row_idx}"
+                    row_key = first_col_value
+
+                    if row_key not in validation_history:
+                        validation_history[row_key] = {}
+
+                    # Process each cell in the row
+                    for col_idx, cell in enumerate(row):
+                        if col_idx >= len(headers):
+                            break
+
+                        column_name = headers[col_idx]
+                        cell_value = cell.value
+
+                        # Skip empty cells
+                        if not cell_value or not str(cell_value).strip():
+                            continue
+
+                        # Extract comment if it exists
+                        comment_text = ""
+                        if cell.comment:
+                            comment_text = cell.comment.text if hasattr(cell.comment, 'text') else str(cell.comment)
+
+                        # Parse comment to extract historical data
+                        parsed_comment = {}
+                        if comment_text:
+                            parsed_comment = self._parse_validation_comment(comment_text)
+
+                        # Build field history
+                        field_history = {
+                            'prior_value': str(cell_value).strip(),
+                            'prior_confidence': parsed_comment.get('original_confidence', ''),
+                            'prior_timestamp': timestamps.get('prior_timestamp', ''),
+                            'original_value': parsed_comment.get('original_value', ''),
+                            'original_confidence': parsed_comment.get('original_confidence', ''),
+                            'original_key_citation': parsed_comment.get('key_citation', ''),
+                            'original_sources': parsed_comment.get('sources', []),
+                            'original_timestamp': timestamps.get('original_timestamp', '')
+                        }
+
+                        validation_history[row_key][column_name] = field_history
+
+                workbook.close()
+
+                self.logger.info(f"Extracted history for {len(validation_history)} rows")
+
+                return {
+                    'validation_history': validation_history,
+                    'file_timestamp': timestamps.get('file_timestamp', '')
+                }
+
+            finally:
+                # Clean up temp file
+                os.unlink(temp_file_path)
+
+        except Exception as e:
+            self.logger.error(f"Failed to extract validation history: {str(e)}")
+            # Return empty history instead of raising - treat as new file
+            return {
+                'validation_history': {},
+                'file_timestamp': ''
+            }
+
+    def _parse_validation_comment(self, comment_text: str) -> Dict:
+        """
+        Parse structured validation comment from Updated Values sheet.
+
+        Example input:
+            Original Value: ABC Corp (MEDIUM Confidence)
+
+            Key Citation: Company website (https://...)
+
+            Sources:
+            [1] Title (URL): "snippet"
+            [2] Title (URL): "snippet"
+
+        Returns:
+            {
+                'original_value': 'ABC Corp',
+                'original_confidence': 'MEDIUM',
+                'key_citation': 'Company website (https://...)',
+                'sources': ['https://...', 'https://...']
+            }
+        """
+        result = {}
+
+        if not comment_text:
+            return result
+
+        lines = comment_text.split('\n')
+
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+
+            # Parse Original Value with confidence
+            if line.startswith('Original Value:'):
+                # Extract: "Original Value: ABC Corp (MEDIUM Confidence)"
+                content = line.replace('Original Value:', '').strip()
+                if '(' in content and content.endswith('Confidence)'):
+                    # Split by last occurrence of '('
+                    last_paren = content.rfind('(')
+                    value = content[:last_paren].strip()
+                    conf = content[last_paren+1:].replace('Confidence)', '').strip()
+                    result['original_value'] = value
+                    result['original_confidence'] = conf
+                else:
+                    result['original_value'] = content
+
+            # Parse Key Citation
+            elif line.startswith('Key Citation:'):
+                result['key_citation'] = line.replace('Key Citation:', '').strip()
+
+            # Parse Sources section
+            elif line.startswith('Sources:'):
+                sources = []
+                i += 1
+                while i < len(lines):
+                    source_line = lines[i].strip()
+                    if not source_line:
+                        break
+                    # Extract URL from "[1] Title (URL): "snippet""
+                    if '(' in source_line and ')' in source_line:
+                        url_start = source_line.find('(')
+                        url_end = source_line.find(')', url_start)
+                        url = source_line[url_start+1:url_end]
+                        sources.append(url)
+                    i += 1
+                result['sources'] = sources
+                continue
+
+            i += 1
+
+        return result
+
+    def _load_validation_timestamps(self, bucket: str, key: str) -> Dict:
+        """
+        Read Validation Record sheet to get timestamps.
+
+        Returns:
+            {
+                'original_timestamp': str,  # Run_Number=1, Run_Time field
+                'prior_timestamp': str,     # Last run, Run_Time field
+                'file_timestamp': str       # Fallback: S3 LastModified
+            }
+        """
+        try:
+            # Get S3 file metadata for fallback timestamp
+            response = self.s3_client.head_object(Bucket=bucket, Key=key)
+            file_timestamp = response['LastModified'].isoformat() if 'LastModified' in response else ''
+
+            # Download file to read Validation Record sheet
+            response = self.s3_client.get_object(Bucket=bucket, Key=key)
+            file_content = response['Body'].read()
+
+            with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
+                temp_file.write(file_content)
+                temp_file_path = temp_file.name
+
+            try:
+                if not OPENPYXL_AVAILABLE:
+                    raise ImportError("openpyxl is required for timestamp extraction")
+
+                workbook = load_workbook(temp_file_path, read_only=True, data_only=True)
+
+                # Check if Validation Record sheet exists
+                if 'Validation Record' not in workbook.sheetnames:
+                    self.logger.info(f"No 'Validation Record' sheet found, using S3 timestamp as fallback")
+                    workbook.close()
+                    return {
+                        'original_timestamp': file_timestamp,
+                        'prior_timestamp': file_timestamp,
+                        'file_timestamp': file_timestamp
+                    }
+
+                worksheet = workbook['Validation Record']
+                rows = list(worksheet.iter_rows(values_only=True))
+
+                if not rows or len(rows) < 2:
+                    self.logger.warning(f"Empty or invalid Validation Record sheet")
+                    workbook.close()
+                    return {
+                        'original_timestamp': file_timestamp,
+                        'prior_timestamp': file_timestamp,
+                        'file_timestamp': file_timestamp
+                    }
+
+                # Parse header row to find column indices
+                header_row = rows[0]
+                run_number_idx = None
+                run_time_idx = None
+
+                for idx, header in enumerate(header_row):
+                    if header and 'Run_Number' in str(header):
+                        run_number_idx = idx
+                    elif header and 'Run_Time' in str(header):
+                        run_time_idx = idx
+
+                if run_number_idx is None or run_time_idx is None:
+                    self.logger.warning(f"Could not find Run_Number or Run_Time columns in Validation Record")
+                    workbook.close()
+                    return {
+                        'original_timestamp': file_timestamp,
+                        'prior_timestamp': file_timestamp,
+                        'file_timestamp': file_timestamp
+                    }
+
+                # Extract timestamps
+                original_timestamp = file_timestamp
+                prior_timestamp = file_timestamp
+
+                # Find Run_Number = 1 for original timestamp
+                for row in rows[1:]:
+                    if len(row) > run_number_idx and row[run_number_idx] == 1:
+                        if len(row) > run_time_idx and row[run_time_idx]:
+                            original_timestamp = str(row[run_time_idx])
+                        break
+
+                # Find last run for prior timestamp
+                max_run_number = 0
+                for row in rows[1:]:
+                    if len(row) > run_number_idx and row[run_number_idx]:
+                        try:
+                            run_num = int(row[run_number_idx])
+                            if run_num > max_run_number:
+                                max_run_number = run_num
+                                if len(row) > run_time_idx and row[run_time_idx]:
+                                    prior_timestamp = str(row[run_time_idx])
+                        except (ValueError, TypeError):
+                            continue
+
+                workbook.close()
+
+                return {
+                    'original_timestamp': original_timestamp,
+                    'prior_timestamp': prior_timestamp,
+                    'file_timestamp': file_timestamp
+                }
+
+            finally:
+                # Clean up temp file
+                os.unlink(temp_file_path)
+
+        except Exception as e:
+            self.logger.error(f"Failed to load validation timestamps: {str(e)}")
+            # Fallback to S3 timestamp
+            try:
+                response = self.s3_client.head_object(Bucket=bucket, Key=key)
+                file_timestamp = response['LastModified'].isoformat() if 'LastModified' in response else ''
+            except Exception:
+                file_timestamp = ''
+
+            return {
+                'original_timestamp': file_timestamp,
+                'prior_timestamp': file_timestamp,
+                'file_timestamp': file_timestamp
+            }
+
 # Global instance for easy imports
 s3_table_parser = S3TableParser()

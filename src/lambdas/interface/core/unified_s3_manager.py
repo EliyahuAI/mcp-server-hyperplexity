@@ -1432,7 +1432,7 @@ class UnifiedS3Manager:
         """Add refinement entry to session_info.json with full context paths"""
         try:
             session_info = self.load_session_info(email, session_id)
-            
+
             refinement_entry = {
                 "from_version": from_version,
                 "to_version": to_version,
@@ -1441,13 +1441,13 @@ class UnifiedS3Manager:
                 "from_config_path": "",  # Will be populated from session_info
                 "to_config_path": ""     # Will be populated after new config is stored
             }
-            
+
             # Find the config path for the from_version using clean structure
             versions = session_info.get("versions", {})
             from_version_data = versions.get(str(from_version))
             if from_version_data and from_version_data.get("config"):
                 refinement_entry["from_config_path"] = from_version_data["config"].get("config_path", "")
-            
+
             # Add context file paths used for refinement
             if context_used:
                 refinement_entry["context_used"] = context_used
@@ -1462,19 +1462,108 @@ class UnifiedS3Manager:
                         context_used["validation_results_path"] = from_version_data["validation"]["results_path"]
                     if from_version_data.get("validation", {}).get("enhanced_excel_path"):
                         context_used["validation_enhanced_excel_path"] = from_version_data["validation"]["enhanced_excel_path"]
-                    
+
                 refinement_entry["context_used"] = context_used
-                
+
             if changes_made:
                 refinement_entry["changes_made"] = changes_made
-                
+
             # Skip refinements tracking - refinements generate new config versions instead
             # This function is deprecated and should not be used
             logger.warning("add_session_refinement is deprecated - refinements create new config versions")
-            
+
             return self.save_session_info(email, session_id, session_info)
         except Exception as e:
             logger.error(f"Failed to add session refinement: {e}")
+            return False
+
+    def update_validation_runs(self, email: str, session_id: str, run_data: dict, is_preview: bool = False) -> bool:
+        """
+        Update the validation_runs array in session_info.json
+
+        Args:
+            email: User email
+            session_id: Clean session ID
+            run_data: Dict with keys: config_s3_key, total_rows, total_columns,
+                     confidences_original, confidences_updated
+            is_preview: Whether this is a preview run
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            import time
+
+            session_info = self.load_session_info(email, session_id)
+
+            # Ensure validation_runs array exists
+            if 'validation_runs' not in session_info:
+                session_info['validation_runs'] = []
+
+            # Generate run_key: {session_id}_{unix_timestamp}
+            run_key = f"{session_id}_{int(time.time())}"
+
+            if is_preview:
+                # Preview: overwrite run_number 1 if it exists
+                session_info['validation_runs'] = [r for r in session_info['validation_runs'] if r.get('run_number') != 1]
+
+                new_run = {
+                    'run_number': 1,
+                    'run_time': datetime.now(timezone.utc).isoformat(),
+                    'session_id': session_id,
+                    'configuration_id': run_data.get('config_s3_key', ''),
+                    'run_key': run_key,
+                    'rows': run_data.get('total_rows', 0),
+                    'columns': run_data.get('total_columns', 0),
+                    'confidences_original': run_data.get('confidences_original', ''),
+                    'confidences_updated': run_data.get('confidences_updated', ''),
+                    'is_preview': True
+                }
+                session_info['validation_runs'].insert(0, new_run)
+                logger.info(f"[VALIDATION_RUNS] Created preview run (run_number=1) for session {session_id}")
+            else:
+                # Full validation
+                existing_runs = session_info.get('validation_runs', [])
+
+                # Check if run_number 1 is a preview
+                if existing_runs and existing_runs[0].get('is_preview') and existing_runs[0].get('run_number') == 1:
+                    # Overwrite preview with full validation
+                    session_info['validation_runs'][0] = {
+                        'run_number': 1,
+                        'run_time': datetime.now(timezone.utc).isoformat(),
+                        'session_id': session_id,
+                        'configuration_id': run_data.get('config_s3_key', ''),
+                        'run_key': run_key,
+                        'rows': run_data.get('total_rows', 0),
+                        'columns': run_data.get('total_columns', 0),
+                        'confidences_original': run_data.get('confidences_original', ''),
+                        'confidences_updated': run_data.get('confidences_updated', ''),
+                        'is_preview': False
+                    }
+                    logger.info(f"[VALIDATION_RUNS] Overwrote preview with full validation (run_number=1) for session {session_id}")
+                else:
+                    # Append as new run
+                    next_run_number = max([r.get('run_number', 0) for r in existing_runs], default=0) + 1
+                    new_run = {
+                        'run_number': next_run_number,
+                        'run_time': datetime.now(timezone.utc).isoformat(),
+                        'session_id': session_id,
+                        'configuration_id': run_data.get('config_s3_key', ''),
+                        'run_key': run_key,
+                        'rows': run_data.get('total_rows', 0),
+                        'columns': run_data.get('total_columns', 0),
+                        'confidences_original': run_data.get('confidences_original', ''),
+                        'confidences_updated': run_data.get('confidences_updated', ''),
+                        'is_preview': False
+                    }
+                    session_info['validation_runs'].append(new_run)
+                    logger.info(f"[VALIDATION_RUNS] Appended full validation (run_number={next_run_number}) for session {session_id}")
+
+            # Save updated session_info
+            return self.save_session_info(email, session_id, session_info)
+
+        except Exception as e:
+            logger.error(f"Failed to update validation_runs: {e}")
             return False
 
     def find_config_by_id(self, config_id: str, email: str) -> Tuple[Optional[Dict], Optional[str]]:

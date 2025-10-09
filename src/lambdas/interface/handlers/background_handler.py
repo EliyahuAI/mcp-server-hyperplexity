@@ -2992,29 +2992,17 @@ def handle_main_processing(event, context):
                     table_data['data'] = processed_rows  # Replace with rows that include _row_key
                     logger.debug(f"[PAYLOAD_GENERATION] Updated table_data with processed rows (including _row_key)")
 
-                # Load validation history if available and we have Excel content (matching invoke_validator_lambda logic)
+                # Load validation history using new extract_validation_history method
                 validation_history = {}
                 try:
-                    # Import validation history loader
-                    from interface_lambda.utils.history_loader import load_validation_history_from_excel
+                    # Use S3TableParser to extract validation history from Updated Values sheet
+                    history_data = table_parser.extract_validation_history(
+                        storage_manager.bucket_name,
+                        actual_excel_s3_key
+                    )
 
-                    # Save Excel content to a temporary file for history extraction
-                    # Ensure excel_content is bytes
-                    if isinstance(excel_content, str):
-                        excel_bytes = excel_content.encode('utf-8')
-                    elif isinstance(excel_content, bytes):
-                        excel_bytes = excel_content
-                    else:
-                        # excel_content might be a file-like object or response
-                        excel_bytes = excel_content if isinstance(excel_content, bytes) else str(excel_content).encode('utf-8')
-
-                    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_file:
-                        tmp_file.write(excel_bytes)
-                        tmp_file.flush()  # Ensure data is written to disk
-                        tmp_file_path = tmp_file.name
-
-                    # File is now closed and can be read by openpyxl
-                    original_validation_history = load_validation_history_from_excel(tmp_file_path)
+                    # Extract the validation_history dict from the returned structure
+                    original_validation_history = history_data.get('validation_history', {})
 
                     logger.debug(f"[PAYLOAD_GENERATION] Loaded validation history for {len(original_validation_history)} row keys from Excel")
 
@@ -3033,14 +3021,6 @@ def handle_main_processing(event, context):
                         if matched_count == 0 and len(validation_history) > 0:
                             logger.warning("[PAYLOAD_GENERATION] No rows matched with validation history - may be using different primary keys")
                             logger.debug(f"[PAYLOAD_GENERATION] Current primary keys: {id_fields}")
-
-                    # Clean up temp file
-                    try:
-                        import os
-                        if tmp_file_path:
-                            os.unlink(tmp_file_path)
-                    except Exception as cleanup_error:
-                        logger.warning(f"[PAYLOAD_GENERATION] Failed to cleanup temp file: {cleanup_error}")
 
                 except Exception as e:
                     logger.warning(f"[PAYLOAD_GENERATION] Failed to load validation history: {e}")

@@ -177,6 +177,178 @@ def should_update_value(original_confidence, validation_confidence):
     # Only update if validation confidence is higher than or equal to original
     return validation_level >= original_level
 
+def calculate_confidence_distribution(validation_results, qc_results):
+    """
+    Calculate percentage distribution of confidence levels.
+    Uses QC-adjusted confidences when QC was applied.
+
+    Args:
+        validation_results: Dictionary of validation results keyed by row hash
+        qc_results: Optional dictionary of QC results keyed by row hash
+
+    Returns:
+        Tuple of (original_str, updated_str) with percentage distributions
+        e.g., ("L: 15%, M: 45%, H: 40%", "L: 5%, M: 35%, H: 60%")
+    """
+    original_counts = {'LOW': 0, 'MEDIUM': 0, 'HIGH': 0}
+    updated_counts = {'LOW': 0, 'MEDIUM': 0, 'HIGH': 0}
+    total_fields = 0
+
+    for row_key, row_results in validation_results.items():
+        if not isinstance(row_results, dict):
+            continue
+
+        for field, field_data in row_results.items():
+            if not isinstance(field_data, dict):
+                continue
+
+            total_fields += 1
+
+            # Use QC-adjusted confidence if available
+            if qc_results and row_key in qc_results and field in qc_results[row_key]:
+                qc_field = qc_results[row_key][field]
+                if isinstance(qc_field, dict):
+                    original_conf = qc_field.get('qc_original_confidence', field_data.get('original_confidence'))
+                    updated_conf = qc_field.get('qc_confidence', field_data.get('confidence_level'))
+                else:
+                    original_conf = field_data.get('original_confidence')
+                    updated_conf = field_data.get('confidence_level')
+            else:
+                original_conf = field_data.get('original_confidence')
+                updated_conf = field_data.get('confidence_level')
+
+            # Count confidences (handling various confidence formats)
+            if original_conf:
+                original_conf_upper = str(original_conf).strip().upper()
+                if original_conf_upper in original_counts:
+                    original_counts[original_conf_upper] += 1
+
+            if updated_conf:
+                updated_conf_upper = str(updated_conf).strip().upper()
+                if updated_conf_upper in updated_counts:
+                    updated_counts[updated_conf_upper] += 1
+
+    # Format as percentages (handle division by zero)
+    if total_fields > 0:
+        original_str = f"L: {original_counts['LOW']/total_fields*100:.0f}%, M: {original_counts['MEDIUM']/total_fields*100:.0f}%, H: {original_counts['HIGH']/total_fields*100:.0f}%"
+        updated_str = f"L: {updated_counts['LOW']/total_fields*100:.0f}%, M: {updated_counts['MEDIUM']/total_fields*100:.0f}%, H: {updated_counts['HIGH']/total_fields*100:.0f}%"
+    else:
+        original_str = "L: 0%, M: 0%, H: 0%"
+        updated_str = "L: 0%, M: 0%, H: 0%"
+
+    return original_str, updated_str
+
+def create_validation_record_sheet(workbook, header_format, validation_results, qc_results,
+                                   session_id, config_s3_key, rows_data, headers,
+                                   existing_validation_record=None, is_preview=False):
+    """
+    Create Validation Record sheet with run-level metadata.
+
+    Args:
+        workbook: xlsxwriter workbook object
+        header_format: Format for headers
+        validation_results: Validation results dictionary
+        qc_results: QC results dictionary (optional)
+        session_id: Session ID
+        config_s3_key: S3 key for configuration file
+        rows_data: List of row dictionaries
+        headers: List of column headers
+        existing_validation_record: Existing validation record data (list of dicts)
+        is_preview: Whether this is a preview run
+
+    Returns:
+        Validation Record worksheet object
+    """
+    from datetime import datetime, timezone
+    import time
+
+    # Create the worksheet
+    validation_record_sheet = workbook.add_worksheet('Validation Record')
+
+    # Define headers
+    record_headers = [
+        'Run_Number', 'Run_Time', 'Session_ID', 'Configuration_ID',
+        'Run_Key', 'Rows', 'Columns', 'Original_Confidences', 'Updated_Confidences'
+    ]
+
+    # Write headers
+    for col_idx, header in enumerate(record_headers):
+        validation_record_sheet.write(0, col_idx, header, header_format)
+        validation_record_sheet.set_column(col_idx, col_idx, 20)
+
+    # Calculate confidence distributions
+    original_conf_str, updated_conf_str = calculate_confidence_distribution(
+        validation_results, qc_results
+    )
+
+    # Generate run metadata
+    run_time = datetime.now(timezone.utc).isoformat()
+    run_key = f"{session_id}_{int(time.time())}"
+    total_rows = len(rows_data)
+    total_columns = len(headers)
+
+    # Determine run number and whether to overwrite
+    run_number = 1
+    should_overwrite = False
+
+    if existing_validation_record and len(existing_validation_record) > 0:
+        # Check if we should overwrite Run_Number 1 (preview -> full validation)
+        first_record = existing_validation_record[0]
+        if (first_record.get('Run_Number') == 1 and
+            first_record.get('Session_ID') == session_id and
+            not is_preview):
+            # Full validation following a preview - overwrite run 1
+            run_number = 1
+            should_overwrite = True
+            logger.info(f"[VALIDATION_RECORD] Overwriting Run_Number 1 (preview -> full validation)")
+        elif is_preview:
+            # Preview run - always overwrite run 1 if it exists
+            run_number = 1
+            should_overwrite = True
+            logger.info(f"[VALIDATION_RECORD] Overwriting Run_Number 1 (preview)")
+        else:
+            # Append as new run
+            max_run_number = max([r.get('Run_Number', 0) for r in existing_validation_record], default=0)
+            run_number = max_run_number + 1
+            logger.info(f"[VALIDATION_RECORD] Appending new run with Run_Number {run_number}")
+
+    # Write validation record entries
+    row_idx = 1
+
+    if should_overwrite and existing_validation_record:
+        # Skip the first record (will be replaced by new run)
+        records_to_write = existing_validation_record[1:]
+    else:
+        records_to_write = existing_validation_record or []
+
+    # Write new run first
+    validation_record_sheet.write(row_idx, 0, run_number)
+    validation_record_sheet.write(row_idx, 1, run_time)
+    validation_record_sheet.write(row_idx, 2, session_id)
+    validation_record_sheet.write(row_idx, 3, config_s3_key or '')
+    validation_record_sheet.write(row_idx, 4, run_key)
+    validation_record_sheet.write(row_idx, 5, total_rows)
+    validation_record_sheet.write(row_idx, 6, total_columns)
+    validation_record_sheet.write(row_idx, 7, original_conf_str)
+    validation_record_sheet.write(row_idx, 8, updated_conf_str)
+    row_idx += 1
+
+    # Write historical records
+    for record in records_to_write:
+        validation_record_sheet.write(row_idx, 0, record.get('Run_Number', ''))
+        validation_record_sheet.write(row_idx, 1, record.get('Run_Time', ''))
+        validation_record_sheet.write(row_idx, 2, record.get('Session_ID', ''))
+        validation_record_sheet.write(row_idx, 3, record.get('Configuration_ID', ''))
+        validation_record_sheet.write(row_idx, 4, record.get('Run_Key', ''))
+        validation_record_sheet.write(row_idx, 5, record.get('Rows', ''))
+        validation_record_sheet.write(row_idx, 6, record.get('Columns', ''))
+        validation_record_sheet.write(row_idx, 7, record.get('Original_Confidences', ''))
+        validation_record_sheet.write(row_idx, 8, record.get('Updated_Confidences', ''))
+        row_idx += 1
+
+    logger.info(f"[VALIDATION_RECORD] Created Validation Record sheet with {row_idx - 1} runs")
+    return validation_record_sheet
+
 def create_enhanced_excel_with_validation(excel_data, validation_results, config_data, session_id, skip_history=False, validated_sheet_name=None, qc_results=None):
     """Create 3-sheet Excel file with validation results and optional QC data.
 
@@ -448,19 +620,20 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         else:
             logger.debug(f"[KEY_MATCH_DEBUG] No QC results provided to Excel function")
         
-        # Load existing Details entries from the original Excel (for history preservation)
+        # Load existing Details entries and Validation Record from the original Excel (for history preservation)
         existing_details = []
+        existing_validation_record = []
         details_sheet_exists = False
         if not skip_history and not isinstance(excel_data, dict):
-            # Only try to load existing details if we have raw Excel data, not structured data
+            # Only try to load existing details/validation record if we have raw Excel data, not structured data
             try:
                 if 'Details' in workbook.sheetnames:
                     details_sheet_exists = True
                     details_worksheet = workbook['Details']
-                    
+
                     # Read existing details headers
                     details_headers = [cell.value for cell in details_worksheet[1]]
-                    
+
                     # Read existing details data
                     for row_idx in range(2, details_worksheet.max_row + 1):
                         detail_row = {}
@@ -468,7 +641,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             if header:
                                 cell_value = details_worksheet.cell(row=row_idx, column=col_idx + 1).value
                                 detail_row[header] = cell_value
-                        
+
                         # Mark existing entries as "History"
                         if detail_row:
                             if 'New' in detail_row and detail_row['New'] == 'New':
@@ -476,10 +649,30 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             elif 'New' not in detail_row:
                                 detail_row['New'] = 'History'
                             existing_details.append(detail_row)
-                    
+
                     logger.info(f"Loaded {len(existing_details)} existing detail entries from Excel")
+
+                # Load existing Validation Record
+                if 'Validation Record' in workbook.sheetnames:
+                    validation_record_worksheet = workbook['Validation Record']
+
+                    # Read validation record headers
+                    validation_record_headers = [cell.value for cell in validation_record_worksheet[1]]
+
+                    # Read existing validation record data
+                    for row_idx in range(2, validation_record_worksheet.max_row + 1):
+                        record_row = {}
+                        for col_idx, header in enumerate(validation_record_headers):
+                            if header:
+                                cell_value = validation_record_worksheet.cell(row=row_idx, column=col_idx + 1).value
+                                record_row[header] = cell_value
+
+                        if record_row:
+                            existing_validation_record.append(record_row)
+
+                    logger.info(f"Loaded {len(existing_validation_record)} existing validation record entries from Excel")
             except Exception as e:
-                logger.warning(f"Could not load existing Details sheet: {e}")
+                logger.warning(f"Could not load existing Details/Validation Record sheets: {e}")
         
         # Create Excel with xlsxwriter for advanced formatting
         with xlsxwriter.Workbook(excel_buffer, {'strings_to_urls': False, 'nan_inf_to_errors': True}) as workbook:
@@ -615,7 +808,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                         else:
                             updated_sheet.write(updated_row_idx, col_idx, safe_for_excel(updated_value, should_preserve_formulas(col_name)), cell_format)
                         
-                        # Add comment with original value and reasoning (same as Original Values sheet)
+                        # Add comment with original value and reasoning (Updated Values sheet format)
                         comment_text = None
                         if row_validation_data and col_name in row_validation_data:
                             field_data = row_validation_data[col_name]
@@ -623,88 +816,77 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 original_value = row_data.get(col_name, '')
                                 validated_value = field_data.get('value', '')
                                 reasoning = field_data.get('reasoning', '')
-                                
-                                # Create comment with original value, reasoning, and citations
+
+                                # Create comment with original value, confidence, and citations
                                 comment_parts = []
-                                if validated_value != original_value or reasoning:
-                                    if validated_value != original_value:
-                                        comment_parts.append(f'Original Value: {original_value}')
-
-                                    # Check for QC data to determine appropriate reasoning and citations
-                                    key_citation = None
-                                    supporting_reasoning = reasoning  # Default to validation reasoning
-                                    qc_citations = ''
-                                    qc_reasoning = ''
-                                    qc_value = ''
-
+                                if validated_value != original_value:
+                                    # Get original confidence (use QC-adjusted if available)
+                                    original_confidence = field_data.get('original_confidence', '')
                                     row_qc_data = get_qc_data_for_row(row_key, row_idx)
                                     if row_qc_data and col_name in row_qc_data:
                                         field_qc_data = row_qc_data[col_name]
                                         if isinstance(field_qc_data, dict):
-                                            qc_citations = field_qc_data.get('qc_citations', '')
-                                            qc_reasoning = field_qc_data.get('qc_reasoning', '')
-                                            qc_value = field_qc_data.get('qc_entry', '')
+                                            qc_original_confidence = field_qc_data.get('qc_original_confidence')
+                                            if qc_original_confidence and str(qc_original_confidence).strip():
+                                                original_confidence = qc_original_confidence
 
-                                    # Smart reasoning selection based on QC data:
-                                    # 1. If QC citations exist, use those (no Supporting Information)
-                                    if qc_citations and str(qc_citations).strip():
-                                        key_citation = qc_citations
-                                        # Don't add Supporting Information when we have QC citations
+                                    # Lead with Original Value and confidence
+                                    if original_confidence:
+                                        comment_parts.append(f'Original Value: {original_value} ({original_confidence} Confidence)')
                                     else:
-                                        # 2. No QC citations - choose reasoning based on QC value match
-                                        if qc_value and str(qc_value).strip():
-                                            # QC changed the value - use QC reasoning
-                                            if str(qc_value) != str(validated_value):
-                                                supporting_reasoning = qc_reasoning if qc_reasoning else reasoning
-                                            # QC value matches updated value - use validation reasoning
-                                            else:
-                                                supporting_reasoning = reasoning
+                                        comment_parts.append(f'Original Value: {original_value}')
 
-                                        # Add Supporting Information if we have reasoning
-                                        if supporting_reasoning:
-                                            comment_parts.append(f'Supporting Information: {supporting_reasoning}')
+                                # Add Key Citation
+                                key_citation = None
+                                row_qc_data = get_qc_data_for_row(row_key, row_idx)
+                                if row_qc_data and col_name in row_qc_data:
+                                    field_qc_data = row_qc_data[col_name]
+                                    if isinstance(field_qc_data, dict):
+                                        qc_citations = field_qc_data.get('qc_citations', '')
+                                        if qc_citations and str(qc_citations).strip():
+                                            key_citation = qc_citations
 
-                                    # If no QC citation, use first validation citation
-                                    if not key_citation:
-                                        citations = field_data.get('citations', [])
-                                        if citations and len(citations) > 0:
-                                            first_citation = citations[0]
-                                            cite_text = first_citation.get('title', 'Source')
-                                            cite_url = first_citation.get('url', '')
-                                            cite_snippet = first_citation.get('cited_text', '')
-                                            if cite_snippet and len(cite_snippet) > 150:
-                                                cite_snippet = cite_snippet[:150] + "..."
-                                            key_citation = f"{cite_text}"
-                                            if cite_snippet:
-                                                key_citation += f" - {cite_snippet}"
-                                            if cite_url:
-                                                key_citation += f" ({cite_url})"
-
-                                    if key_citation:
-                                        # Ensure key citation doesn't have problematic newlines
-                                        clean_citation = key_citation.replace('\n', ' ').replace('\r', ' ')
-                                        comment_parts.append(f'Key Citation: {clean_citation}')
-
-                                    # Add citations if available
+                                # If no QC citation, use first validation citation
+                                if not key_citation:
                                     citations = field_data.get('citations', [])
-                                    if citations:
-                                        citation_texts = []
-                                        for i, citation in enumerate(citations, 1):
-                                            cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
-                                            cite_url = citation.get('url', '')
-                                            cite_snippet = citation.get('cited_text', '')
-                                            if cite_url:
-                                                cite_text += f" ({cite_url})"
-                                            if cite_snippet:
-                                                cite_text += f": \"{cite_snippet}\""
-                                            citation_texts.append(cite_text)
-                                        
-                                        if citation_texts:
-                                            comment_parts.append(f"Sources:\n" + "\n".join(citation_texts))
-                                    
-                                    # Create comment only if we have meaningful content
-                                    if comment_parts:
-                                        comment_text = '\n\n'.join(comment_parts)
+                                    if citations and len(citations) > 0:
+                                        first_citation = citations[0]
+                                        cite_text = first_citation.get('title', 'Source')
+                                        cite_url = first_citation.get('url', '')
+                                        cite_snippet = first_citation.get('cited_text', '')
+                                        if cite_snippet and len(cite_snippet) > 150:
+                                            cite_snippet = cite_snippet[:150] + "..."
+                                        key_citation = f"{cite_text}"
+                                        if cite_snippet:
+                                            key_citation += f" - {cite_snippet}"
+                                        if cite_url:
+                                            key_citation += f" ({cite_url})"
+
+                                if key_citation:
+                                    # Ensure key citation doesn't have problematic newlines
+                                    clean_citation = key_citation.replace('\n', ' ').replace('\r', ' ')
+                                    comment_parts.append(f'Key Citation: {clean_citation}')
+
+                                # Add Sources section
+                                citations = field_data.get('citations', [])
+                                if citations:
+                                    citation_texts = []
+                                    for i, citation in enumerate(citations, 1):
+                                        cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
+                                        cite_url = citation.get('url', '')
+                                        cite_snippet = citation.get('cited_text', '')
+                                        if cite_url:
+                                            cite_text += f" ({cite_url})"
+                                        if cite_snippet:
+                                            cite_text += f": \"{cite_snippet}\""
+                                        citation_texts.append(cite_text)
+
+                                    if citation_texts:
+                                        comment_parts.append(f"Sources:\n" + "\n".join(citation_texts))
+
+                                # Create comment only if we have meaningful content
+                                if comment_parts:
+                                    comment_text = '\n\n'.join(comment_parts)
                         
                         # Add comment if needed
                         if comment_text:
@@ -780,87 +962,76 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             else:
                                 cell_format = None  # No coloring for IGNORED and ID columns
                             
-                            # Create comment with updated value, reasoning, and citations
+                            # Create comment with updated value and confidence (Original Values sheet format)
                             comment_parts = []
-                            if validated_value != original_value or reasoning:
-                                if validated_value != original_value:
-                                    comment_parts.append(f'Updated Value: {validated_value}')
-
-                                # Check for QC data to determine appropriate reasoning and citations
-                                key_citation = None
-                                supporting_reasoning = reasoning  # Default to validation reasoning
-                                qc_citations = ''
-                                qc_reasoning = ''
-                                qc_value = ''
-
+                            if validated_value != original_value:
+                                # Get updated confidence (use QC-adjusted if available)
+                                updated_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
                                 row_qc_data = get_qc_data_for_row(row_key, row_idx)
                                 if row_qc_data and col_name in row_qc_data:
                                     field_qc_data = row_qc_data.get(col_name)
                                     if isinstance(field_qc_data, dict):
-                                        qc_citations = field_qc_data.get('qc_citations', '')
-                                        qc_reasoning = field_qc_data.get('qc_reasoning', '')
-                                        qc_value = field_qc_data.get('qc_entry', '')
+                                        qc_confidence = field_qc_data.get('qc_confidence')
+                                        if qc_confidence and str(qc_confidence).strip():
+                                            updated_confidence = qc_confidence
 
-                                # Smart reasoning selection based on QC data:
-                                # 1. If QC citations exist, use those (no Supporting Information)
-                                if qc_citations and str(qc_citations).strip():
-                                    key_citation = qc_citations
-                                    # Don't add Supporting Information when we have QC citations
+                                # Lead with Updated Value and confidence
+                                if updated_confidence:
+                                    comment_parts.append(f'Updated Value: {validated_value} ({updated_confidence} Confidence)')
                                 else:
-                                    # 2. No QC citations - choose reasoning based on QC value match
-                                    if qc_value and str(qc_value).strip():
-                                        # QC changed the value - use QC reasoning
-                                        if str(qc_value) != str(validated_value):
-                                            supporting_reasoning = qc_reasoning if qc_reasoning else reasoning
-                                        # QC value matches updated value - use validation reasoning
-                                        else:
-                                            supporting_reasoning = reasoning
+                                    comment_parts.append(f'Updated Value: {validated_value}')
 
-                                    # Add Supporting Information if we have reasoning
-                                    if supporting_reasoning:
-                                        comment_parts.append(f'Supporting Information: {supporting_reasoning}')
+                            # Add Key Citation
+                            key_citation = None
+                            row_qc_data = get_qc_data_for_row(row_key, row_idx)
+                            if row_qc_data and col_name in row_qc_data:
+                                field_qc_data = row_qc_data.get(col_name)
+                                if isinstance(field_qc_data, dict):
+                                    qc_citations = field_qc_data.get('qc_citations', '')
+                                    if qc_citations and str(qc_citations).strip():
+                                        key_citation = qc_citations
 
-                                # If no QC citation, use first validation citation
-                                if not key_citation:
-                                    citations = field_data.get('citations', [])
-                                    if citations and len(citations) > 0:
-                                        first_citation = citations[0]
-                                        cite_text = first_citation.get('title', 'Source')
-                                        cite_url = first_citation.get('url', '')
-                                        cite_snippet = first_citation.get('cited_text', '')
-                                        if cite_snippet and len(cite_snippet) > 150:
-                                            cite_snippet = cite_snippet[:150] + "..."
-                                        key_citation = f"{cite_text}"
-                                        if cite_snippet:
-                                            key_citation += f" - {cite_snippet}"
-                                        if cite_url:
-                                            key_citation += f" ({cite_url})"
-
-                                if key_citation:
-                                    # Ensure key citation doesn't have problematic newlines
-                                    clean_citation = key_citation.replace('\n', ' ').replace('\r', ' ')
-                                    comment_parts.append(f'Key Citation: {clean_citation}')
-
-                                # Add citations if available
+                            # If no QC citation, use first validation citation
+                            if not key_citation:
                                 citations = field_data.get('citations', [])
-                                if citations:
-                                    citation_texts = []
-                                    for i, citation in enumerate(citations, 1):
-                                        cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
-                                        cite_url = citation.get('url', '')
-                                        cite_snippet = citation.get('cited_text', '')
-                                        if cite_url:
-                                            cite_text += f" ({cite_url})"
-                                        if cite_snippet:
-                                            cite_text += f": \"{cite_snippet}\""
-                                        citation_texts.append(cite_text)
-                                    
-                                    if citation_texts:
-                                        comment_parts.append(f"Sources:\n" + "\n".join(citation_texts))
+                                if citations and len(citations) > 0:
+                                    first_citation = citations[0]
+                                    cite_text = first_citation.get('title', 'Source')
+                                    cite_url = first_citation.get('url', '')
+                                    cite_snippet = first_citation.get('cited_text', '')
+                                    if cite_snippet and len(cite_snippet) > 150:
+                                        cite_snippet = cite_snippet[:150] + "..."
+                                    key_citation = f"{cite_text}"
+                                    if cite_snippet:
+                                        key_citation += f" - {cite_snippet}"
+                                    if cite_url:
+                                        key_citation += f" ({cite_url})"
 
-                                # Create comment only if we have meaningful content
-                                if comment_parts:
-                                    comment_text = '\n\n'.join(comment_parts)
+                            if key_citation:
+                                # Ensure key citation doesn't have problematic newlines
+                                clean_citation = key_citation.replace('\n', ' ').replace('\r', ' ')
+                                comment_parts.append(f'Key Citation: {clean_citation}')
+
+                            # Add Sources section
+                            citations = field_data.get('citations', [])
+                            if citations:
+                                citation_texts = []
+                                for i, citation in enumerate(citations, 1):
+                                    cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
+                                    cite_url = citation.get('url', '')
+                                    cite_snippet = citation.get('cited_text', '')
+                                    if cite_url:
+                                        cite_text += f" ({cite_url})"
+                                    if cite_snippet:
+                                        cite_text += f": \"{cite_snippet}\""
+                                    citation_texts.append(cite_text)
+
+                                if citation_texts:
+                                    comment_parts.append(f"Sources:\n" + "\n".join(citation_texts))
+
+                            # Create comment only if we have meaningful content
+                            if comment_parts:
+                                comment_text = '\n\n'.join(comment_parts)
                     
                     # Write original value - use xlsxwriter's write_formula method for preserved formulas
                     if should_preserve_formulas(col_name) and str(original_value).startswith('='):
@@ -879,8 +1050,35 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                                        {'width': 300, 'height': 150})
                         except Exception as e:
                             logger.warning(f"Could not add comment: {e}")
-            
-            # SHEET 3: Details (comprehensive view)
+
+            # SHEET 3: Validation Record (run-level metadata)
+            # Extract config S3 key from config_data if available
+            config_s3_key = config_data.get('config_s3_key', '') if isinstance(config_data, dict) else ''
+
+            # Determine if this is a preview run (heuristic: check if we have partial validation)
+            is_preview = False
+            if isinstance(validation_results, dict) and validation_results:
+                validated_row_count = len([k for k in row_keys if k in validation_results])
+                total_row_count = len(row_keys)
+                # If less than 50% of rows validated, consider it a preview
+                if total_row_count > 0 and validated_row_count < (total_row_count * 0.5):
+                    is_preview = True
+                    logger.info(f"[VALIDATION_RECORD] Detected preview run ({validated_row_count}/{total_row_count} rows validated)")
+
+            validation_record_sheet = create_validation_record_sheet(
+                workbook=workbook,
+                header_format=header_format,
+                validation_results=validation_results,
+                qc_results=qc_results,
+                session_id=session_id,
+                config_s3_key=config_s3_key,
+                rows_data=rows_data,
+                headers=headers,
+                existing_validation_record=existing_validation_record,
+                is_preview=is_preview
+            )
+
+            # SHEET 4: Details (comprehensive view)
             details_sheet = workbook.add_worksheet('Details')
             
             # Build detail headers dynamically to include ID fields

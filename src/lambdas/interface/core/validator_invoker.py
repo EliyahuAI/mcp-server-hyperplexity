@@ -14,7 +14,6 @@ import math
 from pathlib import Path
 
 from row_key_utils import generate_row_key
-from interface_lambda.utils.history_loader import load_validation_history_from_excel
 from schema_validator_simplified import SimplifiedSchemaValidator
 from interface_lambda.reporting.markdown_report import create_markdown_table_from_results
 from shared_table_parser import S3TableParser
@@ -514,38 +513,37 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 value = sample_row.get(id_field, 'NOT FOUND')
                 logger.info(f"  {id_field}: {value}")
         
-        # Load validation history if available and we have Excel content
+        # Load validation history using new extract_validation_history method
         validation_history = {}
         if not preview_first_row:  # Load validation history for all files (now all are Excel format)
             try:
-                # Save Excel content to a temporary file for history extraction
-                with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_file:
-                    tmp_file.write(excel_content)
-                    tmp_file_path = tmp_file.name
-                
-                original_validation_history = load_validation_history_from_excel(tmp_file_path)
-                
+                # Use S3TableParser to extract validation history from Updated Values sheet
+                history_data = table_parser.extract_validation_history(
+                    S3_CACHE_BUCKET,
+                    excel_s3_key
+                )
+
+                # Extract the validation_history dict from the returned structure
+                original_validation_history = history_data.get('validation_history', {})
+
                 logger.info(f"Loaded validation history for {len(original_validation_history)} row keys from Excel")
-                
+
                 if original_validation_history:
                     validation_history = original_validation_history
-                    
+
                     # Log matching summary
                     matched_count = 0
                     for row in rows:
                         payload_key = row.get('_row_key', '')
                         if payload_key and payload_key in validation_history:
                             matched_count += 1
-                    
+
                     logger.info(f"Matched {matched_count} out of {len(rows)} rows with validation history")
-                    
+
                     if matched_count == 0 and len(validation_history) > 0:
                         logger.warning("No rows matched with validation history - may be using different primary keys")
                         logger.info(f"Current primary keys: {id_fields}")
-                
-                # Clean up temp file
-                os.unlink(tmp_file_path)
-                
+
             except Exception as e:
                 logger.warning(f"Could not load validation history: {e}")
                 import traceback
