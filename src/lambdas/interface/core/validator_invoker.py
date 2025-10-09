@@ -544,7 +544,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             preview_rows = rows[:total_rows_to_send]
             
             payload = {
-                "test_mode": True, 
+                "test_mode": True,
                 "config": config_data,
                 "validation_data": {
                     "rows": preview_rows,
@@ -555,8 +555,8 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                         "batch_end_idx": len(preview_rows),
                         "total_dataset_size": total_rows  # Use actual total rows from Excel, not just preview rows
                     }
-                }, 
-                "validation_history": {},
+                },
+                "validation_history": validation_history,  # Use extracted history instead of empty dict
                 "session_id": session_id,
                 "is_preview": True,
                 "total_rows": total_rows  # Also add as top-level field for clarity
