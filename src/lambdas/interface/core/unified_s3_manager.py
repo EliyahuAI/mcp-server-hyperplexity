@@ -1582,16 +1582,23 @@ class UnifiedS3Manager:
             # STRATEGY 1: Try new clean format first (direct path construction)
             session_id = None
             filename = None
-            
-            # FIRST: Fixed-length session parsing (most common for copied configs)
-            if len(config_id) > 32 and config_id.startswith('session_'):
-                # Session format: session_YYYYMMDD_HHMMSS_XXXXXXXX (32 chars total)
-                # Common when configs are copied: session_20250918_150921_ea332116_session_20250915_143022_abc_MarketResearch_Config
+
+            # FIRST: Fixed-length session parsing (handles both regular and demo sessions)
+            if config_id.startswith('session_demo_'):
+                # Demo session format: session_demo_YYYYMMDD_HHMMSS_XXXXXXXX (37 chars total)
+                if len(config_id) > 37:
+                    session_id = config_id[:37]
+                    remaining = config_id[37:]
+                    if remaining.startswith('_'):
+                        filename = remaining[1:] + '.json'  # Remove leading underscore
+                        logger.debug(f"Parsed with fixed length (demo session): session={session_id}, filename={filename}")
+            elif len(config_id) > 32 and config_id.startswith('session_'):
+                # Regular session format: session_YYYYMMDD_HHMMSS_XXXXXXXX (32 chars total)
                 session_id = config_id[:32]
                 remaining = config_id[32:]
                 if remaining.startswith('_'):
                     filename = remaining[1:] + '.json'  # Remove leading underscore
-                    logger.debug(f"Parsed with fixed length (copied config): session={session_id}, filename={filename}")
+                    logger.debug(f"Parsed with fixed length (regular session): session={session_id}, filename={filename}")
             
             # SECOND: New format with _config_v marker
             elif '_config_v' in config_id:
