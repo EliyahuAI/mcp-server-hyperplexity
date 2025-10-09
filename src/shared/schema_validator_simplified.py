@@ -341,7 +341,11 @@ class SimplifiedSchemaValidator:
 
             field_parts.append(f"Importance: {target.importance}")
 
-            # Add examples after importance
+            # Add notes before examples
+            if target.notes:
+                field_parts.append(f"\nNotes: {target.notes}")
+
+            # Add examples after notes
             if target.examples:
                 field_parts.append("\nExamples:")
                 for example in target.examples:
@@ -369,9 +373,6 @@ class SimplifiedSchemaValidator:
                 # Prior value (from Original Values sheet - older validation)
                 if field_history.get('original_value'):
                     field_parts.append(f"\nPrior Value (from Original Values sheet): {field_history['original_value']}")
-
-            if target.notes:
-                field_parts.append(f"\nNotes: {target.notes}")
 
             fields_parts.append("\n".join(field_parts))
         
