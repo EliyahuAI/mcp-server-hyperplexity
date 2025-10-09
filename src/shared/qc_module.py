@@ -308,7 +308,7 @@ class QCModule:
                 if validation_history and column in validation_history:
                     field_history = validation_history[column]
 
-                    # Prior Value (from previous validation run - stored in cell comments)
+                    # Prior Value (just the raw value from a previous validation)
                     if field_history.get('prior_value'):
                         prior_ts = field_history.get('prior_timestamp', '')
                         if prior_ts:
@@ -316,26 +316,30 @@ class QCModule:
                         else:
                             field_output.append(f"### Prior Value: `{field_history['prior_value']}`")
 
+                        # Prior value only shows the confidence from that validation, no context
                         if field_history.get('prior_confidence'):
                             field_output.append(f"* **Prior Confidence:** {field_history['prior_confidence']}")
-                        if field_history.get('original_key_citation'):
-                            field_output.append(f"* **Prior Validation Context:**")
-                            field_output.append(f"  - Key Citation: {field_history['original_key_citation']}")
-                        if field_history.get('original_sources'):
-                            sources_str = ', '.join(field_history['original_sources'])
-                            field_output.append(f"  - Sources: {sources_str}")
                         field_output.append("")
 
                 # Original/Current Value (the INPUT - what's in the cell now)
                 field_output.append(f"### Original/Current Value: `{original_value}`")
                 field_output.append(f"* **Original Confidence:** {original_confidence}")
 
-                # Add validation context if this current value was previously validated
+                # Add validation context from cell comments for the current value
                 if validation_history and column in validation_history:
                     field_history = validation_history[column]
-                    # Check if we have validation context for the current value
+
+                    # The validation context belongs to the Original/Current value
+                    if field_history.get('original_key_citation'):
+                        field_output.append(f"* **Validation Context:**")
+                        field_output.append(f"  - Key Citation: {field_history['original_key_citation']}")
+                    if field_history.get('original_sources'):
+                        sources_str = ', '.join(field_history['original_sources'])
+                        field_output.append(f"  - Sources: {sources_str}")
+
+                    # Show the even older value from Original Values sheet if available
                     if field_history.get('original_value'):
-                        field_output.append(f"* **Validation Context (from Original Values sheet):** `{field_history['original_value']}`")
+                        field_output.append(f"* **Original Values sheet entry:** `{field_history['original_value']}`")
                 field_output.append("")
 
                 # Updated Value (Proposed) - always say "Now" for cache efficiency
