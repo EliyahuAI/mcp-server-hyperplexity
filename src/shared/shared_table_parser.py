@@ -1193,7 +1193,8 @@ class S3TableParser:
                             'original_value': parsed_comment.get('original_value', ''),
                             'original_confidence': parsed_comment.get('original_confidence', ''),
                             'original_key_citation': parsed_comment.get('key_citation', ''),
-                            'original_sources': parsed_comment.get('sources', []),
+                            'original_sources': parsed_comment.get('sources', []),  # URLs for backward compatibility
+                            'original_sources_full': parsed_comment.get('sources_full', []),  # Full citation text
                             'original_timestamp': timestamps.get('original_timestamp', '')
                         }
 
@@ -1275,12 +1276,15 @@ class S3TableParser:
             # Parse Sources section
             elif line.startswith('Sources:'):
                 sources = []
+                sources_full = []  # Keep full citation text
                 i += 1
                 while i < len(lines):
                     source_line = lines[i].strip()
                     if not source_line:
                         break
-                    # Extract URL from "[1] Title (URL): "snippet""
+                    # Keep the full source line for complete citation
+                    sources_full.append(source_line)
+                    # Also extract just the URL for backward compatibility
                     if '(' in source_line and ')' in source_line:
                         url_start = source_line.find('(')
                         url_end = source_line.find(')', url_start)
@@ -1288,6 +1292,7 @@ class S3TableParser:
                         sources.append(url)
                     i += 1
                 result['sources'] = sources
+                result['sources_full'] = sources_full  # Full citation text
                 continue
 
             i += 1

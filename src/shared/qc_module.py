@@ -347,12 +347,18 @@ class QCModule:
                     field_history = validation_history[column]
 
                     # The validation context belongs to the Original/Current value
+                    # Show the key citation
                     if field_history.get('original_key_citation'):
-                        field_output.append(f"* **Validation Context:**")
-                        field_output.append(f"  - Key Citation: {field_history['original_key_citation']}")
-                    if field_history.get('original_sources'):
-                        sources_str = ', '.join(field_history['original_sources'])
-                        field_output.append(f"  - Sources: {sources_str}")
+                        field_output.append(f"* **Key Citation:** {field_history['original_key_citation']}")
+
+                    # Show full source citations if available, otherwise fall back to URLs
+                    if field_history.get('original_sources_full'):
+                        field_output.append(f"* **Sources:**")
+                        for source in field_history['original_sources_full']:
+                            field_output.append(f"  - {source}")
+                    elif field_history.get('original_sources'):
+                        # Fallback to just URLs if full citations not available
+                        field_output.append(f"* **Sources:** {', '.join(field_history['original_sources'])}")
 
                     # Show the even older value from Original Values sheet if available
                     if field_history.get('original_value'):
@@ -363,8 +369,20 @@ class QCModule:
                 field_output.append(f"### Updated Value (Proposed): Now")
                 field_output.append(f"* **Updated Confidence (Proposed):** {confidence}")
                 field_output.append(f"* **Reasoning:** {reasoning}")
-                field_output.append(f"* **Sources:** {', '.join(sources) if sources else 'None'}")
-                field_output.append(f"* **Citations:** {self._format_citations_for_qc(citations)}")
+
+                # Show citations with full text (these already contain title, URL, and snippets)
+                if citations:
+                    field_output.append(f"* **Citations:**")
+                    for i, citation in enumerate(citations, 1):
+                        field_output.append(f"  - [{i}] {citation}")
+                else:
+                    field_output.append(f"* **Citations:** None")
+
+                # Also show just the source URLs separately for quick reference
+                if sources:
+                    field_output.append(f"* **Source URLs:** {', '.join(sources)}")
+                else:
+                    field_output.append(f"* **Source URLs:** None")
                 if explanation:
                     field_output.append(f"* **Explanation:** {explanation}")
                 field_output.append(f"* **Substantially Different from Original:** {'Yes' if str(answer).strip() != str(original_value).strip() else 'No'}")
