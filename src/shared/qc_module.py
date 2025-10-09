@@ -371,18 +371,21 @@ class QCModule:
                 field_output.append(f"* **Reasoning:** {reasoning}")
 
                 # Show citations with full text (these already contain title, URL, and snippets)
-                if citations:
+                if citations and any(citations):  # Check if citations exist and are not empty
                     field_output.append(f"* **Citations:**")
                     for i, citation in enumerate(citations, 1):
                         field_output.append(f"  - [{i}] {citation}")
+                elif sources:  # If no citations but we have source URLs, format them
+                    field_output.append(f"* **Citations:** (URLs only)")
+                    for i, source in enumerate(sources, 1):
+                        field_output.append(f"  - [{i}] {source}")
                 else:
                     field_output.append(f"* **Citations:** None")
 
-                # Also show just the source URLs separately for quick reference
-                if sources:
+                # Also show just the source URLs separately for quick reference if we have full citations
+                # Only show this if we had actual citations (to avoid duplication)
+                if citations and any(citations) and sources:
                     field_output.append(f"* **Source URLs:** {', '.join(sources)}")
-                else:
-                    field_output.append(f"* **Source URLs:** None")
                 if explanation:
                     field_output.append(f"* **Explanation:** {explanation}")
                 field_output.append(f"* **Substantially Different from Original:** {'Yes' if str(answer).strip() != str(original_value).strip() else 'No'}")
