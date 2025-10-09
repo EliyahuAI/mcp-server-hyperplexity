@@ -34,7 +34,28 @@ QC receives:
 - **Field guidance**: Description, format, notes, examples from config
 - **Context**: ID fields for row context (not QC'd themselves)
 - **Validation results**: Complete outputs from all field groups
-- **Original values**: Raw data for comparison
+- **Original/Current values**: Input data being validated (what's in the cell)
+- **Validation history**: Historical validation data from cell comments (when available)
+
+#### Understanding Value Types in QC
+
+QC processes three distinct value types in chronological order:
+
+1. **Prior Value** (optional) - Historical validation data from cell comments:
+   - Value from a PREVIOUS validation run
+   - May include timestamp, confidence level, and citations
+   - Provides context about how the field has changed over time
+
+2. **Original/Current Value** - The INPUT being validated:
+   - What's currently in the Excel cell
+   - This is what the validator is processing RIGHT NOW
+   - Has an assigned "Original Confidence" from the validator
+
+3. **Updated Value** - The validator's PROPOSED new value:
+   - What the validator suggests as the replacement
+   - May be the same as Original/Current if no change needed
+   - Has an assigned "Updated Confidence" from the validator
+   - Subject to QC review and potential override
 
 QC evaluates each field using the same confidence rubric as validation:
 - **HIGH**: Widely accepted fact, directly verified by authoritative source
@@ -58,7 +79,45 @@ QC provides enhanced citation tracking using the same architecture as validation
 - Added automatically to all QC results
 - Populated in QC Sources column in Excel Details sheet
 
-### 4. QC Actions
+### 4. Validation History in QC
+
+QC now receives validation history to provide better context for decisions:
+
+**Field Display Format in QC Prompt**:
+```markdown
+**FIELD: End Date**
+
+### Field Configuration
+* **Description:** Last day of the conference
+* **Format:** Date
+* **Notes:** Format as YYYY-MM-DD. Should be same as or after Start Date.
+* **Examples:**
+  - 2025-07-17
+  - 2025-09-26
+
+### Prior Value: `2025-12-05` (from validation before 2025-09-15)
+* **Prior Confidence:** MEDIUM
+* **Prior Validation Context:**
+  - Key Citation: Conference dates are December 5-7, 2025
+  - Sources: https://neurips.cc/archive-2025
+
+### Original/Current Value: `2025-12-07`
+* **Original Confidence:** LOW
+
+### Updated Value (Proposed): Now
+* **Updated Confidence:** HIGH
+* **Reasoning:** The end date for NeurIPS 2025 is December 7, 2025
+* **Sources:** https://neurips.cc, https://eventbrowse.com/event/neurips-2025/
+* **Citations:** [1] Official NeurIPS announcement confirming December 7
+* **Substantially Different from Original:** No
+```
+
+This chronological presentation helps QC understand:
+- How the value has evolved over time (Prior → Current → Proposed)
+- Previous validation confidence and sources
+- Whether the proposed change is justified
+
+### 5. QC Actions
 
 **Confidence Lowered**: Keep same value but reduce confidence level
 ```json
@@ -539,6 +598,13 @@ The system is functional and provides valuable QC insights, but would benefit fr
 - Follows `MULTIPLEX_RESPONSE_SCHEMA` with QC extensions
 - Scrubs encrypted content from citations
 - Aggregates citations between validation and QC runs
+
+### Validation History Integration
+- **Data Flow**: `lambda_function.py` → `qc_integration.py` → `qc_module.py`
+- **History Source**: Extracted from Excel cell comments via `shared_table_parser.py`
+- **Format**: Dictionary mapping column names to historical validation data
+- **Content**: Prior values, confidence levels, timestamps, citations, sources
+- **Usage**: Provides temporal context for QC decisions
 
 ### Error Handling
 - Graceful fallback if QC disabled or fails
