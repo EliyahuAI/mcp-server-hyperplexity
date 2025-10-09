@@ -1573,8 +1573,8 @@ class AIAPIClient:
             return 'request'
     
     
-    async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-3-5-sonnet-20241022", 
-                                 tool_name: str = "structured_response", use_cache: bool = True, 
+    async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-sonnet-4-5",
+                                 tool_name: str = "structured_response", use_cache: bool = True,
                                  context: str = "", max_tokens: int = None, max_web_searches: int = 3,
                                  search_context_size: str = "low", debug_name: str = None) -> Dict:
         """
@@ -1616,7 +1616,11 @@ class AIAPIClient:
         for model_index, current_model in enumerate(models_to_try):
             try:
                 logger.debug(f"[MODEL_TRY] Attempting model {model_index + 1}/{len(models_to_try)}: {current_model}")
-                
+
+                # Monitor for legacy Sonnet 3.5 usage
+                if 'sonnet-3' in current_model.lower() or '3-5-sonnet' in current_model.lower() or '3.5-sonnet' in current_model.lower():
+                    logger.warning(f"[LEGACY_MODEL_WARNING] Using legacy Sonnet 3.5 model: {current_model}. Expected claude-sonnet-4-5 or newer.")
+
                 # Normalize model for current provider
                 api_provider = self._determine_api_provider(current_model)
                 current_model_normalized = self._normalize_anthropic_model(current_model)
@@ -1797,7 +1801,12 @@ class AIAPIClient:
                     else:
                         # Perplexity response is already in the correct format
                         result['citations'] = self.extract_citations_from_perplexity_response(result.get('response', {}))
-                    
+
+                    # Monitor for legacy model references in response content
+                    response_str = json.dumps(result.get('response', {})).lower()
+                    if 'sonnet-3' in response_str or '3-5-sonnet' in response_str or '3.5-sonnet' in response_str or 'claude-3' in response_str:
+                        logger.warning(f"[LEGACY_MODEL_REFERENCE] Response from {current_model} contains references to legacy Sonnet 3.x models. This may indicate model confusion.")
+
                     logger.debug(f"[SUCCESS] Model {current_model} succeeded with unified response format")
                     return result
                     
@@ -1823,7 +1832,7 @@ class AIAPIClient:
         else:
             raise Exception("All models failed - no specific error captured")
     
-    async def call_text_api(self, prompt: str, model: Union[str, List[str]] = "claude-3-5-sonnet-20241022", 
+    async def call_text_api(self, prompt: str, model: Union[str, List[str]] = "claude-sonnet-4-5",
                            use_cache: bool = True, context: str = "", max_web_searches: int = 3) -> Dict:
         """
         Call AI API for text response.
@@ -1837,6 +1846,10 @@ class AIAPIClient:
         Returns:
             Dict containing the text response and metadata
         """
+        # Monitor for legacy Sonnet 3.5 usage
+        if isinstance(model, str) and ('sonnet-3' in model.lower() or '3-5-sonnet' in model.lower() or '3.5-sonnet' in model.lower()):
+            logger.warning(f"[LEGACY_MODEL_WARNING] Using legacy Sonnet 3.5 model: {model}. Expected claude-sonnet-4-5 or newer.")
+
         normalized_model = self._normalize_anthropic_model(model)
         cache_key = self._get_cache_key(prompt, normalized_model, None, context, max_web_searches) if use_cache else None
         
@@ -2406,7 +2419,12 @@ class AIAPIClient:
                             
                             if attempt > 0:
                                 logger.debug(f"[SUCCESS] Claude API call succeeded on attempt {attempt + 1}")
-                            
+
+                            # Monitor for legacy model references in response content
+                            response_str = json.dumps(response_json).lower()
+                            if 'sonnet-3' in response_str or '3-5-sonnet' in response_str or '3.5-sonnet' in response_str or 'claude-3' in response_str:
+                                logger.warning(f"[LEGACY_MODEL_REFERENCE] Response from {normalized_model} contains references to legacy Sonnet 3.x models. This may indicate model confusion.")
+
                             return {
                                 'response': response_json,
                                 'token_usage': token_usage,

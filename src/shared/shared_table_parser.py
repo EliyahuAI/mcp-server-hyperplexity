@@ -54,7 +54,7 @@ class S3TableParser:
 
         return normalized
 
-    def parse_s3_table(self, bucket: str, key: str, sheet_name: Optional[str] = None, extract_formulas: bool = False) -> Dict[str, Any]:
+    def parse_s3_table(self, bucket: str, key: str, sheet_name: Optional[str] = None, extract_formulas: bool = False, id_fields: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Parse Excel/CSV from S3 into standard JSON format
 
@@ -63,9 +63,11 @@ class S3TableParser:
             key: S3 object key
             sheet_name: Excel sheet name (optional, uses first sheet if not specified)
             extract_formulas: Whether to extract Excel formulas with descriptions (default: False)
+            id_fields: List of ID field names for row key generation (optional)
 
         Returns:
-            Structured table data with metadata, optionally including formulas
+            Structured table data with metadata, optionally including formulas.
+            If id_fields provided, each row will include a 'row_key' field.
         """
         try:
             # Download file from S3
@@ -76,11 +78,11 @@ class S3TableParser:
             # Determine file type from key
             filename = key.split('/')[-1]
             if filename.endswith('.csv'):
-                return self._parse_csv_content(file_content, filename)
+                return self._parse_csv_content(file_content, filename, id_fields)
             elif filename.endswith(('.xlsx', '.xls')):
                 if not OPENPYXL_AVAILABLE:
                     raise ImportError("openpyxl is required for Excel file support")
-                return self._parse_excel_content(file_content, filename, sheet_name, extract_formulas)
+                return self._parse_excel_content(file_content, filename, sheet_name, extract_formulas, id_fields)
             else:
                 raise ValueError(f"Unsupported file format: {filename}")
                 
@@ -88,7 +90,7 @@ class S3TableParser:
             self.logger.error(f"Failed to parse S3 table {bucket}/{key}: {str(e)}")
             raise
     
-    def _parse_csv_content(self, file_content: bytes, filename: str) -> Dict[str, Any]:
+    def _parse_csv_content(self, file_content: bytes, filename: str, id_fields: Optional[List[str]] = None) -> Dict[str, Any]:
         """Parse CSV content into structured format"""
         try:
             # Try multiple encodings to handle different CSV file encodings (expanded list)
@@ -142,16 +144,70 @@ class S3TableParser:
             # Clean headers
             clean_headers = [self._normalize_column_name(str(header).strip()) if header else f"Column_{i+1}"
                            for i, header in enumerate(headers)]
-            
+
+            # Import row key generation function
+            generate_row_key = None
+            try:
+                from row_key_utils import generate_row_key
+            except ImportError:
+                self.logger.warning("row_key_utils not available - row keys will not be generated")
+
             # Convert to structured format
             structured_data = []
-            for row in data_rows:
-                if any(cell.strip() for cell in row):  # Skip empty rows
-                    row_dict = {}
-                    for i, header in enumerate(clean_headers):
-                        cell_value = row[i] if i < len(row) else ""
-                        row_dict[header] = str(cell_value).strip() if cell_value else ""
+
+            # If id_fields provided, do two-pass with deduplication check
+            if id_fields and generate_row_key:
+                # First pass: collect all rows and detect duplicates
+                temp_rows = []
+                id_hash_counts = {}
+
+                for row in data_rows:
+                    if any(cell.strip() for cell in row):  # Skip empty rows
+                        row_dict = {}
+                        for i, header in enumerate(clean_headers):
+                            cell_value = row[i] if i < len(row) else ""
+                            row_dict[header] = str(cell_value).strip() if cell_value else ""
+                        temp_rows.append(row_dict)
+
+                        # Generate ID-based hash to detect duplicates
+                        id_hash = generate_row_key(row_dict, primary_keys=id_fields)
+                        if id_hash not in id_hash_counts:
+                            id_hash_counts[id_hash] = 0
+                        id_hash_counts[id_hash] += 1
+
+                # Second pass: assign row keys (ID hash for unique, full hash for duplicates)
+                for row_dict in temp_rows:
+                    id_hash = generate_row_key(row_dict, primary_keys=id_fields)
+
+                    if id_hash_counts[id_hash] > 1:
+                        # Duplicate detected - use full row hash
+                        row_key = generate_row_key(row_dict, primary_keys=None)
+                    else:
+                        # Unique ID - use ID hash
+                        row_key = id_hash
+
+                    row_dict['_row_key'] = row_key
                     structured_data.append(row_dict)
+
+                # Log duplicate summary
+                duplicate_count = sum(1 for count in id_hash_counts.values() if count > 1)
+                if duplicate_count > 0:
+                    self.logger.info(f"CSV: Found {duplicate_count} duplicate ID groups, using full-row hashing for those")
+            else:
+                # No id_fields - just use full row hash for all rows
+                for row in data_rows:
+                    if any(cell.strip() for cell in row):  # Skip empty rows
+                        row_dict = {}
+                        for i, header in enumerate(clean_headers):
+                            cell_value = row[i] if i < len(row) else ""
+                            row_dict[header] = str(cell_value).strip() if cell_value else ""
+
+                        # Generate full row hash
+                        if generate_row_key:
+                            row_key = generate_row_key(row_dict, primary_keys=None)
+                            row_dict['_row_key'] = row_key
+
+                        structured_data.append(row_dict)
             
             return {
                 'filename': filename,
@@ -170,7 +226,7 @@ class S3TableParser:
             self.logger.error(f"Failed to parse CSV content: {str(e)}")
             raise
     
-    def _parse_excel_content(self, file_content: bytes, filename: str, sheet_name: Optional[str] = None, extract_formulas: bool = False) -> Dict[str, Any]:
+    def _parse_excel_content(self, file_content: bytes, filename: str, sheet_name: Optional[str] = None, extract_formulas: bool = False, id_fields: Optional[List[str]] = None) -> Dict[str, Any]:
         """Parse Excel content into structured format"""
         try:
             # Create temporary file
@@ -220,11 +276,21 @@ class S3TableParser:
                 # Clean headers
                 clean_headers = [self._normalize_column_name(str(header).strip()) if header is not None else f"Column_{i+1}"
                                for i, header in enumerate(headers)]
-                
+
+                # Import row key generation function
+                generate_row_key = None
+                try:
+                    from row_key_utils import generate_row_key
+                except ImportError:
+                    self.logger.warning("row_key_utils not available - row keys will not be generated")
+
                 # Convert to structured format
                 structured_data = []
                 formula_data = [] if extract_formulas else None
 
+                # First pass: extract all row data and formulas
+                temp_rows = []
+                temp_formulas = []
                 for row_idx, row in enumerate(data_rows):
                     if row and any(cell is not None for cell in row):  # Skip empty rows
                         row_dict = {}
@@ -243,9 +309,57 @@ class S3TableParser:
                                     if formula_info:
                                         formula_dict[header] = formula_info
 
+                        temp_rows.append(row_dict)
+                        if extract_formulas:
+                            temp_formulas.append(formula_dict if formula_dict else {})
+
+                # Second pass: assign row keys with deduplication if id_fields provided
+                if id_fields and generate_row_key:
+                    # Detect duplicates
+                    id_hash_counts = {}
+                    for row_dict in temp_rows:
+                        id_hash = generate_row_key(row_dict, primary_keys=id_fields)
+                        if id_hash not in id_hash_counts:
+                            id_hash_counts[id_hash] = 0
+                        id_hash_counts[id_hash] += 1
+
+                    # Assign row keys
+                    for row_dict in temp_rows:
+                        id_hash = generate_row_key(row_dict, primary_keys=id_fields)
+
+                        if id_hash_counts[id_hash] > 1:
+                            # Duplicate detected - use full row hash
+                            row_key = generate_row_key(row_dict, primary_keys=None)
+                        else:
+                            # Unique ID - use ID hash
+                            row_key = id_hash
+
+                        row_dict['_row_key'] = row_key
                         structured_data.append(row_dict)
-                        if extract_formulas and formula_dict:
-                            formula_data.append(formula_dict)
+
+                    # Log duplicate summary
+                    duplicate_count = sum(1 for count in id_hash_counts.values() if count > 1)
+                    if duplicate_count > 0:
+                        self.logger.info(f"Excel: Found {duplicate_count} duplicate ID groups, using full-row hashing for those")
+
+                    # Add formulas if extracted
+                    if extract_formulas:
+                        formula_data = temp_formulas
+                elif generate_row_key:
+                    # No id_fields - just use full row hash for all rows
+                    for row_dict in temp_rows:
+                        row_key = generate_row_key(row_dict, primary_keys=None)
+                        row_dict['_row_key'] = row_key
+                        structured_data.append(row_dict)
+
+                    # Add formulas if extracted
+                    if extract_formulas:
+                        formula_data = temp_formulas
+                else:
+                    # No row key generation available
+                    structured_data = temp_rows
+                    if extract_formulas:
+                        formula_data = temp_formulas
                 
                 # --- New Logic: Detect external links ---
                 has_external_links = False

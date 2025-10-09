@@ -1323,48 +1323,28 @@ def handle_main_processing(event, context):
 
                 return {'statusCode': 500, 'body': json.dumps({'status': 'failed', 'error': 'Files not found'})}
 
-            # Parse table_data ONCE at the beginning (don't re-parse later for Excel)
+            # Extract ID fields from config (needed for parser)
+            id_fields = []
+            for target in config_data.get('validation_targets', []):
+                if target.get('importance', '').upper() == 'ID':
+                    field_name = target.get('name') or target.get('column')
+                    if field_name:
+                        id_fields.append(field_name)
+
+            logger.debug(f"[PREVIEW_TABLE_DATA] Using ID fields for row key generation: {id_fields}")
+
+            # Parse table_data ONCE at the beginning (parser will generate row keys)
             from shared_table_parser import S3TableParser
-            from row_key_utils import generate_row_key
             table_parser = S3TableParser()
-            table_data = table_parser.parse_s3_table(storage_manager.bucket_name, actual_excel_s3_key, extract_formulas=True)
+            table_data = table_parser.parse_s3_table(
+                storage_manager.bucket_name,
+                actual_excel_s3_key,
+                extract_formulas=True,
+                id_fields=id_fields if id_fields else None
+            )
 
-            # Add row keys to table_data using hybrid hashing (same logic as async validation)
             if table_data and isinstance(table_data, dict) and 'data' in table_data:
-                excel_rows = table_data['data']
-
-                # Extract ID fields from config
-                id_fields = []
-                for target in config_data.get('validation_targets', []):
-                    if target.get('importance', '').upper() == 'ID':
-                        field_name = target.get('name') or target.get('column')
-                        if field_name:
-                            id_fields.append(field_name)
-
-                logger.debug(f"[PREVIEW_TABLE_DATA] Using ID fields for hybrid hashing: {id_fields}")
-
-                # Hybrid hashing: ID-field for unique rows, full-row for duplicates
-                id_hash_counts = {}
-
-                # First pass: detect duplicates
-                for row_idx, row_data in enumerate(excel_rows):
-                    id_hash = generate_row_key(row_data, primary_keys=id_fields if id_fields else None)
-                    if id_hash not in id_hash_counts:
-                        id_hash_counts[id_hash] = []
-                    id_hash_counts[id_hash].append(row_idx)
-
-                # Second pass: assign row keys
-                for row_idx, row_data in enumerate(excel_rows):
-                    id_hash = generate_row_key(row_data, primary_keys=id_fields if id_fields else None)
-
-                    if len(id_hash_counts[id_hash]) > 1:
-                        row_key = generate_row_key(row_data, primary_keys=None)  # Full-row hash
-                    else:
-                        row_key = id_hash  # ID-field hash
-
-                    row_data['_row_key'] = row_key
-
-                logger.info(f"[PREVIEW_TABLE_DATA] Added row keys to {len(excel_rows)} rows in table_data")
+                logger.info(f"[PREVIEW_TABLE_DATA] Parser generated row keys for {len(table_data['data'])} rows")
 
             # Send validation start progress update - interface setup complete, AI work begins (5-90% reserved for validation lambda)
             _send_websocket_message_deduplicated(session_id, {
@@ -2838,14 +2818,41 @@ def handle_main_processing(event, context):
             
             logger.info(f"Retrieved files from unified storage - Excel: {actual_excel_s3_key}, Config: {actual_config_s3_key}")
             
+            # Extract ID fields from config (needed for parser row key generation)
+            id_fields = []
+            for target in config_data.get('validation_targets', []):
+                if target.get('importance', '').upper() == 'ID':
+                    field_name = target.get('name') or target.get('column')
+                    if field_name:
+                        id_fields.append(field_name)
+
+            # Fallback to SimplifiedSchemaValidator primary keys if no explicit ID fields
+            if not id_fields:
+                try:
+                    from simplified_schema_validator import SimplifiedSchemaValidator
+                    validator = SimplifiedSchemaValidator(config_data)
+                    id_fields = validator.primary_key
+                    logger.debug(f"Using primary keys from SimplifiedSchemaValidator: {id_fields}")
+                except Exception as e:
+                    logger.warning(f"Could not use SimplifiedSchemaValidator: {e}")
+                    id_fields = []
+
+            logger.debug(f"Using ID fields for row key generation: {id_fields}")
+
             # Use shared table parser to get row count (handles both CSV and Excel)
             from shared_table_parser import S3TableParser
             table_parser = S3TableParser()
-            
-            # Parse table to get structure and row count
-            table_data = table_parser.parse_s3_table(storage_manager.bucket_name, actual_excel_s3_key, extract_formulas=True)
-            total_rows_in_file = len(table_data.get('rows', []))
+
+            # Parse table to get structure and row count (parser will generate row keys)
+            table_data = table_parser.parse_s3_table(
+                storage_manager.bucket_name,
+                actual_excel_s3_key,
+                extract_formulas=True,
+                id_fields=id_fields if id_fields else None
+            )
+            total_rows_in_file = len(table_data.get('data', []))
             rows_to_process = min(max_rows, total_rows_in_file) if max_rows else total_rows_in_file
+            logger.info(f"Parser generated row keys for {total_rows_in_file} rows")
 
             # The actual batching loop
             all_validation_results = {}
@@ -2912,85 +2919,12 @@ def handle_main_processing(event, context):
                 logger.debug(f"[PAYLOAD_GENERATION] Creating complete validation payload for {rows_to_process} rows")
 
                 # Get parsed rows from the table data (S3TableParser uses 'data' field)
+                # Rows already have _row_key added by parser
                 excel_rows = table_data.get('data', [])
                 if max_rows:
                     excel_rows = excel_rows[:max_rows]
 
-                logger.debug(f"[PAYLOAD_GENERATION] Processing {len(excel_rows)} rows for validation payload")
-
-                # Get ID fields from config for row key generation (same logic as sync validation)
-                id_fields = []
-                logger.debug(f"[PAYLOAD_GENERATION] Searching for ID fields in validation targets...")
-                for i, target in enumerate(config_data.get('validation_targets', [])):
-                    importance = target.get('importance', '')
-                    if importance.lower() == 'id':
-                        column = target.get('column', '')
-                        if column:
-                            id_fields.append(column)
-                            logger.debug(f"[PAYLOAD_GENERATION] Found ID field: {column}")
-
-                # Fallback to SimplifiedSchemaValidator primary keys if no explicit ID fields
-                if not id_fields:
-                    try:
-                        from simplified_schema_validator import SimplifiedSchemaValidator
-                        validator = SimplifiedSchemaValidator(config_data)
-                        id_fields = validator.primary_key
-                        logger.debug(f"[PAYLOAD_GENERATION] Using primary keys from SimplifiedSchemaValidator: {id_fields}")
-                    except Exception as e:
-                        logger.warning(f"[PAYLOAD_GENERATION] Could not use SimplifiedSchemaValidator: {e}")
-                        # Use default fallback ID fields for demo
-                        id_fields = ['Ticker_Symbol', 'Asset_ID']
-                        logger.debug(f"[PAYLOAD_GENERATION] Using fallback ID fields: {id_fields}")
-
-                logger.debug(f"[PAYLOAD_GENERATION] ID fields for row key generation: {id_fields}")
-
-                # Add pre-computed row keys to each row using HYBRID hashing:
-                # 1. Try ID-field hashing first (for history matching)
-                # 2. For duplicates, use full-row hashing (to distinguish them)
-                from row_key_utils import generate_row_key
-                processed_rows = []
-                id_hash_counts = {}  # Track duplicate ID hashes
-
-                # First pass: Generate ID-field hashes and detect duplicates
-                for row_idx, row_data in enumerate(excel_rows):
-                    # Generate ID-field hash
-                    id_hash = generate_row_key(row_data, primary_keys=id_fields if id_fields else None)
-
-                    if id_hash not in id_hash_counts:
-                        id_hash_counts[id_hash] = []
-                    id_hash_counts[id_hash].append(row_idx)
-
-                # Second pass: Assign final row keys (ID-hash or full-row hash for duplicates)
-                for row_idx, row_data in enumerate(excel_rows):
-                    id_hash = generate_row_key(row_data, primary_keys=id_fields if id_fields else None)
-
-                    # If this ID hash appears multiple times, use full-row hash
-                    if len(id_hash_counts[id_hash]) > 1:
-                        row_key = generate_row_key(row_data, primary_keys=None)  # Full-row hash
-                        logger.debug(f"[PAYLOAD_GENERATION] Row {row_idx}: Duplicate ID detected, using full-row hash: {row_key[:8]}...")
-                    else:
-                        row_key = id_hash  # Use ID-field hash
-                        logger.debug(f"[PAYLOAD_GENERATION] Row {row_idx}: Using ID-field hash: {row_key[:8]}...")
-
-                    # Add row key to row data
-                    row_data['_row_key'] = row_key
-                    processed_rows.append(row_data)
-
-                # Log duplicate summary
-                duplicate_id_count = sum(1 for count_list in id_hash_counts.values() if len(count_list) > 1)
-                total_duplicate_rows = sum(len(count_list) for count_list in id_hash_counts.values() if len(count_list) > 1)
-                if duplicate_id_count > 0:
-                    logger.info(f"[PAYLOAD_GENERATION] Found {duplicate_id_count} duplicate ID groups ({total_duplicate_rows} total rows)")
-                    logger.info(f"[PAYLOAD_GENERATION] Duplicate rows will use full-row hashing (history matching disabled for these)")
-                else:
-                    logger.info(f"[PAYLOAD_GENERATION] No duplicate IDs detected, all rows using ID-field hashing")
-
-                logger.debug(f"[PAYLOAD_GENERATION] Added pre-computed row keys to {len(processed_rows)} rows")
-
-                # CRITICAL: Update table_data with row keys so Excel report can access them
-                if table_data and isinstance(table_data, dict) and 'data' in table_data:
-                    table_data['data'] = processed_rows  # Replace with rows that include _row_key
-                    logger.debug(f"[PAYLOAD_GENERATION] Updated table_data with processed rows (including _row_key)")
+                logger.debug(f"[PAYLOAD_GENERATION] Processing {len(excel_rows)} rows (row keys already generated by parser)")
 
                 # Load validation history using new extract_validation_history method
                 validation_history = {}
@@ -3013,12 +2947,12 @@ def handle_main_processing(event, context):
 
                         # Log matching summary
                         matched_count = 0
-                        for row in processed_rows:
+                        for row in excel_rows:
                             payload_key = row.get('_row_key', '')
                             if payload_key and payload_key in validation_history:
                                 matched_count += 1
 
-                        logger.debug(f"[PAYLOAD_GENERATION] Matched {matched_count} out of {len(processed_rows)} rows with validation history")
+                        logger.debug(f"[PAYLOAD_GENERATION] Matched {matched_count} out of {len(excel_rows)} rows with validation history")
 
                         if matched_count == 0 and len(validation_history) > 0:
                             logger.warning("[PAYLOAD_GENERATION] No rows matched with validation history - may be using different primary keys")
@@ -3033,16 +2967,16 @@ def handle_main_processing(event, context):
                     "test_mode": False,
                     "config": config_data,  # Embedded config data
                     "validation_data": {
-                        "rows": processed_rows,  # All Excel data with pre-computed row keys
+                        "rows": excel_rows,  # All Excel data with pre-computed row keys
                         "max_rows": max_rows,
                         "batch_size": batch_size,
-                        "total_dataset_size": len(processed_rows)
+                        "total_dataset_size": len(excel_rows)
                     },
                     "validation_history": validation_history,  # Properly loaded validation history
                     "session_id": session_id
                 }
 
-                logger.debug(f"[PAYLOAD_GENERATION] Complete validation payload created with {len(processed_rows)} rows")
+                logger.debug(f"[PAYLOAD_GENERATION] Complete validation payload created with {len(excel_rows)} rows")
 
             # ========== SMART DELEGATION SYSTEM DECISION POINT ==========
             # Check if we should delegate to async processing based on estimated time
