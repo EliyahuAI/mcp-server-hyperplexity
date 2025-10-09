@@ -928,13 +928,14 @@ class S3TableParser:
 
         return base_description
 
-    def extract_validation_history(self, bucket: str, key: str) -> Dict:
+    def extract_validation_history(self, bucket: str, key: str, id_fields: list = None) -> Dict:
         """
         Extract validation history from Updated Values sheet + Validation Record.
 
         Args:
             bucket: S3 bucket name
             key: S3 object key for previously validated Excel file
+            id_fields: List of ID field names for row key generation (optional)
 
         Returns:
             {
@@ -957,6 +958,16 @@ class S3TableParser:
         """
         try:
             self.logger.info(f"Extracting validation history from s3://{bucket}/{key}")
+
+            # Import row key generation function
+            try:
+                from row_key_utils import generate_row_key
+            except ImportError:
+                self.logger.error("row_key_utils not available - cannot generate row keys for history")
+                return {
+                    'validation_history': {},
+                    'file_timestamp': ''
+                }
 
             # Load timestamps from Validation Record sheet
             timestamps = self._load_validation_timestamps(bucket, key)
@@ -1017,9 +1028,18 @@ class S3TableParser:
                     if not any(val and str(val).strip() for val in row_values):
                         continue
 
-                    # Create row key (using first column or row number)
-                    first_col_value = str(row_values[0]).strip() if row_values and row_values[0] else f"Row_{row_idx}"
-                    row_key = first_col_value
+                    # Create row dict for hash generation
+                    row_dict = {}
+                    for col_idx, header in enumerate(headers):
+                        if col_idx < len(row_values):
+                            cell_value = row_values[col_idx]
+                            row_dict[header] = str(cell_value).strip() if cell_value else ""
+
+                    # Generate row key using same hash logic as validation
+                    # Use ID fields if provided, otherwise use full row hash
+                    row_key = generate_row_key(row_dict, primary_keys=id_fields if id_fields else None)
+
+                    self.logger.debug(f"Generated row key for history: {row_key[:16]}... from row {row_idx}")
 
                     if row_key not in validation_history:
                         validation_history[row_key] = {}
