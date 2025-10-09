@@ -340,7 +340,7 @@ class QCModule:
                 else:
                     field_output.append(f"### Original/Current Value: `{original_value}`")
 
-                field_output.append(f"* **Original Confidence:** {original_confidence}")
+                field_output.append(f"* **Original Confidence (Proposed):** {original_confidence}")
 
                 # Add validation context from cell comments for the current value
                 if validation_history and column in validation_history:
@@ -361,7 +361,7 @@ class QCModule:
 
                 # Updated Value (Proposed) - always say "Now" for cache efficiency
                 field_output.append(f"### Updated Value (Proposed): Now")
-                field_output.append(f"* **Updated Confidence:** {confidence}")
+                field_output.append(f"* **Updated Confidence (Proposed):** {confidence}")
                 field_output.append(f"* **Reasoning:** {reasoning}")
                 field_output.append(f"* **Sources:** {', '.join(sources) if sources else 'None'}")
                 field_output.append(f"* **Citations:** {self._format_citations_for_qc(citations)}")
