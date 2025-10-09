@@ -1488,9 +1488,9 @@ def handle_main_processing(event, context):
             }, "preview_progress_analysis")
             
             # Final status update for preview
-            if validation_results and validation_results.get('validation_results'):
-                # Extract metadata first
-                real_results = validation_results.get('validation_results', {})
+            if validation_results and validation_results.get('body', {}).get('data', {}).get('rows'):
+                # Extract metadata first (use consistent structure)
+                real_results = validation_results.get('body', {}).get('data', {}).get('rows', {})
 
                 # Extract QC data if present (it's at the top level of validation_results, not in metadata)
                 qc_results = validation_results.get('qc_results', {})
@@ -2272,7 +2272,7 @@ def handle_main_processing(event, context):
                 
                 # Use enhanced provider metrics from ai_client aggregation if available
                 provider_metrics_for_db = {}
-                total_rows_processed = len(validation_results.get('validation_results', {})) if validation_results else 1
+                total_rows_processed = len(validation_results.get('body', {}).get('data', {}).get('rows', {})) if validation_results else 1
                 
                 if enhanced_metrics and enhanced_metrics.get('aggregated_metrics'):
                     # Use properly aggregated enhanced metrics from validation lambda
@@ -2430,7 +2430,7 @@ def handle_main_processing(event, context):
                     run_type="Preview",
                     verbose_status="Preview complete. Results available.",
                     percent_complete=100,
-                    processed_rows=len(validation_results.get('validation_results', {})) if validation_results else 0,
+                    processed_rows=len(validation_results.get('body', {}).get('data', {}).get('rows', {})) if validation_results else 0,
                     total_rows=total_rows,  # Actual total rows in the table
                     preview_data=frontend_payload,  # Send minimal frontend payload
                     account_current_balance=float(current_balance) if current_balance else 0,
@@ -2999,10 +2999,21 @@ def handle_main_processing(event, context):
                     from interface_lambda.utils.history_loader import load_validation_history_from_excel
 
                     # Save Excel content to a temporary file for history extraction
+                    # Ensure excel_content is bytes
+                    if isinstance(excel_content, str):
+                        excel_bytes = excel_content.encode('utf-8')
+                    elif isinstance(excel_content, bytes):
+                        excel_bytes = excel_content
+                    else:
+                        # excel_content might be a file-like object or response
+                        excel_bytes = excel_content if isinstance(excel_content, bytes) else str(excel_content).encode('utf-8')
+
                     with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_file:
-                        tmp_file.write(excel_content)
+                        tmp_file.write(excel_bytes)
+                        tmp_file.flush()  # Ensure data is written to disk
                         tmp_file_path = tmp_file.name
 
+                    # File is now closed and can be read by openpyxl
                     original_validation_history = load_validation_history_from_excel(tmp_file_path)
 
                     logger.debug(f"[PAYLOAD_GENERATION] Loaded validation history for {len(original_validation_history)} row keys from Excel")
@@ -3026,7 +3037,8 @@ def handle_main_processing(event, context):
                     # Clean up temp file
                     try:
                         import os
-                        os.unlink(tmp_file_path)
+                        if tmp_file_path:
+                            os.unlink(tmp_file_path)
                     except Exception as cleanup_error:
                         logger.warning(f"[PAYLOAD_GENERATION] Failed to cleanup temp file: {cleanup_error}")
 
@@ -3359,6 +3371,12 @@ def handle_main_processing(event, context):
             if not should_delegate:
                 # ========== SYNCHRONOUS PROCESSING (CURRENT BEHAVIOR) ==========
                 logger.debug(f"[DELEGATION] Using synchronous processing (estimated {estimated_minutes:.1f}min <= {MAX_SYNC_INVOCATION_TIME_MINUTES:.1f}min)")
+
+            # Define config_version and results_path for both sync and async paths
+            config_version = config_data.get('storage_metadata', {}).get('version', 1) if config_data else 1
+            domain = email.split('@')[-1].lower().strip() if email and '@' in email else 'unknown'
+            email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_plus_')[:20] if email and '@' in email else 'unknown'
+            results_path = f"results/{domain}/{email_prefix}/{session_id}/v{config_version}_results"
 
             try:
                 # Check if this is async completion with pre-loaded results
@@ -4401,8 +4419,8 @@ def handle_main_processing(event, context):
 
                         # Send failure email to user (not success email!)
                         try:
-                            from email_sender import send_validation_failure_alert
-                            send_validation_failure_alert(
+                            from email_sender import send_validation_failure_alert as send_email_failure_alert
+                            send_email_failure_alert(
                                 session_id=session_id,
                                 email=email_address,
                                 error_type='VALIDATION_FAILURE',
@@ -4593,7 +4611,7 @@ def handle_main_processing(event, context):
                         }, "full_validation_finalizing")
 
                         # Send final completion notification with download URLs
-                        processed_rows_count = len(validation_results.get('validation_results', {}))
+                        processed_rows_count = len(validation_results.get('body', {}).get('data', {}).get('rows', {}))
                         total_rows_in_file = validation_results.get('total_rows', processed_rows_count)
 
                         # No longer creating ZIP - enhanced Excel is stored directly in S3
@@ -4965,8 +4983,9 @@ def handle_main_processing(event, context):
                         # The initial check before billing prevents charges for incomplete results
                         logger.debug(f"[FINAL_COMPLETENESS_CHECK] Performing detailed validation result completeness check")
 
-                        # Extract validation results for completeness check
-                        final_validation_results = validation_results.get('validation_results', {}) if validation_results else {}
+                        # Extract validation results for completeness check (correct structure)
+                        # validation_results has structure: {body: {data: {rows: {...}, metadata: {...}}}}
+                        final_validation_results = validation_results.get('body', {}).get('data', {}).get('rows', {}) if validation_results else {}
                         expected_row_count = total_rows_in_file
                         actual_results_count = len(final_validation_results) if isinstance(final_validation_results, dict) else 0
 
@@ -5018,16 +5037,16 @@ def handle_main_processing(event, context):
                         except Exception as excel_check_error:
                             logger.warning(f"[FINAL_COMPLETENESS_CHECK] Could not verify enhanced Excel structure: {excel_check_error}")
 
-                        # Check metadata completeness
+                        # Check metadata completeness (use correct structure: body.metadata)
                         if validation_results:
-                            metadata = validation_results.get('metadata', {})
-                            if not metadata or not isinstance(metadata, dict):
+                            metadata_check = validation_results.get('body', {}).get('metadata', {})
+                            if not metadata_check or not isinstance(metadata_check, dict):
                                 is_complete = False
                                 completeness_issues.append("Missing or invalid metadata")
                             else:
                                 # Check for essential metadata fields
                                 essential_metadata = ['processing_time', 'completed_rows']
-                                missing_metadata = [field for field in essential_metadata if field not in metadata]
+                                missing_metadata = [field for field in essential_metadata if field not in metadata_check]
                                 if missing_metadata:
                                     completeness_issues.append(f"Missing metadata fields: {missing_metadata}")
 
