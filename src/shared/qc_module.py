@@ -308,12 +308,20 @@ class QCModule:
                 if validation_history and column in validation_history:
                     field_history = validation_history[column]
 
-                    # Prior Value (just the raw value from a previous validation)
+                    # Prior Value (the value from a previous validation run)
                     if field_history.get('prior_value'):
                         prior_ts = field_history.get('prior_timestamp', '')
+                        original_ts = field_history.get('original_timestamp', '')
+
+                        # Determine the timestamp to show for Prior Value
                         if prior_ts:
-                            field_output.append(f"### Prior Value: `{field_history['prior_value']}` (from validation before {prior_ts})")
+                            # We have an explicit prior timestamp
+                            field_output.append(f"### Prior Value: `{field_history['prior_value']}` (from validation on {prior_ts})")
+                        elif original_ts:
+                            # No prior timestamp, but we have original - so prior must be before original
+                            field_output.append(f"### Prior Value: `{field_history['prior_value']}` (from validation before {original_ts})")
                         else:
+                            # No timestamps available
                             field_output.append(f"### Prior Value: `{field_history['prior_value']}`")
 
                         # Prior value only shows the confidence from that validation, no context
@@ -322,7 +330,16 @@ class QCModule:
                         field_output.append("")
 
                 # Original/Current Value (the INPUT - what's in the cell now)
-                field_output.append(f"### Original/Current Value: `{original_value}`")
+                # This is from the most recent validation (has validation context in cell comments)
+                original_ts = ''
+                if validation_history and column in validation_history:
+                    original_ts = validation_history[column].get('original_timestamp', '')
+
+                if original_ts:
+                    field_output.append(f"### Original/Current Value: `{original_value}` (validated on {original_ts})")
+                else:
+                    field_output.append(f"### Original/Current Value: `{original_value}`")
+
                 field_output.append(f"* **Original Confidence:** {original_confidence}")
 
                 # Add validation context from cell comments for the current value
