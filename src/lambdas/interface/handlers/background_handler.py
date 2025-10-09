@@ -2930,11 +2930,11 @@ def handle_main_processing(event, context):
                 validation_history = {}
                 try:
                     # Use S3TableParser to extract validation history from Updated Values sheet
-                    # Pass ID fields so row keys are generated consistently
+                    # Pass parsed table_data so row keys match (includes deduplication)
                     history_data = table_parser.extract_validation_history(
                         storage_manager.bucket_name,
                         actual_excel_s3_key,
-                        id_fields=id_fields
+                        parsed_data=table_data
                     )
 
                     # Extract the validation_history dict from the returned structure

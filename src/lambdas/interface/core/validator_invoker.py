@@ -518,11 +518,12 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         if not preview_first_row:  # Load validation history for all files (now all are Excel format)
             try:
                 # Use S3TableParser to extract validation history from Updated Values sheet
-                # Pass ID fields so row keys are generated consistently
+                # Pass parsed rows data so row keys match (includes deduplication)
+                parsed_rows_data = {'data': rows}  # rows already have _row_key
                 history_data = table_parser.extract_validation_history(
                     S3_CACHE_BUCKET,
                     excel_s3_key,
-                    id_fields=id_fields
+                    parsed_data=parsed_rows_data
                 )
 
                 # Extract the validation_history dict from the returned structure

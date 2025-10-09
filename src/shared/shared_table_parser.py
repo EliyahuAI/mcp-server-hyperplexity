@@ -1042,14 +1042,14 @@ class S3TableParser:
 
         return base_description
 
-    def extract_validation_history(self, bucket: str, key: str, id_fields: list = None) -> Dict:
+    def extract_validation_history(self, bucket: str, key: str, parsed_data: Dict[str, Any] = None) -> Dict:
         """
         Extract validation history from Updated Values sheet + Validation Record.
 
         Args:
             bucket: S3 bucket name
             key: S3 object key for previously validated Excel file
-            id_fields: List of ID field names for row key generation (optional)
+            parsed_data: Already-parsed data with row keys (optional, will parse if not provided)
 
         Returns:
             {
@@ -1073,15 +1073,23 @@ class S3TableParser:
         try:
             self.logger.info(f"Extracting validation history from s3://{bucket}/{key}")
 
-            # Import row key generation function
-            try:
-                from row_key_utils import generate_row_key
-            except ImportError:
-                self.logger.error("row_key_utils not available - cannot generate row keys for history")
+            # Parse the file if not already parsed (to get row keys with proper deduplication)
+            if not parsed_data:
+                self.logger.info("No parsed_data provided, parsing file to get row keys")
+                # Note: We don't have id_fields here, so this will use full row hash
+                # This is a fallback - callers should provide parsed_data
+                parsed_data = self.parse_s3_table(bucket, key, sheet_name="Updated Values")
+
+            # Extract row keys from parsed data
+            parsed_rows = parsed_data.get('data', [])
+            if not parsed_rows:
+                self.logger.warning("No data rows in parsed data")
                 return {
                     'validation_history': {},
                     'file_timestamp': ''
                 }
+
+            self.logger.info(f"Using row keys from {len(parsed_rows)} parsed rows")
 
             # Load timestamps from Validation Record sheet
             timestamps = self._load_validation_timestamps(bucket, key)
@@ -1131,35 +1139,32 @@ class S3TableParser:
                         header_row_idx = idx
                         break
 
-                # Extract validation history from data rows
+                # Extract validation history from data rows using parsed row keys
                 validation_history = {}
 
-                for row_idx in range(header_row_idx + 1, len(rows)):
-                    row = rows[row_idx]
-                    row_values = [cell.value for cell in row]
+                # Match parsed rows to Excel rows by index
+                excel_data_start_idx = header_row_idx + 1
+                for parsed_idx, parsed_row in enumerate(parsed_rows):
+                    excel_row_idx = excel_data_start_idx + parsed_idx
 
-                    # Skip empty rows
-                    if not any(val and str(val).strip() for val in row_values):
+                    # Check if we have a corresponding Excel row
+                    if excel_row_idx >= len(rows):
+                        self.logger.warning(f"Parsed row {parsed_idx} has no corresponding Excel row")
+                        break
+
+                    excel_row = rows[excel_row_idx]
+
+                    # Get row key from parsed data (already has deduplication applied)
+                    row_key = parsed_row.get('_row_key')
+                    if not row_key:
+                        self.logger.warning(f"Parsed row {parsed_idx} has no _row_key, skipping")
                         continue
-
-                    # Create row dict for hash generation
-                    row_dict = {}
-                    for col_idx, header in enumerate(headers):
-                        if col_idx < len(row_values):
-                            cell_value = row_values[col_idx]
-                            row_dict[header] = str(cell_value).strip() if cell_value else ""
-
-                    # Generate row key using same hash logic as validation
-                    # Use ID fields if provided, otherwise use full row hash
-                    row_key = generate_row_key(row_dict, primary_keys=id_fields if id_fields else None)
-
-                    self.logger.debug(f"Generated row key for history: {row_key[:16]}... from row {row_idx}")
 
                     if row_key not in validation_history:
                         validation_history[row_key] = {}
 
-                    # Process each cell in the row
-                    for col_idx, cell in enumerate(row):
+                    # Process each cell in the Excel row to extract comments
+                    for col_idx, cell in enumerate(excel_row):
                         if col_idx >= len(headers):
                             break
 
@@ -1193,6 +1198,8 @@ class S3TableParser:
                         }
 
                         validation_history[row_key][column_name] = field_history
+
+                self.logger.info(f"Extracted history using parsed row keys, found {len(validation_history)} rows with history")
 
                 workbook.close()
 
