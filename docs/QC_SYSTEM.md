@@ -95,17 +95,18 @@ QC now receives validation history to provide better context for decisions:
   - 2025-07-17
   - 2025-09-26
 
-### Prior Value: `2025-12-05` (from validation before 2025-09-15)
+### Prior Value: `2025-12-05` (from validation on 2025-09-10)
 * **Prior Confidence:** MEDIUM
-* **Prior Validation Context:**
-  - Key Citation: Conference dates are December 5-7, 2025
-  - Sources: https://neurips.cc/archive-2025
 
-### Original/Current Value: `2025-12-07`
-* **Original Confidence:** LOW
+### Original/Current Value: `2025-12-07` (validated on 2025-09-15)
+* **Original Confidence (Proposed):** LOW
+* **Validation Context:**
+  - Key Citation: Conference dates confirmed as December 2-7, 2025
+  - Sources: https://neurips.cc, https://eventbrowse.com
+* **Original Values sheet entry:** `2025-12-10`
 
 ### Updated Value (Proposed): Now
-* **Updated Confidence:** HIGH
+* **Updated Confidence (Proposed):** HIGH
 * **Reasoning:** The end date for NeurIPS 2025 is December 7, 2025
 * **Sources:** https://neurips.cc, https://eventbrowse.com/event/neurips-2025/
 * **Citations:** [1] Official NeurIPS announcement confirming December 7

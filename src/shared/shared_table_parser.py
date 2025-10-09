@@ -1367,17 +1367,12 @@ class S3TableParser:
                     }
 
                 # Extract timestamps
+                # The most recent run (highest run number) is the "original" (current input)
+                # An earlier run (if exists) is the "prior"
                 original_timestamp = file_timestamp
-                prior_timestamp = file_timestamp
+                prior_timestamp = None  # Start with None to indicate no prior
 
-                # Find Run_Number = 1 for original timestamp
-                for row in rows[1:]:
-                    if len(row) > run_number_idx and row[run_number_idx] == 1:
-                        if len(row) > run_time_idx and row[run_time_idx]:
-                            original_timestamp = str(row[run_time_idx])
-                        break
-
-                # Find last run for prior timestamp
+                # Find the highest run number (most recent = original)
                 max_run_number = 0
                 for row in rows[1:]:
                     if len(row) > run_number_idx and row[run_number_idx]:
@@ -1386,15 +1381,34 @@ class S3TableParser:
                             if run_num > max_run_number:
                                 max_run_number = run_num
                                 if len(row) > run_time_idx and row[run_time_idx]:
-                                    prior_timestamp = str(row[run_time_idx])
+                                    original_timestamp = str(row[run_time_idx])
                         except (ValueError, TypeError):
                             continue
+
+                # Find a prior timestamp (any run before the most recent)
+                # Look for the second-highest run number if multiple runs exist
+                if max_run_number > 1:
+                    # There are earlier runs, find the second most recent
+                    second_highest = 0
+                    for row in rows[1:]:
+                        if len(row) > run_number_idx and row[run_number_idx]:
+                            try:
+                                run_num = int(row[run_number_idx])
+                                # Find the highest run that's less than max
+                                if run_num < max_run_number and run_num > second_highest:
+                                    second_highest = run_num
+                                    if len(row) > run_time_idx and row[run_time_idx]:
+                                        prior_timestamp = str(row[run_time_idx])
+                            except (ValueError, TypeError):
+                                continue
+
+                # If no prior_timestamp found, it will be None
 
                 workbook.close()
 
                 return {
                     'original_timestamp': original_timestamp,
-                    'prior_timestamp': prior_timestamp,
+                    'prior_timestamp': prior_timestamp if prior_timestamp else '',
                     'file_timestamp': file_timestamp
                 }
 
