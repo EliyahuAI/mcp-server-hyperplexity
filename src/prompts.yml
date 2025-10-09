@@ -74,11 +74,57 @@ qc_validation: |
   The following ID fields provide context for this row but are NOT being QC'd:
   {context}
 
- 
+  === UNDERSTANDING THE INFORMATION PROVIDED ===
+
+  For each field, you will see the following information (when available):
+
+  **1. Field Configuration** - Requirements and guidance for this field:
+     - Description: What this field represents
+     - Format: Expected format/structure
+     - Notes: Special validation rules and considerations
+     - Examples: Sample valid values
+
+  **2. Prior Value** (if available) - Historical validation data from cell comments:
+     - The value from a PREVIOUS validation run (may have date/confidence/citations)
+     - This helps you understand how the value has changed over time
+     - May include confidence level and validation context from that prior validation
+
+  **3. Original/Current Value** - The INPUT value currently in the Excel cell:
+     - This is what the validator is validating RIGHT NOW
+     - This is the starting point that may need updating
+     - Original Confidence: The validator's assessment of confidence in this CURRENT INPUT value
+     - May have validation context if this value was previously validated
+
+  **4. Updated Value (Proposed)** - What the validator is PROPOSING as the new value:
+     - The validator's suggested update (may be same as Original/Current if no change needed)
+     - Updated Confidence: The validator's confidence in their PROPOSED value
+     - Reasoning: Why the validator chose this value
+     - Sources & Citations: Evidence supporting the proposed value
+     - Substantially Different: Whether the update materially changes the original
+
+  === YOUR QC TASK ===
+
+  Review the validator's work and provide YOUR final QC decisions:
+
+  **JSON Response Fields (ALL MANDATORY for EVERY field):**
+  - **answer**: Your final QC value (confirm Updated Value OR provide your own correction)
+  - **confidence**: YOUR confidence in the QC value you're providing
+  - **original_confidence**: YOUR assessment of confidence in the Original/Current input value
+  - **updated_confidence**: YOUR assessment of the validator's Updated Value confidence
+  - **qc_reasoning**: Explain your QC decision and any changes you made
+  - **qc_citations**: Provide citations supporting your QC decision
+  - **update_importance**: Rate the importance of changes from Original to your QC answer (0-5 scale with explanation)
+
+  **Key Points:**
+  - Original/Current = the INPUT being validated (what's in the cell now)
+  - Updated = the validator's PROPOSED change
+  - Your answer = the FINAL QC-approved value
+  - You must assess confidence for both Original/Current AND Updated values
+  - Prior values are for context only - they show historical changes
+
   === ALL VALIDATION OUTPUTS TO REVIEW ===
 
   Below are the multiplex validation outputs for ALL field groups for this complete row.
-  Review each field across all groups for accuracy and confidence. You are provide with an Original value, and assigned Original Confidence, an Updated or Validated value, and assigned Updated Confidence along withupporting information and requirements. Your job is to QC these values and when needed, provide a QC Entry ('answer'), an assigned QC Confidence ('confidence' - the confidence of the QC Entry), and update the Original Confidence ('original_confidence') and Updated Confidence ('updated_confidence') if necessary. 
 
   {all_multiplex_outputs}
 
@@ -113,6 +159,7 @@ qc_validation: |
     - You MUST ensure: Original Confidence ≤ QC Confidence
     - If this hierarchy is violated, you MUST adjust the confidence levels to maintain this order
     - Example: If Original=HIGH, QC Confidence=MEDIUM, you MUST lower Original to MEDIUM or raise QC Confidence to HIGH. Generally lower confidences when you are not sure about the inconsistency.
+    - If the final answer is not meaningfully different from the original value the confidences must be the same. 
   * **MANDATORY QC VALUE:** When any QC action is taken, the `answer` field is REQUIRED - it cannot be optional, and you must also explicitly state the confidence of of this entry, and your reviewed confidence of the Original entry.
   * Use your judgment to identify inconsistencies across all field groups - are these talking about the item identified in the context? Do they make sense together? Individually (use common sense)?
 
@@ -141,10 +188,11 @@ qc_validation: |
   * `answer`: The QC Entry **MANDATORY FOR ALL QC RESPONSES**
   * `qc_reasoning`: Detailed explanation of why QC revision was necessary (required)
   * `confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the QC Entry (must be higher than or equal to the original confidence)
-  * `original_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the original value (must be lower than or equal to the QC confidence). **IMPORTANT: When there is no meaningful change between the final answer and the original value, the QC original confidence MUST be identical to the final confidence.**
+  * `original_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the original value (must be lower than or equal to the QC confidence). 
   * `updated_confidence`: **MANDATORY FOR ALL QC RESPONSES** - the final confidence level for the updated value
   * `qc_citations`: Key supporting citation - **ABSOLUTELY REQUIRED for EVERY SINGLE FIELD** regardless of whether QC changes are made or not (see formatting below). This field is mandatory for all responses.
   * `update_importance`: **MANDATORY FOR ALL QC RESPONSES** - A 0-5 scale rating that measures the NET CHANGE from the original input value to the final QC answer, considering both the significance of the change AND your confidence in it. This is NOT about the QC process itself - it's about the overall impact of the change from what was originally provided to what you're now concluding. High scores require BOTH importance AND confidence. Format: "N - Explanation text" where N is 0-5. Score 0 requires no explanation.
+  **IMPORTANT: When there is no meaningful change between the final answer and the original value, or update_importance is 0, the QC original confidence (original_confidence) MUST be identical to the final QC confidence (confidence).**
 
     **Update Importance Scale:**
     - **0**: No meaningful net change from original to final answer (no explanation needed). Original value confirmed or trivial formatting adjustments.

@@ -49,7 +49,8 @@ class QCIntegrationManager:
         validation_targets: List[Any],
         context: str = "",
         general_notes: str = "",
-        group_metadata: Dict[str, Dict[str, Any]] = None
+        group_metadata: Dict[str, Dict[str, Any]] = None,
+        validation_history: Dict[str, Any] = None
     ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
         """
         Process QC for a complete row after ALL field groups have been processed.
@@ -62,6 +63,7 @@ class QCIntegrationManager:
             context: Context information
             general_notes: General guidance notes
             group_metadata: Dictionary mapping group names to metadata (description, model, etc.)
+            validation_history: Validation history for this row (dict mapping column to history data)
 
         Returns:
             Tuple of (merged_results_by_column, qc_metrics)
@@ -102,7 +104,8 @@ class QCIntegrationManager:
             validation_targets=validation_targets,
             context=context,
             general_notes=general_notes,
-            group_metadata=group_metadata
+            group_metadata=group_metadata,
+            validation_history=validation_history
         )
 
         # Merge multiplex and QC results first to get proper validation data

@@ -180,7 +180,7 @@ class QCModule:
 
         return aggregated_sources
 
-    def format_all_multiplex_outputs_for_qc(self, all_group_results: Dict[str, List[Dict]], original_row: Dict[str, Any] = None, validation_targets: List[Any] = None, group_metadata: Dict[str, Dict[str, Any]] = None) -> str:
+    def format_all_multiplex_outputs_for_qc(self, all_group_results: Dict[str, List[Dict]], original_row: Dict[str, Any] = None, validation_targets: List[Any] = None, group_metadata: Dict[str, Dict[str, Any]] = None, validation_history: Dict[str, Any] = None) -> str:
         """
         Format ALL multiplex validation outputs across all field groups for inclusion in QC prompt.
         Enhanced formatting to provide complete context for QC review.
@@ -190,6 +190,7 @@ class QCModule:
             original_row: Original row data for extracting original values
             validation_targets: List of validation target objects for field guidance
             group_metadata: Dictionary mapping group names to metadata (description, model, etc.)
+            validation_history: Validation history for this row (dict mapping column to history data)
 
         Returns:
             Formatted string for QC prompt showing all field groups with complete context
@@ -281,39 +282,71 @@ class QCModule:
                 if citations:
                     logger.debug(f"[QC_CITATIONS_DEBUG] {column}: First citation sample: {citations[0][:100]}..." if len(citations[0]) > 100 else citations[0])
 
-                # Enhanced field formatting with original and updated values
+                # Enhanced field formatting with validation history context
                 field_output = [
                     f"**FIELD: {column}**",
-                    ""
+                    "",
+                    "### Field Configuration"
                 ]
 
                 # Add field-specific guidance if available
                 if column in targets_by_column:
                     target = targets_by_column[column]
                     if hasattr(target, 'description') and target.description:
-                        field_output.append(f"* Description: {target.description}")
+                        field_output.append(f"* **Description:** {target.description}")
                     if hasattr(target, 'format') and target.format:
-                        field_output.append(f"* Format: {target.format}")
+                        field_output.append(f"* **Format:** {target.format}")
                     if hasattr(target, 'notes') and target.notes:
-                        field_output.append(f"* Notes: {target.notes}")
+                        field_output.append(f"* **Notes:** {target.notes}")
                     if hasattr(target, 'examples') and target.examples:
-                        field_output.append("* Examples:")
+                        field_output.append("* **Examples:**")
                         for example in target.examples:
                             field_output.append(f"  - {example}")
                     field_output.append("")
 
-                field_output.extend([
-                    f"* Original Entry: {original_value}",
-                    f"* Updated Entry: {answer}",
-                    f"* Confidence: {confidence}",
-                    f"* Original Confidence: {original_confidence}",
-                    f"* Reasoning: {reasoning}",
-                    f"* Sources: {', '.join(sources) if sources else 'None'}",
-                    f"* Citations: {self._format_citations_for_qc(citations)}"
-                ])
+                # Add validation history if available
+                if validation_history and column in validation_history:
+                    field_history = validation_history[column]
 
+                    # Prior Value (from previous validation run - stored in cell comments)
+                    if field_history.get('prior_value'):
+                        prior_ts = field_history.get('prior_timestamp', '')
+                        if prior_ts:
+                            field_output.append(f"### Prior Value: `{field_history['prior_value']}` (from validation before {prior_ts})")
+                        else:
+                            field_output.append(f"### Prior Value: `{field_history['prior_value']}`")
+
+                        if field_history.get('prior_confidence'):
+                            field_output.append(f"* **Prior Confidence:** {field_history['prior_confidence']}")
+                        if field_history.get('original_key_citation'):
+                            field_output.append(f"* **Prior Validation Context:**")
+                            field_output.append(f"  - Key Citation: {field_history['original_key_citation']}")
+                        if field_history.get('original_sources'):
+                            sources_str = ', '.join(field_history['original_sources'])
+                            field_output.append(f"  - Sources: {sources_str}")
+                        field_output.append("")
+
+                # Original/Current Value (the INPUT - what's in the cell now)
+                field_output.append(f"### Original/Current Value: `{original_value}`")
+                field_output.append(f"* **Original Confidence:** {original_confidence}")
+
+                # Add validation context if this current value was previously validated
+                if validation_history and column in validation_history:
+                    field_history = validation_history[column]
+                    # Check if we have validation context for the current value
+                    if field_history.get('original_value'):
+                        field_output.append(f"* **Validation Context (from Original Values sheet):** `{field_history['original_value']}`")
+                field_output.append("")
+
+                # Updated Value (Proposed) - always say "Now" for cache efficiency
+                field_output.append(f"### Updated Value (Proposed): Now")
+                field_output.append(f"* **Updated Confidence:** {confidence}")
+                field_output.append(f"* **Reasoning:** {reasoning}")
+                field_output.append(f"* **Sources:** {', '.join(sources) if sources else 'None'}")
+                field_output.append(f"* **Citations:** {self._format_citations_for_qc(citations)}")
                 if explanation:
-                    field_output.append(f"* Explanation: {explanation}")
+                    field_output.append(f"* **Explanation:** {explanation}")
+                field_output.append(f"* **Substantially Different from Original:** {'Yes' if str(answer).strip() != str(original_value).strip() else 'No'}")
 
                 field_output.append("")
                 field_output.append("---")
@@ -408,7 +441,8 @@ class QCModule:
         validation_targets: List[Any],
         context: str = "",
         general_notes: str = "",
-        group_metadata: Dict[str, Dict[str, Any]] = None
+        group_metadata: Dict[str, Dict[str, Any]] = None,
+        validation_history: Dict[str, Any] = None
     ) -> Tuple[List[Dict], Dict[str, Any]]:
         """
         Process QC for a complete row after ALL field groups have been processed.
@@ -421,6 +455,7 @@ class QCModule:
             context: Context information for validation
             general_notes: General guidance notes
             group_metadata: Dictionary mapping group names to metadata (description, model, etc.)
+            validation_history: Validation history for this row (dict mapping column to history data)
 
         Returns:
             Tuple of (qc_results_list, qc_metrics_dict)
@@ -451,7 +486,7 @@ class QCModule:
 
         # Format ALL multiplex outputs for QC review
         all_multiplex_outputs_formatted = self.format_all_multiplex_outputs_for_qc(
-            scrubbed_all_group_results, row, validation_targets, group_metadata
+            scrubbed_all_group_results, row, validation_targets, group_metadata, validation_history
         )
 
         # Get QC schema

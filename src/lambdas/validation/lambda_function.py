@@ -3981,7 +3981,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         validation_targets=all_validation_targets_for_qc,  # Use ALL targets including ID fields
                         context=config.get('table_context', ''),
                         general_notes=config.get('general_notes', ''),
-                        group_metadata=group_metadata
+                        group_metadata=group_metadata,
+                        validation_history=validation_history
                     )
 
                     # Report QC call progress with average QC confidence score
