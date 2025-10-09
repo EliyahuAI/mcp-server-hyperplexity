@@ -349,7 +349,7 @@ def create_validation_record_sheet(workbook, header_format, validation_results, 
     logger.info(f"[VALIDATION_RECORD] Created Validation Record sheet with {row_idx - 1} runs")
     return validation_record_sheet
 
-def create_enhanced_excel_with_validation(excel_data, validation_results, config_data, session_id, skip_history=False, validated_sheet_name=None, qc_results=None):
+def create_enhanced_excel_with_validation(excel_data, validation_results, config_data, session_id, skip_history=False, validated_sheet_name=None, qc_results=None, config_s3_key=None):
     """Create 3-sheet Excel file with validation results and optional QC data.
 
     Args:
@@ -360,6 +360,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         skip_history: If True, skip loading existing Details sheet (for fallback mode)
         validated_sheet_name: Name of the sheet that was actually validated (from metadata)
         qc_results: Optional QC results to integrate into the Excel file
+        config_s3_key: S3 key for the configuration file (for Validation Record)
     """
     logger.debug("🔥🔥🔥 EXCEL REPORT QC UNIFIED VERSION IS RUNNING 🔥🔥🔥")
 
@@ -1052,8 +1053,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             logger.warning(f"Could not add comment: {e}")
 
             # SHEET 3: Validation Record (run-level metadata)
-            # Extract config S3 key from config_data if available
-            config_s3_key = config_data.get('config_s3_key', '') if isinstance(config_data, dict) else ''
+            # Use config_s3_key parameter if provided, otherwise try to extract from config_data
+            if not config_s3_key:
+                config_s3_key = config_data.get('config_s3_key', '') if isinstance(config_data, dict) else ''
 
             # Determine if this is a preview run (heuristic: check if we have partial validation)
             is_preview = False
@@ -1491,7 +1493,8 @@ def create_qc_enhanced_excel_for_interface(
     validation_results: dict,
     config_data: dict,
     session_id: str,
-    validated_sheet_name: str = None
+    validated_sheet_name: str = None,
+    config_s3_key: str = None
 ):
     """
     QC-enhanced Excel creation that integrates with interface lambda.
@@ -1505,6 +1508,7 @@ def create_qc_enhanced_excel_for_interface(
         config_data: Configuration data
         session_id: Session ID
         validated_sheet_name: Name of validated sheet
+        config_s3_key: S3 key for the configuration file (for Validation Record)
 
     Returns:
         BytesIO buffer with Excel content, or None if creation failed
@@ -1549,7 +1553,8 @@ def create_qc_enhanced_excel_for_interface(
             session_id=session_id,
             skip_history=False,
             validated_sheet_name=validated_sheet_name,
-            qc_results=qc_results
+            qc_results=qc_results,
+            config_s3_key=config_s3_key
         )
 
         if excel_buffer:
@@ -1569,7 +1574,8 @@ def create_qc_enhanced_excel_for_interface(
                 session_id=session_id,
                 skip_history=False,
                 validated_sheet_name=validated_sheet_name,
-                qc_results=None
+                qc_results=None,
+                config_s3_key=config_s3_key
             )
         except Exception as fallback_error:
             logger.error(f"Fallback Excel creation also failed: {str(fallback_error)}")

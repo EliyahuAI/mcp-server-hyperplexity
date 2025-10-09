@@ -1117,8 +1117,8 @@ def handle_main_processing(event, context):
             try:
                 from ..reporting.excel_report_new import create_enhanced_excel_with_validation, EXCEL_ENHANCEMENT_AVAILABLE
                 # Fallback function that maps to QC interface
-                def create_qc_enhanced_excel_for_interface(table_data, validation_results, config_data, session_id, validated_sheet_name=None):
-                    return create_enhanced_excel_with_validation(table_data, validation_results, config_data, session_id, validated_sheet_name)
+                def create_qc_enhanced_excel_for_interface(table_data, validation_results, config_data, session_id, validated_sheet_name=None, config_s3_key=None):
+                    return create_enhanced_excel_with_validation(table_data, validation_results, config_data, session_id, validated_sheet_name, config_s3_key=config_s3_key)
             except ImportError:
                 EXCEL_ENHANCEMENT_AVAILABLE = False
                 def create_qc_enhanced_excel_for_interface(*args, **kwargs): return None
@@ -2083,7 +2083,9 @@ def handle_main_processing(event, context):
                                 logger.debug(f"[PREVIEW_EXCEL] Reusing table_data with {len(table_data.get('data', []))} rows (row keys already added)")
 
                                 excel_buffer = create_qc_enhanced_excel_for_interface(
-                                    table_data, validation_results, config_data, session_id, validated_sheet_name=validated_sheet
+                                    table_data, validation_results, config_data, session_id,
+                                    validated_sheet_name=validated_sheet,
+                                    config_s3_key=config_s3_key
                                 )
                                 
                                 if excel_buffer:
@@ -4092,7 +4094,8 @@ def handle_main_processing(event, context):
 
                         excel_buffer = create_qc_enhanced_excel_for_interface(
                             table_data, excel_validation_results, config_data, session_id,
-                            validated_sheet_name=validated_sheet
+                            validated_sheet_name=validated_sheet,
+                            config_s3_key=config_s3_key
                         )
                         if excel_buffer:
                             enhanced_excel_content = excel_buffer.getvalue()
