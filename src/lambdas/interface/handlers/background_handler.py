@@ -1800,7 +1800,6 @@ def handle_main_processing(event, context):
                 # Apply domain multiplier with comprehensive validation and audit trail
                 try:
                     import sys
-                    import os
                     sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
                     from dynamodb_schemas import track_preview_cost, track_api_usage_detailed, check_user_balance
                     from decimal import Decimal
@@ -2154,7 +2153,6 @@ def handle_main_processing(event, context):
                 # Get account balance and multiplier for preview tracking
                 try:
                     import sys
-                    import os
                     sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
                     from dynamodb_schemas import check_user_balance, get_domain_multiplier
                     
@@ -3639,7 +3637,6 @@ def handle_main_processing(event, context):
             # Apply domain multiplier to raw costs and handle billing
             try:
                 import sys
-                import os
                 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
                 from dynamodb_schemas import get_domain_multiplier, track_api_usage_detailed, deduct_from_balance, check_user_balance
                 from decimal import Decimal
