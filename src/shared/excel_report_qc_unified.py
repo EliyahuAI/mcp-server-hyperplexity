@@ -876,10 +876,11 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                         cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
                                         cite_url = citation.get('url', '')
                                         cite_snippet = citation.get('cited_text', '')
-                                        if cite_url:
-                                            cite_text += f" ({cite_url})"
+                                        # Format: [{#}] {Title}: "{quote}" (URL)
                                         if cite_snippet:
                                             cite_text += f": \"{cite_snippet}\""
+                                        if cite_url:
+                                            cite_text += f" ({cite_url})"
                                         citation_texts.append(cite_text)
 
                                     if citation_texts:
@@ -1021,10 +1022,11 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                     cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
                                     cite_url = citation.get('url', '')
                                     cite_snippet = citation.get('cited_text', '')
-                                    if cite_url:
-                                        cite_text += f" ({cite_url})"
+                                    # Format: [{#}] {Title}: "{quote}" (URL)
                                     if cite_snippet:
                                         cite_text += f": \"{cite_snippet}\""
+                                    if cite_url:
+                                        cite_text += f" ({cite_url})"
                                     citation_texts.append(cite_text)
 
                                 if citation_texts:
@@ -1379,12 +1381,13 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                         if isinstance(citation, dict):
                                             cite_text = f"[{i}] {citation.get('title', 'Untitled')}"
                                             cite_url = citation.get('url', '')
-                                            if cite_url:
-                                                cite_text += f" ({cite_url})"
                                             cite_snippet = citation.get('cited_text', '')
+                                            # Format: [{#}] {Title}: "{quote}" (URL)
                                             if cite_snippet:
                                                 # Show full citation content - no truncation
                                                 cite_text += f": \"{cite_snippet}\""
+                                            if cite_url:
+                                                cite_text += f" ({cite_url})"
                                             citation_texts.append(cite_text)
 
                                 # Add QC citations if QC is applied and has citations

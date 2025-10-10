@@ -274,13 +274,18 @@ class QCModule:
                 original_confidence = result.get('original_confidence', '')
                 reasoning = result.get('reasoning', '')
                 sources = result.get('sources', [])
-                citations = result.get('citations', [])
+                citations = result.get('citations', [])  # Full structured citation data
                 explanation = result.get('explanation', '')
 
                 # Debug logging for citations
                 logger.debug(f"[QC_CITATIONS_DEBUG] {column}: Found {len(citations)} citations")
-                if citations:
-                    logger.debug(f"[QC_CITATIONS_DEBUG] {column}: First citation sample: {citations[0][:100]}..." if len(citations[0]) > 100 else citations[0])
+                if citations and len(citations) > 0:
+                    # Log type of first citation for debugging
+                    first_citation = citations[0]
+                    if isinstance(first_citation, dict):
+                        logger.debug(f"[QC_CITATIONS_DEBUG] {column}: First citation is dict with keys: {list(first_citation.keys())}")
+                    else:
+                        logger.debug(f"[QC_CITATIONS_DEBUG] {column}: First citation is string, length: {len(str(first_citation))}")
 
                 # Enhanced field formatting with validation history context
                 field_output = [
@@ -370,11 +375,26 @@ class QCModule:
                 field_output.append(f"* **Updated Confidence (Proposed):** {confidence}")
                 field_output.append(f"* **Reasoning:** {reasoning}")
 
-                # Show citations with full text (these already contain title, URL, and snippets)
+                # Show citations with full text from structured citation data
                 if citations and any(citations):  # Check if citations exist and are not empty
                     field_output.append(f"* **Citations:**")
                     for i, citation in enumerate(citations, 1):
-                        field_output.append(f"  - [{i}] {citation}")
+                        # Handle both structured citation objects and plain strings
+                        if isinstance(citation, dict):
+                            # Format structured citation with title and snippet
+                            title = citation.get('title', 'Untitled')
+                            url = citation.get('url', '')
+                            cited_text = citation.get('cited_text', '')
+
+                            # Format: [{#}] {Title}: "{quote}" (URL)
+                            if cited_text:
+                                citation_text = f"[{i}] {title}: \"{cited_text}\" ({url})"
+                            else:
+                                citation_text = f"[{i}] {title} ({url})"
+                            field_output.append(f"  - {citation_text}")
+                        else:
+                            # Plain string citation (fallback)
+                            field_output.append(f"  - [{i}] {citation}")
                 elif sources:  # If no citations but we have source URLs, format them
                     field_output.append(f"* **Citations:** (URLs only)")
                     for i, source in enumerate(sources, 1):

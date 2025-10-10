@@ -1186,11 +1186,13 @@ class S3TableParser:
                             parsed_comment = self._parse_validation_comment(comment_text)
 
                         # Build field history
+                        # IMPORTANT: Updated Values sheet cell = Original/Current (INPUT)
+                        #            Updated Values sheet comment "Original Value:" = Prior (from Original Values sheet)
                         field_history = {
-                            'prior_value': str(cell_value).strip(),
+                            'prior_value': parsed_comment.get('original_value', ''),  # From comment's "Original Value:" field
                             'prior_confidence': parsed_comment.get('original_confidence', ''),
                             'prior_timestamp': timestamps.get('prior_timestamp', ''),
-                            'original_value': parsed_comment.get('original_value', ''),
+                            'original_value': str(cell_value).strip(),  # Updated Values sheet cell = INPUT
                             'original_confidence': parsed_comment.get('original_confidence', ''),
                             'original_key_citation': parsed_comment.get('key_citation', ''),
                             'original_sources': parsed_comment.get('sources', []),  # URLs for backward compatibility
