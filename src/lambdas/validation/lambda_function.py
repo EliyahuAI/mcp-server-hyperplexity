@@ -3930,6 +3930,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     'original_confidence': validation_result.get('original_confidence', ''),
                                     'reasoning': validation_result.get('quote', ''),
                                     'sources': validation_result.get('sources', []),
+                                    'citations': validation_result.get('citations', []),  # Add full citation info
                                     'explanation': validation_result.get('explanation', ''),
                                     'consistent_with_model_knowledge': validation_result.get('consistent_with_model', '')
                                 }
