@@ -684,23 +684,37 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                 'fg_color': '#4472C4', 'font_color': 'white', 'border': 1
             })
             
-            # Original confidence formats (HIGH/MEDIUM/LOW) - use same colors as validation confidence
+            # Original confidence formats (HIGH/MEDIUM/LOW) - no italics, no bolding
             original_confidence_formats = {
-                'HIGH': workbook.add_format({'bold': True, 'fg_color': '#C6EFCE', 'font_color': '#006100'}),
+                'HIGH': workbook.add_format({'fg_color': '#C6EFCE', 'font_color': '#006100'}),
                 'MEDIUM': workbook.add_format({'fg_color': '#FFEB9C', 'font_color': '#9C6500'}),
-                'LOW': workbook.add_format({'italic': True, 'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
-            }
-            
-            # Validation confidence formats (HIGH/MEDIUM/LOW)
-            validation_confidence_formats = {
-                'HIGH': workbook.add_format({'bold': True, 'fg_color': '#C6EFCE', 'font_color': '#006100'}),
-                'MEDIUM': workbook.add_format({'fg_color': '#FFEB9C', 'font_color': '#9C6500'}),
-                'LOW': workbook.add_format({'italic': True, 'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
+                'LOW': workbook.add_format({'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
             }
 
-            # QC applied formats (same as confidence formats - no special styling)
-            qc_confidence_formats = {
+            # Updated confidence formats with BOLD only (no italics) - for when values changed
+            validation_confidence_formats_bold = {
                 'HIGH': workbook.add_format({'bold': True, 'fg_color': '#C6EFCE', 'font_color': '#006100'}),
+                'MEDIUM': workbook.add_format({'bold': True, 'fg_color': '#FFEB9C', 'font_color': '#9C6500'}),
+                'LOW': workbook.add_format({'bold': True, 'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
+            }
+
+            # Updated confidence formats without bold - for when values stayed the same
+            validation_confidence_formats = {
+                'HIGH': workbook.add_format({'fg_color': '#C6EFCE', 'font_color': '#006100'}),
+                'MEDIUM': workbook.add_format({'fg_color': '#FFEB9C', 'font_color': '#9C6500'}),
+                'LOW': workbook.add_format({'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
+            }
+
+            # QC applied formats with BOLD only (no italics) - for when QC changed values
+            qc_confidence_formats_bold = {
+                'HIGH': workbook.add_format({'bold': True, 'fg_color': '#C6EFCE', 'font_color': '#006100'}),
+                'MEDIUM': workbook.add_format({'bold': True, 'fg_color': '#FFEB9C', 'font_color': '#9C6500'}),
+                'LOW': workbook.add_format({'bold': True, 'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
+            }
+
+            # QC applied formats without bold - for when QC didn't change values
+            qc_confidence_formats = {
+                'HIGH': workbook.add_format({'fg_color': '#C6EFCE', 'font_color': '#006100'}),
                 'MEDIUM': workbook.add_format({'fg_color': '#FFEB9C', 'font_color': '#9C6500'}),
                 'LOW': workbook.add_format({'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
             }
@@ -780,22 +794,29 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                         # Apply appropriate formatting (QC takes priority over validation confidence)
                         # Skip coloring for IGNORED and ID columns
                         if should_apply_coloring(col_name):
+                            # Determine if value changed to decide on bold formatting
+                            value_changed = (updated_value != original_value)
+
                             if qc_applied:
-                                # Get QC confidence format (same as validation format)
+                                # Get QC confidence format - use bold if value changed, regular if not
                                 row_qc_data = get_qc_data_for_row(row_key, row_idx)
                                 if row_qc_data and col_name in row_qc_data:
                                     field_qc_data = row_qc_data[col_name]
-                                    cell_format = get_qc_confidence_format(field_qc_data, qc_confidence_formats)
+                                    format_dict = qc_confidence_formats_bold if value_changed else qc_confidence_formats
+                                    cell_format = get_qc_confidence_format(field_qc_data, format_dict)
                                 if not cell_format:
                                     # Fallback to generic format if no confidence found
-                                    cell_format = qc_confidence_formats.get('MEDIUM')  # Default QC format
+                                    format_dict = qc_confidence_formats_bold if value_changed else qc_confidence_formats
+                                    cell_format = format_dict.get('MEDIUM')  # Default QC format
                             else:
                                 validation_confidence = None
                                 if row_validation_data and col_name in row_validation_data:
                                     field_data = row_validation_data[col_name]
                                     if isinstance(field_data, dict):
                                         validation_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
-                                cell_format = get_confidence_format(validation_confidence, validation_confidence_formats)
+                                # Use bold if value changed, regular if not
+                                format_dict = validation_confidence_formats_bold if value_changed else validation_confidence_formats
+                                cell_format = get_confidence_format(validation_confidence, format_dict)
                         else:
                             cell_format = None  # No coloring for IGNORED and ID columns
 
