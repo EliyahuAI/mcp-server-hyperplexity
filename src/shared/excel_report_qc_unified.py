@@ -1000,22 +1000,22 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 logger.info(f"[COMMENT_BUILD_DEBUG] Row {row_idx} {col_name}: About to build comment with validated_value='{validated_value}'")
 
                             comment_parts = []
-                            if validated_value != original_value:
-                                # Get updated confidence (use QC-adjusted if available)
-                                updated_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
-                                row_qc_data = get_qc_data_for_row(row_key, row_idx)
-                                if row_qc_data and col_name in row_qc_data:
-                                    field_qc_data = row_qc_data.get(col_name)
-                                    if isinstance(field_qc_data, dict):
-                                        qc_confidence = field_qc_data.get('qc_confidence')
-                                        if qc_confidence and str(qc_confidence).strip():
-                                            updated_confidence = qc_confidence
+                            # ALWAYS show what appears in Updated Values sheet (not just when different)
+                            # Get updated confidence (use QC-adjusted if available)
+                            updated_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
+                            row_qc_data = get_qc_data_for_row(row_key, row_idx)
+                            if row_qc_data and col_name in row_qc_data:
+                                field_qc_data = row_qc_data.get(col_name)
+                                if isinstance(field_qc_data, dict):
+                                    qc_confidence = field_qc_data.get('qc_confidence')
+                                    if qc_confidence and str(qc_confidence).strip():
+                                        updated_confidence = qc_confidence
 
-                                # Lead with Updated Value and confidence
-                                if updated_confidence:
-                                    comment_parts.append(f'Updated Value: {validated_value} ({updated_confidence} Confidence)')
-                                else:
-                                    comment_parts.append(f'Updated Value: {validated_value}')
+                            # Lead with Updated Value and confidence
+                            if updated_confidence:
+                                comment_parts.append(f'Updated Value: {validated_value} ({updated_confidence} Confidence)')
+                            else:
+                                comment_parts.append(f'Updated Value: {validated_value}')
 
                             # Add Key Citation
                             key_citation = None
