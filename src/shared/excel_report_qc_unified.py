@@ -684,11 +684,18 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                 'fg_color': '#4472C4', 'font_color': 'white', 'border': 1
             })
             
-            # Original confidence formats (HIGH/MEDIUM/LOW) - no italics, no bolding
+            # Original confidence formats (HIGH/MEDIUM/LOW) - no italics, no bolding (for when values stayed same)
             original_confidence_formats = {
                 'HIGH': workbook.add_format({'fg_color': '#C6EFCE', 'font_color': '#006100'}),
                 'MEDIUM': workbook.add_format({'fg_color': '#FFEB9C', 'font_color': '#9C6500'}),
                 'LOW': workbook.add_format({'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
+            }
+
+            # Original confidence formats with BOLD (no italics) - for when values changed
+            original_confidence_formats_bold = {
+                'HIGH': workbook.add_format({'bold': True, 'fg_color': '#C6EFCE', 'font_color': '#006100'}),
+                'MEDIUM': workbook.add_format({'bold': True, 'fg_color': '#FFEB9C', 'font_color': '#9C6500'}),
+                'LOW': workbook.add_format({'bold': True, 'fg_color': '#FFC7CE', 'font_color': '#9C0006'})
             }
 
             # Updated confidence formats with BOLD only (no italics) - for when values changed
@@ -1011,7 +1018,13 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             # Apply original confidence color (only if confidence should be colored)
                             # Skip coloring for IGNORED and ID columns
                             if should_apply_coloring(col_name):
-                                cell_format = get_confidence_format(original_confidence, original_confidence_formats)
+                                # Determine if value changed to decide on bold formatting
+                                # Compare original value with the actual updated value
+                                value_changed = (validated_value != original_value) if validated_value is not None else False
+
+                                # Use bold format if value changed, regular format if not
+                                format_dict = original_confidence_formats_bold if value_changed else original_confidence_formats
+                                cell_format = get_confidence_format(original_confidence, format_dict)
                             else:
                                 cell_format = None  # No coloring for IGNORED and ID columns
                             
