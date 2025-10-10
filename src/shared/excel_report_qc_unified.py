@@ -820,22 +820,22 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
 
                                 # Create comment with original value, confidence, and citations
                                 comment_parts = []
-                                if validated_value != original_value:
-                                    # Get original confidence (use QC-adjusted if available)
-                                    original_confidence = field_data.get('original_confidence', '')
-                                    row_qc_data = get_qc_data_for_row(row_key, row_idx)
-                                    if row_qc_data and col_name in row_qc_data:
-                                        field_qc_data = row_qc_data[col_name]
-                                        if isinstance(field_qc_data, dict):
-                                            qc_original_confidence = field_qc_data.get('qc_original_confidence')
-                                            if qc_original_confidence and str(qc_original_confidence).strip():
-                                                original_confidence = qc_original_confidence
+                                # ALWAYS show what appears in Original Values sheet (not just when different)
+                                # Get original confidence (use QC-adjusted if available)
+                                original_confidence = field_data.get('original_confidence', '')
+                                row_qc_data = get_qc_data_for_row(row_key, row_idx)
+                                if row_qc_data and col_name in row_qc_data:
+                                    field_qc_data = row_qc_data[col_name]
+                                    if isinstance(field_qc_data, dict):
+                                        qc_original_confidence = field_qc_data.get('qc_original_confidence')
+                                        if qc_original_confidence and str(qc_original_confidence).strip():
+                                            original_confidence = qc_original_confidence
 
-                                    # Lead with Original Value and confidence
-                                    if original_confidence:
-                                        comment_parts.append(f'Original Value: {original_value} ({original_confidence} Confidence)')
-                                    else:
-                                        comment_parts.append(f'Original Value: {original_value}')
+                                # Lead with Original Value and confidence
+                                if original_confidence:
+                                    comment_parts.append(f'Original Value: {original_value} ({original_confidence} Confidence)')
+                                else:
+                                    comment_parts.append(f'Original Value: {original_value}')
 
                                 # Add Key Citation
                                 key_citation = None
