@@ -923,12 +923,11 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
             for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
                 # Get validation results for this row
                 row_validation_data = None
-                if row_key in validation_results:
+                if row_key and row_key in validation_results:
                     row_validation_data = validation_results[row_key]
-                elif str(row_idx) in validation_results:
-                    row_validation_data = validation_results[str(row_idx)]
-                elif row_idx in validation_results:
-                    row_validation_data = validation_results[row_idx]
+                # REMOVED fallback to positional lookup - causes wrong row matching!
+                # The fallback to str(row_idx) and row_idx was causing random row mismatches
+                # because validation_results dictionary order doesn't match Excel row order
                 
                 for col_idx, col_name in enumerate(headers):
                     if not col_name:
@@ -939,7 +938,8 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                     original_value = get_original_value_with_formulas(row_idx, col_name, base_value)
                     cell_format = None
                     comment_text = None
-                    
+                    validated_value = None  # Reset for each column to prevent carryover from previous column
+
                     # Check if this column has validation results
                     if row_validation_data and isinstance(row_validation_data, dict):
                         if col_name in row_validation_data and isinstance(row_validation_data[col_name], dict):

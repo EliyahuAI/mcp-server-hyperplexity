@@ -111,7 +111,8 @@ class QCIntegrationManager:
         # Merge multiplex and QC results first to get proper validation data
         merged_results = self.qc_module.merge_multiplex_and_qc_results(
             multiplex_results=all_multiplex_results,
-            qc_results=qc_results
+            qc_results=qc_results,
+            original_row_data=row
         )
 
         # Track QC costs and metrics using merged results for proper comparison
@@ -222,7 +223,8 @@ class QCIntegrationManager:
         # Merge multiplex and QC results first to get proper validation data
         merged_results = self.qc_module.merge_multiplex_and_qc_results(
             multiplex_results=multiplex_results,
-            qc_results=qc_results
+            qc_results=qc_results,
+            original_row_data=row
         )
 
         # Track QC costs and metrics using merged results for proper comparison

@@ -944,7 +944,8 @@ class QCModule:
     def merge_multiplex_and_qc_results(
         self,
         multiplex_results: List[Dict],
-        qc_results: List[Dict]
+        qc_results: List[Dict],
+        original_row_data: Dict[str, Any] = None
     ) -> Dict[str, Dict[str, Any]]:
         """
         Merge multiplex and QC results to create final entries with Original, Updated, and QC values.
@@ -952,6 +953,7 @@ class QCModule:
         Args:
             multiplex_results: Original multiplex validation results
             qc_results: QC override results
+            original_row_data: Original row data (needed for soft comparison with original values)
 
         Returns:
             Dictionary mapping column names to merged result dictionaries containing:
@@ -1016,9 +1018,31 @@ class QCModule:
                 qc_original_confidence = qc_result.get('original_confidence', '')
                 qc_updated_confidence = qc_result.get('updated_confidence', '')
 
+                # Parse update_importance FIRST (format: "N - Explanation text")
+                update_importance_raw = qc_result.get('update_importance', '0')
+                update_importance_level = 0
+                update_importance_explanation = ''
+
+                try:
+                    if ' - ' in str(update_importance_raw):
+                        parts = str(update_importance_raw).split(' - ', 1)
+                        update_importance_level = int(parts[0].strip())
+                        update_importance_explanation = parts[1].strip()
+                    else:
+                        # If no explanation, just parse the number
+                        update_importance_level = int(str(update_importance_raw).strip())
+                except (ValueError, AttributeError):
+                    logger.warning(f"Could not parse update_importance: {update_importance_raw}")
+                    update_importance_level = 0
+
                 # Check if QC entry is the same as original value (normalized comparison)
-                # If same, enforce original_confidence == qc_confidence
-                original_value_from_multiplex = multiplex_result.get('original_value', '')
+                # If same, OR if update_importance is 0 or 1, enforce original_confidence == qc_confidence
+                # Get original value from row data if available, otherwise from multiplex result
+                original_value_from_row = ''
+                if original_row_data and column in original_row_data:
+                    original_value_from_row = original_row_data[column]
+                else:
+                    original_value_from_row = multiplex_result.get('original_value', '')
 
                 def normalize_for_comparison(value):
                     """Normalize value for comparison: strip whitespace, lowercase, remove punctuation"""
@@ -1030,9 +1054,25 @@ class QCModule:
                     value_str = value_str.translate(str.maketrans('', '', string.punctuation))
                     return value_str
 
-                if normalize_for_comparison(qc_entry) == normalize_for_comparison(original_value_from_multiplex):
+                enforce_equal_confidence = False
+                enforcement_reason = ""
+
+                # Check condition 1: QC entry equals original value
+                if normalize_for_comparison(qc_entry) == normalize_for_comparison(original_value_from_row):
+                    enforce_equal_confidence = True
+                    enforcement_reason = "QC entry matches original value"
+
+                # Check condition 2: Update importance is 0 or 1
+                if update_importance_level in [0, 1]:
+                    enforce_equal_confidence = True
+                    if enforcement_reason:
+                        enforcement_reason += f" AND update_importance={update_importance_level}"
+                    else:
+                        enforcement_reason = f"update_importance={update_importance_level}"
+
+                if enforce_equal_confidence:
                     # No meaningful change - enforce original confidence == qc confidence
-                    logger.debug(f"[QC_CONFIDENCE_ENFORCEMENT] {column}: No meaningful change detected, enforcing original_confidence == qc_confidence ({qc_confidence})")
+                    logger.info(f"[QC_CONFIDENCE_ENFORCEMENT] {column}: {enforcement_reason}, enforcing original_confidence == qc_confidence ({qc_confidence})")
                     qc_original_confidence = qc_confidence  # Override to match QC confidence
 
                 # Update confidence levels if QC provided revisions
@@ -1047,23 +1087,6 @@ class QCModule:
                 logger.debug(f"[QC_MERGE_DEBUG] {column}: QC returned entry='{qc_entry}', confidence='{qc_confidence}'")
                 logger.debug(f"[QC_MERGE_DEBUG] {column}: Original='{multiplex_result.get('original_value', 'N/A')}', Validated='{merged_result['updated_entry']}', QC='{qc_entry}'")
                 logger.debug(f"[QC_MERGE_DEBUG] {column}: Final merged QC fields - qc_applied=True, qc_entry='{qc_entry}', qc_confidence='{qc_confidence}'")
-
-                # Parse update_importance (format: "N - Explanation text")
-                update_importance_raw = qc_result.get('update_importance', '0')
-                update_importance_level = 0
-                update_importance_explanation = ''
-
-                try:
-                    if ' - ' in update_importance_raw:
-                        parts = update_importance_raw.split(' - ', 1)
-                        update_importance_level = int(parts[0].strip())
-                        update_importance_explanation = parts[1].strip()
-                    else:
-                        # If no explanation, just parse the number
-                        update_importance_level = int(update_importance_raw.strip())
-                except (ValueError, AttributeError):
-                    logger.warning(f"Could not parse update_importance: {update_importance_raw}")
-                    update_importance_level = 0
 
                 merged_result.update({
                     'qc_entry': qc_entry,
