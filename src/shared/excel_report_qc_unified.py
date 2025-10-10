@@ -971,6 +971,10 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                 cell_format = None  # No coloring for IGNORED and ID columns
                             
                             # Create comment with updated value and confidence (Original Values sheet format)
+                            # DEBUG: Log validated_value right before building comment
+                            if col_name == 'Start Date':
+                                logger.info(f"[COMMENT_BUILD_DEBUG] Row {row_idx} {col_name}: About to build comment with validated_value='{validated_value}'")
+
                             comment_parts = []
                             if validated_value != original_value:
                                 # Get updated confidence (use QC-adjusted if available)
@@ -1055,6 +1059,10 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                     # Add comment if needed
                     if comment_text:
                         try:
+                            # DEBUG: Log the comment text being written
+                            if col_name == 'Start Date':
+                                logger.info(f"[COMMENT_WRITE_DEBUG] Row {row_idx} {col_name}: Writing comment at Excel row {row_idx + 1}: {comment_text[:200]}...")
+
                             original_sheet.write_comment(row_idx + 1, col_idx, comment_text,
                                                        {'width': 300, 'height': 150})
                         except Exception as e:
