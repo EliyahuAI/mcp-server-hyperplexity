@@ -947,12 +947,19 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                         if col_name in row_validation_data and isinstance(row_validation_data[col_name], dict):
                             field_data = row_validation_data[col_name]
                             original_confidence = field_data.get('original_confidence')
-                            validated_value = field_data.get('value', '')
+
+                            # BUGFIX: Use pre-QC value if available (QC merge may have modified 'value' field)
+                            # This matches the Details sheet logic at lines 264-266
+                            if field_data.get('qc_applied') and 'pre_qc_value' in field_data:
+                                validated_value = str(field_data.get('pre_qc_value', ''))
+                            else:
+                                validated_value = field_data.get('value', '')
+
                             reasoning = field_data.get('reasoning', '')
 
                             # DEBUG: Log the validated_value we just extracted
                             if col_name == 'Start Date':
-                                logger.info(f"[ORIG_SHEET_DEBUG] Row {row_idx} {col_name}: validated_value='{validated_value}', original_value='{original_value}'")
+                                logger.info(f"[ORIG_SHEET_DEBUG] Row {row_idx} {col_name}: validated_value='{validated_value}', original_value='{original_value}', qc_applied={field_data.get('qc_applied', False)}")
 
                             # Check for QC original confidence override
                             row_qc_data = get_qc_data_for_row(row_key, row_idx)
