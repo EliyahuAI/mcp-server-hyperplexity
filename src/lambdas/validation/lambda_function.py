@@ -4116,25 +4116,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             """
             nonlocal total_cache_hits, total_cache_misses
 
+            # CRITICAL FIX: Create a local validator instance for thread safety
+            # This prevents race conditions when multiple rows are processed in parallel
+            local_validator = SimplifiedSchemaValidator(config)
+
             # Track missing columns to return to caller
             missing_column_info = {}
 
             # Initialize row_models_used if not provided
             if row_models_used is None:
                 row_models_used = set()
-            
+
             # Initialize row_api_providers if not provided
             if row_api_providers is None:
                 row_api_providers = set()
-            
+
             # First, filter out any ID or IGNORED fields - we don't validate these
             validation_targets = [t for t in targets if t.importance.upper() not in ["ID", "IGNORED"]]
-            
+
             # If there are no fields to validate after filtering, just return
             if not validation_targets:
                 logger.debug("No non-ID/IGNORED fields to validate in this group")
                 return
-            
+
             # Log clear info about what we're processing
             if len(validation_targets) == 1:
                 pass  # logger.info(f"Processing field '{validation_targets[0].column}' using multiplex format")
@@ -4142,11 +4146,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     pass  # logger.info(f"This is an ISOLATED validation for field '{validation_targets[0].column}'")
             else:
                 logger.debug(f"Processing {len(validation_targets)} fields together using multiplex format")
-            
-            # Get model configuration
-            model, warnings = resolve_search_group_model(validation_targets, validator)
-            search_context_size = resolve_search_group_context_size(validation_targets, validator)
-            max_web_searches = resolve_search_group_max_web_searches(validation_targets, validator)
+
+            # Get model configuration (use local_validator instead of shared validator)
+            model, warnings = resolve_search_group_model(validation_targets, local_validator)
+            search_context_size = resolve_search_group_context_size(validation_targets, local_validator)
+            max_web_searches = resolve_search_group_max_web_searches(validation_targets, local_validator)
             api_provider = determine_api_provider(model)
             
             # Track which model is being used for this row
@@ -4177,7 +4181,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.debug(f"Using resolved search context size: {search_context_size}")
             logger.debug(f"Using resolved max web searches: {max_web_searches}")
 
-            prompt = validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history)
+            prompt = local_validator.generate_multiplex_prompt(row, validation_targets, previous_results, filtered_validation_history)
 
             # Append proactive guidance if provided
             if proactive_guidance:
@@ -4213,8 +4217,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 # Get the search group name for better debug identification
                 group_name = None
-                if group_id is not None and hasattr(validator, 'search_groups') and validator.search_groups:
-                    for group_def in validator.search_groups:
+                if group_id is not None and hasattr(local_validator, 'search_groups') and local_validator.search_groups:
+                    for group_def in local_validator.search_groups:
                         if isinstance(group_def, dict) and group_def.get('group_id') == group_id:
                             group_name = group_def.get('group_name')
                             break
@@ -4297,7 +4301,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             }
             
             # Parse the API response (now normalized to Perplexity format)
-            parsed_results = validator.parse_multiplex_result(api_response, row)
+            parsed_results = local_validator.parse_multiplex_result(api_response, row)
             
             # CRITICAL CACHE VALIDATION LOGIC: Check that response contains all required columns
             # [FIX] Normalize expected columns to match normalized parsing in schema_validator_simplified.py
@@ -4401,7 +4405,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     processing_time = time.time() - start_time
                     
                     # Re-parse the fresh API response (now normalized to Perplexity format)
-                    parsed_results = validator.parse_multiplex_result(api_response, row)
+                    parsed_results = local_validator.parse_multiplex_result(api_response, row)
                     fresh_actual_columns = list(parsed_results.keys())
                     
                     # Check again for missing columns in fresh response with flexible matching

@@ -948,12 +948,29 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             field_data = row_validation_data[col_name]
                             original_confidence = field_data.get('original_confidence')
 
-                            # BUGFIX: Use pre-QC value if available (QC merge may have modified 'value' field)
-                            # This matches the Details sheet logic at lines 264-266
-                            if field_data.get('qc_applied') and 'pre_qc_value' in field_data:
-                                validated_value = str(field_data.get('pre_qc_value', ''))
-                            else:
-                                validated_value = field_data.get('value', '')
+                            # Determine the actual updated value using the SAME logic as Updated Values sheet
+                            # This needs to match lines 746-777 exactly
+                            actual_updated_value = original_value  # Start with original
+
+                            if should_apply_coloring(col_name):
+                                # Check for QC value first (highest priority)
+                                row_qc_data_for_value = get_qc_data_for_row(row_key, row_idx)
+                                if row_qc_data_for_value and col_name in row_qc_data_for_value:
+                                    field_qc_data_for_value = row_qc_data_for_value[col_name]
+                                    if isinstance(field_qc_data_for_value, dict) and field_qc_data_for_value.get('qc_applied', False):
+                                        actual_updated_value = field_qc_data_for_value.get('qc_entry', original_value)
+
+                                # If no QC applied, use validation value with confidence check
+                                elif field_data:
+                                    validation_original_confidence = field_data.get('original_confidence')
+                                    validation_confidence = field_data.get('confidence_level', field_data.get('confidence', ''))
+
+                                    # Only update if validation confidence is higher than original confidence
+                                    if should_update_value(validation_original_confidence, validation_confidence):
+                                        actual_updated_value = field_data.get('value', original_value)
+
+                            # Keep validated_value for legacy code that might use it
+                            validated_value = actual_updated_value
 
                             reasoning = field_data.get('reasoning', '')
 
