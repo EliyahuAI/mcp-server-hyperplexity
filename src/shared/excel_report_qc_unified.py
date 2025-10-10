@@ -925,10 +925,12 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                 row_validation_data = None
                 if row_key and row_key in validation_results:
                     row_validation_data = validation_results[row_key]
+                    # DEBUG: Log which validation data we got for this row
+                    logger.info(f"[ORIG_SHEET_DEBUG] Row {row_idx} (Conference: {row_data.get('Conference', 'N/A')}): Using validation data for key {row_key[:8]}...")
                 # REMOVED fallback to positional lookup - causes wrong row matching!
                 # The fallback to str(row_idx) and row_idx was causing random row mismatches
                 # because validation_results dictionary order doesn't match Excel row order
-                
+
                 for col_idx, col_name in enumerate(headers):
                     if not col_name:
                         continue
@@ -947,6 +949,10 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             original_confidence = field_data.get('original_confidence')
                             validated_value = field_data.get('value', '')
                             reasoning = field_data.get('reasoning', '')
+
+                            # DEBUG: Log the validated_value we just extracted
+                            if col_name == 'Start Date':
+                                logger.info(f"[ORIG_SHEET_DEBUG] Row {row_idx} {col_name}: validated_value='{validated_value}', original_value='{original_value}'")
 
                             # Check for QC original confidence override
                             row_qc_data = get_qc_data_for_row(row_key, row_idx)
