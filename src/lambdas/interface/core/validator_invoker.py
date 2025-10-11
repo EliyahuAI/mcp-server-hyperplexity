@@ -7,6 +7,7 @@ import logging
 import os
 import tempfile
 import time
+import traceback
 from openpyxl import Workbook, load_workbook
 import csv
 import boto3
@@ -155,7 +156,7 @@ def is_validation_response_complete(response_payload, expected_row_count, is_pre
         logger.error(f"[COMPLETENESS_CHECK] Error checking validation completeness: {e}")
         return False, f"Completeness check error: {str(e)}", None
 
-def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, max_retries=2):
+def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, max_retries=0):
     """
     Invoke validator lambda with retry logic for timeouts.
     Since the validation lambda caches results, retries are safe and efficient.
@@ -179,9 +180,10 @@ def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, 
                 InvocationType='RequestResponse',
                 Payload=json.dumps(payload)
             )
-            
+
             elapsed_time = time.time() - attempt_start_time
             logger.info(f"[RETRY_TRACKER] SUCCESS - Attempt {attempt + 1} completed in {elapsed_time:.2f}s")
+            logger.info(f"[RETRY_TRACKER] Response StatusCode: {response.get('StatusCode')}, FunctionError: {response.get('FunctionError', 'None')}")
             
             # Log success without interfering with the response stream
             logger.info(f"[RETRY_TRACKER] Lambda invoke completed successfully")
@@ -196,6 +198,8 @@ def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, 
                 # Check for AWS Lambda runtime errors in the response
                 if response_size == 0:
                     logger.error(f"[RESPONSE_ERROR] Empty response from lambda - possible runtime failure")
+                    logger.error(f"[RESPONSE_ERROR] Attempt {attempt + 1}/{max_retries + 1}")
+                    logger.error(f"[RESPONSE_ERROR] Response metadata: {response.get('ResponseMetadata', {})}")
                     raise Exception("Empty response from validation lambda - possible runtime error")
 
                 # Try to decode as JSON to check for malformed responses
@@ -203,14 +207,17 @@ def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, 
                     response_str = response_data.decode('utf-8')
                     if "Failed to post invocation response" in response_str:
                         logger.error(f"[RESPONSE_ERROR] Lambda runtime failed to post response - likely 413 (Request Too Large)")
+                        logger.error(f"[RESPONSE_ERROR] Response preview: {response_str[:500]}")
                         raise Exception("Lambda response too large - validation data exceeds 6MB limit")
                     # Additional check for empty response that might indicate 413 error
                     if response_size > 0 and response_size < 100:  # Very small responses might be error messages
                         if "413" in response_str or "Request Entity Too Large" in response_str:
                             logger.error(f"[RESPONSE_ERROR] Detected 413 error in small response: {response_str[:200]}")
                             raise Exception("Lambda response too large - validation data exceeds 6MB limit")
-                except UnicodeDecodeError:
+                except UnicodeDecodeError as decode_err:
                     logger.error(f"[RESPONSE_ERROR] Response contains invalid UTF-8 - possible corruption")
+                    logger.error(f"[RESPONSE_ERROR] Decode error: {str(decode_err)}")
+                    logger.error(f"[RESPONSE_ERROR] Response size: {response_size} bytes")
                     raise Exception("Corrupted response from validation lambda")
 
                 # Reset the stream for normal processing
@@ -218,6 +225,8 @@ def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, 
 
             except Exception as read_error:
                 logger.error(f"[RESPONSE_ERROR] Failed to validate response: {str(read_error)}")
+                logger.error(f"[RESPONSE_ERROR] Error type: {type(read_error).__name__}")
+                logger.error(f"[RESPONSE_ERROR] Full traceback: {traceback.format_exc()}")
                 raise Exception(f"Invalid response from validation lambda: {str(read_error)}")
 
             return response
@@ -226,11 +235,14 @@ def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, 
             elapsed_time = time.time() - attempt_start_time
             logger.error(f"[RETRY_TRACKER] READ_TIMEOUT - Attempt {attempt + 1} failed after {elapsed_time:.2f}s")
             logger.error(f"[RETRY_TRACKER] Read timeout details: {str(e)}")
-            
+            logger.error(f"[RETRY_TRACKER] Exception type: {type(e).__name__}")
+            logger.error(f"[RETRY_TRACKER] Full exception: {repr(e)}")
+
             if attempt < max_retries:
+                logger.error(f"[RETRY_TRACKER] Sync call retry determined for session {session_id} due to read timeout.")
                 wait_time = 5 * (attempt + 1)  # Progressive backoff: 5s, 10s
-                logger.warning(f"[RETRY_TRACKER] RETRYING - Will retry in {wait_time}s (attempt {attempt + 2}/{max_retries + 1})")
-                logger.info(f"[RETRY_TRACKER] Note: Validation lambda uses caching, so retry should be faster")
+                logger.error(f"[RETRY_TRACKER] RETRYING - Will retry in {wait_time}s (attempt {attempt + 2}/{max_retries + 1})")
+                logger.error(f"[RETRY_TRACKER] Note: Validation lambda uses caching, so retry should be faster")
                 time.sleep(wait_time)
             else:
                 logger.error(f"[RETRY_TRACKER] FINAL_FAILURE - All {max_retries + 1} attempts failed due to read timeouts")
@@ -241,13 +253,16 @@ def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, 
             elapsed_time = time.time() - attempt_start_time
             logger.error(f"[RETRY_TRACKER] CONNECT_TIMEOUT - Attempt {attempt + 1} failed after {elapsed_time:.2f}s")
             logger.error(f"[RETRY_TRACKER] Connection timeout details: {str(e)}")
-            
+            logger.error(f"[RETRY_TRACKER] Exception type: {type(e).__name__}")
+            logger.error(f"[RETRY_TRACKER] Full exception: {repr(e)}")
+
             if attempt < max_retries:
                 wait_time = 3 * (attempt + 1)  # Shorter backoff for connection issues
-                logger.warning(f"[RETRY_TRACKER] RETRYING - Will retry in {wait_time}s (attempt {attempt + 2}/{max_retries + 1})")
+                logger.error(f"[RETRY_TRACKER] RETRYING - Will retry in {wait_time}s (attempt {attempt + 2}/{max_retries + 1})")
                 time.sleep(wait_time)
             else:
                 logger.error(f"[RETRY_TRACKER] FINAL_FAILURE - All {max_retries + 1} attempts failed due to connection timeouts")
+                logger.error(f"[RETRY_TRACKER] Full traceback: {traceback.format_exc()}")
                 raise
                 
         except Exception as e:
@@ -255,6 +270,8 @@ def _invoke_validator_with_retry(lambda_client, function_name, payload, logger, 
             logger.error(f"[RETRY_TRACKER] NON_TIMEOUT_ERROR - Attempt {attempt + 1} failed after {elapsed_time:.2f}s")
             logger.error(f"[RETRY_TRACKER] Error type: {type(e).__name__}")
             logger.error(f"[RETRY_TRACKER] Error details: {str(e)}")
+            logger.error(f"[RETRY_TRACKER] Full exception: {repr(e)}")
+            logger.error(f"[RETRY_TRACKER] Full traceback: {traceback.format_exc()}")
             logger.error(f"[RETRY_TRACKER] NOT_RETRYING - Non-timeout errors are not retried")
             raise
 
@@ -425,7 +442,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         logger.info("Searching for ID fields in validation targets...")
         for i, target in enumerate(config_data.get('validation_targets', [])):
             importance = target.get('importance', '')
-            logger.info(f"Target {i}: importance='{importance}', column='{target.get('column')}', name='{target.get('name')}'")
+            logger.debug(f"Target {i}: importance='{importance}', column='{target.get('column')}', name='{target.get('name')}'")
             if importance.upper() == 'ID':
                 # Support both 'name' and 'column' fields
                 field_name = target.get('name') or target.get('column')
@@ -655,6 +672,9 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             }
             
             try:
+                # Determine if this is sync or async based on InvocationType
+                invocation_type = "sync"  # Default to sync for this code path
+                logger.info(f"Validator triggered: mode=FULL_VALIDATION, type={invocation_type.upper()}, rows={len(rows)}")
                 logger.info(f"[RETRY_TRACKER] FULL_MODE - Starting validation call for {len(rows)} rows")
                 response = _invoke_validator_with_retry(lambda_client, VALIDATOR_LAMBDA_NAME, payload, logger)
                 response_payload = json.loads(response['Payload'].read().decode('utf-8'))
@@ -728,6 +748,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
 
             logger.info(f"Enhanced batch processing completed. Total results: {len(all_validation_results)}")
             total_function_time = time.time() - function_start_time
+            logger.info(f"Sync validator returned: mode=FULL_VALIDATION, status=COMPLETED, rows={len(all_validation_results)}, time={total_function_time:.2f}s")
             logger.info(f"[RETRY_TRACKER] FUNCTION_COMPLETE - Total function execution time: {total_function_time:.2f}s")
             return {
                 'total_rows': total_rows,

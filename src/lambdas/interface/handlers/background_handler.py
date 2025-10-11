@@ -443,8 +443,8 @@ def calculate_discount(session_id: str, config_version: int, quoted_validation_c
 
         if is_demo and is_v1_config:
             discount = float(quoted_validation_cost)
-            logger.info(f"[DISCOUNT] Demo session with v1 config - applying 100% discount: ${discount:.2f}")
-            logger.info(f"[DISCOUNT]   session_id='{session_id}', config_version={config_version}")
+            logger.debug(f"[DISCOUNT] Demo session with v1 config - applying 100% discount: ${discount:.2f}")
+            logger.debug(f"[DISCOUNT]   session_id='{session_id}', config_version={config_version}")
             return discount
         else:
             logger.debug(f"[DISCOUNT] No discount applied - is_demo={is_demo}, is_v1={is_v1_config}")
@@ -1071,7 +1071,7 @@ def handle_async_completion_in_background_handler(event, context):
                     Bucket=s3_bucket,
                     Key=context_s3_key
                 )
-                logger.info(f"[ASYNC_COMPLETION] Successfully deleted async_context: s3://{s3_bucket}/{context_s3_key}")
+                logger.debug(f"[ASYNC_COMPLETION] Successfully deleted async_context: s3://{s3_bucket}/{context_s3_key}")
         except Exception as cleanup_error:
             # Don't fail the whole completion if cleanup fails
             logger.warning(f"[ASYNC_COMPLETION] Failed to cleanup async_context from S3: {cleanup_error}")
@@ -1086,6 +1086,55 @@ def handle_async_completion_in_background_handler(event, context):
 
 def handle(event, context):
     """Handle background processing for both normal and preview mode validation."""
+    import uuid
+
+    # Generate instance ID for tracking concurrent executions
+    instance_id = str(uuid.uuid4())[:8]
+
+    # Check if this is from SQS
+    if 'Records' in event:
+        logger.info(f"[SQS_LIFECYCLE] Instance {instance_id} received {len(event['Records'])} SQS records")
+        for idx, record in enumerate(event['Records']):
+            if record.get('eventSource') == 'aws:sqs':
+                receipt_handle = record.get('receiptHandle', 'unknown')
+                message_id = record.get('messageId', 'unknown')
+                logger.info(f"[SQS_LIFECYCLE] Record {idx}: MessageId={message_id}, ReceiptHandle={receipt_handle[:20]}...")
+
+                # Extract actual event from SQS message
+                import json
+                actual_event = json.loads(record['body'])
+                actual_event['_sqs_message_id'] = message_id
+                actual_event['_sqs_receipt_handle'] = receipt_handle
+                actual_event['_instance_id'] = instance_id
+
+                # Process the actual event
+                if (actual_event.get('async_completion') or
+                    actual_event.get('message_type') == 'ASYNC_COMPLETION_REQUEST' or
+                    actual_event.get('message_type') == 'ASYNC_VALIDATION_COMPLETE'):
+                    logger.debug(f"[ASYNC_COMPLETION] Processing async completion request (message_type={actual_event.get('message_type')}, async_completion={actual_event.get('async_completion', False)})")
+                    result = handle_async_completion_in_background_handler(actual_event, context)
+                else:
+                    result = handle_main_processing(actual_event, context)
+
+                # SQS with Lambda automatically deletes message on successful return
+                success = result.get('statusCode', 500) < 400 if isinstance(result, dict) else False
+                logger.info(f"[SQS_LIFECYCLE] Instance {instance_id} completed processing MessageId={message_id}")
+                logger.info(f"[SQS_LIFECYCLE] Returning statusCode={result.get('statusCode', 'N/A') if isinstance(result, dict) else 'N/A'}, success={success}")
+
+                if not success:
+                    logger.error(f"[SQS_LIFECYCLE] WARNING: Returning error status, SQS will retry this message!")
+                    logger.error(f"[SQS_LIFECYCLE] Result: {result}")
+
+                return result
+
+        # If we get here, no valid SQS records
+        logger.error(f"[SQS_LIFECYCLE] No valid SQS records found in event")
+        return {'statusCode': 400, 'body': 'No valid SQS records'}
+
+    # Non-SQS invocation (direct invoke)
+    logger.info(f"[DIRECT_INVOKE] Instance {instance_id} received direct invocation (not from SQS)")
+    event['_instance_id'] = instance_id
+
     # ========== ASYNC COMPLETION CHECK ==========
     # Check if this is async completion (validation lambda finished and we need to complete the job)
     # Check both old field name and new message_type for compatibility
@@ -1102,6 +1151,47 @@ def handle(event, context):
 def handle_main_processing(event, context):
     """Main processing logic for background validation."""
     try:
+        # ========== TIMING AND INSTANCE TRACKING ==========
+        import time
+        start_time = time.time()
+        instance_id = event.get('_instance_id', 'unknown')
+        sqs_message_id = event.get('_sqs_message_id', 'direct')
+
+        logger.info(f"[TIMING] Instance {instance_id} starting handle_main_processing at {time.strftime('%H:%M:%S')}")
+        logger.info(f"[TIMING] SQS MessageId: {sqs_message_id}")
+        logger.info(f"[TIMING] Session: {event.get('session_id')}, RunKey: {event.get('run_key')}")
+
+        # ========== SQS DEDUPLICATION CHECK ==========
+        # Check if this is a duplicate message that we've already processed
+        dedup_id = event.get('deduplication_id')
+        session_id = event.get('session_id')
+        run_key = event.get('run_key')
+
+        if dedup_id and session_id:
+            # Check DynamoDB to see if we've already started processing this exact request
+            import boto3
+            dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+            sessions_table = dynamodb.Table(os.environ.get('DYNAMODB_SESSIONS_TABLE', 'perplexity-validation-sessions'))
+
+            try:
+                response = sessions_table.get_item(Key={'session_id': session_id})
+                if 'Item' in response:
+                    existing_run_key = response['Item'].get('run_key')
+                    status = response['Item'].get('status', 'unknown')
+
+                    # If this exact run_key is already being processed or completed, skip
+                    if existing_run_key == run_key and status in ['processing', 'validating', 'completed']:
+                        logger.warning(f"[SQS_DEDUP] Duplicate message detected! dedup_id={dedup_id}, status={status}")
+                        logger.warning(f"[SQS_DEDUP] Skipping processing - already handled by another invocation")
+                        return {
+                            'statusCode': 200,
+                            'body': json.dumps({'message': 'Duplicate message - already processed', 'dedup_id': dedup_id})
+                        }
+                    else:
+                        logger.info(f"[SQS_DEDUP] Message is unique or status allows reprocessing: run_key={run_key}, status={status}")
+            except Exception as dedup_error:
+                logger.error(f"[SQS_DEDUP] Error checking for duplicates: {dedup_error}")
+                # Continue processing even if dedup check fails
 
         from ..core.validator_invoker import invoke_validator_lambda
         from ..reporting.markdown_report import create_markdown_table_from_results
@@ -1344,7 +1434,7 @@ def handle_main_processing(event, context):
             )
 
             if table_data and isinstance(table_data, dict) and 'data' in table_data:
-                logger.info(f"[PREVIEW_TABLE_DATA] Parser generated row keys for {len(table_data['data'])} rows")
+                logger.debug(f"[PREVIEW_TABLE_DATA] Parser generated row keys for {len(table_data['data'])} rows")
 
             # Send validation start progress update - interface setup complete, AI work begins (5-90% reserved for validation lambda)
             _send_websocket_message_deduplicated(session_id, {
@@ -1828,10 +1918,10 @@ def handle_main_processing(event, context):
                     discount = calculate_discount(session_id, config_version, quoted_full_cost)
                     effective_cost = max(0.0, quoted_full_cost - discount)
 
-                    logger.info(f"[DISCOUNT] Discount calculation:")
-                    logger.info(f"[DISCOUNT]   quoted_cost=${quoted_full_cost:.2f}, discount=${discount:.2f}, effective_cost=${effective_cost:.2f}")
-                    logger.info(f"[DISCOUNT]   session_id={session_id}, config_version={config_version}")
-                    logger.info(f"[DISCOUNT]   current_balance=${float(current_balance) if current_balance is not None else 0:.2f}, sufficient={float(current_balance if current_balance is not None else 0) >= effective_cost}, credits_needed=${max(0, effective_cost - float(current_balance if current_balance is not None else 0)):.2f}")
+                    logger.debug(f"[DISCOUNT] Discount calculation:")
+                    logger.debug(f"[DISCOUNT]   quoted_cost=${quoted_full_cost:.2f}, discount=${discount:.2f}, effective_cost=${effective_cost:.2f}")
+                    logger.debug(f"[DISCOUNT]   session_id={session_id}, config_version={config_version}")
+                    logger.debug(f"[DISCOUNT]   current_balance=${float(current_balance) if current_balance is not None else 0:.2f}, sufficient={float(current_balance if current_balance is not None else 0) >= effective_cost}, credits_needed=${max(0, effective_cost - float(current_balance if current_balance is not None else 0)):.2f}")
 
                     # Validation and audit logging
                     if 'error' in multiplier_result:
@@ -3221,6 +3311,9 @@ def handle_main_processing(event, context):
                                 logger.debug(f"[DELEGATION] Full payload keys: {list(async_payload_event.keys())}")
 
                                 # Direct Lambda invocation (async)
+                                total_rows_in_payload = len(async_payload_event.get('validation_data', {}).get('rows', []))
+                                logger.info(f"Validator triggered: mode=FULL_VALIDATION, type=ASYNC, rows={total_rows_in_payload}")
+
                                 response = lambda_client.invoke(
                                     FunctionName=VALIDATOR_LAMBDA_NAME,
                                     InvocationType='Event',  # Async invocation
@@ -3315,18 +3408,10 @@ def handle_main_processing(event, context):
                     logger.debug("[ASYNC_COMPLETION] Using pre-loaded validation results from async completion")
                     validation_results = event['_validation_results_from_async']
                 else:
-                    # Use the same pre-generated payload for sync validation
-                    logger.debug("[SYNC_VALIDATION] Using pre-generated validation payload for sync processing")
+                    # Use invoke_validator_lambda for SYNC validation (has retry protection)
+                    logger.debug("[SYNC_VALIDATION] Using invoke_validator_lambda for sync processing (with retry protection)")
 
-                    # Call validation lambda directly with the complete payload
-                    import boto3
-                    lambda_client = boto3.client('lambda')
-
-                    # Use environment variable directly to get correct lambda name
-                    validator_lambda_name = os.environ.get('VALIDATOR_LAMBDA_NAME', 'perplexity-validator')
-                    logger.debug(f"[SYNC_VALIDATION] Invoking validation lambda: {validator_lambda_name}")
-
-                    # Add critical fields to sync payload (same as async payload)
+                    # Add critical fields to the payload
                     sync_payload = complete_validation_payload.copy()
                     sync_payload.update({
                         "run_key": run_key,
@@ -3335,22 +3420,60 @@ def handle_main_processing(event, context):
                         "email": email,
                         "config_version": config_version,
                         "results_path": results_path,
-                        "async_delegation_request": False  # CRITICAL: Tell validator this is sync mode (don't trigger completion)
+                        "async_delegation_request": False  # CRITICAL: Tell validator this is sync mode
                     })
 
-                    # Debug payload before sending
-                    config_targets_count = len(sync_payload.get('config', {}).get('validation_targets', []))
-                    rows_count = len(sync_payload.get('validation_data', {}).get('rows', []))
-                    logger.debug(f"[SYNC_VALIDATION] Payload debug - config targets: {config_targets_count}, rows: {rows_count}")
-                    logger.debug(f"[SYNC_VALIDATION] Added fields - email: {email}, config_version: {config_version}, results_path: {results_path}")
+                    # Store the payload in the event for invoke_validator_lambda to use
+                    # The function expects these fields in the event
+                    event['validation_data'] = sync_payload.get('validation_data', {})
+                    event['config'] = sync_payload.get('config', {})
+                    event['validation_history'] = sync_payload.get('validation_history', {})
+                    event['run_key'] = run_key
+                    event['async_delegation_request'] = False
 
-                    response = lambda_client.invoke(
-                        FunctionName=validator_lambda_name,
-                        InvocationType='RequestResponse',
-                        Payload=json.dumps(sync_payload, default=str)
+                    logger.info(f"[SYNC_VALIDATION] Using invoke_validator_lambda for session {session_id}")
+                    logger.info(f"[SYNC_VALIDATION] Rows: {len(sync_payload.get('validation_data', {}).get('rows', []))}")
+
+                    # Use the same invoke_validator_lambda function that preview uses (has retry protection)
+                    invoke_result = invoke_validator_lambda(
+                        excel_s3_key=actual_excel_s3_key,
+                        config_s3_key=actual_config_s3_key,
+                        max_rows=max_rows,
+                        batch_size=batch_size,
+                        S3_CACHE_BUCKET=S3_UNIFIED_BUCKET,
+                        VALIDATOR_LAMBDA_NAME=VALIDATOR_LAMBDA_NAME,
+                        preview_first_row=False,  # Full validation, not preview
+                        preview_max_rows=None,  # Not a preview
+                        sequential_call=None,
+                        session_id=session_id,
+                        update_callback=None,
+                        special_request=None,
+                        validation_history=validation_history
                     )
 
-                    validation_results = json.loads(response['Payload'].read().decode('utf-8'))
+                    logger.info(f"[SYNC_VALIDATION] invoke_validator_lambda completed successfully")
+
+                    # Convert invoke_validator_lambda result to expected format
+                    # invoke_validator_lambda returns: {validation_results, metadata, status, total_rows, qc_results, qc_metrics}
+                    # Code expects various fields at different levels - must match exactly
+                    validation_results = {
+                        'statusCode': 200,
+                        'body': {
+                            'data': {
+                                'rows': invoke_result.get('validation_results', {})
+                            },
+                            'metadata': invoke_result.get('metadata', {})  # metadata at body level for completeness check
+                        },
+                        # These fields at TOP level for other code that expects them there
+                        'status': invoke_result.get('status', 'completed'),
+                        'total_rows': invoke_result.get('total_rows', 0),
+                        'metadata': invoke_result.get('metadata', {}),  # Also at top level for line 1639
+                        'total_processed_rows': len(invoke_result.get('validation_results', {})),
+                        'qc_results': invoke_result.get('qc_results', {}),  # Top level for line 1581
+                        'qc_metrics': invoke_result.get('qc_metrics', {})   # Top level for line 1582
+                    }
+
+                    logger.debug(f"[SYNC_VALIDATION] Converted result format for compatibility")
 
                 # Check if sync validation returned incomplete status and should be delegated to async
                 if validation_results and validation_results.get('status') == 'incomplete':
@@ -3703,23 +3826,23 @@ def handle_main_processing(event, context):
                         preview_discount = preview_data.get('discount', None)
                         if preview_discount is not None:
                             discount = float(preview_discount)
-                            logger.info(f"[DISCOUNT] Using discount from preview: ${discount:.2f}")
+                            logger.debug(f"[DISCOUNT] Using discount from preview: ${discount:.2f}")
                         else:
                             # Discount not in preview, recalculate
                             config_data_for_discount, _ = storage_manager.get_latest_config(email, clean_session_id)
                             config_version = config_data_for_discount.get('storage_metadata', {}).get('version', 1) if config_data_for_discount else 1
                             discount = calculate_discount(session_id, config_version, charged_cost)
-                            logger.info(f"[DISCOUNT] Recalculated discount for full validation: ${discount:.2f}")
+                            logger.debug(f"[DISCOUNT] Recalculated discount for full validation: ${discount:.2f}")
                     else:
                         # No preview data, recalculate discount
                         config_data_for_discount, _ = storage_manager.get_latest_config(email, clean_session_id)
                         config_version = config_data_for_discount.get('storage_metadata', {}).get('version', 1) if config_data_for_discount else 1
                         discount = calculate_discount(session_id, config_version, charged_cost)
-                        logger.info(f"[DISCOUNT] Calculated discount (no preview data): ${discount:.2f}")
+                        logger.debug(f"[DISCOUNT] Calculated discount (no preview data): ${discount:.2f}")
 
                     # Calculate effective cost after discount
                     effective_cost = max(0.0, charged_cost - discount)
-                    logger.info(f"[DISCOUNT] Full validation: quoted=${charged_cost:.2f}, discount=${discount:.2f}, effective=${effective_cost:.2f}")
+                    logger.debug(f"[DISCOUNT] Full validation: quoted=${charged_cost:.2f}, discount=${discount:.2f}, effective=${effective_cost:.2f}")
 
                 except Exception as e:
                     logger.error(f"[DISCOUNT_ERROR] Failed to calculate discount for full validation: {e}")
@@ -3991,8 +4114,26 @@ def handle_main_processing(event, context):
                     try:
                         from shared_table_parser import S3TableParser
                         table_parser = S3TableParser()
-                        table_data = table_parser.parse_s3_table(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
-                        logger.info(f"Parsed table data for enhanced Excel creation: {type(table_data)}")
+
+                        # CRITICAL: Extract id_fields from config to ensure row keys match validation
+                        id_fields = []
+                        try:
+                            for target in config_data.get('validation_targets', []):
+                                field_name = target.get('name') or target.get('column')
+                                importance = target.get('importance', '').upper()
+                                if importance == 'ID' and field_name:
+                                    id_fields.append(field_name)
+                            logger.debug(f"[TABLE_PARSE] Extracted {len(id_fields)} ID fields for row key generation: {id_fields}")
+                        except Exception as e:
+                            logger.warning(f"[TABLE_PARSE] Failed to extract id_fields: {e}")
+
+                        table_data = table_parser.parse_s3_table(
+                            storage_manager.bucket_name,
+                            excel_s3_key,
+                            extract_formulas=True,
+                            id_fields=id_fields if id_fields else None
+                        )
+                        logger.debug(f"[TABLE_PARSE] Parsed table data with {len(id_fields)} ID fields, generated row keys for {len(table_data.get('data', []))} rows")
                     except Exception as e:
                         logger.error(f"Failed to parse table data for Excel: {e}")
                         table_data = None

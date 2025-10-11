@@ -2194,62 +2194,21 @@ async def call_anthropic_api_text(session: aiohttp.ClientSession, prompt: str,
 def progress_sender(progress_queue, session_id):
     """
     Worker thread function to send progress updates from a queue.
-
-    This function runs in a separate thread and processes messages from the
-    progress_queue. It batches "AI call x/X completed" updates by waiting 1 second
-    and only sending the highest count, reducing websocket overhead for rapid updates.
-    Other message types are sent immediately.
+    This version sends updates as they come, relying on a check to prevent sending stale (out-of-order) counts.
     """
     last_sent_count = -1
     while True:
         try:
             item = progress_queue.get()
             if item is None:
-                # Sentinel value received, terminate the thread
                 logger.debug("[PROGRESS_SENDER] Received sentinel, terminating.")
                 break
 
             count, message, progress_percent, confidence_score = item
-
-            # The final message has a count of float('inf')
             is_final_message = count == float('inf')
 
-            # Check if this is an "AI call x/X completed" message
-            is_ai_call_progress = "AI call" in message and "completed" in message
-
-            # Batch ONLY AI call progress updates: wait 1 second and collect latest
-            if not is_final_message and is_ai_call_progress:
-                time.sleep(1.0)
-
-                # Drain the queue and get the latest AI call update
-                latest_item = (count, message, progress_percent, confidence_score)
-                try:
-                    while True:
-                        newer_item = progress_queue.get_nowait()
-                        if newer_item is None:
-                            # Put sentinel back for next iteration
-                            progress_queue.put(None)
-                            break
-                        newer_count, newer_message, newer_progress, newer_confidence = newer_item
-                        if newer_count == float('inf'):
-                            # Put final message back for next iteration
-                            progress_queue.put(newer_item)
-                            break
-                        # Only batch if it's also an AI call message
-                        if "AI call" in newer_message and "completed" in newer_message:
-                            if newer_count > latest_item[0]:
-                                latest_item = newer_item
-                            progress_queue.task_done()
-                        else:
-                            # Non-AI-call message, put it back and stop batching
-                            progress_queue.put(newer_item)
-                            break
-                except queue.Empty:
-                    pass
-
-                count, message, progress_percent, confidence_score = latest_item
-                logger.debug(f"[PROGRESS_SENDER] Batched AI call updates, sending: count={count} confidence_score={confidence_score}")
-
+            # Always send the final message. For progress messages, only send if the count is higher than the last one sent.
+            # This prevents the progress bar from "jumping back" if updates arrive out of order.
             if is_final_message or count > last_sent_count:
                 if not is_final_message:
                     last_sent_count = count
@@ -2325,6 +2284,9 @@ def report_ai_call_progress(session_id: str, total_expected: int, counter_lock, 
         completed_counter[0] += 1
         current_count = completed_counter[0]
 
+    # Log the counter increment
+    logger.info(f"AI Call Counter Incremented: {current_count} / {total_expected}")
+
     # Calculate progress percentage
     ai_progress = 5 + (current_count / total_expected) * 85
     progress_percent = min(90, int(ai_progress))
@@ -2351,6 +2313,9 @@ class ContinuationTriggered(Exception):
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Lambda handler for validation requests and config generation."""
+    # Log the start of every invocation to detect concurrent runs
+    logger.warning(f"VALIDATOR_INVOKED: Starting new invocation for session_id={event.get('session_id')}. AWS_Request_ID={context.aws_request_id if context else 'N/A'}")
+
     progress_thread = None
     progress_queue = None
     try:
@@ -2391,12 +2356,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Check if this is an async delegation request from the smart delegation system
         is_async_request = event.get('async_delegation_request', False)
         session_id = event.get('session_id', 'unknown')
-        logger.debug(f"[ASYNC_CHECK] Lambda invoked with async_delegation_request={is_async_request}, session_id={session_id}")
+
+        # Log how the validator was invoked
+        invocation_type = "ASYNC" if is_async_request else "SYNC"
+        continuation_count = event.get('continuation_count', 0)
+        is_continuation = event.get('is_continuation', False)
+        rows_in_event = len(event.get('validation_data', {}).get('rows', []))
+
+        if is_continuation:
+            logger.info(f"Validator invoked: type={invocation_type}, mode=CONTINUATION #{continuation_count}, session={session_id}, rows={rows_in_event}")
+        else:
+            logger.info(f"Validator invoked: type={invocation_type}, mode=INITIAL, session={session_id}, rows={rows_in_event}")
 
         # Time monitoring configuration
-        # Safety buffer ensures Lambda has time to save results and trigger continuation before timeout
-        # Set to 4.5 minutes to allow safe handoff between continuation chains
-        SAFETY_BUFFER_MS = int(os.environ.get('VALIDATOR_SAFETY_BUFFER_MS', '270000'))  # 4.5 minutes (270000ms)
+        # ASYNC: Trigger continuation when next batch will take >5 minutes (300000ms)
+        # SYNC: Cannot use continuations (should never trigger)
+        CONTINUATION_TRIGGER_THRESHOLD_MS = int(os.environ.get('VALIDATOR_CONTINUATION_THRESHOLD_MS', '300000'))  # 5 minutes (300000ms)
         MAX_PROCESSING_TIME_MS = int(os.environ.get('VALIDATOR_MAX_PROCESSING_TIME_MS', '900000'))  # 15 minutes default
 
         # Track execution start time
@@ -2414,24 +2389,31 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         def should_continue_processing(next_batch_estimated_time_ms=None):
             """Check if we have enough time to continue processing.
 
+            For ASYNC mode only: Triggers continuation if next batch will take >5 minutes.
+            For SYNC mode: Always returns True (no continuation support).
+
             Args:
                 next_batch_estimated_time_ms: Estimated time for next batch in milliseconds.
-                                             If None, just checks safety buffer.
+                                             If None, just checks remaining time.
             """
+            # SYNC mode cannot trigger continuations
+            if not is_async_request:
+                return True
+
             remaining_ms = get_remaining_time_ms()
 
             if next_batch_estimated_time_ms:
-                # Smart check: Will the next batch finish within safety limits?
-                required_time = next_batch_estimated_time_ms + SAFETY_BUFFER_MS
-                can_continue = remaining_ms > required_time
+                # ASYNC mode: Check if next batch will take longer than threshold (5 minutes)
+                # This gives the continuation Lambda time to start and process remaining work
+                can_continue = next_batch_estimated_time_ms <= CONTINUATION_TRIGGER_THRESHOLD_MS
 
                 if not can_continue:
-                    logger.debug(f"[TIME_CHECK] Cannot continue: {remaining_ms}ms left, need {required_time}ms ({next_batch_estimated_time_ms}ms batch + {SAFETY_BUFFER_MS}ms buffer)")
+                    logger.debug(f"[TIME_CHECK] Next batch estimated at {next_batch_estimated_time_ms/1000:.1f}s exceeds threshold {CONTINUATION_TRIGGER_THRESHOLD_MS/1000:.1f}s - will trigger continuation")
 
                 return can_continue
             else:
-                # Simple check: Just ensure we have safety buffer
-                return remaining_ms > SAFETY_BUFFER_MS
+                # Simple check: Ensure we have some time left
+                return remaining_ms > 60000  # At least 1 minute remaining
 
         def save_async_progress(chunks_completed=0, chunks_total=0, rows_processed=0, current_cost=0.0):
             """Save progress to DynamoDB for async processing."""
@@ -2461,8 +2443,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             """Trigger self-continuation via direct Lambda invocation for more processing time."""
             # VALIDATION: Only async-delegated validations can use continuations
             if not is_async_request:
-                logger.warning(f"[CONTINUATION] Sync mode cannot use continuations - validation will timeout")
-                logger.warning(f"[CONTINUATION] Interface should have delegated to async based on preview estimates")
+                logger.error(f"[CONTINUATION] CRITICAL: Sync mode attempted to trigger continuation - this should NEVER happen!")
+                logger.error(f"[CONTINUATION] Sync validators cannot invoke other Lambdas")
+                logger.error(f"[CONTINUATION] Interface should have delegated to async based on preview estimates")
                 return False
 
             try:
@@ -2621,7 +2604,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.error(f"[COMPLETION_TRIGGER] Failed to trigger interface: {e}")
                 return False
 
-        logger.debug(f"[TIME_MONITORING] Lambda execution started, safety buffer: {SAFETY_BUFFER_MS}ms, remaining: {get_remaining_time_ms()}ms")
+        logger.debug(f"[TIME_MONITORING] Lambda execution started, continuation threshold: {CONTINUATION_TRIGGER_THRESHOLD_MS}ms, remaining: {get_remaining_time_ms()}ms")
 
         # Continue with normal validation logic
         # Test CloudWatch logging - with extreme verbosity for debugging
@@ -3323,11 +3306,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         # row_idx is just for logging within batch (0, 1, 2, ...)
                         task = asyncio.create_task(process_row(session, row, row_idx, batch_manager, batch_index, progress_queue, guidance_by_group, missing_columns_by_group, missing_columns_lock))
                         row_tasks.append(task)
-                    
+
+                    logger.debug(f"[BATCH_START] Batch {batch_index}: Created {len(row_tasks)} parallel tasks, waiting for all to complete...")
+
                     # Wait for all rows in the batch to complete
                     batch_success = True
                     try:
                         batch_results = await asyncio.gather(*row_tasks)
+                        logger.debug(f"[BATCH_COMPLETE] Batch {batch_index}: All {len(batch_results)} tasks completed successfully")
 
                         batch_end_time = time.time()
                         batch_processing_time = batch_end_time - batch_start_time
@@ -3399,8 +3385,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                     logger.debug(f"[ASYNC_CONTINUATION] Validated {len(validation_results)} rows, {len(pending_row_keys)} pending")
 
                                 if should_trigger:
-                                    logger.debug(f"[ASYNC_CONTINUATION] Need to trigger continuation after batch {batch_index}")
-                                    logger.debug(f"[ASYNC_CONTINUATION] Avg batch time: {avg_batch_time_seconds:.2f}s, Remaining time insufficient")
+                                    logger.info(f"Validator triggering continuation: batch={batch_index}, avg_batch_time={avg_batch_time_seconds:.1f}s, pending_rows={len(pending_row_keys)}, completed_rows={len(validation_results)}")
 
                                     # [COST_TRACKING_FIX] Extract cost metrics from validation_results
                                     # This ensures continuation saves preserve accumulated cost data
@@ -3531,7 +3516,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                                     # Trigger continuation NOW (time running low)
                                     if trigger_self_continuation():
-                                        logger.debug(f"[ASYNC_CONTINUATION] Successfully triggered continuation - Lambda will exit now")
+                                        next_continuation = event.get('continuation_count', 0) + 1
+                                        logger.info(f"Validator continuation triggered successfully: next_continuation=#{next_continuation}, exiting_lambda=True")
                                         # CRITICAL: Raise exception to exit entire Lambda handler immediately
                                         # Return statement only exits async function, not lambda_handler
                                         raise ContinuationTriggered({
@@ -3540,7 +3526,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                                                 'message': 'Continuation triggered - partial results saved to S3',
                                                 'session_id': session_id,
                                                 'rows_processed': len(validation_results),
-                                                'continuation_count': event.get('continuation_count', 0) + 1
+                                                'continuation_count': next_continuation
                                             }
                                         })
                                     else:

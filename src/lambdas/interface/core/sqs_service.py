@@ -102,7 +102,17 @@ def _send_sqs_message(queue_url, message_body, is_fifo=False):
         if is_fifo:
             params['MessageGroupId'] = f"session-{message_body['session_id']}"
             params['MessageDeduplicationId'] = f"{message_body['session_id']}-{message_body['created_at']}"
-            
+        else:
+            # For standard queues, use MessageDeduplicationId based on session_id + run_key to prevent duplicates
+            # Note: Standard queues don't natively support deduplication, but we can check this at processing time
+            session_id = message_body.get('session_id')
+            run_key = message_body.get('run_key')
+            request_type = message_body.get('request_type', 'unknown')
+            if session_id and run_key:
+                # Add dedup ID to message body for handler to check
+                message_body['deduplication_id'] = f"{session_id}-{run_key}-{request_type}"
+                logger.info(f"[SQS_DEDUP] Added deduplication_id to message: {message_body['deduplication_id']}")
+
         response = sqs.send_message(**params)
         logger.info(f"Message sent to SQS queue {queue_url}. MessageId: {response['MessageId']}")
         return response['MessageId']
