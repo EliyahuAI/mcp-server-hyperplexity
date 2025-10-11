@@ -240,10 +240,10 @@ class DemoTestOrchestrator:
 
     def list_available_demos(self):
         """
-        List all available demos from the API
+        List all available demos from the API and map to local demos
 
         Returns:
-            List of available demos
+            Dictionary mapping display_name to API demo name (S3 folder name)
         """
         self.log("=" * 70)
         self.log("AVAILABLE DEMOS CHECK")
@@ -255,18 +255,24 @@ class DemoTestOrchestrator:
             if result.get('success'):
                 demos = result.get('demos', [])
                 self.log(f"Found {len(demos)} available demos on server")
+
+                # Create mapping from display_name to API name (S3 folder name)
+                demo_name_map = {}
                 for demo in demos:
-                    self.log(f"  - {demo.get('display_name', demo.get('name'))}")
+                    display_name = demo.get('display_name', demo.get('name'))
+                    api_name = demo.get('name')  # This is the S3 folder name the API expects
+                    demo_name_map[display_name] = api_name
+                    self.log(f"  - {display_name} -> {api_name}")
                 self.log("")
-                return demos
+                return demo_name_map
             else:
                 self.log(f"Failed to list demos: {result.get('error', 'Unknown error')}", "WARNING")
                 self.log("")
-                return []
+                return {}
         except Exception as e:
             self.log(f"Error listing demos: {str(e)}", "WARNING")
             self.log("")
-            return []
+            return {}
 
     def test_demo(self, demo: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -368,8 +374,12 @@ class DemoTestOrchestrator:
 
         try:
             # Step 1: Load demo from S3 (uses demo management API)
-            demo_name_normalized = demo['name'].lower().replace(' ', '_')
-            session_id, demo_info = self.api_client.call_demo_api(demo_name_normalized, email=self.email)
+            # Use the api_name (S3 folder name) from the API mapping
+            demo_api_name = demo.get('api_name')
+            if not demo_api_name:
+                raise Exception(f"No API name mapping for demo '{demo['display_name']}'")
+
+            session_id, demo_info = self.api_client.call_demo_api(demo_api_name, email=self.email)
 
             self.log(f"Demo loaded. Session ID: {session_id}")
 
@@ -434,8 +444,12 @@ class DemoTestOrchestrator:
 
             if not session_id:
                 # Load demo from S3 if we don't have a session_id yet
-                demo_name_normalized = demo['name'].lower().replace(' ', '_')
-                session_id, demo_info = self.api_client.call_demo_api(demo_name_normalized, email=self.email)
+                # Use the api_name (S3 folder name) from the API mapping
+                demo_api_name = demo.get('api_name')
+                if not demo_api_name:
+                    raise Exception(f"No API name mapping for demo '{demo['display_name']}'")
+
+                session_id, demo_info = self.api_client.call_demo_api(demo_api_name, email=self.email)
                 self.log(f"Demo loaded. Session ID: {session_id}")
 
             # Trigger full validation
@@ -593,12 +607,29 @@ class DemoTestOrchestrator:
         self.log(f"Testing {len(valid_demos)} valid demos")
         self.log("")
 
-        # Step 2: List available demos on server
-        self.list_available_demos()
+        # Step 2: List available demos on server and get name mapping
+        demo_name_map = self.list_available_demos()
 
-        # Step 3: Run tests for each demo
+        if not demo_name_map:
+            self.log("Failed to get API demo mapping. Cannot proceed.", "ERROR")
+            return 1
+
+        # Step 3: Add API names to local demos
+        for demo in valid_demos:
+            display_name = demo['display_name']
+            if display_name in demo_name_map:
+                demo['api_name'] = demo_name_map[display_name]
+            else:
+                self.log(f"WARNING: No API mapping found for '{display_name}'", "WARNING")
+                demo['api_name'] = None
+
+        # Step 4: Run tests for each demo
         for idx, demo in enumerate(valid_demos, 1):
             demo_name = demo['display_name']
+
+            if not demo.get('api_name'):
+                self.log(f"[{idx}/{len(valid_demos)}] SKIPPING {demo_name} - No API mapping", "WARNING")
+                continue
 
             self.log(f"[{idx}/{len(valid_demos)}] Starting test: {demo_name}")
 

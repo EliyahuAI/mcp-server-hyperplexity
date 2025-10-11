@@ -32,6 +32,8 @@ import time
 import json
 from typing import Dict, Optional, Tuple, Any
 from datetime import datetime
+import websocket
+import threading
 
 
 class DemoAPIClient:
@@ -39,6 +41,7 @@ class DemoAPIClient:
 
     # API Configuration
     DEV_API_BASE = "https://wqamcddvub.execute-api.us-east-1.amazonaws.com/dev"
+    WEBSOCKET_URL = "wss://xt6790qk9f.execute-api.us-east-1.amazonaws.com/prod"
     DEFAULT_EMAIL = "eliyahu@eliyahu.ai"
 
     # Timeout configurations (in seconds)
@@ -51,6 +54,9 @@ class DemoAPIClient:
 
     # Polling configuration
     POLL_INTERVAL = 5  # seconds
+
+    # WebSocket configuration
+    USE_WEBSOCKET = True  # Use WebSocket for status updates
 
     def __init__(self, email: Optional[str] = None, api_base: Optional[str] = None):
         """
@@ -68,6 +74,10 @@ class DemoAPIClient:
         self.session.headers.update({
             'User-Agent': 'HyperplexityValidator-DemoClient/1.0'
         })
+
+        # WebSocket state
+        self.ws_messages = {}  # session_id -> list of messages
+        self.ws_lock = threading.Lock()
 
     def _make_request(
         self,
@@ -386,14 +396,16 @@ class DemoAPIClient:
         Raises:
             Exception: If status check fails
         """
-        params = {
-            'preview': 'true' if is_preview else 'false'
+        # Use the same endpoint as the frontend: POST /validate with action: checkStatus
+        request_data = {
+            'action': 'checkStatus',
+            'session_id': session_id
         }
 
         response = self._make_request(
-            method='GET',
-            endpoint=f'/status/{session_id}',
-            params=params,
+            method='POST',
+            endpoint='/validate',
+            data=request_data,
             timeout=10
         )
 
@@ -430,6 +442,49 @@ class DemoAPIClient:
             'status_data': status
         }
 
+    def _connect_websocket(self, session_id: str):
+        """Connect to WebSocket and listen for messages for a specific session."""
+        def on_message(ws, message):
+            try:
+                data = json.loads(message)
+                print(f"[WEBSOCKET] {json.dumps(data, indent=2)}")
+
+                # Store message for this session
+                with self.ws_lock:
+                    if session_id not in self.ws_messages:
+                        self.ws_messages[session_id] = []
+                    self.ws_messages[session_id].append(data)
+            except Exception as e:
+                print(f"[WEBSOCKET ERROR] Failed to parse message: {e}")
+
+        def on_error(ws, error):
+            print(f"[WEBSOCKET ERROR] {error}")
+
+        def on_close(ws, close_status_code, close_msg):
+            print(f"[WEBSOCKET] Connection closed")
+
+        def on_open(ws):
+            print(f"[WEBSOCKET] Connected for session {session_id}")
+            # Subscribe to session updates
+            ws.send(json.dumps({
+                'action': 'subscribe',
+                'session_id': session_id
+            }))
+
+        ws = websocket.WebSocketApp(
+            self.WEBSOCKET_URL,
+            on_message=on_message,
+            on_error=on_error,
+            on_close=on_close,
+            on_open=on_open
+        )
+
+        # Run WebSocket in background thread
+        ws_thread = threading.Thread(target=ws.run_forever, daemon=True)
+        ws_thread.start()
+
+        return ws
+
     def _poll_for_completion(
         self,
         session_id: str,
@@ -437,7 +492,7 @@ class DemoAPIClient:
         timeout: int
     ) -> Dict[str, Any]:
         """
-        Poll for validation completion.
+        Poll for validation completion using WebSocket or HTTP polling.
 
         Args:
             session_id: Session ID to poll
@@ -454,7 +509,14 @@ class DemoAPIClient:
         last_status = None
         last_percent = 0
 
-        print(f"[INFO] Polling for completion (timeout: {timeout}s)...")
+        # Connect WebSocket if enabled
+        ws = None
+        if self.USE_WEBSOCKET:
+            print(f"[INFO] Connecting WebSocket for real-time updates...")
+            ws = self._connect_websocket(session_id)
+            time.sleep(1)  # Give WebSocket time to connect
+
+        print(f"[INFO] Waiting for completion (timeout: {timeout}s)...")
 
         while True:
             elapsed = time.time() - start_time
@@ -463,6 +525,47 @@ class DemoAPIClient:
                 raise Exception(f"Polling timeout after {timeout}s. Last status: {last_status}")
 
             try:
+                # Check WebSocket messages first
+                if self.USE_WEBSOCKET:
+                    with self.ws_lock:
+                        if session_id in self.ws_messages and self.ws_messages[session_id]:
+                            # Get the latest message
+                            latest_msg = self.ws_messages[session_id][-1]
+
+                            # Check if it's a completion message
+                            msg_status = latest_msg.get('status', '').upper()
+                            if msg_status == 'COMPLETED' or 'preview_data' in latest_msg or 'download_url' in latest_msg:
+                                print(f"[SUCCESS] Validation completed! (via WebSocket)")
+
+                                if ws:
+                                    ws.close()
+
+                                if is_preview:
+                                    return {
+                                        'success': True,
+                                        'session_id': session_id,
+                                        'preview_data': latest_msg.get('preview_data', {}),
+                                        'full_status': latest_msg
+                                    }
+                                else:
+                                    return {
+                                        'success': True,
+                                        'session_id': session_id,
+                                        'download_url': latest_msg.get('download_url'),
+                                        'total_rows': latest_msg.get('total_rows'),
+                                        'processed_rows': latest_msg.get('processed_rows'),
+                                        'total_cost': latest_msg.get('total_cost'),
+                                        'full_status': latest_msg
+                                    }
+
+                            # Check for failure
+                            if msg_status in ['FAILED', 'ERROR']:
+                                if ws:
+                                    ws.close()
+                                error_msg = latest_msg.get('error_message', 'Unknown error')
+                                raise Exception(f"Validation failed: {error_msg}")
+
+                # Also check via HTTP status as fallback
                 status = self.check_status(session_id, is_preview=is_preview)
                 current_status = status.get('status', 'UNKNOWN')
 
@@ -477,12 +580,19 @@ class DemoAPIClient:
                     print(f"[PROGRESS] {percent}%")
                     last_percent = percent
 
-                # Check for completion
-                if current_status == 'COMPLETED':
-                    print(f"[SUCCESS] Validation completed!")
+                # Check for completion (case-insensitive)
+                status_upper = current_status.upper() if current_status else ''
+                is_completed = (status_upper == 'COMPLETED' or
+                               'preview_data' in status or
+                               'download_url' in status)
+
+                if is_completed:
+                    print(f"[SUCCESS] Validation completed! (via HTTP)")
+
+                    if ws:
+                        ws.close()
 
                     if is_preview:
-                        # For preview, return preview_data
                         preview_data = status.get('preview_data', {})
                         return {
                             'success': True,
@@ -491,7 +601,6 @@ class DemoAPIClient:
                             'full_status': status
                         }
                     else:
-                        # For full validation, include download URL
                         download_url = status.get('download_url')
                         return {
                             'success': True,
@@ -504,15 +613,18 @@ class DemoAPIClient:
                         }
 
                 # Check for failure
-                if current_status in ['FAILED', 'ERROR']:
+                if status_upper in ['FAILED', 'ERROR']:
+                    if ws:
+                        ws.close()
                     error_msg = status.get('error_message', 'Unknown error')
                     raise Exception(f"Validation failed: {error_msg}")
 
             except Exception as e:
                 # Only raise if it's not a temporary network error
-                if "Request failed" not in str(e):
+                if "Request failed" not in str(e) and "Validation failed" in str(e):
                     raise
-                print(f"[WARNING] Temporary error during polling: {e}")
+                if "Request failed" not in str(e):
+                    print(f"[WARNING] Error during polling: {e}")
 
             # Wait before next poll
             time.sleep(self.POLL_INTERVAL)
