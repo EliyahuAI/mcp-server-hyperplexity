@@ -156,7 +156,7 @@ demos/
 
 ### 1. test_all_demos.py (Main Orchestrator)
 
-**Location:** `deployment/test_all_demos.py`
+**Location:** `testing/test_all_demos.py`
 
 **Purpose:** Coordinates the entire testing workflow
 
@@ -168,7 +168,7 @@ demos/
 
 **CLI Options:**
 ```bash
-python test_all_demos.py [OPTIONS]
+python testing/test_all_demos.py [OPTIONS]
 
 Options:
   --demos-dir PATH       Path to demos directory (default: ./demos)
@@ -183,7 +183,7 @@ Options:
 
 ### 2. demo_api_client.py (API Client)
 
-**Location:** `deployment/demo_api_client.py`
+**Location:** `testing/demo_api_client.py`
 
 **Purpose:** HTTP client for dev API Gateway
 
@@ -205,7 +205,7 @@ DemoAPIClient(
 
 ### 3. demo_session_manager.py (Session Manager)
 
-**Location:** `deployment/demo_session_manager.py`
+**Location:** `testing/demo_session_manager.py`
 
 **Purpose:** Manages S3 session lifecycle
 
@@ -233,7 +233,7 @@ hyperplexity-storage-dev/
 
 ### 4. demo_test_reporter.py (Report Generator)
 
-**Location:** `deployment/demo_test_reporter.py`
+**Location:** `testing/demo_test_reporter.py`
 
 **Purpose:** Generates comprehensive test reports
 
@@ -276,9 +276,10 @@ API Status: Connected
 **Commands:**
 ```bash
 # Test single demo
-python deployment/test_all_demos.py \
-  --demos-dir demos/ \
-  --output-dir test_results/single_test \
+cd testing
+python test_all_demos.py \
+  --demos-dir ../demos \
+  --output-dir ../test_results/single_test \
   --stop-on-error
 
 # Should test only first demo found
@@ -307,9 +308,10 @@ python deployment/test_all_demos.py \
 **Commands:**
 ```bash
 # Run complete test suite
-python deployment/test_all_demos.py \
-  --demos-dir demos/ \
-  --output-dir test_results/full_run \
+cd testing
+python test_all_demos.py \
+  --demos-dir ../demos \
+  --output-dir ../test_results/full_run \
   --stop-on-error \
   --email eliyahu@eliyahu.ai \
   --environment dev
@@ -383,15 +385,15 @@ python src/manage_dynamodb_tables.py check-balance eliyahu@eliyahu.ai
 
 ```bash
 # 1. Test API Client
-python deployment/demo_api_client.py list
+python testing/demo_api_client.py list
 # Expected: Lists available demos
 
 # 2. Test Session Manager
-python deployment/demo_session_manager.py list --email eliyahu@eliyahu.ai
+python testing/demo_session_manager.py list --email eliyahu@eliyahu.ai
 # Expected: Lists existing sessions
 
 # 3. Test Reporter
-python -c "from deployment.demo_test_reporter import create_report, print_report; r = create_report('test@test.com', 'dev'); print_report(r)"
+cd testing && python -c "from demo_test_reporter import create_report, print_report; r = create_report('test@test.com', 'dev'); print_report(r)"
 # Expected: Prints empty report template
 ```
 
@@ -406,9 +408,10 @@ python -c "from deployment.demo_test_reporter import create_report, print_report
 
 ```bash
 # Run test on first demo only
-python deployment/test_all_demos.py \
-  --demos-dir demos/ \
-  --output-dir test_results/integration_test \
+cd testing
+python test_all_demos.py \
+  --demos-dir ../demos \
+  --output-dir ../test_results/integration_test \
   --stop-on-error
 ```
 
@@ -442,9 +445,10 @@ Test Results:
 
 ```bash
 # Run complete test suite
-python deployment/test_all_demos.py \
-  --demos-dir demos/ \
-  --output-dir test_results/full_suite \
+cd testing
+python test_all_demos.py \
+  --demos-dir ../demos \
+  --output-dir ../test_results/full_suite \
   --stop-on-error \
   --email eliyahu@eliyahu.ai
 ```
@@ -474,8 +478,9 @@ python deployment/test_all_demos.py \
 
 ```bash
 # Test with invalid demo (should fail gracefully)
-python deployment/test_all_demos.py \
-  --demos-dir demos/ \
+cd testing
+python test_all_demos.py \
+  --demos-dir ../demos \
   --stop-on-error
 # Temporarily rename a config file to cause error
 ```
@@ -652,7 +657,7 @@ ls -la demos/
 **Diagnosis:**
 ```bash
 # Check session in S3
-python deployment/demo_session_manager.py verify \
+python testing/demo_session_manager.py verify \
   --email eliyahu@eliyahu.ai \
   --session-id SESSION_ID
 ```
@@ -758,13 +763,13 @@ python deployment/demo_session_manager.py verify \
 python src/manage_dynamodb_tables.py check-balance eliyahu@eliyahu.ai
 
 # List available demos
-python deployment/demo_api_client.py list
+python testing/demo_api_client.py list
 
 # Test single demo
-python deployment/test_all_demos.py --demos-dir demos/ --stop-on-error
+cd testing && python test_all_demos.py --demos-dir ../demos --stop-on-error
 
 # Test all demos
-python deployment/test_all_demos.py
+cd testing && python test_all_demos.py --demos-dir ../demos
 
 # View latest report
 cat test_results/*/report.txt
@@ -777,11 +782,11 @@ ls -lh demos/*/\*Output.xlsx
 
 | Component | Path |
 |-----------|------|
-| Orchestrator | `deployment/test_all_demos.py` |
-| API Client | `deployment/demo_api_client.py` |
-| Session Manager | `deployment/demo_session_manager.py` |
-| Reporter | `deployment/demo_test_reporter.py` |
-| Master Guide | `deployment/DEMO_TESTING_MASTER_GUIDE.md` |
+| Orchestrator | `testing/test_all_demos.py` |
+| API Client | `testing/demo_api_client.py` |
+| Session Manager | `testing/demo_session_manager.py` |
+| Reporter | `testing/demo_test_reporter.py` |
+| Master Guide | `docs/demo_testing_detailed_docs/DEMO_TESTING_MASTER_GUIDE.md` |
 | Demo Folders | `demos/01. Investment Research/` ... `demos/10. Trend Monitoring/` |
 | Test Results | `test_results/<timestamp>/` |
 
@@ -797,6 +802,6 @@ ls -lh demos/*/\*Output.xlsx
 
 For detailed component documentation, see:
 - `TEST_ALL_DEMOS_README.md` - Orchestrator docs
-- `DEMO_API_CLIENT_README.md` - API client docs
+- `DEMO_CLIENT_README.md` - API client docs
 - `DEMO_SESSION_MANAGER.md` - Session manager docs
 - `DEMO_TEST_REPORTER_README.md` - Reporter docs
