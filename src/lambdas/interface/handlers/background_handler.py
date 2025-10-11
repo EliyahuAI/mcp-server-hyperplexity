@@ -1093,12 +1093,12 @@ def handle(event, context):
 
     # Check if this is from SQS
     if 'Records' in event:
-        logger.info(f"[SQS_LIFECYCLE] Instance {instance_id} received {len(event['Records'])} SQS records")
+        logger.debug(f"[SQS_LIFECYCLE] Instance {instance_id} received {len(event['Records'])} SQS records")
         for idx, record in enumerate(event['Records']):
             if record.get('eventSource') == 'aws:sqs':
                 receipt_handle = record.get('receiptHandle', 'unknown')
                 message_id = record.get('messageId', 'unknown')
-                logger.info(f"[SQS_LIFECYCLE] Record {idx}: MessageId={message_id}, ReceiptHandle={receipt_handle[:20]}...")
+                logger.debug(f"[SQS_LIFECYCLE] Record {idx}: MessageId={message_id}, ReceiptHandle={receipt_handle[:20]}...")
 
                 # Extract actual event from SQS message
                 import json
@@ -1118,8 +1118,8 @@ def handle(event, context):
 
                 # SQS with Lambda automatically deletes message on successful return
                 success = result.get('statusCode', 500) < 400 if isinstance(result, dict) else False
-                logger.info(f"[SQS_LIFECYCLE] Instance {instance_id} completed processing MessageId={message_id}")
-                logger.info(f"[SQS_LIFECYCLE] Returning statusCode={result.get('statusCode', 'N/A') if isinstance(result, dict) else 'N/A'}, success={success}")
+                logger.debug(f"[SQS_LIFECYCLE] Instance {instance_id} completed processing MessageId={message_id}")
+                logger.debug(f"[SQS_LIFECYCLE] Returning statusCode={result.get('statusCode', 'N/A') if isinstance(result, dict) else 'N/A'}, success={success}")
 
                 if not success:
                     logger.error(f"[SQS_LIFECYCLE] WARNING: Returning error status, SQS will retry this message!")
@@ -1132,7 +1132,7 @@ def handle(event, context):
         return {'statusCode': 400, 'body': 'No valid SQS records'}
 
     # Non-SQS invocation (direct invoke)
-    logger.info(f"[DIRECT_INVOKE] Instance {instance_id} received direct invocation (not from SQS)")
+    logger.debug(f"[DIRECT_INVOKE] Instance {instance_id} received direct invocation (not from SQS)")
     event['_instance_id'] = instance_id
 
     # ========== ASYNC COMPLETION CHECK ==========
@@ -1157,9 +1157,9 @@ def handle_main_processing(event, context):
         instance_id = event.get('_instance_id', 'unknown')
         sqs_message_id = event.get('_sqs_message_id', 'direct')
 
-        logger.info(f"[TIMING] Instance {instance_id} starting handle_main_processing at {time.strftime('%H:%M:%S')}")
-        logger.info(f"[TIMING] SQS MessageId: {sqs_message_id}")
-        logger.info(f"[TIMING] Session: {event.get('session_id')}, RunKey: {event.get('run_key')}")
+        logger.debug(f"[TIMING] Instance {instance_id} starting handle_main_processing at {time.strftime('%H:%M:%S')}")
+        logger.debug(f"[TIMING] SQS MessageId: {sqs_message_id}")
+        logger.debug(f"[TIMING] Session: {event.get('session_id')}, RunKey: {event.get('run_key')}")
 
         # ========== SQS DEDUPLICATION CHECK ==========
         # Check if this is a duplicate message that we've already processed
@@ -1188,7 +1188,7 @@ def handle_main_processing(event, context):
                             'body': json.dumps({'message': 'Duplicate message - already processed', 'dedup_id': dedup_id})
                         }
                     else:
-                        logger.info(f"[SQS_DEDUP] Message is unique or status allows reprocessing: run_key={run_key}, status={status}")
+                        logger.debug(f"[SQS_DEDUP] Message is unique or status allows reprocessing: run_key={run_key}, status={status}")
             except Exception as dedup_error:
                 logger.error(f"[SQS_DEDUP] Error checking for duplicates: {dedup_error}")
                 # Continue processing even if dedup check fails
@@ -3431,8 +3431,8 @@ def handle_main_processing(event, context):
                     event['run_key'] = run_key
                     event['async_delegation_request'] = False
 
-                    logger.info(f"[SYNC_VALIDATION] Using invoke_validator_lambda for session {session_id}")
-                    logger.info(f"[SYNC_VALIDATION] Rows: {len(sync_payload.get('validation_data', {}).get('rows', []))}")
+                    logger.debug(f"[SYNC_VALIDATION] Using invoke_validator_lambda for session {session_id}")
+                    logger.debug(f"[SYNC_VALIDATION] Rows: {len(sync_payload.get('validation_data', {}).get('rows', []))}")
 
                     # Use the same invoke_validator_lambda function that preview uses (has retry protection)
                     invoke_result = invoke_validator_lambda(
@@ -3451,7 +3451,7 @@ def handle_main_processing(event, context):
                         validation_history=validation_history
                     )
 
-                    logger.info(f"[SYNC_VALIDATION] invoke_validator_lambda completed successfully")
+                    logger.debug(f"[SYNC_VALIDATION] invoke_validator_lambda completed successfully")
 
                     # Convert invoke_validator_lambda result to expected format
                     # invoke_validator_lambda returns: {validation_results, metadata, status, total_rows, qc_results, qc_metrics}

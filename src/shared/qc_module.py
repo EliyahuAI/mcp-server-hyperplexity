@@ -316,18 +316,14 @@ class QCModule:
                     # Prior Value (the value from a previous validation run)
                     if field_history.get('prior_value'):
                         prior_ts = field_history.get('prior_timestamp', '')
-                        original_ts = field_history.get('original_timestamp', '')
 
-                        # Determine the timestamp to show for Prior Value
+                        # Use "previously" if no timestamp available (avoids cache break from S3 LastModified)
                         if prior_ts:
-                            # We have an explicit prior timestamp
+                            # We have an explicit prior timestamp from Validation Record
                             field_output.append(f"### Prior Value: `{field_history['prior_value']}` (from validation on {prior_ts})")
-                        elif original_ts:
-                            # No prior timestamp, but we have original - so prior must be before original
-                            field_output.append(f"### Prior Value: `{field_history['prior_value']}` (from validation before {original_ts})")
                         else:
-                            # No timestamps available
-                            field_output.append(f"### Prior Value: `{field_history['prior_value']}`")
+                            # No timestamp available - say "previously"
+                            field_output.append(f"### Prior Value: `{field_history['prior_value']}` (from previous validation)")
 
                         # Prior value only shows the confidence from that validation, no context
                         if field_history.get('prior_confidence'):
@@ -340,10 +336,11 @@ class QCModule:
                 if validation_history and column in validation_history:
                     original_ts = validation_history[column].get('original_timestamp', '')
 
+                # Use "previously" if no timestamp available (avoids cache break from S3 LastModified)
                 if original_ts:
                     field_output.append(f"### Original/Current Value: `{original_value}` (validated on {original_ts})")
                 else:
-                    field_output.append(f"### Original/Current Value: `{original_value}`")
+                    field_output.append(f"### Original/Current Value: `{original_value}` (from previous validation)")
 
                 field_output.append(f"* **Original Confidence (Proposed):** {original_confidence}")
 

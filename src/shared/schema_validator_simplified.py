@@ -357,8 +357,10 @@ class SimplifiedSchemaValidator:
 
                 # Current value validation context (from most recent validation)
                 if field_history.get('prior_value'):  # 'prior' in history = current in prompt
-                    prior_ts = field_history.get('prior_timestamp', 'unknown')
-                    field_parts.append(f"\nCurrent Value validation context (from validation on {prior_ts}):")
+                    prior_ts = field_history.get('prior_timestamp', '')
+                    # Use "Previously" if no timestamp available (avoids cache break from S3 LastModified)
+                    ts_display = f"validation on {prior_ts}" if prior_ts else "previous validation"
+                    field_parts.append(f"\nCurrent Value validation context (from {ts_display}):")
 
                     if field_history.get('prior_confidence'):
                         field_parts.append(f"  Confidence: {field_history['prior_confidence']}")

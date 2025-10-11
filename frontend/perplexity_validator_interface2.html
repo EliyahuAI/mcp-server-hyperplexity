@@ -3302,12 +3302,12 @@
                         variant: sufficientBalance ? 'primary' : 'secondary',
                         width: 'full',
                         callback: async (e) => {
-                            console.log('[BUTTON] Process Table button clicked - sufficientBalance:', sufficientBalance);
+                            // console.log('[BUTTON] Process Table button clicked - sufficientBalance:', sufficientBalance);
                             const button = e.target.closest('button');
 
                             if (sufficientBalance) {
                                 // User has sufficient balance - proceed with processing
-                                console.log('[BUTTON] Sufficient balance - calling createProcessingCard()');
+                                // console.log('[BUTTON] Sufficient balance - calling createProcessingCard()');
                                 globalState.hasInsufficientBalance = false;
                                 markButtonSelected(button, '✨ Processing...');
                                 globalState.activePreviewCard = null;
@@ -3318,8 +3318,8 @@
                                 // Mark that user attempted processing from preview
                                 globalState.userAttemptedProcessing = true;
                                 globalState.pendingProcessingTrigger = () => {
-                                    console.log('[AUTO-TRIGGER] pendingProcessingTrigger called - searching for Process Table button');
-                                    console.trace('[AUTO-TRIGGER] Stack trace:');
+                                    // console.log('[AUTO-TRIGGER] pendingProcessingTrigger called - searching for Process Table button');
+                                    // console.trace('[AUTO-TRIGGER] Stack trace:');
                                     globalState.activePreviewCard = null;
 
                                     // Find and click the Process Table button to trigger normal processing
@@ -3327,7 +3327,7 @@
                                     for (const button of buttons) {
                                         const buttonText = button.querySelector('.button-text, span');
                                         if (buttonText && buttonText.textContent.includes('Process Table')) {
-                                            console.log('[AUTO-TRIGGER] Found Process Table button - clicking it programmatically');
+                                            // console.log('[AUTO-TRIGGER] Found Process Table button - clicking it programmatically');
                                             button.click();
                                             break;
                                         }
@@ -4859,7 +4859,7 @@
                     // Progress routed to card level;
 
                 } else if (data.status === 'COMPLETED') {
-                    console.log('[WS] 🎉 Received COMPLETED status - starting cleanup');
+                    // console.log('[WS] 🎉 Received COMPLETED status - starting cleanup');
                     // Hide ticker but KEEP messages for next validation
                     globalState.currentValidationState = null;
                     hideTicker(cardId);
@@ -4875,9 +4875,9 @@
                     globalState.processingState.validationCompleted = true;
                     globalState.workflowPhase = 'completed';
                     // Reset guard flag - processing complete
-                    console.log('[GUARD] ✅ Processing completed - clearing guard flag (was: ' + globalState.processingInProgress + ')');
+                    // console.log('[GUARD] ✅ Processing completed - clearing guard flag (was: ' + globalState.processingInProgress + ')');
                     globalState.processingInProgress = false;
-                    console.log('[GUARD] Guard flag now: ' + globalState.processingInProgress);
+                    // console.log('[GUARD] Guard flag now: ' + globalState.processingInProgress);
                     
                     // First update to 100% if we have a progress bar
                     const indicator = document.getElementById(`${cardId}-thinking`);
@@ -8503,7 +8503,7 @@ Please provide any additional context, or simply proceed to generate your initia
                     console.trace('[GUARD] Stack trace of duplicate call:');
                     return null;
                 }
-                console.log('[GUARD] ✅ Processing started - setting guard flag');
+                // console.log('[GUARD] ✅ Processing started - setting guard flag');
                 globalState.processingInProgress = true;
 
                 const cardId = generateCardId();
@@ -8660,7 +8660,7 @@ Please provide any additional context, or simply proceed to generate your initia
                     // Progress routed to card level;
                     showMessage(`${cardId}-messages`, `Error: ${error.message}`, 'error');
                     // Reset guard flag on error
-                    console.log('[GUARD] ✅ Processing error - clearing guard flag');
+                    // console.log('[GUARD] ✅ Processing error - clearing guard flag');
                     globalState.processingInProgress = false;
                 }
             }

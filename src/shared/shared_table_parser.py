@@ -1309,14 +1309,10 @@ class S3TableParser:
             {
                 'original_timestamp': str,  # Run_Number=1, Run_Time field
                 'prior_timestamp': str,     # Last run, Run_Time field
-                'file_timestamp': str       # Fallback: S3 LastModified
+                'file_timestamp': str       # Only for internal tracking, NOT used in validation
             }
         """
         try:
-            # Get S3 file metadata for fallback timestamp
-            response = self.s3_client.head_object(Bucket=bucket, Key=key)
-            file_timestamp = response['LastModified'].isoformat() if 'LastModified' in response else ''
-
             # Download file to read Validation Record sheet
             response = self.s3_client.get_object(Bucket=bucket, Key=key)
             file_content = response['Body'].read()
@@ -1333,24 +1329,24 @@ class S3TableParser:
 
                 # Check if Validation Record sheet exists
                 if 'Validation Record' not in workbook.sheetnames:
-                    self.logger.info(f"No 'Validation Record' sheet found, using S3 timestamp as fallback")
+                    self.logger.info(f"No 'Validation Record' sheet found, returning empty timestamps to avoid cache break")
                     workbook.close()
                     return {
-                        'original_timestamp': file_timestamp,
-                        'prior_timestamp': file_timestamp,
-                        'file_timestamp': file_timestamp
+                        'original_timestamp': '',
+                        'prior_timestamp': '',
+                        'file_timestamp': ''
                     }
 
                 worksheet = workbook['Validation Record']
                 rows = list(worksheet.iter_rows(values_only=True))
 
                 if not rows or len(rows) < 2:
-                    self.logger.warning(f"Empty or invalid Validation Record sheet")
+                    self.logger.warning(f"Empty or invalid Validation Record sheet, returning empty timestamps")
                     workbook.close()
                     return {
-                        'original_timestamp': file_timestamp,
-                        'prior_timestamp': file_timestamp,
-                        'file_timestamp': file_timestamp
+                        'original_timestamp': '',
+                        'prior_timestamp': '',
+                        'file_timestamp': ''
                     }
 
                 # Parse header row to find column indices
@@ -1368,16 +1364,16 @@ class S3TableParser:
                     self.logger.warning(f"Could not find Run_Number or Run_Time columns in Validation Record")
                     workbook.close()
                     return {
-                        'original_timestamp': file_timestamp,
-                        'prior_timestamp': file_timestamp,
-                        'file_timestamp': file_timestamp
+                        'original_timestamp': '',
+                        'prior_timestamp': '',
+                        'file_timestamp': ''
                     }
 
                 # Extract timestamps
                 # The most recent run (highest run number) is the "original" (current input)
                 # An earlier run (if exists) is the "prior"
-                original_timestamp = file_timestamp
-                prior_timestamp = None  # Start with None to indicate no prior
+                original_timestamp = ''
+                prior_timestamp = ''
 
                 # Find the highest run number (most recent = original)
                 max_run_number = 0
@@ -1409,14 +1405,12 @@ class S3TableParser:
                             except (ValueError, TypeError):
                                 continue
 
-                # If no prior_timestamp found, it will be None
-
                 workbook.close()
 
                 return {
                     'original_timestamp': original_timestamp,
-                    'prior_timestamp': prior_timestamp if prior_timestamp else '',
-                    'file_timestamp': file_timestamp
+                    'prior_timestamp': prior_timestamp,
+                    'file_timestamp': ''  # Not used - here for backward compatibility only
                 }
 
             finally:
@@ -1425,17 +1419,12 @@ class S3TableParser:
 
         except Exception as e:
             self.logger.error(f"Failed to load validation timestamps: {str(e)}")
-            # Fallback to S3 timestamp
-            try:
-                response = self.s3_client.head_object(Bucket=bucket, Key=key)
-                file_timestamp = response['LastModified'].isoformat() if 'LastModified' in response else ''
-            except Exception:
-                file_timestamp = ''
-
+            # Return empty timestamps to avoid cache break
+            # DO NOT use S3 LastModified - it changes on every access and breaks caching
             return {
-                'original_timestamp': file_timestamp,
-                'prior_timestamp': file_timestamp,
-                'file_timestamp': file_timestamp
+                'original_timestamp': '',
+                'prior_timestamp': '',
+                'file_timestamp': ''
             }
 
 # Global instance for easy imports

@@ -24,7 +24,8 @@
       "Bash(aws s3 cp:*)",
       "Bash(aws s3 ls:*)",
       "Bash(cat:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(test:*)"
     ],
     "deny": []
   }

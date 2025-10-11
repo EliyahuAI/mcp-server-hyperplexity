@@ -71,6 +71,7 @@ class AIAPIClient:
         # Initialize model configuration table for dynamic token limits
         self.model_config_table = ModelConfigTable()
         self._token_limits_cache = {}  # Cache for token limits to avoid repeated DB calls
+        self._pricing_data_cache = None # Cache for pricing data to avoid repeated DB calls
     
     def _get_anthropic_api_key(self) -> str:
         """Get Anthropic API key from environment or SSM."""
@@ -371,10 +372,16 @@ class AIAPIClient:
         """
         Centralized pricing data loader used by both validation and config lambdas.
         Load pricing data from DynamoDB model config table with robust fallbacks and validation.
+        This method caches the pricing data in an instance variable to avoid repeated database calls.
         
         Returns:
             Dict mapping model patterns to pricing configurations with validated data
         """
+        # Check instance cache first
+        if self._pricing_data_cache is not None:
+            logger.debug("ai_api_client.load_pricing_data: Returning cached pricing data")
+            return self._pricing_data_cache
+
         import time
         import csv
         
@@ -510,7 +517,9 @@ class AIAPIClient:
         # Log final status
         logger.debug(f"ai_api_client.load_pricing_data: Final result - {len(pricing_data)} patterns loaded from {load_source}")
 
-        return pricing_data
+        # Cache the result
+        self._pricing_data_cache = pricing_data
+        return self._pricing_data_cache
     
     def calculate_token_costs(self, token_usage: Dict[str, Any], pricing_data: Dict[str, Dict[str, float]] = None) -> Dict[str, float]:
         """
@@ -2313,25 +2322,45 @@ class AIAPIClient:
                     tool_result = content_item.get('input', {})
                     if 'citations' in tool_result:
                         for citation in tool_result['citations']:
-                            citations.append({
-                                'url': citation.get('url', ''),
-                                'title': citation.get('title', ''),
-                                'cited_text': citation.get('cited_text', ''),
-                                'encrypted_index': citation.get('encrypted_index', '')
-                            })
-                
-                # Legacy format support - tool_result blocks 
-                elif content_item.get('type') == 'tool_result':
-                    tool_content = content_item.get('content', [])
-                    for tool_item in tool_content:
-                        if isinstance(tool_item, dict) and 'citations' in tool_item:
-                            for citation in tool_item['citations']:
+                            # Handle both dict and string citations
+                            if isinstance(citation, dict):
                                 citations.append({
                                     'url': citation.get('url', ''),
                                     'title': citation.get('title', ''),
                                     'cited_text': citation.get('cited_text', ''),
                                     'encrypted_index': citation.get('encrypted_index', '')
                                 })
+                            elif isinstance(citation, str):
+                                # If citation is a string, use it as the title
+                                citations.append({
+                                    'url': '',
+                                    'title': citation,
+                                    'cited_text': '',
+                                    'encrypted_index': ''
+                                })
+                
+                # Legacy format support - tool_result blocks
+                elif content_item.get('type') == 'tool_result':
+                    tool_content = content_item.get('content', [])
+                    for tool_item in tool_content:
+                        if isinstance(tool_item, dict) and 'citations' in tool_item:
+                            for citation in tool_item['citations']:
+                                # Handle both dict and string citations
+                                if isinstance(citation, dict):
+                                    citations.append({
+                                        'url': citation.get('url', ''),
+                                        'title': citation.get('title', ''),
+                                        'cited_text': citation.get('cited_text', ''),
+                                        'encrypted_index': citation.get('encrypted_index', '')
+                                    })
+                                elif isinstance(citation, str):
+                                    # If citation is a string, use it as the title
+                                    citations.append({
+                                        'url': '',
+                                        'title': citation,
+                                        'cited_text': '',
+                                        'encrypted_index': ''
+                                    })
             
             logger.debug(f"Extracted &citations from Claude response")
             return citations
