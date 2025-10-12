@@ -1093,12 +1093,12 @@ def handle(event, context):
 
     # Check if this is from SQS
     if 'Records' in event:
-        logger.debug(f"[SQS_LIFECYCLE] Instance {instance_id} received {len(event['Records'])} SQS records")
+        logger.info(f"[SQS_LIFECYCLE] Instance {instance_id} received {len(event['Records'])} SQS records")
         for idx, record in enumerate(event['Records']):
             if record.get('eventSource') == 'aws:sqs':
                 receipt_handle = record.get('receiptHandle', 'unknown')
                 message_id = record.get('messageId', 'unknown')
-                logger.debug(f"[SQS_LIFECYCLE] Record {idx}: MessageId={message_id}, ReceiptHandle={receipt_handle[:20]}...")
+                logger.info(f"[SQS_LIFECYCLE] Record {idx}: MessageId={message_id}, ReceiptHandle={receipt_handle[:20]}...")
 
                 # Extract actual event from SQS message
                 import json
@@ -1118,8 +1118,8 @@ def handle(event, context):
 
                 # SQS with Lambda automatically deletes message on successful return
                 success = result.get('statusCode', 500) < 400 if isinstance(result, dict) else False
-                logger.debug(f"[SQS_LIFECYCLE] Instance {instance_id} completed processing MessageId={message_id}")
-                logger.debug(f"[SQS_LIFECYCLE] Returning statusCode={result.get('statusCode', 'N/A') if isinstance(result, dict) else 'N/A'}, success={success}")
+                logger.info(f"[SQS_LIFECYCLE] Instance {instance_id} completed processing MessageId={message_id}")
+                logger.info(f"[SQS_LIFECYCLE] Returning statusCode={result.get('statusCode', 'N/A') if isinstance(result, dict) else 'N/A'}, success={success}")
 
                 if not success:
                     logger.error(f"[SQS_LIFECYCLE] WARNING: Returning error status, SQS will retry this message!")
@@ -1132,7 +1132,7 @@ def handle(event, context):
         return {'statusCode': 400, 'body': 'No valid SQS records'}
 
     # Non-SQS invocation (direct invoke)
-    logger.debug(f"[DIRECT_INVOKE] Instance {instance_id} received direct invocation (not from SQS)")
+    logger.info(f"[DIRECT_INVOKE] Instance {instance_id} received direct invocation (not from SQS)")
     event['_instance_id'] = instance_id
 
     # ========== ASYNC COMPLETION CHECK ==========
@@ -1157,9 +1157,9 @@ def handle_main_processing(event, context):
         instance_id = event.get('_instance_id', 'unknown')
         sqs_message_id = event.get('_sqs_message_id', 'direct')
 
-        logger.debug(f"[TIMING] Instance {instance_id} starting handle_main_processing at {time.strftime('%H:%M:%S')}")
-        logger.debug(f"[TIMING] SQS MessageId: {sqs_message_id}")
-        logger.debug(f"[TIMING] Session: {event.get('session_id')}, RunKey: {event.get('run_key')}")
+        logger.info(f"[TIMING] Instance {instance_id} starting handle_main_processing at {time.strftime('%H:%M:%S')}")
+        logger.info(f"[TIMING] SQS MessageId: {sqs_message_id}")
+        logger.info(f"[TIMING] Session: {event.get('session_id')}, RunKey: {event.get('run_key')}")
 
         # ========== SQS DEDUPLICATION CHECK ==========
         # Check if this is a duplicate message that we've already processed
@@ -1188,7 +1188,7 @@ def handle_main_processing(event, context):
                             'body': json.dumps({'message': 'Duplicate message - already processed', 'dedup_id': dedup_id})
                         }
                     else:
-                        logger.debug(f"[SQS_DEDUP] Message is unique or status allows reprocessing: run_key={run_key}, status={status}")
+                        logger.info(f"[SQS_DEDUP] Message is unique or status allows reprocessing: run_key={run_key}, status={status}")
             except Exception as dedup_error:
                 logger.error(f"[SQS_DEDUP] Error checking for duplicates: {dedup_error}")
                 # Continue processing even if dedup check fails
@@ -2102,8 +2102,8 @@ def handle_main_processing(event, context):
                                f"per batch: {timing_estimates.get('actual_time_per_batch_seconds', 0):.3f}s")
                 
                 # Add key frontend-expected fields to cost_estimates object (frontend looks for them here)
-                cost_estimates_update = {
-                    "quoted_validation_cost": effective_cost,  # What user will actually pay (after discount)
+                preview_payload['cost_estimates'].update({
+                    "quoted_validation_cost": quoted_full_cost,  # What user will pay for full validation (rounded up)
                     "estimated_validation_eliyahu_cost": estimated_total_cost_raw,  # Raw eliyahu cost estimate for full table (no multiplier)
                     "discount": discount,  # Discount amount applied
                     "effective_cost": effective_cost,  # Cost after discount (what user actually pays)
@@ -2111,27 +2111,15 @@ def handle_main_processing(event, context):
                     "estimated_validation_time": estimated_total_time_seconds, # Explicitly pass the full validation time estimate
                     "total_provider_cost_estimated": totals.get('total_cost_estimated', 0.0),  # Total estimated cost across all providers
                     "total_provider_calls": totals.get('total_calls', 0) + qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else totals.get('total_calls', 0)  # Total calls including QC
-                }
-
-                # Add original_cost field when there's a discount for frontend display
-                if discount > 0:
-                    cost_estimates_update["original_cost"] = quoted_full_cost
-
-                preview_payload['cost_estimates'].update(cost_estimates_update)
+                })
 
                 # Add fields at top level for backward compatibility and easy access
-                top_level_update = {
-                    "quoted_validation_cost": effective_cost,  # What user will actually pay (after discount)
+                preview_payload.update({
+                    "quoted_validation_cost": quoted_full_cost,  # What user will pay for full validation (rounded up)
                     "estimated_validation_eliyahu_cost": estimated_total_cost_raw,  # Raw eliyahu cost estimate for full table (no multiplier)
                     "discount": discount,  # Discount amount
                     "effective_cost": effective_cost  # Cost after discount
-                }
-
-                # Add original_cost at top level when there's a discount
-                if discount > 0:
-                    top_level_update["original_cost"] = quoted_full_cost
-
-                preview_payload.update(top_level_update)
+                })
                 
                 # Generate enhanced Excel download link and add to preview payload
                 enhanced_download_url = None
@@ -2500,22 +2488,16 @@ def handle_main_processing(event, context):
                 })
 
                 # Create minimal frontend payload with only consumed fields
-                cost_estimates_dict = {
-                    "quoted_validation_cost": effective_cost,  # What user will actually pay (after discount)
-                    "discount": discount,
-                    "effective_cost": effective_cost,
-                    "estimated_validation_time": estimated_total_time_seconds
-                }
-
-                # Add original_cost when there's a discount
-                if discount > 0:
-                    cost_estimates_dict["original_cost"] = quoted_full_cost
-
                 frontend_payload = {
                     "markdown_table": preview_payload.get("markdown_table", ""),
                     "enhanced_download_url": preview_payload.get("enhanced_download_url"),
                     "total_rows": preview_payload.get("total_rows", 0),
-                    "cost_estimates": cost_estimates_dict,
+                    "cost_estimates": {
+                        "quoted_validation_cost": quoted_full_cost,
+                        "discount": discount,
+                        "effective_cost": effective_cost,
+                        "estimated_validation_time": estimated_total_time_seconds
+                    },
                     "validation_metrics": {
                         "validated_columns_count": validation_metrics.get('validated_columns_count', 0),
                         "search_groups_count": total_groups_for_frontend,  # Total groups so frontend math works
@@ -3449,8 +3431,8 @@ def handle_main_processing(event, context):
                     event['run_key'] = run_key
                     event['async_delegation_request'] = False
 
-                    logger.debug(f"[SYNC_VALIDATION] Using invoke_validator_lambda for session {session_id}")
-                    logger.debug(f"[SYNC_VALIDATION] Rows: {len(sync_payload.get('validation_data', {}).get('rows', []))}")
+                    logger.info(f"[SYNC_VALIDATION] Using invoke_validator_lambda for session {session_id}")
+                    logger.info(f"[SYNC_VALIDATION] Rows: {len(sync_payload.get('validation_data', {}).get('rows', []))}")
 
                     # Use the same invoke_validator_lambda function that preview uses (has retry protection)
                     invoke_result = invoke_validator_lambda(
@@ -3469,7 +3451,7 @@ def handle_main_processing(event, context):
                         validation_history=validation_history
                     )
 
-                    logger.debug(f"[SYNC_VALIDATION] invoke_validator_lambda completed successfully")
+                    logger.info(f"[SYNC_VALIDATION] invoke_validator_lambda completed successfully")
 
                     # Convert invoke_validator_lambda result to expected format
                     # invoke_validator_lambda returns: {validation_results, metadata, status, total_rows, qc_results, qc_metrics}
@@ -3947,9 +3929,9 @@ def handle_main_processing(event, context):
                 initial_balance = check_user_balance(email)
                 final_balance = initial_balance
                 balance_error_occurred = False
-                # Use effective_cost (after discount) for billing and email display
-                charged_amount = effective_cost
-                logger.debug(f"[BILLING_INIT] charged_amount set to effective_cost: ${charged_amount:.2f} (original: ${charged_cost:.2f}, discount: ${discount:.2f})")
+                # CRITICAL FIX: Use charged_cost (actual amount) instead of 0
+                charged_amount = charged_cost
+                logger.debug(f"[BILLING_INIT] charged_amount set to charged_cost: ${charged_amount:.2f}")
                         
                 
             except Exception as e:

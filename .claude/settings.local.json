@@ -25,7 +25,9 @@
       "Bash(aws s3 ls:*)",
       "Bash(cat:*)",
       "Bash(mkdir:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(git reset:*)",
+      "Bash(chmod:*)"
     ],
     "deny": []
   }
