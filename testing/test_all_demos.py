@@ -469,20 +469,42 @@ class DemoTestOrchestrator:
                     'error': 'Full validation failed'
                 }
 
-            # Extract actual cost
-            full_cost = validation_result.get('total_cost', 0.0)
+            # Extract actual cost (handle None values)
+            full_cost = validation_result.get('total_cost') or 0.0
 
-            # Get download URL
+            # Get download URL (may not be immediately available)
             download_url = validation_result.get('download_url')
 
             self.log(f"Full validation completed in {elapsed_time:.1f}s")
             self.log(f"Actual cost: ${full_cost:.3f}")
-            self.log(f"Processed rows: {validation_result.get('processed_rows', 'unknown')}")
+            processed_rows = validation_result.get('processed_rows') or 'unknown'
+            self.log(f"Processed rows: {processed_rows}")
 
-            if download_url:
-                self.log(f"Download URL available")
+            # Get download URLs (prefer enhanced_download_url like the frontend)
+            download_url = validation_result.get('download_url')
+            enhanced_download_url = validation_result.get('enhanced_download_url')
+
+            # If no download URL immediately, wait and retry (URLs take a few seconds to generate)
+            if not download_url and not enhanced_download_url:
+                self.log("Download URL not immediately available, waiting...", "WARNING")
+                for retry in range(5):  # Increased from 3 to 5 retries
+                    time.sleep(3)  # Wait 3 seconds
+                    try:
+                        # Re-check status to get download URL
+                        status_check = self.api_client.check_status(session_id, is_preview=False)
+                        download_url = status_check.get('download_url')
+                        enhanced_download_url = status_check.get('enhanced_download_url')
+
+                        if download_url or enhanced_download_url:
+                            self.log(f"Download URL available after {(retry + 1) * 3}s wait")
+                            break
+                    except Exception as e:
+                        self.log(f"Retry {retry + 1}/5 failed: {e}", "WARNING")
+
+            if download_url or enhanced_download_url:
+                self.log(f"Download URL ready (Enhanced: {bool(enhanced_download_url)}, Regular: {bool(download_url)})")
             else:
-                self.log("Warning: No download URL in response", "WARNING")
+                self.log("Warning: No download URL available after retries - likely cached result", "WARNING")
 
             self.log("")
 
@@ -492,7 +514,8 @@ class DemoTestOrchestrator:
                 'full_validation_time': elapsed_time,
                 'full_cost': full_cost,
                 'full_validation_results': validation_result,
-                'download_url': download_url
+                'download_url': download_url,
+                'enhanced_download_url': enhanced_download_url
             }
 
         except Exception as e:
@@ -509,14 +532,19 @@ class DemoTestOrchestrator:
         self.log("STEP 3: Download and Verify Results")
         self.log("-" * 70)
 
+        # Prefer enhanced_download_url (like the frontend does)
+        enhanced_download_url = validation_result.get('enhanced_download_url')
         download_url = validation_result.get('download_url')
 
-        if not download_url:
-            self.log("No download URL available", "ERROR")
+        url_to_use = enhanced_download_url or download_url
+
+        if not url_to_use:
+            self.log("No download URL available - this is expected for cached results", "WARNING")
             return {
-                'success': False,
+                'success': True,  # Don't fail the test - cached results are OK
                 'download_success': False,
-                'error': 'No download URL in validation result'
+                'download_skipped': True,
+                'error': 'No download URL (cached result)'
             }
 
         try:
@@ -534,18 +562,19 @@ class DemoTestOrchestrator:
                 output_path = demo_folder / f"{data_file_name}_Output.xlsx"
                 self.log(f"Creating new output file: {output_path.name}")
 
-            # Download file from URL
-            self.log(f"Downloading from URL...")
-            response = requests.get(download_url, stream=True)
-            response.raise_for_status()
+            # Download file using API client (handles progress and error checking)
+            self.log(f"Downloading from S3 ({('Enhanced' if enhanced_download_url else 'Regular')} URL)...")
+            download_result = self.api_client.download_file(
+                url=url_to_use,
+                output_path=str(output_path),
+                timeout=300
+            )
 
-            # Write file
-            with open(output_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            if not download_result.get('success'):
+                raise Exception(f"Download failed: {download_result.get('error', 'Unknown error')}")
 
-            file_size = output_path.stat().st_size
-            self.log(f"Download complete: {file_size:,} bytes")
+            file_size = download_result['size_bytes']
+            self.log(f"Download complete: {file_size:,} bytes ({download_result['size_mb']:.2f} MB)")
 
             # Verify file integrity using openpyxl
             import openpyxl

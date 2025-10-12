@@ -34,6 +34,8 @@ from typing import Dict, Optional, Tuple, Any
 from datetime import datetime
 import websocket
 import threading
+import os
+from pathlib import Path
 
 
 class DemoAPIClient:
@@ -45,7 +47,7 @@ class DemoAPIClient:
     DEFAULT_EMAIL = "eliyahu@eliyahu.ai"
 
     # Timeout configurations (in seconds)
-    PREVIEW_TIMEOUT = 5 * 60  # 5 minutes
+    PREVIEW_TIMEOUT = 10 * 60  # 10 minutes (demos can take time if not cached)
     VALIDATION_TIMEOUT = 30 * 60  # 30 minutes
 
     # Retry configuration
@@ -56,7 +58,7 @@ class DemoAPIClient:
     POLL_INTERVAL = 5  # seconds
 
     # WebSocket configuration
-    USE_WEBSOCKET = True  # Use WebSocket for status updates
+    USE_WEBSOCKET = True  # Use WebSocket for real-time status updates (HTTP polling is deprecated)
 
     def __init__(self, email: Optional[str] = None, api_base: Optional[str] = None):
         """
@@ -446,30 +448,37 @@ class DemoAPIClient:
         """Connect to WebSocket and listen for messages for a specific session."""
         def on_message(ws, message):
             try:
+                print(f"[WEBSOCKET RAW] {message}")
                 data = json.loads(message)
-                print(f"[WEBSOCKET] {json.dumps(data, indent=2)}")
+                print(f"[WEBSOCKET PARSED] Status: {data.get('status')}, Session: {data.get('session_id')}")
 
-                # Store message for this session
-                with self.ws_lock:
-                    if session_id not in self.ws_messages:
-                        self.ws_messages[session_id] = []
-                    self.ws_messages[session_id].append(data)
+                # Store ALL messages - filter by session_id later
+                msg_session = data.get('session_id', '')
+                if msg_session == session_id or not msg_session:
+                    with self.ws_lock:
+                        if session_id not in self.ws_messages:
+                            self.ws_messages[session_id] = []
+                        self.ws_messages[session_id].append(data)
+                        print(f"[WEBSOCKET] Stored message for session {session_id}, total: {len(self.ws_messages[session_id])}")
             except Exception as e:
-                print(f"[WEBSOCKET ERROR] Failed to parse message: {e}")
+                print(f"[WEBSOCKET ERROR] Failed to parse: {e}")
+                print(f"[WEBSOCKET ERROR] Raw message: {message}")
 
         def on_error(ws, error):
             print(f"[WEBSOCKET ERROR] {error}")
 
         def on_close(ws, close_status_code, close_msg):
-            print(f"[WEBSOCKET] Connection closed")
+            print(f"[WEBSOCKET] Connection closed: {close_status_code} - {close_msg}")
 
         def on_open(ws):
-            print(f"[WEBSOCKET] Connected for session {session_id}")
-            # Subscribe to session updates
-            ws.send(json.dumps({
+            print(f"[WEBSOCKET] Connected - listening for session {session_id}")
+            # Send subscribe message to associate this connection with the session
+            subscribe_msg = json.dumps({
                 'action': 'subscribe',
-                'session_id': session_id
-            }))
+                'sessionId': session_id
+            })
+            print(f"[WEBSOCKET] Sending subscribe message: {subscribe_msg}")
+            ws.send(subscribe_msg)
 
         ws = websocket.WebSocketApp(
             self.WEBSOCKET_URL,
@@ -514,7 +523,8 @@ class DemoAPIClient:
         if self.USE_WEBSOCKET:
             print(f"[INFO] Connecting WebSocket for real-time updates...")
             ws = self._connect_websocket(session_id)
-            time.sleep(1)  # Give WebSocket time to connect
+            time.sleep(2)  # Give WebSocket time to connect and subscribe
+            print(f"[INFO] WebSocket connected and subscribed")
 
         print(f"[INFO] Waiting for completion (timeout: {timeout}s)...")
 
@@ -524,110 +534,63 @@ class DemoAPIClient:
             if elapsed > timeout:
                 raise Exception(f"Polling timeout after {timeout}s. Last status: {last_status}")
 
-            try:
-                # Check WebSocket messages first
-                if self.USE_WEBSOCKET:
-                    with self.ws_lock:
-                        if session_id in self.ws_messages and self.ws_messages[session_id]:
-                            # Get the latest message
-                            latest_msg = self.ws_messages[session_id][-1]
+            # Check WebSocket messages
+            with self.ws_lock:
+                if session_id in self.ws_messages and self.ws_messages[session_id]:
+                    # Get the latest message
+                    latest_msg = self.ws_messages[session_id][-1]
 
-                            # Check if it's a completion message
-                            msg_status = latest_msg.get('status', '').upper()
-                            if msg_status == 'COMPLETED' or 'preview_data' in latest_msg or 'download_url' in latest_msg:
-                                print(f"[SUCCESS] Validation completed! (via WebSocket)")
+                    # Extract status
+                    msg_status = latest_msg.get('status', '').upper()
 
-                                if ws:
-                                    ws.close()
+                    # Show progress updates
+                    if msg_status != last_status:
+                        print(f"[STATUS] {msg_status}")
+                        last_status = msg_status
 
-                                if is_preview:
-                                    return {
-                                        'success': True,
-                                        'session_id': session_id,
-                                        'preview_data': latest_msg.get('preview_data', {}),
-                                        'full_status': latest_msg
-                                    }
-                                else:
-                                    return {
-                                        'success': True,
-                                        'session_id': session_id,
-                                        'download_url': latest_msg.get('download_url'),
-                                        'total_rows': latest_msg.get('total_rows'),
-                                        'processed_rows': latest_msg.get('processed_rows'),
-                                        'total_cost': latest_msg.get('total_cost'),
-                                        'full_status': latest_msg
-                                    }
+                    # Show percentage if available
+                    percent = latest_msg.get('percent_complete', 0)
+                    if percent != last_percent and percent > 0:
+                        print(f"[PROGRESS] {percent}%")
+                        last_percent = percent
 
-                            # Check for failure
-                            if msg_status in ['FAILED', 'ERROR']:
-                                if ws:
-                                    ws.close()
-                                error_msg = latest_msg.get('error_message', 'Unknown error')
-                                raise Exception(f"Validation failed: {error_msg}")
+                    # Check if it's a completion message
+                    if msg_status == 'COMPLETED' or 'preview_data' in latest_msg or 'download_url' in latest_msg or 'enhanced_download_url' in latest_msg:
+                        print(f"[SUCCESS] Validation completed!")
 
-                # Also check via HTTP status as fallback
-                status = self.check_status(session_id, is_preview=is_preview)
-                current_status = status.get('status', 'UNKNOWN')
+                        if ws:
+                            ws.close()
 
-                # Show progress updates
-                if current_status != last_status:
-                    print(f"[STATUS] {current_status}")
-                    last_status = current_status
+                        if is_preview:
+                            preview_data = latest_msg.get('preview_data', {})
+                            return {
+                                'success': True,
+                                'session_id': session_id,
+                                'preview_data': preview_data,
+                                'enhanced_download_url': preview_data.get('enhanced_download_url'),
+                                'full_status': latest_msg
+                            }
+                        else:
+                            return {
+                                'success': True,
+                                'session_id': session_id,
+                                'download_url': latest_msg.get('download_url'),
+                                'enhanced_download_url': latest_msg.get('enhanced_download_url'),
+                                'total_rows': latest_msg.get('total_rows'),
+                                'processed_rows': latest_msg.get('processed_rows'),
+                                'total_cost': latest_msg.get('total_cost'),
+                                'full_status': latest_msg
+                            }
 
-                # Show percentage if available
-                percent = status.get('percent_complete', 0)
-                if percent != last_percent and percent > 0:
-                    print(f"[PROGRESS] {percent}%")
-                    last_percent = percent
+                    # Check for failure
+                    if msg_status in ['FAILED', 'ERROR']:
+                        if ws:
+                            ws.close()
+                        error_msg = latest_msg.get('error_message', 'Unknown error')
+                        raise Exception(f"Validation failed: {error_msg}")
 
-                # Check for completion (case-insensitive)
-                status_upper = current_status.upper() if current_status else ''
-                is_completed = (status_upper == 'COMPLETED' or
-                               'preview_data' in status or
-                               'download_url' in status)
-
-                if is_completed:
-                    print(f"[SUCCESS] Validation completed! (via HTTP)")
-
-                    if ws:
-                        ws.close()
-
-                    if is_preview:
-                        preview_data = status.get('preview_data', {})
-                        return {
-                            'success': True,
-                            'session_id': session_id,
-                            'preview_data': preview_data,
-                            'full_status': status
-                        }
-                    else:
-                        download_url = status.get('download_url')
-                        return {
-                            'success': True,
-                            'session_id': session_id,
-                            'download_url': download_url,
-                            'total_rows': status.get('total_rows'),
-                            'processed_rows': status.get('processed_rows'),
-                            'total_cost': status.get('total_cost'),
-                            'full_status': status
-                        }
-
-                # Check for failure
-                if status_upper in ['FAILED', 'ERROR']:
-                    if ws:
-                        ws.close()
-                    error_msg = status.get('error_message', 'Unknown error')
-                    raise Exception(f"Validation failed: {error_msg}")
-
-            except Exception as e:
-                # Only raise if it's not a temporary network error
-                if "Request failed" not in str(e) and "Validation failed" in str(e):
-                    raise
-                if "Request failed" not in str(e):
-                    print(f"[WARNING] Error during polling: {e}")
-
-            # Wait before next poll
-            time.sleep(self.POLL_INTERVAL)
+            # Wait before next check
+            time.sleep(1)  # Check every second for new WebSocket messages
 
     def list_demos(self) -> Dict[str, Any]:
         """
@@ -663,6 +626,69 @@ class DemoAPIClient:
             'success': True,
             'demos': demos
         }
+
+    def download_file(
+        self,
+        url: str,
+        output_path: str,
+        timeout: int = 300
+    ) -> Dict[str, Any]:
+        """
+        Download a file from a URL (typically an S3 presigned URL).
+
+        Args:
+            url: URL to download from
+            output_path: Local path to save the file
+            timeout: Request timeout in seconds (default: 300)
+
+        Returns:
+            Dictionary with download results
+
+        Raises:
+            Exception: If download fails
+        """
+        try:
+            print(f"[INFO] Downloading file from S3...")
+            print(f"  - Output: {output_path}")
+
+            # Create output directory if it doesn't exist
+            output_dir = os.path.dirname(output_path)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
+
+            # Download the file
+            response = requests.get(url, timeout=timeout, stream=True)
+            response.raise_for_status()
+
+            # Get file size from headers
+            file_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+
+            # Write to file
+            with open(output_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+                        # Show progress for large files
+                        if file_size > 0 and downloaded % (1024 * 1024) == 0:  # Every MB
+                            percent = (downloaded / file_size) * 100
+                            print(f"[DOWNLOAD] {percent:.1f}% ({downloaded / (1024 * 1024):.1f} MB)")
+
+            file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
+            print(f"[SUCCESS] File downloaded: {file_size_mb:.2f} MB")
+
+            return {
+                'success': True,
+                'output_path': output_path,
+                'size_bytes': os.path.getsize(output_path),
+                'size_mb': file_size_mb
+            }
+
+        except Exception as e:
+            print(f"[ERROR] Download failed: {e}")
+            raise Exception(f"Failed to download file: {e}")
 
 
 # Convenience functions for quick usage
