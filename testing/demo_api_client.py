@@ -715,7 +715,7 @@ class DemoAPIClient:
 
 
 # Convenience functions for quick usage
-def quick_demo_test(demo_name: str, email: Optional[str] = None, preview_only: bool = False):
+def quick_demo_test(demo_name: str, email: Optional[str] = None, preview_only: bool = False, download: bool = False):
     """
     Quick test function to run a complete demo workflow.
 
@@ -723,6 +723,7 @@ def quick_demo_test(demo_name: str, email: Optional[str] = None, preview_only: b
         demo_name: Name of the demo to run
         email: User email (defaults to DEFAULT_EMAIL)
         preview_only: If True, only run preview (default: False)
+        download: If True, download the result file (default: False)
 
     Returns:
         Dictionary with test results
@@ -770,6 +771,29 @@ def quick_demo_test(demo_name: str, email: Optional[str] = None, preview_only: b
 
             results['validation_result'] = validation_result
 
+            # Download file if requested
+            if download:
+                download_url = validation_result.get('enhanced_download_url') or validation_result.get('download_url')
+                if download_url:
+                    print("\n" + "=" * 60)
+                    import os
+                    os.makedirs('downloads', exist_ok=True)
+
+                    # Extract filename from URL or use session ID
+                    filename = download_url.split('/')[-1]
+                    output_path = f'downloads/{filename}'
+
+                    try:
+                        download_result = client.download_file(download_url, output_path)
+                        print(f"[SUCCESS] File downloaded to: {output_path}")
+                        print(f"  - Size: {download_result['size_mb']:.2f} MB")
+                        results['download_result'] = download_result
+                    except Exception as e:
+                        print(f"[ERROR] Download failed: {e}")
+                        results['download_error'] = str(e)
+                else:
+                    print("\n[WARNING] No download URL available")
+
         print("\n" + "=" * 60)
         print("[SUCCESS] Demo workflow completed!")
         print("=" * 60)
@@ -790,13 +814,16 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         demo_name = sys.argv[1]
         preview_only = '--preview-only' in sys.argv
+        download = '--download' in sys.argv
 
-        result = quick_demo_test(demo_name, preview_only=preview_only)
+        result = quick_demo_test(demo_name, preview_only=preview_only, download=download)
         print("\n[FINAL RESULT]")
         print(json.dumps(result, indent=2, default=str))
     else:
-        print("Usage: python.exe demo_api_client.py <demo_name> [--preview-only]")
+        print("Usage: python.exe demo_api_client.py <demo_name> [--preview-only] [--download]")
         print("\nExample:")
-        print("  python.exe demo_api_client.py competitive_intelligence --preview-only")
+        print("  python.exe demo_api_client.py \"01. Investment Research\"")
+        print("  python.exe demo_api_client.py \"01. Investment Research\" --preview-only")
+        print("  python.exe demo_api_client.py \"01. Investment Research\" --download")
         print("\nTo list available demos:")
         print("  python.exe -c 'from deployment.demo_api_client import DemoAPIClient; client = DemoAPIClient(); print(client.list_demos())'")
