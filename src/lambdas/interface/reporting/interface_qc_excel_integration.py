@@ -40,8 +40,11 @@ def create_qc_enhanced_excel_for_interface(
         BytesIO buffer with Excel content, or None if creation failed
     """
     try:
-        # Import QC modules
-        from interface_qc_handler import create_interface_qc_handler
+        # Import QC modules with Lambda-compatible paths
+        import sys
+        sys.path.append('/var/task')
+
+        from ..handlers.interface_qc_handler import create_interface_qc_handler
         from qc_enhanced_excel_dual_generator import create_both_excel_versions
 
         # Extract QC data from validation results if not already provided
@@ -98,10 +101,14 @@ def create_qc_enhanced_excel_for_interface(
 
     except Exception as e:
         logger.error(f"Error creating QC-enhanced Excel for interface: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
 
         # Fallback to standard Excel creation
         try:
-            from excel_report_new import create_enhanced_excel_with_validation
+            import sys
+            sys.path.append('/var/task')
+            from excel_report_qc_unified import create_enhanced_excel_with_validation
 
             # Get original Excel file content
             excel_file_content = None
@@ -136,7 +143,9 @@ def get_qc_summary_for_interface(validation_results: Dict[str, Any], config_data
         QC summary for interface
     """
     try:
-        from interface_qc_handler import create_interface_qc_handler
+        import sys
+        sys.path.append('/var/task')
+        from ..handlers.interface_qc_handler import create_interface_qc_handler
 
         qc_handler = create_interface_qc_handler()
         enhanced_response = qc_handler.process_validation_response_with_qc(
