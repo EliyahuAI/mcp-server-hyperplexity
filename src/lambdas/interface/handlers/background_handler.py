@@ -1201,17 +1201,21 @@ def handle_main_processing(event, context):
         s3_client = boto3.client('s3')
 
         try:
-            from excel_report_qc_unified import create_qc_enhanced_excel_for_interface
+            from ..reporting.interface_qc_excel_integration import create_qc_enhanced_excel_for_interface
             EXCEL_ENHANCEMENT_AVAILABLE = True
         except ImportError:
             try:
-                from ..reporting.excel_report_new import create_enhanced_excel_with_validation, EXCEL_ENHANCEMENT_AVAILABLE
-                # Fallback function that maps to QC interface
-                def create_qc_enhanced_excel_for_interface(table_data, validation_results, config_data, session_id, validated_sheet_name=None, config_s3_key=None):
-                    return create_enhanced_excel_with_validation(table_data, validation_results, config_data, session_id, validated_sheet_name, config_s3_key=config_s3_key)
+                from excel_report_qc_unified import create_qc_enhanced_excel_for_interface
+                EXCEL_ENHANCEMENT_AVAILABLE = True
             except ImportError:
-                EXCEL_ENHANCEMENT_AVAILABLE = False
-                def create_qc_enhanced_excel_for_interface(*args, **kwargs): return None
+                try:
+                    from ..reporting.excel_report_new import create_enhanced_excel_with_validation, EXCEL_ENHANCEMENT_AVAILABLE
+                    # Fallback function that maps to OLD Excel generation (does NOT support dual generation)
+                    def create_qc_enhanced_excel_for_interface(table_data, validation_results, config_data, session_id, validated_sheet_name=None, config_s3_key=None):
+                        return create_enhanced_excel_with_validation(table_data, validation_results, config_data, session_id, validated_sheet_name, config_s3_key=config_s3_key)
+                except ImportError:
+                    EXCEL_ENHANCEMENT_AVAILABLE = False
+                    def create_qc_enhanced_excel_for_interface(*args, **kwargs): return None
         
         try:
             from email_sender import send_validation_results_email
