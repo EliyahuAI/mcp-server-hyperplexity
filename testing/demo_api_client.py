@@ -741,8 +741,8 @@ def quick_demo_test(demo_name: str, email: Optional[str] = None, preview_only: b
 
             print("\n[VALIDATION RESULTS]")
             print(f"  - Download URL: {validation_result.get('download_url')}")
-            print(f"  - Processed rows: {validation_result.get('processed_rows')}")
-            print(f"  - Total cost: ${validation_result.get('total_cost', 0):.2f}")
+            print(f"  - Processed rows: {validation_result.get('processed_rows') or 'unknown'}")
+            print(f"  - Total cost: ${(validation_result.get('total_cost') or 0):.2f}")
 
             results['validation_result'] = validation_result
 
