@@ -587,52 +587,43 @@ def send_validation_results_email(email_address, excel_content, config_content, 
 
                 wb = openpyxl.load_workbook(BytesIO(enhanced_excel_content), read_only=True, data_only=True)
 
-                # Check for required sheets
-                required_sheets = ['Updated Values', 'Original Values', 'Details']
+                # Check for required customer-facing sheets
+                # Note: Details sheet has been stripped from customer version, so we only check Updated/Original
+                required_sheets = ['Updated Values', 'Original Values']
                 missing_sheets = [sheet for sheet in required_sheets if sheet not in wb.sheetnames]
 
                 if missing_sheets:
                     logger.error(f"[EMAIL] Enhanced Excel missing required sheets: {missing_sheets}")
                     enhanced_excel_valid = False
                 else:
-                    # Check that Details sheet has content (more than just headers)
-                    details_sheet = wb['Details']
-                    details_row_count = 0
-                    for row in details_sheet.iter_rows():
-                        details_row_count += 1
-                        if details_row_count > 10:  # Just check first 10 rows for efficiency
+                    # Check Updated sheet has content
+                    updated_sheet = wb['Updated Values']
+                    updated_row_count = 0
+                    for row in updated_sheet.iter_rows():
+                        updated_row_count += 1
+                        if updated_row_count > 2:  # At least header + 1 data row
                             break
 
-                    if details_row_count <= 1:  # Only header or empty
-                        logger.error(f"[EMAIL] Details sheet has {details_row_count} rows - appears to be empty!")
+                    if updated_row_count <= 1:
+                        logger.error(f"[EMAIL] Updated sheet has {updated_row_count} rows - appears to be empty!")
                         enhanced_excel_valid = False
                     else:
-                        # Check Updated sheet also has content
-                        updated_sheet = wb['Updated Values']
-                        updated_row_count = 0
-                        for row in updated_sheet.iter_rows():
-                            updated_row_count += 1
-                            if updated_row_count > 2:  # At least header + 1 data row
+                        # Check Original sheet also has content
+                        original_sheet = wb['Original Values']
+                        original_row_count = 0
+                        for row in original_sheet.iter_rows():
+                            original_row_count += 1
+                            if original_row_count > 2:  # At least header + 1 data row
                                 break
 
-                        if updated_row_count <= 1:
-                            logger.error(f"[EMAIL] Updated sheet has {updated_row_count} rows - appears to be empty!")
+                        if original_row_count <= 1:
+                            logger.error(f"[EMAIL] Original sheet has {original_row_count} rows - appears to be empty!")
                             enhanced_excel_valid = False
                         else:
-                            # Check Original sheet also has content
-                            original_sheet = wb['Original Values']
-                            original_row_count = 0
-                            for row in original_sheet.iter_rows():
-                                original_row_count += 1
-                                if original_row_count > 2:  # At least header + 1 data row
-                                    break
-
-                            if original_row_count <= 1:
-                                logger.error(f"[EMAIL] Original sheet has {original_row_count} rows - appears to be empty!")
-                                enhanced_excel_valid = False
-                            else:
-                                logger.info(f"[EMAIL] Enhanced Excel validation passed - Updated: {updated_row_count}+ rows, Original: {original_row_count}+ rows, Details: {details_row_count}+ rows")
-                                enhanced_excel_valid = True
+                            # Check if Reasons sheet exists (another indicator of enhanced Excel)
+                            has_reasons = 'Reasons' in wb.sheetnames
+                            logger.info(f"[EMAIL] Enhanced Excel validation passed - Updated: {updated_row_count}+ rows, Original: {original_row_count}+ rows, Has Reasons sheet: {has_reasons}")
+                            enhanced_excel_valid = True
 
                 wb.close()
 
@@ -663,9 +654,18 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         part = MIMEText(body_html, 'html', CHARSET)
         message.attach(part)
 
-        # Attach validated Excel file if validation passed
+        # Attach validated Excel file if validation passed (strip Details sheet for customer)
         if enhanced_excel_valid:
-            part = MIMEApplication(enhanced_excel_content)
+            # Import the strip function
+            try:
+                from qc_enhanced_excel_report import strip_details_sheet_for_customer
+                customer_excel_content = strip_details_sheet_for_customer(enhanced_excel_content)
+                logger.info(f"[EMAIL] Stripped Details sheet from enhanced Excel for customer delivery")
+            except Exception as e:
+                logger.error(f"[EMAIL] Failed to strip Details sheet, using original: {e}")
+                customer_excel_content = enhanced_excel_content
+
+            part = MIMEApplication(customer_excel_content)
             part.add_header("Content-Disposition", f'attachment; filename="{enhanced_excel_filename}"')
             message.attach(part)
         else:

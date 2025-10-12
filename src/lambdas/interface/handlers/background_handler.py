@@ -2222,10 +2222,21 @@ def handle_main_processing(event, context):
                                 
                                 if enhanced_result['success']:
                                     logger.debug(f"[DEBUG] Enhanced Excel stored in results folder: {enhanced_result['stored_files']}")
-                                    
-                                    # Also create public download link for immediate download
+
+                                    # Strip Details sheet for customer download
+                                    try:
+                                        import sys
+                                        sys.path.append('/var/task')
+                                        from qc_enhanced_excel_report import strip_details_sheet_for_customer
+                                        customer_enhanced_excel = strip_details_sheet_for_customer(enhanced_excel_content)
+                                        logger.info("[PREVIEW_DOWNLOAD] Stripped Details sheet from enhanced Excel for customer download")
+                                    except Exception as e:
+                                        logger.error(f"[PREVIEW_DOWNLOAD] Failed to strip Details sheet: {e}")
+                                        customer_enhanced_excel = enhanced_excel_content
+
+                                    # Create public download link for immediate download (with stripped Details)
                                     enhanced_download_url = storage_manager.create_public_download_link(
-                                        enhanced_excel_content, 
+                                        customer_enhanced_excel,
                                         enhanced_filename,
                                         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                                     )
@@ -4444,10 +4455,21 @@ def handle_main_processing(event, context):
                             
                             if enhanced_result['success']:
                                 logger.info(f"Enhanced Excel stored in results folder for full validation: {enhanced_result['stored_files']}")
-                                
-                                # Also create public download link for immediate download
+
+                                # Strip Details sheet for customer download
+                                try:
+                                    import sys
+                                    sys.path.append('/var/task')
+                                    from qc_enhanced_excel_report import strip_details_sheet_for_customer
+                                    customer_enhanced_excel = strip_details_sheet_for_customer(safe_enhanced_excel_content)
+                                    logger.info("[FULL_DOWNLOAD] Stripped Details sheet from enhanced Excel for customer download")
+                                except Exception as e:
+                                    logger.error(f"[FULL_DOWNLOAD] Failed to strip Details sheet: {e}")
+                                    customer_enhanced_excel = safe_enhanced_excel_content
+
+                                # Create public download link for immediate download (with stripped Details)
                                 enhanced_download_url = storage_manager.create_public_download_link(
-                                    safe_enhanced_excel_content, 
+                                    customer_enhanced_excel,
                                     enhanced_filename,
                                     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                                 )

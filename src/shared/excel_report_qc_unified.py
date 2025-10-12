@@ -412,8 +412,9 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         return None
 
     if not EXCEL_ENHANCEMENT_AVAILABLE:
-        logger.warning("Enhanced Excel not available, skipping Excel creation")
-        return None
+        error_msg = "CRITICAL: xlsxwriter not available - cannot generate enhanced Excel reports. This system requires enhanced Excel generation."
+        logger.error(error_msg)
+        raise ImportError(error_msg)
         
     try:
         # Create Excel buffer
@@ -1616,7 +1617,8 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         logger.error(f"Error creating enhanced Excel: {str(e)}")
         import traceback
         logger.error(f"Enhanced Excel creation traceback: {traceback.format_exc()}")
-        return None
+        # Re-raise the exception - enhanced Excel generation is required, cannot fallback
+        raise Exception(f"Enhanced Excel generation failed: {str(e)}") from e
 
 
 def create_qc_enhanced_excel_for_interface(
@@ -1695,19 +1697,5 @@ def create_qc_enhanced_excel_for_interface(
 
     except Exception as e:
         logger.error(f"Error creating QC-enhanced Excel for interface: {str(e)}")
-
-        # Fallback to standard Excel creation without QC
-        try:
-            return create_enhanced_excel_with_validation(
-                excel_data=table_data,
-                validation_results=validation_results,
-                config_data=config_data,
-                session_id=session_id,
-                skip_history=False,
-                validated_sheet_name=validated_sheet_name,
-                qc_results=None,
-                config_s3_key=config_s3_key
-            )
-        except Exception as fallback_error:
-            logger.error(f"Fallback Excel creation also failed: {str(fallback_error)}")
-            return None
+        # Re-raise the exception - enhanced Excel generation is required, no fallback
+        raise Exception(f"QC-enhanced Excel generation failed: {str(e)}") from e
