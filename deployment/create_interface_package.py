@@ -189,8 +189,11 @@ def copy_source_files():
         "model_config_table.py",
         "web_search_rate_limiter.py",
         "websocket_client.py",
-        # QC-enhanced Excel creator (unified)
-        "excel_report_qc_unified.py"
+        # QC-enhanced Excel creators
+        "excel_report_qc_unified.py",
+        "qc_enhanced_excel_dual_generator.py",
+        "qc_enhanced_excel_report.py",
+        "qc_excel_formatter.py"
     ]
     
     for file_name in shared_modules:
