@@ -138,6 +138,31 @@ def create_qc_enhanced_excel_with_validation(
 
         logger.info(f"QC-Enhanced Excel: Processing {len(rows_data)} rows with {len(headers)} columns, ID fields: {id_fields}")
 
+        # Load existing Validation Record for history preservation
+        existing_validation_record = []
+        if not skip_history:
+            try:
+                if 'Validation Record' in workbook.sheetnames:
+                    validation_record_worksheet = workbook['Validation Record']
+
+                    # Read validation record headers
+                    validation_record_headers = [cell.value for cell in validation_record_worksheet[1]]
+
+                    # Read existing validation record data
+                    for row_idx in range(2, validation_record_worksheet.max_row + 1):
+                        record_row = {}
+                        for col_idx, header in enumerate(validation_record_headers):
+                            if header:
+                                cell_value = validation_record_worksheet.cell(row=row_idx, column=col_idx + 1).value
+                                record_row[header] = cell_value
+
+                        if record_row:
+                            existing_validation_record.append(record_row)
+
+                    logger.info(f"[QC_EXCEL] Loaded {len(existing_validation_record)} existing validation record entries from Excel")
+            except Exception as e:
+                logger.warning(f"[QC_EXCEL] Could not load existing Validation Record sheet: {e}")
+
         # Generate row keys for matching validation results
         from row_key_utils import generate_row_key
         row_keys = []
@@ -315,6 +340,15 @@ def create_qc_enhanced_excel_with_validation(
             # 3. Create Validation Record sheet (for ALL versions - both full and customer)
             # This sheet tracks run-level metadata and validation history
             config_s3_key = config_data.get('storage_metadata', {}).get('config_id', '') if config_data else ''
+
+            # Detect if this is a preview run (less than all rows validated)
+            # Count how many rows have validation results
+            validated_row_count = len([k for k in validation_results.keys() if isinstance(validation_results[k], dict)])
+            total_row_count = len(rows_data)
+            is_preview = (validated_row_count < total_row_count) if total_row_count > 0 else False
+
+            logger.info(f"[QC_EXCEL] Creating Validation Record: {validated_row_count}/{total_row_count} rows validated, is_preview={is_preview}")
+
             validation_record_sheet = create_validation_record_sheet(
                 workbook=workbook,
                 header_format=header_format,
@@ -324,10 +358,10 @@ def create_qc_enhanced_excel_with_validation(
                 config_s3_key=config_s3_key,
                 rows_data=rows_data,
                 headers=headers,
-                existing_validation_record=None,  # TODO: Load existing validation record if needed
-                is_preview=False  # TODO: Detect if this is a preview run
+                existing_validation_record=existing_validation_record,
+                is_preview=is_preview
             )
-            logger.info(f"[QC_EXCEL] Created Validation Record sheet")
+            logger.info(f"[QC_EXCEL] Created Validation Record sheet with {len(existing_validation_record)} historical entries")
 
         excel_buffer.seek(0)
         result = excel_buffer.read()
