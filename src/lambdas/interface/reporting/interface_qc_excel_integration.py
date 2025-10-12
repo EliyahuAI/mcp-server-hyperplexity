@@ -16,7 +16,10 @@ def create_qc_enhanced_excel_for_interface(
     validation_results: Dict[str, Any],
     config_data: Dict[str, Any],
     session_id: str,
-    validated_sheet_name: Optional[str] = None
+    validated_sheet_name: Optional[str] = None,
+    config_s3_key: Optional[str] = None,
+    skip_history: bool = False,
+    qc_results: Optional[Dict[str, Any]] = None
 ) -> Optional[io.BytesIO]:
     """
     Create QC-enhanced Excel for interface lambda.
@@ -28,7 +31,10 @@ def create_qc_enhanced_excel_for_interface(
         validation_results: Validation results from lambda
         config_data: Configuration data
         session_id: Session ID
-        validated_sheet_name: Name of validated sheet
+        validated_sheet_name: Name of validated sheet (optional)
+        config_s3_key: S3 key for configuration file (optional, for backward compatibility)
+        skip_history: If True, skip loading existing Details sheet (optional, for backward compatibility)
+        qc_results: Pre-extracted QC results (optional, will be extracted from validation_results if not provided)
 
     Returns:
         BytesIO buffer with Excel content, or None if creation failed
@@ -38,16 +44,17 @@ def create_qc_enhanced_excel_for_interface(
         from interface_qc_handler import create_interface_qc_handler
         from qc_enhanced_excel_dual_generator import create_both_excel_versions
 
-        # Extract QC data from validation results
-        qc_handler = create_interface_qc_handler()
+        # Extract QC data from validation results if not already provided
+        if qc_results is None:
+            qc_handler = create_interface_qc_handler()
 
-        # Process validation response to extract QC data
-        enhanced_response = qc_handler.process_validation_response_with_qc(
-            validation_results, config_data
-        )
+            # Process validation response to extract QC data
+            enhanced_response = qc_handler.process_validation_response_with_qc(
+                validation_results, config_data
+            )
 
-        # Get QC results if available
-        qc_results = enhanced_response.get('qc_results', {})
+            # Get QC results if available
+            qc_results = enhanced_response.get('qc_results', {})
 
         # Get original Excel file content from table_data
         excel_file_content = None
@@ -180,7 +187,10 @@ def create_enhanced_excel_with_validation_qc(
     validation_results: Dict[str, Any],
     config_data: Dict[str, Any],
     session_id: str,
-    validated_sheet_name: Optional[str] = None
+    validated_sheet_name: Optional[str] = None,
+    config_s3_key: Optional[str] = None,
+    skip_history: bool = False,
+    qc_results: Optional[Dict[str, Any]] = None
 ) -> Optional[io.BytesIO]:
     """
     QC-enhanced version of create_enhanced_excel_with_validation.
@@ -189,5 +199,6 @@ def create_enhanced_excel_with_validation_qc(
     create_enhanced_excel_with_validation function.
     """
     return create_qc_enhanced_excel_for_interface(
-        table_data, validation_results, config_data, session_id, validated_sheet_name
+        table_data, validation_results, config_data, session_id,
+        validated_sheet_name, config_s3_key, skip_history, qc_results
     )
