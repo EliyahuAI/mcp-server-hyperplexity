@@ -518,6 +518,12 @@ class DemoAPIClient:
         last_status = None
         last_percent = 0
 
+        # Clear any old messages for this session before starting
+        with self.ws_lock:
+            if session_id in self.ws_messages:
+                print(f"[INFO] Clearing {len(self.ws_messages[session_id])} old messages for session {session_id}")
+                self.ws_messages[session_id] = []
+
         # Connect WebSocket if enabled
         ws = None
         if self.USE_WEBSOCKET:
@@ -571,7 +577,7 @@ class DemoAPIClient:
                                 'full_status': latest_msg
                             }
                         else:
-                            return {
+                            result = {
                                 'success': True,
                                 'session_id': session_id,
                                 'download_url': latest_msg.get('download_url'),
@@ -581,6 +587,23 @@ class DemoAPIClient:
                                 'total_cost': latest_msg.get('total_cost'),
                                 'full_status': latest_msg
                             }
+
+                            # For cached validations, try to get download URLs from status endpoint if not in WebSocket
+                            if not result.get('download_url') and not result.get('enhanced_download_url'):
+                                print(f"[INFO] No download URLs in WebSocket message, checking status endpoint...")
+                                try:
+                                    time.sleep(2)  # Give backend time to update status
+                                    status = self.check_status(session_id)
+                                    result['download_url'] = status.get('download_url')
+                                    result['enhanced_download_url'] = status.get('enhanced_download_url')
+                                    result['total_rows'] = result.get('total_rows') or status.get('total_rows')
+                                    result['processed_rows'] = result.get('processed_rows') or status.get('processed_rows')
+                                    result['total_cost'] = result.get('total_cost') or status.get('total_cost')
+                                    print(f"[INFO] Retrieved download URLs from status endpoint")
+                                except Exception as e:
+                                    print(f"[WARNING] Could not fetch status: {e}")
+
+                            return result
 
                     # Check for failure
                     if msg_status in ['FAILED', 'ERROR']:
@@ -740,6 +763,7 @@ def quick_demo_test(demo_name: str, email: Optional[str] = None, preview_only: b
             )
 
             print("\n[VALIDATION RESULTS]")
+            print(f"  - Enhanced download URL: {validation_result.get('enhanced_download_url')}")
             print(f"  - Download URL: {validation_result.get('download_url')}")
             print(f"  - Processed rows: {validation_result.get('processed_rows') or 'unknown'}")
             print(f"  - Total cost: ${(validation_result.get('total_cost') or 0):.2f}")
