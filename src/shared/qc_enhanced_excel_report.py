@@ -27,6 +27,7 @@ from qc_excel_formatter import (
     write_qc_enhanced_detail_row,
     create_qc_formats
 )
+from excel_report_qc_unified import create_validation_record_sheet
 
 logger = logging.getLogger()
 
@@ -70,7 +71,8 @@ def create_qc_enhanced_excel_with_validation(
     qc_results: Optional[Dict[str, Dict[str, Any]]] = None,
     config_data: Dict[str, Any] = None,
     session_id: str = "",
-    skip_history: bool = False
+    skip_history: bool = False,
+    include_details_sheet: bool = True
 ):
     """
     Create QC-enhanced Excel file with validation results and QC data.
@@ -98,8 +100,11 @@ def create_qc_enhanced_excel_with_validation(
         # Load original Excel data
         workbook = openpyxl.load_workbook(io.BytesIO(excel_file_content))
 
-        # Select the appropriate sheet
-        if 'Results' in workbook.sheetnames:
+        # Select the appropriate sheet - prefer Updated Values, then Results, then first sheet
+        if 'Updated Values' in workbook.sheetnames:
+            worksheet = workbook['Updated Values']
+            logger.info(f"Using 'Updated Values' sheet as data source for QC-enhanced Excel creation")
+        elif 'Results' in workbook.sheetnames:
             worksheet = workbook['Results']
             logger.info(f"Using 'Results' sheet as data source for QC-enhanced Excel creation")
         elif len(workbook.sheetnames) > 0:
@@ -153,13 +158,13 @@ def create_qc_enhanced_excel_with_validation(
             italic_format = formats['italic_format']
             qc_applied_format = formats['qc_applied_format']
 
-            # 1. Create Results sheet with QC values
-            results_sheet = workbook.add_worksheet('Results')
+            # 1. Create Updated Values sheet with QC values
+            updated_sheet = workbook.add_worksheet('Updated Values')
 
             # Write headers
             for col_idx, col_name in enumerate(headers):
-                results_sheet.write(0, col_idx, col_name, header_format)
-                results_sheet.set_column(col_idx, col_idx, 20)  # Set column width
+                updated_sheet.write(0, col_idx, col_name, header_format)
+                updated_sheet.set_column(col_idx, col_idx, 20)  # Set column width
 
             # Write data rows with QC values where applicable
             for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
@@ -180,152 +185,149 @@ def create_qc_enhanced_excel_with_validation(
 
                     # Write value with appropriate formatting
                     cell_format = qc_applied_format if qc_applied else None
-                    results_sheet.write(row_idx + 1, col_idx, safe_for_excel(qc_value), cell_format)
+                    updated_sheet.write(row_idx + 1, col_idx, safe_for_excel(qc_value), cell_format)
 
-            # 2. Create QC-Enhanced Details sheet
-            details_sheet = workbook.add_worksheet('Details')
+            # 1.5. Create Original Values sheet (original data without QC modifications)
+            original_sheet = workbook.add_worksheet('Original Values')
 
-            # Build QC-enhanced detail headers
-            detail_headers = get_qc_enhanced_detail_headers(id_fields)
+            # Write headers
+            for col_idx, col_name in enumerate(headers):
+                original_sheet.write(0, col_idx, col_name, header_format)
+                original_sheet.set_column(col_idx, col_idx, 20)  # Set column width
 
-            for col_idx, header in enumerate(detail_headers):
-                details_sheet.write(0, col_idx, header, header_format)
+            # Write original data rows (no QC modifications)
+            for row_idx, row_data in enumerate(rows_data):
+                for col_idx, col_name in enumerate(headers):
+                    original_value = row_data.get(col_name, '')
+                    original_sheet.write(row_idx + 1, col_idx, safe_for_excel(original_value))
 
-            # Set column widths
-            base_widths = get_qc_enhanced_column_widths()
-            col_idx = 0
-            details_sheet.set_column(col_idx, col_idx, base_widths[0])  # Row Key
-            col_idx += 1
-            details_sheet.set_column(col_idx, col_idx, base_widths[1])  # Identifier
-            col_idx += 1
+            # 2. Create QC-Enhanced Details sheet (only if requested)
+            if include_details_sheet:
+                details_sheet = workbook.add_worksheet('Details')
 
-            # ID field columns
-            for _ in id_fields:
-                details_sheet.set_column(col_idx, col_idx, 20)
+                # Build QC-enhanced detail headers
+                detail_headers = get_qc_enhanced_detail_headers(id_fields)
+
+                for col_idx, header in enumerate(detail_headers):
+                    details_sheet.write(0, col_idx, header, header_format)
+
+                # Set column widths
+                base_widths = get_qc_enhanced_column_widths()
+                col_idx = 0
+                details_sheet.set_column(col_idx, col_idx, base_widths[0])  # Row Key
+                col_idx += 1
+                details_sheet.set_column(col_idx, col_idx, base_widths[1])  # Identifier
                 col_idx += 1
 
-            # Remaining columns
-            for width in base_widths[2:]:
-                details_sheet.set_column(col_idx, col_idx, width)
-                col_idx += 1
+                # ID field columns
+                for _ in id_fields:
+                    details_sheet.set_column(col_idx, col_idx, 20)
+                    col_idx += 1
 
-            detail_row = 1
-            current_timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                # Remaining columns
+                for width in base_widths[2:]:
+                    details_sheet.set_column(col_idx, col_idx, width)
+                    col_idx += 1
 
-            # Write QC-enhanced detail rows
-            for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
-                # Create identifier from ID fields
-                identifier_parts = []
-                for id_field in id_fields:
-                    if id_field in row_data:
-                        identifier_parts.append(f"{id_field}: {row_data[id_field]}")
-                identifier = ", ".join(identifier_parts) if identifier_parts else f"Row {row_idx + 1}"
+                detail_row = 1
+                current_timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
 
-                # Get validation and QC results for this row
-                row_validation_data = None
-                row_qc_data = {}
+                # Write QC-enhanced detail rows
+                for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
+                    # Create identifier from ID fields
+                    identifier_parts = []
+                    for id_field in id_fields:
+                        if id_field in row_data:
+                            identifier_parts.append(f"{id_field}: {row_data[id_field]}")
+                    identifier = ", ".join(identifier_parts) if identifier_parts else f"Row {row_idx + 1}"
 
-                # Get validation results
-                if row_key in validation_results:
-                    row_validation_data = validation_results[row_key]
-                elif str(row_idx) in validation_results:
-                    row_validation_data = validation_results[str(row_idx)]
-                elif row_idx in validation_results:
-                    row_validation_data = validation_results[row_idx]
+                    # Get validation and QC results for this row
+                    row_validation_data = None
+                    row_qc_data = {}
 
-                # Get QC results
-                if qc_results and row_key in qc_results:
-                    row_qc_data = qc_results[row_key]
+                    # Get validation results
+                    if row_key in validation_results:
+                        row_validation_data = validation_results[row_key]
+                    elif str(row_idx) in validation_results:
+                        row_validation_data = validation_results[str(row_idx)]
+                    elif row_idx in validation_results:
+                        row_validation_data = validation_results[row_idx]
 
-                if row_validation_data and isinstance(row_validation_data, dict):
-                    for field_name, field_data in row_validation_data.items():
-                        if isinstance(field_data, dict) and 'confidence_level' in field_data:
+                    # Get QC results
+                    if qc_results and row_key in qc_results:
+                        row_qc_data = qc_results[row_key]
 
-                            # Get QC data for this field if available
-                            field_qc_data = row_qc_data.get(field_name, {})
+                    if row_validation_data and isinstance(row_validation_data, dict):
+                        for field_name, field_data in row_validation_data.items():
+                            if isinstance(field_data, dict) and 'confidence_level' in field_data:
 
-                            # Format the result for Excel
-                            original_value = row_data.get(field_name, '')
+                                # Get QC data for this field if available
+                                field_qc_data = row_qc_data.get(field_name, {})
 
-                            # If we have QC data, use it; otherwise create from validation data
-                            if field_qc_data:
-                                formatted_result = format_qc_result_for_excel(
-                                    merged_qc_result=field_qc_data,
-                                    field_name=field_name,
-                                    original_value=original_value
+                                # Format the result for Excel
+                                original_value = row_data.get(field_name, '')
+
+                                # If we have QC data, use it; otherwise create from validation data
+                                if field_qc_data:
+                                    formatted_result = format_qc_result_for_excel(
+                                        merged_qc_result=field_qc_data,
+                                        field_name=field_name,
+                                        original_value=original_value
+                                    )
+                                else:
+                                    # Create QC format from validation data (no QC applied)
+                                    formatted_result = {
+                                        'column': field_name,
+                                        'original_value': original_value,
+                                        'updated_value': field_data.get('value', ''),
+                                        'qc_value': field_data.get('value', ''),
+                                        'qc_applied': 'No',
+                                        'qc_action': 'No Change',
+                                        'qc_reasoning': '',
+                                        'final_confidence': field_data.get('confidence_level', ''),
+                                        'original_confidence': field_data.get('original_confidence', ''),
+                                        'quote': field_data.get('reasoning', ''),
+                                        'sources': ', '.join(field_data.get('sources', [])),
+                                        'explanation': field_data.get('explanation', ''),
+                                        'update_required': 'Yes' if field_data.get('value', '') != original_value else 'No',
+                                        'substantially_different': 'No',
+                                        'consistent_with_model': 'Yes'
+                                    }
+
+                                # Get ID field values
+                                id_field_values = [str(row_data.get(id_field, '')) for id_field in id_fields]
+
+                                # Write the detail row
+                                write_qc_enhanced_detail_row(
+                                    worksheet=details_sheet,
+                                    row_num=detail_row,
+                                    row_key=row_key,
+                                    identifier=identifier,
+                                    id_field_values=id_field_values,
+                                    formatted_result=formatted_result,
+                                    model_name=field_data.get('model', 'Unknown'),
+                                    timestamp=current_timestamp,
+                                    formats=formats
                                 )
-                            else:
-                                # Create QC format from validation data (no QC applied)
-                                formatted_result = {
-                                    'column': field_name,
-                                    'original_value': original_value,
-                                    'updated_value': field_data.get('value', ''),
-                                    'qc_value': field_data.get('value', ''),
-                                    'qc_applied': 'No',
-                                    'qc_action': 'No Change',
-                                    'qc_reasoning': '',
-                                    'final_confidence': field_data.get('confidence_level', ''),
-                                    'original_confidence': field_data.get('original_confidence', ''),
-                                    'quote': field_data.get('reasoning', ''),
-                                    'sources': ', '.join(field_data.get('sources', [])),
-                                    'explanation': field_data.get('explanation', ''),
-                                    'update_required': 'Yes' if field_data.get('value', '') != original_value else 'No',
-                                    'substantially_different': 'No',
-                                    'consistent_with_model': 'Yes'
-                                }
 
-                            # Get ID field values
-                            id_field_values = [str(row_data.get(id_field, '')) for id_field in id_fields]
+                                detail_row += 1
 
-                            # Write the detail row
-                            write_qc_enhanced_detail_row(
-                                worksheet=details_sheet,
-                                row_num=detail_row,
-                                row_key=row_key,
-                                identifier=identifier,
-                                id_field_values=id_field_values,
-                                formatted_result=formatted_result,
-                                model_name=field_data.get('model', 'Unknown'),
-                                timestamp=current_timestamp,
-                                formats=formats
-                            )
-
-                            detail_row += 1
-
-            # 3. Create Reasons sheet (enhanced with QC reasoning)
-            reasons_sheet = workbook.add_worksheet('Reasons')
-            reasons_headers = ["Row Key", "Field", "Explanation", "QC Applied", "QC Reasoning", "Update Required", "Substantially Different"]
-
-            for col_idx, header in enumerate(reasons_headers):
-                reasons_sheet.write(0, col_idx, header, header_format)
-                reasons_sheet.set_column(col_idx, col_idx, 30)
-
-            reason_row = 1
-            for row_idx, (row_data, row_key) in enumerate(zip(rows_data, row_keys)):
-                # Get validation and QC results for this row
-                row_validation_data = validation_results.get(row_key, validation_results.get(str(row_idx), validation_results.get(row_idx, {})))
-                row_qc_data = qc_results.get(row_key, {}) if qc_results else {}
-
-                if isinstance(row_validation_data, dict):
-                    for field_name, field_data in row_validation_data.items():
-                        if isinstance(field_data, dict) and 'confidence_level' in field_data:
-                            # Get QC data for this field
-                            field_qc_data = row_qc_data.get(field_name, {})
-                            qc_applied = field_qc_data.get('qc_applied', False)
-
-                            reasons_sheet.write(reason_row, 0, safe_for_excel(row_key))
-                            reasons_sheet.write(reason_row, 1, safe_for_excel(field_name))
-                            reasons_sheet.write(reason_row, 2, safe_for_excel(field_data.get('explanation', '')))
-                            reasons_sheet.write(reason_row, 3, 'Yes' if qc_applied else 'No')
-                            reasons_sheet.write(reason_row, 4, safe_for_excel(field_qc_data.get('qc_reasoning', '')))
-
-                            original_value = row_data.get(field_name, '')
-                            final_value = field_qc_data.get('qc_entry', field_data.get('value', '')) if qc_applied else field_data.get('value', '')
-
-                            reasons_sheet.write(reason_row, 5, 'Yes' if final_value != original_value else 'No')
-                            reasons_sheet.write(reason_row, 6, 'Yes' if qc_applied else 'No')
-
-                            reason_row += 1
+            # 3. Create Validation Record sheet (for ALL versions - both full and customer)
+            # This sheet tracks run-level metadata and validation history
+            config_s3_key = config_data.get('storage_metadata', {}).get('config_id', '') if config_data else ''
+            validation_record_sheet = create_validation_record_sheet(
+                workbook=workbook,
+                header_format=header_format,
+                validation_results=validation_results,
+                qc_results=qc_results,
+                session_id=session_id,
+                config_s3_key=config_s3_key,
+                rows_data=rows_data,
+                headers=headers,
+                existing_validation_record=None,  # TODO: Load existing validation record if needed
+                is_preview=False  # TODO: Detect if this is a preview run
+            )
+            logger.info(f"[QC_EXCEL] Created Validation Record sheet")
 
         excel_buffer.seek(0)
         result = excel_buffer.read()

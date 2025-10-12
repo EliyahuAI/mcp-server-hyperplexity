@@ -578,18 +578,38 @@ def send_validation_results_email(email_address, excel_content, config_content, 
             token_usage = metadata['token_usage']
         
         # Validate enhanced Excel file first (before building email body)
+        # NOTE: If enhanced_excel_content is a BytesIO from interface_qc_excel_integration,
+        # it will have full_version and customer_version attributes
         enhanced_excel_valid = False
+        full_version_excel = None
+        customer_version_excel = None
+
         if enhanced_excel_content:
+            # Check if we have both versions as attributes (from dual generator)
+            if hasattr(enhanced_excel_content, 'full_version') and hasattr(enhanced_excel_content, 'customer_version'):
+                logger.info("[EMAIL] Using dual-generated Excel versions (full + customer)")
+                full_version_excel = enhanced_excel_content.full_version
+                customer_version_excel = enhanced_excel_content.customer_version
+                # Validate the FULL version (which has Details sheet for validation)
+                excel_to_validate = full_version_excel
+            else:
+                # Fallback: old single-version approach
+                logger.warning("[EMAIL] Using single Excel version (legacy path)")
+                excel_to_validate = enhanced_excel_content
+                customer_version_excel = enhanced_excel_content
+
             # Validate the Excel content before attaching
             try:
                 import openpyxl
                 from io import BytesIO
 
-                wb = openpyxl.load_workbook(BytesIO(enhanced_excel_content), read_only=True, data_only=True)
+                wb = openpyxl.load_workbook(BytesIO(excel_to_validate), read_only=True, data_only=True)
 
-                # Check for required customer-facing sheets
-                # Note: Details sheet has been stripped from customer version, so we only check Updated/Original
-                required_sheets = ['Updated Values', 'Original Values']
+                # Check for required sheets - if we have full_version, expect Details + Validation Record; otherwise just Updated/Original + Validation Record
+                if full_version_excel:
+                    required_sheets = ['Updated Values', 'Original Values', 'Details', 'Validation Record']
+                else:
+                    required_sheets = ['Updated Values', 'Original Values', 'Validation Record']
                 missing_sheets = [sheet for sheet in required_sheets if sheet not in wb.sheetnames]
 
                 if missing_sheets:
@@ -654,18 +674,10 @@ def send_validation_results_email(email_address, excel_content, config_content, 
         part = MIMEText(body_html, 'html', CHARSET)
         message.attach(part)
 
-        # Attach validated Excel file if validation passed (strip Details sheet for customer)
+        # Attach validated Excel file if validation passed - use customer version (without Details)
         if enhanced_excel_valid:
-            # Import the strip function
-            try:
-                from qc_enhanced_excel_report import strip_details_sheet_for_customer
-                customer_excel_content = strip_details_sheet_for_customer(enhanced_excel_content)
-                logger.info(f"[EMAIL] Stripped Details sheet from enhanced Excel for customer delivery")
-            except Exception as e:
-                logger.error(f"[EMAIL] Failed to strip Details sheet, using original: {e}")
-                customer_excel_content = enhanced_excel_content
-
-            part = MIMEApplication(customer_excel_content)
+            logger.info(f"[EMAIL] Attaching customer version of enhanced Excel (no Details sheet)")
+            part = MIMEApplication(customer_version_excel)
             part.add_header("Content-Disposition", f'attachment; filename="{enhanced_excel_filename}"')
             message.attach(part)
         else:

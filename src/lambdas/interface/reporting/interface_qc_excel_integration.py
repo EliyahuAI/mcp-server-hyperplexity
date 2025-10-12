@@ -36,7 +36,7 @@ def create_qc_enhanced_excel_for_interface(
     try:
         # Import QC modules
         from interface_qc_handler import create_interface_qc_handler
-        from qc_enhanced_excel_report import create_qc_enhanced_excel_with_validation
+        from qc_enhanced_excel_dual_generator import create_both_excel_versions
 
         # Extract QC data from validation results
         qc_handler = create_interface_qc_handler()
@@ -65,8 +65,9 @@ def create_qc_enhanced_excel_for_interface(
             logger.error("No Excel file content found in table_data for QC Excel creation")
             return None
 
-        # Create QC-enhanced Excel
-        enhanced_excel_content = create_qc_enhanced_excel_with_validation(
+        # Create BOTH full and customer versions of QC-enhanced Excel
+        logger.info(f"[INTERFACE_QC] Generating both full and customer Excel versions for session {session_id}")
+        full_excel_content, customer_excel_content = create_both_excel_versions(
             excel_file_content=excel_file_content,
             validation_results=validation_results,
             qc_results=qc_results,
@@ -74,10 +75,15 @@ def create_qc_enhanced_excel_for_interface(
             session_id=session_id
         )
 
-        if enhanced_excel_content:
-            # Return as BytesIO for compatibility
-            excel_buffer = io.BytesIO(enhanced_excel_content)
-            logger.info(f"Created QC-enhanced Excel for session {session_id}")
+        if full_excel_content and customer_excel_content:
+            # Store both versions in the return object
+            # For now, we return customer version (backward compatible)
+            # The calling code will need to access both versions
+            excel_buffer = io.BytesIO(customer_excel_content)
+            # Store full version as attribute for S3 storage
+            excel_buffer.full_version = full_excel_content
+            excel_buffer.customer_version = customer_excel_content
+            logger.info(f"[INTERFACE_QC] Created both Excel versions for session {session_id}")
             return excel_buffer
         else:
             logger.error("QC-enhanced Excel creation returned None")
