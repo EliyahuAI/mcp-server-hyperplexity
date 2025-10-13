@@ -647,7 +647,7 @@ class QCModule:
                 # Apply flexible column matching to QC results
                 if qc_results and validation_targets:
                     # Get expected column names from non-ID validation targets
-                    expected_columns = [t.column for t in validation_targets if hasattr(t, 'importance') and t.importance.upper() != 'ID']
+                    expected_columns = [t.column for t in validation_targets if hasattr(t, 'importance') and t.importance.upper() not in ['ID', 'IGNORED']]
                     actual_columns = [result.get('column', '') for result in qc_results if result.get('column')]
 
                     # Check for missing columns
@@ -849,7 +849,7 @@ class QCModule:
                 # Apply flexible column matching to QC results
                 if qc_results and validation_targets:
                     # Get expected column names from non-ID validation targets
-                    expected_columns = [t.column for t in validation_targets if hasattr(t, 'importance') and t.importance.upper() != 'ID']
+                    expected_columns = [t.column for t in validation_targets if hasattr(t, 'importance') and t.importance.upper() not in ['ID', 'IGNORED']]
                     actual_columns = [result.get('column', '') for result in qc_results if result.get('column')]
 
                     # Check for missing columns
