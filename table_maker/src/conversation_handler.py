@@ -108,8 +108,8 @@ class TableConversationHandler:
                 debug_name=None  # Disable debug file saving
             )
 
-            # Check API call success
-            if not api_response.get('success'):
+            # Check if API call returned a response (call_structured_api doesn't use 'success' field)
+            if 'response' not in api_response and 'error' in api_response:
                 error_detail = api_response.get('error', 'Unknown error')
                 logger.error(f"API call failed. Error: {error_detail}")
                 logger.error(f"Full API response: {json.dumps(api_response, indent=2)}")
@@ -230,8 +230,8 @@ class TableConversationHandler:
                 debug_name=None  # Disable debug file saving
             )
 
-            # Check API call success
-            if not api_response.get('success'):
+            # Check if API call returned a response (call_structured_api doesn't use 'success' field)
+            if 'response' not in api_response and 'error' in api_response:
                 error_detail = api_response.get('error', 'Unknown error')
                 logger.error(f"API call failed. Error: {error_detail}")
                 logger.error(f"Full API response: {json.dumps(api_response, indent=2)}")
