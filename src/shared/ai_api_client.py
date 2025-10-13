@@ -1482,9 +1482,13 @@ class AIAPIClient:
         except Exception as e:
             logger.error(f"Failed to cache API response: {str(e)}")
     
-    async def _save_debug_data(self, api_provider: str, model: str, request_data: Dict, 
+    async def _save_debug_data(self, api_provider: str, model: str, request_data: Dict,
                               response_data: Any, error: Exception = None, context: str = "", debug_name: str = None):
         """Save debug data for API calls to help diagnose issues."""
+        # Check if debug saves are disabled (e.g., for standalone mode)
+        if os.environ.get('DISABLE_AI_DEBUG_SAVES', '').lower() == 'true':
+            return  # Skip debug saves
+
         try:
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")[:-3]
             status = "ERROR" if error else "SUCCESS"

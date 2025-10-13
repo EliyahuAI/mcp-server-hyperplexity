@@ -20,6 +20,9 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
 
+# Disable S3 debug saves for standalone mode (prevent NoSuchBucket errors)
+os.environ['DISABLE_AI_DEBUG_SAVES'] = 'true'
+
 # Add parent directory to path for imports
 parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(parent_dir))
