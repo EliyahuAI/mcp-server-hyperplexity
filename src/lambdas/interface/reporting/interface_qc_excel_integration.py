@@ -3,6 +3,8 @@ Interface QC Excel Integration
 
 Provides QC-enhanced Excel creation that can be used as a drop-in replacement
 for the standard Excel creation in the interface lambda.
+
+This module simply imports the working function from excel_report_qc_unified.py
 """
 
 import io
@@ -16,68 +18,46 @@ def create_qc_enhanced_excel_for_interface(
     validation_results: Dict[str, Any],
     config_data: Dict[str, Any],
     session_id: str,
-    validated_sheet_name: Optional[str] = None
+    validated_sheet_name: Optional[str] = None,
+    config_s3_key: Optional[str] = None
 ) -> Optional[io.BytesIO]:
     """
-    Create QC-enhanced Excel for interface lambda.
-    This is a drop-in replacement for create_enhanced_excel_with_validation
-    that includes QC data.
+    Create QC-enhanced Excel for interface lambda with Details sheet stripping.
+
+    This wraps the working function from excel_report_qc_unified.py and adds
+    Details sheet stripping for customer-facing downloads.
 
     Args:
         table_data: Table data from parser
-        validation_results: Validation results from lambda
+        validation_results: Validation results from lambda (full response with body)
         config_data: Configuration data
         session_id: Session ID
         validated_sheet_name: Name of validated sheet
+        config_s3_key: Optional S3 key for config
 
     Returns:
-        BytesIO buffer with Excel content, or None if creation failed
+        BytesIO buffer with customer version (no Details sheet),
+        with .full_version and .customer_version attributes
     """
     try:
-        # Import QC modules
-        from interface_qc_handler import create_interface_qc_handler
-        from qc_enhanced_excel_report import create_qc_enhanced_excel_with_validation
+        # Import the WORKING function from excel_report_qc_unified.py
+        from excel_report_qc_unified import create_qc_enhanced_excel_for_interface as create_qc_excel_unified
 
-        # Extract QC data from validation results
-        qc_handler = create_interface_qc_handler()
-
-        # Process validation response to extract QC data
-        enhanced_response = qc_handler.process_validation_response_with_qc(
-            validation_results, config_data
-        )
-
-        # Get QC results if available
-        qc_results = enhanced_response.get('qc_results', {})
-
-        # Get original Excel file content from table_data
-        excel_file_content = None
-        if hasattr(table_data, 'get'):
-            # If table_data is a dict with file content
-            excel_file_content = table_data.get('file_content')
-        elif hasattr(table_data, 'file_content'):
-            # If table_data has file_content attribute
-            excel_file_content = table_data.file_content
-        elif isinstance(table_data, bytes):
-            # If table_data is the file content directly
-            excel_file_content = table_data
-
-        if not excel_file_content:
-            logger.error("No Excel file content found in table_data for QC Excel creation")
-            return None
-
-        # Create QC-enhanced Excel (always includes Details sheet)
-        full_excel_content = create_qc_enhanced_excel_with_validation(
-            excel_file_content=excel_file_content,
+        # Create the full Excel (with Details sheet) using the working function
+        full_excel_buffer = create_qc_excel_unified(
+            table_data=table_data,
             validation_results=validation_results,
-            qc_results=qc_results,
             config_data=config_data,
-            session_id=session_id
+            session_id=session_id,
+            validated_sheet_name=validated_sheet_name,
+            config_s3_key=config_s3_key
         )
 
-        if not full_excel_content:
+        if not full_excel_buffer:
             logger.error("QC-enhanced Excel creation returned None")
             return None
 
+        full_excel_content = full_excel_buffer.getvalue()
         logger.info(f"[INTERFACE_QC] Full Excel generated: {len(full_excel_content):,} bytes (with Details sheet)")
 
         # Strip Details sheet for customer version
@@ -92,36 +72,12 @@ def create_qc_enhanced_excel_for_interface(
         excel_buffer = io.BytesIO(customer_excel_content)
         excel_buffer.full_version = full_excel_content
         excel_buffer.customer_version = customer_excel_content
-        logger.info(f"Created QC-enhanced Excel with both versions for session {session_id}")
+        logger.info(f"[INTERFACE_QC] Created dual-version Excel for session {session_id}")
         return excel_buffer
 
     except Exception as e:
-        logger.error(f"Error creating QC-enhanced Excel for interface: {str(e)}")
-
-        # Fallback to standard Excel creation
-        try:
-            from excel_report_new import create_enhanced_excel_with_validation
-
-            # Get original Excel file content
-            excel_file_content = None
-            if hasattr(table_data, 'get'):
-                excel_file_content = table_data.get('file_content')
-            elif hasattr(table_data, 'file_content'):
-                excel_file_content = table_data.file_content
-            elif isinstance(table_data, bytes):
-                excel_file_content = table_data
-
-            if excel_file_content:
-                return create_enhanced_excel_with_validation(
-                    table_data, validation_results, config_data, session_id, validated_sheet_name
-                )
-            else:
-                logger.error("No Excel file content available for fallback Excel creation")
-                return None
-
-        except Exception as fallback_error:
-            logger.error(f"Fallback Excel creation also failed: {str(fallback_error)}")
-            return None
+        logger.error(f"Error creating QC-enhanced Excel with details stripping: {str(e)}", exc_info=True)
+        return None
 
 def get_qc_summary_for_interface(validation_results: Dict[str, Any], config_data: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -135,7 +91,7 @@ def get_qc_summary_for_interface(validation_results: Dict[str, Any], config_data
         QC summary for interface
     """
     try:
-        from interface_qc_handler import create_interface_qc_handler
+        from ..handlers.interface_qc_handler import create_interface_qc_handler
 
         qc_handler = create_interface_qc_handler()
         enhanced_response = qc_handler.process_validation_response_with_qc(
@@ -186,7 +142,8 @@ def create_enhanced_excel_with_validation_qc(
     validation_results: Dict[str, Any],
     config_data: Dict[str, Any],
     session_id: str,
-    validated_sheet_name: Optional[str] = None
+    validated_sheet_name: Optional[str] = None,
+    config_s3_key: Optional[str] = None
 ) -> Optional[io.BytesIO]:
     """
     QC-enhanced version of create_enhanced_excel_with_validation.
@@ -195,5 +152,5 @@ def create_enhanced_excel_with_validation_qc(
     create_enhanced_excel_with_validation function.
     """
     return create_qc_enhanced_excel_for_interface(
-        table_data, validation_results, config_data, session_id, validated_sheet_name
+        table_data, validation_results, config_data, session_id, validated_sheet_name, config_s3_key
     )

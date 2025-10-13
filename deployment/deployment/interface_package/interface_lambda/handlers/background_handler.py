@@ -1201,7 +1201,7 @@ def handle_main_processing(event, context):
         s3_client = boto3.client('s3')
 
         try:
-            from ..reporting.interface_qc_excel_integration import create_qc_enhanced_excel_for_interface
+            from excel_report_qc_unified import create_qc_enhanced_excel_for_interface
             EXCEL_ENHANCEMENT_AVAILABLE = True
         except ImportError:
             try:
