@@ -2103,10 +2103,10 @@ def handle_main_processing(event, context):
                 
                 # Add key frontend-expected fields to cost_estimates object (frontend looks for them here)
                 cost_estimates_update = {
-                    "quoted_validation_cost": effective_cost,  # What user will actually pay (after discount)
+                    "quoted_validation_cost": quoted_full_cost,  # Price BEFORE discount (what it costs without discount)
                     "estimated_validation_eliyahu_cost": estimated_total_cost_raw,  # Raw eliyahu cost estimate for full table (no multiplier)
                     "discount": discount,  # Discount amount applied
-                    "effective_cost": effective_cost,  # Cost after discount (what user actually pays)
+                    "effective_cost": effective_cost,  # Price AFTER discount (what user actually pays)
                     "estimated_total_processing_time": estimated_total_time_seconds,  # Keep for backward compatibility
                     "estimated_validation_time": estimated_total_time_seconds, # Explicitly pass the full validation time estimate
                     "total_provider_cost_estimated": totals.get('total_cost_estimated', 0.0),  # Total estimated cost across all providers
@@ -2520,15 +2520,11 @@ def handle_main_processing(event, context):
 
                 # Create minimal frontend payload with only consumed fields
                 cost_estimates_dict = {
-                    "quoted_validation_cost": effective_cost,  # What user will actually pay (after discount)
+                    "quoted_validation_cost": quoted_full_cost,  # Price BEFORE discount (what it costs without discount)
                     "discount": discount,
-                    "effective_cost": effective_cost,
+                    "effective_cost": effective_cost,  # Price AFTER discount (what user actually pays)
                     "estimated_validation_time": estimated_total_time_seconds
                 }
-
-                # Add original_cost when there's a discount
-                if discount > 0:
-                    cost_estimates_dict["original_cost"] = quoted_full_cost
 
                 frontend_payload = {
                     "markdown_table": preview_payload.get("markdown_table", ""),
