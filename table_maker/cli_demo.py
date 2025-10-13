@@ -21,7 +21,9 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+parent_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(parent_dir))
+sys.path.insert(0, str(parent_dir / 'src' / 'shared'))
 
 from table_maker.src.conversation_handler import TableConversationHandler
 from table_maker.src.table_generator import TableGenerator
@@ -29,7 +31,7 @@ from table_maker.src.row_expander import RowExpander
 from table_maker.src.config_generator import ConfigGenerator
 from table_maker.src.prompt_loader import PromptLoader
 from table_maker.src.schema_validator import SchemaValidator
-from src.shared.ai_api_client import AIAPIClient
+from ai_api_client import AIAPIClient
 
 
 # ASCII art banner
