@@ -103,8 +103,7 @@ class TableConversationHandler:
                 prompt=prompt,
                 schema=schema,
                 model=model,
-                max_tokens=8000,
-                temperature=0.3
+                max_tokens=8000
             )
 
             # Check API call success
@@ -221,8 +220,7 @@ class TableConversationHandler:
                 prompt=prompt,
                 schema=schema,
                 model=model,
-                max_tokens=8000,
-                temperature=0.3
+                max_tokens=8000
             )
 
             # Check API call success
