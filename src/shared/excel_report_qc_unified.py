@@ -240,7 +240,7 @@ def calculate_confidence_distribution(validation_results, qc_results):
 
 def create_validation_record_sheet(workbook, header_format, validation_results, qc_results,
                                    session_id, config_s3_key, rows_data, headers,
-                                   existing_validation_record=None, is_preview=False):
+                                   existing_validation_record=None, is_preview=False, run_key=None):
     """
     Create Validation Record sheet with run-level metadata.
 
@@ -255,6 +255,7 @@ def create_validation_record_sheet(workbook, header_format, validation_results, 
         headers: List of column headers
         existing_validation_record: Existing validation record data (list of dicts)
         is_preview: Whether this is a preview run
+        run_key: DynamoDB run key (e.g., #Preview_34t345345346346)
 
     Returns:
         Validation Record worksheet object
@@ -283,7 +284,10 @@ def create_validation_record_sheet(workbook, header_format, validation_results, 
 
     # Generate run metadata
     run_time = datetime.now(timezone.utc).isoformat()
-    run_key = f"{session_id}_{int(time.time())}"
+    # Use the actual run_key from DynamoDB or fallback to session_id if not provided
+    if not run_key:
+        run_key = f"{session_id}_{int(time.time())}"
+        logger.warning(f"[VALIDATION_RECORD] No run_key provided, using fallback: {run_key}")
     total_rows = len(rows_data)
     total_columns = len(headers)
 
@@ -349,7 +353,7 @@ def create_validation_record_sheet(workbook, header_format, validation_results, 
     logger.info(f"[VALIDATION_RECORD] Created Validation Record sheet with {row_idx - 1} runs")
     return validation_record_sheet
 
-def create_enhanced_excel_with_validation(excel_data, validation_results, config_data, session_id, skip_history=False, validated_sheet_name=None, qc_results=None, config_s3_key=None):
+def create_enhanced_excel_with_validation(excel_data, validation_results, config_data, session_id, skip_history=False, validated_sheet_name=None, qc_results=None, config_s3_key=None, run_key=None):
     """Create 3-sheet Excel file with validation results and optional QC data.
 
     Args:
@@ -361,6 +365,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         validated_sheet_name: Name of the sheet that was actually validated (from metadata)
         qc_results: Optional QC results to integrate into the Excel file
         config_s3_key: S3 key for the configuration file (for Validation Record)
+        run_key: DynamoDB run key (e.g., #Preview_34t345345346346)
     """
     logger.debug("🔥🔥🔥 EXCEL REPORT QC UNIFIED VERSION IS RUNNING 🔥🔥🔥")
 
@@ -1178,7 +1183,8 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                 rows_data=rows_data,
                 headers=headers,
                 existing_validation_record=existing_validation_record,
-                is_preview=is_preview
+                is_preview=is_preview,
+                run_key=run_key
             )
 
             # SHEET 4: Details (comprehensive view)
@@ -1625,7 +1631,8 @@ def create_qc_enhanced_excel_for_interface(
     config_data: dict,
     session_id: str,
     validated_sheet_name: str = None,
-    config_s3_key: str = None
+    config_s3_key: str = None,
+    run_key: str = None
 ):
     """
     QC-enhanced Excel creation that integrates with interface lambda.
@@ -1640,6 +1647,7 @@ def create_qc_enhanced_excel_for_interface(
         session_id: Session ID
         validated_sheet_name: Name of validated sheet
         config_s3_key: S3 key for the configuration file (for Validation Record)
+        run_key: DynamoDB run key (e.g., #Preview_34t345345346346)
 
     Returns:
         BytesIO buffer with Excel content, or None if creation failed
@@ -1685,7 +1693,8 @@ def create_qc_enhanced_excel_for_interface(
             skip_history=False,
             validated_sheet_name=validated_sheet_name,
             qc_results=qc_results,
-            config_s3_key=config_s3_key
+            config_s3_key=config_s3_key,
+            run_key=run_key
         )
 
         if excel_buffer:
@@ -1706,7 +1715,8 @@ def create_qc_enhanced_excel_for_interface(
                 skip_history=False,
                 validated_sheet_name=validated_sheet_name,
                 qc_results=None,
-                config_s3_key=config_s3_key
+                config_s3_key=config_s3_key,
+                run_key=run_key
             )
         except Exception as fallback_error:
             logger.error(f"Fallback Excel creation also failed: {str(fallback_error)}")

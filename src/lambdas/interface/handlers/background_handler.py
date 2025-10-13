@@ -1207,8 +1207,8 @@ def handle_main_processing(event, context):
             try:
                 from ..reporting.excel_report_new import create_enhanced_excel_with_validation, EXCEL_ENHANCEMENT_AVAILABLE
                 # Fallback function that maps to QC interface
-                def create_qc_enhanced_excel_for_interface(table_data, validation_results, config_data, session_id, validated_sheet_name=None, config_s3_key=None):
-                    return create_enhanced_excel_with_validation(table_data, validation_results, config_data, session_id, validated_sheet_name, config_s3_key=config_s3_key)
+                def create_qc_enhanced_excel_for_interface(table_data, validation_results, config_data, session_id, validated_sheet_name=None, config_s3_key=None, run_key=None):
+                    return create_enhanced_excel_with_validation(table_data, validation_results, config_data, session_id, validated_sheet_name, config_s3_key=config_s3_key, run_key=run_key)
             except ImportError:
                 EXCEL_ENHANCEMENT_AVAILABLE = False
                 def create_qc_enhanced_excel_for_interface(*args, **kwargs): return None
@@ -2182,7 +2182,8 @@ def handle_main_processing(event, context):
                                 excel_buffer = create_qc_enhanced_excel_for_interface(
                                     table_data, validation_results, config_data, session_id,
                                     validated_sheet_name=validated_sheet,
-                                    config_s3_key=config_s3_key
+                                    config_s3_key=config_s3_key,
+                                    run_key=run_key
                                 )
 
                                 if excel_buffer:
@@ -4220,7 +4221,8 @@ def handle_main_processing(event, context):
                         excel_buffer = create_qc_enhanced_excel_for_interface(
                             table_data, excel_validation_results, config_data, session_id,
                             validated_sheet_name=validated_sheet,
-                            config_s3_key=config_s3_key
+                            config_s3_key=config_s3_key,
+                            run_key=run_key
                         )
                         if excel_buffer:
                             # Preserve buffer for accessing dual version attributes

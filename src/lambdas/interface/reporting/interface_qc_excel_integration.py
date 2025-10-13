@@ -19,7 +19,8 @@ def create_qc_enhanced_excel_for_interface(
     config_data: Dict[str, Any],
     session_id: str,
     validated_sheet_name: Optional[str] = None,
-    config_s3_key: Optional[str] = None
+    config_s3_key: Optional[str] = None,
+    run_key: Optional[str] = None
 ) -> Optional[io.BytesIO]:
     """
     Create QC-enhanced Excel for interface lambda with Details sheet stripping.
@@ -34,6 +35,7 @@ def create_qc_enhanced_excel_for_interface(
         session_id: Session ID
         validated_sheet_name: Name of validated sheet
         config_s3_key: Optional S3 key for config
+        run_key: DynamoDB run key (e.g., #Preview_34t345345346346)
 
     Returns:
         BytesIO buffer with customer version (no Details sheet),
@@ -50,7 +52,8 @@ def create_qc_enhanced_excel_for_interface(
             config_data=config_data,
             session_id=session_id,
             validated_sheet_name=validated_sheet_name,
-            config_s3_key=config_s3_key
+            config_s3_key=config_s3_key,
+            run_key=run_key
         )
 
         if not full_excel_buffer:
