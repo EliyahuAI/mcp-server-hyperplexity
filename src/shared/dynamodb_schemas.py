@@ -631,10 +631,38 @@ class DynamoDBSchemas:
                     }
                 },
                 {
-                    'IndexName': 'RunTypeStartTimeIndex', 
+                    'IndexName': 'RunTypeStartTimeIndex',
                     'KeySchema': [
                         {
                             'AttributeName': 'run_type',
+                            'KeyType': 'HASH'
+                        },
+                        {
+                            'AttributeName': 'start_time',
+                            'KeyType': 'RANGE'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                },
+                {
+                    'IndexName': 'run_key-index',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'run_key',
+                            'KeyType': 'HASH'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                },
+                {
+                    'IndexName': 'session_id-start_time-index',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'session_id',
                             'KeyType': 'HASH'
                         },
                         {

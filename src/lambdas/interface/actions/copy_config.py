@@ -224,12 +224,20 @@ def handle_copy_config(event_data, context=None):
                 # Generate filename from original_name
                 original_filename = f"{original_name}.json"
         
-        # Append source session to filename if not already present AND filename doesn't start with session_
+        # Preserve original session prefix if it exists (don't add source_session if filename already has one)
+        # Only add source_session prefix if filename doesn't already have a session_ prefix
         if original_filename and source_session:
+            import re
+            session_prefix_pattern = r'^session_(?:demo_)?\d{8}_\d{6}_[a-f0-9]{8}_'
             base_name = original_filename.replace('.json', '')
-            # Check if filename already starts with session_ pattern
-            if not base_name.startswith('session_') and source_session not in base_name:
+
+            if not re.match(session_prefix_pattern, base_name):
+                # No session prefix exists - add the source session
                 original_filename = f"{source_session}_{base_name}.json"
+                logger.info(f"Added source session to filename: {original_filename}")
+            else:
+                # Session prefix already exists - preserve it
+                logger.info(f"Preserving existing session in filename: {original_filename}")
         
         # Keep all config data including metadata
         clean_config_data = source_config_data.copy()

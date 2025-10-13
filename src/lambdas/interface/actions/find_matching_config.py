@@ -166,42 +166,108 @@ def calculate_column_match_score(table_columns: List[str], config_columns: List[
     
     return final_score
 
-def analyze_table_columns(email: str, session_id: str, storage_manager: UnifiedS3Manager) -> List[str]:
-    """Extract column names from uploaded Excel file"""
+def get_columns_from_dynamodb(email: str, session_id: str) -> List[str]:
+    """
+    Get column names from DynamoDB qc_by_column field (much faster than S3 analysis).
+    Falls back to S3 analysis if not available.
+    """
     try:
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
+        import boto3
+        from boto3.dynamodb.conditions import Key, Attr
+
+        # Access runs table
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        table = dynamodb.Table('perplexity-validator-runs')
+
+        # Use session_id-based query (faster than scan)
+        try:
+            response = table.query(
+                IndexName='session_id-start_time-index',
+                KeyConditionExpression=Key('session_id').eq(session_id),
+                FilterExpression=Attr('qc_metrics').exists() & Attr('qc_metrics.qc_by_column').exists(),
+                ScanIndexForward=False,  # Most recent first
+                Limit=1  # Only need the most recent
+            )
+        except Exception as query_error:
+            # Fallback to scan if index doesn't exist
+            logger.debug(f"[QC_COLUMNS] Query failed, falling back to scan: {query_error}")
+            response = table.scan(
+                FilterExpression=Attr('session_id').eq(session_id) &
+                               Attr('qc_metrics').exists() &
+                               Attr('qc_metrics.qc_by_column').exists()
+            )
+
+        # Get the most recent run with qc_by_column data
+        runs_with_qc = response.get('Items', [])
+
+        if runs_with_qc:
+            # Sort by start_time to get most recent
+            runs_with_qc.sort(key=lambda x: x.get('start_time', ''), reverse=True)
+            most_recent = runs_with_qc[0]
+
+            # Extract column names from qc_by_column keys
+            qc_by_column = most_recent.get('qc_metrics', {}).get('qc_by_column', {})
+            columns = list(qc_by_column.keys())
+
+            if columns:
+                logger.debug(f"[QC_COLUMNS] Extracted {len(columns)} columns from DynamoDB qc_by_column: {columns[:5]}{'...' if len(columns) > 5 else ''}")
+                return columns
+
+        logger.debug(f"[QC_COLUMNS] No qc_by_column data found in DynamoDB for session {session_id}")
+        return None
+
+    except Exception as e:
+        logger.warning(f"[QC_COLUMNS] Could not get columns from DynamoDB: {e}, falling back to S3 analysis")
+        return None
+
+
+def analyze_table_columns(email: str, session_id: str, storage_manager: UnifiedS3Manager) -> List[str]:
+    """Extract column names from uploaded Excel file (with DynamoDB optimization)"""
+    try:
+        # OPTIMIZATION: Try to get columns from DynamoDB first (much faster)
+        columns = get_columns_from_dynamodb(email, session_id)
+        if columns:
+            return columns
+
+        # FALLBACK: Analyze Excel file from S3 if DynamoDB doesn't have the data
+        logger.info("[QC_COLUMNS] Using S3 Excel analysis fallback")
+
         # Get Excel file from unified storage
         excel_content, excel_s3_key = storage_manager.get_excel_file(email, session_id)
         if not excel_content or not excel_s3_key:
             logger.warning(f"No Excel file found for session {session_id}")
             return []
-        
+
         # Use shared table parser to analyze columns
         try:
             # Analyze table structure directly from S3
             table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
-            
+
             if not table_analysis:
                 logger.warning("Table analysis failed")
                 return []
-            
+
             # Extract column names from analysis
             columns = []
             column_analysis = table_analysis.get('column_analysis', {})
-            
+
             logger.info(f"Table analysis keys: {list(table_analysis.keys())}")
             logger.info(f"Column analysis keys: {list(column_analysis.keys())}")
-            
+
             for col_name, col_info in column_analysis.items():
                 if col_name and col_name.strip():
                     columns.append(col_name.strip())
-            
-            logger.info(f"Extracted {len(columns)} columns from table: {columns[:5]}{'...' if len(columns) > 5 else ''}")
+
+            logger.info(f"Extracted {len(columns)} columns from S3 table: {columns[:5]}{'...' if len(columns) > 5 else ''}")
             return columns
-            
+
         except Exception as e:
             logger.error(f"Failed to analyze table structure: {e}")
             return []
-            
+
     except Exception as e:
         logger.error(f"Failed to analyze table columns: {e}")
         return []
@@ -331,6 +397,7 @@ def get_successfully_used_config_ids(email: str) -> List[str]:
     """
     Get all configuration IDs that have been successfully used in Preview or Validation runs.
     This provides a whitelist of configs that are proven to work.
+    Excludes demo session configs as they are temporary.
     """
     try:
         import sys
@@ -338,60 +405,91 @@ def get_successfully_used_config_ids(email: str) -> List[str]:
         sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'shared'))
         import boto3
         from boto3.dynamodb.conditions import Key, Attr
-        
+
         # Access runs table directly
         dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
         table = dynamodb.Table('perplexity-validator-runs')
-        
-        successfully_used_configs = set()
-        
-        # Query for all runs by this user
-        response = table.scan(
-            FilterExpression=Attr('email').eq(email) & 
-                           Attr('run_type').is_in(['Preview', 'Validation']) &
-                           Attr('status').eq('COMPLETED') &
-                           Attr('configuration_id').exists()
-        )
-        
-        # Collect configs with their start_time for sorting
+
         config_with_times = []
+
+        # Try run_key GSI for fast lookup, fall back to scan if index doesn't exist
+        try:
+            logger.debug(f"[GET_CONFIGS] Querying run_key GSI for Preview# runs, filtering by {email}")
+            response = table.query(
+                IndexName='run_key-index',
+                KeyConditionExpression=Key('run_key').begins_with('Preview#'),
+                FilterExpression=Attr('email').eq(email) & Attr('status').eq('COMPLETED') & Attr('configuration_id').exists(),
+                ScanIndexForward=False  # Sort by run_key descending (most recent first due to timestamp)
+            )
+        except Exception as e:
+            # Fallback to scan if GSI doesn't exist
+            logger.debug(f"[GET_CONFIGS] GSI not available, falling back to scan")
+            response = table.scan(
+                FilterExpression=Attr('email').eq(email) &
+                               Attr('run_type').is_in(['Preview', 'Validation']) &
+                               Attr('status').eq('COMPLETED') &
+                               Attr('configuration_id').exists()
+            )
+
+        # Collect configs with their start_time for sorting
         for item in response.get('Items', []):
             config_id = item.get('configuration_id')
             start_time = item.get('start_time', '')
-            if config_id and config_id != 'unknown':
+
+            # Skip demo configs (temporary sessions that get cleaned up)
+            if config_id and config_id != 'unknown' and 'session_demo_' not in config_id:
                 config_with_times.append((config_id, start_time))
                 logger.debug(f"Found successfully used config: {config_id} at {start_time}")
-        
-        # Handle pagination if needed
+            elif config_id and 'session_demo_' in config_id:
+                logger.debug(f"Skipping demo config: {config_id}")
+
+        # Handle pagination if needed (using same method as initial query)
+        using_gsi = 'run_key' in str(response)  # Simple check to see if we used GSI
         while 'LastEvaluatedKey' in response:
-            response = table.scan(
-                FilterExpression=Attr('email').eq(email) & 
-                               Attr('run_type').is_in(['Preview', 'Validation']) &
-                               Attr('status').eq('COMPLETED') &
-                               Attr('configuration_id').exists(),
-                ExclusiveStartKey=response['LastEvaluatedKey']
-            )
-            
+            try:
+                if using_gsi:
+                    response = table.query(
+                        IndexName='run_key-index',
+                        KeyConditionExpression=Key('run_key').begins_with('Preview#'),
+                        FilterExpression=Attr('email').eq(email) & Attr('status').eq('COMPLETED') & Attr('configuration_id').exists(),
+                        ScanIndexForward=False,
+                        ExclusiveStartKey=response['LastEvaluatedKey']
+                    )
+                else:
+                    response = table.scan(
+                        FilterExpression=Attr('email').eq(email) &
+                                       Attr('run_type').is_in(['Preview', 'Validation']) &
+                                       Attr('status').eq('COMPLETED') &
+                                       Attr('configuration_id').exists(),
+                        ExclusiveStartKey=response['LastEvaluatedKey']
+                    )
+            except:
+                break  # Stop pagination on error
+
             for item in response.get('Items', []):
                 config_id = item.get('configuration_id')
                 start_time = item.get('start_time', '')
-                if config_id and config_id != 'unknown':
+
+                # Skip demo configs
+                if config_id and config_id != 'unknown' and 'session_demo_' not in config_id:
                     config_with_times.append((config_id, start_time))
                     logger.debug(f"Found successfully used config: {config_id} at {start_time}")
-        
+                elif config_id and 'session_demo_' in config_id:
+                    logger.debug(f"Skipping demo config: {config_id}")
+
         # Sort by start_time (most recent first) and extract unique config_ids
         config_with_times.sort(key=lambda x: x[1], reverse=True)
         successfully_used_configs = []
         seen_configs = set()
-        
+
         for config_id, start_time in config_with_times:
             if config_id not in seen_configs:
                 successfully_used_configs.append(config_id)
                 seen_configs.add(config_id)
-        
-        logger.info(f"Found {len(successfully_used_configs)} successfully used configs for {email}, ordered by recency")
+
+        logger.info(f"Found {len(successfully_used_configs)} successfully used configs (excluding demos) for {email}, ordered by recency")
         return successfully_used_configs
-        
+
     except Exception as e:
         logger.warning(f"Could not get successfully used config IDs for {email}: {e}")
         # Return empty list to allow all configs (fallback behavior)
@@ -827,29 +925,56 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
     """
     Optimized config matching that starts with successfully used configs and only loads the latest
     version from each session. Much more efficient than loading all configs then filtering.
+
+    Strategy:
+    1. Try DynamoDB qc_by_column first (FAST) - can search 100+ configs
+    2. If no qc data, fall back to S3 Excel analysis (SLOW) - limit to 10 attempts
     """
     try:
         storage_manager = UnifiedS3Manager()
-        
-        # Get columns from current table
-        table_columns = analyze_table_columns(email, session_id, storage_manager)
-        logger.info(f"Analyzed table columns for {email}/{session_id}: {table_columns}")
-        
+
+        # OPTIMIZATION: Try DynamoDB first (fast path)
+        table_columns = get_columns_from_dynamodb(email, session_id)
+        used_fast_path = table_columns is not None
+
+        if not table_columns:
+            # FALLBACK: S3 Excel analysis (slow path)
+            logger.info("[FIND_CONFIG] No DynamoDB qc_by_column data - using S3 Excel analysis (slow)")
+            # Get Excel file from unified storage
+            excel_content, excel_s3_key = storage_manager.get_excel_file(email, session_id)
+            if not excel_content or not excel_s3_key:
+                logger.warning(f"No Excel file found for session {session_id}")
+                return {
+                    'success': True,
+                    'matches': [],
+                    'table_columns': [],
+                    'total_configs_searched': 0,
+                    'message': 'Could not analyze columns from uploaded table. Please ensure you have uploaded a valid Excel file.'
+                }
+
+            # Analyze table structure directly from S3
+            table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
+            if table_analysis:
+                column_analysis = table_analysis.get('column_analysis', {})
+                table_columns = [col.strip() for col in column_analysis.keys() if col and col.strip()]
+                logger.info(f"[FIND_CONFIG] Extracted {len(table_columns)} columns from S3: {table_columns[:5]}...")
+        else:
+            logger.info(f"[FIND_CONFIG] Using DynamoDB qc_by_column (fast path): {len(table_columns)} columns")
+
         if not table_columns:
             return {
                 'success': True,
                 'matches': [],
                 'table_columns': [],
                 'total_configs_searched': 0,
-                'message': 'Could not analyze columns from uploaded table. Please ensure you have uploaded a valid Excel file.'
+                'message': 'Could not analyze columns from uploaded table.'
             }
         
         # Get whitelist of successfully used configuration IDs (ordered by recency)
         successfully_used_configs = get_successfully_used_config_ids(email)
-        logger.info(f"Found {len(successfully_used_configs)} successfully used configs for filtering")
-        if successfully_used_configs:
-            logger.info(f"Whitelist sample: {successfully_used_configs[:3]}...")
-        
+        logger.info(f"[FIND_CONFIG] Found {len(successfully_used_configs)} successfully used configs for filtering")
+        logger.debug(f"[FIND_CONFIG] Whitelist first 5: {successfully_used_configs[:5]}")
+
         if not successfully_used_configs:
             return {
                 'success': True,
@@ -858,60 +983,78 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
                 'total_configs_searched': 0,
                 'message': 'No successfully used configurations found for this user'
             }
-        
-        logger.info(f"Checking configs in order of recency, starting with: {successfully_used_configs[0] if successfully_used_configs else 'none'}")
+
+        logger.info(f"[FIND_CONFIG] Starting interleaved qc_by_column filtering + S3 analysis")
 
         matches = []
         perfect_matches = []
         configs_processed = 0
-        max_configs = 30  # Limit total configs processed
-        max_failed_loads = 10  # Limit consecutive failed config loads
-        max_total_attempts = 20  # Limit total attempts (processed + failed)
+        configs_excluded_by_qc = 0
         failed_loads = 0
-        total_attempts = 0
+        max_s3_analyses = 10
 
-        # Process configs in order of recency - STOP on first perfect match
+        # Process configs in order of recency with interleaved qc filter + S3 check
         for config_id in successfully_used_configs:
-            # Check total attempts limit
-            if total_attempts >= max_total_attempts:
-                logger.warning(f"[FIND_CONFIG] Reached max total attempts limit ({max_total_attempts}), stopping search")
+            # Stop early if we've analyzed enough
+            if configs_processed >= max_s3_analyses:
+                logger.warning(f"[FIND_CONFIG] Reached max S3 analyses limit ({max_s3_analyses}), stopping")
                 break
 
-            # Check max configs limit
-            if configs_processed >= max_configs:
-                logger.warning(f"[FIND_CONFIG] Reached max configs limit ({max_configs}), stopping search")
+            if failed_loads >= 30:
+                logger.warning(f"[FIND_CONFIG] Reached max failed loads limit (30), stopping")
                 break
 
-            # Check failed loads limit
-            if failed_loads >= max_failed_loads:
-                logger.warning(f"[FIND_CONFIG] Reached max failed loads limit ({max_failed_loads}), stopping search")
-                break
+            # Extract session from config_id
+            import re
+            session_pattern = r'^(session_(?:demo_)?\d{8}_\d{6}_[a-f0-9]{8})'
+            match = re.match(session_pattern, config_id)
+            config_session_id = match.group(1) if match else None
 
-            total_attempts += 1
+            # Try qc_by_column exclusionary filter first (fast)
+            if config_session_id:
+                config_qc_columns = get_columns_from_dynamodb(email, config_session_id)
+
+                if config_qc_columns:
+                    # EXCLUSIONARY CHECK: If config has qc columns NOT in our table, skip
+                    config_qc_set = set(config_qc_columns)
+                    table_set = set(table_columns)
+                    extra_columns = config_qc_set - table_set
+
+                    if extra_columns:
+                        logger.debug(f"[FIND_CONFIG] EXCLUDED {config_id}: has {len(extra_columns)} qc columns not in table")
+                        configs_excluded_by_qc += 1
+                        continue
+
+                    logger.debug(f"[FIND_CONFIG] SHORTLISTED {config_id}: all {len(config_qc_columns)} qc columns present - checking S3 now")
+
+            # Passed qc filter (or no qc data) - check S3 immediately
             try:
-                # Load config using the clean lookup system
+                logger.debug(f"[FIND_CONFIG] S3 check {configs_processed + 1}: Loading config {config_id}")
+
+                # Load S3 config file (shortlisted, so likely to match)
                 config_data, config_key = storage_manager.find_config_by_id(config_id, email)
                 if not config_data:
-                    logger.warning(f"Could not load config: {config_id}")
+                    logger.warning(f"[FIND_CONFIG] Failed load #{failed_loads + 1}: Config not in S3: {config_id}")
                     failed_loads += 1
                     continue
 
-                # Successfully loaded config - reset consecutive failure counter
-                failed_loads = 0
-                configs_processed += 1
-                
-                # Extract validation targets
+                # Extract validation targets from config file
                 config_columns = extract_validation_targets(config_data)
                 if not config_columns:
-                    logger.debug(f"No validation targets found in config: {config_id}")
+                    logger.debug(f"[FIND_CONFIG] No validation targets in config: {config_id}")
+                    failed_loads += 1
                     continue
-                
+
+                logger.debug(f"[FIND_CONFIG] Successfully loaded {config_id}: {len(config_columns)} validation columns")
+                failed_loads = 0
+                configs_processed += 1
+
                 # Calculate match score
                 match_score = calculate_column_match_score(table_columns, config_columns)
-                logger.info(f"Config {config_id}: match_score={match_score:.3f}, table_cols={len(table_columns)}, config_cols={len(config_columns)}")
-                
+                logger.debug(f"Config {config_id}: match_score={match_score:.3f}, table_cols={len(table_columns)}, config_cols={len(config_columns)}")
+
                 if match_score >= 0.8:
-                    logger.info(f"High score config {config_id}: table={table_columns[:3]}..., config={config_columns[:3]}...")
+                    logger.debug(f"High score config {config_id}: table={table_columns[:3]}..., config={config_columns[:3]}...")
                 
                 # Skip low matches
                 if match_score < 0.8:
@@ -951,6 +1094,8 @@ def find_matching_configs_optimized(email: str, session_id: str, limit: int = 2)
                 continue
         
         # Sort and return results
+        logger.info(f"[FIND_CONFIG] Search complete: {configs_processed} S3 checks, {configs_excluded_by_qc} excluded by qc_by_column")
+
         if perfect_matches:
             # Sort by created_date and return only the most recent
             perfect_matches.sort(key=lambda x: x.get('created_date', ''), reverse=True)

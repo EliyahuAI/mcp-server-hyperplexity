@@ -146,13 +146,10 @@ def create_markdown_table_from_results(validation_results, preview_row_count=3, 
                     if field_name in row_qc_data:
                         field_qc_data = row_qc_data[field_name]
                         if isinstance(field_qc_data, dict) and field_qc_data.get('qc_applied', False):
-                            # Use QC data when available, but display as normal validation
-                            qc_confidence = field_qc_data.get('qc_confidence', '')
-                            qc_value = field_qc_data.get('qc_entry', '')
-                            if qc_confidence:
-                                confidence = qc_confidence
-                            if qc_value:
-                                value = qc_value
+                            # Use QC data when qc_applied=True, even if values are empty
+                            # This ensures QC-cleared values (empty strings) are properly displayed
+                            confidence = field_qc_data.get('qc_confidence', confidence)
+                            value = field_qc_data.get('qc_entry', value)
 
                 # Override confidence for IGNORED fields to show blue emoji (after QC check)
                 if config.get('importance') == 'IGNORED':

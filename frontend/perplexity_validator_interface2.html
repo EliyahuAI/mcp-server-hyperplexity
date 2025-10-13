@@ -4358,6 +4358,28 @@
 
                             // Mark that we're now in active processing
                             timeoutInfo.activeProcessing = true;
+
+                            // Recovery: If we previously showed a warning, clear it now
+                            if (timeoutInfo.warningShown) {
+                                // Find the card and clear the warning
+                                if (cardHandlers.size > 0) {
+                                    const latestCardId = Array.from(cardHandlers.keys()).pop();
+                                    const progressText = document.querySelector(`#${latestCardId} .progress-text`);
+                                    if (progressText) {
+                                        progressText.style.color = '#666'; // Restore normal color
+                                        // The actual text will be updated by the progress message
+                                    }
+
+                                    // Remove fast heartbeat indicator
+                                    const progressSquare = document.querySelector(`#${latestCardId} .progress-square, #${latestCardId} .thinking-square`);
+                                    if (progressSquare) {
+                                        progressSquare.classList.remove('fast-heartbeat');
+                                    }
+                                }
+
+                                // Clear the warning flag
+                                timeoutInfo.warningShown = false;
+                            }
                         } else if (data.status === 'COMPLETED' || data.progress === 100) {
                             // Validation completed - cancel all timers
                             if (timeoutInfo.inactivityTimer) clearTimeout(timeoutInfo.inactivityTimer);
@@ -4449,7 +4471,7 @@
 
                     // Set up both max timeout and inactivity timeout
                     const maxTimeoutMinutes = data.max_expected_minutes || 30;
-                    const inactivityTimeoutMs = 2 * 60 * 1000; // 2 minutes of no messages = dead process
+                    const inactivityTimeoutMs = 3 * 60 * 1000; // 3 minutes of no messages = dead process
 
                     // Store timeout info for this session
                     if (!window.asyncTimeouts) window.asyncTimeouts = new Map();
@@ -4788,10 +4810,10 @@
                     }
                 }, 5000); // Check every 5 seconds
                 
-                // Stop checking after 2 minutes
+                // Stop checking after 3 minutes
                 setTimeout(() => {
                     clearInterval(fallbackInterval);
-                }, 120000);
+                }, 180000);
             }
 
             function registerCardHandler(cardId, messageTypes, handler) {
@@ -10144,32 +10166,24 @@ Please provide any additional context, or simply proceed to generate your initia
         // Validator timeout warning functions
         function showValidatorDeathWarning(cardId, sessionId) {
 
-            // Complete thinking animation with error
-            completeThinkingInCard(cardId, 'Validator appears to have died');
+            // Update progress text to show warning (less dramatic, recoverable)
+            const progressText = document.querySelector(`#${cardId} .progress-text`);
+            if (progressText) {
+                progressText.textContent = 'No updates for 3 minutes - validator may be stalled. Waiting for recovery...';
+                progressText.style.color = '#ff9800'; // Orange warning color
+            }
 
-            // Show error message
-            const errorHtml = `
-                <div style="background: #ffebee; border: 1px solid #f44336; border-radius: 8px; padding: 16px; margin: 16px 0;">
-                    <h4 style="color: #d32f2f; margin: 0 0 8px 0;">⚠️ Validator Process Failed</h4>
-                    <p style="margin: 0 0 8px 0; color: #424242;">
-                        The validation process appears to have died (no progress updates for 2 minutes).
-                    </p>
-                    <p style="margin: 0 0 12px 0; color: #424242;">
-                        This typically happens when the validator lambda encounters an error or timeout.
-                    </p>
-                    <div style="margin-top: 12px;">
-                        <button onclick="location.reload()" style="background: #f44336; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-right: 8px;">
-                            Reload Page
-                        </button>
-                        <button onclick="window.open('mailto:support@eliyahu.ai?subject=Validator Failed&body=Session ID: ${sessionId}', '_blank')"
-                                style="background: #666; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">
-                            Contact Support
-                        </button>
-                    </div>
-                </div>
-            `;
+            // Mark as having shown warning for recovery
+            const timeoutInfo = window.asyncTimeouts && window.asyncTimeouts.get(sessionId);
+            if (timeoutInfo) {
+                timeoutInfo.warningShown = true;
+            }
 
-            showMessage(`${cardId}-messages`, errorHtml, 'error');
+            // Make the progress square pulse faster to indicate issue
+            const progressSquare = document.querySelector(`#${cardId} .progress-square, #${cardId} .thinking-square`);
+            if (progressSquare) {
+                progressSquare.classList.add('fast-heartbeat');
+            }
         }
 
         function showTimeoutWarning(cardId, sessionId, timeoutMinutes) {

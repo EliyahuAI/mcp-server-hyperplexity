@@ -178,19 +178,57 @@ class UnifiedS3Manager:
             # Use preserved filename if provided (for copying), otherwise generate new one
             if preserve_original_filename:
                 config_filename = preserve_original_filename
+                logger.info(f"Using preserved filename: {config_filename}")
             else:
                 config_filename = f"config_v{version}_{source}.json"
-            
+
             file_key = f"{session_path}{config_filename}"
-            
+
             # Generate clean config ID that matches the filename structure
             # New format: {session_id}_{filename_without_extension}
             # Example: session_20250918_150921_ea332116_config_v1_ai_generated
             # Maps to: session_20250918_150921_ea332116/config_v1_ai_generated.json
+
+            import re
             filename_without_ext = config_filename.replace('.json', '')
-            config_id = f"{session_id}_{filename_without_ext}"
-            
-            logger.info(f"Generated clean config ID: {config_id} for file: {config_filename}")
+
+            # BUGFIX: If filename already has a session prefix, use it for config_id (preserve original source)
+            # Otherwise, prepend current session_id
+            # Also handle legacy duplicated suffixes (e.g., config_v1_ai_generated_config_v1_ai_generated)
+            session_prefix_pattern = r'^(session_(?:demo_)?\d{8}_\d{6}_[a-f0-9]{8})_'
+            match = re.match(session_prefix_pattern, filename_without_ext)
+
+            if match:
+                # Filename already has session prefix - use it as-is to preserve original source
+                config_id = filename_without_ext
+
+                # LEGACY FIX: Strip duplicate suffixes if they exist
+                # Pattern: _something_something (where both parts are identical)
+                parts = config_id.split('_')
+                if len(parts) >= 4:
+                    # Check if last parts repeat (e.g., config_v1_ai_generated_config_v1_ai_generated)
+                    midpoint = len(parts) // 2
+                    first_half = '_'.join(parts[midpoint:])
+                    second_half = '_'.join(parts[midpoint:])
+
+                    # If we have duplicated suffixes after the session ID
+                    remaining = config_id[len(match.group(1)) + 1:]  # Everything after session_XXX_
+                    if '_' in remaining:
+                        suffix_parts = remaining.split('_')
+                        midpoint = len(suffix_parts) // 2
+                        if midpoint > 0:
+                            first_half = '_'.join(suffix_parts[:midpoint])
+                            second_half = '_'.join(suffix_parts[midpoint:])
+                            if first_half == second_half:
+                                # Duplicated suffix found - use first half only
+                                config_id = f"{match.group(1)}_{first_half}"
+                                logger.info(f"Stripped duplicate suffix from config ID: {config_id}")
+
+                logger.info(f"Preserved original session in config ID: {config_id}")
+            else:
+                # No session prefix - prepend current session
+                config_id = f"{session_id}_{filename_without_ext}"
+                logger.info(f"Generated new config ID with current session: {config_id}")
             
             # Calculate and store content hash directly in the config for easy access
             content_hash = self._calculate_config_content_hash(config_data)
@@ -1569,68 +1607,105 @@ class UnifiedS3Manager:
     def find_config_by_id(self, config_id: str, email: str) -> Tuple[Optional[Dict], Optional[str]]:
         """
         Clean config lookup function that handles both new and legacy config ID formats.
-        
+
         New format: {session_id}_{filename_without_extension}
         Example: session_20250918_150921_ea332116_config_v1_ai_generated
         Maps to: session_20250918_150921_ea332116/config_v1_ai_generated.json
-        
+
         Legacy format: {session_id}_v{version}_{description}
         Example: session_20250918_150921_ea332116_v1_Configuration_for_AIML_co
         Requires fallback search
         """
         try:
+            logger.info(f"[FIND_CONFIG_BY_ID] Looking up config_id: {config_id}")
+
             # STRATEGY 1: Try new clean format first (direct path construction)
             session_id = None
             filename = None
 
-            # FIRST: Fixed-length session parsing (handles both regular and demo sessions)
-            if config_id.startswith('session_demo_'):
-                # Demo session format: session_demo_YYYYMMDD_HHMMSS_XXXXXXXX (37 chars total)
-                if len(config_id) > 37:
-                    session_id = config_id[:37]
-                    remaining = config_id[37:]
-                    if remaining.startswith('_'):
-                        filename = remaining[1:] + '.json'  # Remove leading underscore
-                        logger.debug(f"Parsed with fixed length (demo session): session={session_id}, filename={filename}")
-            elif len(config_id) > 32 and config_id.startswith('session_'):
-                # Regular session format: session_YYYYMMDD_HHMMSS_XXXXXXXX (32 chars total)
-                session_id = config_id[:32]
-                remaining = config_id[32:]
+            # FIRST: Pattern-based session parsing using regex (more robust than fixed-length)
+            import re
+
+            # Match session pattern: session_YYYYMMDD_HHMMSS_XXXXXXXX or session_demo_YYYYMMDD_HHMMSS_XXXXXXXX
+            session_pattern = r'^(session_(?:demo_)?\d{8}_\d{6}_[a-f0-9]{8})'
+            match = re.match(session_pattern, config_id)
+
+            if match:
+                session_id = match.group(1)
+                remaining = config_id[len(session_id):]
                 if remaining.startswith('_'):
                     filename = remaining[1:] + '.json'  # Remove leading underscore
-                    logger.debug(f"Parsed with fixed length (regular session): session={session_id}, filename={filename}")
-            
-            # SECOND: New format with _config_v marker
+                    logger.info(f"[FIND_CONFIG_BY_ID] Parsed with regex: session={session_id}, filename={filename}")
+
+            # FALLBACK: New format with _config_v marker
             elif '_config_v' in config_id:
                 # Parse: {session_id}_config_v{version}_{source} -> {session_id}/config_v{version}_{source}.json
                 config_v_pos = config_id.find('_config_v')
                 if config_v_pos > 0:
                     session_id = config_id[:config_v_pos]
                     filename = config_id[config_v_pos + 1:] + '.json'  # Skip the leading underscore
-                    logger.debug(f"Parsed with _config_v marker: session={session_id}, filename={filename}")
-            
+                    logger.info(f"[FIND_CONFIG_BY_ID] Parsed with _config_v marker: session={session_id}, filename={filename}")
+
             # Try direct lookup if we successfully parsed
             if session_id and filename:
                 session_path = self.get_session_path(email, session_id)
                 config_key = f"{session_path}{filename}"
-                
-                logger.debug(f"Trying new format direct lookup: {config_id} -> {config_key}")
-                
+
+                logger.info(f"[FIND_CONFIG_BY_ID] Trying direct lookup: {config_key}")
+
                 try:
                     config_response = self.s3_client.get_object(Bucket=self.bucket_name, Key=config_key)
                     config_data = json.loads(config_response['Body'].read().decode('utf-8'))
-                    logger.info(f"Found config by new format: {config_id} -> {filename}")
+                    logger.info(f"[FIND_CONFIG_BY_ID] SUCCESS - Found config: {config_id} -> {filename}")
                     return config_data, config_key
                 except self.s3_client.exceptions.NoSuchKey:
-                    logger.debug(f"Config not found with new format, trying legacy lookup")
+                    logger.warning(f"[FIND_CONFIG_BY_ID] Config not found at {config_key}, trying legacy lookup")
                 except Exception as e:
-                    logger.debug(f"Error with new format lookup: {e}")
-            
+                    logger.warning(f"[FIND_CONFIG_BY_ID] Error with direct lookup: {e}, trying legacy lookup")
+            else:
+                logger.warning(f"[FIND_CONFIG_BY_ID] Could not parse config_id with regex or _config_v marker")
+
             # STRATEGY 2: Legacy lookup (existing complex logic)
-            return self._legacy_get_config_by_id(config_id, email)
-            
+            result = self._legacy_get_config_by_id(config_id, email)
+            if result[0]:
+                logger.info(f"[FIND_CONFIG_BY_ID] SUCCESS via legacy lookup: {config_id}")
+                return result
+
+            # STRATEGY 3: FALLBACK for legacy duplicated config IDs
+            # Try stripping duplicate session prefixes and suffixes
+            # Pattern: session_A_session_B_config_v1_ai_generated_config_v1_ai_generated
+            # Should be: session_B_config_v1_ai_generated
+            import re
+            session_pattern = r'^(session_(?:demo_)?\d{8}_\d{6}_[a-f0-9]{8})_(session_(?:demo_)?\d{8}_\d{6}_[a-f0-9]{8})_(.+)'
+            match = re.match(session_pattern, config_id)
+
+            if match:
+                # Has double session prefix - use the second (source) session
+                source_session = match.group(2)
+                remainder = match.group(3)
+
+                # Check for duplicated suffix
+                suffix_parts = remainder.split('_')
+                if len(suffix_parts) >= 2:
+                    midpoint = len(suffix_parts) // 2
+                    first_half = '_'.join(suffix_parts[:midpoint])
+                    second_half = '_'.join(suffix_parts[midpoint:])
+
+                    if first_half == second_half:
+                        # Duplicated suffix - use first half
+                        clean_config_id = f"{source_session}_{first_half}"
+                        logger.warning(f"[FIND_CONFIG_BY_ID] Trying fallback for legacy duplicate: {config_id} -> {clean_config_id}")
+
+                        result = self.find_config_by_id(clean_config_id, email)
+                        if result[0]:
+                            logger.info(f"[FIND_CONFIG_BY_ID] SUCCESS via legacy duplicate fallback")
+                            return result
+
+            logger.error(f"[FIND_CONFIG_BY_ID] FAILED - Could not find config: {config_id}")
+            return None, None
+
         except Exception as e:
-            logger.error(f"Failed to find config by ID: {e}")
+            logger.error(f"[FIND_CONFIG_BY_ID] Exception for {config_id}: {e}")
             return None, None
 
     def get_config_by_id(self, config_id: str, email: str) -> Tuple[Optional[Dict], Optional[str]]:

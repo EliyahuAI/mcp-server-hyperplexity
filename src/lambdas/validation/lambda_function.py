@@ -2726,8 +2726,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 event = complete_payload
 
                 # Restore preserved fields (only if not None and not already in payload)
+                # CRITICAL: Always override continuation fields from invocation (they change each lambda call)
+                continuation_fields = {'is_continuation', 'continuation_count', 'last_completed_rows'}
                 for field, value in preserved_fields.items():
-                    if value is not None and field not in event:
+                    # Always restore continuation fields if present (they're per-invocation, not in S3 payload)
+                    if field in continuation_fields and value is not None:
+                        event[field] = value
+                        logger.debug(f"[ASYNC_PAYLOAD] Restored continuation field {field} = {value}")
+                    # Restore other fields only if not already in payload
+                    elif value is not None and field not in event:
                         event[field] = value
                         logger.debug(f"[ASYNC_PAYLOAD] Restored {field} from invocation event")
 
@@ -3074,6 +3081,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.debug(f"[AI_PROGRESS] Counted {calls_per_row_validation} active validation groups (excluding IGNORED-only groups)")
 
         # Calculate already-completed calls for continuations
+        # CRITICAL: is_continuation must be properly restored from invocation event (not from S3 payload)
         already_completed_ai_calls = 0
         if is_continuation and skip_count > 0:
             # Use the same filtered count for consistency
