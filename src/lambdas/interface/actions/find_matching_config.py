@@ -412,18 +412,18 @@ def get_successfully_used_config_ids(email: str) -> List[str]:
 
         config_with_times = []
 
-        # Try run_key GSI for fast lookup, fall back to scan if index doesn't exist
+        # Use EmailStartTimeIndex GSI for fast lookup (ordered by start_time)
         try:
-            logger.debug(f"[GET_CONFIGS] Querying run_key GSI for Preview# runs, filtering by {email}")
+            logger.debug(f"[GET_CONFIGS] Querying EmailStartTimeIndex GSI for {email}")
             response = table.query(
-                IndexName='run_key-index',
-                KeyConditionExpression=Key('run_key').begins_with('Preview#'),
-                FilterExpression=Attr('email').eq(email) & Attr('status').eq('COMPLETED') & Attr('configuration_id').exists(),
-                ScanIndexForward=False  # Sort by run_key descending (most recent first due to timestamp)
+                IndexName='EmailStartTimeIndex',
+                KeyConditionExpression=Key('email').eq(email),
+                FilterExpression=Attr('status').eq('COMPLETED') & Attr('configuration_id').exists(),
+                ScanIndexForward=False  # Most recent first
             )
         except Exception as e:
             # Fallback to scan if GSI doesn't exist
-            logger.debug(f"[GET_CONFIGS] GSI not available, falling back to scan")
+            logger.debug(f"[GET_CONFIGS] EmailStartTimeIndex GSI not available, falling back to scan: {e}")
             response = table.scan(
                 FilterExpression=Attr('email').eq(email) &
                                Attr('run_type').is_in(['Preview', 'Validation']) &
@@ -443,26 +443,16 @@ def get_successfully_used_config_ids(email: str) -> List[str]:
             elif config_id and 'session_demo_' in config_id:
                 logger.debug(f"Skipping demo config: {config_id}")
 
-        # Handle pagination if needed (using same method as initial query)
-        using_gsi = 'run_key' in str(response)  # Simple check to see if we used GSI
+        # Handle pagination for GSI query
         while 'LastEvaluatedKey' in response:
             try:
-                if using_gsi:
-                    response = table.query(
-                        IndexName='run_key-index',
-                        KeyConditionExpression=Key('run_key').begins_with('Preview#'),
-                        FilterExpression=Attr('email').eq(email) & Attr('status').eq('COMPLETED') & Attr('configuration_id').exists(),
-                        ScanIndexForward=False,
-                        ExclusiveStartKey=response['LastEvaluatedKey']
-                    )
-                else:
-                    response = table.scan(
-                        FilterExpression=Attr('email').eq(email) &
-                                       Attr('run_type').is_in(['Preview', 'Validation']) &
-                                       Attr('status').eq('COMPLETED') &
-                                       Attr('configuration_id').exists(),
-                        ExclusiveStartKey=response['LastEvaluatedKey']
-                    )
+                response = table.query(
+                    IndexName='EmailStartTimeIndex',
+                    KeyConditionExpression=Key('email').eq(email),
+                    FilterExpression=Attr('status').eq('COMPLETED') & Attr('configuration_id').exists(),
+                    ScanIndexForward=False,
+                    ExclusiveStartKey=response['LastEvaluatedKey']
+                )
             except:
                 break  # Stop pagination on error
 
@@ -479,15 +469,29 @@ def get_successfully_used_config_ids(email: str) -> List[str]:
 
         # Sort by start_time (most recent first) and extract unique config_ids
         config_with_times.sort(key=lambda x: x[1], reverse=True)
-        successfully_used_configs = []
-        seen_configs = set()
+
+        # DEDUPLICATION: Only keep the latest version per session
+        # Group configs by session_id and keep only the highest version per session
+        session_configs = {}  # session_id -> (config_id, version, start_time)
 
         for config_id, start_time in config_with_times:
-            if config_id not in seen_configs:
-                successfully_used_configs.append(config_id)
-                seen_configs.add(config_id)
+            # Extract session ID and version from config_id
+            session_id, version = extract_session_and_version_from_config_id(config_id)
 
-        logger.info(f"Found {len(successfully_used_configs)} successfully used configs (excluding demos) for {email}, ordered by recency")
+            # Only keep the highest version per session
+            if session_id not in session_configs or version > session_configs[session_id][1]:
+                session_configs[session_id] = (config_id, version, start_time)
+                logger.debug(f"Keeping {config_id} (v{version}) for session {session_id}")
+            else:
+                logger.debug(f"Skipping {config_id} (v{version}), already have v{session_configs[session_id][1]} for session {session_id}")
+
+        # Extract config_ids and sort by start_time (most recent first)
+        deduplicated_configs = [(config_id, start_time) for config_id, version, start_time in session_configs.values()]
+        deduplicated_configs.sort(key=lambda x: x[1], reverse=True)
+        successfully_used_configs = [config_id for config_id, _ in deduplicated_configs]
+
+        logger.info(f"Found {len(successfully_used_configs)} successfully used configs (excluding demos, deduplicated by session) for {email}, ordered by recency")
+        logger.info(f"Original count before deduplication: {len(config_with_times)}")
         return successfully_used_configs
 
     except Exception as e:
