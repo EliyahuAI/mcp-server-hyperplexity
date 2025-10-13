@@ -103,7 +103,8 @@ class TableConversationHandler:
                 prompt=prompt,
                 schema=schema,
                 model=model,
-                max_tokens=8000
+                max_tokens=8000,
+                use_cache=False  # Disable caching for standalone mode
             )
 
             # Check API call success
@@ -220,7 +221,8 @@ class TableConversationHandler:
                 prompt=prompt,
                 schema=schema,
                 model=model,
-                max_tokens=8000
+                max_tokens=8000,
+                use_cache=False  # Disable caching for standalone mode
             )
 
             # Check API call success
