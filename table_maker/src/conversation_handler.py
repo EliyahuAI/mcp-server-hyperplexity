@@ -110,8 +110,11 @@ class TableConversationHandler:
 
             # Check API call success
             if not api_response.get('success'):
+                error_detail = api_response.get('error', 'Unknown error')
+                logger.error(f"API call failed. Error: {error_detail}")
+                logger.error(f"Full API response: {json.dumps(api_response, indent=2)}")
                 raise Exception(
-                    f"AI API call failed: {api_response.get('error', 'Unknown error')}"
+                    f"AI API call failed: {error_detail}"
                 )
 
             # Extract and validate response
@@ -229,8 +232,11 @@ class TableConversationHandler:
 
             # Check API call success
             if not api_response.get('success'):
+                error_detail = api_response.get('error', 'Unknown error')
+                logger.error(f"API call failed. Error: {error_detail}")
+                logger.error(f"Full API response: {json.dumps(api_response, indent=2)}")
                 raise Exception(
-                    f"AI API call failed: {api_response.get('error', 'Unknown error')}"
+                    f"AI API call failed: {error_detail}"
                 )
 
             # Extract and validate response
