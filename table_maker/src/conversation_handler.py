@@ -97,14 +97,15 @@ class TableConversationHandler:
             # Load response schema
             schema = self.schema_validator.load_schema('conversation_response')
 
-            # Call AI API
+            # Call AI API (standalone mode - no caching, no debug saves)
             logger.debug(f"Calling AI API with model: {model}")
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
                 model=model,
                 max_tokens=8000,
-                use_cache=False  # Disable caching for standalone mode
+                use_cache=False,  # Disable caching for standalone mode
+                debug_name=None  # Disable debug file saving
             )
 
             # Check API call success
@@ -215,14 +216,15 @@ class TableConversationHandler:
             # Load response schema
             schema = self.schema_validator.load_schema('conversation_response')
 
-            # Call AI API
+            # Call AI API (standalone mode - no caching, no debug saves)
             logger.debug(f"Calling AI API with model: {model}")
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
                 model=model,
                 max_tokens=8000,
-                use_cache=False  # Disable caching for standalone mode
+                use_cache=False,  # Disable caching for standalone mode
+                debug_name=None  # Disable debug file saving
             )
 
             # Check API call success
