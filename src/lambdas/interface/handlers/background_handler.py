@@ -5159,11 +5159,21 @@ def handle_main_processing(event, context):
                                     break
 
                         # Check for expected sheets in enhanced Excel (if available)
+                        # IMPORTANT: Use FULL version (with Details) for validation, not customer version
                         try:
-                            if enhanced_excel_content:
+                            # Check if we have the full version with Details sheet
+                            excel_to_check = None
+                            if hasattr(enhanced_excel_buffer, 'full_version') and enhanced_excel_buffer.full_version:
+                                excel_to_check = enhanced_excel_buffer.full_version
+                                logger.debug("[FINAL_COMPLETENESS_CHECK] Using full_version for validation (includes Details)")
+                            elif enhanced_excel_content:
+                                excel_to_check = enhanced_excel_content
+                                logger.debug("[FINAL_COMPLETENESS_CHECK] Using customer_version for validation (may not have Details)")
+
+                            if excel_to_check:
                                 import openpyxl
                                 import io
-                                wb = openpyxl.load_workbook(io.BytesIO(enhanced_excel_content), read_only=True)
+                                wb = openpyxl.load_workbook(io.BytesIO(excel_to_check), read_only=True)
                                 expected_sheets = ['Updated Values', 'Original Values', 'Details']  # Correct expected sheets
                                 missing_sheets = [sheet for sheet in expected_sheets if sheet not in wb.sheetnames]
                                 if missing_sheets:
