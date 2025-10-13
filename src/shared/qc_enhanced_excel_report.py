@@ -334,3 +334,48 @@ def create_qc_enhanced_excel_with_validation(
     except Exception as e:
         logger.error(f"Error creating QC-enhanced Excel: {str(e)}")
         return None
+
+
+def strip_details_sheet_for_customer(excel_content: bytes) -> bytes:
+    """
+    Remove the Details sheet from an enhanced Excel file for customer distribution.
+
+    The Details sheet contains internal processing information and should only be
+    kept in the archived results in S3. Customer-facing versions (email attachments
+    and download links) should have this sheet removed.
+
+    Args:
+        excel_content: Enhanced Excel file content with Details sheet
+
+    Returns:
+        Excel file content without Details sheet, or original content if stripping fails
+    """
+    try:
+        import openpyxl
+        from io import BytesIO
+
+        # Load the workbook
+        wb = openpyxl.load_workbook(BytesIO(excel_content))
+
+        # Check if Details sheet exists
+        if 'Details' not in wb.sheetnames:
+            logger.warning("[STRIP_DETAILS] No Details sheet found - returning original content")
+            return excel_content
+
+        # Remove the Details sheet
+        del wb['Details']
+        logger.info(f"[STRIP_DETAILS] Removed Details sheet. Remaining sheets: {wb.sheetnames}")
+
+        # Save to buffer
+        output_buffer = BytesIO()
+        wb.save(output_buffer)
+        output_buffer.seek(0)
+        result = output_buffer.read()
+
+        logger.info(f"[STRIP_DETAILS] Successfully stripped Details sheet. Original size: {len(excel_content)}, New size: {len(result)}")
+        return result
+
+    except Exception as e:
+        logger.error(f"[STRIP_DETAILS] Error stripping Details sheet: {e}")
+        logger.warning("[STRIP_DETAILS] Returning original content due to error")
+        return excel_content
