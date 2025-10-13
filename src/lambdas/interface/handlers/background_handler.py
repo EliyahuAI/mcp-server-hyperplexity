@@ -1201,21 +1201,17 @@ def handle_main_processing(event, context):
         s3_client = boto3.client('s3')
 
         try:
-            from ..reporting.interface_qc_excel_integration import create_qc_enhanced_excel_for_interface
+            from excel_report_qc_unified import create_qc_enhanced_excel_for_interface
             EXCEL_ENHANCEMENT_AVAILABLE = True
         except ImportError:
             try:
-                from excel_report_qc_unified import create_qc_enhanced_excel_for_interface
-                EXCEL_ENHANCEMENT_AVAILABLE = True
+                from ..reporting.excel_report_new import create_enhanced_excel_with_validation, EXCEL_ENHANCEMENT_AVAILABLE
+                # Fallback function that maps to QC interface
+                def create_qc_enhanced_excel_for_interface(table_data, validation_results, config_data, session_id, validated_sheet_name=None, config_s3_key=None):
+                    return create_enhanced_excel_with_validation(table_data, validation_results, config_data, session_id, validated_sheet_name, config_s3_key=config_s3_key)
             except ImportError:
-                try:
-                    from ..reporting.excel_report_new import create_enhanced_excel_with_validation, EXCEL_ENHANCEMENT_AVAILABLE
-                    # Fallback function that maps to OLD Excel generation (does NOT support dual generation)
-                    def create_qc_enhanced_excel_for_interface(table_data, validation_results, config_data, session_id, validated_sheet_name=None, config_s3_key=None):
-                        return create_enhanced_excel_with_validation(table_data, validation_results, config_data, session_id, validated_sheet_name, config_s3_key=config_s3_key)
-                except ImportError:
-                    EXCEL_ENHANCEMENT_AVAILABLE = False
-                    def create_qc_enhanced_excel_for_interface(*args, **kwargs): return None
+                EXCEL_ENHANCEMENT_AVAILABLE = False
+                def create_qc_enhanced_excel_for_interface(*args, **kwargs): return None
         
         try:
             from email_sender import send_validation_results_email
@@ -2106,8 +2102,8 @@ def handle_main_processing(event, context):
                                f"per batch: {timing_estimates.get('actual_time_per_batch_seconds', 0):.3f}s")
                 
                 # Add key frontend-expected fields to cost_estimates object (frontend looks for them here)
-                preview_payload['cost_estimates'].update({
-                    "quoted_validation_cost": quoted_full_cost,  # Original cost before discount
+                cost_estimates_update = {
+                    "quoted_validation_cost": effective_cost,  # What user will actually pay (after discount)
                     "estimated_validation_eliyahu_cost": estimated_total_cost_raw,  # Raw eliyahu cost estimate for full table (no multiplier)
                     "discount": discount,  # Discount amount applied
                     "effective_cost": effective_cost,  # Cost after discount (what user actually pays)
@@ -2115,15 +2111,27 @@ def handle_main_processing(event, context):
                     "estimated_validation_time": estimated_total_time_seconds, # Explicitly pass the full validation time estimate
                     "total_provider_cost_estimated": totals.get('total_cost_estimated', 0.0),  # Total estimated cost across all providers
                     "total_provider_calls": totals.get('total_calls', 0) + qc_metrics_data.get('total_qc_calls', 0) if qc_metrics_data else totals.get('total_calls', 0)  # Total calls including QC
-                })
+                }
+
+                # Add original_cost field when there's a discount for frontend display
+                if discount > 0:
+                    cost_estimates_update["original_cost"] = quoted_full_cost
+
+                preview_payload['cost_estimates'].update(cost_estimates_update)
 
                 # Add fields at top level for backward compatibility and easy access
-                preview_payload.update({
-                    "quoted_validation_cost": quoted_full_cost,  # Original cost before discount
+                top_level_update = {
+                    "quoted_validation_cost": effective_cost,  # What user will actually pay (after discount)
                     "estimated_validation_eliyahu_cost": estimated_total_cost_raw,  # Raw eliyahu cost estimate for full table (no multiplier)
                     "discount": discount,  # Discount amount
                     "effective_cost": effective_cost  # Cost after discount
-                })
+                }
+
+                # Add original_cost at top level when there's a discount
+                if discount > 0:
+                    top_level_update["original_cost"] = quoted_full_cost
+
+                preview_payload.update(top_level_update)
                 
                 # Generate enhanced Excel download link and add to preview payload
                 enhanced_download_url = None
@@ -2204,37 +2212,20 @@ def handle_main_processing(event, context):
                                 config_version = config_data.get('storage_metadata', {}).get('version', 1)
                                 enhanced_filename = f"{os.path.splitext(input_filename)[0]}_v{config_version}_preview_enhanced.xlsx"
                                 logger.debug(f"[DEBUG] Storing enhanced Excel with filename: {enhanced_filename}")
-
-                                # Get full version (with Details sheet) for S3 storage
-                                if hasattr(enhanced_excel_buffer, 'full_version'):
-                                    full_version_excel = enhanced_excel_buffer.full_version
-                                    logger.info("[PREVIEW_S3] Using full version from dual-generated Excel (with Details sheet) for S3 storage")
-                                else:
-                                    logger.warning("[PREVIEW_S3] No full_version attribute found, using buffer content for S3 storage")
-                                    full_version_excel = enhanced_excel_content
-
-                                # Store FULL version (with Details) in versioned results folder
+                                
+                                # Store enhanced Excel in versioned results folder
                                 enhanced_result = storage_manager.store_enhanced_files(
                                     email, clean_session_id, config_version,
-                                    full_version_excel, None,
+                                    enhanced_excel_content, None,
                                     result_type='preview'
                                 )
                                 
                                 if enhanced_result['success']:
                                     logger.debug(f"[DEBUG] Enhanced Excel stored in results folder: {enhanced_result['stored_files']}")
-
-                                    # Get customer version (without Details sheet) for download
-                                    # If enhanced_excel_buffer has customer_version attribute, use it; otherwise use the buffer content
-                                    if hasattr(enhanced_excel_buffer, 'customer_version'):
-                                        customer_enhanced_excel = enhanced_excel_buffer.customer_version
-                                        logger.info("[PREVIEW_DOWNLOAD] Using customer version from dual-generated Excel (no Details sheet)")
-                                    else:
-                                        logger.warning("[PREVIEW_DOWNLOAD] No customer_version attribute found, using buffer content")
-                                        customer_enhanced_excel = enhanced_excel_content
-
-                                    # Create public download link for immediate download (customer version without Details)
+                                    
+                                    # Also create public download link for immediate download
                                     enhanced_download_url = storage_manager.create_public_download_link(
-                                        customer_enhanced_excel,
+                                        enhanced_excel_content, 
                                         enhanced_filename,
                                         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                                     )
@@ -2509,16 +2500,22 @@ def handle_main_processing(event, context):
                 })
 
                 # Create minimal frontend payload with only consumed fields
+                cost_estimates_dict = {
+                    "quoted_validation_cost": effective_cost,  # What user will actually pay (after discount)
+                    "discount": discount,
+                    "effective_cost": effective_cost,
+                    "estimated_validation_time": estimated_total_time_seconds
+                }
+
+                # Add original_cost when there's a discount
+                if discount > 0:
+                    cost_estimates_dict["original_cost"] = quoted_full_cost
+
                 frontend_payload = {
                     "markdown_table": preview_payload.get("markdown_table", ""),
                     "enhanced_download_url": preview_payload.get("enhanced_download_url"),
                     "total_rows": preview_payload.get("total_rows", 0),
-                    "cost_estimates": {
-                        "quoted_validation_cost": quoted_full_cost,  # Original cost before discount
-                        "discount": discount,
-                        "effective_cost": effective_cost,
-                        "estimated_validation_time": estimated_total_time_seconds
-                    },
+                    "cost_estimates": cost_estimates_dict,
                     "validation_metrics": {
                         "validated_columns_count": validation_metrics.get('validated_columns_count', 0),
                         "search_groups_count": total_groups_for_frontend,  # Total groups so frontend math works
@@ -4438,35 +4435,19 @@ def handle_main_processing(event, context):
                             # Get version from config
                             config_version = config_data.get('storage_metadata', {}).get('version', 1)
                             enhanced_filename = f"{os.path.splitext(input_filename)[0]}_v{config_version}_full_enhanced.xlsx"
-
-                            # Get full version (with Details sheet) for S3 storage
-                            if hasattr(enhanced_excel_buffer, 'full_version'):
-                                full_version_excel = enhanced_excel_buffer.full_version
-                                logger.info("[FULL_S3] Using full version from dual-generated Excel (with Details sheet) for S3 storage")
-                            else:
-                                logger.warning("[FULL_S3] No full_version attribute found, using buffer content for S3 storage")
-                                full_version_excel = safe_enhanced_excel_content
-
-                            # Store FULL version (with Details) in versioned results folder
+                            
+                            # Store enhanced Excel in versioned results folder
                             enhanced_result = storage_manager.store_enhanced_files(
-                                email, clean_session_id, config_version,
-                                full_version_excel, None
+                                email, clean_session_id, config_version, 
+                                safe_enhanced_excel_content, None
                             )
                             
                             if enhanced_result['success']:
                                 logger.info(f"Enhanced Excel stored in results folder for full validation: {enhanced_result['stored_files']}")
-
-                                # Get customer version (without Details sheet) for download
-                                if hasattr(enhanced_excel_buffer, 'customer_version'):
-                                    customer_enhanced_excel = enhanced_excel_buffer.customer_version
-                                    logger.info("[FULL_DOWNLOAD] Using customer version from dual-generated Excel (no Details sheet)")
-                                else:
-                                    logger.warning("[FULL_DOWNLOAD] No customer_version attribute found, using buffer content")
-                                    customer_enhanced_excel = safe_enhanced_excel_content
-
-                                # Create public download link for immediate download (with stripped Details)
+                                
+                                # Also create public download link for immediate download
                                 enhanced_download_url = storage_manager.create_public_download_link(
-                                    customer_enhanced_excel,
+                                    safe_enhanced_excel_content, 
                                     enhanced_filename,
                                     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                                 )

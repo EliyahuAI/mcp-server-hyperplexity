@@ -412,9 +412,8 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         return None
 
     if not EXCEL_ENHANCEMENT_AVAILABLE:
-        error_msg = "CRITICAL: xlsxwriter not available - cannot generate enhanced Excel reports. This system requires enhanced Excel generation."
-        logger.error(error_msg)
-        raise ImportError(error_msg)
+        logger.warning("Enhanced Excel not available, skipping Excel creation")
+        return None
         
     try:
         # Create Excel buffer
@@ -1121,28 +1120,28 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                             # Create comment only if we have meaningful content
                             if comment_parts:
                                 comment_text = '\n\n'.join(comment_parts)
-                    
-                    # Write original value - use xlsxwriter's write_formula method for preserved formulas
-                    if should_preserve_formulas(col_name) and str(original_value).startswith('='):
-                        try:
-                            original_sheet.write_formula(row_idx + 1, col_idx, str(original_value), cell_format)
-                        except Exception as e:
-                            logger.warning(f"Failed to write formula, falling back to text: {e}")
-                            original_sheet.write(row_idx + 1, col_idx, safe_for_excel(original_value, should_preserve_formulas(col_name)), cell_format)
-                    else:
-                        original_sheet.write(row_idx + 1, col_idx, safe_for_excel(original_value, should_preserve_formulas(col_name)), cell_format)
-                    
-                    # Add comment if needed
-                    if comment_text:
-                        try:
-                            # DEBUG: Log the comment text being written
-                            if col_name == 'Start Date':
-                                logger.info(f"[COMMENT_WRITE_DEBUG] Row {row_idx} {col_name}: Writing comment at Excel row {row_idx + 1}: {comment_text[:200]}...")
 
-                            original_sheet.write_comment(row_idx + 1, col_idx, comment_text,
-                                                       {'width': 300, 'height': 150})
-                        except Exception as e:
-                            logger.warning(f"Could not add comment: {e}")
+                        # Write original value - use xlsxwriter's write_formula method for preserved formulas
+                        if should_preserve_formulas(col_name) and str(original_value).startswith('='):
+                            try:
+                                original_sheet.write_formula(row_idx + 1, col_idx, str(original_value), cell_format)
+                            except Exception as e:
+                                logger.warning(f"Failed to write formula, falling back to text: {e}")
+                                original_sheet.write(row_idx + 1, col_idx, safe_for_excel(original_value, should_preserve_formulas(col_name)), cell_format)
+                        else:
+                            original_sheet.write(row_idx + 1, col_idx, safe_for_excel(original_value, should_preserve_formulas(col_name)), cell_format)
+
+                        # Add comment if needed
+                        if comment_text:
+                            try:
+                                # DEBUG: Log the comment text being written
+                                if col_name == 'Start Date':
+                                    logger.info(f"[COMMENT_WRITE_DEBUG] Row {row_idx} {col_name}: Writing comment at Excel row {row_idx + 1}: {comment_text[:200]}...")
+
+                                original_sheet.write_comment(row_idx + 1, col_idx, comment_text,
+                                                           {'width': 300, 'height': 150})
+                            except Exception as e:
+                                logger.warning(f"Could not add comment: {e}")
 
                     original_rows_processed += 1
                 except Exception as row_error:
@@ -1617,8 +1616,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
         logger.error(f"Error creating enhanced Excel: {str(e)}")
         import traceback
         logger.error(f"Enhanced Excel creation traceback: {traceback.format_exc()}")
-        # Re-raise the exception - enhanced Excel generation is required, cannot fallback
-        raise Exception(f"Enhanced Excel generation failed: {str(e)}") from e
+        return None
 
 
 def create_qc_enhanced_excel_for_interface(
@@ -1697,5 +1695,19 @@ def create_qc_enhanced_excel_for_interface(
 
     except Exception as e:
         logger.error(f"Error creating QC-enhanced Excel for interface: {str(e)}")
-        # Re-raise the exception - enhanced Excel generation is required, no fallback
-        raise Exception(f"QC-enhanced Excel generation failed: {str(e)}") from e
+
+        # Fallback to standard Excel creation without QC
+        try:
+            return create_enhanced_excel_with_validation(
+                excel_data=table_data,
+                validation_results=validation_results,
+                config_data=config_data,
+                session_id=session_id,
+                skip_history=False,
+                validated_sheet_name=validated_sheet_name,
+                qc_results=None,
+                config_s3_key=config_s3_key
+            )
+        except Exception as fallback_error:
+            logger.error(f"Fallback Excel creation also failed: {str(fallback_error)}")
+            return None
