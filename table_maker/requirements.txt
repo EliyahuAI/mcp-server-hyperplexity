@@ -1,0 +1,8 @@
+anthropic
+aiohttp
+aioboto3
+boto3
+pandas
+pyyaml
+pytest
+pytest-asyncio
