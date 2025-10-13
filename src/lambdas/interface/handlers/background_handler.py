@@ -2184,11 +2184,14 @@ def handle_main_processing(event, context):
                                     validated_sheet_name=validated_sheet,
                                     config_s3_key=config_s3_key
                                 )
-                                
+
                                 if excel_buffer:
+                                    # Preserve buffer for accessing dual version attributes
+                                    enhanced_excel_buffer = excel_buffer
                                     enhanced_excel_content = excel_buffer.getvalue()
                                 else:
                                     logger.error("Enhanced Excel creation failed - excel_buffer is None")
+                                    enhanced_excel_buffer = None
                             except Exception as e:
                                 logger.error(f"Error creating enhanced Excel for preview: {str(e)}")
                                 import traceback
@@ -2212,20 +2215,36 @@ def handle_main_processing(event, context):
                                 config_version = config_data.get('storage_metadata', {}).get('version', 1)
                                 enhanced_filename = f"{os.path.splitext(input_filename)[0]}_v{config_version}_preview_enhanced.xlsx"
                                 logger.debug(f"[DEBUG] Storing enhanced Excel with filename: {enhanced_filename}")
-                                
-                                # Store enhanced Excel in versioned results folder
+
+                                # Use FULL version (with Details) for S3 storage if available
+                                if enhanced_excel_buffer and hasattr(enhanced_excel_buffer, 'full_version'):
+                                    s3_excel_content = enhanced_excel_buffer.full_version
+                                    logger.info("[PREVIEW_S3] Using full version (with Details sheet) for S3 storage")
+                                else:
+                                    s3_excel_content = enhanced_excel_content
+                                    logger.warning("[PREVIEW_S3] No full_version attribute, using buffer content")
+
+                                # Store FULL version (with Details) in versioned results folder
                                 enhanced_result = storage_manager.store_enhanced_files(
                                     email, clean_session_id, config_version,
-                                    enhanced_excel_content, None,
+                                    s3_excel_content, None,
                                     result_type='preview'
                                 )
-                                
+
                                 if enhanced_result['success']:
                                     logger.debug(f"[DEBUG] Enhanced Excel stored in results folder: {enhanced_result['stored_files']}")
-                                    
+
+                                    # Use CUSTOMER version (without Details) for download link
+                                    if enhanced_excel_buffer and hasattr(enhanced_excel_buffer, 'customer_version'):
+                                        download_excel_content = enhanced_excel_buffer.customer_version
+                                        logger.info("[PREVIEW_DOWNLOAD] Using customer version (no Details sheet) for download")
+                                    else:
+                                        download_excel_content = enhanced_excel_content
+                                        logger.warning("[PREVIEW_DOWNLOAD] No customer_version attribute, using buffer content")
+
                                     # Also create public download link for immediate download
                                     enhanced_download_url = storage_manager.create_public_download_link(
-                                        enhanced_excel_content, 
+                                        download_excel_content,
                                         enhanced_filename,
                                         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                                     )
@@ -4208,17 +4227,27 @@ def handle_main_processing(event, context):
                             config_s3_key=config_s3_key
                         )
                         if excel_buffer:
+                            # Preserve buffer for accessing dual version attributes
+                            enhanced_excel_buffer = excel_buffer
                             enhanced_excel_content = excel_buffer.getvalue()
                             logger.info(f"Created enhanced Excel: {len(enhanced_excel_content)} bytes")
 
-                            # Save enhanced Excel to S3 for potential future use
+                            # Use FULL version (with Details) for S3 storage if available
+                            if hasattr(enhanced_excel_buffer, 'full_version'):
+                                s3_excel_content = enhanced_excel_buffer.full_version
+                                logger.info("[FULL_S3] Using full version (with Details sheet) for S3 storage")
+                            else:
+                                s3_excel_content = enhanced_excel_content
+                                logger.warning("[FULL_S3] No full_version attribute, using buffer content")
+
+                            # Save FULL version (with Details) to S3 for potential future use
                             try:
                                 session_path = storage_manager.get_session_path(email, clean_session_id)
                                 enhanced_excel_key = f"{session_path}v{config_version}_results/enhanced_validation.xlsx"
                                 s3_client.put_object(
                                     Bucket=storage_manager.bucket_name,
                                     Key=enhanced_excel_key,
-                                    Body=enhanced_excel_content,
+                                    Body=s3_excel_content,
                                     ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                                 )
                                 logger.info(f"Saved enhanced Excel to S3: {enhanced_excel_key}")
@@ -4226,6 +4255,7 @@ def handle_main_processing(event, context):
                                 logger.warning(f"Failed to save enhanced Excel to S3: {save_e}")
                         else:
                             logger.error("Enhanced Excel creation failed - excel_buffer is None")
+                            enhanced_excel_buffer = None
                     except Exception as e:
                         logger.error(f"Error creating enhanced Excel: {str(e)}")
                         import traceback
@@ -4435,19 +4465,35 @@ def handle_main_processing(event, context):
                             # Get version from config
                             config_version = config_data.get('storage_metadata', {}).get('version', 1)
                             enhanced_filename = f"{os.path.splitext(input_filename)[0]}_v{config_version}_full_enhanced.xlsx"
-                            
-                            # Store enhanced Excel in versioned results folder
+
+                            # Use FULL version (with Details) for S3 storage if available
+                            if enhanced_excel_buffer and hasattr(enhanced_excel_buffer, 'full_version'):
+                                s3_excel_content = enhanced_excel_buffer.full_version
+                                logger.info("[FULL_VALIDATION_S3] Using full version (with Details sheet) for S3 storage")
+                            else:
+                                s3_excel_content = safe_enhanced_excel_content
+                                logger.warning("[FULL_VALIDATION_S3] No full_version attribute, using safe_enhanced_excel_content")
+
+                            # Store FULL version (with Details) in versioned results folder
                             enhanced_result = storage_manager.store_enhanced_files(
-                                email, clean_session_id, config_version, 
-                                safe_enhanced_excel_content, None
+                                email, clean_session_id, config_version,
+                                s3_excel_content, None
                             )
-                            
+
                             if enhanced_result['success']:
                                 logger.info(f"Enhanced Excel stored in results folder for full validation: {enhanced_result['stored_files']}")
-                                
+
+                                # Use CUSTOMER version (without Details) for download link
+                                if enhanced_excel_buffer and hasattr(enhanced_excel_buffer, 'customer_version'):
+                                    download_excel_content = enhanced_excel_buffer.customer_version
+                                    logger.info("[FULL_VALIDATION_DOWNLOAD] Using customer version (no Details sheet) for download")
+                                else:
+                                    download_excel_content = safe_enhanced_excel_content
+                                    logger.warning("[FULL_VALIDATION_DOWNLOAD] No customer_version attribute, using safe_enhanced_excel_content")
+
                                 # Also create public download link for immediate download
                                 enhanced_download_url = storage_manager.create_public_download_link(
-                                    safe_enhanced_excel_content, 
+                                    download_excel_content,
                                     enhanced_filename,
                                     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                                 )

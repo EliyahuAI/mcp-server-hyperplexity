@@ -65,8 +65,8 @@ def create_qc_enhanced_excel_for_interface(
             logger.error("No Excel file content found in table_data for QC Excel creation")
             return None
 
-        # Create QC-enhanced Excel
-        enhanced_excel_content = create_qc_enhanced_excel_with_validation(
+        # Create QC-enhanced Excel (always includes Details sheet)
+        full_excel_content = create_qc_enhanced_excel_with_validation(
             excel_file_content=excel_file_content,
             validation_results=validation_results,
             qc_results=qc_results,
@@ -74,14 +74,26 @@ def create_qc_enhanced_excel_for_interface(
             session_id=session_id
         )
 
-        if enhanced_excel_content:
-            # Return as BytesIO for compatibility
-            excel_buffer = io.BytesIO(enhanced_excel_content)
-            logger.info(f"Created QC-enhanced Excel for session {session_id}")
-            return excel_buffer
-        else:
+        if not full_excel_content:
             logger.error("QC-enhanced Excel creation returned None")
             return None
+
+        logger.info(f"[INTERFACE_QC] Full Excel generated: {len(full_excel_content):,} bytes (with Details sheet)")
+
+        # Strip Details sheet for customer version
+        from qc_enhanced_excel_report import strip_details_sheet_for_customer
+        customer_excel_content = strip_details_sheet_for_customer(full_excel_content)
+        logger.info(f"[INTERFACE_QC] Customer Excel created: {len(customer_excel_content):,} bytes (no Details sheet)")
+
+        # Return BytesIO with BOTH versions as attributes
+        # - customer version in buffer (for backward compatibility with .getvalue())
+        # - full version as .full_version attribute (for S3 storage)
+        # - customer version as .customer_version attribute (for downloads/email)
+        excel_buffer = io.BytesIO(customer_excel_content)
+        excel_buffer.full_version = full_excel_content
+        excel_buffer.customer_version = customer_excel_content
+        logger.info(f"Created QC-enhanced Excel with both versions for session {session_id}")
+        return excel_buffer
 
     except Exception as e:
         logger.error(f"Error creating QC-enhanced Excel for interface: {str(e)}")
