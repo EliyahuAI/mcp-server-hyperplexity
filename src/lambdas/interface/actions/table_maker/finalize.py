@@ -242,13 +242,13 @@ Ensure variety and relevance to the research domain.
             # Progress update
             if websocket_client and session_id:
                 try:
-                websocket_client.send_to_session(session_id, {
-                    'type': 'table_finalization_progress',
-                    'progress': 50,
-                    'status': 'Creating CSV files...'
-                })
-            except Exception as e:
-                logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
+                    websocket_client.send_to_session(session_id, {
+                        'type': 'table_finalization_progress',
+                        'progress': 50,
+                        'status': 'Creating CSV files...'
+                    })
+                except Exception as e:
+                    logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
 
             # Create CSV WITH column definitions (for user download)
             user_csv_filename = f"table_{session_id}.csv"
@@ -360,10 +360,10 @@ Ensure variety and relevance to the research domain.
         if websocket_client and session_id:
             try:
                 websocket_client.send_to_session(session_id, {
-                'type': 'table_finalization_progress',
-                'progress': 60,
-                'status': 'Generating validation configuration...'
-            })
+                    'type': 'table_finalization_progress',
+                    'progress': 60,
+                    'status': 'Generating validation configuration...'
+                })
             except Exception as e:
                 logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
 
@@ -425,10 +425,10 @@ Ensure variety and relevance to the research domain.
         if websocket_client and session_id:
             try:
                 websocket_client.send_to_session(session_id, {
-                'type': 'table_finalization_progress',
-                'progress': 70,
-                'status': 'Calling config generation lambda...'
-            })
+                    'type': 'table_finalization_progress',
+                    'progress': 70,
+                    'status': 'Calling config generation lambda...'
+                })
             except Exception as e:
                 logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
 
@@ -470,10 +470,10 @@ Ensure variety and relevance to the research domain.
         if websocket_client and session_id:
             try:
                 websocket_client.send_to_session(session_id, {
-                'type': 'table_finalization_progress',
-                'progress': 85,
-                'status': 'Launching preview validation...'
-            })
+                    'type': 'table_finalization_progress',
+                    'progress': 85,
+                    'status': 'Launching preview validation...'
+                })
             except Exception as e:
                 logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
 
@@ -510,10 +510,10 @@ Ensure variety and relevance to the research domain.
         if websocket_client and session_id:
             try:
                 websocket_client.send_to_session(session_id, {
-                'type': 'table_finalization_progress',
-                'progress': 100,
-                'status': 'Table generation and validation complete!'
-            })
+                    'type': 'table_finalization_progress',
+                    'progress': 100,
+                    'status': 'Table generation and validation complete!'
+                })
             except Exception as e:
                 logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
 
