@@ -553,16 +553,23 @@ def handle_table_accept_and_validate_sync(event_data: Dict[str, Any], context) -
     from interface_lambda.utils.helpers import create_response
 
     try:
+        logger.info(f"[TABLE_FINALIZE_SYNC] Starting sync wrapper with event_data: {event_data.keys()}")
+
         # Run the async function
         result = asyncio.run(handle_table_accept_and_validate(event_data))
 
-        if result['success']:
+        logger.info(f"[TABLE_FINALIZE_SYNC] Async function completed with success={result.get('success')}")
+
+        if result.get('success'):
             return create_response(200, result)
         else:
+            logger.error(f"[TABLE_FINALIZE_SYNC] Result indicated failure: {result.get('error')}")
             return create_response(500, result)
 
     except Exception as e:
-        logger.error(f"Sync table finalization failed: {str(e)}")
+        logger.error(f"[TABLE_FINALIZE_SYNC] Sync table finalization failed: {str(e)}")
+        import traceback
+        logger.error(f"[TABLE_FINALIZE_SYNC] Traceback: {traceback.format_exc()}")
         return create_response(500, {'success': False, 'error': str(e)})
 
 

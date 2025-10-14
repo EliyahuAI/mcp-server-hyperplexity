@@ -10685,8 +10685,10 @@ Please provide any additional context, or simply proceed to generate your initia
                 return;
             }
 
-            // Hide input, show thinking
+            // Hide input and button, show thinking
             document.getElementById(`${cardId}-input-container`).style.display = 'none';
+            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+            if (buttonsContainer) buttonsContainer.style.display = 'none';
             showThinkingInCard(cardId, 'Starting conversation with AI...', true);
 
             // Add user message to chat
@@ -10797,15 +10799,7 @@ Please provide any additional context, or simply proceed to generate your initia
             }
 
             const messageDiv = document.createElement('div');
-            messageDiv.className = `table-chat-message ${role}`;
-            messageDiv.style.cssText = `
-                margin-bottom: 12px;
-                padding: 10px 14px;
-                border-radius: 8px;
-                ${role === 'user' ?
-                    'background: #007bff; color: white; margin-left: 20%; text-align: right;' :
-                    'background: #f0f0f0; color: #333; margin-right: 20%;'}
-            `;
+            messageDiv.className = `chat-message ${role}`; // Use global chat-message class
             messageDiv.textContent = cleanContent;
             chatContainer.appendChild(messageDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -10854,32 +10848,43 @@ Please provide any additional context, or simply proceed to generate your initia
             const columns = previewData.columns || [];
             const sampleRows = previewData.sample_rows || previewData.rows?.sample_rows || [];
 
-            // Build column list
+            // Build column list with ID indicators
             const columnListHtml = columns.map(col => {
                 const name = col.name || col;
                 const desc = col.description || '';
-                const isId = col.is_identification ? ' [ID]' : '';
-                return `<li><strong>${name}</strong>${isId}${desc ? ': ' + desc : ''}</li>`;
+                const isId = col.is_identification;
+                const idIndicator = isId ? '<span style="display: inline-block; width: 8px; height: 8px; background: #007bff; border-radius: 50%; margin-right: 4px;"></span>' : '';
+                return `<li>${idIndicator}<strong>${name}</strong>${desc ? ': ' + desc : ''}</li>`;
             }).join('');
 
-            // Build markdown table
+            // Build TRANSPOSED markdown table (like validation preview)
             let markdownTable = '';
             if (sampleRows.length > 0 && columns.length > 0) {
-                // Header row
-                const headers = columns.map(col => col.name || col).join(' | ');
-                const separator = columns.map(() => '---').join(' | ');
+                const rowsToShow = sampleRows.slice(0, 3);
 
-                // Data rows (limit to 3 sample rows)
-                const dataRows = sampleRows.slice(0, 3).map(row => {
-                    return columns.map(col => {
-                        const colName = col.name || col;
+                // Transposed: each column becomes a row
+                const transposedRows = columns.map(col => {
+                    const colName = col.name || col;
+                    const isId = col.is_identification;
+                    const idMarker = isId ? ' 🔵' : '';
+                    const values = rowsToShow.map(row => {
                         const value = row[colName] || '';
                         return String(value).substring(0, 50); // Truncate long values
-                    }).join(' | ');
+                    });
+                    return `| **${colName}**${idMarker} | ${values.join(' | ')} |`;
                 }).join('\n');
 
-                markdownTable = `${headers}\n${separator}\n${dataRows}`;
+                // Header shows row numbers
+                const header = `| Column | ${rowsToShow.map((_, i) => `Row ${i + 1}`).join(' | ')} |`;
+                const separator = `| --- | ${rowsToShow.map(() => '---').join(' | ')} |`;
+
+                markdownTable = `${header}\n${separator}\n${transposedRows}`;
             }
+
+            // ID columns explanation
+            const idExplanation = columns.some(c => c.is_identification)
+                ? '<p style="margin: 8px 0; padding: 8px 12px; background: #e3f2fd; border-radius: 4px; color: #1565c0; font-size: 13px;"><span style="display: inline-block; width: 8px; height: 8px; background: #007bff; border-radius: 50%; margin-right: 6px;"></span><strong>ID Columns</strong> define the row identity and are not validated (marked with 🔵)</p>'
+                : '';
 
             // Display preview
             previewContainer.innerHTML = `
@@ -10887,14 +10892,16 @@ Please provide any additional context, or simply proceed to generate your initia
                     <h4 style="margin: 0 0 12px 0; color: #28a745;">[SUCCESS] Table Structure Ready</h4>
                     <p style="margin: 0 0 12px 0; color: #666;">Your table structure is ready with ${columns.length} columns. You can now generate the full table with validation.</p>
 
+                    ${idExplanation}
+
                     <h5 style="margin: 12px 0 8px 0;">Columns:</h5>
-                    <ul style="margin: 0 0 12px 0; padding-left: 24px;">
+                    <ul style="margin: 0 0 12px 0; padding-left: 24px; font-family: inherit;">
                         ${columnListHtml}
                     </ul>
 
                     ${markdownTable ? `
-                        <h5 style="margin: 12px 0 8px 0;">Sample Data Preview:</h5>
-                        <pre style="background: white; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 11px; font-family: monospace;">${markdownTable}</pre>
+                        <h5 style="margin: 12px 0 8px 0;">Sample Data Preview (transposed):</h5>
+                        <div style="overflow-x: auto;">${renderMarkdown(markdownTable)}</div>
                     ` : ''}
                 </div>
             `;
