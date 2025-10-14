@@ -19,7 +19,7 @@ from .conversation import (
     handle_table_conversation_continue
 )
 from .preview import handle_table_preview_generate
-from .finalize import handle_table_accept_and_validate
+from .finalize import handle_table_accept_and_validate_sync
 from .context_research import perform_context_research
 from .config_bridge import build_table_analysis_from_conversation
 
@@ -28,7 +28,7 @@ TABLE_MAKER_ACTIONS = {
     'startTableConversation': handle_table_conversation_start_async,
     'continueTableConversation': handle_table_conversation_continue_async,
     'generateTablePreview': handle_table_preview_generate,
-    'acceptTableAndValidate': handle_table_accept_and_validate,
+    'acceptTableAndValidate': handle_table_accept_and_validate_sync,
 }
 
 def route_table_maker_action(action, request_data, context):

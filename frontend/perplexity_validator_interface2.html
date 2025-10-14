@@ -10790,6 +10790,12 @@ Please provide any additional context, or simply proceed to generate your initia
             const chatContainer = document.getElementById(`${cardId}-chat`);
             if (!chatContainer) return;
 
+            // Strip citation tags from AI responses (e.g., <cite index="11-1">text</cite>)
+            let cleanContent = content;
+            if (role === 'ai') {
+                cleanContent = content.replace(/<cite[^>]*>(.*?)<\/cite>/g, '$1');
+            }
+
             const messageDiv = document.createElement('div');
             messageDiv.className = `table-chat-message ${role}`;
             messageDiv.style.cssText = `
@@ -10800,7 +10806,7 @@ Please provide any additional context, or simply proceed to generate your initia
                     'background: #007bff; color: white; margin-left: 20%; text-align: right;' :
                     'background: #f0f0f0; color: #333; margin-right: 20%;'}
             `;
-            messageDiv.textContent = content;
+            messageDiv.textContent = cleanContent;
             chatContainer.appendChild(messageDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
@@ -10844,12 +10850,52 @@ Please provide any additional context, or simply proceed to generate your initia
             // Store preview data
             tableMakerState.previewData = previewData;
 
+            // Extract columns and sample rows
+            const columns = previewData.columns || [];
+            const sampleRows = previewData.sample_rows || previewData.rows?.sample_rows || [];
+
+            // Build column list
+            const columnListHtml = columns.map(col => {
+                const name = col.name || col;
+                const desc = col.description || '';
+                const isId = col.is_identification ? ' [ID]' : '';
+                return `<li><strong>${name}</strong>${isId}${desc ? ': ' + desc : ''}</li>`;
+            }).join('');
+
+            // Build markdown table
+            let markdownTable = '';
+            if (sampleRows.length > 0 && columns.length > 0) {
+                // Header row
+                const headers = columns.map(col => col.name || col).join(' | ');
+                const separator = columns.map(() => '---').join(' | ');
+
+                // Data rows (limit to 3 sample rows)
+                const dataRows = sampleRows.slice(0, 3).map(row => {
+                    return columns.map(col => {
+                        const colName = col.name || col;
+                        const value = row[colName] || '';
+                        return String(value).substring(0, 50); // Truncate long values
+                    }).join(' | ');
+                }).join('\n');
+
+                markdownTable = `${headers}\n${separator}\n${dataRows}`;
+            }
+
             // Display preview
             previewContainer.innerHTML = `
                 <div style="margin: 16px 0; padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745;">
-                    <h4 style="margin: 0 0 12px 0; color: #28a745;">✅ Table Structure Ready</h4>
-                    <p style="margin: 0 0 12px 0; color: #666;">Your table structure is ready. You can now generate the full table with validation.</p>
-                    <pre style="background: white; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px;">${JSON.stringify(previewData, null, 2)}</pre>
+                    <h4 style="margin: 0 0 12px 0; color: #28a745;">[SUCCESS] Table Structure Ready</h4>
+                    <p style="margin: 0 0 12px 0; color: #666;">Your table structure is ready with ${columns.length} columns. You can now generate the full table with validation.</p>
+
+                    <h5 style="margin: 12px 0 8px 0;">Columns:</h5>
+                    <ul style="margin: 0 0 12px 0; padding-left: 24px;">
+                        ${columnListHtml}
+                    </ul>
+
+                    ${markdownTable ? `
+                        <h5 style="margin: 12px 0 8px 0;">Sample Data Preview:</h5>
+                        <pre style="background: white; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 11px; font-family: monospace;">${markdownTable}</pre>
+                    ` : ''}
                 </div>
             `;
 
