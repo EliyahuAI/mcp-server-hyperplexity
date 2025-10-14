@@ -510,6 +510,52 @@ class TableConversationHandler:
 
         return "No description available"
 
+    def _extract_structured_response(self, raw_response: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract structured response from raw API response.
+
+        Args:
+            raw_response: Raw API response
+
+        Returns:
+            Parsed structured response dictionary
+        """
+        try:
+            # Check if response is already structured (from cache or direct return)
+            if 'ai_message' in raw_response:
+                return raw_response
+
+            # Extract from Perplexity/Anthropic response format
+            if 'choices' in raw_response:
+                content = raw_response['choices'][0]['message']['content']
+                # Parse JSON string to dict
+                if isinstance(content, str):
+                    return json.loads(content)
+                return content
+
+            # If content is in different format
+            if 'content' in raw_response:
+                content = raw_response['content']
+                if isinstance(content, str):
+                    return json.loads(content)
+                elif isinstance(content, list) and len(content) > 0:
+                    # Anthropic format: content[0]['text']
+                    text_content = content[0].get('text', '{}')
+                    return json.loads(text_content)
+                return content
+
+            # Fallback: return as-is and let validation catch issues
+            logger.warning(f"Unknown response structure, keys: {list(raw_response.keys())}")
+            return raw_response
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON from response content: {e}")
+            logger.error(f"Content was: {str(content)[:500]}")
+            raise Exception(f"Failed to parse structured response: {e}")
+        except Exception as e:
+            logger.error(f"Error extracting structured response: {e}")
+            raise
+
     def _log_token_usage(self, token_usage: Dict[str, Any]):
         """
         Log token usage information.
