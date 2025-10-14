@@ -5942,11 +5942,11 @@
 
             function proceedWithTableMaker(cardId) {
                 // Show completion state
-                showFinalCardState(cardId, 'Opening table maker...', 'success');
+                showFinalCardState(cardId, 'Starting table maker...', 'success');
 
-                // Open table maker modal
+                // Create table maker card
                 setTimeout(() => {
-                    openTableMakerModal();
+                    createTableMakerCard();
                 }, 500);
             }
 
@@ -10624,142 +10624,84 @@ Please provide any additional context, or simply proceed to generate your initia
         const tableMakerState = {
             conversationId: null,
             messages: [],
-            previewData: null
+            previewData: null,
+            cardId: null
         };
 
-        // Open initial table maker prompt modal
-        function openTableMakerModal() {
-            const overlay = document.createElement('div');
-            overlay.className = 'table-maker-modal-overlay';
-            overlay.id = 'table-maker-modal-overlay';
+        // Create table maker card
+        function createTableMakerCard() {
+            const cardId = generateCardId();
+            tableMakerState.cardId = cardId;
 
-            overlay.innerHTML = `
-                <div class="table-maker-modal">
-                    <button class="table-maker-modal-close" onclick="closeTableMakerModal()">&times;</button>
-                    <div class="table-maker-modal-header">
-                        <h2 class="table-maker-modal-title">Create a Research Table</h2>
-                        <p class="table-maker-modal-subtitle">Describe what you'd like to research and we'll help you build a comprehensive table</p>
-                    </div>
-                    <div class="table-maker-input-area">
-                        <textarea id="table-maker-initial-input" class="table-maker-textarea"
-                            placeholder="Example: Track AI research papers on transformers with citation data, publication venues, and code availability"></textarea>
-                        <p class="table-maker-example">Tip: Be specific about what data points you need</p>
-                    </div>
-                    <div class="table-maker-buttons">
-                        <button class="std-button secondary" onclick="closeTableMakerModal()">Cancel</button>
-                        <button class="std-button primary" onclick="startTableConversation()">Continue</button>
-                    </div>
+            const content = `
+                <div id="${cardId}-messages"></div>
+                <div id="${cardId}-chat" style="max-height: 400px; overflow-y: auto; margin-bottom: 16px;"></div>
+                <div id="${cardId}-preview-container"></div>
+                <div id="${cardId}-input-container">
+                    <textarea id="${cardId}-input" class="table-maker-textarea"
+                        placeholder="Example: Track AI research papers on transformers with citation data, publication venues, and code availability"
+                        style="width: 100%; min-height: 80px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; font-size: 14px; resize: vertical;"></textarea>
+                    <p style="margin: 8px 0; color: #666; font-size: 13px;">💡 Tip: Be specific about what data points you need</p>
                 </div>
             `;
 
-            document.body.appendChild(overlay);
-        }
+            const card = createCard({
+                id: cardId,
+                icon: '🔬',
+                title: 'Research Table Maker',
+                subtitle: 'Describe your research table and we\'ll help you build it',
+                content,
+                buttons: [
+                    {
+                        text: '📝 Start Conversation',
+                        variant: 'primary',
+                        callback: () => startTableConversationFromCard(cardId)
+                    }
+                ]
+            });
 
-        // Close table maker modal
-        function closeTableMakerModal() {
-            const overlay = document.getElementById('table-maker-modal-overlay');
-            if (overlay) {
-                overlay.remove();
-            }
+            return card;
         }
 
         // Register WebSocket handler for table conversation updates
-        function registerTableMakerWebSocketHandler() {
-            const chatOverlay = document.getElementById('table-maker-chat-overlay');
-            if (!chatOverlay) return;
+        function registerTableMakerWebSocketHandler(cardId) {
+            const card = document.getElementById(cardId);
+            if (!card) return;
 
-            // Register handler with a unique ID based on the overlay
-            registerCardHandler('table-maker-chat-overlay', ['table_conversation_update'], (data) => {
+            // Register handler with the card ID
+            registerCardHandler(cardId, ['table_conversation_update'], (data) => {
                 console.log('[TABLE_MAKER] Received WebSocket update:', data);
-                handleTableConversationUpdate(data);
+                handleTableConversationUpdate(data, cardId);
             });
         }
 
-        // Handle table conversation updates from WebSocket
-        function handleTableConversationUpdate(data) {
-            // Remove thinking indicator if present
-            removeTableMakerThinkingIndicator();
-
-            // Update progress if available
-            if (data.progress !== undefined) {
-                updateTableMakerProgress(data.progress, data.status);
-            }
-
-            // Add AI message when complete
-            if (data.progress === 100 && data.ai_message) {
-                tableMakerState.messages.push({ role: 'ai', content: data.ai_message });
-                addTableMakerMessage('ai', data.ai_message);
-
-                // Check if ready to generate preview
-                if (data.ready_to_generate && data.preview_data) {
-                    showTableMakerPreview(data.preview_data);
-                }
-
-                // Check for proposed table
-                if (data.proposed_table) {
-                    showTableMakerPreview(data.proposed_table);
-                }
-            }
-
-            // Handle errors
-            if (data.error) {
-                addTableMakerMessage('error', data.error);
-            }
-        }
-
-        // Add thinking indicator to table maker chat
-        function addTableMakerThinkingIndicator() {
-            const chatContainer = document.getElementById('table-maker-chat');
-            if (!chatContainer) return;
-
-            const thinkingDiv = document.createElement('div');
-            thinkingDiv.className = 'table-maker-message ai';
-            thinkingDiv.id = 'table-maker-thinking';
-            thinkingDiv.innerHTML = `
-                <div class="thinking-animation">
-                    <span class="thinking-dot"></span>
-                    <span class="thinking-dot"></span>
-                    <span class="thinking-dot"></span>
-                </div>
-                <p class="thinking-text">AI is analyzing your request...</p>
-            `;
-            chatContainer.appendChild(thinkingDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
-
-        // Remove thinking indicator
-        function removeTableMakerThinkingIndicator() {
-            const thinking = document.getElementById('table-maker-thinking');
-            if (thinking) {
-                thinking.remove();
-            }
-        }
-
-        // Update table maker progress
-        function updateTableMakerProgress(progress, statusMessage) {
-            // Update subtitle with progress
-            const subtitle = document.querySelector('.table-maker-modal-subtitle');
-            if (subtitle && statusMessage) {
-                subtitle.textContent = `${progress}% - ${statusMessage}`;
-            }
-        }
-
-        // Start table conversation (async via WebSocket)
-        async function startTableConversation() {
-            const input = document.getElementById('table-maker-initial-input');
+        // Start table conversation from card
+        async function startTableConversationFromCard(cardId) {
+            const input = document.getElementById(`${cardId}-input`);
             const userMessage = input.value.trim();
 
             if (!userMessage) {
-                alert('Please describe what table you want to create');
+                showMessage(`${cardId}-messages`, 'Please describe what table you want to create', 'error');
                 return;
             }
 
-            // Close initial modal and open chat interface
-            closeTableMakerModal();
-            openTableMakerChatModal(userMessage);
+            // Hide input, show thinking
+            document.getElementById(`${cardId}-input-container`).style.display = 'none';
+            showThinkingInCard(cardId, 'Starting conversation with AI...', true);
 
-            // Register WebSocket handler for table conversation updates
-            registerTableMakerWebSocketHandler();
+            // Add user message to chat
+            addMessageToTableChat(cardId, 'user', userMessage);
+            tableMakerState.messages.push({ role: 'user', content: userMessage });
+
+            // Register WebSocket handler
+            registerTableMakerWebSocketHandler(cardId);
+
+            // Update card subtitle
+            const card = document.getElementById(cardId);
+            const subtitle = card.querySelector('.card-subtitle');
+            if (subtitle) {
+                subtitle.textContent = 'AI is analyzing your request...';
+            }
 
             // Send to backend - this will queue the work and return immediately
             try {
@@ -10781,23 +10723,253 @@ Please provide any additional context, or simply proceed to generate your initia
                 if (data.success && data.status === 'processing') {
                     // Request queued successfully - save conversation ID and wait for WebSocket updates
                     tableMakerState.conversationId = data.conversation_id;
-                    tableMakerState.messages.push({ role: 'user', content: userMessage });
 
                     // Connect to WebSocket session
                     connectToSession(sessionId);
 
-                    // Show thinking indicator
-                    addTableMakerThinkingIndicator();
-
                     console.log(`[TABLE_MAKER] Conversation started, waiting for updates via WebSocket: ${data.conversation_id}`);
                 } else {
-                    alert('Failed to start conversation: ' + (data.error || data.message || 'Unknown error'));
-                    closeTableMakerChatModal();
+                    completeThinkingInCard(cardId, 'Failed to start');
+                    showMessage(`${cardId}-messages`,
+                        'Failed to start conversation: ' + (data.error || data.message || 'Unknown error'),
+                        'error');
+                    document.getElementById(`${cardId}-input-container`).style.display = 'block';
                 }
             } catch (error) {
                 console.error('Error starting table conversation:', error);
-                alert('Failed to start conversation. Please try again.');
-                closeTableMakerChatModal();
+                completeThinkingInCard(cardId, 'Error');
+                showMessage(`${cardId}-messages`,
+                    'Failed to start conversation. Please try again.',
+                    'error');
+                document.getElementById(`${cardId}-input-container`).style.display = 'block';
+            }
+        }
+
+        // Handle table conversation updates from WebSocket
+        function handleTableConversationUpdate(data, cardId) {
+            console.log('[TABLE_MAKER] Processing update:', data);
+
+            // Update progress if available
+            if (data.progress !== undefined) {
+                if (data.progress < 100) {
+                    updateThinkingProgress(cardId, data.progress, data.status);
+                }
+            }
+
+            // Add AI message when complete
+            if (data.progress === 100 && data.ai_message) {
+                completeThinkingInCard(cardId, 'Response received');
+                tableMakerState.messages.push({ role: 'ai', content: data.ai_message });
+                addMessageToTableChat(cardId, 'ai', data.ai_message);
+
+                // Update subtitle
+                const card = document.getElementById(cardId);
+                const subtitle = card.querySelector('.card-subtitle');
+                if (subtitle) {
+                    subtitle.textContent = `Turn ${data.turn_count || tableMakerState.messages.length / 2}`;
+                }
+
+                // Check if ready to generate preview
+                if (data.ready_to_generate) {
+                    showTablePreviewInCard(cardId, data.proposed_table || data.preview_data);
+                } else {
+                    // Show refinement input
+                    showRefinementInput(cardId);
+                }
+            }
+
+            // Handle errors
+            if (data.error) {
+                completeThinkingInCard(cardId, 'Error occurred');
+                showMessage(`${cardId}-messages`, `Error: ${data.error}`, 'error');
+            }
+        }
+
+        // Add message to table chat
+        function addMessageToTableChat(cardId, role, content) {
+            const chatContainer = document.getElementById(`${cardId}-chat`);
+            if (!chatContainer) return;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `table-chat-message ${role}`;
+            messageDiv.style.cssText = `
+                margin-bottom: 12px;
+                padding: 10px 14px;
+                border-radius: 8px;
+                ${role === 'user' ?
+                    'background: #007bff; color: white; margin-left: 20%; text-align: right;' :
+                    'background: #f0f0f0; color: #333; margin-right: 20%;'}
+            `;
+            messageDiv.textContent = content;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Show refinement input
+        function showRefinementInput(cardId) {
+            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+            if (!buttonsContainer) return;
+
+            // Create refinement input if it doesn't exist
+            let refinementDiv = document.getElementById(`${cardId}-refinement`);
+            if (!refinementDiv) {
+                refinementDiv = document.createElement('div');
+                refinementDiv.id = `${cardId}-refinement`;
+                refinementDiv.style.cssText = 'margin-top: 16px;';
+                refinementDiv.innerHTML = `
+                    <textarea id="${cardId}-refine-input" class="table-maker-textarea"
+                        placeholder="Add more details or ask questions..."
+                        style="width: 100%; min-height: 60px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; font-size: 14px; resize: vertical; margin-bottom: 8px;"></textarea>
+                `;
+                buttonsContainer.parentNode.insertBefore(refinementDiv, buttonsContainer);
+            }
+
+            // Update buttons
+            createButtonRow(`${cardId}-buttons`, [
+                {
+                    text: '💬 Continue Conversation',
+                    variant: 'primary',
+                    callback: () => continueTableConversationFromCard(cardId)
+                }
+            ]);
+        }
+
+        // Show table preview in card
+        function showTablePreviewInCard(cardId, previewData) {
+            if (!previewData) return;
+
+            const previewContainer = document.getElementById(`${cardId}-preview-container`);
+            if (!previewContainer) return;
+
+            // Store preview data
+            tableMakerState.previewData = previewData;
+
+            // Display preview
+            previewContainer.innerHTML = `
+                <div style="margin: 16px 0; padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745;">
+                    <h4 style="margin: 0 0 12px 0; color: #28a745;">✅ Table Structure Ready</h4>
+                    <p style="margin: 0 0 12px 0; color: #666;">Your table structure is ready. You can now generate the full table with validation.</p>
+                    <pre style="background: white; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px;">${JSON.stringify(previewData, null, 2)}</pre>
+                </div>
+            `;
+
+            // Update buttons
+            createButtonRow(`${cardId}-buttons`, [
+                {
+                    text: '🔧 Refine Table',
+                    variant: 'secondary',
+                    callback: () => showRefinementInput(cardId)
+                },
+                {
+                    text: '✨ Generate & Validate',
+                    variant: 'primary',
+                    callback: () => acceptTableAndValidateFromCard(cardId)
+                }
+            ]);
+        }
+
+        // Continue table conversation from card
+        async function continueTableConversationFromCard(cardId) {
+            const input = document.getElementById(`${cardId}-refine-input`);
+            if (!input) return;
+
+            const userMessage = input.value.trim();
+            if (!userMessage) {
+                showMessage(`${cardId}-messages`, 'Please enter a message', 'error');
+                return;
+            }
+
+            // Add user message to chat
+            addMessageToTableChat(cardId, 'user', userMessage);
+            tableMakerState.messages.push({ role: 'user', content: userMessage });
+
+            // Clear input and show thinking
+            input.value = '';
+            showThinkingInCard(cardId, 'Processing your request...', true);
+
+            // Hide refinement input
+            const refinementDiv = document.getElementById(`${cardId}-refinement`);
+            if (refinementDiv) refinementDiv.style.display = 'none';
+
+            // Send to backend
+            try {
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'continueTableConversation',
+                        email: globalState.email,
+                        session_id: globalState.sessionId,
+                        conversation_id: tableMakerState.conversationId,
+                        user_message: userMessage
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.status === 'processing') {
+                    console.log(`[TABLE_MAKER] Conversation continue queued, waiting for updates`);
+                } else {
+                    completeThinkingInCard(cardId, 'Error');
+                    showMessage(`${cardId}-messages`,
+                        'Failed to continue conversation: ' + (data.error || data.message || 'Unknown error'),
+                        'error');
+                    if (refinementDiv) refinementDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error continuing conversation:', error);
+                completeThinkingInCard(cardId, 'Error');
+                showMessage(`${cardId}-messages`,
+                    'Failed to send message. Please try again.',
+                    'error');
+                if (refinementDiv) refinementDiv.style.display = 'block';
+            }
+        }
+
+        // Accept table and start validation from card
+        async function acceptTableAndValidateFromCard(cardId) {
+            if (!tableMakerState.previewData) {
+                showMessage(`${cardId}-messages`, 'No table preview available', 'error');
+                return;
+            }
+
+            showThinkingInCard(cardId, 'Generating table and starting validation...', true);
+
+            try {
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'acceptTableAndValidate',
+                        email: globalState.email,
+                        session_id: globalState.sessionId,
+                        conversation_id: tableMakerState.conversationId,
+                        table_config: tableMakerState.previewData
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    completeThinkingInCard(cardId, 'Table generated!');
+                    showMessage(`${cardId}-messages`,
+                        '✅ Table structure generated successfully! Validation starting...',
+                        'success');
+
+                    // This would transition to standard validation flow
+                    // For now, show success
+                } else {
+                    completeThinkingInCard(cardId, 'Generation failed');
+                    showMessage(`${cardId}-messages`,
+                        'Failed to generate table: ' + (data.error || data.message || 'Unknown error'),
+                        'error');
+                }
+            } catch (error) {
+                console.error('Error accepting table:', error);
+                completeThinkingInCard(cardId, 'Error');
+                showMessage(`${cardId}-messages`,
+                    'Failed to generate table. Please try again.',
+                    'error');
             }
         }
 
