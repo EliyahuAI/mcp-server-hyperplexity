@@ -27,7 +27,8 @@
       "Bash(mkdir:*)",
       "Bash(test:*)",
       "Bash(git reset:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(python3.exe:*)"
     ],
     "deny": []
   }
