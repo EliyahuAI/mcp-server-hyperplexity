@@ -10707,7 +10707,24 @@ Please provide any additional context, or simply proceed to generate your initia
 
             // Send to backend - this will queue the work and return immediately
             try {
-                const sessionId = globalState.sessionId || 'temp_' + Date.now();
+                // Generate proper session ID for table maker (similar to config_gen_)
+                let sessionId = globalState.sessionId;
+                if (!sessionId) {
+                    // Generate new session ID: table_gen_YYYYMMDD_HHMMSS_randomhex
+                    const now = new Date();
+                    const timestamp = now.getFullYear().toString() +
+                        (now.getMonth() + 1).toString().padStart(2, '0') +
+                        now.getDate().toString().padStart(2, '0') + '_' +
+                        now.getHours().toString().padStart(2, '0') +
+                        now.getMinutes().toString().padStart(2, '0') +
+                        now.getSeconds().toString().padStart(2, '0');
+                    const randomHex = Math.random().toString(16).substring(2, 10);
+                    sessionId = `table_gen_${timestamp}_${randomHex}`;
+
+                    // Store in globalState for this table generation
+                    globalState.sessionId = sessionId;
+                    logger.info(`[TABLE_MAKER] Generated new session ID: ${sessionId}`);
+                }
 
                 const response = await fetch(`${API_BASE}/validate`, {
                     method: 'POST',
