@@ -118,7 +118,14 @@ class TableConversationHandler:
                 )
 
             # Extract and validate response
-            ai_response = api_response.get('response', {})
+            raw_response = api_response.get('response', {})
+
+            # The response needs to be extracted from the API response structure
+            # For Anthropic/Perplexity: response['choices'][0]['message']['content'] contains JSON string
+            ai_response = self._extract_structured_response(raw_response)
+
+            logger.info(f"Extracted AI response keys: {list(ai_response.keys())}")
+
             validation_result = self.schema_validator.validate_ai_response(
                 ai_response,
                 'conversation_response'
@@ -240,7 +247,14 @@ class TableConversationHandler:
                 )
 
             # Extract and validate response
-            ai_response = api_response.get('response', {})
+            raw_response = api_response.get('response', {})
+
+            # The response needs to be extracted from the API response structure
+            # For Anthropic/Perplexity: response['choices'][0]['message']['content'] contains JSON string
+            ai_response = self._extract_structured_response(raw_response)
+
+            logger.info(f"Extracted AI response keys: {list(ai_response.keys())}")
+
             validation_result = self.schema_validator.validate_ai_response(
                 ai_response,
                 'conversation_response'
