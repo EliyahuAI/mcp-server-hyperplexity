@@ -104,7 +104,7 @@ class TableConversationHandler:
                 schema=schema,
                 model=model,
                 max_tokens=8000,
-                use_cache=False,  # Disable caching for standalone mode
+                use_cache=True,  # Enable caching for Lambda deployment
                 debug_name=None  # Disable debug file saving
             )
 
@@ -233,7 +233,7 @@ class TableConversationHandler:
                 schema=schema,
                 model=model,
                 max_tokens=8000,
-                use_cache=False,  # Disable caching for standalone mode
+                use_cache=True,  # Enable caching for Lambda deployment
                 debug_name=None  # Disable debug file saving
             )
 

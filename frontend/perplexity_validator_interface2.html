@@ -10883,26 +10883,26 @@ Please provide any additional context, or simply proceed to generate your initia
 
             // ID columns explanation
             const idExplanation = columns.some(c => c.is_identification)
-                ? '<p style="margin: 8px 0; padding: 8px 12px; background: #e3f2fd; border-radius: 4px; color: #1565c0; font-size: 13px;"><span style="display: inline-block; width: 8px; height: 8px; background: #007bff; border-radius: 50%; margin-right: 6px;"></span><strong>ID Columns</strong> define the row identity and are not validated (marked with 🔵)</p>'
+                ? '<div class="message message-info"><span class="message-icon">ℹ️</span><span><span style="display: inline-block; width: 8px; height: 8px; background: #007bff; border-radius: 50%; margin-right: 6px;"></span><strong>ID Columns</strong> define the row identity and are not validated (marked with 🔵)</span></div>'
                 : '';
 
-            // Display preview
+            // Display preview - TABLE FIRST, then column definitions
             previewContainer.innerHTML = `
-                <div style="margin: 16px 0; padding: 16px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745;">
-                    <h4 style="margin: 0 0 12px 0; color: #28a745;">[SUCCESS] Table Structure Ready</h4>
-                    <p style="margin: 0 0 12px 0; color: #666;">Your table structure is ready with ${columns.length} columns. You can now generate the full table with validation.</p>
+                <div style="margin: 16px 0;">
+                    <h4 class="success-heading">[SUCCESS] Table Structure Ready</h4>
+                    <p class="info-text">Your table structure is ready with ${columns.length} columns. You can now generate the full table with validation.</p>
 
                     ${idExplanation}
 
-                    <h5 style="margin: 12px 0 8px 0;">Columns:</h5>
-                    <ul style="margin: 0 0 12px 0; padding-left: 24px; font-family: inherit;">
+                    ${markdownTable ? `
+                        <h5 class="section-heading">Sample Data Preview (transposed):</h5>
+                        ${renderMarkdown(markdownTable)}
+                    ` : ''}
+
+                    <h5 class="section-heading" style="margin-top: 16px;">Column Definitions:</h5>
+                    <ul class="column-list">
                         ${columnListHtml}
                     </ul>
-
-                    ${markdownTable ? `
-                        <h5 style="margin: 12px 0 8px 0;">Sample Data Preview (transposed):</h5>
-                        <div style="overflow-x: auto;">${renderMarkdown(markdownTable)}</div>
-                    ` : ''}
                 </div>
             `;
 
