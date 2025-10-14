@@ -10663,7 +10663,88 @@ Please provide any additional context, or simply proceed to generate your initia
             }
         }
 
-        // Start table conversation
+        // Register WebSocket handler for table conversation updates
+        function registerTableMakerWebSocketHandler() {
+            const chatOverlay = document.getElementById('table-maker-chat-overlay');
+            if (!chatOverlay) return;
+
+            // Register handler with a unique ID based on the overlay
+            registerCardHandler('table-maker-chat-overlay', ['table_conversation_update'], (data) => {
+                console.log('[TABLE_MAKER] Received WebSocket update:', data);
+                handleTableConversationUpdate(data);
+            });
+        }
+
+        // Handle table conversation updates from WebSocket
+        function handleTableConversationUpdate(data) {
+            // Remove thinking indicator if present
+            removeTableMakerThinkingIndicator();
+
+            // Update progress if available
+            if (data.progress !== undefined) {
+                updateTableMakerProgress(data.progress, data.status);
+            }
+
+            // Add AI message when complete
+            if (data.progress === 100 && data.ai_message) {
+                tableMakerState.messages.push({ role: 'ai', content: data.ai_message });
+                addTableMakerMessage('ai', data.ai_message);
+
+                // Check if ready to generate preview
+                if (data.ready_to_generate && data.preview_data) {
+                    showTableMakerPreview(data.preview_data);
+                }
+
+                // Check for proposed table
+                if (data.proposed_table) {
+                    showTableMakerPreview(data.proposed_table);
+                }
+            }
+
+            // Handle errors
+            if (data.error) {
+                addTableMakerMessage('error', data.error);
+            }
+        }
+
+        // Add thinking indicator to table maker chat
+        function addTableMakerThinkingIndicator() {
+            const chatContainer = document.getElementById('table-maker-chat');
+            if (!chatContainer) return;
+
+            const thinkingDiv = document.createElement('div');
+            thinkingDiv.className = 'table-maker-message ai';
+            thinkingDiv.id = 'table-maker-thinking';
+            thinkingDiv.innerHTML = `
+                <div class="thinking-animation">
+                    <span class="thinking-dot"></span>
+                    <span class="thinking-dot"></span>
+                    <span class="thinking-dot"></span>
+                </div>
+                <p class="thinking-text">AI is analyzing your request...</p>
+            `;
+            chatContainer.appendChild(thinkingDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Remove thinking indicator
+        function removeTableMakerThinkingIndicator() {
+            const thinking = document.getElementById('table-maker-thinking');
+            if (thinking) {
+                thinking.remove();
+            }
+        }
+
+        // Update table maker progress
+        function updateTableMakerProgress(progress, statusMessage) {
+            // Update subtitle with progress
+            const subtitle = document.querySelector('.table-maker-modal-subtitle');
+            if (subtitle && statusMessage) {
+                subtitle.textContent = `${progress}% - ${statusMessage}`;
+            }
+        }
+
+        // Start table conversation (async via WebSocket)
         async function startTableConversation() {
             const input = document.getElementById('table-maker-initial-input');
             const userMessage = input.value.trim();
@@ -10677,41 +10758,46 @@ Please provide any additional context, or simply proceed to generate your initia
             closeTableMakerModal();
             openTableMakerChatModal(userMessage);
 
-            // Send to backend
+            // Register WebSocket handler for table conversation updates
+            registerTableMakerWebSocketHandler();
+
+            // Send to backend - this will queue the work and return immediately
             try {
+                const sessionId = globalState.sessionId || 'temp_' + Date.now();
+
                 const response = await fetch(`${API_BASE}/validate`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         action: 'startTableConversation',
                         email: globalState.email,
-                        session_id: globalState.sessionId || 'temp_' + Date.now(),
+                        session_id: sessionId,
                         user_message: userMessage
                     })
                 });
 
                 const data = await response.json();
 
-                if (data.success) {
+                if (data.success && data.status === 'processing') {
+                    // Request queued successfully - save conversation ID and wait for WebSocket updates
                     tableMakerState.conversationId = data.conversation_id;
                     tableMakerState.messages.push({ role: 'user', content: userMessage });
-                    tableMakerState.messages.push({ role: 'ai', content: data.ai_message });
 
-                    // Update chat with AI response
-                    addTableMakerMessage('ai', data.ai_message);
+                    // Connect to WebSocket session
+                    connectToSession(sessionId);
 
-                    // Check if ready to generate preview
-                    if (data.ready_to_generate && data.preview_data) {
-                        showTableMakerPreview(data.preview_data);
-                    }
+                    // Show thinking indicator
+                    addTableMakerThinkingIndicator();
+
+                    console.log(`[TABLE_MAKER] Conversation started, waiting for updates via WebSocket: ${data.conversation_id}`);
                 } else {
-                    alert('Failed to start conversation: ' + (data.message || 'Unknown error'));
-                    closeTableMakerModal();
+                    alert('Failed to start conversation: ' + (data.error || data.message || 'Unknown error'));
+                    closeTableMakerChatModal();
                 }
             } catch (error) {
                 console.error('Error starting table conversation:', error);
                 alert('Failed to start conversation. Please try again.');
-                closeTableMakerModal();
+                closeTableMakerChatModal();
             }
         }
 
@@ -10797,7 +10883,10 @@ Please provide any additional context, or simply proceed to generate your initia
             // Clear input
             input.value = '';
 
-            // Send to backend
+            // Show thinking indicator
+            addTableMakerThinkingIndicator();
+
+            // Send to backend - this will queue the work and return immediately
             try {
                 const response = await fetch(`${API_BASE}/validate`, {
                     method: 'POST',
@@ -10813,19 +10902,16 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 const data = await response.json();
 
-                if (data.success) {
-                    tableMakerState.messages.push({ role: 'ai', content: data.ai_message });
-                    addTableMakerMessage('ai', data.ai_message);
-
-                    // Check if ready to generate preview
-                    if (data.ready_to_generate && data.preview_data) {
-                        showTableMakerPreview(data.preview_data);
-                    }
+                if (data.success && data.status === 'processing') {
+                    // Request queued successfully - wait for WebSocket updates
+                    console.log(`[TABLE_MAKER] Conversation continue queued, waiting for updates via WebSocket: ${tableMakerState.conversationId}`);
                 } else {
-                    alert('Failed to continue conversation: ' + (data.message || 'Unknown error'));
+                    removeTableMakerThinkingIndicator();
+                    alert('Failed to continue conversation: ' + (data.error || data.message || 'Unknown error'));
                 }
             } catch (error) {
                 console.error('Error continuing conversation:', error);
+                removeTableMakerThinkingIndicator();
                 alert('Failed to send message. Please try again.');
             }
         }
