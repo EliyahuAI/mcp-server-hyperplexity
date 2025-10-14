@@ -98,14 +98,25 @@ class RowExpander:
   # Slightly higher for more diverse row generation
             )
 
-            # Check if API call was successful
-            if not api_response.get('success'):
+            # Check if API call returned a response
+            if 'response' not in api_response and 'error' in api_response:
                 raise Exception(
                     f"AI API call failed: {api_response.get('error', 'Unknown error')}"
                 )
 
-            # Extract response content
-            response_content = api_response.get('response', {})
+            # Extract response content and parse structured response
+            raw_response = api_response.get('response', {})
+
+            # Parse structured response (same as conversation_handler)
+            if 'choices' in raw_response:
+                content = raw_response['choices'][0]['message']['content']
+                if isinstance(content, str):
+                    import json
+                    response_content = json.loads(content)
+                else:
+                    response_content = content
+            else:
+                response_content = raw_response
 
             # Validate response against schema
             validation_result = self.schema_validator.validate_ai_response(
