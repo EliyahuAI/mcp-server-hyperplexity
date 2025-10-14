@@ -10856,23 +10856,16 @@ Please provide any additional context, or simply proceed to generate your initia
             if (!previewData) return;
 
             const previewContainer = document.getElementById(`${cardId}-preview-container`);
-            if (!previewContainer) return;
+            const chatContainer = document.getElementById(`${cardId}-chat`);
+            if (!previewContainer || !chatContainer) return;
 
             // Store preview data
             tableMakerState.previewData = previewData;
 
             // Extract columns and sample rows
             const columns = previewData.columns || [];
-            const sampleRows = previewData.sample_rows || previewData.rows?.sample_rows || [];
-
-            // Build column list with ID indicators
-            const columnListHtml = columns.map(col => {
-                const name = col.name || col;
-                const desc = col.description || '';
-                const isId = col.is_identification;
-                const idIndicator = isId ? '<span style="display: inline-block; width: 8px; height: 8px; background: #007bff; border-radius: 50%; margin-right: 4px;"></span>' : '';
-                return `<li>${idIndicator}<strong>${name}</strong>${desc ? ': ' + desc : ''}</li>`;
-            }).join('');
+            const sampleRows = previewData.sample_rows || previewData.sample_rows_transposed || previewData.rows?.sample_rows || [];
+            const futureIds = previewData.future_ids || [];
 
             // Build TRANSPOSED markdown table (like validation preview)
             let markdownTable = '';
@@ -10886,56 +10879,91 @@ Please provide any additional context, or simply proceed to generate your initia
                     const idMarker = isId ? ' 🔵' : '';
                     const values = rowsToShow.map(row => {
                         const value = row[colName] || '';
-                        return String(value).substring(0, 50); // Truncate long values
+                        return String(value).substring(0, 50);
                     });
                     return `| **${colName}**${idMarker} | ${values.join(' | ')} |`;
                 }).join('\n');
 
-                // Header shows row numbers
                 const header = `| Column | ${rowsToShow.map((_, i) => `Row ${i + 1}`).join(' | ')} |`;
                 const separator = `| --- | ${rowsToShow.map(() => '---').join(' | ')} |`;
 
                 markdownTable = `${header}\n${separator}\n${transposedRows}`;
             }
 
-            // ID columns explanation
+            // ID columns explanation - using proper message-info class with em-sized circle
             const idExplanation = columns.some(c => c.is_identification)
-                ? '<div class="message message-info"><span class="message-icon">ℹ️</span><span><span style="display: inline-block; width: 8px; height: 8px; background: #007bff; border-radius: 50%; margin-right: 6px;"></span><strong>ID Columns</strong> define the row identity and are not validated (marked with 🔵)</span></div>'
+                ? '<div class="message message-info"><span class="message-icon">ℹ️</span><span><span style="display: inline-block; width: 1em; height: 1em; background: #007bff; border-radius: 50%; margin-right: 6px; vertical-align: middle;"></span><strong>ID Columns</strong> define the row identity and are not validated (marked with 🔵)</span></div>'
                 : '';
 
-            // Display preview - TABLE FIRST, then column definitions
+            // Display preview OUTSIDE chat area
             previewContainer.innerHTML = `
                 <div style="margin: 16px 0;">
-                    <h4 class="success-heading">[SUCCESS] Table Structure Ready</h4>
-                    <p class="info-text">Your table structure is ready with ${columns.length} columns. You can now generate the full table with validation.</p>
+                    <h3 style="color: #2e7d32; font-weight: 600; margin: 8px 0;">[SUCCESS] Table Structure Ready</h3>
+                    <p style="margin: 8px 0; color: #666;">Your table structure is ready with ${columns.length} columns. You can now generate the full table with validation.</p>
 
                     ${idExplanation}
 
                     ${markdownTable ? `
-                        <h5 class="section-heading">Sample Data Preview (transposed):</h5>
+                        <h4 style="color: #333; font-weight: 600; margin: 16px 0 8px 0;">Sample Data Preview (transposed):</h4>
                         ${renderMarkdown(markdownTable)}
                     ` : ''}
-
-                    <h5 class="section-heading" style="margin-top: 16px;">Column Definitions:</h5>
-                    <ul class="column-list">
-                        ${columnListHtml}
-                    </ul>
                 </div>
             `;
 
-            // Update buttons
-            createButtonRow(`${cardId}-buttons`, [
-                {
-                    text: '🔧 Refine Table',
-                    variant: 'secondary',
-                    callback: () => showRefinementInput(cardId)
-                },
-                {
-                    text: '✨ Generate & Validate',
-                    variant: 'primary',
-                    callback: () => acceptTableAndValidateFromCard(cardId)
-                }
-            ]);
+            // Add column definitions to CHAT area with em-sized blue circles
+            const columnListHtml = columns.map(col => {
+                const name = col.name || col;
+                const desc = col.description || '';
+                const isId = col.is_identification;
+                const idIndicator = isId ? '<span style="display: inline-block; width: 1em; height: 1em; background: #007bff; border-radius: 50%; margin-right: 6px; vertical-align: middle;"></span>' : '';
+                return `${idIndicator}<strong>${name}</strong>${desc ? ': ' + desc : ''}`;
+            }).join('<br>');
+
+            const columnDefDiv = document.createElement('div');
+            columnDefDiv.className = 'chat-message ai';
+            columnDefDiv.innerHTML = `<h4 style="margin-top: 0;">Column Definitions:</h4>${columnListHtml}`;
+            chatContainer.appendChild(columnDefDiv);
+
+            // Add future IDs (additional rows) to CHAT area - ID columns only
+            if (futureIds && futureIds.length > 0) {
+                const idColumns = columns.filter(c => c.is_identification);
+                const futureIdsList = futureIds.slice(0, 5).map(idSet => {
+                    const idValues = idColumns.map(col => idSet[col.name] || '').join(', ');
+                    return `• ${idValues}`;
+                }).join('<br>');
+
+                const futureIdsDiv = document.createElement('div');
+                futureIdsDiv.className = 'chat-message ai';
+                futureIdsDiv.innerHTML = `<h4 style="margin-top: 0;">Additional Rows (sample):</h4>${futureIdsList}`;
+                chatContainer.appendChild(futureIdsDiv);
+            }
+
+            // Add button explanation to CHAT area
+            const explanationDiv = document.createElement('div');
+            explanationDiv.className = 'chat-message ai';
+            explanationDiv.innerHTML = '<strong>Next Steps:</strong><br>Press <strong>🔧 Refine Table</strong> to continue the conversation and adjust the structure, or press <strong>✨ Generate & Validate</strong> to preview the validation of the first few rows.';
+            chatContainer.appendChild(explanationDiv);
+
+            // Scroll chat to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            // Update buttons - ensure container is visible
+            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+            if (buttonsContainer) {
+                buttonsContainer.style.display = 'block';
+                createButtonRow(`${cardId}-buttons`, [
+                    {
+                        text: '🔧 Refine Table',
+                        variant: 'secondary',
+                        callback: () => showRefinementInput(cardId)
+                    },
+                    {
+                        text: '✨ Generate & Validate',
+                        variant: 'primary',
+                        callback: () => acceptTableAndValidateFromCard(cardId)
+                    }
+                ]);
+            }
         }
 
         // Continue table conversation from card
