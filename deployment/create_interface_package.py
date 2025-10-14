@@ -137,19 +137,33 @@ def clean_directory(dir_path):
 def install_dependencies():
     """Install dependencies to package directory."""
     logger.info(f"Installing interface Lambda dependencies from {SCRIPT_DIR / 'requirements-interface-lambda.txt'}...")
-    
+
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
+            # Install dependencies - removed --only-binary=:all: to allow pure Python packages like jsonschema
             subprocess.check_call([
                 sys.executable, "-m", "pip", "install",
-            "-r", str(SCRIPT_DIR / "requirements-interface-lambda.txt"),
+                "-r", str(SCRIPT_DIR / "requirements-interface-lambda.txt"),
                 "-t", str(PACKAGE_DIR),
                 "--no-cache-dir",
                 "--platform", "manylinux2014_x86_64",
-                "--only-binary=:all:"
+                "--implementation", "cp",
+                "--python-version", "3.9",
+                "--only-binary=:all:",
+                "--no-deps"  # Install deps in a second pass
             ])
-            logger.info("Dependencies installed successfully.")
+            logger.info("Binary dependencies installed successfully.")
+
+            # Second pass: Install pure Python packages and dependencies
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install",
+                "-r", str(SCRIPT_DIR / "requirements-interface-lambda.txt"),
+                "-t", str(PACKAGE_DIR),
+                "--no-cache-dir",
+                "--upgrade"  # Upgrade any that were missed
+            ])
+            logger.info("All dependencies installed successfully.")
             break
         except subprocess.CalledProcessError as e:
             logger.error(f"Error installing dependencies (attempt {attempt}/{max_attempts}): {e}")
