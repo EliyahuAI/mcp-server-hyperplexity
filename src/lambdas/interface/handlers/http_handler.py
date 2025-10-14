@@ -11,6 +11,7 @@ from interface_lambda.utils.helpers import create_response
 from interface_lambda.actions import status_check, generate_config_unified, email_validation, user_stats, config_validation, find_matching_config, copy_config, diagnostics, account_balance, payment_webhook, check_squarespace_orders, use_config_by_id, get_ai_summary, demo_management
 from interface_lambda.utils.parsing import parse_multipart_form_data
 from interface_lambda.actions import process_excel_unified
+from interface_lambda.actions.table_maker import route_table_maker_action
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -153,6 +154,8 @@ def handle(event, context):
                 return get_ai_summary.handle_get_ai_summary(request_data, context)
             elif action in ['listDemos', 'selectDemo', 'clearUserHistoryForTesting']:
                 return demo_management.handle(request_data, context)
+            elif action in ['startTableConversation', 'continueTableConversation', 'generateTablePreview', 'acceptTableAndValidate']:
+                return route_table_maker_action(action, request_data, context)
             else:
                 logger.warning(f"Unknown action in JSON body: {action}")
                 return create_response(400, {'error': f'Unknown or unsupported action: {action}'})

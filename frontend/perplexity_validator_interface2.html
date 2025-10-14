@@ -1397,6 +1397,388 @@
         border: 1px solid #bbdefb;
     }
 
+    /* ============================================
+       TABLE MAKER STYLES
+       ============================================ */
+
+    /* Modal Overlay */
+    .table-maker-modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        opacity: 0;
+        animation: fadeIn 0.3s ease forwards;
+    }
+
+    @keyframes fadeIn {
+        to { opacity: 1; }
+    }
+
+    /* Modal Content */
+    .table-maker-modal {
+        background-color: white;
+        border-radius: var(--border-radius);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        max-width: 600px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+        padding: 2rem;
+        position: relative;
+        animation: slideUp 0.3s ease forwards;
+    }
+
+    @keyframes slideUp {
+        from {
+            transform: translateY(30px);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    .table-maker-modal-header {
+        margin-bottom: 1.5rem;
+    }
+
+    .table-maker-modal-title {
+        font-size: var(--font-size-large);
+        font-weight: 600;
+        margin: 0 0 0.5rem 0;
+        color: var(--text-color);
+    }
+
+    .table-maker-modal-subtitle {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+        margin: 0;
+    }
+
+    .table-maker-modal-close {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: var(--text-secondary);
+        padding: 0.5rem;
+        line-height: 1;
+    }
+
+    .table-maker-modal-close:hover {
+        color: var(--text-color);
+    }
+
+    /* Chat Interface */
+    .table-maker-chat {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .table-maker-message {
+        display: flex;
+        gap: 1rem;
+        animation: slideInMessage 0.3s ease forwards;
+    }
+
+    @keyframes slideInMessage {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .table-maker-message.user {
+        flex-direction: row-reverse;
+    }
+
+    .table-maker-message-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-weight: 600;
+        font-size: var(--font-size-small);
+    }
+
+    .table-maker-message.user .table-maker-message-avatar {
+        background-color: var(--primary-color);
+        color: white;
+    }
+
+    .table-maker-message.ai .table-maker-message-avatar {
+        background-color: var(--secondary-color);
+        color: white;
+    }
+
+    .table-maker-message-content {
+        flex: 1;
+        padding: 1rem;
+        border-radius: var(--border-radius);
+        font-size: var(--font-size-base);
+        line-height: var(--line-height);
+    }
+
+    .table-maker-message.user .table-maker-message-content {
+        background-color: #e8f5e9;
+        color: var(--text-color);
+    }
+
+    .table-maker-message.ai .table-maker-message-content {
+        background-color: #f3e5f5;
+        color: var(--text-color);
+    }
+
+    /* Table Preview */
+    .table-maker-preview {
+        margin-top: 1.5rem;
+    }
+
+    .table-maker-preview-header {
+        background-color: #e8f5e9;
+        padding: 1rem;
+        border-radius: var(--border-radius) var(--border-radius) 0 0;
+        border: 1px solid #c8e6c9;
+    }
+
+    .table-maker-preview-title {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        color: #2e7d32;
+        margin: 0 0 0.5rem 0;
+    }
+
+    .table-maker-preview-purpose {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+        margin: 0;
+    }
+
+    .table-maker-preview-table {
+        border: 1px solid #c8e6c9;
+        border-top: none;
+        border-radius: 0 0 var(--border-radius) var(--border-radius);
+        overflow: hidden;
+    }
+
+    /* ID Column Badge (Blue Circle) */
+    .id-column-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        color: #1565c0;
+        font-weight: 600;
+    }
+
+    .id-column-badge::before {
+        content: '\u25C9';  /* Blue circle character */
+        font-size: 1.2em;
+    }
+
+    /* Column Definitions Section */
+    .table-maker-column-defs {
+        margin-top: 1rem;
+        padding: 1rem;
+        background-color: #f8f9fa;
+        border-radius: var(--border-radius);
+    }
+
+    .table-maker-column-defs-title {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        margin: 0 0 1rem 0;
+        color: var(--text-color);
+    }
+
+    .table-maker-column-def {
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid #e9ecef;
+    }
+
+    .table-maker-column-def:last-child {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+    }
+
+    .table-maker-column-name {
+        font-weight: 600;
+        font-size: var(--font-size-base);
+        color: var(--text-color);
+        margin-bottom: 0.25rem;
+    }
+
+    .table-maker-column-importance {
+        display: inline-block;
+        padding: 0.125rem 0.5rem;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        margin-left: 0.5rem;
+    }
+
+    .table-maker-column-importance.critical {
+        background-color: #ffebee;
+        color: #c62828;
+    }
+
+    .table-maker-column-importance.high {
+        background-color: #fff3e0;
+        color: #e65100;
+    }
+
+    .table-maker-column-importance.medium {
+        background-color: #e3f2fd;
+        color: #1565c0;
+    }
+
+    .table-maker-column-description {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+        margin-top: 0.25rem;
+    }
+
+    /* Future IDs Section */
+    .table-maker-future-ids {
+        margin-top: 1rem;
+        padding: 1rem;
+        background-color: #e3f2fd;
+        border-radius: var(--border-radius);
+    }
+
+    .table-maker-future-ids-title {
+        font-size: var(--font-size-base);
+        font-weight: 600;
+        margin: 0 0 0.5rem 0;
+        color: #1565c0;
+    }
+
+    .table-maker-future-ids-subtitle {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+        margin: 0 0 1rem 0;
+    }
+
+    .table-maker-future-ids-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 0.5rem;
+    }
+
+    .table-maker-future-id {
+        font-size: var(--font-size-small);
+        color: #1565c0;
+        padding: 0.25rem 0;
+    }
+
+    .table-maker-future-id::before {
+        content: '\u25C9';  /* Blue circle */
+        margin-right: 0.5rem;
+    }
+
+    /* Input Area */
+    .table-maker-input-area {
+        margin-top: 1rem;
+    }
+
+    .table-maker-textarea {
+        width: 100%;
+        min-height: 120px;
+        padding: 1rem;
+        border: 2px solid #e9ecef;
+        border-radius: var(--border-radius);
+        font-size: var(--font-size-base);
+        font-family: var(--font-family);
+        resize: vertical;
+        transition: border-color 0.3s ease;
+    }
+
+    .table-maker-textarea:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+    }
+
+    .table-maker-example {
+        font-size: var(--font-size-small);
+        color: var(--text-secondary);
+        margin-top: 0.5rem;
+        font-style: italic;
+    }
+
+    /* Button Container */
+    .table-maker-buttons {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1.5rem;
+        justify-content: flex-end;
+    }
+
+    /* Mobile Responsive */
+    @media (max-width: 768px) {
+        .table-maker-modal {
+            width: 95%;
+            padding: 1.5rem;
+            max-height: 95vh;
+        }
+
+        .table-maker-modal-title {
+            font-size: var(--font-size-base);
+        }
+
+        .table-maker-message {
+            gap: 0.5rem;
+        }
+
+        .table-maker-message-avatar {
+            width: 28px;
+            height: 28px;
+            font-size: 12px;
+        }
+
+        .table-maker-message-content {
+            padding: 0.75rem;
+            font-size: var(--font-size-small);
+        }
+
+        .table-maker-buttons {
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .table-maker-buttons .std-button {
+            width: 100%;
+        }
+
+        .table-maker-future-ids-list {
+            grid-template-columns: 1fr;
+        }
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
         .validator-container {
@@ -5537,9 +5919,17 @@
                             }
                         },
                         {
-                            text: '🎯 Try a Demo Table',
+                            text: '✨ Create New Table',
                             icon: '',
                             variant: 'secondary',
+                            callback: async function() {
+                                proceedWithTableMaker(cardId);
+                            }
+                        },
+                        {
+                            text: '🎯 Try a Demo Table',
+                            icon: '',
+                            variant: 'tertiary',
                             callback: async function() {
                                 proceedWithDemo(cardId);
                             }
@@ -5548,6 +5938,16 @@
                 });
 
                 return card;
+            }
+
+            function proceedWithTableMaker(cardId) {
+                // Show completion state
+                showFinalCardState(cardId, 'Opening table maker...', 'success');
+
+                // Open table maker modal
+                setTimeout(() => {
+                    openTableMakerModal();
+                }, 500);
             }
 
             function proceedWithDemo(cardId) {
@@ -10215,6 +10615,421 @@ Please provide any additional context, or simply proceed to generate your initia
 
             showMessage(`${cardId}-messages`, warningHtml, 'warning');
         }
+
+        // ============================================
+        // TABLE MAKER FUNCTIONS
+        // ============================================
+
+        // Global state for table maker
+        const tableMakerState = {
+            conversationId: null,
+            messages: [],
+            previewData: null
+        };
+
+        // Open initial table maker prompt modal
+        function openTableMakerModal() {
+            const overlay = document.createElement('div');
+            overlay.className = 'table-maker-modal-overlay';
+            overlay.id = 'table-maker-modal-overlay';
+
+            overlay.innerHTML = `
+                <div class="table-maker-modal">
+                    <button class="table-maker-modal-close" onclick="closeTableMakerModal()">&times;</button>
+                    <div class="table-maker-modal-header">
+                        <h2 class="table-maker-modal-title">Create a Research Table</h2>
+                        <p class="table-maker-modal-subtitle">Describe what you'd like to research and we'll help you build a comprehensive table</p>
+                    </div>
+                    <div class="table-maker-input-area">
+                        <textarea id="table-maker-initial-input" class="table-maker-textarea"
+                            placeholder="Example: Track AI research papers on transformers with citation data, publication venues, and code availability"></textarea>
+                        <p class="table-maker-example">Tip: Be specific about what data points you need</p>
+                    </div>
+                    <div class="table-maker-buttons">
+                        <button class="std-button secondary" onclick="closeTableMakerModal()">Cancel</button>
+                        <button class="std-button primary" onclick="startTableConversation()">Continue</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+        }
+
+        // Close table maker modal
+        function closeTableMakerModal() {
+            const overlay = document.getElementById('table-maker-modal-overlay');
+            if (overlay) {
+                overlay.remove();
+            }
+        }
+
+        // Start table conversation
+        async function startTableConversation() {
+            const input = document.getElementById('table-maker-initial-input');
+            const userMessage = input.value.trim();
+
+            if (!userMessage) {
+                alert('Please describe what table you want to create');
+                return;
+            }
+
+            // Close initial modal and open chat interface
+            closeTableMakerModal();
+            openTableMakerChatModal(userMessage);
+
+            // Send to backend
+            try {
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'startTableConversation',
+                        email: globalState.email,
+                        session_id: globalState.sessionId || 'temp_' + Date.now(),
+                        user_message: userMessage
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    tableMakerState.conversationId = data.conversation_id;
+                    tableMakerState.messages.push({ role: 'user', content: userMessage });
+                    tableMakerState.messages.push({ role: 'ai', content: data.ai_message });
+
+                    // Update chat with AI response
+                    addTableMakerMessage('ai', data.ai_message);
+
+                    // Check if ready to generate preview
+                    if (data.ready_to_generate && data.preview_data) {
+                        showTableMakerPreview(data.preview_data);
+                    }
+                } else {
+                    alert('Failed to start conversation: ' + (data.message || 'Unknown error'));
+                    closeTableMakerModal();
+                }
+            } catch (error) {
+                console.error('Error starting table conversation:', error);
+                alert('Failed to start conversation. Please try again.');
+                closeTableMakerModal();
+            }
+        }
+
+        // Open chat interface modal
+        function openTableMakerChatModal(initialMessage) {
+            const overlay = document.createElement('div');
+            overlay.className = 'table-maker-modal-overlay';
+            overlay.id = 'table-maker-chat-overlay';
+
+            overlay.innerHTML = `
+                <div class="table-maker-modal" style="max-width: 800px;">
+                    <button class="table-maker-modal-close" onclick="closeTableMakerChatModal()">&times;</button>
+                    <div class="table-maker-modal-header">
+                        <h2 class="table-maker-modal-title">Design Your Table</h2>
+                        <p class="table-maker-modal-subtitle">AI is analyzing your needs...</p>
+                    </div>
+                    <div class="table-maker-chat" id="table-maker-chat">
+                        <!-- Messages will be added here -->
+                    </div>
+                    <div id="table-maker-preview-container"></div>
+                    <div class="table-maker-input-area" id="table-maker-input-area">
+                        <textarea id="table-maker-chat-input" class="table-maker-textarea"
+                            placeholder="Add more details or ask questions..."></textarea>
+                        <div class="table-maker-buttons">
+                            <button class="std-button secondary" onclick="closeTableMakerChatModal()">Cancel</button>
+                            <button class="std-button primary" onclick="continueTableConversation()">Send</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+
+            // Add initial user message
+            addTableMakerMessage('user', initialMessage);
+        }
+
+        // Close chat modal
+        function closeTableMakerChatModal() {
+            const overlay = document.getElementById('table-maker-chat-overlay');
+            if (overlay) {
+                overlay.remove();
+            }
+            // Reset state
+            tableMakerState.conversationId = null;
+            tableMakerState.messages = [];
+            tableMakerState.previewData = null;
+        }
+
+        // Add message to chat
+        function addTableMakerMessage(role, content) {
+            const chat = document.getElementById('table-maker-chat');
+            if (!chat) return;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `table-maker-message ${role}`;
+
+            const avatarText = role === 'user' ? 'You' : 'AI';
+
+            messageDiv.innerHTML = `
+                <div class="table-maker-message-avatar">${avatarText}</div>
+                <div class="table-maker-message-content">${content}</div>
+            `;
+
+            chat.appendChild(messageDiv);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        // Continue conversation
+        async function continueTableConversation() {
+            const input = document.getElementById('table-maker-chat-input');
+            const userMessage = input.value.trim();
+
+            if (!userMessage) {
+                alert('Please enter a message');
+                return;
+            }
+
+            // Add user message to chat
+            addTableMakerMessage('user', userMessage);
+            tableMakerState.messages.push({ role: 'user', content: userMessage });
+
+            // Clear input
+            input.value = '';
+
+            // Send to backend
+            try {
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'continueTableConversation',
+                        email: globalState.email,
+                        session_id: globalState.sessionId,
+                        conversation_id: tableMakerState.conversationId,
+                        user_message: userMessage
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    tableMakerState.messages.push({ role: 'ai', content: data.ai_message });
+                    addTableMakerMessage('ai', data.ai_message);
+
+                    // Check if ready to generate preview
+                    if (data.ready_to_generate && data.preview_data) {
+                        showTableMakerPreview(data.preview_data);
+                    }
+                } else {
+                    alert('Failed to continue conversation: ' + (data.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error continuing conversation:', error);
+                alert('Failed to send message. Please try again.');
+            }
+        }
+
+        // Show preview in modal
+        function showTableMakerPreview(previewData) {
+            tableMakerState.previewData = previewData;
+
+            const container = document.getElementById('table-maker-preview-container');
+            const inputArea = document.getElementById('table-maker-input-area');
+
+            if (!container) return;
+
+            // Hide input area
+            if (inputArea) inputArea.style.display = 'none';
+
+            // Build preview HTML
+            let previewHtml = '<div class="table-maker-preview">';
+
+            // Header
+            previewHtml += `
+                <div class="table-maker-preview-header">
+                    <h3 class="table-maker-preview-title">Table Preview</h3>
+                    <p class="table-maker-preview-purpose">${previewData.purpose || 'Your research table preview'}</p>
+                </div>
+            `;
+
+            // Transposed table (using markdown rendering)
+            if (previewData.markdown_table) {
+                previewHtml += `<div class="table-maker-preview-table">${renderMarkdown(previewData.markdown_table)}</div>`;
+            }
+
+            // Column definitions
+            if (previewData.columns && previewData.columns.length > 0) {
+                previewHtml += '<div class="table-maker-column-defs">';
+                previewHtml += '<h4 class="table-maker-column-defs-title">Column Definitions</h4>';
+
+                previewData.columns.forEach(col => {
+                    const isId = col.is_identification;
+                    const importance = col.importance || 'medium';
+                    const badge = isId ? '<span class="id-column-badge"></span>' : '';
+
+                    previewHtml += `
+                        <div class="table-maker-column-def">
+                            <div class="table-maker-column-name">
+                                ${badge}${col.name}
+                                <span class="table-maker-column-importance ${importance.toLowerCase()}">${importance}</span>
+                            </div>
+                            <div class="table-maker-column-description">${col.description || ''}</div>
+                        </div>
+                    `;
+                });
+
+                previewHtml += '</div>';
+            }
+
+            // Future IDs
+            if (previewData.future_ids && previewData.future_ids.length > 0) {
+                const futureCount = previewData.row_count || 20;
+                previewHtml += '<div class="table-maker-future-ids">';
+                previewHtml += '<h4 class="table-maker-future-ids-title">Additional Rows</h4>';
+                previewHtml += `<p class="table-maker-future-ids-subtitle">When you accept this table, we will generate ${futureCount} more rows with these ID combinations:</p>`;
+                previewHtml += '<ul class="table-maker-future-ids-list">';
+
+                previewData.future_ids.slice(0, 10).forEach(id => {
+                    const idText = typeof id === 'string' ? id : Object.values(id).join(', ');
+                    previewHtml += `<li class="table-maker-future-id">${idText}</li>`;
+                });
+
+                if (previewData.future_ids.length > 10) {
+                    previewHtml += `<li class="table-maker-future-id">... (${previewData.future_ids.length - 10} more)</li>`;
+                }
+
+                previewHtml += '</ul></div>';
+            }
+
+            // Action buttons
+            previewHtml += `
+                <div class="table-maker-buttons">
+                    <button class="std-button tertiary" onclick="downloadTablePreview()">📥 Download Preview</button>
+                    <button class="std-button secondary" onclick="refineTableMaker()">🔧 Refine Table</button>
+                    <button class="std-button primary" onclick="acceptTableAndValidate()">✓ Accept and Validate</button>
+                </div>
+            `;
+
+            previewHtml += '</div>';
+
+            container.innerHTML = previewHtml;
+        }
+
+        // Download preview CSV
+        async function downloadTablePreview() {
+            if (!tableMakerState.previewData || !tableMakerState.previewData.download_url) {
+                alert('No preview available to download');
+                return;
+            }
+
+            window.open(tableMakerState.previewData.download_url, '_blank');
+        }
+
+        // Refine table - return to chat
+        function refineTableMaker() {
+            const container = document.getElementById('table-maker-preview-container');
+            const inputArea = document.getElementById('table-maker-input-area');
+
+            if (container) container.innerHTML = '';
+            if (inputArea) inputArea.style.display = 'block';
+
+            addTableMakerMessage('ai', 'What would you like to change about the table?');
+        }
+
+        // Accept and validate
+        async function acceptTableAndValidate() {
+            if (!tableMakerState.conversationId) {
+                alert('No conversation ID available');
+                return;
+            }
+
+            // Close modal and create progress card
+            closeTableMakerChatModal();
+
+            const cardId = generateCardId();
+            const card = createCard({
+                id: cardId,
+                icon: '⚡',
+                title: 'Generating Full Table',
+                subtitle: 'Creating your research table and validation configuration...',
+                content: '<div id="' + cardId + '-messages"></div>'
+            });
+
+            showThinkingInCard(cardId, 'Generating full table...', true);
+
+            try {
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'acceptTableAndValidate',
+                        email: globalState.email,
+                        session_id: globalState.sessionId,
+                        conversation_id: tableMakerState.conversationId,
+                        row_count: 20
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Update global state
+                    globalState.sessionId = data.session_id || globalState.sessionId;
+                    globalState.excelFileName = data.table_filename || 'generated_table.xlsx';
+                    globalState.excelFileUploaded = true;
+
+                    completeThinkingInCard(cardId, 'Table generated successfully!');
+
+                    // Show success message
+                    showMessage(`${cardId}-messages`,
+                        'Table created successfully! Proceeding to validation preview...',
+                        'success'
+                    );
+
+                    // Wait for WebSocket message with preview validation results
+                    // Register handler for preview validation completion
+                    registerCardHandler(cardId, (wsData) => {
+                        if (wsData.type === 'table_validation_complete') {
+                            handleTableValidationComplete(wsData, cardId);
+                        }
+                    });
+                } else {
+                    completeThinkingInCard(cardId, 'Generation failed');
+                    showMessage(`${cardId}-messages`,
+                        'Failed to generate table: ' + (data.message || 'Unknown error'),
+                        'error'
+                    );
+                }
+            } catch (error) {
+                console.error('Error accepting table:', error);
+                completeThinkingInCard(cardId, 'Generation failed');
+                showMessage(`${cardId}-messages`,
+                    'Failed to generate table. Please try again.',
+                    'error'
+                );
+            }
+        }
+
+        // Handle table validation complete
+        function handleTableValidationComplete(data, cardId) {
+            // This will be called when the backend completes validation
+            // For now, transition to standard validation preview
+            if (data.preview_validation_results) {
+                // Reuse existing preview display logic
+                handlePreviewWebSocketMessage(data.preview_validation_results, cardId);
+            }
+        }
+
+        // Make functions globally available
+        window.openTableMakerModal = openTableMakerModal;
+        window.closeTableMakerModal = closeTableMakerModal;
+        window.startTableConversation = startTableConversation;
+        window.closeTableMakerChatModal = closeTableMakerChatModal;
+        window.continueTableConversation = continueTableConversation;
+        window.downloadTablePreview = downloadTablePreview;
+        window.refineTableMaker = refineTableMaker;
+        window.acceptTableAndValidate = acceptTableAndValidate;
 
     })();
    </script>
