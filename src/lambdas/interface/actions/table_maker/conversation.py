@@ -36,7 +36,7 @@ from table_maker.src.prompt_loader import PromptLoader
 from table_maker.src.schema_validator import SchemaValidator
 
 # Shared imports
-from shared.ai_api_client import AIAPIClient
+from ai_api_client import AIAPIClient
 
 # WebSocket client for real-time updates
 try:
