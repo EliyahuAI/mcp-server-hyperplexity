@@ -95,7 +95,7 @@ class RowExpander:
                 schema=schema,
                 model=model,
                 max_tokens=8000,
-                temperature=0.7  # Slightly higher for more diverse row generation
+  # Slightly higher for more diverse row generation
             )
 
             # Check if API call was successful
