@@ -29,6 +29,7 @@ from pathlib import Path
 # Lambda imports
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
 from interface_lambda.utils.helpers import create_response
+from interface_lambda.core.sqs_service import send_table_conversation_request
 from dynamodb_schemas import create_run_record, update_run_status
 
 # Table maker imports (packaged with lambda)
@@ -51,6 +52,119 @@ except ImportError:
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+
+# ============================================================================
+# ASYNC WRAPPERS - Queue to SQS and return immediately
+# ============================================================================
+
+def handle_table_conversation_start_async(request_data, context):
+    """
+    Async wrapper for starting table conversation - queues to SQS and returns immediately.
+    Results will be sent via WebSocket.
+    """
+    try:
+        email = request_data.get('email')
+        session_id = request_data.get('session_id')
+        user_message = request_data.get('user_message', '')
+
+        if not email or not session_id:
+            return create_response(400, {'error': 'Missing email or session_id'})
+
+        if not user_message.strip():
+            return create_response(400, {'error': 'Missing user_message'})
+
+        # Generate conversation ID
+        conversation_id = f"table_conv_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{session_id[-6:]}"
+
+        # Send to SQS for background processing
+        conversation_request = {
+            'action': 'startTableConversation',
+            'email': email,
+            'session_id': session_id,
+            'user_message': user_message,
+            'conversation_id': conversation_id,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        logger.info(f"Queueing table conversation start request: {conversation_id}")
+        message_id = send_table_conversation_request(conversation_request)
+
+        if not message_id:
+            return create_response(500, {'error': 'Failed to queue table conversation request'})
+
+        logger.info(f"Table conversation request queued successfully: {message_id}")
+
+        # Return immediately - results will come via WebSocket
+        response_body = {
+            'success': True,
+            'status': 'processing',
+            'conversation_id': conversation_id
+        }
+
+        logger.info(f"✅ ASYNC TABLE CONVERSATION RESPONSE (WebSocket-only): {response_body}")
+        return create_response(200, response_body)
+
+    except Exception as e:
+        logger.error(f"Async table conversation start failed: {str(e)}")
+        return create_response(500, {'success': False, 'error': str(e)})
+
+
+def handle_table_conversation_continue_async(request_data, context):
+    """
+    Async wrapper for continuing table conversation - queues to SQS and returns immediately.
+    Results will be sent via WebSocket.
+    """
+    try:
+        email = request_data.get('email')
+        session_id = request_data.get('session_id')
+        conversation_id = request_data.get('conversation_id')
+        user_message = request_data.get('user_message', '')
+
+        if not email or not session_id:
+            return create_response(400, {'error': 'Missing email or session_id'})
+
+        if not conversation_id:
+            return create_response(400, {'error': 'Missing conversation_id'})
+
+        if not user_message.strip():
+            return create_response(400, {'error': 'Missing user_message'})
+
+        # Send to SQS for background processing
+        conversation_request = {
+            'action': 'continueTableConversation',
+            'email': email,
+            'session_id': session_id,
+            'conversation_id': conversation_id,
+            'user_message': user_message,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        logger.info(f"Queueing table conversation continue request: {conversation_id}")
+        message_id = send_table_conversation_request(conversation_request)
+
+        if not message_id:
+            return create_response(500, {'error': 'Failed to queue table conversation request'})
+
+        logger.info(f"Table conversation continue request queued successfully: {message_id}")
+
+        # Return immediately - results will come via WebSocket
+        response_body = {
+            'success': True,
+            'status': 'processing',
+            'conversation_id': conversation_id
+        }
+
+        logger.info(f"✅ ASYNC TABLE CONVERSATION CONTINUE RESPONSE (WebSocket-only): {response_body}")
+        return create_response(200, response_body)
+
+    except Exception as e:
+        logger.error(f"Async table conversation continue failed: {str(e)}")
+        return create_response(500, {'success': False, 'error': str(e)})
+
+
+# ============================================================================
+# SYNC HANDLERS - Do the actual work (called by background processor)
+# ============================================================================
 
 def _load_table_maker_config() -> Dict[str, Any]:
     """

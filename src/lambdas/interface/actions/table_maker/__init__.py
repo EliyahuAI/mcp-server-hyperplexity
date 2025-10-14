@@ -12,16 +12,21 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Import action handlers
-from .conversation import handle_table_conversation_start, handle_table_conversation_continue
+from .conversation import (
+    handle_table_conversation_start_async,
+    handle_table_conversation_continue_async,
+    handle_table_conversation_start,
+    handle_table_conversation_continue
+)
 from .preview import handle_table_preview_generate
 from .finalize import handle_table_accept_and_validate
 from .context_research import perform_context_research
 from .config_bridge import build_table_analysis_from_conversation
 
-# Action routing dictionary
+# Action routing dictionary - uses ASYNC wrappers for HTTP requests
 TABLE_MAKER_ACTIONS = {
-    'startTableConversation': handle_table_conversation_start,
-    'continueTableConversation': handle_table_conversation_continue,
+    'startTableConversation': handle_table_conversation_start_async,
+    'continueTableConversation': handle_table_conversation_continue_async,
     'generateTablePreview': handle_table_preview_generate,
     'acceptTableAndValidate': handle_table_accept_and_validate,
 }

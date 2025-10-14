@@ -1228,7 +1228,12 @@ def handle_main_processing(event, context):
         if event.get('request_type') == 'config_generation':
             logger.info("Detected config generation request, forwarding to validation lambda")
             return handle_config_generation(event, context)
-        
+
+        # Check if this is a table conversation request
+        if event.get('request_type') == 'table_conversation':
+            logger.info("Detected table conversation request, forwarding to table maker handler")
+            return handle_table_conversation(event, context)
+
         # Extract parameters from event, ensuring correct types
         # Check both preview_mode and request_type for compatibility
         is_preview = event.get('preview_mode', False) or event.get('request_type') == 'preview'
@@ -6306,3 +6311,48 @@ def _update_session_info_with_account_data(email: str, session_id: str, account_
         
     except Exception as e:
         logger.error(f"Failed to update session_info with account data: {e}")
+
+
+def handle_table_conversation(event, context):
+    """
+    Handle table maker conversation requests from SQS.
+    Routes to the appropriate conversation handler based on action.
+    """
+    import asyncio
+    from interface_lambda.actions.table_maker.conversation import (
+        handle_table_conversation_start,
+        handle_table_conversation_continue
+    )
+
+    try:
+        action = event.get('action')
+        session_id = event.get('session_id')
+        conversation_id = event.get('conversation_id')
+
+        logger.info(f"[TABLE_CONVERSATION] Processing {action} for session {session_id}, conversation {conversation_id}")
+
+        # Route based on action
+        if action == 'startTableConversation':
+            # Call the async handler using asyncio.run
+            result = asyncio.run(handle_table_conversation_start(event, context))
+        elif action == 'continueTableConversation':
+            # Call the async handler using asyncio.run
+            result = asyncio.run(handle_table_conversation_continue(event, context))
+        else:
+            logger.error(f"Unknown table conversation action: {action}")
+            return {
+                'statusCode': 400,
+                'body': {'error': f'Unknown action: {action}'}
+            }
+
+        logger.info(f"[TABLE_CONVERSATION] Completed {action} for conversation {conversation_id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"[TABLE_CONVERSATION] Error processing table conversation: {e}")
+        import traceback
+        logger.error(f"[TABLE_CONVERSATION] Traceback: {traceback.format_exc()}")
+        return {
+            'statusCode': 500,
+            'body': {'error': f'Table conversation processing failed: {str(e)}'}
+        }

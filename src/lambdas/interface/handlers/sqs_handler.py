@@ -55,6 +55,17 @@ def handle(event, context):
                     "request_type": "config_generation",
                     **message_body
                 }
+
+            # Handle table conversation requests
+            elif request_type == 'table_conversation':
+                logger.info(f"Processing table conversation request for session {message_body.get('session_id')}")
+                # Pass the entire message body for table conversation
+                background_event = {
+                    "background_processing": True,
+                    "request_type": "table_conversation",
+                    **message_body
+                }
+
             else:
                 # Handle regular validation requests
                 background_event = {
