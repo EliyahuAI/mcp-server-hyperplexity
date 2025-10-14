@@ -1,0 +1,26 @@
+# Generated: 2025-10-14T00:12:20.898885Z
+# Columns: 14
+# Rows: 5
+# 
+# Column Definitions:
+#   - paper_title [ID]: Full title of the research paper (Format: String, Importance: CRITICAL)
+#   - publication_year [ID]: Year the paper was published or first appeared on arXiv (Format: Number, Importance: CRITICAL)
+#   - authors: Primary authors (first author et al. format acceptable for large teams) (Format: String, Importance: HIGH)
+#   - venue: Publication venue (conference or journal name: NeurIPS, ICML, ACL, arXiv, etc.) (Format: String, Importance: HIGH)
+#   - venue_tier: Quality tier of publication venue (A*, A, B, C based on CORE rankings or similar) (Format: String, Importance: MEDIUM)
+#   - citation_count: Number of citations (from Google Scholar or Semantic Scholar) (Format: Number, Importance: HIGH)
+#   - arxiv_url: Link to arXiv preprint or official paper URL (Format: URL, Importance: HIGH)
+#   - key_innovation: Primary technical contribution or innovation introduced in the paper (1-2 sentences) (Format: String, Importance: CRITICAL)
+#   - primary_application: Main application domain or task (e.g., NLP, Computer Vision, Speech, Multimodal) (Format: String, Importance: HIGH)
+#   - code_available: Whether official implementation code is publicly available (Yes/No/Partial) (Format: String, Importance: MEDIUM)
+#   - code_repository_url: Link to official GitHub or code repository if available (Format: URL, Importance: MEDIUM)
+#   - datasets_used: Key datasets used for training or evaluation (Format: String, Importance: MEDIUM)
+#   - model_size_parameters: Number of parameters in the model (e.g., 110M, 175B) (Format: String, Importance: MEDIUM)
+#   - notable_follow_up_work: Significant papers or models that built upon this work (Format: String, Importance: LOW)
+# 
+paper_title,publication_year,authors,venue,venue_tier,citation_count,arxiv_url,key_innovation,primary_application,code_available,code_repository_url,datasets_used,model_size_parameters,notable_follow_up_work
+Attention is All You Need,2017,Vaswani et al.,NeurIPS,A*,95000,https://arxiv.org/abs/1706.03762,Introduced transformer architecture with self-attention mechanism,Machine Translation,Yes,,,,
+BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding,2019,Devlin et al.,NAACL,A,75000,https://arxiv.org/abs/1810.04805,Bidirectional pre-training with masked language modeling,Natural Language Understanding,Yes,,,,
+Language Models are Few-Shot Learners,2020,Brown et al.,NeurIPS,A*,45000,https://arxiv.org/abs/2005.14165,Demonstrated emergent few-shot learning capabilities at scale (GPT-3),General Language Tasks,No,,,,
+An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale,2021,Dosovitskiy et al.,ICLR,A*,28000,https://arxiv.org/abs/2010.11929,Applied transformers directly to image patches for vision tasks,Computer Vision,Yes,,,,
+Training Compute-Optimal Large Language Models,2022,Hoffmann et al.,NeurIPS,A*,3500,https://arxiv.org/abs/2203.15556,Scaling laws for optimal model size vs training data (Chinchilla),LLM Training Efficiency,Partial,,,,

@@ -1,0 +1,186 @@
+{
+  "general_notes": "Configuration generated from conversational table design system.\n\nResearch Purpose: Create a table to track AI research papers on transformers, including citations, venues, and key findings\n\nThis configuration was automatically generated from a table structure created through\nan interactive conversation. The validation targets and search groups are organized\nbased on the importance levels and data types specified during table design.\n\nIdentification columns are not included in validation targets as they represent\nthe core data being researched, not fields to be validated.",
+  "default_model": "sonar-pro",
+  "default_search_context_size": "medium",
+  "search_groups": [
+    {
+      "group_id": 1,
+      "group_name": "Critical Validation",
+      "description": "Critical fields requiring highest accuracy",
+      "model": "claude-sonnet-4-5",
+      "search_context": "high",
+      "column_count": 1
+    },
+    {
+      "group_id": 2,
+      "group_name": "High Priority Validation",
+      "description": "Important fields requiring detailed verification",
+      "model": "sonar-pro",
+      "search_context": "medium",
+      "column_count": 5
+    },
+    {
+      "group_id": 3,
+      "group_name": "Standard Validation",
+      "description": "Standard verification fields",
+      "model": "sonar-pro",
+      "search_context": "medium",
+      "column_count": 5
+    },
+    {
+      "group_id": 4,
+      "group_name": "Basic Validation",
+      "description": "Basic verification with minimal context",
+      "model": "sonar-pro",
+      "search_context": "low",
+      "column_count": 1
+    }
+  ],
+  "validation_targets": [
+    {
+      "column": "authors",
+      "description": "Primary authors (first author et al. format acceptable for large teams)",
+      "importance": "HIGH",
+      "format": "String",
+      "search_group": 2,
+      "notes": "Validation for authors: Primary authors (first author et al. format acceptable for large teams)",
+      "examples": [
+        "Sample value"
+      ]
+    },
+    {
+      "column": "venue",
+      "description": "Publication venue (conference or journal name: NeurIPS, ICML, ACL, arXiv, etc.)",
+      "importance": "HIGH",
+      "format": "String",
+      "search_group": 2,
+      "notes": "Validation for venue: Publication venue (conference or journal name: NeurIPS, ICML, ACL, arXiv, etc.)",
+      "examples": [
+        "Sample value"
+      ]
+    },
+    {
+      "column": "venue_tier",
+      "description": "Quality tier of publication venue (A*, A, B, C based on CORE rankings or similar)",
+      "importance": "MEDIUM",
+      "format": "String",
+      "search_group": 3,
+      "notes": "Validation for venue_tier: Quality tier of publication venue (A*, A, B, C based on CORE rankings or similar)",
+      "examples": [
+        "Sample value"
+      ]
+    },
+    {
+      "column": "citation_count",
+      "description": "Number of citations (from Google Scholar or Semantic Scholar)",
+      "importance": "HIGH",
+      "format": "Number",
+      "search_group": 2,
+      "notes": "Validation for citation_count: Number of citations (from Google Scholar or Semantic Scholar)",
+      "examples": [
+        "42"
+      ]
+    },
+    {
+      "column": "arxiv_url",
+      "description": "Link to arXiv preprint or official paper URL",
+      "importance": "HIGH",
+      "format": "URL",
+      "search_group": 2,
+      "notes": "Validation for arxiv_url: Link to arXiv preprint or official paper URL",
+      "examples": [
+        "https://example.com"
+      ]
+    },
+    {
+      "column": "key_innovation",
+      "description": "Primary technical contribution or innovation introduced in the paper (1-2 sentences)",
+      "importance": "CRITICAL",
+      "format": "String",
+      "search_group": 1,
+      "notes": "Validation for key_innovation: Primary technical contribution or innovation introduced in the paper (1-2 sentences)",
+      "examples": [
+        "Sample value"
+      ],
+      "preferred_model": "claude-sonnet-4-5",
+      "search_context_size": "high"
+    },
+    {
+      "column": "primary_application",
+      "description": "Main application domain or task (e.g., NLP, Computer Vision, Speech, Multimodal)",
+      "importance": "HIGH",
+      "format": "String",
+      "search_group": 2,
+      "notes": "Validation for primary_application: Main application domain or task (e.g., NLP, Computer Vision, Speech, Multimodal)",
+      "examples": [
+        "Sample value"
+      ]
+    },
+    {
+      "column": "code_available",
+      "description": "Whether official implementation code is publicly available (Yes/No/Partial)",
+      "importance": "MEDIUM",
+      "format": "String",
+      "search_group": 3,
+      "notes": "Validation for code_available: Whether official implementation code is publicly available (Yes/No/Partial)",
+      "examples": [
+        "Sample value"
+      ]
+    },
+    {
+      "column": "code_repository_url",
+      "description": "Link to official GitHub or code repository if available",
+      "importance": "MEDIUM",
+      "format": "URL",
+      "search_group": 3,
+      "notes": "Validation for code_repository_url: Link to official GitHub or code repository if available",
+      "examples": [
+        "https://example.com"
+      ]
+    },
+    {
+      "column": "datasets_used",
+      "description": "Key datasets used for training or evaluation",
+      "importance": "MEDIUM",
+      "format": "String",
+      "search_group": 3,
+      "notes": "Validation for datasets_used: Key datasets used for training or evaluation",
+      "examples": [
+        "Sample value"
+      ]
+    },
+    {
+      "column": "model_size_parameters",
+      "description": "Number of parameters in the model (e.g., 110M, 175B)",
+      "importance": "MEDIUM",
+      "format": "String",
+      "search_group": 3,
+      "notes": "Validation for model_size_parameters: Number of parameters in the model (e.g., 110M, 175B)",
+      "examples": [
+        "Sample value"
+      ]
+    },
+    {
+      "column": "notable_follow_up_work",
+      "description": "Significant papers or models that built upon this work",
+      "importance": "LOW",
+      "format": "String",
+      "search_group": 4,
+      "notes": "Validation for notable_follow_up_work: Significant papers or models that built upon this work",
+      "examples": [
+        "Sample value"
+      ]
+    }
+  ],
+  "generation_metadata": {
+    "generated_at": "2025-10-14T00:12:20.899664Z",
+    "generated_from": "table_generation_system",
+    "conversation_id": "table_conv_24abc6b64010",
+    "version": 1,
+    "identification_columns": [
+      "paper_title",
+      "publication_year"
+    ],
+    "total_research_columns": 12
+  }
+}
