@@ -142,8 +142,8 @@ def install_dependencies():
     for attempt in range(1, max_attempts + 1):
         try:
             # Install dependencies for Lambda Linux environment (Python 3.9 on manylinux2014_x86_64)
-            # Use --only-binary for SPECIFIC packages that require compiled code, allow source for others
-            # This ensures binary dependencies like rpds get correct Linux wheels while pure Python packages work
+            # When using platform constraints, pip requires BOTH --only-binary=:all: AND --no-binary=:none:
+            # This ensures all packages get correct Linux manylinux wheels for the Lambda runtime
             subprocess.check_call([
                 sys.executable, "-m", "pip", "install",
                 "-r", str(SCRIPT_DIR / "requirements-interface-lambda.txt"),
@@ -151,7 +151,8 @@ def install_dependencies():
                 "--platform", "manylinux2014_x86_64",
                 "--implementation", "cp",
                 "--python-version", "3.9",
-                "--only-binary", "rpds-py,PyMuPDF,aiohttp,yarl,frozenlist,multidict",  # Only require binary for known compiled packages
+                "--only-binary", ":all:",
+                "--no-binary", ":none:",
                 "--upgrade",
                 "--no-cache-dir"
             ])
