@@ -10723,7 +10723,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
                     // Store in globalState for this table generation
                     globalState.sessionId = sessionId;
-                    logger.info(`[TABLE_MAKER] Generated new session ID: ${sessionId}`);
+                    console.log(`[TABLE_MAKER] Generated new session ID: ${sessionId}`);
                 }
 
                 const response = await fetch(`${API_BASE}/validate`, {
