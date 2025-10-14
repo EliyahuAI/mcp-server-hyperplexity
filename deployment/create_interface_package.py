@@ -141,29 +141,15 @@ def install_dependencies():
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
-            # Install dependencies - removed --only-binary=:all: to allow pure Python packages like jsonschema
+            # Install all dependencies - removed --only-binary=:all: to include pure Python packages like jsonschema
+            # Lambda Python 3.9 can run both binary wheels and pure Python packages
             subprocess.check_call([
                 sys.executable, "-m", "pip", "install",
                 "-r", str(SCRIPT_DIR / "requirements-interface-lambda.txt"),
                 "-t", str(PACKAGE_DIR),
-                "--no-cache-dir",
-                "--platform", "manylinux2014_x86_64",
-                "--implementation", "cp",
-                "--python-version", "3.9",
-                "--only-binary=:all:",
-                "--no-deps"  # Install deps in a second pass
+                "--no-cache-dir"
             ])
-            logger.info("Binary dependencies installed successfully.")
-
-            # Second pass: Install pure Python packages and dependencies
-            subprocess.check_call([
-                sys.executable, "-m", "pip", "install",
-                "-r", str(SCRIPT_DIR / "requirements-interface-lambda.txt"),
-                "-t", str(PACKAGE_DIR),
-                "--no-cache-dir",
-                "--upgrade"  # Upgrade any that were missed
-            ])
-            logger.info("All dependencies installed successfully.")
+            logger.info("Dependencies installed successfully.")
             break
         except subprocess.CalledProcessError as e:
             logger.error(f"Error installing dependencies (attempt {attempt}/{max_attempts}): {e}")
