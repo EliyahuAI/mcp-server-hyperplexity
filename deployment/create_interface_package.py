@@ -141,12 +141,17 @@ def install_dependencies():
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
-            # Install all dependencies - removed --only-binary=:all: to include pure Python packages like jsonschema
-            # Lambda Python 3.9 can run both binary wheels and pure Python packages
+            # Install dependencies for Lambda Linux environment (Python 3.9 on manylinux2014_x86_64)
+            # This ensures binary wheels (like rpds for jsonschema) are compiled for the correct platform
             subprocess.check_call([
                 sys.executable, "-m", "pip", "install",
                 "-r", str(SCRIPT_DIR / "requirements-interface-lambda.txt"),
                 "-t", str(PACKAGE_DIR),
+                "--platform", "manylinux2014_x86_64",
+                "--implementation", "cp",
+                "--python-version", "3.9",
+                "--only-binary", ":all:",
+                "--upgrade",
                 "--no-cache-dir"
             ])
             logger.info("Dependencies installed successfully.")
