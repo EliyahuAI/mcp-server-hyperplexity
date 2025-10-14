@@ -206,13 +206,13 @@ Ensure variety and relevance to the research domain.
                 # Progress update
                 if websocket_client and session_id:
                     try:
-                websocket_client.send_to_session(session_id, {
-                        'type': 'table_finalization_progress',
-                        'progress': 30,
-                        'status': f'Expanding table to {row_count} rows...'
-                    })
-            except Exception as e:
-                logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
+                        websocket_client.send_to_session(session_id, {
+                            'type': 'table_finalization_progress',
+                            'progress': 30,
+                            'status': f'Expanding table to {row_count} rows...'
+                        })
+                    except Exception as e:
+                        logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
 
                 # Expand rows iteratively
                 table_structure = {
