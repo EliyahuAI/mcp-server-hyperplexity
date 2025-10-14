@@ -1305,11 +1305,12 @@ def verify_api_gateway_deployment(api_name, region, timeout=120):
 def wait_for_all_deployments(region):
     """Wait for all deployments to complete and verify they're working."""
     logger.info("\n=== DEPLOYMENT VERIFICATION ===")
-    
+
+    # Use actual deployed function names (with environment suffixes applied)
     deployments_to_verify = [
-        ("perplexity-validator-interface", "Interface Lambda"),
-        ("perplexity-validator-config", "Config Lambda"),
-        ("perplexity-validator-ws-handler", "WebSocket Lambda")
+        (LAMBDA_CONFIG["FunctionName"], "Interface Lambda"),
+        (LAMBDA_CONFIG["Environment"]["Variables"]["CONFIG_LAMBDA_NAME"], "Config Lambda"),
+        ("perplexity-validator-ws-handler", "WebSocket Lambda")  # WebSocket is shared across all environments
     ]
     
     all_success = True
@@ -1325,7 +1326,7 @@ def wait_for_all_deployments(region):
     
     # Verify API Gateway
     logger.info(f"\n--- Verifying API Gateway ---")
-    if not verify_api_gateway_deployment("perplexity-validator-api", region):
+    if not verify_api_gateway_deployment(API_GATEWAY_CONFIG["ApiName"], region):
         logger.error("❌ API Gateway deployment failed")
         all_success = False
     else:
