@@ -28,6 +28,7 @@ from pathlib import Path
 
 # Lambda imports
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+from interface_lambda.utils.helpers import create_response
 from dynamodb_schemas import create_run_record, update_run_status
 
 # Table maker imports (packaged with lambda)
@@ -265,11 +266,11 @@ async def handle_table_conversation_start(request_data, context):
 
         if not email or not session_id:
             result['error'] = 'Missing email or session_id'
-            return result
+            return create_response(400, result)
 
         if not user_message.strip():
             result['error'] = 'Missing user_message'
-            return result
+            return create_response(400, result)
 
         logger.info(f"[TABLE_MAKER] Starting conversation for session {session_id}: '{user_message[:50]}...'")
 
@@ -387,7 +388,7 @@ async def handle_table_conversation_start(request_data, context):
                 except Exception as e:
                     logger.error(f"[TABLE_MAKER] Failed to update run status: {e}")
 
-            return result
+            return create_response(500, result)
 
         # Extract AI response
         ai_response = conversation_result.get('ai_response', {})
@@ -461,7 +462,7 @@ async def handle_table_conversation_start(request_data, context):
                 logger.error(f"[TABLE_MAKER] Failed to update run status: {e}")
 
         logger.info(f"[TABLE_MAKER] Conversation started successfully: {conversation_id}")
-        return result
+        return create_response(200, result)
 
     except Exception as e:
         error_msg = f"Error starting table conversation: {str(e)}"
@@ -469,7 +470,7 @@ async def handle_table_conversation_start(request_data, context):
         import traceback
         logger.error(f"[TABLE_MAKER] Traceback: {traceback.format_exc()}")
         result['error'] = error_msg
-        return result
+        return create_response(500, result)
 
 
 async def handle_table_conversation_continue(request_data, context):
@@ -527,11 +528,11 @@ async def handle_table_conversation_continue(request_data, context):
 
         if not email or not session_id or not conversation_id:
             result['error'] = 'Missing email, session_id, or conversation_id'
-            return result
+            return create_response(400, result)
 
         if not user_message.strip():
             result['error'] = 'Missing user_message'
-            return result
+            return create_response(400, result)
 
         result['conversation_id'] = conversation_id
 
@@ -551,7 +552,7 @@ async def handle_table_conversation_continue(request_data, context):
         if not conversation_state:
             result['error'] = f'Conversation {conversation_id} not found'
             logger.error(f"[TABLE_MAKER] {result['error']}")
-            return result
+            return create_response(404, result)
 
         # Get run_key for database tracking
         run_key = conversation_state.get('run_key')
@@ -632,7 +633,7 @@ async def handle_table_conversation_continue(request_data, context):
                 except Exception as e:
                     logger.error(f"[TABLE_MAKER] Failed to update run status: {e}")
 
-            return result
+            return create_response(500, result)
 
         # Extract AI response
         ai_response = conversation_result.get('ai_response', {})
@@ -699,7 +700,7 @@ async def handle_table_conversation_continue(request_data, context):
                 logger.error(f"[TABLE_MAKER] Failed to update run status: {e}")
 
         logger.info(f"[TABLE_MAKER] Conversation continued successfully: {conversation_id}, turn {result['turn_count']}")
-        return result
+        return create_response(200, result)
 
     except Exception as e:
         error_msg = f"Error continuing table conversation: {str(e)}"
@@ -707,4 +708,4 @@ async def handle_table_conversation_continue(request_data, context):
         import traceback
         logger.error(f"[TABLE_MAKER] Traceback: {traceback.format_exc()}")
         result['error'] = error_msg
-        return result
+        return create_response(500, result)
