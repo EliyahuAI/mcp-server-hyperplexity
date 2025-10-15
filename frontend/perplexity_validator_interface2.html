@@ -4842,7 +4842,7 @@
                 // Handle progress updates for any card with progress indicator
                 const isProgressType = (data.type === 'progress' || data.type === 'config_generation_progress' ||
                      data.type === 'progress_update' || data.type === 'config_progress_update' ||
-                     data.type === 'preview_progress' || data.type === 'table_finalization_progress');
+                     data.type === 'preview_progress');
                 const hasProgress = data.progress !== undefined;
 
                 if (isProgressType && hasProgress) {
@@ -4859,11 +4859,38 @@
                         globalState.currentConfidenceScore = runningAverage;
                     }
 
-                    // Find the card with progress indicator and update it
+                    // Find the last registered card (the active one) and update it
+                    let latestCardId = null;
+                    let latestOrder = -1;
+
                     for (const [cardId, handlerInfo] of cardHandlers) {
-                        if (handlerInfo && cardId) {
-                            const message = data.status || data.message || null;
-                            updateThinkingProgress(cardId, data.progress, message);
+                        if (handlerInfo && cardId && handlerInfo.registrationOrder > latestOrder) {
+                            latestCardId = cardId;
+                            latestOrder = handlerInfo.registrationOrder;
+                        }
+                    }
+
+                    if (latestCardId) {
+                        const message = data.status || data.message || null;
+                        updateThinkingProgress(latestCardId, data.progress, message);
+
+                        // Check if this is table generation completion
+                        if (data.progress === 100 && message && message.includes('Table generation complete')) {
+                            // Update global state
+                            if (data.session_id) globalState.sessionId = data.session_id;
+                            if (data.table_filename) globalState.excelFileName = data.table_filename;
+                            globalState.excelFileUploaded = true;
+
+                            // Complete the thinking indicator
+                            completeThinkingInCard(latestCardId, 'Table generation complete!');
+
+                            // Show success message
+                            showMessage(`${latestCardId}-messages`, 'Table generated successfully! Starting preview validation...', 'success');
+
+                            // Trigger preview validation in new card
+                            setTimeout(() => {
+                                triggerPreviewValidation(data.session_id);
+                            }, 800);
                         }
                     }
                     return; // Progress messages don't need further routing to completion handlers
@@ -11173,10 +11200,15 @@ Please provide any additional context, or simply proceed to generate your initia
             showThinkingInCard(cardId, 'Generating table and starting validation...', true);
 
             // Register handler BEFORE fetch to catch early progress messages
-            registerCardHandler(cardId, (wsData) => {
-                if (wsData.type === 'table_finalization_progress') {
-                    // Check if we're at 100% (complete)
-                    if (wsData.progress === 100 || wsData.status === 'complete') {
+            unregisterCardHandler(cardId);
+            registerCardHandler(cardId, ['progress_update'], (wsData, handlerCardId) => {
+                // Progress updates are handled by global progress routing
+                // This handler is just for completion events
+                if (wsData.type === 'progress_update' && wsData.progress === 100) {
+                    const message = wsData.message || wsData.status || '';
+
+                    // Check if this is table generation completion
+                    if (message.includes('Table generation complete')) {
                         console.log('[TABLE_FINALIZE_CARD] Table generation complete, preparing validation');
 
                         // Update global state
@@ -11184,17 +11216,10 @@ Please provide any additional context, or simply proceed to generate your initia
                         if (wsData.table_filename) globalState.excelFileName = wsData.table_filename;
                         globalState.excelFileUploaded = true;
 
-                        completeThinkingInCard(cardId, 'Table generation complete!');
-
-                        showMessage(`${cardId}-messages`,
-                            'I have completed a first pass generation of your research table, and will now validate the first 3 rows.',
-                            'success'
-                        );
-
                         // Wait 800ms then trigger preview validation
                         setTimeout(() => {
                             console.log('[TABLE_FINALIZE_CARD] Triggering preview validation');
-                            triggerPreviewValidation(cardId);
+                            triggerPreviewValidation(handlerCardId);
                         }, 800);
                     }
                 }
@@ -11500,42 +11525,17 @@ Please provide any additional context, or simply proceed to generate your initia
 
             showThinkingInCard(cardId, 'Generating full table...', true);
 
+            // Register card handler for progress updates
+            unregisterCardHandler(cardId);
+            registerCardHandler(cardId, ['progress_update'], (wsData, handlerCardId) => {
+                // Progress updates are handled by global progress routing
+                // This registration ensures this card is marked as the "latest" card
+            });
+
             // Ensure WebSocket connection is established for progress updates
             if (globalState.sessionId) {
                 ensureWebSocketHealth(globalState.sessionId);
             }
-
-            // Register handler BEFORE fetch to catch all progress messages
-            registerCardHandler(cardId, (wsData) => {
-                // Check if table finalization is complete
-                if (wsData.type === 'table_finalization_progress') {
-                    // Progress updates will be handled by the general progress handler
-
-                    // Check if we're at 100% (complete)
-                    if (wsData.progress === 100 || wsData.status === 'complete') {
-                        console.log('[TABLE_FINALIZE] Table generation complete, preparing validation');
-
-                        // Update global state
-                        if (wsData.session_id) globalState.sessionId = wsData.session_id;
-                        if (wsData.table_filename) globalState.excelFileName = wsData.table_filename;
-
-                        // Show completion message
-                        clearThinkingFromCard(cardId);
-                        appendToCardMessages(cardId, `
-                            <div class="success-message">
-                                <strong>[SUCCESS] Table Generated Successfully!</strong><br>
-                                Rows: ${wsData.row_count || 'N/A'}<br>
-                                Columns: ${wsData.column_count || 'N/A'}
-                            </div>
-                        `);
-
-                        // Now trigger preview validation in a NEW card
-                        setTimeout(() => {
-                            triggerPreviewValidation(wsData.session_id);
-                        }, 500);
-                    }
-                }
-            });
 
             try {
                 const response = await fetch(`${API_BASE}/validate`, {
