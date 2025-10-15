@@ -95,7 +95,8 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
             except Exception as e:
                 logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
 
-        # Load conversation state from S3
+        # Load conversation state from S3 (optional - used for context)
+        conversation_state = {}
         conversation_key = f"{session_path}table_maker/conversation_{conversation_id}.json"
         try:
             response = storage_manager.s3_client.get_object(
@@ -103,27 +104,31 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                 Key=conversation_key
             )
             conversation_state = json.loads(response['Body'].read().decode('utf-8'))
+            logger.info(f"Loaded conversation state from S3")
         except Exception as e:
-            logger.error(f"Failed to load conversation state: {e}")
-            return {
-                'success': False,
-                'error': f'Failed to load conversation state: {str(e)}'
-            }
+            logger.warning(f"Could not load conversation state (will use preview data for context): {e}")
+            # Not fatal - we can work with just the preview data
 
-        # Load preview data from S3
-        preview_key = f"{session_path}table_maker/preview_{conversation_id}.json"
-        try:
-            response = storage_manager.s3_client.get_object(
-                Bucket=storage_manager.bucket_name,
-                Key=preview_key
-            )
-            preview_data = json.loads(response['Body'].read().decode('utf-8'))
-        except Exception as e:
-            logger.error(f"Failed to load preview data: {e}")
-            return {
-                'success': False,
-                'error': f'Failed to load preview data: {str(e)}'
-            }
+        # Get preview data from request or load from S3
+        preview_data = event_data.get('table_config')
+
+        if not preview_data:
+            # Fallback: try loading from S3
+            preview_key = f"{session_path}table_maker/preview_{conversation_id}.json"
+            try:
+                response = storage_manager.s3_client.get_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=preview_key
+                )
+                preview_data = json.loads(response['Body'].read().decode('utf-8'))
+            except Exception as e:
+                logger.error(f"No preview data in request and failed to load from S3: {e}")
+                return {
+                    'success': False,
+                    'error': f'No preview data available. Please try generating the preview again.'
+                }
+
+        logger.info(f"Using preview data with {len(preview_data.get('columns', []))} columns")
 
         # Create run record for table generation
         try:
@@ -156,45 +161,53 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                 websocket_client.send_to_session(session_id, {
                 'type': 'table_finalization_progress',
                 'progress': 15,
-                'status': f'Generating {row_count} rows for full table...'
+                'status': f'Starting parallel table generation and config creation...'
             })
             except Exception as e:
                 logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
 
-        # Generate full table using TableGenerator
-        try:
-            from table_maker.src.table_generator import TableGenerator
-            from table_maker.src.row_expander import RowExpander
-            from table_maker.src.prompt_loader import PromptLoader
-            from table_maker.src.schema_validator import SchemaValidator
-            from shared.ai_api_client import AIAPIClient
+        # Extract columns and sample rows from preview for use in both parallel operations
+        columns = preview_data.get('columns', [])
+        sample_rows = preview_data.get('sample_rows', [])
+        future_ids = preview_data.get('future_ids', [])
 
-            # Initialize components
-            table_generator = TableGenerator()
-            ai_client = AIAPIClient()
-            prompt_loader = PromptLoader()
-            schema_validator = SchemaValidator()
-            row_expander = RowExpander(ai_client, prompt_loader, schema_validator)
+        # Define parallel async functions
+        async def generate_full_table():
+            """Generate and store full table with all rows"""
+            try:
+                from table_maker.src.table_generator import TableGenerator
+                from table_maker.src.row_expander import RowExpander
+                from table_maker.src.prompt_loader import PromptLoader
+                from table_maker.src.schema_validator import SchemaValidator
+                from shared.ai_api_client import AIAPIClient
 
-            # Get table structure from preview
-            columns = preview_data.get('columns', [])
-            sample_rows = preview_data.get('sample_rows', [])
-            future_ids = preview_data.get('future_ids', [])
+                # Initialize components
+                table_generator = TableGenerator()
+                ai_client = AIAPIClient()
+                prompt_loader = PromptLoader()
+                schema_validator = SchemaValidator()
+                row_expander = RowExpander(ai_client, prompt_loader, schema_validator)
 
-            # Calculate how many additional rows we need
-            existing_row_count = len(sample_rows)
-            additional_rows_needed = max(0, row_count - existing_row_count)
+                # Calculate how many additional rows we need
+                existing_row_count = len(sample_rows)
+                additional_rows_needed = max(0, row_count - existing_row_count)
 
-            logger.info(f"Existing rows: {existing_row_count}, Additional needed: {additional_rows_needed}")
+                logger.info(f"Existing rows: {existing_row_count}, Additional needed: {additional_rows_needed}")
 
-            all_rows = list(sample_rows)  # Start with preview rows
+                all_rows = list(sample_rows)  # Start with preview rows
 
-            if additional_rows_needed > 0:
-                # Build expansion request based on future IDs and conversation context
-                research_purpose = conversation_state.get('messages', [{}])[0].get('content', '')
+                if additional_rows_needed > 0:
+                    # Build expansion request based on future IDs and conversation context
+                    research_purpose = ""
+                    if conversation_state.get('messages'):
+                        research_purpose = conversation_state['messages'][0].get('content', '')
 
-                # Create expansion request
-                expansion_request = f"""
+                    # Fallback: use preview_data description if available
+                    if not research_purpose and preview_data.get('metadata'):
+                        research_purpose = preview_data['metadata'].get('description', 'Generate comprehensive research data')
+
+                    # Create expansion request
+                    expansion_request = f"""
 Generate {additional_rows_needed} additional rows based on the research purpose: {research_purpose}
 
 Use these future ID combinations as a guide:
@@ -203,268 +216,283 @@ Use these future ID combinations as a guide:
 Ensure variety and relevance to the research domain.
 """
 
+                    # Progress update
+                    if websocket_client and session_id:
+                        try:
+                            websocket_client.send_to_session(session_id, {
+                                'type': 'table_finalization_progress',
+                                'progress': 30,
+                                'status': f'Expanding table to {row_count} rows...'
+                            })
+                        except Exception as e:
+                            logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
+
+                    # Expand rows iteratively
+                    table_structure = {
+                        'columns': columns,
+                        'proposed_columns': columns
+                    }
+
+                    expansion_result = await row_expander.expand_rows_iteratively(
+                        table_structure=table_structure,
+                        existing_rows=sample_rows,
+                        expansion_request=expansion_request,
+                        total_rows_needed=additional_rows_needed,
+                        batch_size=10,
+                        model="claude-sonnet-4-5"
+                    )
+
+                    if not expansion_result['success']:
+                        logger.error(f"Row expansion failed: {expansion_result.get('errors', [])}")
+                        raise Exception(f"Failed to generate full table: {expansion_result.get('errors', ['Unknown error'])}")
+
+                    all_rows.extend(expansion_result['expanded_rows'])
+                    logger.info(f"Generated {len(expansion_result['expanded_rows'])} additional rows")
+
                 # Progress update
                 if websocket_client and session_id:
                     try:
                         websocket_client.send_to_session(session_id, {
                             'type': 'table_finalization_progress',
-                            'progress': 30,
-                            'status': f'Expanding table to {row_count} rows...'
+                            'progress': 50,
+                            'status': 'Creating CSV files...'
                         })
                     except Exception as e:
                         logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
 
-                # Expand rows iteratively
-                table_structure = {
-                    'columns': columns,
-                    'proposed_columns': columns
-                }
+                # Create CSV WITH column definitions (for user download)
+                user_csv_filename = f"table_{session_id}.csv"
+                user_csv_path = f"/tmp/{user_csv_filename}"
 
-                expansion_result = await row_expander.expand_rows_iteratively(
-                    table_structure=table_structure,
-                    existing_rows=sample_rows,
-                    expansion_request=expansion_request,
-                    total_rows_needed=additional_rows_needed,
-                    batch_size=10,
-                    model="claude-sonnet-4-5"
+                generation_result = table_generator.generate_csv(
+                    columns=columns,
+                    rows=all_rows,
+                    output_path=user_csv_path,
+                    include_metadata=True  # Include column definitions
                 )
 
-                if not expansion_result['success']:
-                    logger.error(f"Row expansion failed: {expansion_result.get('errors', [])}")
-                    return {
-                        'success': False,
-                        'error': f"Failed to generate full table: {expansion_result.get('errors', ['Unknown error'])}"
+                if not generation_result['success']:
+                    raise Exception(f"Failed to generate user CSV: {generation_result.get('error')}")
+
+                # Store user CSV in S3
+                with open(user_csv_path, 'rb') as f:
+                    user_csv_content = f.read()
+
+                user_csv_key = f"{session_path}{user_csv_filename}"
+                storage_manager.s3_client.put_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=user_csv_key,
+                    Body=user_csv_content,
+                    ContentType='text/csv',
+                    Metadata={
+                        'session_id': session_id,
+                        'email': email,
+                        'conversation_id': conversation_id,
+                        'row_count': str(len(all_rows)),
+                        'includes_definitions': 'true'
                     }
-
-                all_rows.extend(expansion_result['expanded_rows'])
-                logger.info(f"Generated {len(expansion_result['expanded_rows'])} additional rows")
-
-            # Progress update
-            if websocket_client and session_id:
-                try:
-                    websocket_client.send_to_session(session_id, {
-                        'type': 'table_finalization_progress',
-                        'progress': 50,
-                        'status': 'Creating CSV files...'
-                    })
-                except Exception as e:
-                    logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
-
-            # Create CSV WITH column definitions (for user download)
-            user_csv_filename = f"table_{session_id}.csv"
-            user_csv_path = f"/tmp/{user_csv_filename}"
-
-            generation_result = table_generator.generate_csv(
-                columns=columns,
-                rows=all_rows,
-                output_path=user_csv_path,
-                include_metadata=True  # Include column definitions
-            )
-
-            if not generation_result['success']:
-                return {
-                    'success': False,
-                    'error': f"Failed to generate user CSV: {generation_result.get('error')}"
-                }
-
-            # Store user CSV in S3
-            with open(user_csv_path, 'rb') as f:
-                user_csv_content = f.read()
-
-            user_csv_key = f"{session_path}{user_csv_filename}"
-            storage_manager.s3_client.put_object(
-                Bucket=storage_manager.bucket_name,
-                Key=user_csv_key,
-                Body=user_csv_content,
-                ContentType='text/csv',
-                Metadata={
-                    'session_id': session_id,
-                    'email': email,
-                    'conversation_id': conversation_id,
-                    'row_count': str(len(all_rows)),
-                    'includes_definitions': 'true'
-                }
-            )
-
-            logger.info(f"Stored user CSV with definitions: {user_csv_key}")
-
-            # Create CSV WITHOUT column definitions (for validation)
-            validation_csv_filename = f"table_{session_id}_for_validation.csv"
-            validation_csv_path = f"/tmp/{validation_csv_filename}"
-
-            validation_result = table_generator.generate_csv(
-                columns=columns,
-                rows=all_rows,
-                output_path=validation_csv_path,
-                include_metadata=False  # NO column definitions for validation
-            )
-
-            if not validation_result['success']:
-                return {
-                    'success': False,
-                    'error': f"Failed to generate validation CSV: {validation_result.get('error')}"
-                }
-
-            # Store validation CSV in S3
-            with open(validation_csv_path, 'rb') as f:
-                validation_csv_content = f.read()
-
-            validation_csv_key = f"{session_path}{validation_csv_filename}"
-            storage_manager.s3_client.put_object(
-                Bucket=storage_manager.bucket_name,
-                Key=validation_csv_key,
-                Body=validation_csv_content,
-                ContentType='text/csv',
-                Metadata={
-                    'session_id': session_id,
-                    'email': email,
-                    'conversation_id': conversation_id,
-                    'row_count': str(len(all_rows)),
-                    'includes_definitions': 'false'
-                }
-            )
-
-            logger.info(f"Stored validation CSV without definitions: {validation_csv_key}")
-
-        except Exception as e:
-            logger.error(f"Failed to generate full table: {e}")
-            if run_key:
-                update_run_status(
-                    session_id=session_id,
-                    run_key=run_key,
-                    status='FAILED',
-                    run_type="Table Generation",
-                    verbose_status="Failed to generate full table",
-                    percent_complete=0,
-                    error_message=str(e)
                 )
-            return {
-                'success': False,
-                'error': f'Failed to generate full table: {str(e)}'
-            }
 
-        # Update run status for table generation completion
-        if run_key:
-            update_run_status(
-                session_id=session_id,
-                run_key=run_key,
-                status='COMPLETED',
-                run_type="Table Generation",
-                verbose_status=f"Generated table with {len(all_rows)} rows",
-                percent_complete=100,
-                processed_rows=len(all_rows),
-                total_rows=row_count
-            )
+                logger.info(f"Stored user CSV with definitions: {user_csv_key}")
 
-        # Progress update
-        if websocket_client and session_id:
-            try:
-                websocket_client.send_to_session(session_id, {
-                    'type': 'table_finalization_progress',
-                    'progress': 60,
-                    'status': 'Generating validation configuration...'
-                })
-            except Exception as e:
-                logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
+                # Create CSV WITHOUT column definitions (for validation)
+                validation_csv_filename = f"table_{session_id}_for_validation.csv"
+                validation_csv_path = f"/tmp/{validation_csv_filename}"
 
-        # Build enhanced table_analysis with conversation_context
-        try:
-            # Extract identification columns
-            identification_columns = [
-                col['name'] for col in columns if col.get('is_identification', False)
-            ]
+                validation_result = table_generator.generate_csv(
+                    columns=columns,
+                    rows=all_rows,
+                    output_path=validation_csv_path,
+                    include_metadata=False  # NO column definitions for validation
+                )
 
-            # Build table_analysis structure for config generation
-            table_analysis = {
-                'basic_info': {
-                    'filename': user_csv_filename,
-                    'total_rows': len(all_rows),
-                    'total_columns': len(columns),
-                    'has_header': True
-                },
-                'column_analysis': {
-                    col['name']: {
-                        'name': col['name'],
-                        'description': col.get('description', ''),
-                        'data_type': col.get('format', 'String'),
-                        'importance': col.get('importance', 'MEDIUM'),
-                        'sample_values': [row.get(col['name'], '') for row in all_rows[:3]],
-                        'is_identification': col.get('is_identification', False)
+                if not validation_result['success']:
+                    raise Exception(f"Failed to generate validation CSV: {validation_result.get('error')}")
+
+                # Store validation CSV in S3
+                with open(validation_csv_path, 'rb') as f:
+                    validation_csv_content = f.read()
+
+                validation_csv_key = f"{session_path}{validation_csv_filename}"
+                storage_manager.s3_client.put_object(
+                    Bucket=storage_manager.bucket_name,
+                    Key=validation_csv_key,
+                    Body=validation_csv_content,
+                    ContentType='text/csv',
+                    Metadata={
+                        'session_id': session_id,
+                        'email': email,
+                        'conversation_id': conversation_id,
+                        'row_count': str(len(all_rows)),
+                        'includes_definitions': 'false'
                     }
-                    for col in columns
-                },
-                'domain_info': {
-                    'domain': conversation_state.get('context_research', {}).get('domain', 'research'),
-                    'insights': conversation_state.get('context_research', {}).get('insights', '')
-                },
-                'metadata': {
-                    'file_type': 'csv',
-                    'generated_by': 'table_maker',
-                    'conversation_id': conversation_id
-                },
-                'conversation_context': {
-                    'research_purpose': conversation_state.get('messages', [{}])[0].get('content', ''),
-                    'ai_reasoning': conversation_state.get('messages', [{}])[-1].get('content', '') if len(conversation_state.get('messages', [])) > 1 else '',
-                    'column_details': columns,
-                    'identification_columns': identification_columns,
-                    'conversation_history': conversation_state.get('messages', []),
-                    'context_research': conversation_state.get('context_research', {})
-                }
-            }
+                )
 
-            logger.info("Built enhanced table_analysis with conversation_context")
+                logger.info(f"Stored validation CSV without definitions: {validation_csv_key}")
 
-        except Exception as e:
-            logger.error(f"Failed to build table_analysis: {e}")
-            return {
-                'success': False,
-                'error': f'Failed to build table_analysis: {str(e)}'
-            }
+                # Update run status for table generation completion
+                if run_key:
+                    update_run_status(
+                        session_id=session_id,
+                        run_key=run_key,
+                        status='COMPLETED',
+                        run_type="Table Generation",
+                        verbose_status=f"Generated table with {len(all_rows)} rows",
+                        percent_complete=100,
+                        processed_rows=len(all_rows),
+                        total_rows=row_count
+                    )
 
-        # Progress update
-        if websocket_client and session_id:
-            try:
-                websocket_client.send_to_session(session_id, {
-                    'type': 'table_finalization_progress',
-                    'progress': 70,
-                    'status': 'Calling config generation lambda...'
-                })
-            except Exception as e:
-                logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
-
-        # Call existing handle_generate_config_unified() with enhanced payload
-        try:
-            config_generation_payload = {
-                'email': email,
-                'session_id': session_id,
-                'table_analysis': table_analysis,
-                'instructions': f"Generate optimal validation configuration for AI-generated research table. Research purpose: {table_analysis['conversation_context']['research_purpose'][:200]}...",
-                'existing_config': None  # No existing config for new table
-            }
-
-            config_result = await handle_generate_config_unified(
-                config_generation_payload
-            )
-
-            if not config_result.get('success'):
-                error_msg = config_result.get('error', 'Unknown error')
-                logger.error(f"Config generation failed: {error_msg}")
+                # Return results
                 return {
-                    'success': False,
-                    'error': f'Failed to generate validation config: {error_msg}'
+                    'all_rows': all_rows,
+                    'user_csv_key': user_csv_key,
+                    'validation_csv_key': validation_csv_key,
+                    'user_csv_filename': user_csv_filename
                 }
 
-            config_version = config_result.get('config_version', 1)
-            config_s3_key = config_result.get('config_s3_key', '')
+            except Exception as e:
+                logger.error(f"Failed to generate full table: {e}")
+                if run_key:
+                    update_run_status(
+                        session_id=session_id,
+                        run_key=run_key,
+                        status='FAILED',
+                        run_type="Table Generation",
+                        verbose_status="Failed to generate full table",
+                        percent_complete=0,
+                        error_message=str(e)
+                    )
+                raise
 
-            logger.info(f"Config generated successfully: version {config_version}, key {config_s3_key}")
+        async def generate_config():
+            """Generate validation configuration in parallel"""
+            try:
+                # Progress update
+                if websocket_client and session_id:
+                    try:
+                        websocket_client.send_to_session(session_id, {
+                            'type': 'table_finalization_progress',
+                            'progress': 60,
+                            'status': 'Generating validation configuration...'
+                        })
+                    except Exception as e:
+                        logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
 
-        except Exception as e:
-            logger.error(f"Failed to generate config: {e}")
-            return {
-                'success': False,
-                'error': f'Failed to generate validation config: {str(e)}'
-            }
+                # Extract identification columns
+                identification_columns = [
+                    col['name'] for col in columns if col.get('is_identification', False)
+                ]
+
+                # Build table_analysis structure for config generation
+                # IMPORTANT: Use sample_rows (from preview) for sample_values since we're running in parallel
+                table_analysis = {
+                    'basic_info': {
+                        'filename': f"table_{session_id}.csv",
+                        'total_rows': len(sample_rows),  # Use sample_rows count for preview
+                        'total_columns': len(columns),
+                        'has_header': True
+                    },
+                    'column_analysis': {
+                        col['name']: {
+                            'name': col['name'],
+                            'description': col.get('description', ''),
+                            'data_type': col.get('format', 'String'),
+                            'importance': col.get('importance', 'MEDIUM'),
+                            'sample_values': [row.get(col['name'], '') for row in sample_rows[:3]],  # Use sample_rows
+                            'is_identification': col.get('is_identification', False)
+                        }
+                        for col in columns
+                    },
+                    'domain_info': {
+                        'domain': conversation_state.get('context_research', {}).get('domain', 'research'),
+                        'insights': conversation_state.get('context_research', {}).get('insights', '')
+                    },
+                    'metadata': {
+                        'file_type': 'csv',
+                        'generated_by': 'table_maker',
+                        'conversation_id': conversation_id
+                    },
+                    'conversation_context': {
+                        'research_purpose': conversation_state.get('messages', [{}])[0].get('content', ''),
+                        'ai_reasoning': conversation_state.get('messages', [{}])[-1].get('content', '') if len(conversation_state.get('messages', [])) > 1 else '',
+                        'column_details': columns,
+                        'identification_columns': identification_columns,
+                        'conversation_history': conversation_state.get('messages', []),
+                        'context_research': conversation_state.get('context_research', {})
+                    }
+                }
+
+                logger.info("Built enhanced table_analysis with conversation_context")
+
+                # Progress update
+                if websocket_client and session_id:
+                    try:
+                        websocket_client.send_to_session(session_id, {
+                            'type': 'table_finalization_progress',
+                            'progress': 70,
+                            'status': 'Calling config generation lambda...'
+                        })
+                    except Exception as e:
+                        logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
+
+                # Call existing handle_generate_config_unified() with enhanced payload
+                config_generation_payload = {
+                    'email': email,
+                    'session_id': session_id,
+                    'table_analysis': table_analysis,
+                    'instructions': f"Generate optimal validation configuration for AI-generated research table. Research purpose: {table_analysis['conversation_context']['research_purpose'][:200]}...",
+                    'existing_config': None  # No existing config for new table
+                }
+
+                config_result = await handle_generate_config_unified(
+                    config_generation_payload
+                )
+
+                if not config_result.get('success'):
+                    error_msg = config_result.get('error', 'Unknown error')
+                    logger.error(f"Config generation failed: {error_msg}")
+                    raise Exception(f'Failed to generate validation config: {error_msg}')
+
+                config_version = config_result.get('config_version', 1)
+                config_s3_key = config_result.get('config_s3_key', '')
+
+                logger.info(f"Config generated successfully: version {config_version}, key {config_s3_key}")
+
+                # Return results
+                return {
+                    'config_version': config_version,
+                    'config_s3_key': config_s3_key
+                }
+
+            except Exception as e:
+                logger.error(f"Failed to generate config: {e}")
+                raise
+
+        # Run table generation and config generation in parallel
+        table_result, config_result = await asyncio.gather(
+            generate_full_table(),
+            generate_config(),
+            return_exceptions=True
+        )
+
+        # Handle results
+        if isinstance(table_result, Exception):
+            logger.error(f"Table generation failed: {table_result}")
+            return {'success': False, 'error': f'Table generation failed: {str(table_result)}'}
+
+        if isinstance(config_result, Exception):
+            logger.error(f"Config generation failed: {config_result}")
+            return {'success': False, 'error': f'Config generation failed: {str(config_result)}'}
+
+        # Extract results
+        all_rows = table_result['all_rows']
+        user_csv_key = table_result['user_csv_key']
+        validation_csv_key = table_result['validation_csv_key']
+        user_csv_filename = table_result['user_csv_filename']
+
+        config_version = config_result['config_version']
+        config_s3_key = config_result['config_s3_key']
 
         # Progress update
         if websocket_client and session_id:

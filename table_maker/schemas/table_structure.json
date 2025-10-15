@@ -22,8 +22,8 @@
           },
           "importance": {
             "type": "string",
-            "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"],
-            "description": "Importance level for validation prioritization"
+            "enum": ["ID", "CRITICAL"],
+            "description": "Importance level: ID for identification columns, CRITICAL for research columns to validate"
           },
           "is_identification": {
             "type": "boolean",

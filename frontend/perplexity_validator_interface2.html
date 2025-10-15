@@ -1221,11 +1221,11 @@
     }
 
     .chat-message.system {
-        background-color: #e3f2fd;
-        color: #1565c0;
-        margin: 1rem auto;
-        text-align: center;
-        max-width: 70%;
+        background-color: #f0f0f0;
+        color: #333;
+        margin-left: 0;
+        margin-right: auto;
+        border-bottom-left-radius: 4px;
     }
 
     /* Markdown content styling */
@@ -1234,9 +1234,25 @@
         line-height: 1.6;
     }
 
-    .markdown-content h1, .markdown-content h2, .markdown-content h3 {
+    .markdown-content h1 {
         margin: 1em 0 0.5em 0;
         font-weight: 600;
+        font-size: 1.5em;
+        color: #333;
+    }
+
+    .markdown-content h2 {
+        margin: 1em 0 0.5em 0;
+        font-weight: 600;
+        font-size: 1.25em;
+        color: #333;
+    }
+
+    .markdown-content h3 {
+        margin: 1em 0 0.5em 0;
+        font-weight: 600;
+        font-size: 1.1em;
+        color: #333;
     }
 
     .markdown-content p {
@@ -10633,28 +10649,26 @@ Please provide any additional context, or simply proceed to generate your initia
             const cardId = generateCardId();
             tableMakerState.cardId = cardId;
 
-            const initialPrompt = `<div class="message message-info" style="margin-bottom: 16px;">
-                <div style="padding: 12px;">
-                    <h4 style="margin: 0 0 12px 0; color: #1565c0;">Let's build your research table</h4>
-                    <p style="margin: 0 0 8px 0;"><strong>To get started, please tell me:</strong></p>
-                    <ul style="margin: 0 0 8px 0; padding-left: 20px; line-height: 1.6;">
-                        <li><strong>What research table would you like to build?</strong></li>
-                        <li><strong>What information defines each row</strong> that I should iterate over?</li>
-                        <li><strong>What kind of information</strong> are you interested in for the columns?</li>
-                        <li><strong>Who will use this table, and for what purpose?</strong></li>
-                    </ul>
-                    <p style="margin: 8px 0 0 0; font-style: italic; color: #666;">I can get pretty far with just a bit of info, but I can get to where you want to go with more detail.</p>
-                </div>
+            const initialPrompt = `<div class="chat-message ai">
+                <h4 style="margin: 0 0 12px 0;">Let's build your research table</h4>
+                <p style="margin: 0 0 8px 0;"><strong>To get started, please tell me:</strong></p>
+                <ul style="margin: 0 0 8px 0; padding-left: 20px; line-height: 1.6;">
+                    <li><strong>What research table would you like to build?</strong></li>
+                    <li><strong>What information defines each row</strong> that I should iterate over?</li>
+                    <li><strong>What kind of information</strong> are you interested in for the columns?</li>
+                    <li><strong>Who will use this table, and for what purpose?</strong></li>
+                </ul>
+                <p style="margin: 8px 0 0 0; font-style: italic;">I can get pretty far with just a bit of info, but I can get to where you want to go with more detail.</p>
             </div>`;
 
             const content = `
                 ${initialPrompt}
                 <div id="${cardId}-messages"></div>
-                <div id="${cardId}-chat" style="max-height: 400px; overflow-y: auto; margin-bottom: 16px;"></div>
+                <div id="${cardId}-chat" style="margin-bottom: 16px;"></div>
                 <div id="${cardId}-input-container">
                     <textarea id="${cardId}-input" class="table-maker-textarea"
                         placeholder="Example: Track AI research papers on transformers. Each row is a paper (defined by title and authors). I want columns for citation count, publication venue, key findings, and code availability. This is for my literature review."
-                        style="width: 100%; min-height: 100px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; font-size: 14px; resize: vertical;"></textarea>
+                        style="width: 100%; min-height: 100px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; font-size: 16px; resize: vertical;"></textarea>
                 </div>
             `;
 
@@ -10735,11 +10749,18 @@ Please provide any additional context, or simply proceed to generate your initia
                 const data = await response.json();
 
                 if (data.success && data.status === 'processing') {
-                    // Request queued successfully - save conversation ID and wait for WebSocket updates
+                    // Request queued successfully - save conversation ID and session ID
                     tableMakerState.conversationId = data.conversation_id;
 
+                    // Store session_id if backend generated one
+                    if (data.session_id && !globalState.sessionId) {
+                        globalState.sessionId = data.session_id;
+                        localStorage.setItem('sessionId', data.session_id);
+                        console.log(`[TABLE_MAKER] Stored new session ID: ${data.session_id}`);
+                    }
+
                     // Connect to WebSocket session
-                    connectToSession(sessionId);
+                    connectToSession(globalState.sessionId);
 
                     console.log(`[TABLE_MAKER] Conversation started, waiting for updates via WebSocket: ${data.conversation_id}`);
                 } else {
@@ -10820,8 +10841,15 @@ Please provide any additional context, or simply proceed to generate your initia
             }
 
             const messageDiv = document.createElement('div');
-            messageDiv.className = `chat-message ${role}`; // Use global chat-message class
-            messageDiv.textContent = cleanContent;
+            messageDiv.className = `chat-message ${role}`;
+
+            // Render markdown for AI messages
+            if (role === 'ai') {
+                messageDiv.innerHTML = renderMarkdown(cleanContent);
+            } else {
+                messageDiv.textContent = cleanContent;
+            }
+
             chatContainer.appendChild(messageDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
@@ -10829,24 +10857,45 @@ Please provide any additional context, or simply proceed to generate your initia
         // Show refinement input
         function showRefinementInput(cardId) {
             const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+            const chatContainer = document.getElementById(`${cardId}-chat`);
             if (!buttonsContainer) return;
 
-            // Build assumptions text from reasoning and clarifying questions
-            let assumptionsHtml = '';
-            if (tableMakerState.reasoning || tableMakerState.clarifying_questions) {
-                assumptionsHtml = '<div class="message message-info" style="margin-bottom: 12px;"><div style="padding: 12px;">';
+            // Add chat bubbles for refinement guidance
+            if (chatContainer && (tableMakerState.reasoning || tableMakerState.clarifying_questions)) {
+                // First bubble: prompt for changes
+                addMessageToTableChat(cardId, 'ai', 'What shall I change about the table columns or rows?');
 
+                // Second bubble: combine reasoning and questions as bulleted list
+                let bulletPoints = [];
+
+                // Parse reasoning into bullet points
                 if (tableMakerState.reasoning) {
-                    // Format reasoning as "I assumed..." statements
-                    const reasoningText = tableMakerState.reasoning.replace(/\.$/, ''); // Remove trailing period
-                    assumptionsHtml += `<p style="margin: 0 0 8px 0;"><strong>My assumptions:</strong> ${reasoningText}.</p>`;
+                    const reasoningText = tableMakerState.reasoning.trim();
+                    // Split by sentence or use whole text
+                    const sentences = reasoningText.split(/\.\s+/).filter(s => s.trim());
+                    sentences.forEach(sentence => {
+                        if (sentence.trim()) {
+                            bulletPoints.push(`I ${sentence.trim()}${sentence.endsWith('.') ? '' : '.'} Would you prefer something different?`);
+                        }
+                    });
                 }
 
+                // Parse clarifying questions into bullet points
                 if (tableMakerState.clarifying_questions && tableMakerState.clarifying_questions.trim()) {
-                    assumptionsHtml += `<p style="margin: 0;"><strong>Questions:</strong> ${tableMakerState.clarifying_questions}</p>`;
+                    const questionsText = tableMakerState.clarifying_questions.trim();
+                    // Split by question marks or newlines
+                    const questions = questionsText.split(/\?[\s\n]+|\n+/).filter(q => q.trim());
+                    questions.forEach(question => {
+                        if (question.trim()) {
+                            bulletPoints.push(`${question.trim()}${question.endsWith('?') ? '' : '?'}`);
+                        }
+                    });
                 }
 
-                assumptionsHtml += '<p style="margin: 8px 0 0 0; font-style: italic; color: #666;">Would you prefer something different?</p></div></div>';
+                if (bulletPoints.length > 0) {
+                    const bulletedMessage = bulletPoints.map(point => `• ${point}`).join('\n');
+                    addMessageToTableChat(cardId, 'ai', bulletedMessage);
+                }
             }
 
             // Create refinement input if it doesn't exist
@@ -10856,10 +10905,9 @@ Please provide any additional context, or simply proceed to generate your initia
                 refinementDiv.id = `${cardId}-refinement`;
                 refinementDiv.style.cssText = 'margin-top: 16px;';
                 refinementDiv.innerHTML = `
-                    ${assumptionsHtml}
                     <textarea id="${cardId}-refine-input" class="table-maker-textarea"
                         placeholder="Add more details or ask questions..."
-                        style="width: 100%; min-height: 60px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; font-size: 14px; resize: vertical; margin-bottom: 8px;"></textarea>
+                        style="width: 100%; min-height: 60px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; font-size: 16px; resize: vertical; margin-bottom: 8px;"></textarea>
                 `;
                 buttonsContainer.parentNode.insertBefore(refinementDiv, buttonsContainer);
             }
@@ -10880,7 +10928,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
             const content = `
                 <div id="${previewCardId}-preview-container"></div>
-                <div id="${previewCardId}-chat" style="max-height: 400px; overflow-y: auto; margin-top: 16px;"></div>
+                <div id="${previewCardId}-chat" style="margin-top: 16px;"></div>
             `;
 
             const card = createCard({
@@ -10914,21 +10962,25 @@ Please provide any additional context, or simply proceed to generate your initia
             const sampleRows = previewData.sample_rows || previewData.sample_rows_transposed || previewData.rows?.sample_rows || [];
             const futureIds = previewData.future_ids || [];
 
-            // Build TRANSPOSED markdown table (like validation preview)
+            // Separate ID and Research columns
+            const idColumns = columns.filter(c => c.is_identification);
+            const researchColumns = columns.filter(c => !c.is_identification);
+
+            // Build TRANSPOSED markdown table with blue dots BEFORE column names
             let markdownTable = '';
             if (sampleRows.length > 0 && columns.length > 0) {
                 const rowsToShow = sampleRows.slice(0, 3);
 
-                // Transposed: each column becomes a row
+                // Transposed: each column becomes a row, blue dot before ID columns
                 const transposedRows = columns.map(col => {
                     const colName = col.name || col;
                     const isId = col.is_identification;
-                    const idMarker = isId ? ' 🔵' : '';
+                    const idMarker = isId ? '🔵 ' : '';
                     const values = rowsToShow.map(row => {
                         const value = row[colName] || '';
                         return String(value).substring(0, 50);
                     });
-                    return `| **${colName}**${idMarker} | ${values.join(' | ')} |`;
+                    return `| ${idMarker}**${colName}** | ${values.join(' | ')} |`;
                 }).join('\n');
 
                 const header = `| Column | ${rowsToShow.map((_, i) => `Row ${i + 1}`).join(' | ')} |`;
@@ -10937,82 +10989,98 @@ Please provide any additional context, or simply proceed to generate your initia
                 markdownTable = `${header}\n${separator}\n${transposedRows}`;
             }
 
-            // ID columns explanation - using proper message-info class with em-sized circle
-            const idExplanation = columns.some(c => c.is_identification)
-                ? '<div class="message message-info"><span class="message-icon">ℹ️</span><span><span style="display: inline-block; width: 1em; height: 1em; background: #007bff; border-radius: 50%; margin-right: 6px; vertical-align: middle;"></span><strong>ID Columns</strong> define the row identity and are not validated (marked with 🔵)</span></div>'
-                : '';
-
-            // Display preview OUTSIDE chat area
-            previewContainer.innerHTML = `
-                <div style="margin: 16px 0;">
-                    <h3 style="color: #2e7d32; font-weight: 600; margin: 8px 0;">[SUCCESS] Table Structure Ready</h3>
-                    <p style="margin: 8px 0; color: #666;">Your table structure is ready with ${columns.length} columns. You can now generate the full table with validation.</p>
-
-                    ${idExplanation}
-
-                    ${markdownTable ? `
-                        <h4 style="color: #333; font-weight: 600; margin: 16px 0 8px 0;">Sample Data Preview (transposed):</h4>
-                        ${renderMarkdown(markdownTable)}
-                    ` : ''}
-                </div>
-            `;
-
-            // Add column definitions to CHAT area if chat container exists
+            // Step 1: Show intro message immediately
             if (chatContainer) {
-                const columnListHtml = columns.map(col => {
-                    const name = col.name || col;
-                    const desc = col.description || '';
-                    const isId = col.is_identification;
-                    const idIndicator = isId ? '<span style="display: inline-block; width: 1em; height: 1em; background: #007bff; border-radius: 50%; margin-right: 6px; vertical-align: middle;"></span>' : '';
-                    return `${idIndicator}<strong>${name}</strong>${desc ? ': ' + desc : ''}`;
-                }).join('<br>');
-
-                const columnDefDiv = document.createElement('div');
-                columnDefDiv.className = 'chat-message ai';
-                columnDefDiv.innerHTML = `<h4 style="margin-top: 0;">Column Definitions:</h4>${columnListHtml}`;
-                chatContainer.appendChild(columnDefDiv);
-
-                // Add future IDs (additional rows) to CHAT area - ID columns only
-                if (futureIds && futureIds.length > 0) {
-                    const idColumns = columns.filter(c => c.is_identification);
-                    const futureIdsList = futureIds.slice(0, 5).map(idSet => {
-                        const idValues = idColumns.map(col => idSet[col.name] || '').join(', ');
-                        return `• ${idValues}`;
-                    }).join('<br>');
-
-                    const futureIdsDiv = document.createElement('div');
-                    futureIdsDiv.className = 'chat-message ai';
-                    futureIdsDiv.innerHTML = `<h4 style="margin-top: 0;">Additional Rows (sample):</h4>${futureIdsList}`;
-                    chatContainer.appendChild(futureIdsDiv);
-                }
-
-                // Add button explanation to CHAT area
-                const explanationDiv = document.createElement('div');
-                explanationDiv.className = 'chat-message ai';
-                explanationDiv.innerHTML = '<strong>Next Steps:</strong><br>Press <strong>🔧 Refine Table</strong> to continue the conversation and adjust the structure, or press <strong>✨ Generate & Validate</strong> to preview the validation of the first few rows.';
-                chatContainer.appendChild(explanationDiv);
-
-                // Scroll chat to bottom
+                const introDiv = document.createElement('div');
+                introDiv.className = 'chat-message ai';
+                introDiv.innerHTML = `I've designed a table structure with ${idColumns.length} identification column${idColumns.length !== 1 ? 's' : ''} and ${researchColumns.length} research column${researchColumns.length !== 1 ? 's' : ''}. Let me show you the preview...`;
+                chatContainer.appendChild(introDiv);
                 chatContainer.scrollTop = chatContainer.scrollHeight;
             }
 
-            // Update buttons - ensure container is visible
-            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-            if (buttonsContainer) {
-                buttonsContainer.style.display = 'block';
-                createButtonRow(`${cardId}-buttons`, [
-                    {
-                        text: '🔧 Refine Table',
-                        variant: 'secondary',
-                        callback: () => showRefinementInput(cardId)
-                    },
-                    {
-                        text: '✨ Generate & Validate',
-                        variant: 'primary',
-                        callback: () => acceptTableAndValidateFromCard(cardId)
+            // Step 2: After 800ms pause, show column definitions and table
+            setTimeout(() => {
+                // Step 2a: Add column lists to CHAT area FIRST
+                if (chatContainer) {
+                    // ID Columns list
+                    if (idColumns.length > 0) {
+                        const idListHtml = idColumns.map(col => {
+                            const name = col.name || col;
+                            const desc = col.description || '';
+                            return `<span style="display: inline-block; width: 0.8em; height: 0.8em; background: #007bff; border-radius: 50%; margin-right: 6px; vertical-align: middle;"></span><strong>${name}</strong>${desc ? ': ' + desc : ''}`;
+                        }).join('<br>');
+
+                        const idColDiv = document.createElement('div');
+                        idColDiv.className = 'chat-message ai';
+                        idColDiv.innerHTML = `<strong>ID Columns</strong> (define the row, not validated):<br>${idListHtml}`;
+                        chatContainer.appendChild(idColDiv);
                     }
-                ]);
-            }
+
+                    // Research Columns list
+                    if (researchColumns.length > 0) {
+                        const researchListHtml = researchColumns.map(col => {
+                            const name = col.name || col;
+                            const desc = col.description || '';
+                            return `<strong>${name}</strong>${desc ? ': ' + desc : ''}`;
+                        }).join('<br>');
+
+                        const researchColDiv = document.createElement('div');
+                        researchColDiv.className = 'chat-message ai';
+                        researchColDiv.innerHTML = `<strong>Research Columns</strong> (to be validated):<br>${researchListHtml}`;
+                        chatContainer.appendChild(researchColDiv);
+                    }
+
+                    // Additional rows - ID columns only
+                    if (futureIds && futureIds.length > 0) {
+                        const futureIdsList = futureIds.slice(0, 5).map(idSet => {
+                            const idValues = idColumns.map(col => idSet[col.name] || '').join(', ');
+                            return `• ${idValues}`;
+                        }).join('<br>');
+
+                        const futureIdsDiv = document.createElement('div');
+                        futureIdsDiv.className = 'chat-message ai';
+                        futureIdsDiv.innerHTML = `<strong>Additional rows</strong> (${futureIds.length} more):<br>${futureIdsList}${futureIds.length > 5 ? '<br>...and more' : ''}`;
+                        chatContainer.appendChild(futureIdsDiv);
+                    }
+
+                    // Scroll to bottom
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+
+                // Step 2b: Display table OUTSIDE chat area AFTER column definitions
+                if (markdownTable) {
+                    previewContainer.innerHTML = `<div style="margin: 16px 0;">${renderMarkdown(markdownTable)}</div>`;
+                }
+
+                // Step 2c: Add next steps explanation
+                if (chatContainer) {
+                    const explanationDiv = document.createElement('div');
+                    explanationDiv.className = 'chat-message ai';
+                    explanationDiv.innerHTML = '<strong>Next Steps:</strong><br>• <strong>🔧 Refine Table</strong> - Continue the conversation to adjust rows or columns<br>• <strong>✨ Generate & Validate</strong> - Create the full table and preview validation of the first few rows';
+                    chatContainer.appendChild(explanationDiv);
+
+                    // Scroll to bottom
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+
+                // Update buttons
+                const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                if (buttonsContainer) {
+                    buttonsContainer.style.display = 'block';
+                    createButtonRow(`${cardId}-buttons`, [
+                        {
+                            text: '🔧 Refine Table',
+                            variant: 'secondary',
+                            callback: () => showRefinementInput(cardId)
+                        },
+                        {
+                            text: '✨ Generate & Validate',
+                            variant: 'primary',
+                            callback: () => acceptTableAndValidateFromCard(cardId)
+                        }
+                    ]);
+                }
+            }, 800); // 800ms pause before showing table
         }
 
         // Continue table conversation from card

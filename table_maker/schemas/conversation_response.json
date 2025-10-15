@@ -4,7 +4,7 @@
   "properties": {
     "ai_message": {
       "type": "string",
-      "description": "Natural language response to the user"
+      "description": "Start with 2-3 clear sentences describing the table's purpose and structure. Then add a Context section with comprehensive details about data sources, validation approaches, domain-specific requirements, or any other information critical for configuration. Column definitions and additional rows will be presented separately, so you don't need to list those."
     },
     "proposed_rows": {
       "type": "object",
@@ -17,7 +17,12 @@
         "sample_rows": {
           "type": "array",
           "items": {"type": "object"},
-          "description": "Sample row data as key-value pairs"
+          "description": "3 sample rows with ALL columns populated (both ID and research columns) for preview"
+        },
+        "additional_rows": {
+          "type": "array",
+          "items": {"type": "object"},
+          "description": "Additional 15-20 rows with ONLY ID columns populated. These define the full set of rows to validate. Research columns should be omitted or empty."
         }
       }
     },
@@ -29,7 +34,7 @@
           "name": {"type": "string"},
           "description": {"type": "string"},
           "format": {"type": "string"},
-          "importance": {"type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"]},
+          "importance": {"type": "string", "enum": ["ID", "CRITICAL"]},
           "is_identification": {"type": "boolean"}
         }
       }
