@@ -10633,23 +10633,36 @@ Please provide any additional context, or simply proceed to generate your initia
             const cardId = generateCardId();
             tableMakerState.cardId = cardId;
 
+            const initialPrompt = `<div class="message message-info" style="margin-bottom: 16px;">
+                <div style="padding: 12px;">
+                    <h4 style="margin: 0 0 12px 0; color: #1565c0;">Let's build your research table</h4>
+                    <p style="margin: 0 0 8px 0;"><strong>To get started, please tell me:</strong></p>
+                    <ul style="margin: 0 0 8px 0; padding-left: 20px; line-height: 1.6;">
+                        <li><strong>What research table would you like to build?</strong></li>
+                        <li><strong>What information defines each row</strong> that I should iterate over?</li>
+                        <li><strong>What kind of information</strong> are you interested in for the columns?</li>
+                        <li><strong>Who will use this table, and for what purpose?</strong></li>
+                    </ul>
+                    <p style="margin: 8px 0 0 0; font-style: italic; color: #666;">I can get pretty far with just a bit of info, but I can get to where you want to go with more detail.</p>
+                </div>
+            </div>`;
+
             const content = `
+                ${initialPrompt}
                 <div id="${cardId}-messages"></div>
                 <div id="${cardId}-chat" style="max-height: 400px; overflow-y: auto; margin-bottom: 16px;"></div>
-                <div id="${cardId}-preview-container"></div>
                 <div id="${cardId}-input-container">
                     <textarea id="${cardId}-input" class="table-maker-textarea"
-                        placeholder="Example: Track AI research papers on transformers with citation data, publication venues, and code availability"
-                        style="width: 100%; min-height: 80px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; font-size: 14px; resize: vertical;"></textarea>
-                    <p style="margin: 8px 0; color: #666; font-size: 13px;">💡 Tip: Be specific about what data points you need</p>
+                        placeholder="Example: Track AI research papers on transformers. Each row is a paper (defined by title and authors). I want columns for citation count, publication venue, key findings, and code availability. This is for my literature review."
+                        style="width: 100%; min-height: 100px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; font-size: 14px; resize: vertical;"></textarea>
                 </div>
             `;
 
             const card = createCard({
                 id: cardId,
                 icon: '🔬',
-                title: 'Research Table Maker',
-                subtitle: 'Describe your research table and we\'ll help you build it',
+                title: 'Table Maker',
+                subtitle: 'Build a research table through conversation',
                 content,
                 buttons: [
                     {
@@ -10707,10 +10720,9 @@ Please provide any additional context, or simply proceed to generate your initia
 
             // Send to backend - this will queue the work and return immediately
             try {
-                // Generate proper session ID for table maker (similar to config_gen_)
+                // Generate proper session ID: session_YYYYMMDD_HHMMSS_randomhex
                 let sessionId = globalState.sessionId;
                 if (!sessionId) {
-                    // Generate new session ID: table_gen_YYYYMMDD_HHMMSS_randomhex
                     const now = new Date();
                     const timestamp = now.getFullYear().toString() +
                         (now.getMonth() + 1).toString().padStart(2, '0') +
@@ -10719,7 +10731,7 @@ Please provide any additional context, or simply proceed to generate your initia
                         now.getMinutes().toString().padStart(2, '0') +
                         now.getSeconds().toString().padStart(2, '0');
                     const randomHex = Math.random().toString(16).substring(2, 10);
-                    sessionId = `table_gen_${timestamp}_${randomHex}`;
+                    sessionId = `session_${timestamp}_${randomHex}`;
 
                     // Store in globalState for this table generation
                     globalState.sessionId = sessionId;
@@ -10781,6 +10793,14 @@ Please provide any additional context, or simply proceed to generate your initia
                 tableMakerState.messages.push({ role: 'ai', content: data.ai_message });
                 addMessageToTableChat(cardId, 'ai', data.ai_message);
 
+                // Store reasoning and clarifying questions for refinement
+                if (data.reasoning) {
+                    tableMakerState.reasoning = data.reasoning;
+                }
+                if (data.clarifying_questions) {
+                    tableMakerState.clarifying_questions = data.clarifying_questions;
+                }
+
                 // Update subtitle
                 const card = document.getElementById(cardId);
                 const subtitle = card.querySelector('.card-subtitle');
@@ -10790,7 +10810,8 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 // Check if ready to generate preview
                 if (data.ready_to_generate) {
-                    showTablePreviewInCard(cardId, data.proposed_table || data.preview_data);
+                    // Create a new "Table Preview" card instead of showing in current card
+                    createTablePreviewCard(data.proposed_table || data.preview_data);
                 } else {
                     // Show refinement input
                     showRefinementInput(cardId);
@@ -10827,6 +10848,24 @@ Please provide any additional context, or simply proceed to generate your initia
             const buttonsContainer = document.getElementById(`${cardId}-buttons`);
             if (!buttonsContainer) return;
 
+            // Build assumptions text from reasoning and clarifying questions
+            let assumptionsHtml = '';
+            if (tableMakerState.reasoning || tableMakerState.clarifying_questions) {
+                assumptionsHtml = '<div class="message message-info" style="margin-bottom: 12px;"><div style="padding: 12px;">';
+
+                if (tableMakerState.reasoning) {
+                    // Format reasoning as "I assumed..." statements
+                    const reasoningText = tableMakerState.reasoning.replace(/\.$/, ''); // Remove trailing period
+                    assumptionsHtml += `<p style="margin: 0 0 8px 0;"><strong>My assumptions:</strong> ${reasoningText}.</p>`;
+                }
+
+                if (tableMakerState.clarifying_questions && tableMakerState.clarifying_questions.trim()) {
+                    assumptionsHtml += `<p style="margin: 0;"><strong>Questions:</strong> ${tableMakerState.clarifying_questions}</p>`;
+                }
+
+                assumptionsHtml += '<p style="margin: 8px 0 0 0; font-style: italic; color: #666;">Would you prefer something different?</p></div></div>';
+            }
+
             // Create refinement input if it doesn't exist
             let refinementDiv = document.getElementById(`${cardId}-refinement`);
             if (!refinementDiv) {
@@ -10834,6 +10873,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 refinementDiv.id = `${cardId}-refinement`;
                 refinementDiv.style.cssText = 'margin-top: 16px;';
                 refinementDiv.innerHTML = `
+                    ${assumptionsHtml}
                     <textarea id="${cardId}-refine-input" class="table-maker-textarea"
                         placeholder="Add more details or ask questions..."
                         style="width: 100%; min-height: 60px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; font-size: 14px; resize: vertical; margin-bottom: 8px;"></textarea>
@@ -10851,13 +10891,37 @@ Please provide any additional context, or simply proceed to generate your initia
             ]);
         }
 
+        // Create a new "Table Preview" card
+        function createTablePreviewCard(previewData) {
+            const previewCardId = generateCardId();
+
+            const content = `
+                <div id="${previewCardId}-preview-container"></div>
+                <div id="${previewCardId}-chat" style="max-height: 400px; overflow-y: auto; margin-top: 16px;"></div>
+            `;
+
+            const card = createCard({
+                id: previewCardId,
+                icon: '📊',
+                title: 'Table Preview',
+                subtitle: 'Review and refine your table structure',
+                content,
+                buttons: []  // Will be added by showTablePreviewInCard
+            });
+
+            // Populate the preview
+            showTablePreviewInCard(previewCardId, previewData);
+
+            return card;
+        }
+
         // Show table preview in card
         function showTablePreviewInCard(cardId, previewData) {
             if (!previewData) return;
 
             const previewContainer = document.getElementById(`${cardId}-preview-container`);
             const chatContainer = document.getElementById(`${cardId}-chat`);
-            if (!previewContainer || !chatContainer) return;
+            if (!previewContainer) return;
 
             // Store preview data
             tableMakerState.previewData = previewData;
@@ -10910,42 +10974,44 @@ Please provide any additional context, or simply proceed to generate your initia
                 </div>
             `;
 
-            // Add column definitions to CHAT area with em-sized blue circles
-            const columnListHtml = columns.map(col => {
-                const name = col.name || col;
-                const desc = col.description || '';
-                const isId = col.is_identification;
-                const idIndicator = isId ? '<span style="display: inline-block; width: 1em; height: 1em; background: #007bff; border-radius: 50%; margin-right: 6px; vertical-align: middle;"></span>' : '';
-                return `${idIndicator}<strong>${name}</strong>${desc ? ': ' + desc : ''}`;
-            }).join('<br>');
-
-            const columnDefDiv = document.createElement('div');
-            columnDefDiv.className = 'chat-message ai';
-            columnDefDiv.innerHTML = `<h4 style="margin-top: 0;">Column Definitions:</h4>${columnListHtml}`;
-            chatContainer.appendChild(columnDefDiv);
-
-            // Add future IDs (additional rows) to CHAT area - ID columns only
-            if (futureIds && futureIds.length > 0) {
-                const idColumns = columns.filter(c => c.is_identification);
-                const futureIdsList = futureIds.slice(0, 5).map(idSet => {
-                    const idValues = idColumns.map(col => idSet[col.name] || '').join(', ');
-                    return `• ${idValues}`;
+            // Add column definitions to CHAT area if chat container exists
+            if (chatContainer) {
+                const columnListHtml = columns.map(col => {
+                    const name = col.name || col;
+                    const desc = col.description || '';
+                    const isId = col.is_identification;
+                    const idIndicator = isId ? '<span style="display: inline-block; width: 1em; height: 1em; background: #007bff; border-radius: 50%; margin-right: 6px; vertical-align: middle;"></span>' : '';
+                    return `${idIndicator}<strong>${name}</strong>${desc ? ': ' + desc : ''}`;
                 }).join('<br>');
 
-                const futureIdsDiv = document.createElement('div');
-                futureIdsDiv.className = 'chat-message ai';
-                futureIdsDiv.innerHTML = `<h4 style="margin-top: 0;">Additional Rows (sample):</h4>${futureIdsList}`;
-                chatContainer.appendChild(futureIdsDiv);
+                const columnDefDiv = document.createElement('div');
+                columnDefDiv.className = 'chat-message ai';
+                columnDefDiv.innerHTML = `<h4 style="margin-top: 0;">Column Definitions:</h4>${columnListHtml}`;
+                chatContainer.appendChild(columnDefDiv);
+
+                // Add future IDs (additional rows) to CHAT area - ID columns only
+                if (futureIds && futureIds.length > 0) {
+                    const idColumns = columns.filter(c => c.is_identification);
+                    const futureIdsList = futureIds.slice(0, 5).map(idSet => {
+                        const idValues = idColumns.map(col => idSet[col.name] || '').join(', ');
+                        return `• ${idValues}`;
+                    }).join('<br>');
+
+                    const futureIdsDiv = document.createElement('div');
+                    futureIdsDiv.className = 'chat-message ai';
+                    futureIdsDiv.innerHTML = `<h4 style="margin-top: 0;">Additional Rows (sample):</h4>${futureIdsList}`;
+                    chatContainer.appendChild(futureIdsDiv);
+                }
+
+                // Add button explanation to CHAT area
+                const explanationDiv = document.createElement('div');
+                explanationDiv.className = 'chat-message ai';
+                explanationDiv.innerHTML = '<strong>Next Steps:</strong><br>Press <strong>🔧 Refine Table</strong> to continue the conversation and adjust the structure, or press <strong>✨ Generate & Validate</strong> to preview the validation of the first few rows.';
+                chatContainer.appendChild(explanationDiv);
+
+                // Scroll chat to bottom
+                chatContainer.scrollTop = chatContainer.scrollHeight;
             }
-
-            // Add button explanation to CHAT area
-            const explanationDiv = document.createElement('div');
-            explanationDiv.className = 'chat-message ai';
-            explanationDiv.innerHTML = '<strong>Next Steps:</strong><br>Press <strong>🔧 Refine Table</strong> to continue the conversation and adjust the structure, or press <strong>✨ Generate & Validate</strong> to preview the validation of the first few rows.';
-            chatContainer.appendChild(explanationDiv);
-
-            // Scroll chat to bottom
-            chatContainer.scrollTop = chatContainer.scrollHeight;
 
             // Update buttons - ensure container is visible
             const buttonsContainer = document.getElementById(`${cardId}-buttons`);
