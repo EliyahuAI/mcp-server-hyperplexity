@@ -11665,6 +11665,13 @@ Please provide any additional context, or simply proceed to generate your initia
 
             showThinkingInCard(cardId, 'Validating table preview...', true);
 
+            // Register handler for preview progress updates
+            unregisterCardHandler(cardId);
+            registerCardHandler(cardId, ['preview_progress', 'progress_update'], (wsData, handlerCardId) => {
+                // Progress updates are handled by global routing
+                // This registration ensures the card receives preview validation updates
+            });
+
             // Trigger preview validation via existing flow
             // This will use the uploaded Excel file and trigger validation
             fetch(`${API_BASE}/validate`, {
