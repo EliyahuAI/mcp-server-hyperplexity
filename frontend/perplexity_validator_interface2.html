@@ -1228,6 +1228,12 @@
         border-bottom-left-radius: 4px;
     }
 
+    .chat-message h4 {
+        font-size: 1em;
+        font-weight: 600;
+        margin: 0 0 12px 0;
+    }
+
     /* Markdown content styling */
     .markdown-content {
         font-size: var(--font-size-base);
@@ -4836,7 +4842,7 @@
                 // Handle progress updates for any card with progress indicator
                 const isProgressType = (data.type === 'progress' || data.type === 'config_generation_progress' ||
                      data.type === 'progress_update' || data.type === 'config_progress_update' ||
-                     data.type === 'preview_progress');
+                     data.type === 'preview_progress' || data.type === 'table_finalization_progress');
                 const hasProgress = data.progress !== undefined;
 
                 if (isProgressType && hasProgress) {
@@ -10650,7 +10656,7 @@ Please provide any additional context, or simply proceed to generate your initia
             tableMakerState.cardId = cardId;
 
             const initialPrompt = `<div class="chat-message ai">
-                <h4 style="margin: 0 0 12px 0;">Let's build your research table</h4>
+                <h4>Let's build your research table</h4>
                 <p style="margin: 0 0 8px 0;"><strong>To get started, please tell me:</strong></p>
                 <ul style="margin: 0 0 8px 0; padding-left: 20px; line-height: 1.6;">
                     <li><strong>What research table would you like to build?</strong></li>
@@ -10668,7 +10674,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 <div id="${cardId}-input-container">
                     <textarea id="${cardId}-input" class="table-maker-textarea"
                         placeholder="Example: Track AI research papers on transformers. Each row is a paper (defined by title and authors). I want columns for citation count, publication venue, key findings, and code availability. This is for my literature review."
-                        style="width: 100%; min-height: 100px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; font-size: 16px; resize: vertical;"></textarea>
+                        style="width: 100%; min-height: 100px; resize: vertical;"></textarea>
                 </div>
             `;
 
@@ -10814,8 +10820,10 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 // Check if ready to generate preview
                 if (data.ready_to_generate) {
-                    // Create a new "Table Preview" card instead of showing in current card
-                    createTablePreviewCard(data.proposed_table || data.preview_data);
+                    // Wait for user to see the response before creating preview card
+                    setTimeout(() => {
+                        createTablePreviewCard(data.proposed_table || data.preview_data);
+                    }, 2500); // 2.5s pause to show response before table preview
                 } else {
                     // Show refinement input
                     showRefinementInput(cardId);
@@ -10862,39 +10870,36 @@ Please provide any additional context, or simply proceed to generate your initia
 
             // Add chat bubbles for refinement guidance
             if (chatContainer && (tableMakerState.reasoning || tableMakerState.clarifying_questions)) {
-                // First bubble: prompt for changes
-                addMessageToTableChat(cardId, 'ai', 'What shall I change about the table columns or rows?');
+                // First bubble: prompt for changes with better language
+                addMessageToTableChat(cardId, 'ai', '**What do you like about the columns and rows? What can I change?**');
 
-                // Second bubble: combine reasoning and questions as bulleted list
-                let bulletPoints = [];
-
-                // Parse reasoning into bullet points
-                if (tableMakerState.reasoning) {
+                // Second bubble: reasoning as context paragraph (if exists)
+                if (tableMakerState.reasoning && tableMakerState.reasoning.trim()) {
                     const reasoningText = tableMakerState.reasoning.trim();
-                    // Split by sentence or use whole text
-                    const sentences = reasoningText.split(/\.\s+/).filter(s => s.trim());
-                    sentences.forEach(sentence => {
-                        if (sentence.trim()) {
-                            bulletPoints.push(`I ${sentence.trim()}${sentence.endsWith('.') ? '' : '.'} Would you prefer something different?`);
-                        }
-                    });
+                    addMessageToTableChat(cardId, 'ai', reasoningText);
                 }
 
-                // Parse clarifying questions into bullet points
+                // Third bubble: clarifying questions as markdown list with alternatives
                 if (tableMakerState.clarifying_questions && tableMakerState.clarifying_questions.trim()) {
                     const questionsText = tableMakerState.clarifying_questions.trim();
-                    // Split by question marks or newlines
-                    const questions = questionsText.split(/\?[\s\n]+|\n+/).filter(q => q.trim());
-                    questions.forEach(question => {
-                        if (question.trim()) {
-                            bulletPoints.push(`${question.trim()}${question.endsWith('?') ? '' : '?'}`);
-                        }
-                    });
-                }
+                    // Format as markdown with "Or would you prefer:" for alternatives
+                    const formattedQuestions = questionsText
+                        .split(/\n+/)
+                        .filter(q => q.trim())
+                        .map(q => {
+                            // Remove numbering, bullets, and leading punctuation
+                            let cleaned = q.trim()
+                                .replace(/^[\d]+[\.)]\s*/, '')  // Remove "1. " or "1) "
+                                .replace(/^[-*•]\s*/, '')        // Remove "- ", "* ", "• "
+                                .replace(/^\.+\s*/, '');         // Remove leading periods
+                            cleaned = cleaned.trim();
+                            return `- ${cleaned}${cleaned.endsWith('?') ? '' : '?'}`;
+                        })
+                        .join('\n');
 
-                if (bulletPoints.length > 0) {
-                    const bulletedMessage = bulletPoints.map(point => `• ${point}`).join('\n');
-                    addMessageToTableChat(cardId, 'ai', bulletedMessage);
+                    if (formattedQuestions) {
+                        addMessageToTableChat(cardId, 'ai', `**Here are some things to consider:**\n\n${formattedQuestions}\n\n*Or would you prefer something else?*`);
+                    }
                 }
             }
 
@@ -10907,7 +10912,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 refinementDiv.innerHTML = `
                     <textarea id="${cardId}-refine-input" class="table-maker-textarea"
                         placeholder="Add more details or ask questions..."
-                        style="width: 100%; min-height: 60px; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; font-size: 16px; resize: vertical; margin-bottom: 8px;"></textarea>
+                        style="width: 100%; min-height: 60px; resize: vertical; margin-bottom: 8px;"></textarea>
                 `;
                 buttonsContainer.parentNode.insertBefore(refinementDiv, buttonsContainer);
             }
@@ -10915,7 +10920,7 @@ Please provide any additional context, or simply proceed to generate your initia
             // Update buttons
             createButtonRow(`${cardId}-buttons`, [
                 {
-                    text: '💬 Continue Conversation',
+                    text: '📝 Update Table',
                     variant: 'primary',
                     callback: () => continueTableConversationFromCard(cardId)
                 }
@@ -10958,9 +10963,19 @@ Please provide any additional context, or simply proceed to generate your initia
             tableMakerState.previewData = previewData;
 
             // Extract columns and sample rows
+            // Structure: {rows: {sample_rows: [], additional_rows: []}, columns: []}
             const columns = previewData.columns || [];
             const sampleRows = previewData.sample_rows || previewData.sample_rows_transposed || previewData.rows?.sample_rows || [];
-            const futureIds = previewData.future_ids || [];
+            const futureIds = previewData.future_ids || previewData.rows?.additional_rows || [];
+
+            // Debug logging for additional rows
+            console.log('[TABLE_MAKER] Preview data keys:', Object.keys(previewData));
+            console.log('[TABLE_MAKER] previewData.rows:', previewData.rows);
+            console.log('[TABLE_MAKER] rows?.sample_rows length:', previewData.rows?.sample_rows?.length);
+            console.log('[TABLE_MAKER] rows?.additional_rows length:', previewData.rows?.additional_rows?.length);
+            console.log('[TABLE_MAKER] future_ids:', previewData.future_ids);
+            console.log('[TABLE_MAKER] futureIds array:', futureIds);
+            console.log('[TABLE_MAKER] futureIds.length:', futureIds.length);
 
             // Separate ID and Research columns
             const idColumns = columns.filter(c => c.is_identification);
@@ -10989,18 +11004,9 @@ Please provide any additional context, or simply proceed to generate your initia
                 markdownTable = `${header}\n${separator}\n${transposedRows}`;
             }
 
-            // Step 1: Show intro message immediately
-            if (chatContainer) {
-                const introDiv = document.createElement('div');
-                introDiv.className = 'chat-message ai';
-                introDiv.innerHTML = `I've designed a table structure with ${idColumns.length} identification column${idColumns.length !== 1 ? 's' : ''} and ${researchColumns.length} research column${researchColumns.length !== 1 ? 's' : ''}. Let me show you the preview...`;
-                chatContainer.appendChild(introDiv);
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-            }
-
-            // Step 2: After 800ms pause, show column definitions and table
+            // Step 1: After 800ms pause, show column definitions, intro message, and table
             setTimeout(() => {
-                // Step 2a: Add column lists to CHAT area FIRST
+                // Step 1a: Add column lists to CHAT area FIRST
                 if (chatContainer) {
                     // ID Columns list
                     if (idColumns.length > 0) {
@@ -11043,20 +11049,26 @@ Please provide any additional context, or simply proceed to generate your initia
                         chatContainer.appendChild(futureIdsDiv);
                     }
 
+                    // Add intro message AFTER column lists, BEFORE table preview
+                    const introDiv = document.createElement('div');
+                    introDiv.className = 'chat-message ai';
+                    introDiv.innerHTML = `I've designed a table structure with ${idColumns.length} identification column${idColumns.length !== 1 ? 's' : ''} and ${researchColumns.length} research column${researchColumns.length !== 1 ? 's' : ''}. Let me show you the preview...`;
+                    chatContainer.appendChild(introDiv);
+
                     // Scroll to bottom
                     chatContainer.scrollTop = chatContainer.scrollHeight;
                 }
 
-                // Step 2b: Display table OUTSIDE chat area AFTER column definitions
+                // Step 1b: Display table OUTSIDE chat area AFTER intro message
                 if (markdownTable) {
                     previewContainer.innerHTML = `<div style="margin: 16px 0;">${renderMarkdown(markdownTable)}</div>`;
                 }
 
-                // Step 2c: Add next steps explanation
+                // Step 1c: Add next steps explanation
                 if (chatContainer) {
                     const explanationDiv = document.createElement('div');
                     explanationDiv.className = 'chat-message ai';
-                    explanationDiv.innerHTML = '<strong>Next Steps:</strong><br>• <strong>🔧 Refine Table</strong> - Continue the conversation to adjust rows or columns<br>• <strong>✨ Generate & Validate</strong> - Create the full table and preview validation of the first few rows';
+                    explanationDiv.innerHTML = '<strong>Next Steps:</strong><br>• <strong>🔧 Refine Table</strong> - Continue the conversation to adjust rows or columns<br>• <strong>✨ Generate and Validate</strong> - Create the full table and preview validation of the first few rows';
                     chatContainer.appendChild(explanationDiv);
 
                     // Scroll to bottom
@@ -11085,6 +11097,12 @@ Please provide any additional context, or simply proceed to generate your initia
 
         // Continue table conversation from card
         async function continueTableConversationFromCard(cardId) {
+            // Hide the Update Table button to prevent duplicate submissions
+            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+            if (buttonsContainer) {
+                buttonsContainer.style.display = 'none';
+            }
+
             const input = document.getElementById(`${cardId}-refine-input`);
             if (!input) return;
 
@@ -11148,7 +11166,39 @@ Please provide any additional context, or simply proceed to generate your initia
                 return;
             }
 
+            // Hide buttons to prevent duplicate submissions
+            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+            if (buttonsContainer) buttonsContainer.style.display = 'none';
+
             showThinkingInCard(cardId, 'Generating table and starting validation...', true);
+
+            // Register handler BEFORE fetch to catch early progress messages
+            registerCardHandler(cardId, (wsData) => {
+                if (wsData.type === 'table_finalization_progress') {
+                    // Check if we're at 100% (complete)
+                    if (wsData.progress === 100 || wsData.status === 'complete') {
+                        console.log('[TABLE_FINALIZE_CARD] Table generation complete, preparing validation');
+
+                        // Update global state
+                        if (wsData.session_id) globalState.sessionId = wsData.session_id;
+                        if (wsData.table_filename) globalState.excelFileName = wsData.table_filename;
+                        globalState.excelFileUploaded = true;
+
+                        completeThinkingInCard(cardId, 'Table generation complete!');
+
+                        showMessage(`${cardId}-messages`,
+                            'I have completed a first pass generation of your research table, and will now validate the first 3 rows.',
+                            'success'
+                        );
+
+                        // Wait 800ms then trigger preview validation
+                        setTimeout(() => {
+                            console.log('[TABLE_FINALIZE_CARD] Triggering preview validation');
+                            triggerPreviewValidation(cardId);
+                        }, 800);
+                    }
+                }
+            });
 
             try {
                 const response = await fetch(`${API_BASE}/validate`, {
@@ -11159,25 +11209,42 @@ Please provide any additional context, or simply proceed to generate your initia
                         email: globalState.email,
                         session_id: globalState.sessionId,
                         conversation_id: tableMakerState.conversationId,
-                        table_config: tableMakerState.previewData
+                        table_config: tableMakerState.previewData,
+                        row_count: 20
                     })
                 });
 
                 const data = await response.json();
 
-                if (data.success) {
-                    completeThinkingInCard(cardId, 'Table generated!');
-                    showMessage(`${cardId}-messages`,
-                        '✅ Table structure generated successfully! Validation starting...',
-                        'success');
+                if (data.success && data.status === 'processing') {
+                    // Async mode - wait for WebSocket updates (handler already registered above)
+                    console.log('[TABLE_FINALIZE_CARD] Async processing started, waiting for WebSocket updates');
 
-                    // This would transition to standard validation flow
-                    // For now, show success
+                } else if (data.success) {
+                    // Synchronous mode (legacy fallback)
+                    globalState.sessionId = data.session_id || globalState.sessionId;
+                    globalState.excelFileName = data.table_filename || 'generated_table.xlsx';
+                    globalState.excelFileUploaded = true;
+
+                    completeThinkingInCard(cardId, 'Table generated!');
+
+                    showMessage(`${cardId}-messages`,
+                        'I have completed a first pass generation of your research table, and will now validate the first 3 rows.',
+                        'success'
+                    );
+
+                    // Wait 800ms then trigger preview validation
+                    setTimeout(() => {
+                        triggerPreviewValidation(cardId);
+                    }, 800);
+
                 } else {
                     completeThinkingInCard(cardId, 'Generation failed');
                     showMessage(`${cardId}-messages`,
                         'Failed to generate table: ' + (data.error || data.message || 'Unknown error'),
                         'error');
+                    // Show buttons again on error
+                    if (buttonsContainer) buttonsContainer.style.display = 'block';
                 }
             } catch (error) {
                 console.error('Error accepting table:', error);
@@ -11185,6 +11252,8 @@ Please provide any additional context, or simply proceed to generate your initia
                 showMessage(`${cardId}-messages`,
                     'Failed to generate table. Please try again.',
                     'error');
+                // Show buttons again on error
+                if (buttonsContainer) buttonsContainer.style.display = 'block';
             }
         }
 
@@ -11431,6 +11500,43 @@ Please provide any additional context, or simply proceed to generate your initia
 
             showThinkingInCard(cardId, 'Generating full table...', true);
 
+            // Ensure WebSocket connection is established for progress updates
+            if (globalState.sessionId) {
+                ensureWebSocketHealth(globalState.sessionId);
+            }
+
+            // Register handler BEFORE fetch to catch all progress messages
+            registerCardHandler(cardId, (wsData) => {
+                // Check if table finalization is complete
+                if (wsData.type === 'table_finalization_progress') {
+                    // Progress updates will be handled by the general progress handler
+
+                    // Check if we're at 100% (complete)
+                    if (wsData.progress === 100 || wsData.status === 'complete') {
+                        console.log('[TABLE_FINALIZE] Table generation complete, preparing validation');
+
+                        // Update global state
+                        if (wsData.session_id) globalState.sessionId = wsData.session_id;
+                        if (wsData.table_filename) globalState.excelFileName = wsData.table_filename;
+
+                        // Show completion message
+                        clearThinkingFromCard(cardId);
+                        appendToCardMessages(cardId, `
+                            <div class="success-message">
+                                <strong>[SUCCESS] Table Generated Successfully!</strong><br>
+                                Rows: ${wsData.row_count || 'N/A'}<br>
+                                Columns: ${wsData.column_count || 'N/A'}
+                            </div>
+                        `);
+
+                        // Now trigger preview validation in a NEW card
+                        setTimeout(() => {
+                            triggerPreviewValidation(wsData.session_id);
+                        }, 500);
+                    }
+                }
+            });
+
             try {
                 const response = await fetch(`${API_BASE}/validate`, {
                     method: 'POST',
@@ -11446,31 +11552,33 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 const data = await response.json();
 
-                if (data.success) {
-                    // Update global state
+                if (data.success && data.status === 'processing') {
+                    // Async mode - wait for WebSocket updates
+                    console.log('[TABLE_FINALIZE] Async processing started, waiting for WebSocket updates');
+                    // Handler already registered above - just wait for WebSocket messages
+
+                } else if (data.success) {
+                    // Synchronous mode (legacy fallback)
                     globalState.sessionId = data.session_id || globalState.sessionId;
                     globalState.excelFileName = data.table_filename || 'generated_table.xlsx';
                     globalState.excelFileUploaded = true;
 
                     completeThinkingInCard(cardId, 'Table generated successfully!');
 
-                    // Show success message
                     showMessage(`${cardId}-messages`,
-                        'Table created successfully! Proceeding to validation preview...',
+                        'I have completed a first pass generation of your research table, and will now validate the first 3 rows.',
                         'success'
                     );
 
-                    // Wait for WebSocket message with preview validation results
-                    // Register handler for preview validation completion
-                    registerCardHandler(cardId, (wsData) => {
-                        if (wsData.type === 'table_validation_complete') {
-                            handleTableValidationComplete(wsData, cardId);
-                        }
-                    });
+                    // Wait 800ms then trigger preview validation
+                    setTimeout(() => {
+                        triggerPreviewValidation(cardId);
+                    }, 800);
+
                 } else {
                     completeThinkingInCard(cardId, 'Generation failed');
                     showMessage(`${cardId}-messages`,
-                        'Failed to generate table: ' + (data.message || 'Unknown error'),
+                        'Failed to generate table: ' + (data.message || data.error || 'Unknown error'),
                         'error'
                     );
                 }
@@ -11482,6 +11590,108 @@ Please provide any additional context, or simply proceed to generate your initia
                     'error'
                 );
             }
+        }
+
+        // Helper function to download unvalidated table
+        async function downloadUnvalidatedTable() {
+            try {
+                if (!globalState.sessionId || !globalState.email) {
+                    throw new Error('Session information not available');
+                }
+
+                // Request presigned URL for the generated table
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'getTableDownloadUrl',
+                        email: globalState.email,
+                        session_id: globalState.sessionId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.download_url) {
+                    // Create temporary link and trigger download
+                    const link = document.createElement('a');
+                    link.href = data.download_url;
+                    link.download = data.filename || `table_${globalState.sessionId}.xlsx`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                } else {
+                    throw new Error(data.error || 'Failed to get download URL');
+                }
+            } catch (error) {
+                console.error('Error downloading table:', error);
+                alert('Failed to download table: ' + error.message);
+            }
+        }
+
+        // Helper function to trigger preview validation
+        function triggerPreviewValidation(cardId) {
+            console.log('[TABLE_VALIDATE] Starting preview validation');
+
+            // First, add download button for unvalidated table
+            const messagesDiv = document.getElementById(`${cardId}-messages`);
+            if (messagesDiv) {
+                const downloadButtonHtml = `
+                    <div style="margin: 1rem 0;">
+                        <button class="std-button tertiary" id="${cardId}-download-table-btn" style="width: 100%;" disabled>
+                            <span class="button-text">📥 Preparing Download...</span>
+                        </button>
+                    </div>
+                `;
+                messagesDiv.insertAdjacentHTML('beforeend', downloadButtonHtml);
+
+                // Enable download button after 3 seconds
+                setTimeout(() => {
+                    const downloadBtn = document.getElementById(`${cardId}-download-table-btn`);
+                    if (downloadBtn) {
+                        downloadBtn.disabled = false;
+                        downloadBtn.querySelector('.button-text').textContent = '📥 Download Unvalidated Table';
+                        downloadBtn.addEventListener('click', downloadUnvalidatedTable);
+                    }
+                }, 3000); // 3 second delay for download to be ready
+            }
+
+            // Update card for validation phase
+            const cardTitle = document.querySelector(`#${cardId} .card-title`);
+            if (cardTitle) cardTitle.textContent = 'Validating Table Preview';
+
+            const cardSubtitle = document.querySelector(`#${cardId} .card-subtitle`);
+            if (cardSubtitle) cardSubtitle.textContent = 'Running validation on first 3 rows...';
+
+            showThinkingInCard(cardId, 'Validating table preview...', true);
+
+            // Trigger preview validation via existing flow
+            // This will use the uploaded Excel file and trigger validation
+            fetch(`${API_BASE}/validate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'processExcel',
+                    email: globalState.email,
+                    session_id: globalState.sessionId,
+                    preview_first_row: 'true',
+                    async: 'true'
+                })
+            }).then(response => response.json())
+              .then(data => {
+                  if (data.status === 'processing') {
+                      console.log('[TABLE_VALIDATE] Preview validation queued, waiting for WebSocket updates');
+                      // WebSocket updates will handle the progress
+                  } else if (data.error) {
+                      completeThinkingInCard(cardId, 'Validation failed');
+                      showMessage(`${cardId}-messages`, `Validation error: ${data.error}`, 'error');
+                  }
+              })
+              .catch(error => {
+                  console.error('Error starting preview validation:', error);
+                  completeThinkingInCard(cardId, 'Validation failed');
+                  showMessage(`${cardId}-messages`, 'Failed to start validation. Please try again.', 'error');
+              });
         }
 
         // Handle table validation complete
