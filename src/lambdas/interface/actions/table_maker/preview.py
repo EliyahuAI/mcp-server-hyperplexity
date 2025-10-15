@@ -192,6 +192,68 @@ def handle_table_preview_generate(event: Dict[str, Any], context: Any) -> Dict[s
         })
 
 
+def handle_table_preview_generate_async(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Async wrapper for table preview generation - sends request to SQS and returns immediately.
+    This prevents frontend timeouts for AI-powered table generation operations.
+    """
+    try:
+        # Import SQS service
+        from interface_lambda.core.sqs_service import send_table_finalization_request
+
+        # Parse request body
+        body = event.get('body', '{}')
+        if isinstance(body, str):
+            body = json.loads(body)
+
+        email = body.get('email')
+        session_id = body.get('session_id')
+        conversation_id = body.get('conversation_id')
+
+        # Validate required parameters
+        if not email or not session_id or not conversation_id:
+            return create_response(400, {
+                'error': 'Missing required parameters: email, session_id, conversation_id'
+            })
+
+        logger.info(f"[PREVIEW_GENERATE_ASYNC] Sending preview generation request to SQS for conversation {conversation_id}")
+
+        # Send to SQS for background processing
+        message_data = {
+            'email': email,
+            'session_id': session_id,
+            'conversation_id': conversation_id,
+            'action': 'generateTablePreview'
+        }
+
+        message_id = send_table_finalization_request(message_data)
+
+        if not message_id:
+            logger.error("[PREVIEW_GENERATE_ASYNC] Failed to send SQS message")
+            return create_response(500, {
+                'success': False,
+                'error': 'Failed to queue preview generation request'
+            })
+
+        logger.info(f"[PREVIEW_GENERATE_ASYNC] Successfully queued preview generation: MessageId={message_id}")
+
+        # Return immediately with processing status
+        return create_response(200, {
+            'success': True,
+            'status': 'processing',
+            'message': 'Preview generation started. You will receive updates via WebSocket.',
+            'session_id': session_id,
+            'conversation_id': conversation_id,
+            'message_id': message_id
+        })
+
+    except Exception as e:
+        logger.error(f"[PREVIEW_GENERATE_ASYNC] Async wrapper failed: {str(e)}")
+        import traceback
+        logger.error(f"[PREVIEW_GENERATE_ASYNC] Traceback: {traceback.format_exc()}")
+        return create_response(500, {'success': False, 'error': str(e)})
+
+
 def _load_conversation_state(storage_manager: UnifiedS3Manager, email: str,
                             session_id: str, conversation_id: str) -> Optional[Dict[str, Any]]:
     """Load conversation state from S3."""

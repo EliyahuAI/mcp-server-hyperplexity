@@ -1,0 +1,72 @@
+{
+  "type": "object",
+  "required": ["columns", "rows", "metadata"],
+  "properties": {
+    "columns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "format", "importance", "is_identification"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Column name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Detailed description of what data this column contains"
+          },
+          "format": {
+            "type": "string",
+            "description": "Data format (String, Number, URL, Date, etc.)"
+          },
+          "importance": {
+            "type": "string",
+            "enum": ["ID", "CRITICAL"],
+            "description": "Importance level: ID for identification columns, CRITICAL for research columns to validate"
+          },
+          "is_identification": {
+            "type": "boolean",
+            "description": "Whether this column identifies/defines the row"
+          }
+        }
+      },
+      "description": "Array of column definitions"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "description": "Row data as key-value pairs matching column names"
+      },
+      "description": "Array of row data objects"
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of table creation"
+        },
+        "conversation_id": {
+          "type": "string",
+          "description": "ID of the conversation that generated this table"
+        },
+        "description": {
+          "type": "string",
+          "description": "User's research description"
+        },
+        "row_count": {
+          "type": "integer",
+          "description": "Total number of rows"
+        },
+        "column_count": {
+          "type": "integer",
+          "description": "Total number of columns"
+        }
+      },
+      "description": "Metadata about the table"
+    }
+  }
+}

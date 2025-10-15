@@ -154,7 +154,7 @@ def handle(event, context):
                 return get_ai_summary.handle_get_ai_summary(request_data, context)
             elif action in ['listDemos', 'selectDemo', 'clearUserHistoryForTesting']:
                 return demo_management.handle(request_data, context)
-            elif action in ['startTableConversation', 'continueTableConversation', 'generateTablePreview', 'acceptTableAndValidate']:
+            elif action in ['startTableConversation', 'continueTableConversation', 'generateTablePreview', 'acceptTableAndValidate', 'getTableDownloadUrl']:
                 return route_table_maker_action(action, request_data, context)
             else:
                 logger.warning(f"Unknown action in JSON body: {action}")

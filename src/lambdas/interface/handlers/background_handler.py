@@ -1234,6 +1234,11 @@ def handle_main_processing(event, context):
             logger.info("Detected table conversation request, forwarding to table maker handler")
             return handle_table_conversation(event, context)
 
+        # Check if this is a table finalization request (preview generation or accept and validate)
+        if event.get('request_type') == 'table_finalization':
+            logger.info("Detected table finalization request, forwarding to table finalization handler")
+            return handle_table_finalization(event, context)
+
         # Extract parameters from event, ensuring correct types
         # Check both preview_mode and request_type for compatibility
         is_preview = event.get('preview_mode', False) or event.get('request_type') == 'preview'
@@ -6355,4 +6360,47 @@ def handle_table_conversation(event, context):
         return {
             'statusCode': 500,
             'body': {'error': f'Table conversation processing failed: {str(e)}'}
+        }
+
+
+def handle_table_finalization(event, context):
+    """
+    Handle table finalization requests from SQS (preview generation and accept/validate).
+    Routes to the appropriate handler based on action.
+    """
+    import asyncio
+    from interface_lambda.actions.table_maker.preview import handle_table_preview_generate
+    from interface_lambda.actions.table_maker.finalize import handle_table_accept_and_validate
+
+    try:
+        action = event.get('action')
+        session_id = event.get('session_id')
+        conversation_id = event.get('conversation_id')
+
+        logger.info(f"[TABLE_FINALIZATION] Processing {action} for session {session_id}, conversation {conversation_id}")
+
+        # Route based on action
+        if action == 'generateTablePreview':
+            # Call preview generation handler
+            result = handle_table_preview_generate(event, context)
+        elif action == 'acceptTableAndValidate':
+            # Call the async handler using asyncio.run
+            result = asyncio.run(handle_table_accept_and_validate(event))
+        else:
+            logger.error(f"Unknown table finalization action: {action}")
+            return {
+                'statusCode': 400,
+                'body': {'error': f'Unknown action: {action}'}
+            }
+
+        logger.info(f"[TABLE_FINALIZATION] Completed {action} for conversation {conversation_id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"[TABLE_FINALIZATION] Error processing table finalization: {e}")
+        import traceback
+        logger.error(f"[TABLE_FINALIZATION] Traceback: {traceback.format_exc()}")
+        return {
+            'statusCode': 500,
+            'body': {'error': f'Table finalization processing failed: {str(e)}'}
         }

@@ -18,17 +18,19 @@ from .conversation import (
     handle_table_conversation_start,
     handle_table_conversation_continue
 )
-from .preview import handle_table_preview_generate
-from .finalize import handle_table_accept_and_validate_sync
+from .preview import handle_table_preview_generate, handle_table_preview_generate_async
+from .finalize import handle_table_accept_and_validate_async, handle_table_accept_and_validate
 from .context_research import perform_context_research
 from .config_bridge import build_table_analysis_from_conversation
+from .download import handle_table_download_url
 
-# Action routing dictionary - uses ASYNC wrappers for HTTP requests
+# Action routing dictionary - uses ASYNC wrappers for HTTP requests to prevent timeouts
 TABLE_MAKER_ACTIONS = {
     'startTableConversation': handle_table_conversation_start_async,
     'continueTableConversation': handle_table_conversation_continue_async,
-    'generateTablePreview': handle_table_preview_generate,
-    'acceptTableAndValidate': handle_table_accept_and_validate_sync,
+    'generateTablePreview': handle_table_preview_generate_async,  # Use async wrapper to prevent timeouts
+    'acceptTableAndValidate': handle_table_accept_and_validate_async,  # Use async wrapper to prevent timeouts
+    'getTableDownloadUrl': handle_table_download_url,  # Get presigned download URL for unvalidated table
 }
 
 def route_table_maker_action(action, request_data, context):
@@ -81,6 +83,7 @@ __all__ = [
     'handle_table_conversation_continue',
     'handle_table_preview_generate',
     'handle_table_accept_and_validate',
+    'handle_table_download_url',
     'perform_context_research',
     'build_table_analysis_from_conversation',
 ]

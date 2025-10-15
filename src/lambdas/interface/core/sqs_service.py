@@ -109,6 +109,23 @@ def send_table_conversation_request(message_data):
     message_body_cleaned = {k: v for k, v in message_body.items() if v is not None}
     return _send_sqs_message(STANDARD_QUEUE_URL, message_body_cleaned)
 
+def send_table_finalization_request(message_data):
+    """Send a table finalization (accept and validate) request to the standard SQS queue."""
+    if not STANDARD_QUEUE_URL:
+        logger.error("Standard SQS queue URL is not configured.")
+        return None
+
+    message_body = {
+        'request_type': 'table_finalization',
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'deployment_environment': os.environ.get('DEPLOYMENT_ENVIRONMENT', 'prod'),
+        **message_data
+    }
+
+    # Clean out None values so they don't get serialized
+    message_body_cleaned = {k: v for k, v in message_body.items() if v is not None}
+    return _send_sqs_message(STANDARD_QUEUE_URL, message_body_cleaned)
+
 def _send_sqs_message(queue_url, message_body, is_fifo=False):
     """Helper function to send a message to a specified SQS queue."""
     try:

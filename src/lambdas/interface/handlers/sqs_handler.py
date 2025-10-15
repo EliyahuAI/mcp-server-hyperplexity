@@ -66,6 +66,16 @@ def handle(event, context):
                     **message_body
                 }
 
+            # Handle table finalization requests (preview generation + accept and validate)
+            elif request_type == 'table_finalization':
+                logger.info(f"Processing table finalization request for session {message_body.get('session_id')}")
+                # Pass the entire message body for table finalization
+                background_event = {
+                    "background_processing": True,
+                    "request_type": "table_finalization",
+                    **message_body
+                }
+
             else:
                 # Handle regular validation requests
                 background_event = {

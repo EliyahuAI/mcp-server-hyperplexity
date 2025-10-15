@@ -1,0 +1,34 @@
+{
+  "conversation": {
+    "model": "claude-sonnet-4-5",
+    "max_turns_before_preview": 3,
+    "min_turns_before_preview": 1,
+    "readiness_threshold": 0.75,
+    "max_tokens": 8000,
+    "use_web_search_for_context": true,
+    "context_web_searches": 3
+  },
+  "preview_generation": {
+    "sample_row_count": 3,
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 12000,
+    "search_context": "high"
+  },
+  "full_table_generation": {
+    "default_row_count": 20,
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 16000,
+    "batch_size": 10
+  },
+  "models": {
+    "conversation": "claude-sonnet-4-5",
+    "preview": "claude-sonnet-4-5",
+    "expansion": "claude-sonnet-4-5"
+  },
+  "features": {
+    "enable_column_definitions_in_csv": true,
+    "remove_definitions_for_validation": true,
+    "enable_context_research": true,
+    "show_id_columns_in_blue_circles": true
+  }
+}

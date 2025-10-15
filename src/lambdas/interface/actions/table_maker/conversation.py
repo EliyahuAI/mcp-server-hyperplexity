@@ -24,7 +24,6 @@ import os
 import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional
-from pathlib import Path
 
 # Lambda imports
 from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
@@ -33,9 +32,9 @@ from interface_lambda.core.sqs_service import send_table_conversation_request
 from dynamodb_schemas import create_run_record, update_run_status
 
 # Table maker imports (packaged with lambda)
-from table_maker.src.conversation_handler import TableConversationHandler
-from table_maker.src.prompt_loader import PromptLoader
-from table_maker.src.schema_validator import SchemaValidator
+from .table_maker_lib.conversation_handler import TableConversationHandler
+from .table_maker_lib.prompt_loader import PromptLoader
+from .table_maker_lib.schema_validator import SchemaValidator
 
 # Shared imports
 from ai_api_client import AIAPIClient
@@ -53,6 +52,98 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+def _build_provider_metrics(api_metadata: Dict[str, Any], processing_time: float) -> Dict[str, Any]:
+    """
+    Build provider metrics structure matching config generation format.
+
+    Args:
+        api_metadata: Metadata from conversation handler
+        processing_time: Actual processing time in seconds
+
+    Returns:
+        Provider metrics dictionary for DynamoDB
+    """
+    provider_metrics = {}
+    token_usage = api_metadata.get('token_usage', {})
+    eliyahu_cost = api_metadata.get('eliyahu_cost', 0.0)
+    eliyahu_cost_estimated = api_metadata.get('eliyahu_cost_estimated', 0.0)
+    time_estimated = api_metadata.get('run_time_s_estimated', processing_time)
+    model = api_metadata.get('models', 'unknown')
+
+    # Determine provider
+    provider_name = "anthropic" if 'claude' in model.lower() else "perplexity" if 'sonar' in model.lower() else "unknown"
+
+    if eliyahu_cost > 0 or token_usage.get('total_tokens', 0) > 0:
+        # Calculate cache metrics
+        cache_read_tokens = token_usage.get('cache_read_tokens', 0)
+        total_tokens = token_usage.get('total_tokens', 0)
+
+        # Cache efficiency: how much we saved by using cache
+        if eliyahu_cost_estimated > 0:
+            cache_efficiency = ((eliyahu_cost_estimated - eliyahu_cost) / eliyahu_cost_estimated) * 100
+        else:
+            cache_efficiency = 0
+
+        provider_metrics[provider_name] = {
+            'calls': 1,
+            'tokens': total_tokens,
+            'cost_actual': eliyahu_cost,
+            'cost_estimated': eliyahu_cost_estimated if eliyahu_cost_estimated > 0 else eliyahu_cost,
+            'processing_time': processing_time,
+            'cache_hit_tokens': cache_read_tokens,
+            'cost_per_row_actual': eliyahu_cost,  # For conversation, per turn
+            'cost_per_row_estimated': eliyahu_cost_estimated if eliyahu_cost_estimated > 0 else eliyahu_cost,
+            'time_per_row_actual': processing_time,
+            'time_per_row_estimated': time_estimated,
+            'cache_efficiency_percent': cache_efficiency
+        }
+
+    return provider_metrics
+
+
+def _build_token_usage_structure(api_metadata: Dict[str, Any], provider_metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build detailed token usage structure matching config generation format.
+
+    Args:
+        api_metadata: Metadata from conversation handler
+        provider_metrics: Provider metrics from _build_provider_metrics
+
+    Returns:
+        Token usage dictionary for DynamoDB
+    """
+    token_usage = api_metadata.get('token_usage', {})
+    model = api_metadata.get('models', 'unknown')
+    provider_name = "anthropic" if 'claude' in model.lower() else "perplexity" if 'sonar' in model.lower() else "unknown"
+
+    # Build by_provider structure
+    by_provider = {
+        'anthropic': {
+            'calls': 0,
+            'total_tokens': 0,
+            'total_cost': 0.0
+        },
+        'perplexity': {
+            'calls': 0,
+            'total_tokens': 0,
+            'total_cost': 0.0
+        }
+    }
+
+    # Update with actual data
+    if provider_name in by_provider and provider_name in provider_metrics:
+        by_provider[provider_name] = {
+            'calls': provider_metrics[provider_name]['calls'],
+            'total_tokens': provider_metrics[provider_name]['tokens'],
+            'total_cost': provider_metrics[provider_name]['cost_actual']
+        }
+
+    return {
+        'total_tokens': token_usage.get('total_tokens', 0),
+        'by_provider': by_provider
+    }
+
+
 # ============================================================================
 # ASYNC WRAPPERS - Queue to SQS and return immediately
 # ============================================================================
@@ -67,8 +158,16 @@ def handle_table_conversation_start_async(request_data, context):
         session_id = request_data.get('session_id')
         user_message = request_data.get('user_message', '')
 
-        if not email or not session_id:
-            return create_response(400, {'error': 'Missing email or session_id'})
+        if not email:
+            return create_response(400, {'error': 'Missing email'})
+
+        # Generate session ID if not provided
+        if not session_id:
+            import uuid
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            random_hex = uuid.uuid4().hex[:8]
+            session_id = f"session_{timestamp}_{random_hex}"
+            logger.info(f"[TABLE_MAKER] Generated new session ID: {session_id}")
 
         if not user_message.strip():
             return create_response(400, {'error': 'Missing user_message'})
@@ -98,7 +197,8 @@ def handle_table_conversation_start_async(request_data, context):
         response_body = {
             'success': True,
             'status': 'processing',
-            'conversation_id': conversation_id
+            'conversation_id': conversation_id,
+            'session_id': session_id  # Return session_id for frontend tracking
         }
 
         logger.info(f"✅ ASYNC TABLE CONVERSATION RESPONSE (WebSocket-only): {response_body}")
@@ -120,8 +220,16 @@ def handle_table_conversation_continue_async(request_data, context):
         conversation_id = request_data.get('conversation_id')
         user_message = request_data.get('user_message', '')
 
-        if not email or not session_id:
-            return create_response(400, {'error': 'Missing email or session_id'})
+        if not email:
+            return create_response(400, {'error': 'Missing email'})
+
+        # Generate session ID if not provided (shouldn't happen for continue, but safety check)
+        if not session_id:
+            import uuid
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            random_hex = uuid.uuid4().hex[:8]
+            session_id = f"session_{timestamp}_{random_hex}"
+            logger.warning(f"[TABLE_MAKER] Had to generate session ID for continue: {session_id}")
 
         if not conversation_id:
             return create_response(400, {'error': 'Missing conversation_id'})
@@ -174,10 +282,10 @@ def _load_table_maker_config() -> Dict[str, Any]:
         Configuration dictionary with conversation, preview, and feature settings
     """
     try:
-        # Path is relative to lambda package root
-        config_path = Path(__file__).parent.parent.parent.parent / "table_maker" / "table_maker_config.json"
+        # Use local config file
+        config_path = os.path.join(os.path.dirname(__file__), 'table_maker_config.json')
 
-        if not config_path.exists():
+        if not os.path.exists(config_path):
             logger.warning(f"Table maker config not found at {config_path}, using defaults")
             return _get_default_config()
 
@@ -392,9 +500,10 @@ async def handle_table_conversation_start(request_data, context):
         config = _load_table_maker_config()
         conversation_config = config.get('conversation', {})
 
-        # Generate conversation ID
-        conversation_id = _generate_conversation_id()
+        # Use conversation ID from request if provided (from HTTP endpoint), otherwise generate new one
+        conversation_id = request_data.get('conversation_id') or _generate_conversation_id()
         result['conversation_id'] = conversation_id
+        logger.info(f"[TABLE_MAKER] Using conversation ID: {conversation_id}")
 
         # Initialize storage manager
         storage_manager = UnifiedS3Manager()
@@ -449,10 +558,11 @@ async def handle_table_conversation_start(request_data, context):
         # Initialize AI client, prompt loader, and schema validator
         ai_client = AIAPIClient()
 
-        # Paths are relative to lambda package root
-        base_path = Path(__file__).parent.parent.parent.parent / "table_maker"
-        prompt_loader = PromptLoader(str(base_path / "prompts"))
-        schema_validator = SchemaValidator(str(base_path / "schemas"))
+        # Use local table_maker_lib copy
+        prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
+        schemas_dir = os.path.join(os.path.dirname(__file__), 'schemas')
+        prompt_loader = PromptLoader(prompts_dir)
+        schema_validator = SchemaValidator(schemas_dir)
 
         # Initialize conversation handler (REUSE existing class)
         conversation_handler = TableConversationHandler(
@@ -540,7 +650,10 @@ async def handle_table_conversation_start(request_data, context):
         )
 
         if not save_result['success']:
-            logger.warning(f"[TABLE_MAKER] Failed to save conversation state: {save_result['error']}")
+            logger.error(f"[TABLE_MAKER] CRITICAL: Failed to save conversation state: {save_result['error']}")
+            logger.error(f"[TABLE_MAKER] This will prevent conversation continuation!")
+        else:
+            logger.info(f"[TABLE_MAKER] Successfully saved conversation state to {save_result['s3_key']}")
 
         # Send progress update
         if websocket_client and session_id:
@@ -560,9 +673,22 @@ async def handle_table_conversation_start(request_data, context):
             except Exception as e:
                 logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
 
-        # Update runs database with progress
+        # Update runs database with progress and cost metadata
         if run_key:
             try:
+                # Extract API metadata from conversation result
+                api_metadata = conversation_result.get('api_metadata', {})
+                processing_time = api_metadata.get('run_time_s', 0.0)
+
+                # Build provider metrics and token usage structures
+                provider_metrics = _build_provider_metrics(api_metadata, processing_time)
+                token_usage_structure = _build_token_usage_structure(api_metadata, provider_metrics)
+
+                # Calculate totals
+                total_cost = sum(pm.get('cost_actual', 0.0) for pm in provider_metrics.values())
+                total_tokens = sum(pm.get('tokens', 0) for pm in provider_metrics.values())
+                total_calls = sum(pm.get('calls', 0) for pm in provider_metrics.values())
+
                 update_run_status(
                     session_id=session_id,
                     run_key=run_key,
@@ -570,7 +696,17 @@ async def handle_table_conversation_start(request_data, context):
                     run_type="Table Generation",
                     verbose_status="Conversation turn 1 complete",
                     percent_complete=20,
-                    models=model
+                    models=api_metadata.get('models', model),
+                    eliyahu_cost=api_metadata.get('eliyahu_cost', 0.0),
+                    token_usage=token_usage_structure,
+                    run_time_s=processing_time,
+                    provider_metrics=provider_metrics,
+                    total_provider_cost_actual=total_cost,
+                    total_provider_cost_estimated=sum(pm.get('cost_estimated', 0.0) for pm in provider_metrics.values()),
+                    total_provider_tokens=total_tokens,
+                    total_provider_calls=total_calls,
+                    actual_processing_time_seconds=processing_time,
+                    time_per_row_seconds=processing_time
                 )
             except Exception as e:
                 logger.error(f"[TABLE_MAKER] Failed to update run status: {e}")
@@ -685,9 +821,10 @@ async def handle_table_conversation_continue(request_data, context):
 
         # Initialize AI client, prompt loader, and schema validator
         ai_client = AIAPIClient()
-        base_path = Path(__file__).parent.parent.parent.parent / "table_maker"
-        prompt_loader = PromptLoader(str(base_path / "prompts"))
-        schema_validator = SchemaValidator(str(base_path / "schemas"))
+        prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
+        schemas_dir = os.path.join(os.path.dirname(__file__), 'schemas')
+        prompt_loader = PromptLoader(prompts_dir)
+        schema_validator = SchemaValidator(schemas_dir)
 
         # Initialize conversation handler and restore state (REUSE existing class)
         conversation_handler = TableConversationHandler(
@@ -777,7 +914,10 @@ async def handle_table_conversation_continue(request_data, context):
         )
 
         if not save_result['success']:
-            logger.warning(f"[TABLE_MAKER] Failed to save updated conversation state: {save_result['error']}")
+            logger.error(f"[TABLE_MAKER] CRITICAL: Failed to save updated conversation state: {save_result['error']}")
+            logger.error(f"[TABLE_MAKER] This will prevent further conversation continuation!")
+        else:
+            logger.info(f"[TABLE_MAKER] Successfully saved updated conversation state to {save_result['s3_key']}")
 
         # Send progress update
         if websocket_client and session_id:
@@ -797,9 +937,22 @@ async def handle_table_conversation_continue(request_data, context):
             except Exception as e:
                 logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
 
-        # Update runs database with progress
+        # Update runs database with progress and cost metadata
         if run_key:
             try:
+                # Extract API metadata from conversation result
+                api_metadata = conversation_result.get('api_metadata', {})
+                processing_time = api_metadata.get('run_time_s', 0.0)
+
+                # Build provider metrics and token usage structures
+                provider_metrics = _build_provider_metrics(api_metadata, processing_time)
+                token_usage_structure = _build_token_usage_structure(api_metadata, provider_metrics)
+
+                # Calculate totals
+                total_cost = sum(pm.get('cost_actual', 0.0) for pm in provider_metrics.values())
+                total_tokens = sum(pm.get('tokens', 0) for pm in provider_metrics.values())
+                total_calls = sum(pm.get('calls', 0) for pm in provider_metrics.values())
+
                 status_msg = "Ready for preview generation" if result['ready_to_generate'] else f"Conversation turn {result['turn_count']} complete"
                 update_run_status(
                     session_id=session_id,
@@ -808,7 +961,17 @@ async def handle_table_conversation_continue(request_data, context):
                     run_type="Table Generation",
                     verbose_status=status_msg,
                     percent_complete=20 + (result['turn_count'] * 10),
-                    models=model
+                    models=api_metadata.get('models', model),
+                    eliyahu_cost=api_metadata.get('eliyahu_cost', 0.0),
+                    token_usage=token_usage_structure,
+                    run_time_s=processing_time,
+                    provider_metrics=provider_metrics,
+                    total_provider_cost_actual=total_cost,
+                    total_provider_cost_estimated=sum(pm.get('cost_estimated', 0.0) for pm in provider_metrics.values()),
+                    total_provider_tokens=total_tokens,
+                    total_provider_calls=total_calls,
+                    actual_processing_time_seconds=processing_time,
+                    time_per_row_seconds=processing_time
                 )
             except Exception as e:
                 logger.error(f"[TABLE_MAKER] Failed to update run status: {e}")
