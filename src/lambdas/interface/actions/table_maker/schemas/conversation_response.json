@@ -1,10 +1,16 @@
 {
   "type": "object",
-  "required": ["ai_message", "proposed_rows", "proposed_columns", "clarifying_questions", "confidence", "ready_to_generate", "reasoning"],
+  "required": ["ai_message", "table_name", "proposed_rows", "proposed_columns", "clarifying_questions", "confidence", "ready_to_generate", "reasoning"],
   "properties": {
     "ai_message": {
       "type": "string",
       "description": "Start with 2-3 clear sentences describing the table's purpose and structure. Then add a Context section with comprehensive details about data sources, validation approaches, domain-specific requirements, or any other information critical for configuration. Column definitions and additional rows will be presented separately, so you don't need to list those."
+    },
+    "table_name": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 100,
+      "description": "Short, descriptive table name in proper title case (e.g., 'Research Applications for Internal Programs', 'New Clients with GenAI Job Postings'). Use clear, human-readable titles that describe the table's purpose. This will be converted to snake_case for file naming."
     },
     "proposed_rows": {
       "type": "object",

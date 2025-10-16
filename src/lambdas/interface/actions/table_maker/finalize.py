@@ -38,6 +38,26 @@ except ImportError:
     logger.warning("WebSocket client not available for table maker finalization")
 
 
+def title_to_snake_case(title: str) -> str:
+    """
+    Convert title case to snake_case for file naming.
+
+    Examples:
+        'Research Applications for Internal Programs' -> 'Research_Applications_for_Internal_Programs'
+        'New Clients with GenAI Job Postings' -> 'New_Clients_with_GenAI_Job_Postings'
+    """
+    import re
+    # Replace spaces with underscores
+    snake = title.replace(' ', '_')
+    # Remove any characters that aren't alphanumeric or underscore
+    snake = re.sub(r'[^a-zA-Z0-9_]', '', snake)
+    # Remove consecutive underscores
+    snake = re.sub(r'_+', '_', snake)
+    # Remove leading/trailing underscores
+    snake = snake.strip('_')
+    return snake
+
+
 async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Generate full table, create config, and run preview validation.
@@ -136,6 +156,21 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                 }
 
         logger.info(f"Using preview data with {len(preview_data.get('columns', []))} columns")
+
+        # Extract table name from conversation state for file naming
+        table_name_title = None
+        if conversation_state.get('current_proposal'):
+            # Get table_name from the LLM response (in title case)
+            ai_response = conversation_state.get('ai_response', {})
+            table_name_title = ai_response.get('table_name')
+
+        # Convert to snake_case for file naming, fallback to session_id if not available
+        if table_name_title:
+            table_name_snake = title_to_snake_case(table_name_title)
+            logger.info(f"Using table name: '{table_name_title}' -> '{table_name_snake}'")
+        else:
+            table_name_snake = f"table_{session_id}"
+            logger.warning(f"No table name found in conversation state, using default: {table_name_snake}")
 
         # Create run record for table generation
         try:
@@ -377,7 +412,7 @@ Ensure variety and relevance to the research domain.
                         logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
 
                 # Create CSV WITH column definitions (for user download)
-                user_csv_filename = f"table_{session_id}.csv"
+                user_csv_filename = f"{table_name_snake}.csv"
                 user_csv_path = f"/tmp/{user_csv_filename}"
 
                 generation_result = table_generator.generate_csv(
@@ -412,7 +447,7 @@ Ensure variety and relevance to the research domain.
                 logger.info(f"Stored user CSV with definitions: {user_csv_key}")
 
                 # Create CSV WITHOUT column definitions (for validation)
-                validation_csv_filename = f"table_{session_id}_for_validation.csv"
+                validation_csv_filename = f"{table_name_snake}_for_validation.csv"
                 validation_csv_path = f"/tmp/{validation_csv_filename}"
 
                 validation_result = table_generator.generate_csv(
@@ -543,7 +578,7 @@ Ensure variety and relevance to the research domain.
                 # IMPORTANT: Use sample_rows (from preview) for sample_values since we're running in parallel
                 table_analysis = {
                     'basic_info': {
-                        'filename': f"table_{session_id}.csv",
+                        'filename': f"{table_name_snake}.csv",
                         'total_rows': len(sample_rows),  # Use sample_rows count for preview
                         'total_columns': len(columns),
                         'has_header': True
