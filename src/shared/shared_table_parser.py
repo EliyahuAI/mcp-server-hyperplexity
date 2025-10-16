@@ -10,7 +10,8 @@ import json
 import logging
 import os
 import tempfile
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +25,20 @@ except ImportError:
 
 class S3TableParser:
     """Unified S3 table-to-JSON parser used by both interface and validation code"""
-    
-    def __init__(self):
+
+    def __init__(self, enable_cleaning_log: bool = True, output_dir: str = "results"):
         self.s3_client = boto3.client('s3')
         self.logger = logging.getLogger(__name__)
+        self.enable_cleaning_log = enable_cleaning_log
+        self.output_dir = output_dir
+        self.cleaning_logger = None
+
+        if self.enable_cleaning_log:
+            try:
+                from table_cleaning_logger import TableCleaningLogger
+                self.cleaning_logger = TableCleaningLogger(output_dir)
+            except ImportError:
+                self.logger.debug("TableCleaningLogger not available, cleaning operations won't be logged")
 
     def _normalize_column_name(self, col_name: str) -> str:
         """
@@ -54,7 +65,56 @@ class S3TableParser:
 
         return normalized
 
-    def parse_s3_table(self, bucket: str, key: str, sheet_name: Optional[str] = None, extract_formulas: bool = False, id_fields: Optional[List[str]] = None) -> Dict[str, Any]:
+    def _get_preferred_file_key(self, bucket: str, key: str) -> Tuple[str, bool]:
+        """
+        Check if a focused/cleaned version exists and return the preferred key.
+        Looks for the cleaned file in the base results folder.
+
+        Args:
+            bucket: S3 bucket name
+            key: Original S3 object key
+
+        Returns:
+            Tuple of (preferred_key, is_focused_version)
+        """
+        # Extract filename from key
+        filename = key.split('/')[-1]
+        base_name = Path(filename).stem
+        extension = Path(filename).suffix
+
+        # First, check for the primary cleaned file in results folder
+        # This is the main cleaned file without timestamp
+        primary_cleaned_key = f"results/{base_name}{extension}"
+
+        try:
+            # Check if primary cleaned version exists
+            self.s3_client.head_object(Bucket=bucket, Key=primary_cleaned_key)
+            self.logger.info(f"Found primary cleaned version: {primary_cleaned_key}")
+            return primary_cleaned_key, True
+        except self.s3_client.exceptions.NoSuchKey:
+            pass
+
+        # Check for other focused patterns as fallback
+        focused_patterns = [
+            f"results/{base_name}_focused{extension}",
+            f"results/{base_name}_cleaned{extension}",
+        ]
+
+        for focused_key in focused_patterns:
+            try:
+                self.s3_client.head_object(Bucket=bucket, Key=focused_key)
+                self.logger.info(f"Found focused version: {focused_key}")
+                return focused_key, True
+            except self.s3_client.exceptions.NoSuchKey:
+                continue
+
+        # No focused version found, use original
+        self.logger.debug(f"No cleaned version found for {key}, using original")
+        return key, False
+
+    def parse_s3_table(self, bucket: str, key: str, sheet_name: Optional[str] = None,
+                      extract_formulas: bool = False, id_fields: Optional[List[str]] = None,
+                      use_focused: bool = True, save_cleaned: bool = True) -> Dict[str, Any]:
         """
         Parse Excel/CSV from S3 into standard JSON format
 
@@ -64,31 +124,136 @@ class S3TableParser:
             sheet_name: Excel sheet name (optional, uses first sheet if not specified)
             extract_formulas: Whether to extract Excel formulas with descriptions (default: False)
             id_fields: List of ID field names for row key generation (optional)
+            use_focused: Whether to prefer focused/cleaned versions if available (default: True)
+            save_cleaned: Whether to save cleaned version if cleaning is performed (default: True)
 
         Returns:
             Structured table data with metadata, optionally including formulas.
             If id_fields provided, each row will include a 'row_key' field.
         """
         try:
+            # Check for focused version if enabled
+            actual_key = key
+            is_focused = False
+            if use_focused:
+                actual_key, is_focused = self._get_preferred_file_key(bucket, key)
+
             # Download file from S3
-            self.logger.info(f"Downloading table from S3: s3://{bucket}/{key}")
-            response = self.s3_client.get_object(Bucket=bucket, Key=key)
+            self.logger.info(f"Downloading table from S3: s3://{bucket}/{actual_key}")
+            response = self.s3_client.get_object(Bucket=bucket, Key=actual_key)
             file_content = response['Body'].read()
-            
+
+            # Keep track of original content if we'll be cleaning
+            original_content = file_content if save_cleaned and not is_focused else None
+
             # Determine file type from key
-            filename = key.split('/')[-1]
+            filename = actual_key.split('/')[-1]
+
+            # Initialize cleaning log if needed
+            if self.cleaning_logger and not is_focused:
+                original_shape = self._get_file_shape(file_content, filename)
+                self.cleaning_logger.start_file_cleaning(filename,
+                                                        'csv' if filename.endswith('.csv') else 'excel',
+                                                        original_shape,
+                                                        sheet_name=sheet_name)
+
+            # Parse the file
             if filename.endswith('.csv'):
-                return self._parse_csv_content(file_content, filename, id_fields)
+                result = self._parse_csv_content(file_content, filename, id_fields)
             elif filename.endswith(('.xlsx', '.xls')):
                 if not OPENPYXL_AVAILABLE:
                     raise ImportError("openpyxl is required for Excel file support")
-                return self._parse_excel_content(file_content, filename, sheet_name, extract_formulas, id_fields)
+                result = self._parse_excel_content(file_content, filename, sheet_name, extract_formulas, id_fields)
             else:
                 raise ValueError(f"Unsupported file format: {filename}")
-                
+
+            # Add metadata about focused version
+            result['metadata']['used_focused_version'] = is_focused
+            result['metadata']['original_key'] = key if is_focused else None
+
+            # Finalize cleaning log and save files if we did cleaning
+            if self.cleaning_logger and not is_focused and save_cleaned:
+                final_shape = (result['total_rows'], result['total_columns'])
+                self.cleaning_logger.finalize_cleaning(final_shape)
+
+                # Save the cleaning log
+                log_path = self.cleaning_logger.save_log()
+                result['metadata']['cleaning_log_path'] = log_path
+
+                # If we have original content and made changes, save both versions
+                if original_content:
+                    # For Excel files, we need to regenerate the cleaned content
+                    # since we modified it in memory
+                    if filename.endswith(('.xlsx', '.xls')):
+                        # Create a cleaned version using the parsed data
+                        # Note: This is simplified - in production we'd want to
+                        # preserve the actual cleaned Excel file
+                        self.logger.info("Note: Excel file cleaning saved to log only")
+                        # TODO: Implement Excel file saving if needed
+                    else:
+                        # For CSV files, regenerate from cleaned data
+                        cleaned_csv = self._generate_csv_from_data(result)
+                        saved_files = self.cleaning_logger.save_original_and_cleaned(
+                            original_content=original_content,
+                            cleaned_content=cleaned_csv.encode('utf-8'),
+                            base_filename=filename,
+                            save_original_copy=True
+                        )
+                        result['metadata']['saved_files'] = saved_files
+                        self.logger.info(f"Saved cleaned CSV files: {saved_files}")
+
+            return result
+
         except Exception as e:
             self.logger.error(f"Failed to parse S3 table {bucket}/{key}: {str(e)}")
             raise
+
+    def _generate_csv_from_data(self, parsed_data: Dict[str, Any]) -> str:
+        """Generate CSV content from parsed data structure."""
+        import io
+        import csv
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Write headers
+        headers = parsed_data['column_names']
+        writer.writerow(headers)
+
+        # Write data rows
+        for row in parsed_data['data']:
+            row_values = []
+            for header in headers:
+                # Skip internal fields like _row_key
+                if not header.startswith('_'):
+                    value = row.get(header, '')
+                    row_values.append(value)
+            writer.writerow(row_values)
+
+        return output.getvalue()
+
+    def _get_file_shape(self, file_content: bytes, filename: str) -> Tuple[int, int]:
+        """Get the shape (rows, columns) of a file for logging."""
+        try:
+            if filename.endswith('.csv'):
+                text_content = file_content.decode('utf-8-sig')
+                reader = csv.reader(text_content.splitlines())
+                rows = list(reader)
+                return (len(rows), len(rows[0]) if rows else 0)
+            else:
+                # Excel file
+                with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
+                    tmp.write(file_content)
+                    tmp_path = tmp.name
+
+                workbook = load_workbook(tmp_path, read_only=True)
+                worksheet = workbook.active
+                shape = (worksheet.max_row, worksheet.max_column)
+                workbook.close()
+                os.unlink(tmp_path)
+                return shape
+        except:
+            return (0, 0)
     
     def _parse_csv_content(self, file_content: bytes, filename: str, id_fields: Optional[List[str]] = None) -> Dict[str, Any]:
         """Parse CSV content into structured format"""
@@ -249,22 +414,26 @@ class S3TableParser:
                 # When we need to preserve formulas through row deletion, we need write access
                 workbook = load_workbook(temp_file_path, read_only=False, data_only=not extract_formulas)
 
+                # Log available sheets if we have a logger
+                if self.cleaning_logger:
+                    self.cleaning_logger.set_available_sheets(workbook.sheetnames)
+
                 # Select worksheet
                 if sheet_name:
                     if sheet_name not in workbook.sheetnames:
                         raise ValueError(f"Sheet '{sheet_name}' not found. Available sheets: {workbook.sheetnames}")
                     worksheet = workbook[sheet_name]
                 else:
-                    # Default behavior: try "Results" sheet first, then fall back to first sheet
-                    if "Results" in workbook.sheetnames:
-                        worksheet = workbook["Results"]
-                        sheet_name = "Results"
-                        print(f"Using 'Results' sheet by default")
+                    # Default behavior: try "Updated Values" sheet first, then fall back to first sheet
+                    if "Updated Values" in workbook.sheetnames:
+                        worksheet = workbook["Updated Values"]
+                        sheet_name = "Updated Values"
+                        print(f"Using 'Updated Values' sheet by default")
                     else:
                         # Use first sheet (workbook.active might not be the first sheet)
                         worksheet = workbook[workbook.sheetnames[0]]
                         sheet_name = workbook.sheetnames[0]
-                        print(f"No 'Results' sheet found, using first sheet: '{sheet_name}'")
+                        print(f"No 'Updated Values' sheet found, using first sheet: '{sheet_name}'")
 
                 # Import advanced table detector if available
                 use_advanced_detection = False
@@ -292,15 +461,39 @@ class S3TableParser:
                 if use_advanced_detection:
                     tables = detector.detect_table_boundaries(worksheet, start_row=0)
                     if tables:
-                        # Use the first data table found
+                        # First, look for tables with ID columns - these are most likely the real data tables
+                        id_column_tables = []
                         for table in tables:
                             if table['table_type'] == 'data':
-                                table_info = table
-                                self.logger.info(
-                                    f"Found data table: rows {table['start_row']}-{table['end_row']}, "
-                                    f"has_summary={table['has_summary']}"
-                                )
-                                break
+                                # Check if headers contain ID columns
+                                has_id_col = False
+                                for header in table.get('headers', []):
+                                    if header and any(pattern in str(header).upper() for pattern in
+                                                     ['_ID', ' ID', 'ID ', 'PRODUCT_ID', 'COMPANY_ID',
+                                                      'CUSTOMER_ID', 'ITEM_ID', 'ORDER_ID', 'USER_ID']):
+                                        has_id_col = True
+                                        break
+                                if has_id_col:
+                                    id_column_tables.append(table)
+
+                        # Prefer tables with ID columns
+                        if id_column_tables:
+                            table_info = id_column_tables[0]
+                            self.logger.info(
+                                f"Found data table with ID columns: rows {table_info['start_row']}-{table_info['end_row']}, "
+                                f"has_summary={table_info['has_summary']}"
+                            )
+                        else:
+                            # Fallback to first data table
+                            for table in tables:
+                                if table['table_type'] == 'data':
+                                    table_info = table
+                                    self.logger.info(
+                                        f"Found data table: rows {table['start_row']}-{table['end_row']}, "
+                                        f"has_summary={table['has_summary']}"
+                                    )
+                                    break
+
                         if not table_info and tables:
                             # No data table found, use the first table
                             table_info = tables[0]
@@ -310,14 +503,29 @@ class S3TableParser:
                     # Use detected boundaries
                     table_start_row = table_info['start_row'] - 1  # Convert to 0-based
                     headers = table_info['headers']
+                    header_column_indices = table_info.get('header_column_indices', None)
+
                     # Extract only data rows (exclude summary if present)
                     if table_info['has_summary'] and table_info['summary_start_row']:
-                        data_end_idx = table_info['summary_start_row'] - 1
-                        data_rows = all_rows[table_start_row + 1:data_end_idx]
-                        self.logger.info(f"Excluding summary rows starting at row {table_info['summary_start_row']}")
+                        # summary_start_row is 1-based from detector, convert to 0-based
+                        summary_row_idx = table_info['summary_start_row'] - 1
+                        data_rows = all_rows[table_start_row + 1:summary_row_idx]
+                        self.logger.info(f"Table info: start_row={table_info['start_row']} (1-based), summary_start_row={table_info['summary_start_row']} (1-based)")
+                        self.logger.info(f"Extracting data rows from index {table_start_row + 1} to {summary_row_idx - 1} (0-based)")
+                        self.logger.info(f"Slice: all_rows[{table_start_row + 1}:{summary_row_idx}]")
+                        self.logger.info(f"Data rows extracted: {len(data_rows)} rows")
+                        # Debug: show what's in each row
+                        for i, row in enumerate(data_rows[:3]):  # Show first 3 rows
+                            non_empty = sum(1 for cell in row if cell is not None and str(cell).strip())
+                            self.logger.debug(f"  Row {i}: {non_empty} non-empty cells, first cell: {row[0] if row else 'empty'}")
                     else:
-                        data_end_idx = table_info['end_row']
+                        # end_row is 1-based from detector and represents the last data row
+                        data_end_idx = table_info['end_row'] - 1  # Convert to 0-based
                         data_rows = all_rows[table_start_row + 1:data_end_idx + 1]
+                        self.logger.info(f"Table info: start_row={table_info['start_row']} (1-based), end_row={table_info['end_row']} (1-based)")
+                        self.logger.info(f"Extracting data rows from index {table_start_row + 1} to {data_end_idx} (0-based)")
+                        self.logger.info(f"Slice: all_rows[{table_start_row + 1}:{data_end_idx + 1}]")
+                        self.logger.info(f"Data rows extracted: {len(data_rows)} rows")
                 else:
                     # Fallback to basic detection
                     table_start_row, headers = self._find_table_start(all_rows)
@@ -325,9 +533,13 @@ class S3TableParser:
 
                 # Clean data rows with enhanced filtering if detector available
                 if use_advanced_detection:
-                    data_rows, filter_metadata = detector.filter_data_rows(
-                        data_rows, headers, preserve_summary=False
+                    # Note: filter_data_rows expects the first row to be headers, so we prepend headers
+                    rows_with_headers = [headers] + data_rows
+                    filtered_rows, filter_metadata = detector.filter_data_rows(
+                        rows_with_headers, headers, preserve_summary=False
                     )
+                    # Remove the header row that we added
+                    data_rows = filtered_rows
                     self.logger.info(
                         f"Advanced filtering: removed {filter_metadata['removed_empty']} empty, "
                         f"{filter_metadata['removed_sparse']} sparse, {filter_metadata['removed_metadata']} metadata rows"
@@ -339,9 +551,35 @@ class S3TableParser:
                 # Track original column count before trimming
                 original_column_count = len(headers) if not hasattr(headers[0], '__iter__') else len(headers)
 
-                # Clean headers
-                clean_headers = [self._normalize_column_name(str(header).strip()) if header is not None else f"Column_{i+1}"
-                               for i, header in enumerate(headers)]
+                # Clean headers and remove empty header columns
+                # First identify which columns have headers
+                non_empty_header_indices = []
+                clean_headers = []
+                for i, header in enumerate(headers):
+                    if header is not None and str(header).strip():
+                        non_empty_header_indices.append(i)
+                        clean_headers.append(self._normalize_column_name(str(header).strip()))
+
+                # If we removed empty header columns, we need to filter data accordingly
+                if len(non_empty_header_indices) < len(headers):
+                    self.logger.info(f"Removing {len(headers) - len(non_empty_header_indices)} columns without headers")
+
+                    # Log column removal if we have a cleaning logger
+                    if self.cleaning_logger:
+                        removed_indices = [i for i in range(len(headers)) if i not in non_empty_header_indices]
+                        removed_headers = [headers[i] if i < len(headers) else "" for i in removed_indices]
+                        self.cleaning_logger.log_column_removal(
+                            column_indices=removed_indices,
+                            column_headers=removed_headers,
+                            removal_reason="No header content"
+                        )
+
+                    # Filter data_rows to only include columns with headers
+                    filtered_data_rows = []
+                    for row in data_rows:
+                        filtered_row = [row[i] if i < len(row) else None for i in non_empty_header_indices]
+                        filtered_data_rows.append(filtered_row)
+                    data_rows = filtered_data_rows
 
                 # Check if we trimmed columns and are extracting formulas
                 columns_trimmed = original_column_count > len(clean_headers)
@@ -365,17 +603,76 @@ class S3TableParser:
                 # First pass: extract all row data and formulas
                 temp_rows = []
                 temp_formulas = []
-                for row_idx, row in enumerate(data_rows):
-                    # Skip completely empty rows only - keep all data rows even if sparse
-                    non_empty_count = sum(1 for cell in row if cell is not None and str(cell).strip())
-                    if non_empty_count == 0:
-                        continue  # Skip completely empty rows
 
-                    # After headers are found, keep ALL data rows (even sparse ones)
-                    row_dict = {}
-                    formula_dict = {} if extract_formulas else None
+                # If we have header column indices from the detector, use them to properly align data
+                if header_column_indices and table_info:
+                    self.logger.info(f"Using header column indices for data alignment: {header_column_indices}")
+                    self.logger.info(f"Processing {len(data_rows)} data rows")
+                    for row_idx, row in enumerate(data_rows):
+                        # Skip completely empty rows only - keep all data rows even if sparse
+                        non_empty_count = sum(1 for cell in row if cell is not None and str(cell).strip())
+                        if row_idx < 3:  # Debug first 3 rows
+                            self.logger.debug(f"  Data row {row_idx}: non_empty={non_empty_count}, first 4 cells: {row[:4] if row else 'empty'}")
+                        if non_empty_count == 0:
+                            # Log empty row removal if we have a cleaning logger
+                            if self.cleaning_logger:
+                                self.cleaning_logger.log_row_removal(
+                                    row_indices=[table_start_row + 1 + row_idx],
+                                    rows_content=[[str(c) if c else "" for c in row]],
+                                    removal_reason="Completely empty row",
+                                    row_type='empty'
+                                )
+                            continue  # Skip completely empty rows
 
-                    for i, header in enumerate(clean_headers):
+                        # After headers are found, keep ALL data rows (even sparse ones)
+                        row_dict = {}
+                        formula_dict = {} if extract_formulas else None
+
+                        # Map data from original columns to headers using indices
+                        for header_idx, header in enumerate(clean_headers):
+                            if header_idx < len(header_column_indices):
+                                original_col_idx = header_column_indices[header_idx]
+                                cell_value = row[original_col_idx] if original_col_idx < len(row) else None
+                            else:
+                                cell_value = None
+
+                            row_dict[header] = str(cell_value).strip() if cell_value is not None else ""
+
+                            # Extract formula if requested
+                            if extract_formulas and all_cell_objects:
+                                actual_row_idx = table_start_row + 1 + row_idx
+                                if actual_row_idx < len(all_cell_objects) and header_idx < len(header_column_indices):
+                                    original_col_idx = header_column_indices[header_idx]
+                                    if original_col_idx < len(all_cell_objects[actual_row_idx]):
+                                        cell_obj = all_cell_objects[actual_row_idx][original_col_idx]
+                                        formula_info = self._extract_formula_info(cell_obj, clean_headers, worksheet)
+                                        if formula_info:
+                                            formula_dict[header] = formula_info
+
+                        temp_rows.append(row_dict)
+                        if extract_formulas:
+                            temp_formulas.append(formula_dict if formula_dict else {})
+                else:
+                    # Fallback to original logic if no header indices available
+                    for row_idx, row in enumerate(data_rows):
+                        # Skip completely empty rows only - keep all data rows even if sparse
+                        non_empty_count = sum(1 for cell in row if cell is not None and str(cell).strip())
+                        if non_empty_count == 0:
+                            # Log empty row removal if we have a cleaning logger
+                            if self.cleaning_logger:
+                                self.cleaning_logger.log_row_removal(
+                                    row_indices=[table_start_row + 1 + row_idx],
+                                    rows_content=[[str(c) if c else "" for c in row]],
+                                    removal_reason="Completely empty row",
+                                    row_type='empty'
+                                )
+                            continue  # Skip completely empty rows
+
+                        # After headers are found, keep ALL data rows (even sparse ones)
+                        row_dict = {}
+                        formula_dict = {} if extract_formulas else None
+
+                        for i, header in enumerate(clean_headers):
                             cell_value = row[i] if i < len(row) else None
                             row_dict[header] = str(cell_value).strip() if cell_value is not None else ""
 
@@ -640,14 +937,46 @@ class S3TableParser:
         """Find the actual start of the table data by detecting headers intelligently."""
         # First, find the maximum column count in the data
         max_cols = 0
-        for row in all_rows[:10]:  # Check first 10 rows for max columns
+        for row in all_rows[:20]:  # Check first 20 rows for max columns
             if row and any(cell is not None and str(cell).strip() for cell in row):
                 max_cols = max(max_cols, len(row))
 
+        # Look for rows containing ID columns - these are definitive headers
         for row_idx, row in enumerate(all_rows):
             # Skip completely empty rows
             if not any(cell is not None and str(cell).strip() for cell in row):
                 continue
+
+            # Check if this row contains ID columns (strong indicator of headers)
+            has_id_column = False
+            for cell in row:
+                if cell is not None:
+                    cell_str = str(cell).strip().upper()
+                    # Look for ID patterns in column names
+                    if any(pattern in cell_str for pattern in ['_ID', ' ID', 'ID ',
+                                                                'PRODUCT_ID', 'COMPANY_ID', 'CUSTOMER_ID',
+                                                                'ITEM_ID', 'ORDER_ID', 'USER_ID']):
+                        has_id_column = True
+                        break
+
+            if has_id_column:
+                # This is definitely a header row - ID columns must be in headers
+                self.logger.debug(f"Found ID column in row {row_idx}, treating as header row")
+                headers = self._trim_trailing_empty(row)
+
+                # Log header detection if we have a cleaning logger
+                if self.cleaning_logger:
+                    id_columns_found = [str(cell).strip() for cell in row
+                                       if cell and any(p in str(cell).upper() for p in
+                                                      ['_ID', ' ID', 'ID ', 'PRODUCT_ID', 'COMPANY_ID'])]
+                    self.cleaning_logger.log_header_detection(
+                        method='id_column',
+                        header_row=row_idx,
+                        headers=[str(h).strip() if h else "" for h in headers],
+                        id_columns_found=id_columns_found
+                    )
+
+                return row_idx, headers
 
             # Count non-empty cells
             non_empty_count = sum(1 for cell in row if cell is not None and str(cell).strip())
@@ -658,23 +987,50 @@ class S3TableParser:
                 # This row is sparse - check if it's significantly incomplete
                 if non_empty_count < max(2, max_cols * 0.3):
                     self.logger.debug(f"Skipping sparse Excel row {row_idx} as potential header: {non_empty_count}/{max_cols} cells filled")
+
+                    # Log metadata row removal if we have a cleaning logger
+                    if self.cleaning_logger:
+                        row_content = [str(cell) if cell else "" for cell in row]
+                        self.cleaning_logger.log_row_removal(
+                            row_indices=[row_idx],
+                            rows_content=[row_content],
+                            removal_reason=f"Sparse metadata row ({non_empty_count}/{max_cols} cells filled)",
+                            row_type='metadata'
+                        )
+
                     continue
 
             # Consider this a header row if it has at least 2 non-empty cells
             # and the next few rows seem to contain data
             if non_empty_count >= 2:
+                # Check for metadata patterns that disqualify this as headers
+                has_metadata_pattern = False
+                for cell in row:
+                    if cell is not None and str(cell).strip():
+                        cell_lower = str(cell).strip().lower()
+                        if any(pattern in cell_lower for pattern in
+                              ['department:', 'quarter:', 'generated', 'report',
+                               'confidential', 'version', 'internal use']):
+                            has_metadata_pattern = True
+                            self.logger.debug(f"Row {row_idx} has metadata pattern: {str(cell).strip()}")
+                            break
+
+                # Skip rows with metadata patterns
+                if has_metadata_pattern:
+                    continue
+
                 # Check if this looks like a data table start
                 if self._looks_like_header_row(row, all_rows, row_idx):
                     # Trim trailing empty columns from headers
                     headers = self._trim_trailing_empty(row)
                     return row_idx, headers
-        
+
         # Fallback: use first non-empty row as headers
         for row_idx, row in enumerate(all_rows):
             if any(cell is not None and str(cell).strip() for cell in row):
                 headers = self._trim_trailing_empty(row)
                 return row_idx, headers
-        
+
         # Ultimate fallback
         return 0, all_rows[0] if all_rows else []
     
@@ -733,7 +1089,7 @@ class S3TableParser:
         """Find table start for CSV files (similar logic but handles string data)."""
         # First, find the maximum column count in the data
         max_cols = 0
-        for row in rows[:10]:  # Check first 10 rows for max columns
+        for row in rows[:20]:  # Check first 20 rows for max columns
             if row and not str(row[0]).strip().startswith('#'):
                 max_cols = max(max_cols, len(row))
 
@@ -746,6 +1102,24 @@ class S3TableParser:
             if row and str(row[0]).strip().startswith('#'):
                 self.logger.debug(f"Skipping comment row {row_idx}: {str(row[0])[:50]}...")
                 continue
+
+            # Check if this row contains ID columns (strong indicator of headers)
+            has_id_column = False
+            for cell in row:
+                if cell:
+                    cell_str = str(cell).strip().upper()
+                    # Look for ID patterns in column names
+                    if any(pattern in cell_str for pattern in ['_ID', ' ID', 'ID ',
+                                                                'PRODUCT_ID', 'COMPANY_ID', 'CUSTOMER_ID',
+                                                                'ITEM_ID', 'ORDER_ID', 'USER_ID']):
+                        has_id_column = True
+                        break
+
+            if has_id_column:
+                # This is definitely a header row - ID columns must be in headers
+                self.logger.debug(f"Found ID column in CSV row {row_idx}, treating as header row")
+                headers = self._trim_trailing_empty_csv(row)
+                return row_idx, headers
 
             # Count non-empty cells
             non_empty_count = sum(1 for cell in row if str(cell).strip())

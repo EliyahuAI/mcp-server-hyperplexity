@@ -7,45 +7,76 @@ The table cleaning system provides intelligent detection and filtering of Excel 
 ## Key Features
 
 ### 1. Table Boundary Detection
+- **ID column detection**: Automatically identifies header rows containing ID columns (Company_ID, Product_ID, etc.)
+- **ID columns as definitive headers**: When ID columns are found, that row is definitively treated as the header row
 - **Automatic header detection**: Identifies actual table headers vs metadata rows
-- **Data vs summary separation**: Detects summary rows (TOTAL, AVERAGE, etc.) and can exclude them from data processing
+- **Metadata pattern rejection**: Rejects rows with patterns like "Department:", "Quarter:", "Generated", etc.
+- **Data vs summary separation**: Detects summary rows (TOTAL, AVERAGE, etc.) using keyword and vertical range formula detection
 - **Multiple table support**: Can identify and extract multiple tables from a single worksheet
 - **Smart metadata filtering**: Removes report headers, timestamps, and other non-data rows
+- **Empty column removal**: Automatically removes columns without headers after header row is found
+- **Priority sheet selection**: Defaults to "Updated Values" sheet if available
 
-### 2. Row Filtering
+### 2. Cleaning Log System
+- **Comprehensive operation tracking**: Logs all cleaning operations with enough detail for restoration
+- **File versioning**: Saves both original and cleaned versions of files
+- **Primary file in results folder**: Cleaned version saved as primary file in base results folder
+- **Restoration capability**: Generates restoration scripts to recover original structure
+- **Summary reporting**: Provides human-readable reports of all cleaning operations
 
-#### Sparse Row Detection
-The system uses an 80% threshold for determining valid data rows:
-- **Complete rows** (>80% filled): Always kept as data
-- **Sparse rows** (30-80% filled): Analyzed for data patterns
-- **Very sparse rows** (<30% filled): Usually removed as metadata
-- **Empty rows**: Always removed
+### 3. Row Filtering
+
+#### Sparse Row Detection (Header Detection Phase Only)
+The system uses sparse row filtering ONLY during header detection to skip metadata:
+- **During header search**: Rows with <80% filled cells may be skipped as potential headers
+- **After headers found**: ALL data rows are kept, including sparse ones
+- **Empty rows**: Always removed (completely empty rows with no data)
+- **Summary row detection**: Uses both keywords (TOTAL, AVERAGE, etc.) and vertical range formula patterns
+
+#### Important Changes (Latest Updates)
+- **Sparse row filtering is ONLY applied during header detection**
+- **Once headers are found, sparse data rows are PRESERVED**
+- **This ensures partial data records are not lost**
+- **Summary rows are detected more accurately using vertical range formulas (e.g., =SUM(A7:A11))**
+- **Rows with ID values (like '001', '002') are not mistaken for summary rows**
+- **Empty leading columns are now properly handled** - data is correctly aligned with headers even when empty columns exist before data
+- **Column alignment tracking** - header column indices are tracked to ensure proper data extraction when columns without headers are removed
 
 #### Special Cases
-- **Early rows** (first 3 rows after headers): More lenient filtering to preserve sub-headers
+- **ID columns are definitive**: If a row contains ID columns (Product_ID, Company_ID, etc.), it's treated as the header row
 - **Summary rows**: Detected by keywords (TOTAL, AVERAGE) and formula patterns
-- **Metadata rows**: Identified by keywords like "Generated", "Report", "Confidential"
+- **Metadata rows**: Identified by keywords like "Generated", "Report", "Confidential" - only filtered during header detection
 
-### 3. Column Handling
+### 4. Column Handling
 
-#### Empty Column Detection
-The system can identify and handle empty columns:
-- Columns with no data are detected
-- Trailing empty columns are automatically trimmed
-- Interior empty columns can be preserved or removed based on configuration
+#### Empty Column Detection and Removal
+The system handles empty columns intelligently:
+- **Header-based filtering**: Columns without headers are automatically removed
+- **Empty column detection**: Columns with no data are identified
+- **Automatic removal**: Empty leading columns (before data columns) are removed
+- **Column index tracking**: The system tracks which columns have headers (`header_column_indices`) to maintain proper data alignment
+- **Formula-aware**: Column removal preserves formula references using openpyxl's built-in methods
+- **Data alignment**: When extracting data rows, the system uses header column indices to correctly map data from original columns to headers
 
 #### Column Normalization
 - Unicode characters converted to ASCII equivalents (em-dash → hyphen)
 - Special spaces normalized to regular spaces
-- Consistent naming for unnamed columns (Column_1, Column_2, etc.)
+- Columns without headers are removed rather than given generic names
 
-### 4. Formula Preservation
+### 5. Formula Preservation
 
+#### Row Deletion
 When rows are deleted from Excel files:
 - Uses openpyxl's `delete_rows()` method which automatically adjusts formula references
 - Formulas like `=SUM(A2:A10)` become `=SUM(A2:A8)` if 2 rows are deleted
-- External references are detected and preserved
-- Cell references in formulas are automatically updated
+- All cell references in formulas are automatically updated
+
+#### Column Deletion
+When columns are deleted from Excel files:
+- Uses openpyxl's `delete_cols()` method which automatically adjusts formula references
+- Formulas referencing columns to the right of deleted columns are adjusted
+- Example: If column B is deleted, `=SUM(C2:C10)` becomes `=SUM(B2:B10)`
+- Cross-references between tables are preserved
 
 ## Implementation Details
 
@@ -53,10 +84,12 @@ When rows are deleted from Excel files:
 
 #### 1. ExcelTableDetector (`excel_table_detector.py`)
 Advanced detection class with methods:
-- `detect_table_boundaries()`: Find all tables in a worksheet
-- `filter_data_rows()`: Smart row filtering with metadata detection
+- `detect_table_boundaries()`: Find all tables in a worksheet, returns `header_column_indices` for proper data alignment
+- `filter_data_rows()`: Smart row filtering with metadata detection (expects first row to be headers)
 - `preserve_formulas_on_row_deletion()`: Safely delete rows while maintaining formulas
+- `preserve_formulas_on_column_deletion()`: Safely delete columns while maintaining formulas
 - `detect_empty_columns()`: Identify columns with no data
+- `_is_summary_row()`: Improved detection using ID values and vertical range formulas to avoid false positives
 
 #### 2. SharedTableParser (`shared_table_parser.py`)
 Main parsing interface:
@@ -64,18 +97,36 @@ Main parsing interface:
 - Falls back to basic detection if advanced detector not present
 - Handles both CSV and Excel files
 - Manages row key generation with deduplication
+- Prefers focused/cleaned versions from results folder
+- Integrates with cleaning logger
+- Uses `header_column_indices` from detector to correctly align data with headers when empty columns are present
+
+#### 3. TableCleaningLogger (`table_cleaning_logger.py`)
+Comprehensive logging system:
+- `start_file_cleaning()`: Initialize cleaning log for a file
+- `log_header_detection()`: Log how headers were detected
+- `log_row_removal()`: Track removed rows with content
+- `log_column_removal()`: Track removed columns
+- `finalize_cleaning()`: Generate summary statistics
+- `save_log()`: Save JSON log file
+- `save_original_and_cleaned()`: Save both file versions
+- `get_restoration_script()`: Generate Python restoration code
 
 ### Usage Examples
 
-#### Basic Table Parsing
+#### Basic Table Parsing with Cleaning Log
 ```python
 from shared_table_parser import S3TableParser
 
-parser = S3TableParser()
+# Parser with cleaning log enabled (default)
+parser = S3TableParser(enable_cleaning_log=True, output_dir='results')
+
 result = parser.parse_s3_table(
     bucket='my-bucket',
     key='data/report.xlsx',
-    id_fields=['Company_ID']  # For row key generation
+    id_fields=['Company_ID'],  # For row key generation
+    use_focused=True,  # Prefer cleaned version if exists
+    save_cleaned=True  # Save cleaned version
 )
 
 # Result includes cleaned data with:
@@ -83,6 +134,8 @@ result = parser.parse_s3_table(
 # - Empty rows/columns trimmed
 # - Summary rows optionally excluded
 # - Row keys generated for deduplication
+# - Cleaning log saved to results folder
+# - Both original and cleaned files saved
 ```
 
 #### Advanced Table Detection
@@ -130,16 +183,18 @@ result = parser.parse_s3_table(
 
 ### Thresholds
 These can be adjusted in the code:
-- **Sparse row threshold**: 80% (rows with less than 80% filled cells are examined closely)
-- **Very sparse threshold**: 30% (rows with less than 30% filled are usually removed)
-- **Header detection minimum**: 2 non-empty cells required for valid headers
+- **Sparse row threshold during header detection**: 80% (rows with less than 80% filled cells may be skipped as potential headers)
+- **Very sparse threshold during header detection**: 30% (rows with less than 30% filled are likely metadata)
+- **Data row filtering**: NO FILTERING - all non-empty data rows are kept after headers are found
+- **Header detection minimum**: 2 non-empty cells required OR presence of ID columns
 - **Summary detection threshold**: 30% of cells must be aggregate formulas
 
 ### Patterns
-The system uses regex patterns to identify:
+The system uses regex patterns and keywords to identify:
+- **ID column patterns**: '_ID', 'PRODUCT_ID', 'COMPANY_ID', 'CUSTOMER_ID', etc.
 - **Data patterns**: Dates, IDs, URLs, email addresses
 - **Summary formulas**: SUM, AVERAGE, COUNT, MIN, MAX, MEDIAN, SUBTOTAL
-- **Metadata keywords**: "generated", "report", "confidential", "page"
+- **Metadata keywords**: "generated", "report", "confidential", "page" (only checked during header detection)
 
 ## CSV-Specific Features
 
@@ -210,16 +265,18 @@ For large files:
 #### 1. Headers Not Detected
 **Problem**: Table headers are being skipped or misidentified
 **Solution**:
-- Check for metadata rows above headers
-- Ensure headers have at least 2 non-empty cells
-- Verify headers don't match metadata patterns
+- Ensure ID columns are present in the header row for automatic detection
+- Check for metadata rows above headers that might be mistaken as headers
+- Ensure headers have at least 2 non-empty cells or contain ID columns
+- Verify headers don't match metadata patterns like "Report", "Generated", etc.
 
 #### 2. Data Rows Filtered Out
 **Problem**: Valid data rows are being removed
 **Solution**:
-- Adjust sparse row thresholds if needed
-- Check if rows match metadata patterns
-- Verify fill percentage calculations
+- This should not happen with the updated logic - sparse data rows are preserved
+- Only completely empty rows are removed after headers are found
+- If data is still being filtered, check if the header detection is correct
+- Verify that the advanced table detector is being used when available
 
 #### 3. Formula References Broken
 **Problem**: Excel formulas show #REF! errors after processing

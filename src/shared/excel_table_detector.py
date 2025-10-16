@@ -117,11 +117,13 @@ class ExcelTableDetector:
         except (IndexError, TypeError):
             return None
 
-        # Extract non-None headers
+        # Extract headers with their column indices
         headers = []
-        for cell in headers_row:
-            if cell and cell.value is not None:
+        header_column_indices = []
+        for i, cell in enumerate(headers_row):
+            if cell and cell.value is not None and str(cell.value).strip():
                 headers.append(cell.value)
+                header_column_indices.append(i)
 
         if not headers or len(headers) < 2:
             return None
@@ -147,12 +149,13 @@ class ExcelTableDetector:
             # Check if this is a summary row
             if self._is_summary_row(row, headers):
                 summary_start_row = row_idx
-                # Continue to find the actual end of summary section
+                # The last data row is the row BEFORE the summary row
+                data_end_row = row_idx - 1
+                # Continue to find the actual end of summary section (for completeness)
                 for sum_row_idx in range(row_idx + 1, min(row_idx + 10, worksheet.max_row + 1)):
                     sum_row = list(worksheet[sum_row_idx])
                     if self._is_empty_row_cells(sum_row):
                         break
-                    data_end_row = sum_row_idx
                 break
 
             # Check if this looks like the start of a new table
@@ -166,6 +169,7 @@ class ExcelTableDetector:
             'start_row': start_row + 1,  # Header row
             'end_row': data_end_row,
             'headers': headers,
+            'header_column_indices': header_column_indices,  # Track which columns have headers
             'has_summary': summary_start_row is not None,
             'summary_start_row': summary_start_row,
             'table_type': self._determine_table_type(worksheet, start_row + 1, data_end_row)
@@ -180,26 +184,51 @@ class ExcelTableDetector:
         - Has significantly fewer filled cells than data rows
         - Contains keywords like "Total", "Summary", "Average"
         """
-        # Check for summary keywords in first few cells
-        for cell in row_cells[:3]:
+        # Check for summary keywords in first few cells - this is the strongest indicator
+        for cell in row_cells[:4]:  # Check first 4 cells
             if cell.value:
                 value_str = str(cell.value).strip().upper()
-                if any(keyword in value_str for keyword in ['TOTAL', 'SUMMARY', 'AVERAGE', 'SUM', 'SUBTOTAL']):
+                if any(keyword in value_str for keyword in ['TOTAL', 'SUMMARY', 'AVERAGE', 'SUM', 'SUBTOTAL', 'GRAND TOTAL']):
                     self.logger.debug(f"Found summary keyword: {value_str}")
                     return True
 
-        # Check for formulas
+        # Check if this row has ID values (data rows typically have IDs)
+        has_id_value = False
+        for i, cell in enumerate(row_cells[:4]):
+            if cell.value:
+                value_str = str(cell.value).strip()
+                # Check if it looks like an ID (e.g., "001", "002", etc.)
+                if re.match(r'^\d{3,}$', value_str) or re.match(r'^[A-Z]{1,3}\d{3,}$', value_str):
+                    has_id_value = True
+                    break
+
+        # If row has ID values, it's likely a data row, not a summary
+        if has_id_value:
+            return False
+
+        # Check for formulas that reference ranges (more sophisticated check)
         formula_count = 0
+        range_formula_count = 0
         for cell in row_cells:
             if hasattr(cell, 'data_type') and cell.data_type == 'f':
                 formula_str = str(cell.value) if cell.value else ""
+                # Check if formula references a range of cells (e.g., A7:A11)
+                if re.search(r'[A-Z]+\d+:[A-Z]+\d+', formula_str):
+                    # Check if this is a vertical range (summary typically uses vertical ranges)
+                    match = re.search(r'([A-Z]+)(\d+):([A-Z]+)(\d+)', formula_str)
+                    if match:
+                        col1, row1, col2, row2 = match.groups()
+                        # Vertical range: same column, different rows, spanning multiple rows
+                        if col1 == col2 and abs(int(row2) - int(row1)) > 2:
+                            range_formula_count += 1
+
                 if any(re.match(pattern, formula_str, re.IGNORECASE) for pattern in self.summary_formula_patterns):
                     formula_count += 1
 
-        # If more than 30% of non-empty cells are summary formulas
+        # Summary rows typically have formulas that reference vertical ranges
         non_empty = sum(1 for cell in row_cells if cell.value)
-        if non_empty > 0 and formula_count / non_empty > 0.3:
-            self.logger.debug(f"Row has {formula_count}/{non_empty} summary formulas")
+        if non_empty > 0 and range_formula_count > 0 and range_formula_count / non_empty > 0.2:
+            self.logger.debug(f"Row has {range_formula_count}/{non_empty} range formulas (likely summary)")
             return True
 
         return False
@@ -296,21 +325,50 @@ class ExcelTableDetector:
         except (IndexError, TypeError):
             return False
 
+        # First priority: Check for ID columns - definitive headers
+        has_id_column = False
+        for cell in row:
+            if cell and cell.value:
+                value_str = str(cell.value).strip().upper()
+                # Look for ID patterns in column names
+                if any(pattern in value_str for pattern in ['_ID', ' ID', 'ID ',
+                                                            'PRODUCT_ID', 'COMPANY_ID', 'CUSTOMER_ID',
+                                                            'ITEM_ID', 'ORDER_ID', 'USER_ID']):
+                    has_id_column = True
+                    self.logger.debug(f"Found ID column '{value_str}' in row {row_idx + 1}")
+                    break
+
+        if has_id_column:
+            # This is definitely a header row
+            return True
+
         # Count non-empty cells that look like headers
         header_like_cells = 0
         total_non_empty = 0
+        has_metadata_pattern = False
 
         for cell in row:
             if cell and cell.value:
                 value_str = str(cell.value).strip()
                 total_non_empty += 1
 
+                # Check for metadata patterns that disqualify this as a header
+                value_lower = value_str.lower()
+                if any(meta in value_lower for meta in
+                      ['generated', 'report', 'confidential', 'page', 'date:',
+                       'department:', 'quarter:', 'version', 'internal use']):
+                    has_metadata_pattern = True
+                    self.logger.debug(f"Found metadata pattern in row {row_idx + 1}: {value_str}")
+
                 # Check if it looks like a header (not a date, not pure numeric, has some text)
                 if value_str and not self._is_numeric(value_str):
-                    # Exclude obvious metadata patterns
-                    if not any(meta in value_str.lower() for meta in
-                              ['generated', 'report', 'confidential', 'page', 'date:']):
+                    # Only count as header-like if no metadata patterns
+                    if not has_metadata_pattern:
                         header_like_cells += 1
+
+        # Reject rows with metadata patterns
+        if has_metadata_pattern:
+            return False
 
         # Need at least 2 header-like cells
         if header_like_cells < 2:
@@ -467,8 +525,8 @@ class ExcelTableDetector:
         preserve_summary: bool = False
     ) -> Tuple[List[Any], Dict[str, Any]]:
         """
-        Filter data rows intelligently, removing metadata and empty rows
-        while preserving summary rows if requested.
+        Filter data rows to remove only empty rows and detect summary rows.
+        NOTE: After headers are found, we should NOT filter sparse data rows.
 
         Args:
             all_rows: All rows including headers
@@ -487,8 +545,6 @@ class ExcelTableDetector:
             'data_end_row': None
         }
 
-        expected_columns = len(headers)
-
         for row_idx, row in enumerate(all_rows):
             # Skip header row (assumed to be first)
             if row_idx == 0:
@@ -501,42 +557,19 @@ class ExcelTableDetector:
                 # Handle openpyxl row objects
                 non_empty_count = sum(1 for cell in row if cell.value and str(cell.value).strip())
 
-            # Skip completely empty rows
+            # Skip only completely empty rows
             if non_empty_count == 0:
                 metadata['removed_empty'] += 1
                 continue
 
-            # Check if this is a sparse row (less than 80% filled)
-            fill_ratio = non_empty_count / expected_columns if expected_columns > 0 else 0
+            # After headers are found, keep ALL non-empty data rows (even sparse ones)
+            # Only check for summary rows if requested
+            if preserve_summary and self._is_summary_row_simple(row):
+                metadata['summary_rows_found'] += 1
+                metadata['data_end_row'] = len(filtered_rows)  # Mark where data ends
 
-            if fill_ratio < 0.8:
-                # For early rows, be more lenient (might be sub-headers)
-                if row_idx <= 3 and fill_ratio >= 0.3:
-                    # Check if it looks like a sub-header or metadata
-                    if self._looks_like_metadata_row(row, headers):
-                        metadata['removed_metadata'] += 1
-                        continue
-                    else:
-                        # Keep it as potential sub-header
-                        filtered_rows.append(row)
-                elif fill_ratio < 0.3:
-                    # Very sparse row - likely metadata or empty
-                    metadata['removed_sparse'] += 1
-                    continue
-                else:
-                    # Medium sparse - check content
-                    if self._looks_like_data_row(row):
-                        filtered_rows.append(row)
-                    else:
-                        metadata['removed_sparse'] += 1
-                        continue
-            else:
-                # Well-filled row - check if it's a summary row
-                if preserve_summary and self._is_summary_row_simple(row):
-                    metadata['summary_rows_found'] += 1
-                    metadata['data_end_row'] = len(filtered_rows)  # Mark where data ends
-
-                filtered_rows.append(row)
+            # Keep the row - we don't filter sparse data rows after headers are found
+            filtered_rows.append(row)
 
         return filtered_rows, metadata
 
