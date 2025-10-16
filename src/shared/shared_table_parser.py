@@ -162,18 +162,30 @@ class S3TableParser:
                 id_hash_counts = {}
 
                 for row in data_rows:
-                    if any(cell.strip() for cell in row):  # Skip empty rows
-                        row_dict = {}
-                        for i, header in enumerate(clean_headers):
-                            cell_value = row[i] if i < len(row) else ""
-                            row_dict[header] = str(cell_value).strip() if cell_value else ""
-                        temp_rows.append(row_dict)
+                    # Count non-empty cells in this row
+                    non_empty_count = sum(1 for cell in row if cell and str(cell).strip())
+                    # Skip if this row has less than 80% of expected columns filled
+                    # (likely a header or metadata row accidentally included)
+                    expected_columns = len(clean_headers)
+                    if non_empty_count == 0:
+                        continue  # Skip completely empty rows
+                    elif non_empty_count < expected_columns * 0.8:
+                        # This might be a partial header row or metadata - check if it's significantly incomplete
+                        if non_empty_count < max(2, expected_columns * 0.3):
+                            self.logger.debug(f"Skipping sparse row with only {non_empty_count}/{expected_columns} non-empty cells")
+                            continue
 
-                        # Generate ID-based hash to detect duplicates
-                        id_hash = generate_row_key(row_dict, primary_keys=id_fields)
-                        if id_hash not in id_hash_counts:
-                            id_hash_counts[id_hash] = 0
-                        id_hash_counts[id_hash] += 1
+                    row_dict = {}
+                    for i, header in enumerate(clean_headers):
+                        cell_value = row[i] if i < len(row) else ""
+                        row_dict[header] = str(cell_value).strip() if cell_value else ""
+                    temp_rows.append(row_dict)
+
+                    # Generate ID-based hash to detect duplicates
+                    id_hash = generate_row_key(row_dict, primary_keys=id_fields)
+                    if id_hash not in id_hash_counts:
+                        id_hash_counts[id_hash] = 0
+                    id_hash_counts[id_hash] += 1
 
                 # Second pass: assign row keys (ID hash for unique, full hash for duplicates)
                 for row_dict in temp_rows:
@@ -196,11 +208,21 @@ class S3TableParser:
             else:
                 # No id_fields - just use full row hash for all rows
                 for row in data_rows:
-                    if any(cell.strip() for cell in row):  # Skip empty rows
-                        row_dict = {}
-                        for i, header in enumerate(clean_headers):
-                            cell_value = row[i] if i < len(row) else ""
-                            row_dict[header] = str(cell_value).strip() if cell_value else ""
+                    # Count non-empty cells in this row
+                    non_empty_count = sum(1 for cell in row if cell and str(cell).strip())
+                    expected_columns = len(clean_headers)
+                    if non_empty_count == 0:
+                        continue  # Skip completely empty rows
+                    elif non_empty_count < expected_columns * 0.8:
+                        # This might be a partial header row or metadata - check if it's significantly incomplete
+                        if non_empty_count < max(2, expected_columns * 0.3):
+                            self.logger.debug(f"Skipping sparse row with only {non_empty_count}/{expected_columns} non-empty cells")
+                            continue
+
+                    row_dict = {}
+                    for i, header in enumerate(clean_headers):
+                        cell_value = row[i] if i < len(row) else ""
+                        row_dict[header] = str(cell_value).strip() if cell_value else ""
 
                         # Generate full row hash
                         if generate_row_key:
@@ -292,11 +314,21 @@ class S3TableParser:
                 temp_rows = []
                 temp_formulas = []
                 for row_idx, row in enumerate(data_rows):
-                    if row and any(cell is not None for cell in row):  # Skip empty rows
-                        row_dict = {}
-                        formula_dict = {} if extract_formulas else None
+                    # Count non-empty cells in this row
+                    non_empty_count = sum(1 for cell in row if cell is not None and str(cell).strip())
+                    expected_columns = len(clean_headers)
+                    if non_empty_count == 0:
+                        continue  # Skip completely empty rows
+                    elif non_empty_count < expected_columns * 0.8:
+                        # This might be a partial header row or metadata - check if it's significantly incomplete
+                        if non_empty_count < max(2, expected_columns * 0.3):
+                            self.logger.debug(f"Skipping sparse Excel row with only {non_empty_count}/{expected_columns} non-empty cells")
+                            continue
 
-                        for i, header in enumerate(clean_headers):
+                    row_dict = {}
+                    formula_dict = {} if extract_formulas else None
+
+                    for i, header in enumerate(clean_headers):
                             cell_value = row[i] if i < len(row) else None
                             row_dict[header] = str(cell_value).strip() if cell_value is not None else ""
 
