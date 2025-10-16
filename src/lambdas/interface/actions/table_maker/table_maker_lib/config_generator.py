@@ -84,9 +84,14 @@ class ConfigGenerator:
             result['config'] = config
             result['success'] = True
 
+            # Count ID vs research columns from the config
+            id_count = sum(1 for t in config.get('validation_targets', []) if t.get('importance') == 'ID')
+            research_count = len(config.get('validation_targets', [])) - id_count
+
             logger.info(
                 f"Successfully generated config with "
-                f"{len(config['validation_targets'])} validation targets and "
+                f"{len(config['validation_targets'])} validation targets "
+                f"({id_count} ID columns + {research_count} research columns) and "
                 f"{len(config.get('search_groups', []))} search groups"
             )
 
@@ -141,6 +146,7 @@ class ConfigGenerator:
                 'notes': f"Identification column: {col['name']}",
                 'is_identification': True  # Extra flag for clarity
             })
+            logger.info(f"Added ID column to validation_targets: {col['name']}")
 
         # Then add research columns for actual validation
         research_targets = self._create_validation_targets(
@@ -356,8 +362,9 @@ This configuration was automatically generated from a table structure created th
 an interactive conversation. The validation targets and search groups are organized
 based on the importance levels and data types specified during table design.
 
-Identification columns are not included in validation targets as they represent
-the core data being researched, not fields to be validated.
+Identification columns are included in validation targets with importance='ID' for
+row key generation but are not actively validated as they represent the core
+data being researched.
 """
 
         return notes.strip()
@@ -389,10 +396,11 @@ the core data being researched, not fields to be validated.
             if 'search_group' not in target:
                 errors.append(f"Validation target {idx} missing 'search_group' field")
 
-            # Check that search_group references valid group
+            # Check that search_group references valid group (0 is valid for ID columns)
             group_id = target.get('search_group')
             valid_groups = [g['group_id'] for g in config.get('search_groups', [])]
-            if group_id not in valid_groups:
+            # Group 0 is valid for ID columns that don't need validation
+            if group_id != 0 and group_id not in valid_groups:
                 errors.append(
                     f"Validation target '{target.get('column')}' references "
                     f"invalid search_group {group_id}"
