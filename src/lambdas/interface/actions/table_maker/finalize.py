@@ -522,8 +522,17 @@ Ensure variety and relevance to the research domain.
         async def generate_config():
             """Generate validation configuration in parallel"""
             try:
-                # NO WEBSOCKET UPDATES from config generation to avoid race conditions
-                logger.info(f"[TABLE_FINALIZE] Starting config generation (no WebSocket updates)")
+                logger.info(f"[TABLE_FINALIZE] Starting config generation with WebSocket updates")
+
+                # Create websocket callback for config generation
+                def config_websocket_callback(message):
+                    """Send WebSocket updates from config generation"""
+                    if websocket_client and session_id:
+                        try:
+                            websocket_client.send_to_session(session_id, message)
+                            logger.info(f"[TABLE_FINALIZE] Config generation sent WebSocket: {message.get('status', 'no status')}")
+                        except Exception as e:
+                            logger.warning(f"[TABLE_FINALIZE] Failed to send config WebSocket update: {e}")
 
                 # Extract identification columns
                 identification_columns = [
@@ -573,7 +582,7 @@ Ensure variety and relevance to the research domain.
 
                 # NO WEBSOCKET UPDATE - avoid race condition with table generation
 
-                # Call existing handle_generate_config_unified() with enhanced payload
+                # Call existing handle_generate_config_unified() with enhanced payload and websocket callback
                 config_generation_payload = {
                     'email': email,
                     'session_id': session_id,
@@ -583,7 +592,8 @@ Ensure variety and relevance to the research domain.
                 }
 
                 config_result = await handle_generate_config_unified(
-                    config_generation_payload
+                    config_generation_payload,
+                    websocket_callback=config_websocket_callback
                 )
 
                 if not config_result.get('success'):

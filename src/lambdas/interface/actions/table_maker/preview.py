@@ -354,7 +354,10 @@ def _generate_preview_table(conversation_state: Dict[str, Any],
         # Extract table structure from conversation state
         current_proposal = conversation_state.get('current_proposal', {})
         columns = current_proposal.get('columns', [])
-        sample_rows = current_proposal.get('sample_rows', [])
+        # IMPORTANT: current_proposal.rows contains the proposed_rows object from LLM schema
+        # which has sample_rows and additional_rows inside it
+        rows_data = current_proposal.get('rows', {})
+        sample_rows = rows_data.get('sample_rows', [])
 
         if not columns:
             return {
@@ -457,11 +460,25 @@ def _generate_future_ids(conversation_state: Dict[str, Any],
                         columns: List[Dict[str, Any]],
                         config: Dict[str, Any]) -> List[Dict[str, str]]:
     """
-    Generate future ID combinations list (20 rows worth).
+    Get future ID combinations from LLM response additional_rows.
+
+    The LLM already provides these in the additional_rows field of proposed_rows.
 
     Returns list of dictionaries with ID column values.
     """
     try:
+        # First, check if we already have additional_rows from the LLM response
+        current_proposal = conversation_state.get('current_proposal', {})
+        rows_data = current_proposal.get('rows', {})
+        additional_rows = rows_data.get('additional_rows', [])
+
+        if additional_rows:
+            logger.info(f"[PREVIEW_GENERATE] Using {len(additional_rows)} additional rows from LLM response")
+            return additional_rows
+
+        # Fallback: Generate ID combinations using AI if not provided by LLM
+        logger.info("[PREVIEW_GENERATE] No additional_rows from LLM, generating future IDs with AI")
+
         # Get identification columns
         id_columns = [col for col in columns if col.get('is_identification', False)]
 
