@@ -298,18 +298,7 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
         logger.info(f"Excel S3 key: {excel_s3_key}")
         logger.info(f"Config S3 key: {config_s3_key}")
 
-        # Get accurate row count using shared_table_parser (robust empty row handling)
-        logger.info(f"Using shared_table_parser to get accurate row count")
-        table_parser = S3TableParser()
-        parsed_data = table_parser.parse_s3_table(S3_CACHE_BUCKET, excel_s3_key)
-        accurate_total_rows = parsed_data['total_rows']
-        logger.info(f"Accurate row count from shared_table_parser: {accurate_total_rows}")
-
-        # Download Excel file from S3
-        excel_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=excel_s3_key)
-        excel_content = excel_response['Body'].read()
-        
-        # Download config file from S3
+        # Download config file from S3 FIRST to extract ID fields
         config_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=config_s3_key)
         config_data = json.loads(config_response['Body'].read().decode('utf-8'))
         
@@ -322,7 +311,53 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
                 elif 'name' in target and 'column' not in target:
                     target['column'] = target['name']
                 # Keep both fields for backward compatibility
-        
+
+        # Get ID fields from config for row key generation - BEFORE parsing table
+        id_fields = []
+        logger.info("Searching for ID fields in validation targets...")
+        for i, target in enumerate(config_data.get('validation_targets', [])):
+            importance = target.get('importance', '')
+            logger.debug(f"Target {i}: importance='{importance}', column='{target.get('column')}', name='{target.get('name')}'")
+            if importance.upper() == 'ID':
+                # Support both 'name' and 'column' fields
+                field_name = target.get('name') or target.get('column')
+                if field_name and field_name not in id_fields:
+                    id_fields.append(field_name)
+                    logger.info(f"Found ID field: {field_name}")
+                else:
+                    logger.warning(f"ID target found but no field name: {target}")
+            else:
+                logger.debug(f"Target '{target.get('column')}' has importance '{importance}' (not ID)")
+
+        # Check generation_metadata.identification_columns (table maker configs) if no ID fields found
+        if not id_fields and config_data.get('generation_metadata', {}).get('identification_columns'):
+            id_fields = config_data['generation_metadata']['identification_columns']
+            logger.info(f"Found ID fields in generation_metadata: {id_fields}")
+
+        # If no ID fields found, try to use SimplifiedSchemaValidator to determine primary keys
+        if not id_fields:
+            try:
+                validator = SimplifiedSchemaValidator(config_data)
+                id_fields = validator.primary_key
+                logger.info(f"Using primary keys from SimplifiedSchemaValidator: {id_fields}")
+            except ImportError:
+                logger.warning("SimplifiedSchemaValidator not available in deployment package")
+            except Exception as e:
+                logger.warning(f"Could not use SimplifiedSchemaValidator: {e}")
+
+        logger.info(f"ID fields for row key generation: {id_fields}")
+
+        # Parse table with ID fields to get rows with correct row keys
+        logger.info(f"Using shared_table_parser with id_fields to parse table")
+        table_parser = S3TableParser()
+        parsed_data = table_parser.parse_s3_table(S3_CACHE_BUCKET, excel_s3_key, id_fields=id_fields)
+        accurate_total_rows = parsed_data['total_rows']
+        logger.info(f"Accurate row count from shared_table_parser: {accurate_total_rows}")
+
+        # Download Excel file from S3 (still needed for format detection)
+        excel_response = s3_client.get_object(Bucket=S3_CACHE_BUCKET, Key=excel_s3_key)
+        excel_content = excel_response['Body'].read()
+
         # Detect file type and load data accordingly
         # Check if this is a CSV file and convert to Excel format if needed
         original_file_type = "Excel"
@@ -434,107 +469,25 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             max_process_rows = min(preview_max_rows, total_rows)
         else:
             max_process_rows = min(max_rows, total_rows) if max_rows else total_rows
-        
+
         logger.info(f"Processing {max_process_rows} rows from {original_file_type} (total available: {total_rows})")
-        
-        # Get ID fields from config for row key generation
-        id_fields = []
-        logger.info("Searching for ID fields in validation targets...")
-        for i, target in enumerate(config_data.get('validation_targets', [])):
-            importance = target.get('importance', '')
-            logger.debug(f"Target {i}: importance='{importance}', column='{target.get('column')}', name='{target.get('name')}'")
-            if importance.upper() == 'ID':
-                # Support both 'name' and 'column' fields
-                field_name = target.get('name') or target.get('column')
-                if field_name and field_name not in id_fields:
-                    id_fields.append(field_name)
-                    logger.info(f"Found ID field: {field_name}")
-                else:
-                    logger.warning(f"ID target found but no field name: {target}")
-            else:
-                logger.debug(f"Target '{target.get('column')}' has importance '{importance}' (not ID)")
 
-        # Check generation_metadata.identification_columns (table maker configs) if no ID fields found
-        if not id_fields and config_data.get('generation_metadata', {}).get('identification_columns'):
-            id_fields = config_data['generation_metadata']['identification_columns']
-            logger.info(f"Found ID fields in generation_metadata: {id_fields}")
+        # Use rows from parsed_data which already have correct _row_key from shared_table_parser
+        # The shared_table_parser already implements the hybrid row key generation:
+        # - ID hash for unique rows
+        # - Full-row hash for duplicates
+        rows_from_parser = parsed_data.get('data', [])
 
-        # If no ID fields found, try to use SimplifiedSchemaValidator to determine primary keys
-        if not id_fields:
-            try:
-                validator = SimplifiedSchemaValidator(config_data)
-                id_fields = validator.primary_key
-                logger.info(f"Using primary keys from SimplifiedSchemaValidator: {id_fields}")
-            except ImportError:
-                logger.warning("SimplifiedSchemaValidator not available in deployment package")
-            except Exception as e:
-                logger.warning(f"Could not use SimplifiedSchemaValidator: {e}")
-        
-        logger.info(f"ID fields for row key generation: {id_fields}")
-        
-        # Process data rows using Excel format (works for both original Excel and converted CSV)
-        # Extract all rows first, then apply hybrid hashing
-        excel_rows = []
-        for row_idx in range(2, min(2 + max_process_rows, worksheet.max_row + 1)):
-            row_data = {}
+        # Limit rows for preview mode or max_rows
+        rows = rows_from_parser[:max_process_rows]
 
-            # Extract cell values
-            for col_idx, header in enumerate(headers):
-                if header:  # Skip empty headers
-                    cell_value = worksheet.cell(row=row_idx, column=col_idx + 1).value
-                    row_data[header] = str(cell_value) if cell_value is not None else ""
+        logger.info(f"Using {len(rows)} rows from shared_table_parser (already have correct _row_key with hybrid deduplication)")
 
-            # Debug: Log first row's data to see what we're getting
-            if row_idx == 2:  # First data row
-                logger.info(f"First row data extracted: {json.dumps(row_data)}")
-                logger.info(f"Looking for ID fields: {id_fields}")
-                for id_field in id_fields:
-                    logger.info(f"  {id_field}: '{row_data.get(id_field, 'NOT FOUND')}'")
-
-            excel_rows.append(row_data)
-
-        # HYBRID ROW KEY GENERATION (matches async validation flow)
-        # 1. Try ID-field hashing first (for history matching)
-        # 2. For duplicates, use full-row hashing (to distinguish them)
-        id_hash_counts = {}  # Track duplicate ID hashes
-
-        # First pass: Generate ID-field hashes and detect duplicates
-        for row_idx, row_data in enumerate(excel_rows):
-            # Generate ID-field hash
-            id_hash = generate_row_key(row_data, primary_keys=id_fields if id_fields else None)
-
-            if id_hash not in id_hash_counts:
-                id_hash_counts[id_hash] = []
-            id_hash_counts[id_hash].append(row_idx)
-
-        # Second pass: Assign final row keys (ID-hash or full-row hash for duplicates)
-        for row_idx, row_data in enumerate(excel_rows):
-            id_hash = generate_row_key(row_data, primary_keys=id_fields if id_fields else None)
-
-            # If this ID hash appears multiple times, use full-row hash
-            if len(id_hash_counts[id_hash]) > 1:
-                row_key = generate_row_key(row_data, primary_keys=None)  # Full-row hash
-                logger.debug(f"Row {row_idx}: Duplicate ID detected, using full-row hash: {row_key[:8]}...")
-            else:
-                row_key = id_hash  # Use ID-field hash
-                logger.debug(f"Row {row_idx}: Using ID-field hash: {row_key[:8]}...")
-
-            row_data['_row_key'] = row_key
-            rows.append(row_data)
-
-        # Log duplicate summary
-        duplicate_id_count = sum(1 for count_list in id_hash_counts.values() if len(count_list) > 1)
-        total_duplicate_rows = sum(len(count_list) for count_list in id_hash_counts.values() if len(count_list) > 1)
-        if duplicate_id_count > 0:
-            logger.info(f"[PREVIEW_HYBRID_HASH] Found {duplicate_id_count} duplicate ID groups ({total_duplicate_rows} total rows)")
-            logger.info(f"[PREVIEW_HYBRID_HASH] Duplicate rows will use full-row hashing")
-        else:
-            logger.info(f"[PREVIEW_HYBRID_HASH] No duplicate IDs detected, all rows using ID-field hashing")
-        
-        # Show sample row data to understand what keys will be generated
+        # Debug: Show sample row data to verify row keys are present
         if rows and len(rows) > 0:
             sample_row = rows[0]
             logger.info("Sample row data for first row:")
+            logger.info(f"  _row_key: {sample_row.get('_row_key', 'NOT FOUND')[:16]}...")
             for id_field in id_fields:
                 value = sample_row.get(id_field, 'NOT FOUND')
                 logger.info(f"  {id_field}: {value}")
