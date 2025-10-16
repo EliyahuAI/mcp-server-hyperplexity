@@ -10,10 +10,64 @@ import json
 import logging
 import os
 import tempfile
+import time
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
+from functools import wraps
+from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
+
+def retry_s3_operation(max_attempts=3, initial_delay=2.0, backoff_factor=2.0):
+    """
+    Retry decorator for S3 operations with exponential backoff.
+
+    Args:
+        max_attempts: Maximum number of retry attempts (default: 3)
+        initial_delay: Initial delay in seconds before first retry (default: 2.0)
+        backoff_factor: Multiplier for delay between retries (default: 2.0)
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            delay = initial_delay
+            last_exception = None
+
+            for attempt in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except ClientError as e:
+                    error_code = e.response.get('Error', {}).get('Code', '')
+
+                    # Only retry on 404 (NoSuchKey) errors
+                    if error_code == '404' or error_code == 'NoSuchKey':
+                        last_exception = e
+
+                        if attempt < max_attempts - 1:
+                            logger.warning(
+                                f"S3 operation failed with 404 (attempt {attempt + 1}/{max_attempts}). "
+                                f"Retrying in {delay:.1f} seconds..."
+                            )
+                            time.sleep(delay)
+                            delay *= backoff_factor
+                        else:
+                            logger.error(
+                                f"S3 operation failed after {max_attempts} attempts. "
+                                f"File may not exist or is still being created."
+                            )
+                    else:
+                        # For other errors, don't retry - re-raise immediately
+                        raise
+                except Exception as e:
+                    # For non-ClientError exceptions, don't retry
+                    raise
+
+            # If we exhausted all retries, raise the last exception
+            if last_exception:
+                raise last_exception
+
+        return wrapper
+    return decorator
 
 # Try to import openpyxl
 try:
@@ -65,6 +119,15 @@ class S3TableParser:
 
         return normalized
 
+    @retry_s3_operation(max_attempts=3, initial_delay=2.0, backoff_factor=2.0)
+    def _check_s3_object_exists(self, bucket: str, key: str) -> bool:
+        """
+        Check if an S3 object exists with retry logic.
+        Wrapper method to apply retry decorator.
+        """
+        self.s3_client.head_object(Bucket=bucket, Key=key)
+        return True
+
     def _get_preferred_file_key(self, bucket: str, key: str) -> Tuple[str, bool]:
         """
         Check if a focused/cleaned version exists and return the preferred key.
@@ -87,12 +150,16 @@ class S3TableParser:
         primary_cleaned_key = f"results/{base_name}{extension}"
 
         try:
-            # Check if primary cleaned version exists
-            self.s3_client.head_object(Bucket=bucket, Key=primary_cleaned_key)
+            # Check if primary cleaned version exists (with retry logic)
+            self._check_s3_object_exists(bucket, primary_cleaned_key)
             self.logger.info(f"Found primary cleaned version: {primary_cleaned_key}")
             return primary_cleaned_key, True
-        except self.s3_client.exceptions.NoSuchKey:
-            pass
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            if error_code == '404' or error_code == 'NoSuchKey':
+                pass
+            else:
+                raise
 
         # Check for other focused patterns as fallback
         focused_patterns = [
@@ -102,15 +169,29 @@ class S3TableParser:
 
         for focused_key in focused_patterns:
             try:
-                self.s3_client.head_object(Bucket=bucket, Key=focused_key)
+                # Check with retry logic
+                self._check_s3_object_exists(bucket, focused_key)
                 self.logger.info(f"Found focused version: {focused_key}")
                 return focused_key, True
-            except self.s3_client.exceptions.NoSuchKey:
-                continue
+            except ClientError as e:
+                error_code = e.response.get('Error', {}).get('Code', '')
+                if error_code == '404' or error_code == 'NoSuchKey':
+                    continue
+                else:
+                    raise
 
         # No focused version found, use original
         self.logger.debug(f"No cleaned version found for {key}, using original")
         return key, False
+
+    @retry_s3_operation(max_attempts=3, initial_delay=2.0, backoff_factor=2.0)
+    def _download_s3_object(self, bucket: str, key: str) -> bytes:
+        """
+        Download S3 object with retry logic.
+        Wrapper method to apply retry decorator.
+        """
+        response = self.s3_client.get_object(Bucket=bucket, Key=key)
+        return response['Body'].read()
 
     def parse_s3_table(self, bucket: str, key: str, sheet_name: Optional[str] = None,
                       extract_formulas: bool = False, id_fields: Optional[List[str]] = None,
@@ -138,10 +219,9 @@ class S3TableParser:
             if use_focused:
                 actual_key, is_focused = self._get_preferred_file_key(bucket, key)
 
-            # Download file from S3
+            # Download file from S3 (with retry logic)
             self.logger.info(f"Downloading table from S3: s3://{bucket}/{actual_key}")
-            response = self.s3_client.get_object(Bucket=bucket, Key=actual_key)
-            file_content = response['Body'].read()
+            file_content = self._download_s3_object(bucket, actual_key)
 
             # Keep track of original content if we'll be cleaning
             original_content = file_content if save_cleaned and not is_focused else None
@@ -1586,9 +1666,8 @@ class S3TableParser:
             # Load timestamps from Validation Record sheet
             timestamps = self._load_validation_timestamps(bucket, key)
 
-            # Create temporary file to load the Excel workbook
-            response = self.s3_client.get_object(Bucket=bucket, Key=key)
-            file_content = response['Body'].read()
+            # Create temporary file to load the Excel workbook (with retry logic)
+            file_content = self._download_s3_object(bucket, key)
 
             with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
                 temp_file.write(file_content)
@@ -1805,9 +1884,8 @@ class S3TableParser:
             }
         """
         try:
-            # Download file to read Validation Record sheet
-            response = self.s3_client.get_object(Bucket=bucket, Key=key)
-            file_content = response['Body'].read()
+            # Download file to read Validation Record sheet (with retry logic)
+            file_content = self._download_s3_object(bucket, key)
 
             with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
                 temp_file.write(file_content)
