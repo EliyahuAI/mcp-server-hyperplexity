@@ -4874,24 +4874,28 @@
                         const message = data.status || data.message || null;
                         updateThinkingProgress(latestCardId, data.progress, message);
 
-                        // Check if this is table generation completion
-                        if (data.progress === 100 && message && message.includes('Table generation complete')) {
+                        // Check if this is configuration generation completion
+                        if (data.progress === 100 && message && (message.includes('Configuration generated') || message.includes('Table generation complete'))) {
                             // Update global state
                             if (data.session_id) globalState.sessionId = data.session_id;
                             if (data.table_filename) globalState.excelFileName = data.table_filename;
                             globalState.excelFileUploaded = true;
 
                             // Complete the thinking indicator
-                            completeThinkingInCard(latestCardId, 'Table generation complete!');
+                            completeThinkingInCard(latestCardId, 'Configuration generation complete!');
 
-                            // Show success message
-                            showMessage(`${latestCardId}-messages`, 'Table generated successfully! Creating preview card...', 'success');
+                            // For Table Maker flow, validation is handled by the card-specific handler
+                            // For legacy flow, create preview card
+                            if (!message.includes('Configuration generated')) {
+                                // Show success message
+                                showMessage(`${latestCardId}-messages`, 'Table generated successfully! Creating preview card...', 'success');
 
-                            // Create new preview card (same as config generation flow)
-                            setTimeout(() => {
-                                globalState.activePreviewCard = null;
-                                createPreviewCard();
-                            }, 800);
+                                // Create new preview card (legacy flow only)
+                                setTimeout(() => {
+                                    globalState.activePreviewCard = null;
+                                    createPreviewCard();
+                                }, 800);
+                            }
                         }
                     }
                     return; // Progress messages don't need further routing to completion handlers
@@ -8851,7 +8855,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 // Show thinking indicators
                 showThinkingInCard(cardId, 'Preparing preview...', true);
                 // Start dummy progress animation for preview
-                startDummyProgress(cardId, 80000); // 80 seconds estimated for preview
+                startDummyProgress(cardId, 90000); // 90 seconds estimated for preview
                 // Progress routed to card level;
 
                 try {
@@ -10836,18 +10840,20 @@ Please provide any additional context, or simply proceed to generate your initia
                 }
             }
 
-            // Add AI message when complete
-            if (data.progress === 100 && data.ai_message) {
-                completeThinkingInCard(cardId, 'Response received');
-                tableMakerState.messages.push({ role: 'ai', content: data.ai_message });
-                addMessageToTableChat(cardId, 'ai', data.ai_message);
+            // Add AI message when complete (handle both old and new schema)
+            const aiMessage = data.ai_message || data.follow_up_question;
+            const isReady = data.ready_to_generate || data.trigger_preview;
+            const isGenerating = data.is_generating;
+            const previewGenerated = data.preview_generated;
 
-                // Store reasoning and clarifying questions for refinement
-                if (data.reasoning) {
-                    tableMakerState.reasoning = data.reasoning;
-                }
-                if (data.clarifying_questions) {
-                    tableMakerState.clarifying_questions = data.clarifying_questions;
+            if (data.progress === 100 && aiMessage && !isGenerating && !previewGenerated) {
+                completeThinkingInCard(cardId, 'Response received');
+                tableMakerState.messages.push({ role: 'ai', content: aiMessage });
+                addMessageToTableChat(cardId, 'ai', aiMessage);
+
+                // Store table name if provided
+                if (data.table_name) {
+                    tableMakerState.table_name = data.table_name;
                 }
 
                 // Update subtitle
@@ -10858,14 +10864,60 @@ Please provide any additional context, or simply proceed to generate your initia
                 }
 
                 // Check if ready to generate preview
-                if (data.ready_to_generate) {
-                    // Wait for user to see the response before creating preview card
+                if (isReady && !data.about_to_generate) {
+                    // Interview complete, ready for preview
+                    console.log('[TABLE_MAKER] Interview ready for preview, creating preview card now');
+
+                    // Complete interview card
+                    completeThinkingInCard(cardId, 'Interview complete');
+
+                    // Wait 2 seconds for smooth transition before creating preview card
                     setTimeout(() => {
-                        createTablePreviewCard(data.proposed_table || data.preview_data);
-                    }, 2500); // 2.5s pause to show response before table preview
-                } else {
-                    // Show refinement input
+                        // Create preview card with loading state
+                        const previewCardId = createTablePreviewCard(null, null, data.table_name);
+
+                        // Store preview card ID for later population
+                        tableMakerState.previewCardId = previewCardId;
+
+                        // Register the preview card to receive WebSocket updates
+                        registerCardHandler(previewCardId, ['table_conversation_update'], (wsData, handlerCardId) => {
+                            handleTableConversationUpdate(wsData, handlerCardId);
+                        });
+
+                        // Show progress indicator immediately (messages may already be arriving)
+                        showThinkingInCard(previewCardId, 'Generating preview...', true);
+                    }, 2000);
+                } else if (!isReady) {
+                    // Show refinement input (more conversation needed)
                     showRefinementInput(cardId);
+                }
+            }
+
+            // Handle preview generation complete
+            if (previewGenerated && data.preview_data) {
+                console.log('[TABLE_MAKER] Preview generation complete, populating preview card');
+                console.log('[TABLE_MAKER] preview_data keys:', Object.keys(data.preview_data));
+
+                // Use the stored preview card ID
+                const previewCardId = tableMakerState.previewCardId;
+                console.log('[TABLE_MAKER] Using stored preview card ID:', previewCardId);
+
+                if (previewCardId) {
+                    // Complete the thinking indicator
+                    completeThinkingInCard(previewCardId, 'Preview generated');
+
+                    // Populate the existing preview card with data
+                    showTablePreviewInCard(previewCardId, data.preview_data, data.download_url);
+
+                    // Update card subtitle to table name if provided
+                    const card = document.getElementById(previewCardId);
+                    const cardSubtitle = card?.querySelector('.card-subtitle');
+                    if (cardSubtitle && data.table_name) {
+                        cardSubtitle.textContent = data.table_name;
+                    }
+                } else {
+                    console.log('[TABLE_MAKER] No stored preview card ID, creating new card');
+                    createTablePreviewCard(data.preview_data, data.download_url, data.table_name);
                 }
             }
 
@@ -10967,7 +11019,7 @@ Please provide any additional context, or simply proceed to generate your initia
         }
 
         // Create a new "Table Preview" card
-        function createTablePreviewCard(previewData) {
+        function createTablePreviewCard(previewData, downloadUrl, tableName) {
             const previewCardId = generateCardId();
 
             const content = `
@@ -10979,19 +11031,21 @@ Please provide any additional context, or simply proceed to generate your initia
                 id: previewCardId,
                 icon: '📊',
                 title: 'Table Preview',
-                subtitle: 'Review and refine your table structure',
+                subtitle: tableName || (previewData ? 'Review and refine your table structure' : 'Generating preview...'),
                 content,
                 buttons: []  // Will be added by showTablePreviewInCard
             });
 
-            // Populate the preview
-            showTablePreviewInCard(previewCardId, previewData);
+            // Populate the preview if data is available
+            if (previewData) {
+                showTablePreviewInCard(previewCardId, previewData, downloadUrl);
+            }
 
-            return card;
+            return previewCardId;  // Return the card ID so caller can reference it
         }
 
         // Show table preview in card
-        function showTablePreviewInCard(cardId, previewData) {
+        function showTablePreviewInCard(cardId, previewData, downloadUrl) {
             if (!previewData) return;
 
             const previewContainer = document.getElementById(`${cardId}-preview-container`);
@@ -11107,7 +11161,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 if (chatContainer) {
                     const explanationDiv = document.createElement('div');
                     explanationDiv.className = 'chat-message ai';
-                    explanationDiv.innerHTML = '<strong>Next Steps:</strong><br>• <strong>🔧 Refine Table</strong> - Continue the conversation to adjust rows or columns<br>• <strong>✨ Generate and Validate</strong> - Create the full table and preview validation of the first few rows';
+                    explanationDiv.innerHTML = '<strong>Next Steps:</strong><br>• <strong>🔧 Refine Table</strong> - Continue the conversation to adjust rows or columns<br>• <strong>✨ Validate Table</strong> - Preview Hyperplexity validation of the first few rows';
                     chatContainer.appendChild(explanationDiv);
 
                     // Scroll to bottom
@@ -11125,7 +11179,7 @@ Please provide any additional context, or simply proceed to generate your initia
                             callback: () => showRefinementInput(cardId)
                         },
                         {
-                            text: '✨ Generate & Validate',
+                            text: '✨ Validate Table',
                             variant: 'primary',
                             callback: () => acceptTableAndValidateFromCard(cardId)
                         }
@@ -11205,34 +11259,51 @@ Please provide any additional context, or simply proceed to generate your initia
                 return;
             }
 
-            // Hide buttons to prevent duplicate submissions
-            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-            if (buttonsContainer) buttonsContainer.style.display = 'none';
+            // Complete the preview card
+            completeThinkingInCard(cardId, 'Table accepted');
 
-            showThinkingInCard(cardId, 'Generating table and starting validation...', true);
+            // Create new "Configuration Generation" card
+            const configCardId = generateCardId();
+            const configCard = createCard({
+                id: configCardId,
+                icon: '⚙️',
+                title: 'Configuration Generation',
+                subtitle: tableMakerState.table_name || 'Generating validation configuration...',
+                content: '<div id="' + configCardId + '-messages"></div>',
+                buttons: []
+            });
+
+            // Show progress indicator for config generation
+            showThinkingInCard(configCardId, 'Generating validation configuration...', true);
 
             // Register handler BEFORE fetch to catch early progress messages
-            unregisterCardHandler(cardId);
-            registerCardHandler(cardId, ['progress_update'], (wsData, handlerCardId) => {
+            unregisterCardHandler(configCardId);
+            let validationAutoTriggered = false;  // Prevent duplicate auto-triggers
+            registerCardHandler(configCardId, ['table_finalization_progress'], (wsData, handlerCardId) => {
                 // Progress updates are handled by global progress routing
                 // This handler is just for completion events
-                if (wsData.type === 'progress_update' && wsData.progress === 100) {
+                if (wsData.type === 'table_finalization_progress' && wsData.progress === 100 && !validationAutoTriggered) {
                     const message = wsData.message || wsData.status || '';
 
-                    // Check if this is table generation completion
+                    // Check if this is table/config generation completion
                     if (message.includes('Table generation complete')) {
-                        console.log('[TABLE_FINALIZE_CARD] Table generation complete, preparing validation');
+                        console.log('[CONFIG_CARD] Config generation complete, creating validation card');
+                        validationAutoTriggered = true;  // Set flag to prevent duplicates
 
                         // Update global state
                         if (wsData.session_id) globalState.sessionId = wsData.session_id;
                         if (wsData.table_filename) globalState.excelFileName = wsData.table_filename;
                         globalState.excelFileUploaded = true;
+                        globalState.configLoaded = true;
 
-                        // Wait 800ms then trigger preview validation
+                        // Complete config card
+                        completeThinkingInCard(handlerCardId, 'Configuration generated');
+
+                        // Create Preview Validation card and auto-trigger validation
                         setTimeout(() => {
-                            console.log('[TABLE_FINALIZE_CARD] Triggering preview validation');
-                            triggerPreviewValidation(handlerCardId);
-                        }, 800);
+                            console.log('[CONFIG_CARD] Creating preview validation card');
+                            createPreviewCard();  // This will auto-trigger validation
+                        }, 500);
                     }
                 }
             });

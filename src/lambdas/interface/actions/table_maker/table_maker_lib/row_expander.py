@@ -95,7 +95,8 @@ class RowExpander:
                 schema=schema,
                 model=model,
                 max_tokens=8000,
-  # Slightly higher for more diverse row generation
+                use_cache=True,  # Enable caching for Lambda deployment
+                debug_name="table_maker_row_expansion"
             )
 
             # Check if API call returned a response

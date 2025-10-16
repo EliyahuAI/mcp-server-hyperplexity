@@ -18,6 +18,7 @@ import json
 import logging
 import asyncio
 import io
+import os
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from pathlib import Path
@@ -60,7 +61,8 @@ def title_to_snake_case(title: str) -> str:
 
 async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Generate full table, create config, and run preview validation.
+    Generate validation configuration only (no table completion).
+    Table completion will happen during validation process.
 
     Args:
         event_data: {
@@ -74,11 +76,8 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
     Returns:
         {
             'success': True,
-            'table_csv_key': 's3://...',
-            'validation_csv_key': 's3://...',  # Without column definitions
             'config_key': 's3://...',
-            'config_version': 1,
-            'preview_validation_results': {...}
+            'config_version': 1
         }
     """
     from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
@@ -136,33 +135,21 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
             logger.warning(f"Could not load conversation state (will use preview data for context): {e}")
             # Not fatal - we can work with just the preview data
 
-        # Get preview data from request or load from S3
-        preview_data = event_data.get('table_config')
+        # Always load preview data from conversation state (not from request)
+        # The conversation state has the proper structure with all the data
+        if not conversation_state.get('preview_data'):
+            logger.error(f"No preview data in conversation state")
+            return {
+                'success': False,
+                'error': f'No preview data available. Please try generating the preview again.'
+            }
 
-        if not preview_data:
-            # Fallback: try loading from S3
-            preview_key = f"{session_path}table_maker/preview_{conversation_id}.json"
-            try:
-                response = storage_manager.s3_client.get_object(
-                    Bucket=storage_manager.bucket_name,
-                    Key=preview_key
-                )
-                preview_data = json.loads(response['Body'].read().decode('utf-8'))
-            except Exception as e:
-                logger.error(f"No preview data in request and failed to load from S3: {e}")
-                return {
-                    'success': False,
-                    'error': f'No preview data available. Please try generating the preview again.'
-                }
+        preview_data = conversation_state['preview_data']
+        logger.info(f"Loaded preview data from conversation state with {len(preview_data.get('columns', []))} columns")
 
-        logger.info(f"Using preview data with {len(preview_data.get('columns', []))} columns")
-
-        # Extract table name from conversation state for file naming
-        table_name_title = None
-        if conversation_state.get('current_proposal'):
-            # Get table_name from the LLM response (in title case)
-            ai_response = conversation_state.get('ai_response', {})
-            table_name_title = ai_response.get('table_name')
+        # Extract table name from interview context
+        interview_context = conversation_state.get('interview_context', {})
+        table_name_title = interview_context.get('table_name', '')
 
         # Convert to snake_case for file naming, fallback to session_id if not available
         if table_name_title:
@@ -204,7 +191,7 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                     'type': 'table_finalization_progress',
                     'session_id': session_id,
                     'progress': 5,
-                    'status': f'Starting table and config generation...'
+                    'status': f'Starting configuration generation...'
                 })
             except Exception as e:
                 logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
@@ -222,53 +209,76 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
 
         logger.info(f"Preview data has {len(sample_rows)} sample rows and {len(columns)} columns")
 
-        # CREATE EXCEL FILE FIRST (before parallel operations) using preview rows
-        # This allows config generation to start immediately while table expansion continues
+        # CREATE clean CSV from preview data (WITHOUT column definitions for config generation)
+        # The preview CSV has column definitions which confuse the config lambda
         try:
-            import xlsxwriter
-            # Use descriptive table name for Excel file (store_excel_file will add _input suffix)
-            excel_filename = f"{table_name_snake}.xlsx"
-            excel_path = f"/tmp/{excel_filename}"
+            from .table_maker_lib.table_generator import TableGenerator
+            import csv
 
-            # Write preview rows to Excel
-            workbook = xlsxwriter.Workbook(excel_path)
-            worksheet = workbook.add_worksheet()
+            # Destination: {table_name_snake}_input.csv in main session folder
+            dest_csv_filename = f"{table_name_snake}_input.csv"
+            dest_csv_key = f"{session_path}{dest_csv_filename}"
+            tmp_csv_path = f"/tmp/{dest_csv_filename}"
 
-            # Write headers - use columns if sample_rows is empty
-            if sample_rows:
-                headers = list(sample_rows[0].keys())
-            elif columns:
-                headers = [col['name'] for col in columns]
-            else:
-                raise Exception("No sample rows or columns available to create Excel file")
+            logger.info(f"Creating clean CSV (without definitions) at {tmp_csv_path}")
 
-            # Write header row
-            for col_idx, header in enumerate(headers):
-                worksheet.write(0, col_idx, header)
+            # Get all rows (sample rows + future ID rows)
+            all_rows = list(sample_rows)
 
-            # Write sample data rows (if any)
-            if sample_rows:
-                for row_idx, row_data in enumerate(sample_rows, start=1):
-                    for col_idx, header in enumerate(headers):
-                        worksheet.write(row_idx, col_idx, row_data.get(header, ''))
+            # Add future_ids as rows with only ID columns populated
+            if future_ids:
+                for future_id in future_ids:
+                    partial_row = {}
+                    for col in columns:
+                        col_name = col['name']
+                        if col.get('is_identification', False) and col_name in future_id:
+                            partial_row[col_name] = future_id[col_name]
+                        else:
+                            partial_row[col_name] = ''
+                    all_rows.append(partial_row)
 
-            workbook.close()
+            logger.info(f"Writing CSV with {len(all_rows)} rows ({len(sample_rows)} complete + {len(future_ids)} ID-only)")
 
-            # Store Excel file in S3 (config generation needs this)
-            with open(excel_path, 'rb') as f:
-                excel_content = f.read()
+            # Write clean CSV without column definitions
+            with open(tmp_csv_path, 'w', newline='', encoding='utf-8') as f:
+                if all_rows:
+                    fieldnames = [col['name'] for col in columns]
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(all_rows)
 
-            storage_manager.store_excel_file(
-                email=email,
-                session_id=session_id,
-                file_content=excel_content,
-                filename=excel_filename
+            # Upload to S3
+            with open(tmp_csv_path, 'rb') as f:
+                csv_content = f.read()
+
+            storage_manager.s3_client.put_object(
+                Bucket=storage_manager.bucket_name,
+                Key=dest_csv_key,
+                Body=csv_content,
+                ContentType='text/csv',
+                Metadata={
+                    'session-id': session_id,
+                    'email': email,
+                    'conversation-id': conversation_id,
+                    'source': 'table_maker_preview',
+                    'row-count': str(len(all_rows)),
+                    'column-count': str(len(columns)),
+                    'is-clean': 'true',  # Tell parsers this is already clean
+                    'skip-table-cleaning': 'true'  # Don't apply table cleaning to this file
+                }
             )
 
-            logger.info(f"Created initial Excel file with {len(sample_rows)} preview rows for config generation")
+            logger.info(f"Successfully created clean CSV at {dest_csv_key} for config generation")
+            logger.info(f"File: {dest_csv_filename}, Rows: {len(all_rows)}, Columns: {len(columns)}")
+
+            # Clean up temp file
+            os.unlink(tmp_csv_path)
+
         except Exception as e:
-            logger.error(f"Failed to create initial Excel file: {e}")
-            raise Exception(f"Cannot proceed without Excel file for config generation: {e}")
+            logger.error(f"Failed to create clean CSV: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise Exception(f"Cannot proceed without clean CSV: {e}")
 
         # Define parallel async functions
         async def generate_full_table():
@@ -555,12 +565,12 @@ Ensure variety and relevance to the research domain.
                 raise
 
         async def generate_config():
-            """Generate validation configuration in parallel"""
+            """Generate validation configuration"""
             try:
                 logger.info(f"[TABLE_FINALIZE] Starting config generation with WebSocket updates")
 
-                # Create websocket callback for config generation
-                def config_websocket_callback(message):
+                # Create websocket callback for config generation (must be async)
+                async def config_websocket_callback(message):
                     """Send WebSocket updates from config generation"""
                     if websocket_client and session_id:
                         try:
@@ -626,9 +636,10 @@ Ensure variety and relevance to the research domain.
                     'existing_config': None  # No existing config for new table
                 }
 
+                # The function signature expects positional args
                 config_result = await handle_generate_config_unified(
                     config_generation_payload,
-                    websocket_callback=config_websocket_callback
+                    config_websocket_callback  # Pass as second positional arg, not keyword
                 )
 
                 if not config_result.get('success'):
@@ -651,58 +662,40 @@ Ensure variety and relevance to the research domain.
                 logger.error(f"Failed to generate config: {e}")
                 raise
 
-        # Run table generation and config generation in parallel
-        table_result, config_result = await asyncio.gather(
-            generate_full_table(),
-            generate_config(),
-            return_exceptions=True
-        )
+        # Only run config generation (no table generation)
+        try:
+            config_result = await generate_config()
+        except Exception as config_error:
+            logger.error(f"Config generation failed: {config_error}")
+            return {'success': False, 'error': f'Config generation failed: {str(config_error)}'}
 
-        # Handle results
-        if isinstance(table_result, Exception):
-            logger.error(f"Table generation failed: {table_result}")
-            return {'success': False, 'error': f'Table generation failed: {str(table_result)}'}
-
-        if isinstance(config_result, Exception):
-            logger.error(f"Config generation failed: {config_result}")
-            return {'success': False, 'error': f'Config generation failed: {str(config_result)}'}
-
-        # Extract results
-        all_rows = table_result['all_rows']
-        user_csv_key = table_result['user_csv_key']
-        validation_csv_key = table_result['validation_csv_key']
-        user_csv_filename = table_result['user_csv_filename']
-
+        # Extract config results
         config_version = config_result['config_version']
         config_s3_key = config_result['config_s3_key']
 
-        # FINAL COMPLETION - Both table and config generation are complete
-        logger.info(f"[TABLE_FINALIZE] Both table and config generation complete - sending final WebSocket update")
+        # FINAL COMPLETION - Config generation is complete
+        logger.info(f"[TABLE_FINALIZE] Config generation complete - sending final WebSocket update")
         if websocket_client and session_id:
             try:
                 websocket_client.send_to_session(session_id, {
                     'type': 'table_finalization_progress',
                     'session_id': session_id,
                     'progress': 100,
-                    'status': 'Table generation complete! Ready for validation.'
+                    'status': 'Table generation complete! Ready for validation.',  # Use standard message
+                    'table_filename': f'{table_name_snake}_input.csv'  # Tell frontend the table filename
                 })
             except Exception as e:
                 logger.warning(f"[TABLE_FINALIZE] Failed to send final WebSocket update: {e}")
 
-        # Return comprehensive result
+        # Return simplified result (no table CSVs)
         result = {
             'success': True,
-            'table_csv_key': user_csv_key,
-            'validation_csv_key': validation_csv_key,
             'config_key': config_s3_key,
             'config_version': config_version,
-            'row_count': len(all_rows),
-            'column_count': len(columns),
-            'download_url': storage_manager.generate_presigned_url(user_csv_key, expiration=86400),  # 24 hours
             'conversation_id': conversation_id
         }
 
-        logger.info(f"Table finalization completed successfully: {len(all_rows)} rows, {len(columns)} columns")
+        logger.info(f"Config generation completed successfully for conversation {conversation_id}")
 
         return result
 

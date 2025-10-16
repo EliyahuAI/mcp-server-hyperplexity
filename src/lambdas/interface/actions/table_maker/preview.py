@@ -35,7 +35,7 @@ from interface_lambda.core.s3_manager import generate_presigned_url
 from interface_lambda.utils.helpers import create_response
 
 
-def handle_table_preview_generate(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+async def handle_table_preview_generate(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Generate 3-row preview from conversation state.
 
@@ -93,7 +93,7 @@ def handle_table_preview_generate(event: Dict[str, Any], context: Any) -> Dict[s
         logger.info(f"[PREVIEW_GENERATE] Generating {sample_row_count} sample rows")
 
         # Generate preview using TableGenerator
-        preview_result = _generate_preview_table(
+        preview_result = await _generate_preview_table(
             conversation_state=conversation_state,
             sample_row_count=sample_row_count,
             config=config
@@ -110,12 +110,34 @@ def handle_table_preview_generate(event: Dict[str, Any], context: Any) -> Dict[s
             rows=preview_result['rows']
         )
 
-        # Generate future IDs list (20 rows worth)
-        future_ids = _generate_future_ids(
-            conversation_state=conversation_state,
-            columns=preview_result['columns'],
-            config=config
-        )
+        # Get future IDs - use additional_rows from preview if available, otherwise generate
+        if preview_result.get('additional_rows'):
+            logger.info(f"[PREVIEW_GENERATE] Using {len(preview_result['additional_rows'])} additional rows from conversation handler")
+            future_ids = preview_result['additional_rows']
+        else:
+            logger.info(f"[PREVIEW_GENERATE] No additional_rows from handler, generating future IDs")
+            future_ids = _generate_future_ids(
+                conversation_state=conversation_state,
+                columns=preview_result['columns'],
+                config=config
+            )
+
+        # Combine sample rows with future ID rows for CSV
+        # Sample rows have all columns filled, future ID rows have only ID columns filled (rest empty)
+        all_rows_for_csv = preview_result['rows'].copy()
+
+        # Add future_ids as rows with only ID columns populated, other columns empty
+        for future_id in future_ids:
+            partial_row = {}
+            # Set all columns to empty string
+            for col in preview_result['columns']:
+                partial_row[col['name']] = ''
+            # Fill in the ID column values from future_ids
+            for id_col, id_val in future_id.items():
+                partial_row[id_col] = id_val
+            all_rows_for_csv.append(partial_row)
+
+        logger.info(f"[PREVIEW_GENERATE] Storing CSV with {len(preview_result['rows'])} complete rows + {len(future_ids)} ID-only rows = {len(all_rows_for_csv)} total rows")
 
         # Store preview CSV in S3 with column definitions
         preview_csv_result = _store_preview_csv(
@@ -124,7 +146,7 @@ def handle_table_preview_generate(event: Dict[str, Any], context: Any) -> Dict[s
             session_id=session_id,
             conversation_id=conversation_id,
             columns=preview_result['columns'],
-            rows=preview_result['rows'],
+            rows=all_rows_for_csv,
             include_metadata=True
         )
 
@@ -148,6 +170,16 @@ def handle_table_preview_generate(event: Dict[str, Any], context: Any) -> Dict[s
             'future_ids': future_ids,
             'generated_at': datetime.utcnow().isoformat() + 'Z'
         }
+
+        # Store the current_proposal so refinement can access it
+        conversation_state['current_proposal'] = {
+            'columns': preview_result['columns'],
+            'rows': {
+                'sample_rows': preview_result['rows'],
+                'additional_rows': future_ids
+            }
+        }
+
         _save_conversation_state(storage_manager, email, session_id, conversation_id, conversation_state)
 
         # Update runs database with preview status
@@ -159,11 +191,15 @@ def handle_table_preview_generate(event: Dict[str, Any], context: Any) -> Dict[s
                 status='COMPLETED',
                 end_time=datetime.utcnow().isoformat() + 'Z',
                 metadata={
-                    'preview_rows': len(preview_result['rows']),
-                    'preview_columns': len(preview_result['columns']),
-                    'future_id_count': len(future_ids)
+                    'preview_sample_rows': len(preview_result['rows']),
+                    'preview_id_rows': len(future_ids),
+                    'preview_total_rows': len(all_rows_for_csv),
+                    'preview_columns': len(preview_result['columns'])
                 }
             )
+
+        # Get interview context for display
+        interview_context = conversation_state.get('interview_context', {})
 
         # Prepare response with preview data
         response_data = {
@@ -173,13 +209,20 @@ def handle_table_preview_generate(event: Dict[str, Any], context: Any) -> Dict[s
                 'columns': preview_result['columns'],
                 'sample_rows_transposed': transposed_data,
                 'future_ids': future_ids
-            }
+            },
+            # Include the follow-up question/table proposal from interview
+            'follow_up_question': interview_context.get('follow_up_question', ''),
+            'table_name': interview_context.get('table_name', ''),
+            # Include API response for metrics aggregation
+            'api_response': preview_result.get('api_response'),
+            'model': preview_result.get('model'),
+            'processing_time': preview_result.get('processing_time', 0.0)
         }
 
         if download_url:
             response_data['download_url'] = download_url
 
-        logger.info(f"[PREVIEW_GENERATE] Preview generated successfully: {len(preview_result['rows'])} rows, {len(preview_result['columns'])} columns")
+        logger.info(f"[PREVIEW_GENERATE] Preview generated successfully: {len(all_rows_for_csv)} total rows ({len(preview_result['rows'])} complete + {len(future_ids)} ID-only), {len(preview_result['columns'])} columns")
 
         return create_response(200, response_data)
 
@@ -332,7 +375,7 @@ def _get_default_config() -> Dict[str, Any]:
     }
 
 
-def _generate_preview_table(conversation_state: Dict[str, Any],
+async def _generate_preview_table(conversation_state: Dict[str, Any],
                            sample_row_count: int,
                            config: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -347,17 +390,50 @@ def _generate_preview_table(conversation_state: Dict[str, Any],
     }
     """
     try:
-        # Import TableGenerator from table_maker standalone code
-        sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..', 'table_maker', 'src'))
-        from table_generator import TableGenerator
+        # Import TableGenerator from packaged table_maker_lib
+        from .table_maker_lib.table_generator import TableGenerator
 
-        # Extract table structure from conversation state
+        # Check if we're using new interview schema or old conversation schema
+        interview_context = conversation_state.get('interview_context', {})
         current_proposal = conversation_state.get('current_proposal', {})
-        columns = current_proposal.get('columns', [])
-        # IMPORTANT: current_proposal.rows contains the proposed_rows object from LLM schema
-        # which has sample_rows and additional_rows inside it
-        rows_data = current_proposal.get('rows', {})
-        sample_rows = rows_data.get('sample_rows', [])
+
+        # If we have interview context but no current_proposal,
+        # use the original TableConversationHandler to generate everything
+        if interview_context and not current_proposal:
+            logger.info(f"[PREVIEW_GENERATE] Using interview conversation to generate full table structure")
+            logger.info(f"[PREVIEW_GENERATE]   - table_name: {interview_context.get('table_name', 'N/A')}")
+            logger.info(f"[PREVIEW_GENERATE]   - context_web_research: {interview_context.get('context_web_research', [])}")
+
+            # Use the original conversation handler to generate columns + rows
+            full_table = await _generate_table_from_conversation(
+                conversation_state=conversation_state,
+                config=config
+            )
+
+            if not full_table['success']:
+                return {
+                    'success': False,
+                    'error': f"Failed to generate table: {full_table.get('error', 'Unknown error')}"
+                }
+
+            return {
+                'success': True,
+                'columns': full_table['columns'],
+                'rows': full_table['rows'],
+                'additional_rows': full_table.get('additional_rows', [])
+            }
+
+        # If we have a current_proposal from refinement, use it
+        if current_proposal:
+            logger.info(f"[PREVIEW_GENERATE] Using existing proposal from conversation (refinement flow)")
+            columns = current_proposal.get('columns', [])
+            # IMPORTANT: current_proposal.rows contains the proposed_rows object from LLM schema
+            # which has sample_rows and additional_rows inside it
+            rows_data = current_proposal.get('rows', {})
+            sample_rows = rows_data.get('sample_rows', [])
+        else:
+            columns = []
+            sample_rows = []
 
         if not columns:
             return {
@@ -397,15 +473,154 @@ def _generate_preview_table(conversation_state: Dict[str, Any],
         }
 
 
+async def _generate_table_from_conversation(
+    conversation_state: Dict[str, Any],
+    config: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Generate full table structure using the original TableConversationHandler.
+
+    Takes the interview conversation and feeds it into the existing handler
+    that already knows how to generate columns, rows, and everything else.
+
+    Args:
+        conversation_state: Full conversation state including interview messages
+        config: Table maker configuration
+
+    Returns:
+        {
+            'success': bool,
+            'columns': List[Dict],
+            'rows': List[Dict],
+            'error': Optional[str]
+        }
+    """
+    try:
+        # Import the original conversation handler (same imports as conversation.py)
+        from .table_maker_lib.conversation_handler import TableConversationHandler
+        from .table_maker_lib.prompt_loader import PromptLoader
+        from .table_maker_lib.schema_validator import SchemaValidator
+        from ai_api_client import AIAPIClient
+
+        # Initialize handler
+        prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
+        schemas_dir = os.path.join(os.path.dirname(__file__), 'schemas')
+
+        ai_client = AIAPIClient()
+        prompt_loader = PromptLoader(prompts_dir)
+        schema_validator = SchemaValidator(schemas_dir)
+
+        conversation_handler = TableConversationHandler(
+            ai_client=ai_client,
+            prompt_loader=prompt_loader,
+            schema_validator=schema_validator
+        )
+
+        # Build a comprehensive message from the interview conversation
+        messages = conversation_state.get('messages', [])
+        interview_context = conversation_state.get('interview_context', {})
+
+        # Build context from full conversation (both user and assistant)
+        conversation_context = "\n\n".join([
+            f"{'User' if msg.get('role') == 'user' else 'Assistant'}: {msg.get('content', '')}"
+            for msg in messages
+        ])
+
+        # The follow_up_question contains the table proposal in markdown
+        table_proposal = interview_context.get('follow_up_question', '')
+        context_research_queries = interview_context.get('context_web_research', [])
+
+        # Synthesize a comprehensive message that includes:
+        # 1. The full conversation context
+        # 2. The final table proposal
+        # 3. Context research queries (the handler will research these)
+        if context_research_queries:
+            research_section = f"""
+CONTEXT TO RESEARCH (use web search to find current information about these specific items):
+{chr(10).join([f"- {q}" for q in context_research_queries])}
+
+Research these items and embed the findings into your table configuration and column descriptions."""
+        else:
+            research_section = ""
+
+        synthesized_message = f"""Based on our interview conversation, I need to build this research table:
+
+INTERVIEW CONVERSATION:
+{conversation_context}
+
+TABLE PROPOSAL:
+{table_proposal}
+{research_section}
+
+Please generate the complete table structure with columns and sample rows."""
+
+        logger.info(f"[PREVIEW_GENERATE] Generating table with original handler from interview context")
+
+        # Use the conversation config settings for this generation
+        conversation_config = config.get('conversation', {})
+        model = conversation_config.get('model', 'claude-sonnet-4-5')
+
+        logger.info(f"[PREVIEW_GENERATE] Generating table with original handler (web search enabled by default)")
+
+        # Call the original handler to generate everything at once
+        # The handler's call_structured_api has max_web_searches=3 by default
+        # It will research the context items and generate the table in ONE call
+        result = await conversation_handler.start_conversation(
+            user_message=synthesized_message,
+            model=model,
+            conversation_id=conversation_state.get('conversation_id', 'preview_gen')
+        )
+
+        if not result.get('success'):
+            return {
+                'success': False,
+                'error': result.get('error', 'Table generation failed')
+            }
+
+        # Extract the proposed table structure
+        proposed_table = result.get('proposed_table', {})
+        columns = proposed_table.get('columns', [])
+        rows_data = proposed_table.get('rows', {})
+        sample_rows = rows_data.get('sample_rows', [])
+        additional_rows = rows_data.get('additional_rows', [])
+
+        if not columns or not sample_rows:
+            return {
+                'success': False,
+                'error': 'Handler did not return valid table structure'
+            }
+
+        logger.info(f"[PREVIEW_GENERATE] Generated {len(columns)} columns, {len(sample_rows)} sample rows, {len(additional_rows)} additional rows")
+
+        # Return table structure AND API metadata for metrics aggregation
+        return {
+            'success': True,
+            'columns': columns,
+            'rows': sample_rows,
+            'additional_rows': additional_rows,
+            'api_response': result.get('api_response', {}),  # Full API response
+            'model': model,
+            'processing_time': result.get('api_metadata', {}).get('processing_time', 0.0)
+        }
+
+    except Exception as e:
+        logger.error(f"[PREVIEW_GENERATE] Error generating table from conversation: {e}")
+        import traceback
+        logger.error(f"[PREVIEW_GENERATE] Traceback: {traceback.format_exc()}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
 def _generate_rows_with_ai(columns: List[Dict[str, Any]], row_count: int,
                           conversation_state: Dict[str, Any],
                           config: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Generate rows using AI (row_expander)."""
     try:
-        # Import row_expander
-        sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..', 'table_maker', 'src'))
-        from row_expander import RowExpander
-        from prompt_loader import PromptLoader
+        # Import row_expander from packaged table_maker_lib
+        from .table_maker_lib.row_expander import RowExpander
+        from .table_maker_lib.prompt_loader import PromptLoader
 
         # Initialize row expander
         prompt_loader = PromptLoader()
@@ -591,9 +806,8 @@ def _store_preview_csv(storage_manager: UnifiedS3Manager, email: str,
     }
     """
     try:
-        # Import TableGenerator
-        sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..', 'table_maker', 'src'))
-        from table_generator import TableGenerator
+        # Import TableGenerator from packaged table_maker_lib
+        from .table_maker_lib.table_generator import TableGenerator
 
         # Create temporary file for CSV
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as tmp_file:

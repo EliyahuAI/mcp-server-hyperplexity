@@ -97,7 +97,7 @@ class TableConversationHandler:
             # Load response schema
             schema = self.schema_validator.load_schema('conversation_response')
 
-            # Call AI API (standalone mode - no caching, no debug saves)
+            # Call AI API for preview generation
             logger.debug(f"Calling AI API with model: {model}")
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
@@ -105,7 +105,7 @@ class TableConversationHandler:
                 model=model,
                 max_tokens=8000,
                 use_cache=True,  # Enable caching for Lambda deployment
-                debug_name=None  # Disable debug file saving
+                debug_name="table_maker_preview_generation"
             )
 
             # Check if API call returned a response (call_structured_api doesn't use 'success' field)
@@ -153,8 +153,9 @@ class TableConversationHandler:
             result['proposed_table'] = self.current_proposal
             result['ready_to_generate'] = ai_response.get('ready_to_generate', False)
 
-            # Extract cost and metadata for runs table tracking
+            # Return both extracted metadata AND raw response for enhanced metrics aggregation
             result['api_metadata'] = self._extract_api_metadata(api_response)
+            result['api_response'] = api_response  # Full response for enhanced metrics
 
             logger.info(
                 f"Conversation started successfully. "
@@ -229,7 +230,7 @@ class TableConversationHandler:
             # Load response schema
             schema = self.schema_validator.load_schema('conversation_response')
 
-            # Call AI API (standalone mode - no caching, no debug saves)
+            # Call AI API for table refinement
             logger.debug(f"Calling AI API with model: {model}")
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
@@ -237,7 +238,7 @@ class TableConversationHandler:
                 model=model,
                 max_tokens=8000,
                 use_cache=True,  # Enable caching for Lambda deployment
-                debug_name=None  # Disable debug file saving
+                debug_name="table_maker_refinement"
             )
 
             # Check if API call returned a response (call_structured_api doesn't use 'success' field)
@@ -284,8 +285,9 @@ class TableConversationHandler:
             result['proposed_table'] = self.current_proposal
             result['ready_to_generate'] = ai_response.get('ready_to_generate', False)
 
-            # Extract cost and metadata for runs table tracking
+            # Return both extracted metadata AND raw response for enhanced metrics aggregation
             result['api_metadata'] = self._extract_api_metadata(api_response)
+            result['api_response'] = api_response  # Full response for enhanced metrics
 
             logger.info(
                 f"Conversation continued successfully. "

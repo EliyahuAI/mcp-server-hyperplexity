@@ -579,6 +579,9 @@ class S3TableParser:
                             table_info = tables[0]
 
                 # Find actual table start (skip empty rows and detect headers)
+                # Initialize header_column_indices to avoid uninitialized variable error
+                header_column_indices = None
+
                 if table_info:
                     # Use detected boundaries
                     table_start_row = table_info['start_row'] - 1  # Convert to 0-based

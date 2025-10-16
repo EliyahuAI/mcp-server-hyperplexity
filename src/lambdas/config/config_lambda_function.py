@@ -1221,7 +1221,6 @@ def build_table_analysis_section(basic_info, column_analysis, domain_info, calcu
 # TABLE ANALYSIS
 
 **File Information:**
-- File: {basic_info.get('filename', 'Unknown')}
 - Size: {basic_info.get('shape', [0, 0])[0]} rows x {basic_info.get('shape', [0, 0])[1]} columns
 - Domain: {domain_info.get('likely_domain', 'general')} (confidence: {domain_info.get('confidence', 0)})
 

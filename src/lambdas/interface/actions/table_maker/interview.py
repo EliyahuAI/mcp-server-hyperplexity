@@ -77,8 +77,8 @@ class TableInterviewHandler:
     async def start_interview(
         self,
         user_message: str,
-        model: str = "claude-3-5-haiku-20241022",
-        max_tokens: int = 4000
+        model: str = "claude-sonnet-4-5",
+        max_tokens: int = 8000
     ) -> Dict[str, Any]:
         """
         Start a new interview with the user's initial message.
@@ -113,19 +113,23 @@ class TableInterviewHandler:
                 'timestamp': datetime.utcnow().isoformat() + 'Z'
             })
 
-            # Call AI with structured output
-            logger.info(f"[INTERVIEW] Calling AI with model: {model}")
-            response = await self.ai_client.call_with_structured_output(
-                messages=[{'role': 'user', 'content': prompt}],
+            # Call AI with structured output (NO web search for interview)
+            logger.info(f"[INTERVIEW] Calling AI with model: {model} (web search disabled)")
+            response = await self.ai_client.call_structured_api(
+                prompt=prompt,
                 schema=self.interview_schema,
                 model=model,
                 max_tokens=max_tokens,
-                cache_system_prompt=False  # No caching for fast interview
+                use_cache=True,
+                max_web_searches=0,  # Explicitly disable web search for interview
+                debug_name="table_maker_interview"
             )
 
-            if not response.get('success'):
+            # Check for errors (same pattern as conversation_handler)
+            if 'response' not in response and 'error' in response:
                 error_msg = response.get('error', 'Unknown error during interview')
                 logger.error(f"[INTERVIEW] AI call failed: {error_msg}")
+                logger.error(f"[INTERVIEW] Full API response: {json.dumps(response, indent=2)}")
                 return {
                     'success': False,
                     'trigger_preview': False,
@@ -137,8 +141,19 @@ class TableInterviewHandler:
                     'error': error_msg
                 }
 
-            # Extract structured response
-            structured_data = response.get('structured_output', {})
+            # Extract structured response (same pattern as conversation_handler)
+            raw_response = response.get('response', {})
+
+            # Parse the structured content from choices[0].message.content
+            if 'choices' in raw_response and len(raw_response['choices']) > 0:
+                content = raw_response['choices'][0]['message']['content']
+                structured_data = json.loads(content) if isinstance(content, str) else content
+            elif 'ai_message' in raw_response:
+                # Response is already structured (from cache)
+                structured_data = raw_response
+            else:
+                logger.error(f"[INTERVIEW] Unexpected response structure: {json.dumps(raw_response, indent=2)[:500]}")
+                structured_data = raw_response
 
             # Add AI response to history
             self.messages.append({
@@ -158,6 +173,8 @@ class TableInterviewHandler:
 
             logger.info(f"[INTERVIEW] Interview turn complete. Trigger preview: {self.interview_context['trigger_preview']}")
 
+            # Return FULL API response for enhanced metrics aggregation
+            # The response from call_structured_api contains everything needed
             return {
                 'success': True,
                 'trigger_preview': self.interview_context['trigger_preview'],
@@ -165,7 +182,7 @@ class TableInterviewHandler:
                 'context_web_research': self.interview_context['context_web_research'],
                 'processing_steps': self.interview_context['processing_steps'],
                 'table_name': self.interview_context['table_name'],
-                'api_metadata': response.get('api_metadata', {}),
+                'api_metadata': response,  # Full response from call_structured_api
                 'error': None
             }
 
@@ -189,8 +206,8 @@ class TableInterviewHandler:
     async def continue_interview(
         self,
         user_message: str,
-        model: str = "claude-3-5-haiku-20241022",
-        max_tokens: int = 4000
+        model: str = "claude-sonnet-4-5",
+        max_tokens: int = 8000
     ) -> Dict[str, Any]:
         """
         Continue the interview with a follow-up message.
@@ -225,19 +242,23 @@ class TableInterviewHandler:
                 'timestamp': datetime.utcnow().isoformat() + 'Z'
             })
 
-            # Call AI with structured output
-            logger.info(f"[INTERVIEW] Calling AI with model: {model}")
-            response = await self.ai_client.call_with_structured_output(
-                messages=[{'role': 'user', 'content': prompt}],
+            # Call AI with structured output (NO web search for interview)
+            logger.info(f"[INTERVIEW] Calling AI with model: {model} (web search disabled)")
+            response = await self.ai_client.call_structured_api(
+                prompt=prompt,
                 schema=self.interview_schema,
                 model=model,
                 max_tokens=max_tokens,
-                cache_system_prompt=False
+                use_cache=True,
+                max_web_searches=0,  # Explicitly disable web search for interview
+                debug_name="table_maker_interview_continue"
             )
 
-            if not response.get('success'):
+            # Check for errors (same pattern as conversation_handler)
+            if 'response' not in response and 'error' in response:
                 error_msg = response.get('error', 'Unknown error during interview')
                 logger.error(f"[INTERVIEW] AI call failed: {error_msg}")
+                logger.error(f"[INTERVIEW] Full API response: {json.dumps(response, indent=2)}")
                 return {
                     'success': False,
                     'trigger_preview': False,
@@ -249,8 +270,19 @@ class TableInterviewHandler:
                     'error': error_msg
                 }
 
-            # Extract structured response
-            structured_data = response.get('structured_output', {})
+            # Extract structured response (same pattern as conversation_handler)
+            raw_response = response.get('response', {})
+
+            # Parse the structured content from choices[0].message.content
+            if 'choices' in raw_response and len(raw_response['choices']) > 0:
+                content = raw_response['choices'][0]['message']['content']
+                structured_data = json.loads(content) if isinstance(content, str) else content
+            elif 'ai_message' in raw_response:
+                # Response is already structured (from cache)
+                structured_data = raw_response
+            else:
+                logger.error(f"[INTERVIEW] Unexpected response structure: {json.dumps(raw_response, indent=2)[:500]}")
+                structured_data = raw_response
 
             # Add AI response to history
             self.messages.append({
@@ -270,6 +302,8 @@ class TableInterviewHandler:
 
             logger.info(f"[INTERVIEW] Interview turn complete. Trigger preview: {self.interview_context['trigger_preview']}")
 
+            # Return FULL API response for enhanced metrics aggregation
+            # The response from call_structured_api contains everything needed
             return {
                 'success': True,
                 'trigger_preview': self.interview_context['trigger_preview'],
@@ -277,7 +311,7 @@ class TableInterviewHandler:
                 'context_web_research': self.interview_context['context_web_research'],
                 'processing_steps': self.interview_context['processing_steps'],
                 'table_name': self.interview_context['table_name'],
-                'api_metadata': response.get('api_metadata', {}),
+                'api_metadata': response,  # Full response from call_structured_api
                 'error': None
             }
 
