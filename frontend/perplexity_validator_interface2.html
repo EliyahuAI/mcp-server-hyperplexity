@@ -5540,8 +5540,12 @@
                     // Auto-generate preview after progress bar shrink animation completes
                     // Animation timing: 300ms move to 100% + 600ms completion + 1000ms shrink = 1900ms
                     setTimeout(() => {
+                        console.log('[CONFIG_COMPLETE] Timeout fired, creating preview card');
+                        console.log('[CONFIG_COMPLETE] activePreviewCard before clear:', globalState.activePreviewCard);
                         // Clear active preview card to allow new card creation
                         globalState.activePreviewCard = null;
+                        console.log('[CONFIG_COMPLETE] activePreviewCard after clear:', globalState.activePreviewCard);
+                        console.log('[CONFIG_COMPLETE] Calling createPreviewCard()');
                         createPreviewCard();
                     }, 2000);
 
@@ -8790,15 +8794,20 @@ Please provide any additional context, or simply proceed to generate your initia
 
             // 5. Preview Card - Fixed to ensure consistent card ID and prevent duplicates
             function createPreviewCard() {
+                console.log('[CREATE_PREVIEW] createPreviewCard() called');
+                console.log('[CREATE_PREVIEW] activePreviewCard:', globalState.activePreviewCard);
 
                 // Check if a preview card already exists
                 if (globalState.activePreviewCard) {
+                    console.log('[CREATE_PREVIEW] Preview card already exists, returning early');
                     return;
                 }
 
+                console.log('[CREATE_PREVIEW] No existing preview card, creating new one');
 
                 // Generate the card ID FIRST
                 const cardId = generateCardId();
+                console.log('[CREATE_PREVIEW] Generated cardId:', cardId);
                 globalState.activePreviewCard = cardId;
 
                 // Update workflow state
