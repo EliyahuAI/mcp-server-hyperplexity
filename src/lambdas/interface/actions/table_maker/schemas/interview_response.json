@@ -1,0 +1,36 @@
+{
+  "type": "object",
+  "required": ["trigger_preview", "follow_up_question", "context_web_research", "processing_steps", "table_name"],
+  "properties": {
+    "trigger_preview": {
+      "type": "boolean",
+      "description": "Set to true when you have enough context to generate a meaningful table structure. Set to false if you need more information from the user."
+    },
+    "follow_up_question": {
+      "type": "string",
+      "description": "If trigger_preview is false, ask a focused question to gather more context. If trigger_preview is true, this should be an empty string."
+    },
+    "context_web_research": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of specific web research queries that would help understand the domain or gather relevant information for table generation. Examples: 'Eliyahu.AI company information', 'GenAI job application trends 2024', 'Research paper citation databases'. Leave empty if no research needed."
+    },
+    "processing_steps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 3,
+      "maxItems": 5,
+      "description": "List of 3-5 word action phrases describing the steps you'll take to generate the table. These should be specific to the problem at hand. Examples: 'Researching Eliyahu.AI', 'Looking for Job Applications', 'Considering Applicability', 'Extracting Paper Citations', 'Validating Company Information'."
+    },
+    "table_name": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 100,
+      "description": "Short, descriptive table name in proper title case (e.g., 'Research Applications for Internal Programs', 'New Clients with GenAI Job Postings'). Use clear, human-readable titles that describe the table's purpose. This will be converted to snake_case for file naming."
+    }
+  }
+}

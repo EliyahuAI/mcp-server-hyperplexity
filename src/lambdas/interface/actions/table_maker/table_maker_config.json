@@ -1,4 +1,10 @@
 {
+  "interview": {
+    "model": "claude-3-5-haiku-20241022",
+    "max_tokens": 4000,
+    "use_web_search": false,
+    "max_turns": 5
+  },
   "conversation": {
     "model": "claude-sonnet-4-5",
     "max_turns_before_preview": 3,
@@ -21,6 +27,7 @@
     "batch_size": 10
   },
   "models": {
+    "interview": "claude-3-5-haiku-20241022",
     "conversation": "claude-sonnet-4-5",
     "preview": "claude-sonnet-4-5",
     "expansion": "claude-sonnet-4-5"

@@ -35,6 +35,7 @@ from dynamodb_schemas import create_run_record, update_run_status
 from .table_maker_lib.conversation_handler import TableConversationHandler
 from .table_maker_lib.prompt_loader import PromptLoader
 from .table_maker_lib.schema_validator import SchemaValidator
+from .interview import TableInterviewHandler
 
 # Shared imports
 from ai_api_client import AIAPIClient
@@ -436,15 +437,16 @@ def _load_conversation_state_from_s3(
 
 async def handle_table_conversation_start(request_data, context):
     """
-    Start a new table design conversation.
+    Start a new table design interview (Phase 1: Quick context gathering).
 
     This handler:
     1. Creates a new conversation_id
     2. Loads table_maker_config.json
     3. Creates runs database entry for tracking
-    4. Initializes TableConversationHandler with user's initial message
-    5. Stores conversation state in S3
-    6. Returns AI response via WebSocket
+    4. Initializes TableInterviewHandler with user's initial message
+    5. Stores interview state in S3
+    6. Returns interview response via WebSocket
+    7. If trigger_preview is true, automatically starts preview generation
 
     Args:
         request_data: {
@@ -459,12 +461,12 @@ async def handle_table_conversation_start(request_data, context):
         {
             'success': True,
             'conversation_id': 'table_conv_abc123',
-            'ai_message': 'I'll help you create...',
-            'clarifying_questions': '...',
-            'reasoning': 'AI explanation of approach',
-            'ready_to_generate': False,
+            'trigger_preview': bool,
+            'follow_up_question': str,
+            'context_web_research': list,
+            'processing_steps': list,
+            'table_name': str,
             'turn_count': 1,
-            'proposed_table': {...},
             'error': None
         }
     """
