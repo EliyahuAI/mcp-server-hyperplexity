@@ -5531,16 +5531,16 @@
                         }
                     }
                     
-                    // Auto-accept the generated config and create preview immediately
+                    // Auto-accept the generated config and trigger preview in same card
                     globalState.configValidated = true;
                     globalState.configStored = true;
                     globalState.configIsAI = true;
-                    
-                    
-                    // Auto-generate preview after progress bar shrink animation completes
+
+
+                    // Auto-trigger preview validation in the same card after animation completes
                     // Animation timing: 300ms move to 100% + 600ms completion + 1000ms shrink = 1900ms
                     setTimeout(() => {
-                        createPreviewCard();
+                        triggerPreviewValidation(cardId);
                     }, 2000);
 
                 } else if (data.type === 'config_generation_failed' || data.error || data.type === 'error') {
