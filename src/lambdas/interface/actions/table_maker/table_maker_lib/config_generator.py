@@ -126,11 +126,28 @@ class ConfigGenerator:
         # Group research columns by importance for search groups
         search_groups = self._create_search_groups(research_columns)
 
-        # Create validation targets for research columns
-        validation_targets = self._create_validation_targets(
+        # Create validation targets for ALL columns (including ID columns for row key generation)
+        # ID columns need to be in validation_targets with importance='ID' for row key generation
+        validation_targets = []
+
+        # First, add identification columns with importance='ID'
+        for col in identification_columns:
+            validation_targets.append({
+                'column': col['name'],
+                'description': col.get('description', ''),
+                'importance': 'ID',  # Critical: This marks it as an ID field for row key generation
+                'format': col.get('format', 'String'),
+                'search_group': 0,  # ID columns don't need validation, just marking
+                'notes': f"Identification column: {col['name']}",
+                'is_identification': True  # Extra flag for clarity
+            })
+
+        # Then add research columns for actual validation
+        research_targets = self._create_validation_targets(
             research_columns,
             search_groups
         )
+        validation_targets.extend(research_targets)
 
         # Build complete config
         config = {
