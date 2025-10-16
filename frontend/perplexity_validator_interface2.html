@@ -4842,7 +4842,7 @@
                 // Handle progress updates for any card with progress indicator
                 const isProgressType = (data.type === 'progress' || data.type === 'config_generation_progress' ||
                      data.type === 'progress_update' || data.type === 'config_progress_update' ||
-                     data.type === 'preview_progress');
+                     data.type === 'preview_progress' || data.type === 'table_finalization_progress');
                 const hasProgress = data.progress !== undefined;
 
                 if (isProgressType && hasProgress) {
