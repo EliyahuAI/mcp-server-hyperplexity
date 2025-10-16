@@ -176,13 +176,14 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
 
         # Extract columns and sample rows from preview for use in both parallel operations
         columns = preview_data.get('columns', [])
-        sample_rows = preview_data.get('sample_rows', [])
+        # NOTE: preview_data stores rows as 'rows', not 'sample_rows'
+        sample_rows = preview_data.get('rows', preview_data.get('sample_rows', []))
         future_ids = preview_data.get('future_ids', [])
 
         # IMPORTANT: If sample_rows is empty, try to get it from conversation_state.current_proposal
         if not sample_rows and conversation_state.get('current_proposal'):
             sample_rows = conversation_state['current_proposal'].get('sample_rows', [])
-            logger.info(f"Retrieved {len(sample_rows)} sample rows from conversation state")
+            logger.info(f"Retrieved {len(sample_rows)} sample rows from conversation_state.current_proposal")
 
         logger.info(f"Preview data has {len(sample_rows)} sample rows and {len(columns)} columns")
 
