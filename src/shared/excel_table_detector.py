@@ -547,3 +547,206 @@ class ExcelTableDetector:
             return True
         except (ValueError, AttributeError):
             return False
+
+    def detect_empty_columns(
+        self,
+        worksheet,
+        start_row: int = 1,
+        end_row: Optional[int] = None,
+        sample_size: int = 100
+    ) -> List[int]:
+        """
+        Detect columns that are completely empty or have negligible data.
+
+        Args:
+            worksheet: openpyxl worksheet object
+            start_row: Row to start checking from (1-based)
+            end_row: Row to stop checking at (1-based), None for all rows
+            sample_size: Max rows to sample for large sheets
+
+        Returns:
+            List of column indices (1-based) that are empty
+        """
+        if end_row is None:
+            end_row = min(worksheet.max_row, start_row + sample_size)
+
+        empty_columns = []
+        max_col = worksheet.max_column
+
+        for col_idx in range(1, max_col + 1):
+            # Check if column has any non-empty cells
+            has_data = False
+            for row_idx in range(start_row, min(end_row + 1, worksheet.max_row + 1)):
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+                if cell.value is not None and str(cell.value).strip():
+                    has_data = True
+                    break
+
+            if not has_data:
+                empty_columns.append(col_idx)
+                self.logger.debug(f"Column {col_idx} is empty")
+
+        return empty_columns
+
+    def remove_empty_columns(
+        self,
+        data_rows: List[List[Any]],
+        headers: List[str],
+        threshold: float = 0.95
+    ) -> Tuple[List[List[Any]], List[str], List[int]]:
+        """
+        Remove columns that are mostly empty from data.
+
+        Args:
+            data_rows: List of data rows
+            headers: List of header names
+            threshold: Percentage of empty cells to consider column empty (0.95 = 95%)
+
+        Returns:
+            Tuple of (filtered_data_rows, filtered_headers, removed_column_indices)
+        """
+        if not data_rows or not headers:
+            return data_rows, headers, []
+
+        # Count empty cells per column
+        num_cols = len(headers)
+        num_rows = len(data_rows)
+        empty_counts = [0] * num_cols
+
+        for row in data_rows:
+            for col_idx in range(min(len(row), num_cols)):
+                if col_idx < len(row):
+                    value = row[col_idx]
+                    if value is None or str(value).strip() == '':
+                        empty_counts[col_idx] += 1
+                else:
+                    empty_counts[col_idx] += 1
+
+        # Identify columns to remove
+        columns_to_remove = []
+        for col_idx, empty_count in enumerate(empty_counts):
+            empty_ratio = empty_count / num_rows if num_rows > 0 else 1.0
+            if empty_ratio >= threshold:
+                columns_to_remove.append(col_idx)
+                self.logger.debug(
+                    f"Removing column {col_idx} ({headers[col_idx]}): "
+                    f"{empty_ratio:.1%} empty"
+                )
+
+        # Filter data and headers
+        if columns_to_remove:
+            # Create filtered headers
+            filtered_headers = [
+                headers[i] for i in range(len(headers))
+                if i not in columns_to_remove
+            ]
+
+            # Filter each data row
+            filtered_data = []
+            for row in data_rows:
+                filtered_row = [
+                    row[i] if i < len(row) else ''
+                    for i in range(len(headers))
+                    if i not in columns_to_remove
+                ]
+                filtered_data.append(filtered_row)
+
+            self.logger.info(
+                f"Removed {len(columns_to_remove)} empty columns, "
+                f"keeping {len(filtered_headers)} columns"
+            )
+            return filtered_data, filtered_headers, columns_to_remove
+
+        return data_rows, headers, []
+
+    def clean_table_data(
+        self,
+        worksheet,
+        remove_empty_rows: bool = True,
+        remove_empty_columns: bool = True,
+        remove_summary: bool = True,
+        preserve_formulas: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Comprehensive table cleaning that handles rows and columns.
+
+        Args:
+            worksheet: openpyxl worksheet object
+            remove_empty_rows: Whether to remove empty/sparse rows
+            remove_empty_columns: Whether to remove empty columns
+            remove_summary: Whether to remove summary statistics rows
+            preserve_formulas: Whether to preserve Excel formulas
+
+        Returns:
+            Dictionary with cleaned data and metadata about changes
+        """
+        result = {
+            'success': False,
+            'data': [],
+            'headers': [],
+            'metadata': {
+                'original_shape': None,
+                'final_shape': None,
+                'removed_rows': 0,
+                'removed_columns': 0,
+                'summary_rows_found': 0
+            }
+        }
+
+        try:
+            # Detect table boundaries
+            tables = self.detect_table_boundaries(worksheet)
+            if not tables:
+                raise ValueError("No tables found in worksheet")
+
+            # Use first data table
+            table_info = None
+            for table in tables:
+                if table['table_type'] == 'data':
+                    table_info = table
+                    break
+            if not table_info:
+                table_info = tables[0]
+
+            # Get all data
+            all_rows = list(worksheet.iter_rows(values_only=True))
+            headers = table_info['headers']
+            data_rows = all_rows[table_info['start_row']:table_info['end_row']]
+
+            result['metadata']['original_shape'] = (len(data_rows), len(headers))
+
+            # Remove empty/sparse rows if requested
+            if remove_empty_rows:
+                data_rows, filter_meta = self.filter_data_rows(
+                    data_rows, headers, preserve_summary=(not remove_summary)
+                )
+                result['metadata']['removed_rows'] = (
+                    filter_meta['removed_empty'] +
+                    filter_meta['removed_sparse'] +
+                    filter_meta['removed_metadata']
+                )
+                result['metadata']['summary_rows_found'] = filter_meta['summary_rows_found']
+
+            # Remove empty columns if requested
+            if remove_empty_columns:
+                data_rows, headers, removed_cols = self.remove_empty_columns(
+                    data_rows, headers, threshold=0.95
+                )
+                result['metadata']['removed_columns'] = len(removed_cols)
+
+            # Store cleaned data
+            result['data'] = data_rows
+            result['headers'] = headers
+            result['metadata']['final_shape'] = (len(data_rows), len(headers))
+            result['success'] = True
+
+            self.logger.info(
+                f"Table cleaning complete: "
+                f"{result['metadata']['original_shape']} -> {result['metadata']['final_shape']}"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Table cleaning failed: {str(e)}")
+            result['error'] = str(e)
+
+        return result
