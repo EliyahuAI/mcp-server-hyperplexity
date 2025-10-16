@@ -264,7 +264,27 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
 
                 all_rows = list(sample_rows)  # Start with preview rows
 
-                if additional_rows_needed > 0:
+                # Append empty rows with future_ids for validator to fill in
+                # The validator will populate these rows based on validation results
+                if additional_rows_needed > 0 and future_ids:
+                    logger.info(f"Appending {min(additional_rows_needed, len(future_ids))} placeholder rows with future IDs")
+                    for i, future_id_set in enumerate(future_ids[:additional_rows_needed]):
+                        # Create a row with ID columns filled in, other columns empty
+                        placeholder_row = {}
+                        for col in columns:
+                            col_name = col['name']
+                            # If this is an ID column and we have a future ID value, use it
+                            if col.get('is_identification', False) and col_name in future_id_set:
+                                placeholder_row[col_name] = future_id_set[col_name]
+                            else:
+                                # Leave other columns empty for validator to fill
+                                placeholder_row[col_name] = ''
+                        all_rows.append(placeholder_row)
+                    logger.info(f"Added {len(future_ids[:additional_rows_needed])} placeholder rows. Total rows: {len(all_rows)}")
+
+                # TEMPORARILY DISABLED: Row expansion will be handled by validator
+                # The validator will fill in additional rows based on validation results
+                if False and additional_rows_needed > 0:
                     # Build expansion request based on future IDs and conversation context
                     research_purpose = ""
                     if conversation_state.get('messages'):
@@ -351,7 +371,7 @@ Ensure variety and relevance to the research domain.
                             'type': 'table_finalization_progress',
                             'session_id': session_id,
                             'progress': 80,
-                            'status': 'Row expansion complete! Creating CSV files...'
+                            'status': 'Created table with placeholder rows. Creating CSV files...'
                         })
                     except Exception as e:
                         logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
