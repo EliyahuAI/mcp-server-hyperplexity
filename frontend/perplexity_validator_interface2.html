@@ -4885,11 +4885,12 @@
                             completeThinkingInCard(latestCardId, 'Table generation complete!');
 
                             // Show success message
-                            showMessage(`${latestCardId}-messages`, 'Table generated successfully! Starting preview validation...', 'success');
+                            showMessage(`${latestCardId}-messages`, 'Table generated successfully! Creating preview card...', 'success');
 
-                            // Trigger preview validation in new card
+                            // Create new preview card (same as config generation flow)
                             setTimeout(() => {
-                                triggerPreviewValidation(latestCardId);
+                                globalState.activePreviewCard = null;
+                                createPreviewCard();
                             }, 800);
                         }
                     }
