@@ -1424,12 +1424,20 @@ def handle_main_processing(event, context):
                 return {'statusCode': 500, 'body': json.dumps({'status': 'failed', 'error': 'Files not found'})}
 
             # Extract ID fields from config (needed for parser)
+            # Try multiple sources since different config generators store them differently
             id_fields = []
+
+            # Method 1: Check validation_targets for importance='ID' (standard configs)
             for target in config_data.get('validation_targets', []):
                 if target.get('importance', '').upper() == 'ID':
                     field_name = target.get('name') or target.get('column')
-                    if field_name:
+                    if field_name and field_name not in id_fields:
                         id_fields.append(field_name)
+
+            # Method 2: Check generation_metadata.identification_columns (table maker configs)
+            if not id_fields and config_data.get('generation_metadata', {}).get('identification_columns'):
+                id_fields = config_data['generation_metadata']['identification_columns']
+                logger.debug(f"[PREVIEW_TABLE_DATA] Found ID fields in generation_metadata: {id_fields}")
 
             logger.debug(f"[PREVIEW_TABLE_DATA] Using ID fields for row key generation: {id_fields}")
 
