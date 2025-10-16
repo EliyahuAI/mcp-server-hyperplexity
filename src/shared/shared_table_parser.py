@@ -642,10 +642,15 @@ class S3TableParser:
             # Skip completely empty rows
             if not any(str(cell).strip() for cell in row):
                 continue
-            
+
+            # Skip rows that look like comments (first cell starts with #)
+            if row and str(row[0]).strip().startswith('#'):
+                self.logger.debug(f"Skipping comment row {row_idx}: {str(row[0])[:50]}...")
+                continue
+
             # Look for a row that seems like headers
             non_empty_count = sum(1 for cell in row if str(cell).strip())
-            
+
             # Consider this a header row if it has at least 2 non-empty cells
             if non_empty_count >= 2:
                 # Check if this looks like a data table start
@@ -653,13 +658,16 @@ class S3TableParser:
                     # Trim trailing empty columns from headers
                     headers = self._trim_trailing_empty_csv(row)
                     return row_idx, headers
-        
-        # Fallback: use first non-empty row as headers
+
+        # Fallback: use first non-empty, non-comment row as headers
         for row_idx, row in enumerate(rows):
+            # Skip comment rows in fallback too
+            if row and str(row[0]).strip().startswith('#'):
+                continue
             if any(str(cell).strip() for cell in row):
                 headers = self._trim_trailing_empty_csv(row)
                 return row_idx, headers
-        
+
         # Ultimate fallback
         return 0, rows[0] if rows else []
     
