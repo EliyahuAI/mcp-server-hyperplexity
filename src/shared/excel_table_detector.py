@@ -396,6 +396,70 @@ class ExcelTableDetector:
             'method': 'openpyxl_delete_rows'
         }
 
+    def preserve_formulas_on_column_deletion(
+        self,
+        worksheet,
+        columns_to_delete: List[int]
+    ) -> Dict[str, Any]:
+        """
+        Properly delete columns while preserving formula references.
+
+        This uses openpyxl's delete_cols method which automatically
+        adjusts formula references. When a column is deleted, formulas
+        that reference columns to the right of it are automatically
+        adjusted to reference the correct data.
+
+        Args:
+            worksheet: openpyxl worksheet object
+            columns_to_delete: List of column indices to delete (0-based)
+
+        Returns:
+            Information about the deletion and adjustments made
+        """
+        if not columns_to_delete:
+            return {'deleted_count': 0, 'adjusted_formulas': 0}
+
+        # Convert to 1-based indexing for openpyxl and sort in reverse
+        # Delete from right to left to maintain column indices
+        cols_to_delete_1based = sorted([c + 1 for c in columns_to_delete], reverse=True)
+
+        adjusted_formulas = 0
+
+        # Track formulas before deletion
+        formula_cells = []
+        for row in worksheet.iter_rows():
+            for cell in row:
+                if hasattr(cell, 'data_type') and cell.data_type == 'f':
+                    formula_cells.append({
+                        'row': cell.row,
+                        'col': cell.column,
+                        'formula': cell.value
+                    })
+
+        # Delete columns one by one from right to left
+        for col_num in cols_to_delete_1based:
+            try:
+                # Openpyxl's delete_cols automatically adjusts formulas
+                worksheet.delete_cols(col_num, 1)
+                self.logger.debug(f"Deleted column {col_num}")
+            except Exception as e:
+                self.logger.warning(f"Failed to delete column {col_num}: {e}")
+
+        # Count adjusted formulas
+        for row in worksheet.iter_rows():
+            for cell in row:
+                if hasattr(cell, 'data_type') and cell.data_type == 'f':
+                    # Check if this formula references columns
+                    formula_str = str(cell.value) if cell.value else ""
+                    if re.search(r'[A-Z]+\d+', formula_str):
+                        adjusted_formulas += 1
+
+        return {
+            'deleted_count': len(columns_to_delete),
+            'adjusted_formulas': adjusted_formulas,
+            'method': 'openpyxl_delete_cols'
+        }
+
     def filter_data_rows(
         self,
         all_rows: List[Any],

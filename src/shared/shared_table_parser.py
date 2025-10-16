@@ -162,19 +162,12 @@ class S3TableParser:
                 id_hash_counts = {}
 
                 for row in data_rows:
-                    # Count non-empty cells in this row
+                    # Skip completely empty rows only - keep all data rows even if sparse
                     non_empty_count = sum(1 for cell in row if cell and str(cell).strip())
-                    # Skip if this row has less than 80% of expected columns filled
-                    # (likely a header or metadata row accidentally included)
-                    expected_columns = len(clean_headers)
                     if non_empty_count == 0:
                         continue  # Skip completely empty rows
-                    elif non_empty_count < expected_columns * 0.8:
-                        # This might be a partial header row or metadata - check if it's significantly incomplete
-                        if non_empty_count < max(2, expected_columns * 0.3):
-                            self.logger.debug(f"Skipping sparse row with only {non_empty_count}/{expected_columns} non-empty cells")
-                            continue
 
+                    # After headers are found, keep ALL data rows (even sparse ones)
                     row_dict = {}
                     for i, header in enumerate(clean_headers):
                         cell_value = row[i] if i < len(row) else ""
@@ -208,17 +201,12 @@ class S3TableParser:
             else:
                 # No id_fields - just use full row hash for all rows
                 for row in data_rows:
-                    # Count non-empty cells in this row
+                    # Skip completely empty rows only - keep all data rows even if sparse
                     non_empty_count = sum(1 for cell in row if cell and str(cell).strip())
-                    expected_columns = len(clean_headers)
                     if non_empty_count == 0:
                         continue  # Skip completely empty rows
-                    elif non_empty_count < expected_columns * 0.8:
-                        # This might be a partial header row or metadata - check if it's significantly incomplete
-                        if non_empty_count < max(2, expected_columns * 0.3):
-                            self.logger.debug(f"Skipping sparse row with only {non_empty_count}/{expected_columns} non-empty cells")
-                            continue
 
+                    # After headers are found, keep ALL data rows (even sparse ones)
                     row_dict = {}
                     for i, header in enumerate(clean_headers):
                         cell_value = row[i] if i < len(row) else ""
@@ -348,9 +336,20 @@ class S3TableParser:
                     # Use basic cleaning
                     data_rows = self._clean_data_rows(data_rows, len(headers))
                 
+                # Track original column count before trimming
+                original_column_count = len(headers) if not hasattr(headers[0], '__iter__') else len(headers)
+
                 # Clean headers
                 clean_headers = [self._normalize_column_name(str(header).strip()) if header is not None else f"Column_{i+1}"
                                for i, header in enumerate(headers)]
+
+                # Check if we trimmed columns and are extracting formulas
+                columns_trimmed = original_column_count > len(clean_headers)
+                if extract_formulas and columns_trimmed:
+                    self.logger.warning(
+                        f"Column trimming detected ({original_column_count} -> {len(clean_headers)}) "
+                        f"while extracting formulas. Formula references to trimmed columns will be marked as 'Outside table range'"
+                    )
 
                 # Import row key generation function
                 generate_row_key = None
@@ -367,17 +366,12 @@ class S3TableParser:
                 temp_rows = []
                 temp_formulas = []
                 for row_idx, row in enumerate(data_rows):
-                    # Count non-empty cells in this row
+                    # Skip completely empty rows only - keep all data rows even if sparse
                     non_empty_count = sum(1 for cell in row if cell is not None and str(cell).strip())
-                    expected_columns = len(clean_headers)
                     if non_empty_count == 0:
                         continue  # Skip completely empty rows
-                    elif non_empty_count < expected_columns * 0.8:
-                        # This might be a partial header row or metadata - check if it's significantly incomplete
-                        if non_empty_count < max(2, expected_columns * 0.3):
-                            self.logger.debug(f"Skipping sparse Excel row with only {non_empty_count}/{expected_columns} non-empty cells")
-                            continue
 
+                    # After headers are found, keep ALL data rows (even sparse ones)
                     row_dict = {}
                     formula_dict = {} if extract_formulas else None
 
@@ -644,14 +638,28 @@ class S3TableParser:
     
     def _find_table_start(self, all_rows):
         """Find the actual start of the table data by detecting headers intelligently."""
+        # First, find the maximum column count in the data
+        max_cols = 0
+        for row in all_rows[:10]:  # Check first 10 rows for max columns
+            if row and any(cell is not None and str(cell).strip() for cell in row):
+                max_cols = max(max_cols, len(row))
+
         for row_idx, row in enumerate(all_rows):
             # Skip completely empty rows
             if not any(cell is not None and str(cell).strip() for cell in row):
                 continue
-            
-            # Look for a row that seems like headers (has multiple non-empty values)
+
+            # Count non-empty cells
             non_empty_count = sum(1 for cell in row if cell is not None and str(cell).strip())
-            
+
+            # Apply sparse row filtering ONLY for header detection
+            # Skip rows that are too sparse to be headers (less than 80% filled)
+            if max_cols > 0 and non_empty_count < max_cols * 0.8:
+                # This row is sparse - check if it's significantly incomplete
+                if non_empty_count < max(2, max_cols * 0.3):
+                    self.logger.debug(f"Skipping sparse Excel row {row_idx} as potential header: {non_empty_count}/{max_cols} cells filled")
+                    continue
+
             # Consider this a header row if it has at least 2 non-empty cells
             # and the next few rows seem to contain data
             if non_empty_count >= 2:
@@ -723,6 +731,12 @@ class S3TableParser:
     
     def _find_table_start_csv(self, rows):
         """Find table start for CSV files (similar logic but handles string data)."""
+        # First, find the maximum column count in the data
+        max_cols = 0
+        for row in rows[:10]:  # Check first 10 rows for max columns
+            if row and not str(row[0]).strip().startswith('#'):
+                max_cols = max(max_cols, len(row))
+
         for row_idx, row in enumerate(rows):
             # Skip completely empty rows
             if not any(str(cell).strip() for cell in row):
@@ -733,8 +747,16 @@ class S3TableParser:
                 self.logger.debug(f"Skipping comment row {row_idx}: {str(row[0])[:50]}...")
                 continue
 
-            # Look for a row that seems like headers
+            # Count non-empty cells
             non_empty_count = sum(1 for cell in row if str(cell).strip())
+
+            # Apply sparse row filtering ONLY for header detection
+            # Skip rows that are too sparse to be headers (less than 80% filled)
+            if max_cols > 0 and non_empty_count < max_cols * 0.8:
+                # This row is sparse - check if it's significantly incomplete
+                if non_empty_count < max(2, max_cols * 0.3):
+                    self.logger.debug(f"Skipping sparse row {row_idx} as potential header: {non_empty_count}/{max_cols} cells filled")
+                    continue
 
             # Consider this a header row if it has at least 2 non-empty cells
             if non_empty_count >= 2:
@@ -1060,13 +1082,16 @@ class S3TableParser:
                     })
                     seen_columns.add(column_name)
             else:
-                # Column is outside our data range
+                # Column is outside our data range - this can happen when:
+                # 1. Formula references columns beyond the data
+                # 2. We trimmed trailing empty columns but formulas still reference them
+                # 3. Formula references external sheets/files
                 referenced_columns.append({
                     'column_name': f"Column_{col_letter}",
                     'column_index': col_idx,
                     'excel_column': col_letter,
                     'example_cell': f"{col_letter}{row_num}",
-                    'note': "Outside table range"
+                    'note': "Outside table range (may be trimmed column)"
                 })
 
         return referenced_columns
