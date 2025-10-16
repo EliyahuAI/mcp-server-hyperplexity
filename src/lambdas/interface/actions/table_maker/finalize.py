@@ -226,8 +226,8 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
         # This allows config generation to start immediately while table expansion continues
         try:
             import xlsxwriter
-            # Use "excel_file.xlsx" which becomes "excel_file_input.xlsx" after store_excel_file adds suffix
-            excel_filename = f"excel_file.xlsx"
+            # Use descriptive table name for Excel file (store_excel_file will add _input suffix)
+            excel_filename = f"{table_name_snake}.xlsx"
             excel_path = f"/tmp/{excel_filename}"
 
             # Write preview rows to Excel
@@ -483,7 +483,7 @@ Ensure variety and relevance to the research domain.
 
                 # UPDATE Excel file with all expanded rows (initial version was created with preview rows)
                 try:
-                    excel_filename = f"excel_file.xlsx"
+                    excel_filename = f"{table_name_snake}.xlsx"
                     excel_path = f"/tmp/{excel_filename}_full"
 
                     # Write to Excel using xlsxwriter
