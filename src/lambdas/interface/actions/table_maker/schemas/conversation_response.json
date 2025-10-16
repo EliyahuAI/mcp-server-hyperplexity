@@ -57,7 +57,7 @@
     },
     "ready_to_generate": {
       "type": "boolean",
-      "description": "Whether table is ready to be generated"
+      "description": "Set to true ONLY if the user has explicitly approved the table structure and is ready to generate. On initial proposal, always set to false to allow for refinement."
     },
     "reasoning": {
       "type": "string",

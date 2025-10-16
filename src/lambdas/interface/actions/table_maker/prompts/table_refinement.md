@@ -24,3 +24,4 @@ You are refining a research table design based on user feedback.
 
 ## Output Format
 Respond using the structured schema provided.
+- `ready_to_generate`: Set to **true** only if user explicitly approves (e.g., "looks good", "generate it", "proceed"). Otherwise set to **false** to continue refinement.
