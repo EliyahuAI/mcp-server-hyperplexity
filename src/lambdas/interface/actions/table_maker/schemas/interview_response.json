@@ -8,14 +8,14 @@
     },
     "follow_up_question": {
       "type": "string",
-      "description": "If trigger_preview is false, ask a focused question to gather more context. If trigger_preview is true, this should be an empty string."
+      "description": "If trigger_preview is false, ask a focused question to gather more context. If trigger_preview is true, this should contain your proposal: 'Here is what I understand so far: {description of the table}. Shall I generate a preview for you to review? We can refine the table if it is not what you are expecting.' Use markdown formatting (bold, lists, bullets) for clarity."
     },
     "context_web_research": {
       "type": "array",
       "items": {
         "type": "string"
       },
-      "description": "List of specific web research queries that would help understand the domain or gather relevant information for table generation. Examples: 'Eliyahu.AI company information', 'GenAI job application trends 2024', 'Research paper citation databases'. Leave empty if no research needed."
+      "description": "List of specific research questions that help define the COLUMNS and provide context for table generation (NOT about the rows themselves). These should be research questions that will inform column descriptions and configuration. Examples: 'What metrics define GenAI job postings?', 'What are standard citation metrics for research papers?', 'What validation criteria exist for AI company claims?'. These will be researched by the preview generator and embedded in column descriptions. Leave empty if no research needed."
     },
     "processing_steps": {
       "type": "array",
