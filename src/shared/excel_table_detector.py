@@ -1,0 +1,549 @@
+#!/usr/bin/env python3
+"""
+Excel Table Detector and Formula Preserver
+Handles advanced Excel table detection, boundary identification, and formula preservation
+"""
+
+import logging
+import re
+from typing import List, Dict, Any, Tuple, Optional
+from collections import Counter
+
+logger = logging.getLogger(__name__)
+
+class ExcelTableDetector:
+    """
+    Advanced Excel table detection with formula preservation.
+
+    Features:
+    - Detect table boundaries (end of data vs summary rows)
+    - Identify multiple tables in the same sheet
+    - Preserve formula references when rows are removed
+    - Detect summary statistics rows (SUM, AVERAGE, etc.)
+    """
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+        # Common summary formula patterns
+        self.summary_formula_patterns = [
+            r'=SUM\(',
+            r'=AVERAGE\(',
+            r'=AVG\(',
+            r'=COUNT\(',
+            r'=COUNTA\(',
+            r'=MIN\(',
+            r'=MAX\(',
+            r'=MEDIAN\(',
+            r'=SUBTOTAL\(',
+            r'=AGGREGATE\('
+        ]
+
+        # Patterns that indicate data rows (not summary)
+        self.data_patterns = [
+            # Dates in various formats
+            r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}',
+            r'\d{4}[/-]\d{1,2}[/-]\d{1,2}',
+            # IDs and codes
+            r'^[A-Z]{2,}\d{3,}',
+            r'^\d{6,}$',
+            # URLs
+            r'^https?://',
+            # Email addresses
+            r'@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+        ]
+
+    def detect_table_boundaries(
+        self,
+        worksheet,
+        start_row: int = 0,
+        headers: List[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Detect one or more tables in a worksheet, identifying their boundaries.
+
+        Args:
+            worksheet: openpyxl worksheet object
+            start_row: Row index to start searching from
+            headers: Optional list of known headers
+
+        Returns:
+            List of table definitions, each containing:
+            {
+                'start_row': int,
+                'end_row': int,
+                'headers': List[str],
+                'has_summary': bool,
+                'summary_start_row': int (if has_summary),
+                'table_type': 'data' | 'summary' | 'pivot'
+            }
+        """
+        tables = []
+        current_row = start_row
+        max_row = worksheet.max_row
+
+        while current_row < max_row:
+            # Skip empty rows
+            if self._is_empty_row(worksheet, current_row):
+                current_row += 1
+                continue
+
+            # Check if this looks like a table start
+            if self._looks_like_table_start(worksheet, current_row):
+                table_info = self._extract_table_info(worksheet, current_row, headers)
+                if table_info:
+                    tables.append(table_info)
+                    # Move past this table
+                    current_row = table_info['end_row'] + 1
+                else:
+                    current_row += 1
+            else:
+                current_row += 1
+
+        return tables
+
+    def _extract_table_info(
+        self,
+        worksheet,
+        start_row: int,
+        known_headers: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Extract detailed information about a table starting at the given row.
+        """
+        # Get headers - handle both 0-based and 1-based indexing properly
+        try:
+            headers_row = list(worksheet[start_row + 1])
+        except (IndexError, TypeError):
+            return None
+
+        # Extract non-None headers
+        headers = []
+        for cell in headers_row:
+            if cell and cell.value is not None:
+                headers.append(cell.value)
+
+        if not headers or len(headers) < 2:
+            return None
+
+        # Find where the data ends
+        data_end_row = start_row + 1
+        summary_start_row = None
+        consecutive_empty = 0
+
+        for row_idx in range(start_row + 2, worksheet.max_row + 1):
+            row = list(worksheet[row_idx])
+
+            # Check if this is an empty row
+            if self._is_empty_row_cells(row):
+                consecutive_empty += 1
+                if consecutive_empty >= 2:
+                    # Two consecutive empty rows likely mean end of table
+                    break
+                continue
+            else:
+                consecutive_empty = 0
+
+            # Check if this is a summary row
+            if self._is_summary_row(row, headers):
+                summary_start_row = row_idx
+                # Continue to find the actual end of summary section
+                for sum_row_idx in range(row_idx + 1, min(row_idx + 10, worksheet.max_row + 1)):
+                    sum_row = list(worksheet[sum_row_idx])
+                    if self._is_empty_row_cells(sum_row):
+                        break
+                    data_end_row = sum_row_idx
+                break
+
+            # Check if this looks like the start of a new table
+            if self._looks_like_new_table(row, headers):
+                break
+
+            # This is a data row
+            data_end_row = row_idx
+
+        return {
+            'start_row': start_row + 1,  # Header row
+            'end_row': data_end_row,
+            'headers': headers,
+            'has_summary': summary_start_row is not None,
+            'summary_start_row': summary_start_row,
+            'table_type': self._determine_table_type(worksheet, start_row + 1, data_end_row)
+        }
+
+    def _is_summary_row(self, row_cells: List, headers: List[str]) -> bool:
+        """
+        Detect if a row contains summary statistics.
+
+        Indicators:
+        - Contains SUM, AVERAGE, or other aggregate formulas
+        - Has significantly fewer filled cells than data rows
+        - Contains keywords like "Total", "Summary", "Average"
+        """
+        # Check for summary keywords in first few cells
+        for cell in row_cells[:3]:
+            if cell.value:
+                value_str = str(cell.value).strip().upper()
+                if any(keyword in value_str for keyword in ['TOTAL', 'SUMMARY', 'AVERAGE', 'SUM', 'SUBTOTAL']):
+                    self.logger.debug(f"Found summary keyword: {value_str}")
+                    return True
+
+        # Check for formulas
+        formula_count = 0
+        for cell in row_cells:
+            if hasattr(cell, 'data_type') and cell.data_type == 'f':
+                formula_str = str(cell.value) if cell.value else ""
+                if any(re.match(pattern, formula_str, re.IGNORECASE) for pattern in self.summary_formula_patterns):
+                    formula_count += 1
+
+        # If more than 30% of non-empty cells are summary formulas
+        non_empty = sum(1 for cell in row_cells if cell.value)
+        if non_empty > 0 and formula_count / non_empty > 0.3:
+            self.logger.debug(f"Row has {formula_count}/{non_empty} summary formulas")
+            return True
+
+        return False
+
+    def _looks_like_new_table(self, row_cells: List, current_headers: List[str]) -> bool:
+        """
+        Detect if this row looks like the start of a new table.
+
+        Indicators:
+        - Has multiple text values that look like headers
+        - Different structure than current table
+        """
+        # Count cells with text that could be headers
+        potential_headers = 0
+        for cell in row_cells:
+            if cell.value and isinstance(cell.value, str):
+                # Check if it looks like a header (title case, all caps, etc.)
+                value = str(cell.value).strip()
+                if len(value) > 2 and (value.istitle() or value.isupper()):
+                    potential_headers += 1
+
+        # If we have multiple potential headers and they're different from current
+        if potential_headers >= len(current_headers) * 0.5:
+            # Extract actual values
+            new_headers = [cell.value for cell in row_cells if cell.value and isinstance(cell.value, str)]
+            # Check if they're significantly different
+            overlap = len(set(new_headers) & set(current_headers))
+            if overlap < len(current_headers) * 0.3:
+                return True
+
+        return False
+
+    def _determine_table_type(self, worksheet, start_row: int, end_row: int) -> str:
+        """
+        Determine the type of table based on its content.
+        """
+        # Check for pivot table characteristics
+        first_row = list(worksheet[start_row + 1])
+
+        # Pivot tables often have grouped/hierarchical first columns
+        if self._has_hierarchical_structure(worksheet, start_row, end_row):
+            return 'pivot'
+
+        # Summary tables have mostly formulas
+        formula_ratio = self._calculate_formula_ratio(worksheet, start_row, end_row)
+        if formula_ratio > 0.5:
+            return 'summary'
+
+        return 'data'
+
+    def _has_hierarchical_structure(self, worksheet, start_row: int, end_row: int) -> bool:
+        """Check if table has hierarchical/grouped structure typical of pivot tables."""
+        # Simple heuristic: check indentation patterns in first column
+        first_col_values = []
+        for row_idx in range(start_row + 1, min(start_row + 10, end_row + 1)):
+            cell = worksheet.cell(row=row_idx, column=1)
+            if cell.value:
+                first_col_values.append(str(cell.value))
+
+        # Check for indentation patterns (leading spaces)
+        indented_count = sum(1 for val in first_col_values if val.startswith('  '))
+        return indented_count > len(first_col_values) * 0.3
+
+    def _calculate_formula_ratio(self, worksheet, start_row: int, end_row: int) -> float:
+        """Calculate the ratio of formula cells to total non-empty cells."""
+        formula_count = 0
+        total_count = 0
+
+        for row_idx in range(start_row, min(start_row + 20, end_row + 1)):
+            for col_idx in range(1, worksheet.max_column + 1):
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+                if cell.value:
+                    total_count += 1
+                    if hasattr(cell, 'data_type') and cell.data_type == 'f':
+                        formula_count += 1
+
+        return formula_count / total_count if total_count > 0 else 0
+
+    def _is_empty_row(self, worksheet, row_idx: int) -> bool:
+        """Check if a row is empty."""
+        row = worksheet[row_idx + 1]  # openpyxl uses 1-based indexing
+        return not any(cell.value for cell in row)
+
+    def _is_empty_row_cells(self, row_cells: List) -> bool:
+        """Check if a list of cells represents an empty row."""
+        return not any(cell.value for cell in row_cells)
+
+    def _looks_like_table_start(self, worksheet, row_idx: int) -> bool:
+        """
+        Check if this row looks like the start of a table (headers).
+        """
+        try:
+            row = list(worksheet[row_idx + 1])
+        except (IndexError, TypeError):
+            return False
+
+        # Count non-empty cells that look like headers
+        header_like_cells = 0
+        total_non_empty = 0
+
+        for cell in row:
+            if cell and cell.value:
+                value_str = str(cell.value).strip()
+                total_non_empty += 1
+
+                # Check if it looks like a header (not a date, not pure numeric, has some text)
+                if value_str and not self._is_numeric(value_str):
+                    # Exclude obvious metadata patterns
+                    if not any(meta in value_str.lower() for meta in
+                              ['generated', 'report', 'confidential', 'page', 'date:']):
+                        header_like_cells += 1
+
+        # Need at least 2 header-like cells
+        if header_like_cells < 2:
+            return False
+
+        # Check if next few rows have consistent data
+        has_data_rows = False
+        for check_idx in range(row_idx + 1, min(row_idx + 4, worksheet.max_row)):
+            try:
+                check_row = list(worksheet[check_idx + 1])
+                # Count non-empty cells in potential data row
+                data_cells = sum(1 for cell in check_row if cell and cell.value)
+                # Should have similar structure to header row
+                if data_cells >= min(2, total_non_empty * 0.5):
+                    has_data_rows = True
+                    break
+            except:
+                continue
+
+        return has_data_rows
+
+    def preserve_formulas_on_row_deletion(
+        self,
+        worksheet,
+        rows_to_delete: List[int],
+        table_boundaries: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Properly delete rows while preserving formula references.
+
+        This uses openpyxl's delete_rows method which automatically
+        adjusts formula references.
+
+        Args:
+            worksheet: openpyxl worksheet object
+            rows_to_delete: List of row indices to delete (0-based)
+            table_boundaries: Optional table boundary information
+
+        Returns:
+            Information about the deletion and adjustments made
+        """
+        if not rows_to_delete:
+            return {'deleted_count': 0, 'adjusted_formulas': 0}
+
+        # Convert to 1-based indexing for openpyxl and sort in reverse
+        # Delete from bottom to top to maintain row indices
+        rows_to_delete_1based = sorted([r + 1 for r in rows_to_delete], reverse=True)
+
+        adjusted_formulas = 0
+
+        # Track formulas before deletion
+        formula_cells = []
+        for row in worksheet.iter_rows():
+            for cell in row:
+                if hasattr(cell, 'data_type') and cell.data_type == 'f':
+                    formula_cells.append({
+                        'row': cell.row,
+                        'col': cell.column,
+                        'formula': cell.value
+                    })
+
+        # Delete rows one by one from bottom to top
+        for row_num in rows_to_delete_1based:
+            try:
+                # Openpyxl's delete_rows automatically adjusts formulas
+                worksheet.delete_rows(row_num, 1)
+                self.logger.debug(f"Deleted row {row_num}")
+            except Exception as e:
+                self.logger.warning(f"Failed to delete row {row_num}: {e}")
+
+        # Count adjusted formulas
+        for row in worksheet.iter_rows():
+            for cell in row:
+                if hasattr(cell, 'data_type') and cell.data_type == 'f':
+                    # Check if this formula references adjusted rows
+                    formula_str = str(cell.value) if cell.value else ""
+                    if re.search(r'[A-Z]+\d+', formula_str):
+                        adjusted_formulas += 1
+
+        return {
+            'deleted_count': len(rows_to_delete),
+            'adjusted_formulas': adjusted_formulas,
+            'method': 'openpyxl_delete_rows'
+        }
+
+    def filter_data_rows(
+        self,
+        all_rows: List[Any],
+        headers: List[str],
+        preserve_summary: bool = False
+    ) -> Tuple[List[Any], Dict[str, Any]]:
+        """
+        Filter data rows intelligently, removing metadata and empty rows
+        while preserving summary rows if requested.
+
+        Args:
+            all_rows: All rows including headers
+            headers: Header row
+            preserve_summary: Whether to preserve summary rows
+
+        Returns:
+            Tuple of (filtered_data_rows, metadata_about_filtering)
+        """
+        filtered_rows = []
+        metadata = {
+            'removed_empty': 0,
+            'removed_sparse': 0,
+            'removed_metadata': 0,
+            'summary_rows_found': 0,
+            'data_end_row': None
+        }
+
+        expected_columns = len(headers)
+
+        for row_idx, row in enumerate(all_rows):
+            # Skip header row (assumed to be first)
+            if row_idx == 0:
+                continue
+
+            # Count non-empty cells
+            if hasattr(row, '__iter__'):
+                non_empty_count = sum(1 for cell in row if cell and str(cell).strip())
+            else:
+                # Handle openpyxl row objects
+                non_empty_count = sum(1 for cell in row if cell.value and str(cell.value).strip())
+
+            # Skip completely empty rows
+            if non_empty_count == 0:
+                metadata['removed_empty'] += 1
+                continue
+
+            # Check if this is a sparse row (less than 80% filled)
+            fill_ratio = non_empty_count / expected_columns if expected_columns > 0 else 0
+
+            if fill_ratio < 0.8:
+                # For early rows, be more lenient (might be sub-headers)
+                if row_idx <= 3 and fill_ratio >= 0.3:
+                    # Check if it looks like a sub-header or metadata
+                    if self._looks_like_metadata_row(row, headers):
+                        metadata['removed_metadata'] += 1
+                        continue
+                    else:
+                        # Keep it as potential sub-header
+                        filtered_rows.append(row)
+                elif fill_ratio < 0.3:
+                    # Very sparse row - likely metadata or empty
+                    metadata['removed_sparse'] += 1
+                    continue
+                else:
+                    # Medium sparse - check content
+                    if self._looks_like_data_row(row):
+                        filtered_rows.append(row)
+                    else:
+                        metadata['removed_sparse'] += 1
+                        continue
+            else:
+                # Well-filled row - check if it's a summary row
+                if preserve_summary and self._is_summary_row_simple(row):
+                    metadata['summary_rows_found'] += 1
+                    metadata['data_end_row'] = len(filtered_rows)  # Mark where data ends
+
+                filtered_rows.append(row)
+
+        return filtered_rows, metadata
+
+    def _looks_like_metadata_row(self, row: Any, headers: List[str]) -> bool:
+        """Check if a row looks like metadata rather than data."""
+        # Get first few cell values
+        values = []
+        if hasattr(row, '__iter__'):
+            values = [str(cell).strip() if cell else "" for cell in row[:3]]
+        else:
+            # Handle openpyxl rows
+            for cell in row[:3]:
+                values.append(str(cell.value).strip() if cell.value else "")
+
+        # Check for metadata patterns
+        metadata_keywords = ['generated', 'created', 'updated', 'report', 'date:', 'time:',
+                            'page', 'of', 'confidential', 'proprietary']
+
+        for value in values:
+            value_lower = value.lower()
+            if any(keyword in value_lower for keyword in metadata_keywords):
+                return True
+
+        return False
+
+    def _looks_like_data_row(self, row: Any) -> bool:
+        """Check if a row looks like actual data."""
+        # Get all non-empty values
+        values = []
+        if hasattr(row, '__iter__'):
+            values = [str(cell).strip() for cell in row if cell and str(cell).strip()]
+        else:
+            # Handle openpyxl rows
+            for cell in row:
+                if cell.value:
+                    values.append(str(cell.value).strip())
+
+        # Check for data patterns
+        for value in values:
+            for pattern in self.data_patterns:
+                if re.search(pattern, value):
+                    return True
+
+        # If it has multiple values and they're not all text, probably data
+        if len(values) >= 2:
+            has_numbers = any(self._is_numeric(v) for v in values)
+            has_text = any(not self._is_numeric(v) for v in values)
+            return has_numbers or len(values) >= 3
+
+        return False
+
+    def _is_summary_row_simple(self, row: Any) -> bool:
+        """Simple check if a row is a summary row."""
+        # Get first few values
+        values = []
+        if hasattr(row, '__iter__'):
+            values = [str(cell).strip().upper() if cell else "" for cell in row[:3]]
+        else:
+            # Handle openpyxl rows
+            for cell in row[:3]:
+                if cell.value:
+                    values.append(str(cell.value).strip().upper())
+
+        # Check for summary keywords
+        summary_keywords = ['TOTAL', 'SUMMARY', 'AVERAGE', 'SUM', 'SUBTOTAL', 'GRAND TOTAL']
+        return any(keyword in value for keyword in summary_keywords for value in values)
+
+    def _is_numeric(self, value: str) -> bool:
+        """Check if a string value is numeric."""
+        try:
+            float(value.replace(',', '').replace('$', '').replace('%', ''))
+            return True
+        except (ValueError, AttributeError):
+            return False

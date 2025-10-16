@@ -255,10 +255,11 @@ class S3TableParser:
             with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
                 temp_file.write(file_content)
                 temp_file_path = temp_file.name
-            
+
             try:
-                # Load workbook (can't use read_only if we need formulas)
-                workbook = load_workbook(temp_file_path, read_only=not extract_formulas, data_only=not extract_formulas)
+                # Load workbook (can't use read_only if we need formulas or to delete rows)
+                # When we need to preserve formulas through row deletion, we need write access
+                workbook = load_workbook(temp_file_path, read_only=False, data_only=not extract_formulas)
 
                 # Select worksheet
                 if sheet_name:
@@ -277,6 +278,16 @@ class S3TableParser:
                         sheet_name = workbook.sheetnames[0]
                         print(f"No 'Results' sheet found, using first sheet: '{sheet_name}'")
 
+                # Import advanced table detector if available
+                use_advanced_detection = False
+                try:
+                    from excel_table_detector import ExcelTableDetector
+                    detector = ExcelTableDetector()
+                    use_advanced_detection = True
+                    self.logger.info("Using advanced Excel table detection")
+                except ImportError:
+                    self.logger.debug("Advanced table detector not available, using basic detection")
+
                 # Read data with robust table detection
                 if extract_formulas:
                     # Get both cell objects and values for formula extraction
@@ -284,16 +295,58 @@ class S3TableParser:
                 else:
                     all_rows = list(worksheet.iter_rows(values_only=True))
                     all_cell_objects = None
-                
+
                 if not all_rows:
                     raise ValueError("Empty Excel worksheet")
-                
+
+                # Advanced table boundary detection if available
+                table_info = None
+                if use_advanced_detection:
+                    tables = detector.detect_table_boundaries(worksheet, start_row=0)
+                    if tables:
+                        # Use the first data table found
+                        for table in tables:
+                            if table['table_type'] == 'data':
+                                table_info = table
+                                self.logger.info(
+                                    f"Found data table: rows {table['start_row']}-{table['end_row']}, "
+                                    f"has_summary={table['has_summary']}"
+                                )
+                                break
+                        if not table_info and tables:
+                            # No data table found, use the first table
+                            table_info = tables[0]
+
                 # Find actual table start (skip empty rows and detect headers)
-                table_start_row, headers = self._find_table_start(all_rows)
-                data_rows = all_rows[table_start_row + 1:]
-                
-                # Clean data rows (remove empty trailing rows and trim columns)
-                data_rows = self._clean_data_rows(data_rows, len(headers))
+                if table_info:
+                    # Use detected boundaries
+                    table_start_row = table_info['start_row'] - 1  # Convert to 0-based
+                    headers = table_info['headers']
+                    # Extract only data rows (exclude summary if present)
+                    if table_info['has_summary'] and table_info['summary_start_row']:
+                        data_end_idx = table_info['summary_start_row'] - 1
+                        data_rows = all_rows[table_start_row + 1:data_end_idx]
+                        self.logger.info(f"Excluding summary rows starting at row {table_info['summary_start_row']}")
+                    else:
+                        data_end_idx = table_info['end_row']
+                        data_rows = all_rows[table_start_row + 1:data_end_idx + 1]
+                else:
+                    # Fallback to basic detection
+                    table_start_row, headers = self._find_table_start(all_rows)
+                    data_rows = all_rows[table_start_row + 1:]
+
+                # Clean data rows with enhanced filtering if detector available
+                if use_advanced_detection:
+                    data_rows, filter_metadata = detector.filter_data_rows(
+                        data_rows, headers, preserve_summary=False
+                    )
+                    self.logger.info(
+                        f"Advanced filtering: removed {filter_metadata['removed_empty']} empty, "
+                        f"{filter_metadata['removed_sparse']} sparse, {filter_metadata['removed_metadata']} metadata rows"
+                    )
+                else:
+                    # Use basic cleaning
+                    data_rows = self._clean_data_rows(data_rows, len(headers))
                 
                 # Clean headers
                 clean_headers = [self._normalize_column_name(str(header).strip()) if header is not None else f"Column_{i+1}"
