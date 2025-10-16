@@ -57,7 +57,7 @@
     },
     "ready_to_generate": {
       "type": "boolean",
-      "description": "Set to true ONLY if the user has explicitly approved the table structure and is ready to generate. On initial proposal, always set to false to allow for refinement."
+      "description": "Set to true ONLY when you have sufficient information to create a complete, well-defined table structure with all required rows and columns. Set to false if you need more clarification from the user or if there are unresolved questions. When true, the user will see a preview card with options to refine or generate the table."
     },
     "reasoning": {
       "type": "string",

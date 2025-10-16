@@ -42,4 +42,4 @@ You are helping a researcher design a table for systematic research and data val
 Respond using the structured schema provided.
 - `sample_rows`: 3 rows with ALL columns populated
 - `additional_rows`: 15-20 rows with ONLY ID columns populated (leave research columns empty)
-- `ready_to_generate`: Set to **false** on initial proposal to allow user to review and refine
+- `ready_to_generate`: Set to **false** if you have clarifying questions or need more information. Set to **true** ONLY when you have all the information needed to create a complete table structure. When true, the user will see a preview card with options to refine or accept the table.
