@@ -446,14 +446,19 @@ def invoke_validator_lambda(excel_s3_key, config_s3_key, max_rows, batch_size, S
             if importance.upper() == 'ID':
                 # Support both 'name' and 'column' fields
                 field_name = target.get('name') or target.get('column')
-                if field_name:
+                if field_name and field_name not in id_fields:
                     id_fields.append(field_name)
                     logger.info(f"Found ID field: {field_name}")
                 else:
                     logger.warning(f"ID target found but no field name: {target}")
             else:
                 logger.debug(f"Target '{target.get('column')}' has importance '{importance}' (not ID)")
-        
+
+        # Check generation_metadata.identification_columns (table maker configs) if no ID fields found
+        if not id_fields and config_data.get('generation_metadata', {}).get('identification_columns'):
+            id_fields = config_data['generation_metadata']['identification_columns']
+            logger.info(f"Found ID fields in generation_metadata: {id_fields}")
+
         # If no ID fields found, try to use SimplifiedSchemaValidator to determine primary keys
         if not id_fields:
             try:
