@@ -169,7 +169,7 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                     'type': 'table_finalization_progress',
                     'session_id': session_id,
                     'progress': 5,
-                    'status': f'Generating validation configuration...'
+                    'status': f'Starting table and config generation...'
                 })
             except Exception as e:
                 logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
@@ -289,7 +289,7 @@ Ensure variety and relevance to the research domain.
                                 'type': 'table_finalization_progress',
                                 'session_id': session_id,
                                 'progress': 20,
-                                'status': f'Config generated! Expanding table to {row_count} rows ({batches_needed} batches)...'
+                                'status': f'Expanding table to {row_count} rows ({batches_needed} batches)...'
                             })
                         except Exception as e:
                             logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
@@ -496,17 +496,8 @@ Ensure variety and relevance to the research domain.
         async def generate_config():
             """Generate validation configuration in parallel"""
             try:
-                # Progress update
-                if websocket_client and session_id:
-                    try:
-                        websocket_client.send_to_session(session_id, {
-                            'type': 'table_finalization_progress',
-                            'session_id': session_id,
-                            'progress': 85,
-                            'status': 'Generating validation configuration...'
-                        })
-                    except Exception as e:
-                        logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
+                # NO WEBSOCKET UPDATES from config generation to avoid race conditions
+                logger.info(f"[TABLE_FINALIZE] Starting config generation (no WebSocket updates)")
 
                 # Extract identification columns
                 identification_columns = [
@@ -554,17 +545,7 @@ Ensure variety and relevance to the research domain.
 
                 logger.info("Built enhanced table_analysis with conversation_context")
 
-                # Progress update
-                if websocket_client and session_id:
-                    try:
-                        websocket_client.send_to_session(session_id, {
-                            'type': 'table_finalization_progress',
-                            'session_id': session_id,
-                            'progress': 90,
-                            'status': 'Finalizing validation configuration...'
-                        })
-                    except Exception as e:
-                        logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
+                # NO WEBSOCKET UPDATE - avoid race condition with table generation
 
                 # Call existing handle_generate_config_unified() with enhanced payload
                 config_generation_payload = {
@@ -624,7 +605,8 @@ Ensure variety and relevance to the research domain.
         config_version = config_result['config_version']
         config_s3_key = config_result['config_s3_key']
 
-        # Progress update - Table generation complete
+        # FINAL COMPLETION - Both table and config generation are complete
+        logger.info(f"[TABLE_FINALIZE] Both table and config generation complete - sending final WebSocket update")
         if websocket_client and session_id:
             try:
                 websocket_client.send_to_session(session_id, {
@@ -634,7 +616,7 @@ Ensure variety and relevance to the research domain.
                     'status': 'Table generation complete! Ready for validation.'
                 })
             except Exception as e:
-                logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
+                logger.warning(f"[TABLE_FINALIZE] Failed to send final WebSocket update: {e}")
 
         # Return comprehensive result
         result = {
