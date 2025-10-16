@@ -1,8 +1,6 @@
 
 
 
---- 
-When using stored config file no questions available for refine. (hit or miss, needs debugging) 
 
 
 ---
@@ -16,8 +14,6 @@ Need ads, strategy.
 Targeted outreach? 
 
 ---
-refine case studies and examples, currently a mix with the Eliyahu.ai case studies
-----
 
 
 ---

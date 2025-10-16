@@ -988,6 +988,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                         validated_value = None  # Reset for each column to prevent carryover from previous column
 
                         # Check if this column has validation results
+                        field_data = None  # Initialize field_data to None
                         if row_validation_data and isinstance(row_validation_data, dict):
                             if col_name in row_validation_data and isinstance(row_validation_data[col_name], dict):
                                 field_data = row_validation_data[col_name]
