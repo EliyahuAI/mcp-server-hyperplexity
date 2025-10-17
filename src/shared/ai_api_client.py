@@ -1781,9 +1781,9 @@ class AIAPIClient:
                         "tool_choice": {"type": "auto"}
                     }
                     
-                    result = await self._make_single_anthropic_call("https://api.anthropic.com/v1/messages", 
-                                                                   headers, data, current_model_normalized, 
-                                                                   use_cache, cache_key, call_start_time)
+                    result = await self._make_single_anthropic_call("https://api.anthropic.com/v1/messages",
+                                                                   headers, data, current_model_normalized,
+                                                                   use_cache, cache_key, call_start_time, max_web_searches)
                     
                 elif api_provider == 'perplexity':
                     # Perplexity API call for structured output
@@ -2511,9 +2511,9 @@ class AIAPIClient:
                 logger.warning(f"Retrying Claude API call in {delay:.1f}s...")
                 await asyncio.sleep(delay)
     
-    async def _make_single_anthropic_call(self, url: str, headers: Dict, data: Dict, 
-                                         normalized_model: str, use_cache: bool, 
-                                         cache_key: str, start_time: datetime) -> Dict:
+    async def _make_single_anthropic_call(self, url: str, headers: Dict, data: Dict,
+                                         normalized_model: str, use_cache: bool,
+                                         cache_key: str, start_time: datetime, max_web_searches: int = 0) -> Dict:
         """Make a single Anthropic API call without retries."""
         debug_request = {
             'url': url,
