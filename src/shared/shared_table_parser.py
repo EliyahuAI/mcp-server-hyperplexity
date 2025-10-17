@@ -80,17 +80,20 @@ except ImportError:
 class S3TableParser:
     """Unified S3 table-to-JSON parser used by both interface and validation code"""
 
-    def __init__(self, enable_cleaning_log: bool = True, output_dir: str = "results"):
+    def __init__(self, enable_cleaning_log: bool = True, output_dir: str = None):
         self.s3_client = boto3.client('s3')
         self.logger = logging.getLogger(__name__)
         self.enable_cleaning_log = enable_cleaning_log
-        self.output_dir = output_dir
+        self.output_dir = output_dir if output_dir is not None else (
+            '/tmp/results' if os.environ.get('AWS_LAMBDA_FUNCTION_NAME') else 'results'
+        )
         self.cleaning_logger = None
 
         if self.enable_cleaning_log:
             try:
                 from table_cleaning_logger import TableCleaningLogger
-                self.cleaning_logger = TableCleaningLogger(output_dir)
+                # Pass None to let TableCleaningLogger auto-detect Lambda environment
+                self.cleaning_logger = TableCleaningLogger(None)
             except ImportError:
                 self.logger.debug("TableCleaningLogger not available, cleaning operations won't be logged")
 
@@ -131,53 +134,54 @@ class S3TableParser:
     def _get_preferred_file_key(self, bucket: str, key: str) -> Tuple[str, bool]:
         """
         Check if a focused/cleaned version exists and return the preferred key.
-        Looks for the cleaned file in the base results folder.
+        Looks for the cleaned file in the SAME DIRECTORY as the original file.
 
         Args:
             bucket: S3 bucket name
-            key: Original S3 object key
+            key: Original S3 object key (e.g., results/domain/user/session/file.csv)
 
         Returns:
             Tuple of (preferred_key, is_focused_version)
         """
-        # Extract filename from key
-        filename = key.split('/')[-1]
+        # Extract directory and filename from key
+        key_parts = key.rsplit('/', 1)
+        if len(key_parts) == 2:
+            directory, filename = key_parts
+        else:
+            directory = ""
+            filename = key
+
         base_name = Path(filename).stem
         extension = Path(filename).suffix
 
-        # First, check for the primary cleaned file in results folder
-        # This is the main cleaned file without timestamp
-        primary_cleaned_key = f"results/{base_name}{extension}"
+        # Build cleaned file paths in the SAME directory as the original
+        focused_patterns = []
+        if directory:
+            # Check for cleaned versions in the same directory
+            focused_patterns = [
+                f"{directory}/{base_name}_cleaned{extension}",
+                f"{directory}/{base_name}_focused{extension}",
+            ]
+        else:
+            # If no directory, check in root
+            focused_patterns = [
+                f"{base_name}_cleaned{extension}",
+                f"{base_name}_focused{extension}",
+            ]
 
-        try:
-            # Check if primary cleaned version exists (with retry logic)
-            self._check_s3_object_exists(bucket, primary_cleaned_key)
-            self.logger.info(f"Found primary cleaned version: {primary_cleaned_key}")
-            return primary_cleaned_key, True
-        except ClientError as e:
-            error_code = e.response.get('Error', {}).get('Code', '')
-            if error_code == '404' or error_code == 'NoSuchKey':
-                pass
-            else:
-                raise
-
-        # Check for other focused patterns as fallback
-        focused_patterns = [
-            f"results/{base_name}_focused{extension}",
-            f"results/{base_name}_cleaned{extension}",
-        ]
-
+        # Check for focused/cleaned versions with reduced retries
         for focused_key in focused_patterns:
             try:
-                # Check with retry logic
-                self._check_s3_object_exists(bucket, focused_key)
-                self.logger.info(f"Found focused version: {focused_key}")
+                # Use head_object directly without retry for existence check
+                self.s3_client.head_object(Bucket=bucket, Key=focused_key)
+                self.logger.info(f"Found cleaned version: {focused_key}")
                 return focused_key, True
             except ClientError as e:
                 error_code = e.response.get('Error', {}).get('Code', '')
                 if error_code == '404' or error_code == 'NoSuchKey':
                     continue
                 else:
+                    # For non-404 errors, raise
                     raise
 
         # No focused version found, use original
@@ -271,7 +275,7 @@ class S3TableParser:
                         self.logger.info("Note: Excel file cleaning saved to log only")
                         # TODO: Implement Excel file saving if needed
                     else:
-                        # For CSV files, regenerate from cleaned data
+                        # For CSV files, regenerate from cleaned data and upload to S3
                         cleaned_csv = self._generate_csv_from_data(result)
                         saved_files = self.cleaning_logger.save_original_and_cleaned(
                             original_content=original_content,
@@ -280,7 +284,29 @@ class S3TableParser:
                             save_original_copy=True
                         )
                         result['metadata']['saved_files'] = saved_files
-                        self.logger.info(f"Saved cleaned CSV files: {saved_files}")
+                        self.logger.info(f"Saved cleaned CSV files locally: {saved_files}")
+
+                        # Upload cleaned version to S3 in same directory as original
+                        try:
+                            # Extract directory from original key
+                            key_parts = key.rsplit('/', 1)
+                            if len(key_parts) == 2:
+                                directory = key_parts[0]
+                                cleaned_s3_key = f"{directory}/{Path(filename).stem}_cleaned{Path(filename).suffix}"
+                            else:
+                                cleaned_s3_key = f"{Path(filename).stem}_cleaned{Path(filename).suffix}"
+
+                            # Upload cleaned CSV to S3
+                            self.s3_client.put_object(
+                                Bucket=bucket,
+                                Key=cleaned_s3_key,
+                                Body=cleaned_csv.encode('utf-8'),
+                                ContentType='text/csv'
+                            )
+                            self.logger.info(f"[SUCCESS] Uploaded cleaned file to S3: s3://{bucket}/{cleaned_s3_key}")
+                            result['metadata']['s3_cleaned_key'] = cleaned_s3_key
+                        except Exception as e:
+                            self.logger.error(f"[ERROR] Failed to upload cleaned file to S3: {str(e)}")
 
             return result
 
