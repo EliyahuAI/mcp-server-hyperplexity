@@ -72,15 +72,18 @@ def _add_api_call_to_runs(
 
     Flow:
     1. READ existing run record
-    2. Extract existing call_metrics_list
+    2. Extract existing call_metrics_list and models list
     3. Add new call metrics (tagged with call_type)
-    4. Re-aggregate ALL calls
-    5. WRITE back to database
+    4. Build model entry (extracts max_web_searches from enhanced_data)
+    5. Re-aggregate ALL calls
+    6. WRITE back to database
 
     Args:
         session_id: Session identifier
         run_key: Run tracking key
-        api_response: API response dict from this call
+        api_response: API response dict from call_structured_api with structure:
+            {'response': <API response>, 'token_usage': {...}, 'processing_time': ...,
+             'is_cached': ..., 'enhanced_data': {...}}
         model: Model name used
         processing_time: Processing time in seconds
         call_type: Type of call (e.g., 'interview', 'preview', 'expansion')
@@ -98,24 +101,49 @@ def _add_api_call_to_runs(
         # Step 1: READ existing run record
         existing_run = get_run_status(session_id, run_key)
 
-        # Get AI client for enhanced metrics
-        ai_client = AIAPIClient()
-
-        # Step 2: Extract existing call_metrics_list (if any)
+        # Step 2: Extract existing call_metrics_list and models list (if any)
         existing_call_metrics = []
-        if existing_run and 'call_metrics_list' in existing_run:
-            existing_call_metrics = existing_run.get('call_metrics_list', [])
-            logger.info(f"[TABLE_MAKER] Found {len(existing_call_metrics)} existing API calls in runs database")
+        existing_models_list = []
+        if existing_run:
+            if 'call_metrics_list' in existing_run:
+                existing_call_metrics = existing_run.get('call_metrics_list', [])
+                logger.info(f"[TABLE_MAKER] Found {len(existing_call_metrics)} existing API calls in runs database")
+            if 'models' in existing_run and isinstance(existing_run['models'], list):
+                existing_models_list = existing_run['models']
 
         # Step 3: Add NEW call metrics with call_type tag
-        new_call_metrics = ai_client.get_enhanced_call_metrics(
-            response=api_response,
-            model=model,
-            processing_time=processing_time
-        )
+        # Use enhanced_data directly from call_structured_api response (already computed)
+        # If not available, regenerate it using get_enhanced_call_metrics
+        if 'enhanced_data' in api_response and api_response['enhanced_data']:
+            new_call_metrics = api_response['enhanced_data']
+            logger.debug(f"[TABLE_MAKER] Using pre-computed enhanced_data from API response")
+        else:
+            # Fallback: regenerate enhanced metrics if not present
+            logger.warning(f"[TABLE_MAKER] enhanced_data not found in api_response, regenerating...")
+            ai_client = AIAPIClient()
+            new_call_metrics = ai_client.get_enhanced_call_metrics(
+                response=api_response.get('response', api_response),
+                model=model,
+                processing_time=processing_time,
+                pre_extracted_token_usage=api_response.get('token_usage'),
+                is_cached=api_response.get('is_cached')
+            )
+
         # Tag with call type for tracking
         new_call_metrics['call_type'] = call_type
         existing_call_metrics.append(new_call_metrics)
+
+        # Extract max_web_searches from enhanced data (automatically embedded by get_enhanced_call_metrics)
+        max_web_searches_value = new_call_metrics.get('call_info', {}).get('max_web_searches', 0)
+
+        # Build model entry with web search info
+        model_entry = {
+            'model': model,
+            'call_type': call_type,
+            'max_web_searches': max_web_searches_value,
+            'is_cached': api_response.get('is_cached', False)
+        }
+        existing_models_list.append(model_entry)
 
         logger.info(f"[TABLE_MAKER] Added new {call_type} call metrics for {model}, total calls: {len(existing_call_metrics)}")
 
@@ -125,21 +153,50 @@ def _add_api_call_to_runs(
         totals = aggregated.get('totals', {})
 
         # Step 5: WRITE back to database with aggregated metrics
+        # Sum of actual costs across all providers and calls
+        total_actual_cost = totals.get('total_cost_actual', 0.0)
+        # Sum of estimated costs (no cache) across all providers and calls
+        total_estimated_cost = totals.get('total_cost_estimated', 0.0)
+        # Sum of actual processing times across all calls
+        total_actual_time = totals.get('total_actual_processing_time', 0.0)
+        # Total number of API calls made
+        total_calls = totals.get('total_calls', 0)
+
+        # Build run_type with operation details
+        # Format: "Table Generation (Interview, Interview, Preview Generation)"
+        call_type_names = {
+            'interview': 'Interview',
+            'preview': 'Preview Generation',
+            'expansion': 'Expansion',
+            'refinement': 'Refinement'
+        }
+        operation_sequence = ', '.join([call_type_names.get(c.get('call_type'), c.get('call_type', 'Unknown'))
+                                       for c in existing_call_metrics])
+        run_type = f"Table Generation ({operation_sequence})" if operation_sequence else "Table Generation"
+
         update_params = {
             'session_id': session_id,
             'run_key': run_key,
             'status': status,
-            'run_type': "Table Generation",
-            'verbose_status': verbose_status or f"Completed {totals.get('total_calls', 0)} API calls",
-            'models': model,  # Current model
-            'eliyahu_cost': totals.get('total_cost_actual', 0.0),
+            'run_type': run_type,  # Includes operation sequence
+            'verbose_status': verbose_status or f"Completed {total_calls} API calls",
+            'models': existing_models_list,  # List of model entries with web search info
+            # Aggregate actual cost across all providers and calls (what we actually paid)
+            'eliyahu_cost': total_actual_cost,
             'provider_metrics': providers,
-            'total_provider_cost_actual': totals.get('total_cost_actual', 0.0),
-            'total_provider_cost_estimated': totals.get('total_cost_estimated', 0.0),
+            # Total actual cost paid (should equal eliyahu_cost)
+            'total_provider_cost_actual': total_actual_cost,
+            # Total estimated cost without caching benefits
+            'total_provider_cost_estimated': total_estimated_cost,
             'total_provider_tokens': totals.get('total_tokens', 0),
-            'total_provider_calls': totals.get('total_calls', 0),
-            'actual_processing_time_seconds': totals.get('total_time_actual', 0.0),
-            'time_per_row_seconds': totals.get('total_time_actual', 0.0) / max(totals.get('total_calls', 1), 1),
+            # Total number of API calls made
+            'total_provider_calls': total_calls,
+            # Sum of actual processing times across all calls
+            'actual_processing_time_seconds': total_actual_time,
+            # Sum of actual run times (same as actual_processing_time_seconds)
+            'run_time_s': total_actual_time,
+            # Average time per call (not per row for table maker)
+            'time_per_row_seconds': total_actual_time / max(total_calls, 1),
             # Store ALL enhanced data for debugging and analysis
             'call_metrics_list': existing_call_metrics,  # Full list with all call details
             'enhanced_metrics_aggregated': aggregated,  # Complete aggregated structure
@@ -1086,6 +1143,38 @@ async def handle_table_conversation_continue(request_data, context):
         interview_handler.interview_context = conversation_state.get('interview_context', {})
 
         logger.info(f"[TABLE_MAKER] Restored interview with {len(interview_handler.messages)} messages")
+
+        # If there's preview data from a previous generation, inject it into the user message
+        # so the LLM can see the complete table structure when refining
+        preview_data = conversation_state.get('preview_data')
+        if preview_data:
+            columns = preview_data.get('columns', [])
+            rows = preview_data.get('rows', [])
+            future_ids = preview_data.get('future_ids', [])
+
+            # Build a comprehensive table context
+            table_context = "\n\n--- CURRENT TABLE STRUCTURE (for reference) ---\n"
+            table_context += f"\nCOLUMNS ({len(columns)} total):\n"
+            for col in columns:
+                col_type = "ID" if col.get('is_identification') else "DATA"
+                table_context += f"  [{col_type}] {col['name']}: {col.get('description', 'No description')}\n"
+
+            table_context += f"\nSAMPLE ROWS ({len(rows)} complete rows):\n"
+            for i, row in enumerate(rows[:3], 1):  # Show first 3 sample rows
+                table_context += f"  Row {i}: {json.dumps(row, indent=4)}\n"
+
+            if future_ids:
+                table_context += f"\nADDITIONAL ROW IDs ({len(future_ids)} rows):\n"
+                for i, id_row in enumerate(future_ids[:5], 1):  # Show first 5 ID rows
+                    table_context += f"  ID {i}: {json.dumps(id_row)}\n"
+                if len(future_ids) > 5:
+                    table_context += f"  ... and {len(future_ids) - 5} more\n"
+
+            table_context += "\n--- END OF CURRENT TABLE ---\n\n"
+
+            # Prepend the table context AND highlight the latest user request
+            user_message = table_context + f"=== USER'S LATEST REQUEST (address this in the ongoing conversation) ===\n{user_message}\n=== END OF LATEST REQUEST ===\n"
+            logger.info(f"[TABLE_MAKER] Added preview table context to refinement request ({len(columns)} columns, {len(rows)} sample rows, {len(future_ids)} additional IDs)")
 
         # Send progress update
         if websocket_client and session_id:

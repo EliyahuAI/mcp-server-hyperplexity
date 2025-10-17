@@ -105,6 +105,7 @@ class TableConversationHandler:
                 model=model,
                 max_tokens=8000,
                 use_cache=True,  # Enable caching for Lambda deployment
+                max_web_searches=3,  # Enable web search for context research
                 debug_name="table_maker_preview_generation"
             )
 
@@ -238,6 +239,7 @@ class TableConversationHandler:
                 model=model,
                 max_tokens=8000,
                 use_cache=True,  # Enable caching for Lambda deployment
+                max_web_searches=3,  # Enable web search for refinement
                 debug_name="table_maker_refinement"
             )
 

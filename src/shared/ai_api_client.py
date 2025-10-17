@@ -803,13 +803,14 @@ class AIAPIClient:
                 'error': str(e)
             }
     
-    def get_enhanced_call_metrics(self, response: Dict, model: str, processing_time: float, 
-                                  search_context_size: str = None, batch_info: Dict = None, 
-                                  pre_extracted_token_usage: Dict = None, is_cached: bool = None) -> Dict[str, Any]:
+    def get_enhanced_call_metrics(self, response: Dict, model: str, processing_time: float,
+                                  search_context_size: str = None, batch_info: Dict = None,
+                                  pre_extracted_token_usage: Dict = None, is_cached: bool = None,
+                                  max_web_searches: int = None) -> Dict[str, Any]:
         """
-        Enhanced elemental call tracking with comprehensive provider-specific metrics, 
+        Enhanced elemental call tracking with comprehensive provider-specific metrics,
         caching analysis, and per-row cost calculations.
-        
+
         Args:
             response: API response dictionary
             model: Model name used for the request
@@ -817,7 +818,9 @@ class AIAPIClient:
             search_context_size: Context size for Perplexity API (optional)
             batch_info: Information about batch size and rows processed (optional)
             pre_extracted_token_usage: Pre-extracted token usage (for cached responses)
-            
+            is_cached: Whether this is a cached response
+            max_web_searches: Maximum web searches used (for Anthropic extended thinking)
+
         Returns:
             Comprehensive call metrics including provider breakdown, caching efficiency, and per-row costs
         """
@@ -877,7 +880,8 @@ class AIAPIClient:
                     'model': model,
                     'api_provider': api_provider,
                     'timestamp': datetime.now(timezone.utc).isoformat(),
-                    'search_context_size': search_context_size
+                    'search_context_size': search_context_size,
+                    'max_web_searches': max_web_searches if max_web_searches is not None else 0
                 },
                 
                 # Token usage breakdown
@@ -1681,11 +1685,12 @@ class AIAPIClient:
                                 original_processing_time = cached_data.get('processing_time', 0)
                                 cached_token_usage = cached_data.get('token_usage', {})
                                 enhanced_data = self.get_enhanced_call_metrics(
-                                    cached_data['api_response'], 
-                                    current_model, 
+                                    cached_data['api_response'],
+                                    current_model,
                                     0.001,  # Use minimal cache retrieval time instead of original processing time
                                     pre_extracted_token_usage=cached_token_usage,
-                                    is_cached=True
+                                    is_cached=True,
+                                    max_web_searches=max_web_searches
                                 )
                                 
                                 # Override timing metrics for cached response
@@ -2538,7 +2543,8 @@ class AIAPIClient:
                         # Generate enhanced metrics for this call
                         try:
                             enhanced_data = self.get_enhanced_call_metrics(
-                                response_json, normalized_model, processing_time, is_cached=False
+                                response_json, normalized_model, processing_time, is_cached=False,
+                                max_web_searches=max_web_searches
                             )
                         except Exception as e:
                             logger.warning(f"Failed to generate enhanced metrics for call_structured_api: {e}")
