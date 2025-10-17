@@ -934,7 +934,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                         if comment_text:
                             try:
                                 updated_sheet.write_comment(updated_row_idx, col_idx, comment_text,
-                                                           {'width': 300, 'height': 150})
+                                                           {'width': 360, 'height': 582})
                             except Exception as e:
                                 logger.warning(f"Could not add comment to Updated Values sheet: {e}")
                     
@@ -1145,7 +1145,7 @@ def create_enhanced_excel_with_validation(excel_data, validation_results, config
                                     logger.info(f"[COMMENT_WRITE_DEBUG] Row {row_idx} {col_name}: Writing comment at Excel row {row_idx + 1}: {comment_text[:200]}...")
 
                                 original_sheet.write_comment(row_idx + 1, col_idx, comment_text,
-                                                           {'width': 300, 'height': 150})
+                                                           {'width': 360, 'height': 582})
                             except Exception as e:
                                 logger.warning(f"Could not add comment: {e}")
 
