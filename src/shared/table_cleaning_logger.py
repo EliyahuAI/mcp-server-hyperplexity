@@ -27,7 +27,15 @@ class TableCleaningLogger:
     - Summary row detection
     """
 
-    def __init__(self, output_dir: str = "results"):
+    def __init__(self, output_dir: str = None):
+        # Use /tmp in Lambda environment (read-only filesystem), otherwise use 'results'
+        if output_dir is None:
+            # Detect Lambda environment
+            if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+                output_dir = '/tmp/results'
+            else:
+                output_dir = 'results'
+
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.logger = logging.getLogger(__name__)

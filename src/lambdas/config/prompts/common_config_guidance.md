@@ -6,7 +6,7 @@ This document contains shared guidelines used by both new config creation and re
 - **Default Model**: `sonar` is the default for most use cases - particularly for new configurations
 - **Alternative Models**: Available models include:
   - Perplexity models: `sonar` (recommended for simple fact checking- default for new configurations), `sonar-pro` (recommended deeper synthesis of sources, a great inexpensive upgrade for more reasoning)
-  - Anthropic models: `claude-opus-4-1` (latest Claude 4 opus for advanced reasoning - expensive!, bring out the big guns only when really deep thought and synthesis is needed - with ), `claude-sonnet-4-0` (latest Claude 4 - this is the first line of defense for advanced reasoning solutions that require search, and very helpful when pure reasoning is needed in response when anthropic_max_web_searches is set to 0, `claude-3.5-haiku-latest` (great for fast reasoning solutions that dont need much thought)
+  - Anthropic models: `claude-opus-4-1` (latest Claude 4 opus for advanced reasoning - expensive!, bring out the big guns only when really deep thought and synthesis is needed - with ), `claude-sonnet-4-5` (latest Claude 4 - this is the first line of defense for qc and advanced reasoning solutions that require search, and very helpful when pure reasoning is needed in response when anthropic_max_web_searches is set to 0, `claude-3.5-haiku-latest` (great for fast reasoning solutions that dont need much thought)
 - **Best Practices**:
   - Use Perplexity models (`sonar` or`sonar-pro`) for standard web search and validation tasks
   - Only use Anthropic models only when deeper reasoning (sonnet-4 in most cases, opus when deep reasoning is called for)
@@ -146,3 +146,11 @@ Search groups are **REQUIRED** for every configuration - they are essential for 
 - **Upper limit**: Maximum 10
 - **No ungrouped fields allowed**: Every column must belong to a search group for optimal performance
 
+## Embedding Tablewide Context Research
+
+When **tablewide context research** is provided (e.g., background about a specific company, methodology, or domain-specific information), you MUST embed it appropriately:
+
+- **General Notes**: If the research is relevant to the ENTIRE table or multiple columns, embed concise key points in the `general_notes` field
+- **Column Notes**: If the research is relevant to ONLY ONE specific column, embed it in that column's `notes` field
+- **Focus on Non-Common Knowledge**: Only embed information that is NOT common knowledge or that provides specific context the AI wouldn't know
+- **Keep It Concise**: Summarize the research into actionable context relevant to the table topic. 

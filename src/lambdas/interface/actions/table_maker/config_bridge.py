@@ -106,6 +106,10 @@ def build_table_analysis_from_conversation(
             'turn_count': conversation_state.get('turn_count', 0)
         }
 
+        # Extract tablewide_research from conversation state
+        # This is the concise research summary from the LLM's table generation
+        tablewide_research = conversation_state.get('tablewide_research', '')
+
         # Build conversation_context (NEW FIELD)
         # This enriches the existing config generation without breaking compatibility
         conversation_context = {
@@ -117,7 +121,8 @@ def build_table_analysis_from_conversation(
             'context_research': context_research,
             'user_requirements': extract_user_requirements(messages),
             'clarifying_questions_asked': extract_clarifying_questions(messages),
-            'readiness_confidence': conversation_state.get('readiness_confidence', 0.0)
+            'readiness_confidence': conversation_state.get('readiness_confidence', 0.0),
+            'tablewide_research': tablewide_research  # Research to embed in general/column notes
         }
 
         # Assemble complete table_analysis

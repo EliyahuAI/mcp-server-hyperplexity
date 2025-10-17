@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["ai_message", "table_name", "proposed_rows", "proposed_columns", "clarifying_questions", "confidence", "ready_to_generate", "reasoning"],
+  "required": ["ai_message", "table_name", "proposed_rows", "proposed_columns", "tablewide_research", "clarifying_questions", "confidence", "ready_to_generate", "reasoning"],
   "properties": {
     "ai_message": {
       "type": "string",
@@ -11,6 +11,10 @@
       "minLength": 3,
       "maxLength": 100,
       "description": "Short, descriptive table name in proper title case (e.g., 'Research Applications for Internal Programs', 'New Clients with GenAI Job Postings'). Use clear, human-readable titles that describe the table's purpose. This will be converted to snake_case for file naming."
+    },
+    "tablewide_research": {
+      "type": "string",
+      "description": "Concise research summary (2-4 sentences) containing non-common-knowledge context about specific entities, methodologies, or domain information mentioned in the conversation. This will be embedded in the validation configuration's general_notes or column notes. Include ONLY information that a state-of-the-art LLM would NOT already know. Examples: 'Eliyahu.AI is a B2B AI validation consulting company founded in 2024', 'This methodology uses hierarchical citation scoring', 'Recent GenAI regulations from Q4 2025'. EXCLUDE common knowledge like 'AI is growing' or row-specific data."
     },
     "proposed_rows": {
       "type": "object",

@@ -191,6 +191,8 @@ def _add_api_call_to_runs(
             'total_provider_tokens': totals.get('total_tokens', 0),
             # Total number of API calls made
             'total_provider_calls': total_calls,
+            # Overall cache efficiency percentage
+            'overall_cache_efficiency_percent': totals.get('overall_cache_efficiency', 0.0),
             # Sum of actual processing times across all calls
             'actual_processing_time_seconds': total_actual_time,
             # Sum of actual run times (same as actual_processing_time_seconds)
@@ -825,8 +827,7 @@ async def handle_table_conversation_start(request_data, context):
             run_key = create_run_record(
                 session_id=session_id,
                 email=email,
-                total_rows=0,  # Preview will have 3 rows
-                batch_size=1,
+                total_rows=0,
                 run_type="Table Generation"
             )
             logger.info(f"[TABLE_MAKER] Created run record with run_key: {run_key}")
@@ -838,17 +839,8 @@ async def handle_table_conversation_start(request_data, context):
                 run_type="Table Generation",
                 verbose_status="Table conversation starting...",
                 percent_complete=5,
-                processed_rows=0,
-                total_rows=0,
-                input_table_name=f"table_{conversation_id}",
-                account_current_balance=0,
-                account_sufficient_balance="n/a",
-                account_credits_needed="n/a",
-                account_domain_multiplier=1.0,
-                models="TBD",
-                batch_size=1,
-                eliyahu_cost=0.0,
-                time_per_row_seconds=0.0
+                input_table_name=f"table_{conversation_id}"
+                # models, eliyahu_cost, run_time_s will be set by _add_api_call_to_runs
             )
         except Exception as e:
             logger.warning(f"[TABLE_MAKER] Failed to create run record: {e}")

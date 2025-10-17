@@ -162,6 +162,9 @@ async def handle_table_preview_generate(event: Dict[str, Any], context: Any) -> 
                 expiration=3600
             )
 
+        # Extract tablewide_research from preview result
+        tablewide_research = preview_result.get('tablewide_research', '')
+
         # Update conversation state with preview data
         conversation_state['status'] = 'preview_generated'
         conversation_state['preview_data'] = {
@@ -170,6 +173,11 @@ async def handle_table_preview_generate(event: Dict[str, Any], context: Any) -> 
             'future_ids': future_ids,
             'generated_at': datetime.utcnow().isoformat() + 'Z'
         }
+
+        # Store tablewide_research for config generation
+        if tablewide_research:
+            conversation_state['tablewide_research'] = tablewide_research
+            logger.info(f"[PREVIEW_GENERATE] Stored tablewide_research in conversation state")
 
         # Store the current_proposal so refinement can access it
         conversation_state['current_proposal'] = {
@@ -584,6 +592,9 @@ Please generate the complete table structure with columns and sample rows."""
         sample_rows = rows_data.get('sample_rows', [])
         additional_rows = rows_data.get('additional_rows', [])
 
+        # Extract tablewide_research from the LLM's response
+        tablewide_research = proposed_table.get('tablewide_research', '')
+
         if not columns or not sample_rows:
             return {
                 'success': False,
@@ -591,6 +602,8 @@ Please generate the complete table structure with columns and sample rows."""
             }
 
         logger.info(f"[PREVIEW_GENERATE] Generated {len(columns)} columns, {len(sample_rows)} sample rows, {len(additional_rows)} additional rows")
+        if tablewide_research:
+            logger.info(f"[PREVIEW_GENERATE] Tablewide research extracted: {tablewide_research[:100]}...")
 
         # Return table structure AND API metadata for metrics aggregation
         return {
@@ -598,6 +611,7 @@ Please generate the complete table structure with columns and sample rows."""
             'columns': columns,
             'rows': sample_rows,
             'additional_rows': additional_rows,
+            'tablewide_research': tablewide_research,  # Pass through for storage
             'api_response': result.get('api_response', {}),  # Full API response
             'model': model,
             'processing_time': result.get('api_metadata', {}).get('processing_time', 0.0)

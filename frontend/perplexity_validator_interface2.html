@@ -11022,7 +11022,7 @@ Please provide any additional context, or simply proceed to generate your initia
             const card = createCard({
                 id: previewCardId,
                 icon: '📊',
-                title: 'Unvalidated Table Preview',
+                title: 'Table Preview',
                 subtitle: tableName || (previewData ? 'Review and refine your table structure' : 'Generating preview...'),
                 content,
                 buttons: []  // Will be added by showTablePreviewInCard
@@ -11141,9 +11141,15 @@ Please provide any additional context, or simply proceed to generate your initia
                     `;
                 }
 
-                // Step 1b: Display table first, then info boxes below
+                // Step 1b: Display blue info box, then table, then info boxes below
                 if (markdownTable) {
-                    previewContainer.innerHTML = `<div style="margin: 16px 0;">${renderMarkdown(markdownTable)}</div>${infoBoxesHtml}`;
+                    const blueInfoBox = `
+                        <div class="message message-info" style="margin-bottom: 1rem;">
+                            <span class="message-icon">ℹ️</span>
+                            <div>First 3 rows (transposed) of state of the art AI table generation, prior to Hyperplexity validation.</div>
+                        </div>
+                    `;
+                    previewContainer.innerHTML = `${blueInfoBox}<div style="margin: 16px 0;">${renderMarkdown(markdownTable)}</div>${infoBoxesHtml}`;
                 }
 
                 // Step 1c: Add next steps explanation in chat

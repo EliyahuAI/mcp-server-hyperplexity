@@ -159,29 +159,23 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
             table_name_snake = f"table_{session_id}"
             logger.warning(f"No table name found in conversation state, using default: {table_name_snake}")
 
-        # Create run record for table generation
-        try:
-            run_key = create_run_record(
-                session_id=session_id,
-                email=email,
-                total_rows=row_count,
-                batch_size=1,
-                run_type="Table Generation"
-            )
-            logger.info(f"Created run record with run_key: {run_key}")
-
-            update_run_status(
-                session_id=session_id,
-                run_key=run_key,
-                status='IN_PROGRESS',
-                run_type="Table Generation",
-                verbose_status="Generating full table from conversation...",
-                percent_complete=10,
-                processed_rows=0,
-                total_rows=row_count
-            )
-        except Exception as e:
-            logger.warning(f"Failed to create run record: {e}")
+        # Reuse existing run_key from conversation (don't create a new one)
+        run_key = conversation_state.get('run_key')
+        if run_key:
+            logger.info(f"Reusing existing run_key from conversation: {run_key}")
+            try:
+                update_run_status(
+                    session_id=session_id,
+                    run_key=run_key,
+                    status='IN_PROGRESS',
+                    verbose_status="Generating full table from conversation...",
+                    percent_complete=10,
+                    total_rows=row_count
+                )
+            except Exception as e:
+                logger.warning(f"Failed to update run status: {e}")
+        else:
+            logger.warning("No run_key found in conversation_state, metrics will not be tracked")
             run_key = None
 
         # Send progress update
@@ -627,12 +621,22 @@ Ensure variety and relevance to the research domain.
 
                 # NO WEBSOCKET UPDATE - avoid race condition with table generation
 
+                # Extract tablewide_research for embedding in configuration
+                tablewide_research = table_analysis['conversation_context'].get('tablewide_research', '')
+
+                # Build instructions with tablewide research context
+                instructions = f"Generate optimal validation configuration for AI-generated research table. Research purpose: {table_analysis['conversation_context']['research_purpose'][:200]}..."
+
+                if tablewide_research:
+                    instructions += f"\n\nHere is tablewide concise research to embed in the general/column notes: {tablewide_research}"
+                    logger.info(f"[TABLE_FINALIZE] Including tablewide_research in config generation instructions")
+
                 # Call existing handle_generate_config_unified() with enhanced payload and websocket callback
                 config_generation_payload = {
                     'email': email,
                     'session_id': session_id,
                     'table_analysis': table_analysis,
-                    'instructions': f"Generate optimal validation configuration for AI-generated research table. Research purpose: {table_analysis['conversation_context']['research_purpose'][:200]}...",
+                    'instructions': instructions,
                     'existing_config': None  # No existing config for new table
                 }
 
