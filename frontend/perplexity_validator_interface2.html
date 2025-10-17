@@ -4888,7 +4888,7 @@
                             // For legacy flow, create preview card
                             if (!message.includes('Configuration generated')) {
                                 // Show success message
-                                showMessage(`${latestCardId}-messages`, 'Table generated successfully! Creating preview card...', 'success');
+                                showMessage(`${latestCardId}-messages`, 'Validation configuration completed! Validating first few rows...', 'success');
 
                                 // Create new preview card (legacy flow only)
                                 setTimeout(() => {
@@ -5967,7 +5967,7 @@
                     id: cardId,
                     icon: '🚀',
                     title: 'Get Started',
-                    subtitle: 'New user detected - choose your path',
+                    subtitle: 'Choose your own adventure!',
                     content,
                     buttons: [
                         {
@@ -10699,15 +10699,7 @@ Please provide any additional context, or simply proceed to generate your initia
             tableMakerState.cardId = cardId;
 
             const initialPrompt = `<div class="chat-message ai">
-                <h4>Let's build your research table</h4>
-                <p style="margin: 0 0 8px 0;"><strong>To get started, please tell me:</strong></p>
-                <ul style="margin: 0 0 8px 0; padding-left: 20px; line-height: 1.6;">
-                    <li><strong>What research table would you like to build?</strong></li>
-                    <li><strong>What information defines each row</strong> that I should iterate over?</li>
-                    <li><strong>What kind of information</strong> are you interested in for the columns?</li>
-                    <li><strong>Who will use this table, and for what purpose?</strong></li>
-                </ul>
-                <p style="margin: 8px 0 0 0; font-style: italic;">I can get pretty far with just a bit of info, but I can get to where you want to go with more detail.</p>
+                <p>Tell me about your research table!</p>
             </div>`;
 
             const content = `
@@ -10729,7 +10721,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 content,
                 buttons: [
                     {
-                        text: '📝 Start Conversation',
+                        text: '📝 Submit',
                         variant: 'primary',
                         callback: () => startTableConversationFromCard(cardId)
                     }
@@ -11030,7 +11022,7 @@ Please provide any additional context, or simply proceed to generate your initia
             const card = createCard({
                 id: previewCardId,
                 icon: '📊',
-                title: 'Table Preview',
+                title: 'Unvalidated Table Preview',
                 subtitle: tableName || (previewData ? 'Review and refine your table structure' : 'Generating preview...'),
                 content,
                 buttons: []  // Will be added by showTablePreviewInCard
@@ -11099,65 +11091,62 @@ Please provide any additional context, or simply proceed to generate your initia
 
             // Step 1: After 800ms pause, show column definitions, intro message, and table
             setTimeout(() => {
-                // Step 1a: Add column lists to CHAT area FIRST
-                if (chatContainer) {
-                    // ID Columns list
-                    if (idColumns.length > 0) {
-                        const idListHtml = idColumns.map(col => {
-                            const name = col.name || col;
-                            const desc = col.description || '';
-                            return `<span style="display: inline-block; width: 0.8em; height: 0.8em; background: #007bff; border-radius: 50%; margin-right: 6px; vertical-align: middle;"></span><strong>${name}</strong>${desc ? ': ' + desc : ''}`;
-                        }).join('<br>');
+                // Step 1a: Add info boxes to preview container FIRST
+                let infoBoxesHtml = '';
 
-                        const idColDiv = document.createElement('div');
-                        idColDiv.className = 'chat-message ai';
-                        idColDiv.innerHTML = `<strong>ID Columns</strong> (define the row, not validated):<br>${idListHtml}`;
-                        chatContainer.appendChild(idColDiv);
-                    }
+                // ID Columns list (Blue/Cyan - quaternary color)
+                if (idColumns.length > 0) {
+                    const idListHtml = idColumns.map(col => {
+                        const name = col.name || col;
+                        const desc = col.description || '';
+                        return `<span style="display: inline-block; width: 0.8em; height: 0.8em; background: #007bff; border-radius: 50%; margin-right: 6px; vertical-align: middle;"></span><strong>${name}</strong>${desc ? ': ' + desc : ''}`;
+                    }).join('<br>');
 
-                    // Research Columns list
-                    if (researchColumns.length > 0) {
-                        const researchListHtml = researchColumns.map(col => {
-                            const name = col.name || col;
-                            const desc = col.description || '';
-                            return `<strong>${name}</strong>${desc ? ': ' + desc : ''}`;
-                        }).join('<br>');
-
-                        const researchColDiv = document.createElement('div');
-                        researchColDiv.className = 'chat-message ai';
-                        researchColDiv.innerHTML = `<strong>Research Columns</strong> (to be validated):<br>${researchListHtml}`;
-                        chatContainer.appendChild(researchColDiv);
-                    }
-
-                    // Additional rows - ID columns only
-                    if (futureIds && futureIds.length > 0) {
-                        const futureIdsList = futureIds.slice(0, 5).map(idSet => {
-                            const idValues = idColumns.map(col => idSet[col.name] || '').join(', ');
-                            return `• ${idValues}`;
-                        }).join('<br>');
-
-                        const futureIdsDiv = document.createElement('div');
-                        futureIdsDiv.className = 'chat-message ai';
-                        futureIdsDiv.innerHTML = `<strong>Additional rows</strong> (${futureIds.length} more):<br>${futureIdsList}${futureIds.length > 5 ? '<br>...and more' : ''}`;
-                        chatContainer.appendChild(futureIdsDiv);
-                    }
-
-                    // Add intro message AFTER column lists, BEFORE table preview
-                    const introDiv = document.createElement('div');
-                    introDiv.className = 'chat-message ai';
-                    introDiv.innerHTML = `I've designed a table structure with ${idColumns.length} identification column${idColumns.length !== 1 ? 's' : ''} and ${researchColumns.length} research column${researchColumns.length !== 1 ? 's' : ''}. Let me show you the preview...`;
-                    chatContainer.appendChild(introDiv);
-
-                    // Scroll to bottom
-                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                    infoBoxesHtml += `
+                        <div class="message" style="margin-bottom: 1rem; background-color: #e0f7fa; color: #00838f; border: 1px solid #b2ebf2;">
+                            <span class="message-icon">ℹ️</span>
+                            <div><strong>ID Columns</strong> (define the row, not validated):<br>${idListHtml}</div>
+                        </div>
+                    `;
                 }
 
-                // Step 1b: Display table OUTSIDE chat area AFTER intro message
+                // Research Columns list (Purple - secondary color)
+                if (researchColumns.length > 0) {
+                    const researchListHtml = researchColumns.map(col => {
+                        const name = col.name || col;
+                        const desc = col.description || '';
+                        return `<strong>${name}</strong>${desc ? ': ' + desc : ''}`;
+                    }).join('<br>');
+
+                    infoBoxesHtml += `
+                        <div class="message" style="margin-bottom: 1rem; background-color: #f3e5f5; color: #6a1b9a; border: 1px solid #ce93d8;">
+                            <span class="message-icon">ℹ️</span>
+                            <div><strong>Research Columns</strong> (to be validated):<br>${researchListHtml}</div>
+                        </div>
+                    `;
+                }
+
+                // Additional rows - ID columns only (Orange - tertiary color)
+                if (futureIds && futureIds.length > 0) {
+                    const futureIdsList = futureIds.slice(0, 5).map(idSet => {
+                        const idValues = idColumns.map(col => idSet[col.name] || '').join(', ');
+                        return `• ${idValues}`;
+                    }).join('<br>');
+
+                    infoBoxesHtml += `
+                        <div class="message" style="margin-bottom: 1rem; background-color: #fff3e0; color: #e65100; border: 1px solid #ffcc80;">
+                            <span class="message-icon">ℹ️</span>
+                            <div><strong>Additional rows</strong> (${futureIds.length} more):<br>${futureIdsList}${futureIds.length > 5 ? '<br>...and more' : ''}</div>
+                        </div>
+                    `;
+                }
+
+                // Step 1b: Display table first, then info boxes below
                 if (markdownTable) {
-                    previewContainer.innerHTML = `<div style="margin: 16px 0;">${renderMarkdown(markdownTable)}</div>`;
+                    previewContainer.innerHTML = `<div style="margin: 16px 0;">${renderMarkdown(markdownTable)}</div>${infoBoxesHtml}`;
                 }
 
-                // Step 1c: Add next steps explanation
+                // Step 1c: Add next steps explanation in chat
                 if (chatContainer) {
                     const explanationDiv = document.createElement('div');
                     explanationDiv.className = 'chat-message ai';
@@ -11181,7 +11170,11 @@ Please provide any additional context, or simply proceed to generate your initia
                         {
                             text: '✨ Validate Table',
                             variant: 'primary',
-                            callback: () => acceptTableAndValidateFromCard(cardId)
+                            callback: async (e) => {
+                                const button = e.target.closest('button');
+                                markButtonSelected(button, '✨ Validating Table...');
+                                await acceptTableAndValidateFromCard(cardId);
+                            }
                         }
                     ]);
                 }
@@ -11375,8 +11368,8 @@ Please provide any additional context, or simply proceed to generate your initia
                 <div class="table-maker-modal" style="max-width: 800px;">
                     <button class="table-maker-modal-close" onclick="closeTableMakerChatModal()">&times;</button>
                     <div class="table-maker-modal-header">
-                        <h2 class="table-maker-modal-title">Design Your Table</h2>
-                        <p class="table-maker-modal-subtitle">AI is analyzing your needs...</p>
+                        <h2 class="table-maker-modal-title">Table Maker</h2>
+                        <p class="table-maker-modal-subtitle">Design your research table with AI</p>
                     </div>
                     <div class="table-maker-chat" id="table-maker-chat">
                         <!-- Messages will be added here -->
@@ -11387,7 +11380,7 @@ Please provide any additional context, or simply proceed to generate your initia
                             placeholder="Add more details or ask questions..."></textarea>
                         <div class="table-maker-buttons">
                             <button class="std-button secondary" onclick="closeTableMakerChatModal()">Cancel</button>
-                            <button class="std-button primary" onclick="continueTableConversation()">Send</button>
+                            <button class="std-button primary" onclick="continueTableConversation()">Submit</button>
                         </div>
                     </div>
                 </div>

@@ -40,9 +40,9 @@ def handle(request_data, context):
             result = {'success': True, 'validated': is_valid}
         elif action == 'checkOrSendValidation':
             result = check_or_send_validation(email)
-            # Add new user detection for demo functionality
-            if result.get('success') and result.get('validated'):
-                result['is_new_user'] = is_new_user(email)
+            # New user detection removed for performance - no longer needed
+            # if result.get('success') and result.get('validated'):
+            #     result['is_new_user'] = is_new_user(email)
         else:
             return create_response(400, {'error': f'Unknown email action: {action}'})
 
