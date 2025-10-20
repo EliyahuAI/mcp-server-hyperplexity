@@ -2990,6 +2990,8 @@ def create_run_record(session_id: str, email: str, total_rows: int, batch_size: 
             raise
 
 def update_run_status(session_id: str, run_key: str, status: str, run_type: str = None, processed_rows: int = None, error_message: str = None, results_s3_key: str = None, verbose_status: str = None, percent_complete: int = None, email_status: str = None, preview_data: dict = None, batch_size: int = None, account_current_balance: float = None, account_sufficient_balance: str = None, account_credits_needed: str = None, account_domain_multiplier: float = None, models: str = None, input_table_name: str = None, configuration_id: str = None, total_rows: int = None, eliyahu_cost: float = None, quoted_validation_cost: float = None, discount: float = None, estimated_validation_eliyahu_cost: float = None, time_per_row_seconds: float = None, estimated_validation_time_minutes: float = None, run_time_s: float = None, provider_metrics: dict = None, qc_metrics: dict = None, total_provider_calls: int = None,
+                      # Table maker aggregation fields
+                      call_metrics_list: list = None, enhanced_metrics_aggregated: dict = None, table_maker_breakdown: dict = None,
                       # Smart delegation system parameters
                       processing_mode: str = None, delegation_timestamp: str = None, estimated_processing_minutes: float = None, sync_timeout_limit_minutes: float = None, delegation_reason: str = None, async_context: dict = None, async_context_s3_key: str = None, async_progress: dict = None, async_results_s3_key: str = None, async_completion_timestamp: str = None, async_total_duration_seconds: float = None, async_input_files: dict = None,
                       # Phase 5: History handling confidence distribution fields
@@ -3222,6 +3224,17 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
     if total_provider_calls is not None and provider_metrics is None:
         update_expression += ", total_provider_calls = :tpc_override"
         expression_attribute_values[':tpc_override'] = total_provider_calls
+
+    # ========== TABLE MAKER AGGREGATION FIELDS ==========
+    if call_metrics_list is not None:
+        update_expression += ", call_metrics_list = :cml"
+        expression_attribute_values[':cml'] = convert_floats_to_decimal(call_metrics_list)
+    if enhanced_metrics_aggregated is not None:
+        update_expression += ", enhanced_metrics_aggregated = :ema"
+        expression_attribute_values[':ema'] = convert_floats_to_decimal(enhanced_metrics_aggregated)
+    if table_maker_breakdown is not None:
+        update_expression += ", table_maker_breakdown = :tmb"
+        expression_attribute_values[':tmb'] = convert_floats_to_decimal(table_maker_breakdown)
 
     # ========== SMART DELEGATION SYSTEM FIELDS ==========
     if processing_mode is not None:
