@@ -15,6 +15,7 @@ import asyncio
 import random
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Union
+from decimal import Decimal
 from perplexity_schema import get_response_format_schema
 from model_config_table import ModelConfigTable
 import traceback
@@ -1150,7 +1151,6 @@ class AIAPIClient:
                 return {'providers': {}, 'totals': {}, 'error': 'no_metrics_provided'}
 
             # Convert any Decimal objects to float (happens when reading from DynamoDB)
-            from decimal import Decimal
             def decimal_to_float(obj):
                 if isinstance(obj, Decimal):
                     return float(obj)
