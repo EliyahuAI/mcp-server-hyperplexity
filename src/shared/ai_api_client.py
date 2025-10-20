@@ -1135,19 +1135,33 @@ class AIAPIClient:
     def aggregate_provider_metrics(call_metrics_list: List[Dict]) -> Dict[str, Any]:
         """
         Aggregate enhanced call metrics by provider for comprehensive analysis.
-        
+
         Args:
             call_metrics_list: List of enhanced call metrics from get_enhanced_call_metrics()
-            
+
         Returns:
             Aggregated metrics by provider with comprehensive statistics
         """
         try:
             logger.debug(f"[AGGREGATE_DEBUG] Starting aggregation of {len(call_metrics_list)} call metrics")
-            
+
             if not call_metrics_list:
                 logger.warning("[AGGREGATE_DEBUG] No call metrics provided for aggregation")
                 return {'providers': {}, 'totals': {}, 'error': 'no_metrics_provided'}
+
+            # Convert any Decimal objects to float (happens when reading from DynamoDB)
+            from decimal import Decimal
+            def decimal_to_float(obj):
+                if isinstance(obj, Decimal):
+                    return float(obj)
+                elif isinstance(obj, dict):
+                    return {k: decimal_to_float(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [decimal_to_float(item) for item in obj]
+                else:
+                    return obj
+
+            call_metrics_list = decimal_to_float(call_metrics_list)
             
             providers = {}
             totals = {
