@@ -104,12 +104,18 @@ def _add_api_call_to_runs(
         # Step 2: Extract existing call_metrics_list and models list (if any)
         existing_call_metrics = []
         existing_models_list = []
+        logger.info(f"[TABLE_MAKER] Read existing run: exists={existing_run is not None}, keys={list(existing_run.keys()) if existing_run else 'None'}")
         if existing_run:
+            logger.info(f"[TABLE_MAKER] Has call_metrics_list={'call_metrics_list' in existing_run}, Has models={'models' in existing_run}")
             if 'call_metrics_list' in existing_run:
                 existing_call_metrics = existing_run.get('call_metrics_list', [])
                 logger.info(f"[TABLE_MAKER] Found {len(existing_call_metrics)} existing API calls in runs database")
+            else:
+                logger.warning(f"[TABLE_MAKER] No call_metrics_list in existing run record")
             if 'models' in existing_run and isinstance(existing_run['models'], list):
                 existing_models_list = existing_run['models']
+        else:
+            logger.warning(f"[TABLE_MAKER] No existing run found for session_id={session_id}, run_key={run_key}")
 
         # Step 3: Add NEW call metrics with call_type tag
         # Use enhanced_data directly from call_structured_api response (already computed)
