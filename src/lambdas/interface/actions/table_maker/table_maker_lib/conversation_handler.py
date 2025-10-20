@@ -614,12 +614,12 @@ class TableConversationHandler:
         }
 
         try:
-            # Extract enhanced metrics if available
-            enhanced_metrics = api_response.get('enhanced_metrics', {})
+            # Extract enhanced_data if available (call_structured_api returns 'enhanced_data', not 'enhanced_metrics')
+            enhanced_data = api_response.get('enhanced_data', {})
 
-            if enhanced_metrics:
-                # Get cost data from enhanced metrics
-                costs = enhanced_metrics.get('costs', {})
+            if enhanced_data:
+                # Get cost data from enhanced_data
+                costs = enhanced_data.get('costs', {})
                 actual_cost = costs.get('actual', {})
                 estimated_cost = costs.get('estimated', {})
 
@@ -627,12 +627,12 @@ class TableConversationHandler:
                 metadata['eliyahu_cost_estimated'] = estimated_cost.get('total_cost', 0.0)
 
                 # Get model used
-                call_info = enhanced_metrics.get('call_info', {})
+                call_info = enhanced_data.get('call_info', {})
                 model_used = call_info.get('model', api_response.get('model_used', 'unknown'))
                 metadata['models'] = model_used
 
                 # Get token usage
-                tokens = enhanced_metrics.get('tokens', {})
+                tokens = enhanced_data.get('tokens', {})
                 metadata['token_usage'] = {
                     'total_tokens': tokens.get('total_tokens', 0),
                     'input_tokens': tokens.get('input_tokens', 0),
@@ -642,7 +642,7 @@ class TableConversationHandler:
                 }
 
                 # Get timing data
-                timing = enhanced_metrics.get('timing', {})
+                timing = enhanced_data.get('timing', {})
                 metadata['run_time_s'] = timing.get('time_actual_seconds', 0.0)
                 metadata['run_time_s_estimated'] = timing.get('time_estimated_seconds', 0.0)
 
