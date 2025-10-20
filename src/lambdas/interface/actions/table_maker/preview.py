@@ -424,11 +424,16 @@ async def _generate_preview_table(conversation_state: Dict[str, Any],
                     'error': f"Failed to generate table: {full_table.get('error', 'Unknown error')}"
                 }
 
+            # Return complete result including API metadata for metrics tracking
             return {
                 'success': True,
                 'columns': full_table['columns'],
                 'rows': full_table['rows'],
-                'additional_rows': full_table.get('additional_rows', [])
+                'additional_rows': full_table.get('additional_rows', []),
+                'tablewide_research': full_table.get('tablewide_research', ''),
+                'api_response': full_table.get('api_response'),
+                'model': full_table.get('model'),
+                'processing_time': full_table.get('processing_time', 0.0)
             }
 
         # If we have a current_proposal from refinement, use it
@@ -450,12 +455,17 @@ async def _generate_preview_table(conversation_state: Dict[str, Any],
             }
 
         # If we already have sample rows from conversation, use them
+        # NOTE: This shouldn't happen for interview-based flow, but handle it for refinement
         if sample_rows and len(sample_rows) >= sample_row_count:
-            logger.info(f"[PREVIEW_GENERATE] Using {len(sample_rows)} sample rows from conversation state")
+            logger.warning(f"[PREVIEW_GENERATE] Using {len(sample_rows)} sample rows from conversation state (no new API call)")
+            # No api_response available since we're reusing existing data
             return {
                 'success': True,
                 'columns': columns,
-                'rows': sample_rows[:sample_row_count]
+                'rows': sample_rows[:sample_row_count],
+                'api_response': None,  # Explicitly None - no new API call made
+                'model': None,
+                'processing_time': 0.0
             }
 
         # Otherwise, generate rows using AI (row_expander)
