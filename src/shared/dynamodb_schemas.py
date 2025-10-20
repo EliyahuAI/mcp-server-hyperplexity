@@ -3041,12 +3041,8 @@ def update_run_status(session_id: str, run_key: str, status: str, run_type: str 
         expression_attribute_values[':adm'] = convert_floats_to_decimal(account_domain_multiplier)
     if models is not None:
         update_expression += ", models = :models"
-<<<<<<< HEAD
-        expression_attribute_values[':models'] = models
-=======
         # Convert to decimal if list/dict (table maker), leave as-is if string (legacy)
         expression_attribute_values[':models'] = convert_floats_to_decimal(models) if isinstance(models, (list, dict)) else models
->>>>>>> 9d732a4a (Fix: Handle both string and list formats for models field)
     if input_table_name is not None:
         update_expression += ", input_table_name = :itn"
         expression_attribute_values[':itn'] = input_table_name
