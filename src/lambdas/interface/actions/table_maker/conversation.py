@@ -633,37 +633,12 @@ async def _trigger_preview_generation(
     # Import preview handler
     from .preview import handle_table_preview_generate
 
-    # Send WebSocket progress updates during generation (simulate ~90s)
+    # Get processing steps for progress updates
     processing_steps = conversation_state.get('interview_context', {}).get('processing_steps', [])
     if not processing_steps:
         processing_steps = ['Preparing preview', 'Analyzing context', 'Generating table']
 
-    # Calculate step duration for ~90 second total
-    step_duration = 90.0 / len(processing_steps) if processing_steps else 30.0
-
-    # Send progress updates for each step with delays
-    for idx, step in enumerate(processing_steps):
-        progress = 10 + (idx * (80 / len(processing_steps)))
-        if websocket_client and session_id:
-            try:
-                websocket_client.send_to_session(session_id, {
-                    'type': 'table_conversation_update',
-                    'conversation_id': conversation_id,
-                    'progress': progress,
-                    'status': step,
-                    'step': idx + 1,
-                    'total_steps': len(processing_steps),
-                    'is_generating': True
-                })
-                logger.info(f"[TABLE_MAKER] Progress {progress}%: {step} (step {idx+1}/{len(processing_steps)})")
-            except Exception as e:
-                logger.warning(f"Failed to send progress update: {e}")
-
-        # Delay between steps (except after last one)
-        if idx < len(processing_steps) - 1:
-            await asyncio.sleep(step_duration)
-
-    # Call preview generator directly (we're already in background processor)
+    # Start preview generation as async task
     preview_request = {
         'body': json.dumps({
             'email': email,
@@ -672,8 +647,43 @@ async def _trigger_preview_generation(
         })
     }
 
+    # Run preview generation and progress updates in parallel, stop when preview completes
+    preview_task = asyncio.create_task(handle_table_preview_generate(preview_request, None))
+
+    # Send progress updates until preview completes
+    step_idx = 0
+    step_interval = 5.0  # Send update every 5 seconds
+    while not preview_task.done():
+        # Calculate progress based on elapsed time and steps
+        step = processing_steps[step_idx % len(processing_steps)]
+        progress = min(90, 10 + (step_idx * 15))  # Cap at 90% until actually complete
+
+        if websocket_client and session_id:
+            try:
+                websocket_client.send_to_session(session_id, {
+                    'type': 'table_conversation_update',
+                    'conversation_id': conversation_id,
+                    'progress': progress,
+                    'status': step,
+                    'step': (step_idx % len(processing_steps)) + 1,
+                    'total_steps': len(processing_steps),
+                    'is_generating': True
+                })
+                logger.info(f"[TABLE_MAKER] Progress {progress}%: {step}")
+            except Exception as e:
+                logger.warning(f"Failed to send progress update: {e}")
+
+        # Wait for interval or preview completion, whichever comes first
+        try:
+            await asyncio.wait_for(asyncio.shield(preview_task), timeout=step_interval)
+            break  # Preview completed
+        except asyncio.TimeoutError:
+            # Timeout means preview still running, continue to next step
+            step_idx += 1
+
+    # Get the preview result
     try:
-        preview_result = await handle_table_preview_generate(preview_request, None)
+        preview_result = await preview_task
         logger.info(f"[TABLE_MAKER] Preview generation complete")
         logger.info(f"[TABLE_MAKER] Preview result keys: {list(preview_result.keys())}")
 
