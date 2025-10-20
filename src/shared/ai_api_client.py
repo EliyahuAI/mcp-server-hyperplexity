@@ -1164,13 +1164,15 @@ class AIAPIClient:
             call_metrics_list = decimal_to_float(call_metrics_list)
             
             providers = {}
+            # Initialize totals - use int for counts, float for costs/times
+            # These will be converted to Decimal when writing to DynamoDB
             totals = {
-                'total_calls': 0,
-                'total_tokens': 0,
+                'total_calls': 0,  # Keep as int
+                'total_tokens': 0,  # Keep as int
                 'total_cost_actual': 0.0,
                 'total_cost_estimated': 0.0,
-                'total_estimated_processing_time': 0.0,  # Renamed from total_processing_time
-                'total_actual_processing_time': 0.0,     # New field for actual times
+                'total_estimated_processing_time': 0.0,
+                'total_actual_processing_time': 0.0,
                 'total_cache_savings_cost': 0.0,
                 'total_cache_savings_time': 0.0,
                 'overall_cache_efficiency': 0.0
@@ -1238,9 +1240,9 @@ class AIAPIClient:
                 if metrics['cost_estimated'] > 0:
                     metrics['cache_efficiency_percent'] = (metrics['cache_savings_cost'] / metrics['cost_estimated']) * 100
                 
-                # Update totals
-                totals['total_calls'] += metrics['calls']
-                totals['total_tokens'] += metrics['tokens']
+                # Update totals (ensure integers stay as ints for DynamoDB)
+                totals['total_calls'] += int(metrics['calls'])
+                totals['total_tokens'] += int(metrics['tokens'])
                 totals['total_cost_actual'] += metrics['cost_actual']
                 totals['total_cost_estimated'] += metrics['cost_estimated']
                 totals['total_estimated_processing_time'] += metrics['time_estimated']
