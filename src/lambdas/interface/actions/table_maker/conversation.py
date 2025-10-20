@@ -693,6 +693,8 @@ async def _trigger_preview_generation(
         preview_model = result_body.get('model')
         preview_processing_time = result_body.get('processing_time', 0.0)
 
+        logger.info(f"[TABLE_MAKER] Preview metrics check: run_key={run_key}, has_api_response={preview_api_response is not None}, api_response_type={type(preview_api_response)}, api_response_truthy={bool(preview_api_response)}")
+
         # Add preview API call metrics to runs database
         if run_key and preview_api_response:
             try:
