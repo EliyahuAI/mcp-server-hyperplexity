@@ -7,9 +7,9 @@
     "emphasis": "sketch_approval"
   },
 
-  "_comment_column_definition": "Column definition uses Claude for task understanding. Uses sonar-pro only when context_web_research items provided.",
+  "_comment_column_definition": "Column definition uses Claude Haiku (fast, cheap). Uses sonar-pro only when context_web_research items provided.",
   "column_definition": {
-    "model": "claude-sonnet-4-5",
+    "model": "claude-haiku-4-5",
     "max_tokens": 8000,
     "use_web_search": true,
     "web_searches": 3,

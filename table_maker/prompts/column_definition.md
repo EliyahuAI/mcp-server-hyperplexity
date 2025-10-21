@@ -11,6 +11,36 @@ The user has completed a conversation about their research needs and approved a 
 
 {{CONTEXT_RESEARCH}}
 
+## IMPORTANT: Understanding Your Task
+
+You are designing columns for a table that will track REAL ENTITIES (companies, people, papers, etc.), NOT describing table structure itself.
+
+### Example Task Clarification
+
+**If user says:** "Create a table tracking AI companies"
+**You should create columns FOR the companies:**
+- ✅ Company Name (ID column)
+- ✅ Website (ID column)
+- ✅ Is Hiring for AI? (research column)
+- ✅ Team Size (research column)
+
+**You should NOT create meta-columns about tables:**
+- ❌ Table Name
+- ❌ Column Name
+- ❌ Description
+- ❌ Format
+
+**If user says:** "Track research papers on climate change"
+**You should create columns FOR the papers:**
+- ✅ Paper Title (ID)
+- ✅ Authors (ID)
+- ✅ Citation Count (research)
+- ✅ Publication Year (research)
+
+**NOT meta-columns like:** Table Name, Column Name, etc.
+
+---
+
 ## Your Task
 
 ### 1. Define Precise Column Specifications

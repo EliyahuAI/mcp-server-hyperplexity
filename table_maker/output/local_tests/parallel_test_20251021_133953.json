@@ -1,0 +1,300 @@
+{
+  "timestamp": "20251021_133953",
+  "mode": "parallel",
+  "max_parallel_streams": 3,
+  "user_request": "\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n",
+  "configuration": {
+    "target_row_count": 10,
+    "discovery_multiplier": 1.5,
+    "min_match_score": 0.6,
+    "column_definition_model": "claude-sonnet-4-5",
+    "web_search_model": "sonar-pro",
+    "max_parallel_streams": 3
+  },
+  "columns": [
+    {
+      "name": "Entity Name",
+      "description": "The official name of the entity being researched",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true
+    },
+    {
+      "name": "Website URL",
+      "description": "The official website URL of the entity",
+      "format": "URL",
+      "importance": "ID",
+      "is_identification": true
+    },
+    {
+      "name": "Description",
+      "description": "A brief description of what the entity does or its primary focus area",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Extract description from the entity's official website homepage or About Us page, focusing on their mission statement or primary value proposition"
+    },
+    {
+      "name": "Location",
+      "description": "Primary headquarters or operational location of the entity",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Check the entity's official website footer, contact page, or About Us section for headquarters location. Verify with LinkedIn company page if available"
+    },
+    {
+      "name": "Year Founded",
+      "description": "The year the entity was established or founded",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Look for founding year on the entity's About Us page, company timeline, or verify through Crunchbase, LinkedIn, or Wikipedia entries"
+    },
+    {
+      "name": "Status",
+      "description": "Current operational status of the entity (e.g., Active, Acquired, Closed)",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Verify current status by checking if the website is active, recent social media posts exist, and search for recent news about acquisitions or closures in the past 12 months"
+    }
+  ],
+  "search_strategy": {
+    "description": "We are looking for entities that can be researched through publicly available web sources. The search focuses on finding organizations, companies, or institutions with established online presence and verifiable information. The scope includes entities with official websites and sufficient public documentation to validate key data points.",
+    "subdomains": [
+      {
+        "name": "Established Organizations",
+        "focus": "Well-known organizations and companies with strong online presence and extensive public documentation, typically with 5+ years of operation",
+        "search_queries": [
+          "list of major organizations by industry 2024",
+          "top companies directory with founding dates",
+          "established organizations with public information"
+        ],
+        "target_rows": 15
+      },
+      {
+        "name": "Emerging Entities",
+        "focus": "Newer organizations, startups, and recently founded entities from the past 5 years with growing online presence",
+        "search_queries": [
+          "new companies founded 2020-2024 list",
+          "emerging organizations directory recent",
+          "startup companies list with founding information"
+        ],
+        "target_rows": 15
+      }
+    ]
+  },
+  "final_rows": [
+    {
+      "id_values": {
+        "Entity Name": "Airalo",
+        "Website URL": "https://www.airalo.com"
+      },
+      "match_score": 0.91,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Airalo is a leading eSIM provider with significant public documentation, a strong online presence, and over 5 years of operation[2].",
+      "source_urls": [
+        "https://explodingtopics.com/blog/trending-companies"
+      ],
+      "source_subdomain": "Established Organizations",
+      "merged_from_streams": [
+        "Established Organizations"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Stellantis",
+        "Website URL": "https://www.stellantis.com"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Stellantis is a major global automotive company formed by the merger of Fiat Chrysler and PSA Group, with extensive public documentation, a strong online presence, and over 5 years of operation as a combined entity[2].",
+      "source_urls": [
+        "https://explodingtopics.com/blog/trending-companies"
+      ],
+      "source_subdomain": "Established Organizations",
+      "merged_from_streams": [
+        "Established Organizations"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Tubi",
+        "Website URL": "https://www.tubi.tv"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Tubi is a well-known, established streaming platform with millions of users, significant public documentation, and a strong online presence, operating for over 5 years[2].",
+      "source_urls": [
+        "https://explodingtopics.com/blog/trending-companies"
+      ],
+      "source_subdomain": "Established Organizations",
+      "merged_from_streams": [
+        "Established Organizations"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Blueground",
+        "Website URL": "https://www.theblueground.com"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Blueground is a prominent real estate tech company with a global footprint, extensive public information, and over 5 years of operation[2].",
+      "source_urls": [
+        "https://explodingtopics.com/blog/trending-companies"
+      ],
+      "source_subdomain": "Established Organizations",
+      "merged_from_streams": [
+        "Established Organizations"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Athletic Brewing Company",
+        "Website URL": "https://www.athleticbrewing.com"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Athletic Brewing is a fast-growing, well-documented beverage company with a strong online presence and over 5 years in operation[2].",
+      "source_urls": [
+        "https://explodingtopics.com/blog/trending-companies"
+      ],
+      "source_subdomain": "Established Organizations",
+      "merged_from_streams": [
+        "Established Organizations"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Airwallex",
+        "Website URL": "https://www.airwallex.com"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Airwallex is a major fintech company with a strong online presence, extensive public documentation, and over 5 years of operation[2].",
+      "source_urls": [
+        "https://explodingtopics.com/blog/trending-companies"
+      ],
+      "source_subdomain": "Established Organizations",
+      "merged_from_streams": [
+        "Established Organizations"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Airbyte",
+        "Website URL": "https://www.airbyte.com"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Airbyte is a well-known data integration platform with significant public information, a strong online presence, and over 5 years of operation[2].",
+      "source_urls": [
+        "https://explodingtopics.com/blog/trending-companies"
+      ],
+      "source_subdomain": "Established Organizations",
+      "merged_from_streams": [
+        "Established Organizations"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Y Combinator",
+        "Website URL": "https://www.ycombinator.com"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.7
+      },
+      "match_rationale": "Y Combinator is a globally recognized startup accelerator with extensive public documentation and a strong online presence, operating for well over 5 years[4].",
+      "source_urls": [
+        "https://www.ycombinator.com/companies"
+      ],
+      "source_subdomain": "Established Organizations",
+      "merged_from_streams": [
+        "Established Organizations"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Sequoia Capital",
+        "Website URL": "https://www.sequoiacap.com"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.7
+      },
+      "match_rationale": "Sequoia Capital is a leading venture capital firm with extensive public information and a strong online presence, established for decades[6].",
+      "source_urls": [
+        "https://topstartups.io"
+      ],
+      "source_subdomain": "Established Organizations",
+      "merged_from_streams": [
+        "Established Organizations"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Andreessen Horowitz (a16z)",
+        "Website URL": "https://a16z.com"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.7
+      },
+      "match_rationale": "Andreessen Horowitz is a major venture capital firm with significant public documentation and a strong online presence, operating for over 15 years[6].",
+      "source_urls": [
+        "https://topstartups.io"
+      ],
+      "source_subdomain": "Established Organizations",
+      "merged_from_streams": [
+        "Established Organizations"
+      ]
+    }
+  ],
+  "statistics": {
+    "column_definition_time": 19.183549165725708,
+    "row_discovery_time": 42.87402582168579,
+    "total_candidates_found": 30,
+    "duplicates_removed": 8,
+    "below_threshold": 0,
+    "final_row_count": 10,
+    "avg_match_score": 0.9099999999999999,
+    "stream_times": []
+  },
+  "total_time_seconds": 62.074567794799805
+}

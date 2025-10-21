@@ -49,7 +49,7 @@ from ai_api_client import AIAPIClient
 TARGET_ROW_COUNT = 10  # Final number of rows to deliver
 DISCOVERY_MULTIPLIER = 1.5  # Find 15, keep best 10
 MIN_MATCH_SCORE = 0.6  # Minimum quality threshold
-COLUMN_DEFINITION_MODEL = "claude-sonnet-4-5"  # Claude for understanding task context
+COLUMN_DEFINITION_MODEL = "claude-haiku-4-5"  # Claude Haiku (faster, cheaper)
 WEB_SEARCH_MODEL = "sonar-pro"  # sonar-pro for row discovery with web search
 MAX_PARALLEL_STREAMS = 3  # PARALLEL: Process up to 3 subdomains concurrently
 

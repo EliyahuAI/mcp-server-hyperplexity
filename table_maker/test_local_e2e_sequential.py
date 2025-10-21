@@ -51,7 +51,7 @@ DISCOVERY_MULTIPLIER = 1.5  # Find 15, keep best 10
 MIN_MATCH_SCORE = 0.6  # Minimum quality threshold
 
 # Models to use
-COLUMN_DEFINITION_MODEL = "claude-sonnet-4-5"  # Claude for understanding task context
+COLUMN_DEFINITION_MODEL = "claude-haiku-4-5"  # Claude Haiku (faster, cheaper)
 WEB_SEARCH_MODEL = "sonar-pro"  # sonar-pro for row discovery with web search
 
 # User request for testing

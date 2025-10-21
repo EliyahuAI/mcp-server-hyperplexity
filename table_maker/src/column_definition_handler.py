@@ -36,7 +36,7 @@ class ColumnDefinitionHandler:
         self,
         conversation_context: Dict[str, Any],
         context_web_research: List[str] = None,
-        model: str = "claude-sonnet-4-5",
+        model: str = "claude-haiku-4-5",
         max_tokens: int = 8000
     ) -> Dict[str, Any]:
         """
