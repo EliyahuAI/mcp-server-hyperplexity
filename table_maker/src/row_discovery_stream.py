@@ -273,13 +273,14 @@ class RowDiscoveryStream:
             result = await self.discover_rows_progressive(
                 subdomain, columns, search_strategy, target_rows, escalation_strategy
             )
-            # Return in legacy format (extract candidates)
+            # Return progressive result with all_rounds for detailed tracking
             return {
                 'subdomain': result['subdomain'],
                 'candidates': result['candidates'],
                 'processing_time': result['processing_time'],
                 'rounds_executed': result.get('rounds_executed', 0),
                 'rounds_skipped': result.get('rounds_skipped', 0),
+                'all_rounds': result.get('all_rounds', []),  # Include all rounds with prompts/enhanced_data
                 'error': result.get('error')
             }
 
