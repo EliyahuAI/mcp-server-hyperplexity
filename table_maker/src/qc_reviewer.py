@@ -184,9 +184,37 @@ class QCReviewer:
             rejected_rows = ai_response.get('rejected_rows', [])
             qc_summary = ai_response.get('qc_summary', {})
 
+            # Merge QC results with original discovery data
+            # QC returns: id_values, row_score, qc_score, qc_rationale, keep, priority_adjustment
+            # Original has: id_values, match_score, score_breakdown, model_used, context_used, match_rationale, source_urls, etc.
+
+            merged_rows = []
+            for qc_row in reviewed_rows:
+                # Find matching original row by id_values
+                qc_id_values = qc_row.get('id_values', {})
+
+                original_row = None
+                for orig in discovered_rows:
+                    if orig.get('id_values') == qc_id_values:
+                        original_row = orig
+                        break
+
+                if original_row:
+                    # Merge: start with original, overlay QC fields
+                    merged = original_row.copy()
+                    merged['qc_score'] = qc_row.get('qc_score', 0)
+                    merged['qc_rationale'] = qc_row.get('qc_rationale', '')
+                    merged['keep'] = qc_row.get('keep', False)
+                    merged['priority_adjustment'] = qc_row.get('priority_adjustment', 'none')
+                    merged_rows.append(merged)
+                else:
+                    # QC row has no matching original (shouldn't happen)
+                    logger.warning(f"QC row has no matching original: {qc_id_values}")
+                    merged_rows.append(qc_row)
+
             # Filter approved rows (keep=true, qc_score >= threshold)
             approved_rows = [
-                row for row in reviewed_rows
+                row for row in merged_rows
                 if row.get('keep', False) and row.get('qc_score', 0) >= min_qc_score
             ]
 
