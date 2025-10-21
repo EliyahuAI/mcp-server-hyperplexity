@@ -20,7 +20,7 @@
     "default_target_rows_total": 30
   },
 
-  "_comment_row_discovery": "Row discovery with progressive model escalation. Starts with sonar (low context), escalates to sonar (high), then sonar-pro (high) only if needed. Saves all candidates for later use.",
+  "_comment_row_discovery": "Row discovery with 2-level escalation. Starts with sonar (high context) for quality, escalates to sonar-pro (high) only if insufficient results. Global counter checks total across all subdomains before escalating. Exclusion list prevents duplicate discovery.",
   "row_discovery": {
     "web_search_model": "sonar-pro",
     "scoring_model": "sonar-pro",
@@ -38,20 +38,14 @@
     "escalation_strategy": [
       {
         "model": "sonar",
-        "search_context_size": "low",
-        "description": "Fast initial search",
-        "min_candidates_percentage": 50
-      },
-      {
-        "model": "sonar",
         "search_context_size": "high",
-        "description": "More thorough search",
+        "description": "Initial thorough search with sonar",
         "min_candidates_percentage": 75
       },
       {
         "model": "sonar-pro",
         "search_context_size": "high",
-        "description": "Highest quality search",
+        "description": "Premium search if sonar insufficient",
         "min_candidates_percentage": null
       }
     ],
