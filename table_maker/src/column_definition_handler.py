@@ -97,7 +97,7 @@ class ColumnDefinitionHandler:
                 model=model,
                 max_tokens=max_tokens,
                 use_cache=False,  # Disable cache for local testing
-                max_web_searches=3,  # Enable web search for context (like config generator)
+                max_web_searches=0,  # Disable web search for column definition
                 debug_name="column_definition"
             )
 
@@ -150,7 +150,9 @@ class ColumnDefinitionHandler:
             if enhanced_data:
                 costs = enhanced_data.get('costs', {})
                 result['cost'] = costs.get('actual', {}).get('total_cost', 0.0)
+                logger.info(f"Column definition cost: ${result['cost']:.4f}")
             else:
+                logger.warning("No enhanced_data in API response, cost tracking unavailable")
                 result['cost'] = 0.0
 
             # Calculate processing time
