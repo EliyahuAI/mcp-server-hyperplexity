@@ -222,7 +222,7 @@ async def run_sequential_test():
             conversation_context=conversation_context,
             context_web_research=context_web_research,
             model=COLUMN_DEFINITION_MODEL,
-            max_tokens=8000
+            max_tokens=12000  # Increased for comprehensive column definitions
         )
 
         if not result.get('success'):
@@ -457,6 +457,7 @@ async def run_sequential_test():
             table_purpose=search_strategy.get('table_purpose', ''),
             tablewide_research=search_strategy.get('tablewide_research', ''),
             model="claude-sonnet-4-5",
+            max_tokens=16000,  # Generous tokens for reviewing all rows
             min_qc_score=0.5,
             max_rows=50
         )

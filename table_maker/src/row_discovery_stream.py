@@ -465,7 +465,7 @@ class RowDiscoveryStream:
                 model=scoring_model,
                 tool_name='row_discovery_integrated',
                 use_cache=False,  # Don't cache - web results change
-                max_tokens=8000,
+                max_tokens=16000,  # Increased for finding multiple entities with details
                 max_web_searches=len(subdomain.get('search_queries', [])),  # Use all queries
                 search_context_size=search_context_size  # Progressive: low → high
             )

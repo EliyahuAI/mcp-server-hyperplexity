@@ -29,7 +29,7 @@
     "progressive_context": true,
     "initial_context_size": "low",
     "escalation_context_size": "high",
-    "max_tokens": 8000,
+    "max_tokens": 16000,
     "target_row_count": 20,
     "discovery_multiplier": 1.5,
     "min_match_score": 0.6,
