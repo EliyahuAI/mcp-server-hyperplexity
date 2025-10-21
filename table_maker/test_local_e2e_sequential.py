@@ -197,15 +197,15 @@ async def run_sequential_test():
     col_start = time.time()
 
     try:
-        # Create conversation context
+        # Create conversation context (match what handler expects)
         conversation_context = {
-            'user_request': USER_REQUEST,
-            'conversation_history': [
-                {
-                    'role': 'user',
-                    'content': USER_REQUEST
-                }
+            'messages': [  # For simple format
+                {'role': 'user', 'content': USER_REQUEST}
             ],
+            'conversation_log': [  # What handler actually reads
+                {'role': 'user', 'content': USER_REQUEST}
+            ],
+            'user_request': USER_REQUEST,
             'approved': True,
             'target_row_count': TARGET_ROW_COUNT
         }

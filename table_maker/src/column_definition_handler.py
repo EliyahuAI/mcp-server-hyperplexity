@@ -300,10 +300,23 @@ class ColumnDefinitionHandler:
             if sample_rows:
                 requirements_parts.append(f"\n**Sample Rows Provided**: {len(sample_rows)}")
 
-            return '\n'.join(requirements_parts)
+            if requirements_parts:
+                return '\n'.join(requirements_parts)
+
+            # Fallback: Use raw user request if no proposal structure
+            user_request = conversation_context.get('user_request', '')
+            if user_request:
+                logger.info("No current_proposal found, using raw user_request")
+                return f"User Request:\n{user_request}"
+
+            return "No specific requirements captured"
 
         except Exception as e:
             logger.warning(f"Error extracting user requirements: {e}")
+            # Fallback: Use raw user request
+            user_request = conversation_context.get('user_request', '')
+            if user_request:
+                return f"User Request:\n{user_request}"
             return "Error extracting user requirements"
 
     def _extract_structured_response(self, raw_response: Dict[str, Any]) -> Dict[str, Any]:
