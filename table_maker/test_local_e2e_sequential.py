@@ -355,7 +355,9 @@ async def run_sequential_test():
             total_score = sum(row.get('match_score', 0) for row in final_rows)
             stats['avg_match_score'] = total_score / len(final_rows)
 
-        # PHASE 1: Track API calls from row discovery rounds
+        # PHASE 1: Track API calls from row discovery rounds and calculate costs
+        row_discovery_total_cost = 0.0
+
         for idx, stream_result in enumerate(stream_results, 1):
             subdomain_name = stream_result.get('subdomain', f'Subdomain {idx}')
             all_rounds = stream_result.get('all_rounds', [])
@@ -363,22 +365,35 @@ async def run_sequential_test():
             if all_rounds:
                 # Progressive escalation mode - has all_rounds
                 for round_data in all_rounds:
+                    enhanced = round_data.get('enhanced_data', {})
+                    round_cost = enhanced.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                    row_discovery_total_cost += round_cost
+
                     api_calls_log.append({
                         'call_description': f"Finding Rows - {subdomain_name} - Round {round_data.get('round', '?')} ({round_data.get('model', 'unknown')}-{round_data.get('context', 'unknown')})",
                         'model': round_data.get('model', 'unknown'),
                         'context': round_data.get('context', 'unknown'),
-                        'enhanced_data': round_data.get('enhanced_data', {}),
+                        'enhanced_data': enhanced,
                         'prompt_used': round_data.get('prompt_used', ''),
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': datetime.now().isoformat(),
+                        'cost': round_cost
                     })
             else:
                 # Legacy mode or single call - just log the subdomain
+                enhanced = stream_result.get('enhanced_data', {})
+                round_cost = enhanced.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                row_discovery_total_cost += round_cost
+
                 api_calls_log.append({
                     'call_description': f"Finding Rows - {subdomain_name}",
                     'model': WEB_SEARCH_MODEL,
-                    'enhanced_data': stream_result.get('enhanced_data', {}),
-                    'timestamp': datetime.now().isoformat()
+                    'enhanced_data': enhanced,
+                    'timestamp': datetime.now().isoformat(),
+                    'cost': round_cost
                 })
+
+        stats['row_discovery_cost'] = row_discovery_total_cost
+        stats['total_cost'] += row_discovery_total_cost
 
         # Display stream results
         print()
@@ -459,7 +474,7 @@ async def run_sequential_test():
             model="claude-sonnet-4-5",
             max_tokens=16000,  # Generous tokens for reviewing all rows
             min_qc_score=0.5,
-            max_rows=50
+            max_rows=999  # No artificial cutoff - keep all quality rows
         )
 
         qc_time = time.time() - qc_start
@@ -473,12 +488,17 @@ async def run_sequential_test():
             approved_rows = qc_result.get('approved_rows', final_rows)
             qc_summary = qc_result.get('qc_summary', {})
 
-            # Track QC API call
+            # Track QC API call and cost
+            qc_cost = qc_result.get('cost', 0.0)
+            stats['qc_cost'] = qc_cost
+            stats['total_cost'] += qc_cost
+
             api_calls_log.append({
                 'call_description': 'QC Review - Filtering and Prioritizing Rows',
                 'model': 'claude-sonnet-4-5',
                 'enhanced_data': qc_result.get('enhanced_data', {}),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'cost': qc_cost
             })
 
             # Update stats
