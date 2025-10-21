@@ -614,7 +614,7 @@ def _load_conversation_state_from_s3(
         return None
 
 
-async def _trigger_preview_generation(
+async def _trigger_execution(
     email: str,
     session_id: str,
     conversation_id: str,
@@ -622,10 +622,18 @@ async def _trigger_preview_generation(
     run_key: Optional[str]
 ) -> None:
     """
-    Trigger preview generation directly when interview is complete.
+    Trigger full table execution pipeline directly when interview is complete.
+
+    This is the entry point to Phase 2 of the two-phase workflow.
+    Once the user approves the table concept during the interview, this function
+    executes the complete 4-step pipeline (3-4 minutes):
+    1. Column Definition
+    2. Row Discovery (parallel with config generation)
+    3. Table Population
+    4. Validation
 
     Since we're already running in the background processor, we can call
-    preview generation directly without queueing to SQS again.
+    execution directly without queueing to SQS again.
 
     Args:
         email: User email
@@ -634,133 +642,117 @@ async def _trigger_preview_generation(
         conversation_state: Complete conversation state with interview_context
         run_key: Run tracking key (optional)
     """
-    logger.info(f"[TABLE_MAKER] Triggering automatic preview generation for {conversation_id}")
+    logger.info(f"[TABLE_MAKER] Triggering full table execution for {conversation_id}")
 
-    # Import preview handler
-    from .preview import handle_table_preview_generate
+    # Import execution orchestrator
+    from .execution import execute_full_table_generation
 
-    # Get processing steps for progress updates
-    processing_steps = conversation_state.get('interview_context', {}).get('processing_steps', [])
-    if not processing_steps:
-        processing_steps = ['Preparing preview', 'Analyzing context', 'Generating table']
+    # Send initial execution start message via WebSocket
+    if websocket_client and session_id:
+        try:
+            websocket_client.send_to_session(session_id, {
+                'type': 'table_execution_update',
+                'conversation_id': conversation_id,
+                'status': 'Starting execution pipeline (3-4 minutes)...',
+                'estimated_duration_seconds': 240,
+                'current_step': 0,
+                'total_steps': 4,
+                'progress_percent': 0,
+                'steps': [
+                    'Defining columns and search strategy',
+                    'Discovering matching entities',
+                    'Populating all data',
+                    'Validating results'
+                ]
+            })
+            logger.info(f"[TABLE_MAKER] Sent execution start message via WebSocket")
+        except Exception as e:
+            logger.warning(f"[TABLE_MAKER] Failed to send execution start message: {e}")
 
-    # Start preview generation as async task
-    preview_request = {
-        'body': json.dumps({
-            'email': email,
-            'session_id': session_id,
-            'conversation_id': conversation_id
-        })
-    }
+    # Execute full table generation pipeline
+    try:
+        execution_result = await execute_full_table_generation(
+            email=email,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            run_key=run_key
+        )
 
-    # Run preview generation and progress updates in parallel, stop when preview completes
-    preview_task = asyncio.create_task(handle_table_preview_generate(preview_request, None))
+        logger.info(f"[TABLE_MAKER] Execution pipeline complete. Success: {execution_result.get('success')}")
 
-    # Send progress updates until preview completes
-    step_idx = 0
-    step_interval = 5.0  # Send update every 5 seconds
-    while not preview_task.done():
-        # Calculate progress based on elapsed time and steps
-        step = processing_steps[step_idx % len(processing_steps)]
-        progress = min(90, 10 + (step_idx * 15))  # Cap at 90% until actually complete
+        # Send completion message via WebSocket
+        if execution_result['success']:
+            if websocket_client and session_id:
+                try:
+                    completion_message = {
+                        'type': 'table_execution_complete',
+                        'conversation_id': conversation_id,
+                        'status': 'Table generation complete',
+                        'table_data': execution_result.get('table_data'),
+                        'validation_summary': execution_result.get('validation_summary'),
+                        'download_url': execution_result.get('download_url')
+                    }
+                    websocket_client.send_to_session(session_id, completion_message)
+                    logger.info(f"[TABLE_MAKER] Sent execution completion message via WebSocket")
+                except Exception as ws_error:
+                    logger.error(f"[TABLE_MAKER] Failed to send execution completion via WebSocket: {ws_error}")
+                    import traceback
+                    logger.error(f"[TABLE_MAKER] WebSocket error traceback: {traceback.format_exc()}")
+        else:
+            # Execution failed - send error message
+            error_msg = execution_result.get('error', 'Unknown execution error')
+            logger.error(f"[TABLE_MAKER] Execution failed: {error_msg}")
 
+            if websocket_client and session_id:
+                try:
+                    websocket_client.send_to_session(session_id, {
+                        'type': 'table_execution_error',
+                        'conversation_id': conversation_id,
+                        'status': 'Execution failed',
+                        'error': error_msg,
+                        'failed_at_step': execution_result.get('failed_at_step')
+                    })
+                except Exception as ws_error:
+                    logger.warning(f"[TABLE_MAKER] Failed to send error message: {ws_error}")
+
+            # Update runs database with failure
+            if run_key:
+                update_run_status(
+                    session_id=session_id,
+                    run_key=run_key,
+                    status='FAILED',
+                    run_type="Table Generation (Execution)",
+                    verbose_status=f"Execution failed: {error_msg}",
+                    error_message=error_msg
+                )
+
+    except Exception as e:
+        error_msg = f"Execution pipeline exception: {str(e)}"
+        logger.error(f"[TABLE_MAKER] {error_msg}")
+        import traceback
+        logger.error(f"[TABLE_MAKER] Traceback: {traceback.format_exc()}")
+
+        # Send error message via WebSocket
         if websocket_client and session_id:
             try:
                 websocket_client.send_to_session(session_id, {
-                    'type': 'table_conversation_update',
+                    'type': 'table_execution_error',
                     'conversation_id': conversation_id,
-                    'progress': progress,
-                    'status': step,
-                    'step': (step_idx % len(processing_steps)) + 1,
-                    'total_steps': len(processing_steps),
-                    'is_generating': True
+                    'status': 'Execution failed',
+                    'error': error_msg
                 })
-                logger.info(f"[TABLE_MAKER] Progress {progress}%: {step}")
-            except Exception as e:
-                logger.warning(f"Failed to send progress update: {e}")
-
-        # Wait for interval or preview completion, whichever comes first
-        try:
-            await asyncio.wait_for(asyncio.shield(preview_task), timeout=step_interval)
-            break  # Preview completed
-        except asyncio.TimeoutError:
-            # Timeout means preview still running, continue to next step
-            step_idx += 1
-
-    # Get the preview result
-    try:
-        preview_result = await preview_task
-        logger.info(f"[TABLE_MAKER] Preview generation complete")
-        logger.info(f"[TABLE_MAKER] Preview result keys: {list(preview_result.keys())}")
-
-        # Extract API response from preview for metrics aggregation
-        result_body = preview_result.get('body', '{}')
-        logger.info(f"[TABLE_MAKER] Result body type: {type(result_body)}, first 200 chars: {str(result_body)[:200]}")
-
-        if isinstance(result_body, str):
-            result_body = json.loads(result_body)
-
-        logger.info(f"[TABLE_MAKER] Parsed result_body keys: {list(result_body.keys()) if isinstance(result_body, dict) else 'NOT A DICT'}")
-        logger.info(f"[TABLE_MAKER] preview_data length: {len(result_body.get('preview_data', {}))}")
-        logger.info(f"[TABLE_MAKER] follow_up_question length: {len(result_body.get('follow_up_question', ''))}")
-
-        # Get API call data from preview result for metrics tracking
-        preview_api_response = result_body.get('api_response')
-        preview_model = result_body.get('model')
-        preview_processing_time = result_body.get('processing_time', 0.0)
-
-        logger.info(f"[TABLE_MAKER] Preview metrics check: run_key={run_key}, has_api_response={preview_api_response is not None}, api_response_type={type(preview_api_response)}, api_response_truthy={bool(preview_api_response)}")
-
-        # Add preview API call metrics to runs database
-        if run_key and preview_api_response:
-            try:
-                _add_api_call_to_runs(
-                    session_id=session_id,
-                    run_key=run_key,
-                    api_response=preview_api_response,
-                    model=preview_model or 'claude-sonnet-4-5',
-                    processing_time=preview_processing_time,
-                    call_type='preview',
-                    status='COMPLETED',
-                    verbose_status="Preview generation complete",
-                    percent_complete=100
-                )
-            except Exception as e:
-                logger.error(f"[TABLE_MAKER] Failed to add preview metrics to runs: {e}")
-
-        # Send final WebSocket message with preview results
-        if websocket_client and session_id and preview_result:
-            try:
-                final_message = {
-                    'type': 'table_conversation_update',
-                    'conversation_id': conversation_id,
-                    'progress': 100,
-                    'status': 'Preview generated',
-                    'preview_generated': True,
-                    'trigger_preview': True,
-                    'preview_data': result_body.get('preview_data', {}),
-                    'follow_up_question': result_body.get('follow_up_question', ''),
-                    'table_name': result_body.get('table_name', ''),
-                    'download_url': result_body.get('download_url')
-                }
-                logger.info(f"[TABLE_MAKER] Sending final preview message with preview_data keys: {list(final_message.get('preview_data', {}).keys())}")
-                websocket_client.send_to_session(session_id, final_message)
-                logger.info(f"[TABLE_MAKER] Sent preview results via WebSocket")
             except Exception as ws_error:
-                logger.error(f"[TABLE_MAKER] Failed to send preview results via WebSocket: {ws_error}")
-                import traceback
-                logger.error(f"[TABLE_MAKER] WebSocket error traceback: {traceback.format_exc()}")
+                logger.warning(f"[TABLE_MAKER] Failed to send error message: {ws_error}")
 
-    except Exception as e:
-        logger.error(f"[TABLE_MAKER] Preview generation failed: {e}")
+        # Update runs database with failure
         if run_key:
             update_run_status(
                 session_id=session_id,
                 run_key=run_key,
                 status='FAILED',
-                run_type="Table Generation",
-                verbose_status=f"Preview generation failed: {str(e)}",
-                error_message=str(e)
+                run_type="Table Generation (Execution)",
+                verbose_status=error_msg,
+                error_message=error_msg
             )
 
 
@@ -775,7 +767,7 @@ async def handle_table_conversation_start(request_data, context):
     4. Initializes TableInterviewHandler with user's initial message
     5. Stores interview state in S3
     6. Returns interview response via WebSocket
-    7. If trigger_preview is true, automatically starts preview generation
+    7. If trigger_execution is true, automatically starts execution pipeline
 
     Args:
         request_data: {
@@ -790,7 +782,7 @@ async def handle_table_conversation_start(request_data, context):
         {
             'success': True,
             'conversation_id': 'table_conv_abc123',
-            'trigger_preview': bool,
+            'trigger_execution': bool,
             'follow_up_question': str,
             'context_web_research': list,
             'processing_steps': list,
@@ -802,7 +794,7 @@ async def handle_table_conversation_start(request_data, context):
     result = {
         'success': False,
         'conversation_id': None,
-        'trigger_preview': False,
+        'trigger_execution': False,
         'follow_up_question': '',
         'context_web_research': [],
         'processing_steps': [],
@@ -933,7 +925,7 @@ async def handle_table_conversation_start(request_data, context):
 
         # Extract interview response (using new interview schema)
         result['success'] = True
-        result['trigger_preview'] = interview_result.get('trigger_preview', False)
+        result['trigger_execution'] = interview_result.get('trigger_execution', False)
         result['follow_up_question'] = interview_result.get('follow_up_question', '')
         result['context_web_research'] = interview_result.get('context_web_research', [])
         result['processing_steps'] = interview_result.get('processing_steps', [])
@@ -947,13 +939,13 @@ async def handle_table_conversation_start(request_data, context):
             'email': email,
             'created_at': datetime.utcnow().isoformat() + 'Z',
             'last_updated': datetime.utcnow().isoformat() + 'Z',
-            'status': 'preview_ready' if result['trigger_preview'] else 'in_progress',
+            'status': 'execution_ready' if result['trigger_execution'] else 'in_progress',
             'turn_count': 1,
             'run_key': run_key,
             'config': config,  # Store config for reference
             'messages': interview_handler.get_interview_history(),
             'interview_context': interview_handler.get_interview_context(),
-            'trigger_preview': result['trigger_preview']
+            'trigger_execution': result['trigger_execution']
         }
 
         # Save conversation state to S3
@@ -979,7 +971,7 @@ async def handle_table_conversation_start(request_data, context):
                     'conversation_id': conversation_id,
                     'progress': 100,
                     'status': 'Interview turn 1 complete',
-                    'trigger_preview': result['trigger_preview'],
+                    'trigger_execution': result['trigger_execution'],
                     'follow_up_question': result['follow_up_question'],
                     'context_web_research': result['context_web_research'],
                     'processing_steps': result['processing_steps'],
@@ -987,7 +979,7 @@ async def handle_table_conversation_start(request_data, context):
                     'turn_count': result['turn_count']
                 }
                 websocket_client.send_to_session(session_id, interview_message)
-                logger.info(f"[TABLE_MAKER] Sent interview results via WebSocket: trigger_preview={result['trigger_preview']}, follow_up_question length={len(result['follow_up_question'])}")
+                logger.info(f"[TABLE_MAKER] Sent interview results via WebSocket: trigger_execution={result['trigger_execution']}, follow_up_question length={len(result['follow_up_question'])}")
             except Exception as e:
                 logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
 
@@ -1012,17 +1004,17 @@ async def handle_table_conversation_start(request_data, context):
             except Exception as e:
                 logger.error(f"[TABLE_MAKER] Failed to update run status: {e}")
 
-        # If trigger_preview is true, start preview generation after brief delay
-        if result['trigger_preview']:
-            logger.info(f"[TABLE_MAKER] Interview ready, waiting 2s before preview generation")
+        # If trigger_execution is true, start execution pipeline after brief delay
+        if result['trigger_execution']:
+            logger.info(f"[TABLE_MAKER] Interview approved, waiting 2s before execution")
 
             # Give frontend time to display interview results (2 seconds)
             await asyncio.sleep(2)
 
-            logger.info(f"[TABLE_MAKER] Starting preview generation now")
+            logger.info(f"[TABLE_MAKER] Starting execution pipeline now")
 
-            # Now trigger preview generation
-            await _trigger_preview_generation(
+            # Now trigger execution
+            await _trigger_execution(
                 email=email,
                 session_id=session_id,
                 conversation_id=conversation_id,
@@ -1051,7 +1043,7 @@ async def handle_table_conversation_continue(request_data, context):
     2. Continues interview with user's new message
     3. Stores updated interview state in S3
     4. Returns interview response via WebSocket
-    5. If trigger_preview is true, automatically starts preview generation
+    5. If trigger_execution is true, automatically starts execution pipeline
 
     Args:
         request_data: {
@@ -1067,7 +1059,7 @@ async def handle_table_conversation_continue(request_data, context):
         {
             'success': True,
             'conversation_id': 'table_conv_abc123',
-            'trigger_preview': bool,
+            'trigger_execution': bool,
             'follow_up_question': str,
             'context_web_research': list,
             'processing_steps': list,
@@ -1079,7 +1071,7 @@ async def handle_table_conversation_continue(request_data, context):
     result = {
         'success': False,
         'conversation_id': None,
-        'trigger_preview': False,
+        'trigger_execution': False,
         'follow_up_question': '',
         'context_web_research': [],
         'processing_steps': [],
@@ -1235,7 +1227,7 @@ async def handle_table_conversation_continue(request_data, context):
 
         # Extract interview response (using new interview schema)
         result['success'] = True
-        result['trigger_preview'] = interview_result.get('trigger_preview', False)
+        result['trigger_execution'] = interview_result.get('trigger_execution', False)
         result['follow_up_question'] = interview_result.get('follow_up_question', '')
         result['context_web_research'] = interview_result.get('context_web_research', [])
         result['processing_steps'] = interview_result.get('processing_steps', [])
@@ -1244,11 +1236,11 @@ async def handle_table_conversation_continue(request_data, context):
 
         # Update conversation state
         conversation_state['last_updated'] = datetime.utcnow().isoformat() + 'Z'
-        conversation_state['status'] = 'preview_ready' if result['trigger_preview'] else 'in_progress'
+        conversation_state['status'] = 'execution_ready' if result['trigger_execution'] else 'in_progress'
         conversation_state['turn_count'] = result['turn_count']
         conversation_state['messages'] = interview_handler.get_interview_history()
         conversation_state['interview_context'] = interview_handler.get_interview_context()
-        conversation_state['trigger_preview'] = result['trigger_preview']
+        conversation_state['trigger_execution'] = result['trigger_execution']
 
         # Save updated conversation state to S3
         save_result = _save_conversation_state_to_s3(
@@ -1273,7 +1265,7 @@ async def handle_table_conversation_continue(request_data, context):
                     'conversation_id': conversation_id,
                     'progress': 100,
                     'status': f'Interview turn {result["turn_count"]} complete',
-                    'trigger_preview': result['trigger_preview'],
+                    'trigger_execution': result['trigger_execution'],
                     'follow_up_question': result['follow_up_question'],
                     'context_web_research': result['context_web_research'],
                     'processing_steps': result['processing_steps'],
@@ -1287,7 +1279,7 @@ async def handle_table_conversation_continue(request_data, context):
         if run_key:
             try:
                 api_response = interview_result.get('api_metadata', {})
-                status_msg = "Ready for preview generation" if result['trigger_preview'] else f"Interview turn {result['turn_count']} complete"
+                status_msg = "Ready for execution" if result['trigger_execution'] else f"Interview turn {result['turn_count']} complete"
 
                 _add_api_call_to_runs(
                     session_id=session_id,
@@ -1303,17 +1295,17 @@ async def handle_table_conversation_continue(request_data, context):
             except Exception as e:
                 logger.error(f"[TABLE_MAKER] Failed to update run status: {e}")
 
-        # If trigger_preview is true, start preview generation after brief delay
-        if result['trigger_preview']:
-            logger.info(f"[TABLE_MAKER] Interview ready, waiting 2s before preview generation")
+        # If trigger_execution is true, start execution pipeline after brief delay
+        if result['trigger_execution']:
+            logger.info(f"[TABLE_MAKER] Interview approved, waiting 2s before execution")
 
             # Give frontend time to display interview results (2 seconds)
             await asyncio.sleep(2)
 
-            logger.info(f"[TABLE_MAKER] Starting preview generation now")
+            logger.info(f"[TABLE_MAKER] Starting execution pipeline now")
 
-            # Now trigger preview generation
-            await _trigger_preview_generation(
+            # Now trigger execution
+            await _trigger_execution(
                 email=email,
                 session_id=session_id,
                 conversation_id=conversation_id,

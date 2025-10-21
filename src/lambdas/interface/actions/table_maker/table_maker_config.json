@@ -3,39 +3,69 @@
     "model": "claude-sonnet-4-5",
     "max_tokens": 8000,
     "use_web_search": false,
-    "max_turns": 5
+    "max_turns": 5,
+    "emphasis": "sketch_approval"
   },
-  "conversation": {
+
+  "column_definition": {
     "model": "claude-sonnet-4-5",
-    "max_turns_before_preview": 3,
-    "min_turns_before_preview": 1,
-    "readiness_threshold": 0.75,
     "max_tokens": 8000,
-    "use_web_search_for_context": true,
-    "context_web_searches": 3
+    "use_web_search": true,
+    "web_searches": 3,
+    "show_preview_table": false
   },
-  "preview_generation": {
-    "sample_row_count": 3,
+
+  "row_discovery": {
     "model": "claude-sonnet-4-5",
-    "max_tokens": 12000,
-    "search_context": "high"
+    "max_tokens": 8000,
+    "target_row_count": 20,
+    "min_match_score": 0.6,
+    "max_parallel_streams": 5,
+    "web_searches_per_stream": 3,
+    "automatic_subdomain_splitting": true,
+    "subdomain_analysis_model": "claude-sonnet-4-5"
   },
-  "full_table_generation": {
-    "default_row_count": 20,
+
+  "table_population": {
     "model": "claude-sonnet-4-5",
     "max_tokens": 16000,
-    "batch_size": 10
+    "batch_size": 10,
+    "parallel_batches": 2,
+    "use_web_search": true
   },
+
+  "config_generation": {
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 8000,
+    "parallel_with_row_discovery": true
+  },
+
+  "validation": {
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 8000,
+    "confidence_threshold": 0.7
+  },
+
   "models": {
     "interview": "claude-sonnet-4-5",
-    "conversation": "claude-sonnet-4-5",
-    "preview": "claude-sonnet-4-5",
-    "expansion": "claude-sonnet-4-5"
+    "column_definition": "claude-sonnet-4-5",
+    "row_discovery": "claude-sonnet-4-5",
+    "table_population": "claude-sonnet-4-5",
+    "config_generation": "claude-sonnet-4-5",
+    "validation": "claude-sonnet-4-5"
   },
+
   "features": {
     "enable_column_definitions_in_csv": true,
     "remove_definitions_for_validation": true,
     "enable_context_research": true,
-    "show_id_columns_in_blue_circles": true
+    "show_id_columns_in_blue_circles": true,
+    "enable_independent_row_discovery": true
+  },
+
+  "execution": {
+    "total_steps": 4,
+    "estimated_duration_seconds": 240,
+    "enable_parallel_step2": true
   }
 }

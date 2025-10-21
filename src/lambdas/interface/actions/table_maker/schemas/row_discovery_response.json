@@ -1,0 +1,44 @@
+{
+  "type": "object",
+  "required": ["subdomain", "candidates"],
+  "properties": {
+    "subdomain": {
+      "type": "string",
+      "description": "The subdomain focus area being searched"
+    },
+    "candidates": {
+      "type": "array",
+      "description": "List of candidate rows discovered for this subdomain",
+      "items": {
+        "type": "object",
+        "required": ["id_values", "match_score", "match_rationale"],
+        "properties": {
+          "id_values": {
+            "type": "object",
+            "description": "Dictionary mapping ID column names to their values",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "match_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Match quality score (0.0 = poor match, 1.0 = perfect match)"
+          },
+          "match_rationale": {
+            "type": "string",
+            "description": "Explanation of why this candidate received this score"
+          },
+          "source_urls": {
+            "type": "array",
+            "description": "URLs where information about this candidate was found",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

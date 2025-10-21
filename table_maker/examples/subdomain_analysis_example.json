@@ -1,0 +1,63 @@
+{
+  "search_strategy": {
+    "description": "Find AI companies across all sectors and stages that are actively hiring",
+    "subdomain_hints": ["Research", "Healthcare", "Enterprise", "Consumer"],
+    "search_queries": [
+      "AI companies hiring machine learning engineers",
+      "artificial intelligence startups with job openings"
+    ]
+  },
+  "subdomain_analyzer_output": {
+    "success": true,
+    "subdomain_count": 4,
+    "execution_time_seconds": 3.2,
+    "subdomains": [
+      {
+        "name": "AI Research Companies",
+        "focus": "Academic and research-focused AI organizations, including university spin-offs and dedicated research labs focused on advancing fundamental AI capabilities",
+        "search_queries": [
+          "AI research labs hiring machine learning scientists",
+          "academic AI research companies with job openings",
+          "university AI lab spin-offs recruiting engineers",
+          "fundamental AI research organizations hiring"
+        ]
+      },
+      {
+        "name": "Healthcare AI",
+        "focus": "AI companies specifically focused on healthcare, medical imaging, drug discovery, clinical applications, and patient care. These companies face unique regulatory requirements (FDA, HIPAA) and domain expertise needs",
+        "search_queries": [
+          "healthcare AI companies hiring ML engineers",
+          "medical imaging AI startups with job postings",
+          "clinical AI software companies recruiting",
+          "drug discovery AI companies hiring data scientists"
+        ]
+      },
+      {
+        "name": "Enterprise AI Solutions",
+        "focus": "B2B AI companies providing enterprise software, automation, business intelligence, and productivity tools to corporate customers. Focus on sales, marketing, operations, and analytics applications",
+        "search_queries": [
+          "enterprise AI software companies hiring",
+          "B2B AI automation companies with job openings",
+          "business intelligence AI companies recruiting",
+          "AI productivity tools companies hiring engineers"
+        ]
+      },
+      {
+        "name": "Consumer AI Products",
+        "focus": "AI companies building consumer-facing products including apps, services, and platforms for end users. Different from enterprise with focus on UX, scale, and consumer behavior",
+        "search_queries": [
+          "consumer AI product companies hiring",
+          "AI consumer app startups recruiting",
+          "B2C AI platform companies with job openings",
+          "AI mobile apps companies hiring product engineers"
+        ]
+      }
+    ],
+    "reasoning": "Split into four major application domains that represent distinct sectors with different customers, business models, regulatory requirements, and technical challenges. Research companies focus on fundamental advances vs commercialization. Healthcare has unique compliance needs. Enterprise serves B2B with different sales cycles and requirements than consumer products. These four categories provide comprehensive coverage of the AI hiring landscape without over-fragmenting the search space.",
+    "token_usage": {
+      "input_tokens": 850,
+      "output_tokens": 420,
+      "total_tokens": 1270
+    }
+  }
+}

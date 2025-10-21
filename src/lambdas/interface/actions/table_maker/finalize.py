@@ -59,10 +59,46 @@ def title_to_snake_case(title: str) -> str:
     return snake
 
 
+async def populate_batch(
+    rows: List[Dict[str, Any]],
+    columns: List[Dict[str, Any]],
+    model: str = "claude-sonnet-4-5"
+) -> List[Dict[str, Any]]:
+    """
+    Populate data columns for a batch of rows.
+
+    This function is for FUTURE USE when we implement data population within finalize.
+    Currently, data population happens during validation.
+
+    Args:
+        rows: Rows with ID columns already filled (from row discovery)
+        columns: Column definitions (ID + research columns)
+        model: Model to use for population
+
+    Returns:
+        Rows with all columns populated
+
+    Note:
+        ID columns already have values from row discovery.
+        This function would use LLM + web search to fill research columns.
+        Not currently used - placeholder for future enhancement.
+    """
+    # PLACEHOLDER: Currently not implemented
+    # In future, this would:
+    # 1. Extract ID values from each row
+    # 2. For each research column, use LLM + web search to find data
+    # 3. Populate the column values
+    # 4. Return completed rows
+    logger.info(f"populate_batch called with {len(rows)} rows (currently a placeholder)")
+    return rows
+
+
 async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Generate validation configuration only (no table completion).
-    Table completion will happen during validation process.
+    Generate validation configuration and optionally populate table with discovered row IDs.
+
+    NEW BEHAVIOR: If final_row_ids is provided, uses pre-discovered rows from row discovery system.
+    LEGACY BEHAVIOR: If final_row_ids not provided, uses future_ids from preview data.
 
     Args:
         event_data: {
@@ -70,7 +106,16 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
             'email': 'user@example.com',
             'session_id': 'session_20251013_123456',
             'conversation_id': 'table_conv_abc123',
-            'row_count': 20  # Optional override
+            'row_count': 20,  # Optional override
+            'final_row_ids': [  # NEW: Pre-discovered rows from row discovery
+                {
+                    'id_values': {'Company Name': 'Anthropic', 'Website': 'anthropic.com'},
+                    'match_score': 0.95,
+                    'match_rationale': '...',
+                    'source_urls': [...]
+                },
+                ...
+            ]
         }
 
     Returns:
@@ -91,11 +136,36 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
         conversation_id = event_data.get('conversation_id')
         row_count = event_data.get('row_count', 20)
 
+        # NEW: Extract pre-discovered row IDs from row discovery system
+        final_row_ids = event_data.get('final_row_ids', None)
+
+        # Determine if we're using new row discovery system or legacy future_ids
+        using_row_discovery = final_row_ids is not None and len(final_row_ids) > 0
+
         if not all([email, session_id, conversation_id]):
             return {
                 'success': False,
                 'error': 'Missing required parameters: email, session_id, or conversation_id'
             }
+
+        # Validate final_row_ids structure if provided
+        if using_row_discovery:
+            logger.info(f"Using row discovery system with {len(final_row_ids)} pre-discovered rows")
+            # Validate structure of first row ID
+            if not isinstance(final_row_ids, list) or len(final_row_ids) == 0:
+                return {
+                    'success': False,
+                    'error': 'final_row_ids must be a non-empty list'
+                }
+            # Check first row has required structure
+            first_row = final_row_ids[0]
+            if 'id_values' not in first_row:
+                return {
+                    'success': False,
+                    'error': 'Each final_row_id must have id_values dictionary'
+                }
+        else:
+            logger.info("Using legacy future_ids system from preview data")
 
         logger.info(f"Starting table acceptance and validation for conversation {conversation_id}")
         logger.info(f"[TABLE_FINALIZE] WebSocket client available: {websocket_client is not None}")
@@ -216,11 +286,27 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
 
             logger.info(f"Creating clean CSV (without definitions) at {tmp_csv_path}")
 
-            # Get all rows (sample rows + future ID rows)
+            # Get all rows (sample rows + ID rows from either system)
             all_rows = list(sample_rows)
 
-            # Add future_ids as rows with only ID columns populated
-            if future_ids:
+            # NEW PATH: Use pre-discovered rows from row discovery
+            if using_row_discovery:
+                logger.info(f"Adding {len(final_row_ids)} rows from row discovery system")
+                for discovered_row in final_row_ids:
+                    partial_row = {}
+                    id_values = discovered_row.get('id_values', {})
+                    for col in columns:
+                        col_name = col['name']
+                        if col.get('is_identification', False) and col_name in id_values:
+                            partial_row[col_name] = id_values[col_name]
+                        else:
+                            partial_row[col_name] = ''
+                    all_rows.append(partial_row)
+                logger.info(f"Writing CSV with {len(all_rows)} rows ({len(sample_rows)} complete + {len(final_row_ids)} from row discovery)")
+
+            # LEGACY PATH: Use future_ids from preview data
+            elif future_ids:
+                logger.info(f"Adding {len(future_ids)} rows from legacy future_ids system")
                 for future_id in future_ids:
                     partial_row = {}
                     for col in columns:
@@ -230,8 +316,7 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                         else:
                             partial_row[col_name] = ''
                     all_rows.append(partial_row)
-
-            logger.info(f"Writing CSV with {len(all_rows)} rows ({len(sample_rows)} complete + {len(future_ids)} ID-only)")
+                logger.info(f"Writing CSV with {len(all_rows)} rows ({len(sample_rows)} complete + {len(future_ids)} ID-only)")
 
             # Write clean CSV without column definitions
             with open(tmp_csv_path, 'w', newline='', encoding='utf-8') as f:
@@ -276,7 +361,12 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
 
         # Define parallel async functions
         async def generate_full_table():
-            """Generate and store full table with all rows"""
+            """
+            Generate and store full table with all rows.
+
+            NEW BEHAVIOR: If using row discovery, creates rows from final_row_ids.
+            LEGACY BEHAVIOR: If using future_ids, creates placeholder rows.
+            """
             try:
                 from .table_maker_lib.table_generator import TableGenerator
                 from .table_maker_lib.row_expander import RowExpander
@@ -303,10 +393,26 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
 
                 all_rows = list(sample_rows)  # Start with preview rows
 
-                # Append empty rows with future_ids for validator to fill in
-                # The validator will populate these rows based on validation results
-                if additional_rows_needed > 0 and future_ids:
-                    logger.info(f"Appending {min(additional_rows_needed, len(future_ids))} placeholder rows with future IDs")
+                # NEW PATH: Use pre-discovered rows from row discovery system
+                if using_row_discovery:
+                    logger.info(f"Using {len(final_row_ids)} pre-discovered rows from row discovery system")
+                    for discovered_row in final_row_ids:
+                        # Create a row with ID columns filled in from discovered row
+                        placeholder_row = {}
+                        id_values = discovered_row.get('id_values', {})
+                        for col in columns:
+                            col_name = col['name']
+                            if col.get('is_identification', False) and col_name in id_values:
+                                placeholder_row[col_name] = id_values[col_name]
+                            else:
+                                # Leave research columns empty for population
+                                placeholder_row[col_name] = ''
+                        all_rows.append(placeholder_row)
+                    logger.info(f"Added {len(final_row_ids)} rows from row discovery. Total rows: {len(all_rows)}")
+
+                # LEGACY PATH: Append empty rows with future_ids for validator to fill in
+                elif additional_rows_needed > 0 and future_ids:
+                    logger.info(f"Appending {min(additional_rows_needed, len(future_ids))} placeholder rows with legacy future IDs")
                     for i, future_id_set in enumerate(future_ids[:additional_rows_needed]):
                         # Create a row with ID columns filled in, other columns empty
                         placeholder_row = {}
@@ -321,8 +427,13 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                         all_rows.append(placeholder_row)
                     logger.info(f"Added {len(future_ids[:additional_rows_needed])} placeholder rows. Total rows: {len(all_rows)}")
 
-                # TEMPORARILY DISABLED: Row expansion will be handled by validator
-                # The validator will fill in additional rows based on validation results
+                # REMOVED: Internal row expansion logic
+                # Row expansion is no longer done here because:
+                # 1. NEW SYSTEM: Row discovery happens independently before finalization
+                # 2. LEGACY SYSTEM: Validator fills in placeholder rows during validation
+                # 3. This eliminates quality drop-off from ad-hoc row generation
+                #
+                # The code below is kept for reference but disabled with if False
                 if False and additional_rows_needed > 0:
                     # Build expansion request based on future IDs and conversation context
                     research_purpose = ""
@@ -743,6 +854,7 @@ def handle_table_accept_and_validate_async(event_data: Dict[str, Any], context) 
             'conversation_id': conversation_id,
             'row_count': event_data.get('row_count', 20),
             'table_config': event_data.get('table_config'),  # Include preview data if present
+            'final_row_ids': event_data.get('final_row_ids'),  # NEW: Include pre-discovered rows
             'action': 'acceptTableAndValidate'
         }
 

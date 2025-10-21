@@ -1,0 +1,76 @@
+{
+  "type": "object",
+  "required": ["columns", "search_strategy", "table_name", "tablewide_research"],
+  "properties": {
+    "columns": {
+      "type": "array",
+      "description": "Array of column objects including ID and research columns",
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "format", "importance", "is_identification"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Column name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Detailed description of what this column contains"
+          },
+          "format": {
+            "type": "string",
+            "description": "Data format (String, Number, Boolean, URL, Date, etc.)"
+          },
+          "importance": {
+            "type": "string",
+            "enum": ["ID", "CRITICAL"],
+            "description": "Column importance level"
+          },
+          "is_identification": {
+            "type": "boolean",
+            "description": "Whether this column is used for row identification"
+          },
+          "validation_strategy": {
+            "type": "string",
+            "description": "How to validate this column's data (required for research columns)"
+          }
+        }
+      }
+    },
+    "search_strategy": {
+      "type": "object",
+      "required": ["description", "subdomain_hints", "search_queries"],
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Clear description of what entities to find"
+        },
+        "subdomain_hints": {
+          "type": "array",
+          "description": "2-5 subdomain hints for parallel row discovery",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "maxItems": 5
+        },
+        "search_queries": {
+          "type": "array",
+          "description": "Specific search queries to help find matching entities",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "table_name": {
+      "type": "string",
+      "description": "Concise name for the table"
+    },
+    "tablewide_research": {
+      "type": "string",
+      "description": "Overall research context and objectives for this table"
+    }
+  }
+}

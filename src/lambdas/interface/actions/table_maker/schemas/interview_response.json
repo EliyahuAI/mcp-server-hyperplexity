@@ -1,14 +1,14 @@
 {
   "type": "object",
-  "required": ["trigger_preview", "follow_up_question", "context_web_research", "processing_steps", "table_name"],
+  "required": ["trigger_execution", "follow_up_question", "context_web_research", "processing_steps", "table_name"],
   "properties": {
-    "trigger_preview": {
+    "trigger_execution": {
       "type": "boolean",
-      "description": "Set to true when you have enough context to generate a meaningful table structure. Set to false if you need more information from the user."
+      "description": "Set to true ONLY when user has approved the table sketch and you're ready to start execution phase (3-4 minute pipeline). Set to false if you need more clarification or user hasn't approved yet."
     },
     "follow_up_question": {
       "type": "string",
-      "description": "If trigger_preview is false, ask a focused question to gather more context. If trigger_preview is true, this should contain your proposal: 'Here is what I understand so far: {description of the table}. Shall I generate a preview for you to review? We can refine the table if it is not what you are expecting.' Use markdown formatting (bold, lists, bullets) for clarity."
+      "description": "If trigger_execution is false, ask a focused question to gather more context or present the table sketch for approval. If trigger_execution is true, confirm execution start with timing: 'I'll need 3-4 minutes to build the complete table.' Use markdown formatting (bold, lists, bullets) for clarity."
     },
     "context_web_research": {
       "type": "array",

@@ -11,7 +11,8 @@ The interview phase asks focused questions to understand:
 3. What columns/information they're interested in
 4. Who will use the table and for what purpose
 
-Once it has enough context, it triggers preview generation.
+Once user approves the table sketch, it triggers execution (the 3-4 minute pipeline
+to build the complete table).
 """
 
 import logging
@@ -30,8 +31,9 @@ class TableInterviewHandler:
     """
     Handles quick interactive interview to gather table requirements.
 
-    This is Phase 1 of table generation - gathering context quickly.
-    Phase 2 (preview generation) happens after trigger_preview is set to true.
+    This is Phase 1 of table generation - gathering context and approval.
+    Phase 2 (execution) happens after trigger_execution is set to true.
+    Execution takes 3-4 minutes to build the complete, validated table.
     """
 
     def __init__(self, prompts_dir: str, schemas_dir: str):
@@ -91,7 +93,7 @@ class TableInterviewHandler:
         Returns:
             {
                 'success': bool,
-                'trigger_preview': bool,
+                'trigger_execution': bool,
                 'follow_up_question': str,
                 'context_web_research': list,
                 'processing_steps': list,
@@ -163,21 +165,24 @@ class TableInterviewHandler:
             })
 
             # Store interview context
+            # Handle both old 'trigger_preview' and new 'trigger_execution' for backward compatibility
+            trigger_execution = structured_data.get('trigger_execution', structured_data.get('trigger_preview', False))
+
             self.interview_context = {
-                'trigger_preview': structured_data.get('trigger_preview', False),
+                'trigger_execution': trigger_execution,
                 'follow_up_question': structured_data.get('follow_up_question', ''),
                 'context_web_research': structured_data.get('context_web_research', []),
                 'processing_steps': structured_data.get('processing_steps', []),
                 'table_name': structured_data.get('table_name', '')
             }
 
-            logger.info(f"[INTERVIEW] Interview turn complete. Trigger preview: {self.interview_context['trigger_preview']}")
+            logger.info(f"[INTERVIEW] Interview turn complete. Trigger execution: {self.interview_context['trigger_execution']}")
 
             # Return FULL API response for enhanced metrics aggregation
             # The response from call_structured_api contains everything needed
             return {
                 'success': True,
-                'trigger_preview': self.interview_context['trigger_preview'],
+                'trigger_execution': self.interview_context['trigger_execution'],
                 'follow_up_question': self.interview_context['follow_up_question'],
                 'context_web_research': self.interview_context['context_web_research'],
                 'processing_steps': self.interview_context['processing_steps'],
@@ -194,7 +199,7 @@ class TableInterviewHandler:
 
             return {
                 'success': False,
-                'trigger_preview': False,
+                'trigger_execution': False,
                 'follow_up_question': '',
                 'context_web_research': [],
                 'processing_steps': [],
@@ -261,7 +266,7 @@ class TableInterviewHandler:
                 logger.error(f"[INTERVIEW] Full API response: {json.dumps(response, indent=2)}")
                 return {
                     'success': False,
-                    'trigger_preview': False,
+                    'trigger_execution': False,
                     'follow_up_question': '',
                     'context_web_research': [],
                     'processing_steps': [],
@@ -292,21 +297,24 @@ class TableInterviewHandler:
             })
 
             # Update interview context
+            # Handle both old 'trigger_preview' and new 'trigger_execution' for backward compatibility
+            trigger_execution = structured_data.get('trigger_execution', structured_data.get('trigger_preview', False))
+
             self.interview_context = {
-                'trigger_preview': structured_data.get('trigger_preview', False),
+                'trigger_execution': trigger_execution,
                 'follow_up_question': structured_data.get('follow_up_question', ''),
                 'context_web_research': structured_data.get('context_web_research', []),
                 'processing_steps': structured_data.get('processing_steps', []),
                 'table_name': structured_data.get('table_name', '')
             }
 
-            logger.info(f"[INTERVIEW] Interview turn complete. Trigger preview: {self.interview_context['trigger_preview']}")
+            logger.info(f"[INTERVIEW] Interview turn complete. Trigger execution: {self.interview_context['trigger_execution']}")
 
             # Return FULL API response for enhanced metrics aggregation
             # The response from call_structured_api contains everything needed
             return {
                 'success': True,
-                'trigger_preview': self.interview_context['trigger_preview'],
+                'trigger_execution': self.interview_context['trigger_execution'],
                 'follow_up_question': self.interview_context['follow_up_question'],
                 'context_web_research': self.interview_context['context_web_research'],
                 'processing_steps': self.interview_context['processing_steps'],
@@ -323,7 +331,7 @@ class TableInterviewHandler:
 
             return {
                 'success': False,
-                'trigger_preview': False,
+                'trigger_execution': False,
                 'follow_up_question': '',
                 'context_web_research': [],
                 'processing_steps': [],
