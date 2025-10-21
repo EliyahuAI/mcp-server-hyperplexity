@@ -60,3 +60,37 @@ Use the exact column names as keys.
 - If web search results are empty or unhelpful, return an empty candidates array
 - Ensure ID values are clean strings (no extra formatting, URLs, etc.)
 - Source URLs should be specific to each candidate (not generic search URLs)
+
+---
+
+## CRITICAL OUTPUT REQUIREMENTS
+
+You MUST return a valid JSON object with a "candidates" array.
+
+**ALWAYS return candidates, even if only partial matches:**
+- If you find 10 great matches, return all 10
+- If you find 3 weak matches, return those 3
+- If you find 1 marginal match, return that 1
+- If truly NO matches exist, return empty array: {"candidates": []}
+
+**Example valid outputs:**
+```json
+{
+  "subdomain": "AI Research Companies",
+  "candidates": [
+    {
+      "id_values": {"Company Name": "Anthropic", "Website": "https://anthropic.com"},
+      "match_score": 0.95,
+      "score_breakdown": {"relevancy": 0.95, "reliability": 1.0, "recency": 0.9},
+      "match_rationale": "Leading AI safety company...",
+      "source_urls": ["https://anthropic.com"]
+    }
+  ]
+}
+```
+
+**NEVER:**
+- Return text explanations instead of JSON
+- Omit the candidates array
+- Return error messages in the JSON
+- Return null or undefined

@@ -136,6 +136,9 @@ async def run_sequential_test():
         'row_discovery_cost': 0.0
     }
 
+    # PHASE 1: Track all API calls with enhanced_data
+    api_calls_log = []
+
     # -------------------------------------------------------------------------
     # PRE-FLIGHT CHECKS
     # -------------------------------------------------------------------------
@@ -234,6 +237,14 @@ async def run_sequential_test():
         col_cost = result.get('cost', 0.0)
         stats['column_def_cost'] = col_cost
         stats['total_cost'] += col_cost
+
+        # PHASE 1: Track column definition API call
+        api_calls_log.append({
+            'call_description': result.get('call_description', 'Creating Columns'),
+            'model': result.get('model_used', COLUMN_DEFINITION_MODEL),
+            'enhanced_data': result.get('enhanced_data', {}),
+            'timestamp': datetime.now().isoformat()
+        })
 
         print_success(f"Defined {len(columns)} columns in {format_time(col_time)} (${col_cost:.4f})")
         print_info(f"Table: {table_name}")
@@ -340,6 +351,17 @@ async def run_sequential_test():
         if final_rows:
             total_score = sum(row.get('match_score', 0) for row in final_rows)
             stats['avg_match_score'] = total_score / len(final_rows)
+
+        # PHASE 1: Track API calls from row discovery rounds
+        for stream_result in stream_results:
+            for round_data in stream_result.get('all_rounds', []):
+                api_calls_log.append({
+                    'call_description': round_data.get('call_description', 'Finding Rows'),
+                    'model': round_data.get('model', 'unknown'),
+                    'context': round_data.get('context', 'unknown'),
+                    'enhanced_data': round_data.get('enhanced_data', {}),
+                    'timestamp': datetime.now().isoformat()
+                })
 
         # Display stream results
         print()
@@ -462,6 +484,26 @@ async def run_sequential_test():
         print(f"     Rationale: {rationale}")
 
     # -------------------------------------------------------------------------
+    # PHASE 1: API CALLS SUMMARY
+    # -------------------------------------------------------------------------
+
+    print("\n[API CALLS SUMMARY]")
+    total_api_cost = sum(
+        call.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0)
+        for call in api_calls_log
+    )
+    print(f"  Total API calls: {len(api_calls_log)}")
+    print(f"  Total cost: ${total_api_cost:.4f}")
+
+    for call in api_calls_log:
+        desc = call.get('call_description', 'Unknown')
+        model = call.get('model', 'unknown')
+        context = call.get('context', '')
+        context_str = f" ({context})" if context else ""
+        cost = call.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0)
+        print(f"    - {desc}: ${cost:.4f} ({model}{context_str})")
+
+    # -------------------------------------------------------------------------
     # STATISTICS
     # -------------------------------------------------------------------------
 
@@ -510,6 +552,7 @@ async def run_sequential_test():
         'search_strategy': search_strategy,
         'final_rows': final_rows,
         'all_candidates_full_list': discovery_result.get('all_candidates', []),  # Full list before filtering
+        'api_calls': api_calls_log,  # PHASE 1: Include all API calls with enhanced_data
         'statistics': stats,
         'total_time_seconds': total_time
     }

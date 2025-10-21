@@ -168,8 +168,13 @@ class ColumnDefinitionHandler:
             result['table_name'] = ai_response.get('table_name', '')
             result['tablewide_research'] = ai_response.get('tablewide_research', '')
 
-            # Include cost information from enhanced_data
+            # PHASE 1: Capture enhanced_data and call metadata
             enhanced_data = api_response.get('enhanced_data', {})
+            result['enhanced_data'] = enhanced_data
+            result['call_description'] = "Creating Columns"
+            result['model_used'] = actual_model
+
+            # Include cost information from enhanced_data
             if enhanced_data:
                 costs = enhanced_data.get('costs', {})
                 result['cost'] = costs.get('actual', {}).get('total_cost', 0.0)

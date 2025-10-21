@@ -334,6 +334,9 @@ class RowDiscovery:
                 all_candidates_before_filter.extend(stream.get('candidates', []))
             result['all_candidates'] = all_candidates_before_filter
 
+            # PHASE 1: Include stream_results with all_rounds data for API tracking
+            result['stream_results'] = successful_streams
+
             # Mark success
             result['success'] = True
 

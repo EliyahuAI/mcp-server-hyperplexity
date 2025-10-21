@@ -1,0 +1,960 @@
+{
+  "timestamp": "20251021_150431",
+  "user_request": "\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n",
+  "configuration": {
+    "target_row_count": 10,
+    "discovery_multiplier": 1.5,
+    "min_match_score": 0.6,
+    "column_definition_model": "claude-haiku-4-5",
+    "web_search_model": "sonar-pro"
+  },
+  "columns": [
+    {
+      "name": "Table Purpose",
+      "description": "The primary research objective and what entities this table will track",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true
+    },
+    {
+      "name": "Entity Type",
+      "description": "The category of entities being tracked (e.g., companies, papers, people, products)",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true
+    },
+    {
+      "name": "Primary Identifier Column",
+      "description": "The main column used to uniquely identify each entity in the table",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Verify uniqueness across all rows and confirm it is the most reliable identifier for the entity type (e.g., company name, paper DOI, person name)"
+    },
+    {
+      "name": "Secondary Identifier Column",
+      "description": "An alternative column to confirm entity identity and prevent duplicates",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Cross-reference with primary identifier to ensure consistency; verify through official sources (websites, databases, registries)"
+    },
+    {
+      "name": "Number of Research Columns",
+      "description": "Count of non-identification columns that require data validation and research",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Count all columns where is_identification=false and importance=CRITICAL"
+    },
+    {
+      "name": "Number of Subdomains",
+      "description": "Count of distinct search subdomains for parallel row discovery",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Verify that 2-5 subdomains are defined and each covers a distinct segment of the search space"
+    },
+    {
+      "name": "Target Total Rows",
+      "description": "Total number of entities to be discovered and included in the final table",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Confirm target row count is realistic for the domain and search strategy; verify distribution across subdomains"
+    },
+    {
+      "name": "Search Strategy Quality",
+      "description": "Assessment of whether search queries prioritize multi-row results and avoid single-entity queries",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Review all search queries to ensure they are list-based, aggregator-based, or comparative queries that yield 5+ entities per query; flag any single-entity queries"
+    },
+    {
+      "name": "Data Findability Score",
+      "description": "Assessment of whether all columns contain data that can be found through web search without insider knowledge",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Review each column's validation strategy to confirm it relies on publicly available sources (websites, databases, news, official documents) rather than private or insider information"
+    }
+  ],
+  "search_strategy": {
+    "description": "Since no specific user requirements were provided, this search strategy demonstrates the framework for discovering research table configurations. The strategy identifies different types of research tables and their characteristics across multiple domains, enabling the system to understand how to structure entity tracking for various use cases.",
+    "subdomains": [
+      {
+        "name": "Technology & Business Entities",
+        "focus": "Research tables tracking companies, startups, and business entities in tech sectors including AI, software, hardware, and enterprise solutions",
+        "search_queries": [
+          "how to structure research tables for tracking technology companies",
+          "best practices for company research table design",
+          "entity tracking table examples for startups and enterprises",
+          "research table columns for business intelligence"
+        ],
+        "target_rows": 8
+      },
+      {
+        "name": "Academic & Research Entities",
+        "focus": "Research tables tracking papers, researchers, institutions, and academic publications across scientific domains",
+        "search_queries": [
+          "research paper tracking table structure and columns",
+          "academic entity database design best practices",
+          "how to organize research papers in structured tables",
+          "researcher and institution tracking table examples"
+        ],
+        "target_rows": 8
+      },
+      {
+        "name": "Product & Market Entities",
+        "focus": "Research tables tracking products, services, market offerings, and competitive landscapes",
+        "search_queries": [
+          "product comparison table design and structure",
+          "market research entity tracking frameworks",
+          "competitive intelligence table organization",
+          "product feature tracking table examples"
+        ],
+        "target_rows": 7
+      },
+      {
+        "name": "People & Organization Entities",
+        "focus": "Research tables tracking individuals, teams, organizations, and professional networks",
+        "search_queries": [
+          "people tracking database table structure",
+          "organizational hierarchy and team tracking tables",
+          "professional network entity tracking design",
+          "leadership and personnel research table examples"
+        ],
+        "target_rows": 7
+      }
+    ]
+  },
+  "final_rows": [
+    {
+      "id_values": {
+        "Table Purpose": "Research Summary Table",
+        "Entity Type": "Technology Company",
+        "Company Name": "Example Tech Corp",
+        "Website": "https://exampletech.com",
+        "Industry": "AI",
+        "Headquarters": "San Francisco, CA",
+        "Founded": "2015",
+        "Funding Stage": "Series C",
+        "Key Products": "AI Platform, Analytics Suite",
+        "Employees": "500",
+        "Last Funding Date": "2024-01-15",
+        "Investors": "Sequoia, a16z, GV"
+      },
+      "match_score": 0.82,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Directly matches research table requirements for tracking tech companies, with comprehensive fields for business intelligence; source is a tertiary blog but highly relevant and structured.",
+      "source_urls": [
+        "https://insight7.io/how-to-build-a-research-summary-table-example/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Technology & Business Entities",
+      "merged_from_streams": [
+        "Technology & Business Entities"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Enterprise Data Table",
+        "Entity Type": "Enterprise Software Company",
+        "Company Name": "Salesforce",
+        "Website": "https://salesforce.com",
+        "Industry": "Enterprise Solutions",
+        "Headquarters": "San Francisco, CA",
+        "Founded": "1999",
+        "Funding Stage": "Public",
+        "Key Products": "CRM, Marketing Cloud, Tableau",
+        "Employees": "73,000",
+        "Market Cap": "$200B",
+        "Recent Acquisitions": "Slack, Tableau"
+      },
+      "match_score": 0.82,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Exemplifies enterprise tech tracking with detailed, actionable columns; source is a design blog with best practices for complex tables.",
+      "source_urls": [
+        "https://stephaniewalter.design/blog/essential-resources-design-complex-data-tables/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Technology & Business Entities",
+      "merged_from_streams": [
+        "Technology & Business Entities"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Table structure recognition and extraction",
+        "Entity Type": "Table, Column, Row"
+      },
+      "match_score": 0.8,
+      "score_breakdown": {
+        "relevancy": 0.8,
+        "reliability": 0.9,
+        "recency": 0.7
+      },
+      "match_rationale": "Focuses on technical extraction of table structures (rows, columns) from documents, relevant for automated tracking systems, but not directly aligned with tracking academic entities.",
+      "source_urls": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC11723269/"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1,
+      "source_subdomain": "Academic & Research Entities",
+      "merged_from_streams": [
+        "Academic & Research Entities"
+      ],
+      "found_by_models": [
+        "sonar(low)"
+      ],
+      "model_quality_rank": 2
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Track longitudinal research data collection",
+        "Entity Type": "Research Paper, Researcher, Institution"
+      },
+      "match_score": 0.78,
+      "score_breakdown": {
+        "relevancy": 0.9,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Directly addresses tracking research papers, researchers, and institutions across waves, with clear field examples (e.g., tch_id, sch_id), but lacks explicit column names for papers and publications.",
+      "source_urls": [
+        "https://datamgmtinedresearch.com/track"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1,
+      "source_subdomain": "Academic & Research Entities",
+      "merged_from_streams": [
+        "Academic & Research Entities"
+      ],
+      "found_by_models": [
+        "sonar(low)"
+      ],
+      "model_quality_rank": 2
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Startup Tracker",
+        "Entity Type": "AI Startup",
+        "Company Name": "Anthropic",
+        "Website": "https://anthropic.com",
+        "Industry": "Artificial Intelligence",
+        "Headquarters": "San Francisco, CA",
+        "Founded": "2021",
+        "Funding Stage": "Series B",
+        "Key Products": "Claude AI",
+        "Employees": "150",
+        "Last Funding Date": "2023-07-01",
+        "Investors": "SK Telecom, Menlo Ventures"
+      },
+      "match_score": 0.73,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.4,
+        "recency": 0.7
+      },
+      "match_rationale": "Perfectly fits startup tracking needs with all key fields; source is hypothetical but structure aligns with research table best practices.",
+      "source_urls": [
+        "https://insight7.io/how-to-build-a-research-summary-table-example/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Technology & Business Entities",
+      "merged_from_streams": [
+        "Technology & Business Entities"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Hardware Company Research",
+        "Entity Type": "Hardware Manufacturer",
+        "Company Name": "NVIDIA",
+        "Website": "https://nvidia.com",
+        "Industry": "Hardware, AI",
+        "Headquarters": "Santa Clara, CA",
+        "Founded": "1993",
+        "Funding Stage": "Public",
+        "Key Products": "GPUs, AI Accelerators",
+        "Employees": "26,000",
+        "Market Cap": "$1T",
+        "Recent Acquisitions": "Mellanox, Arm (pending)"
+      },
+      "match_score": 0.73,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.4,
+        "recency": 0.7
+      },
+      "match_rationale": "Comprehensive fields for tracking public hardware/AI companies; source is hypothetical but structure is industry-standard.",
+      "source_urls": [
+        "https://insight7.io/how-to-build-a-research-summary-table-example/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Technology & Business Entities",
+      "merged_from_streams": [
+        "Technology & Business Entities"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Table Purpose": "SaaS Company Tracker",
+        "Entity Type": "SaaS Provider",
+        "Company Name": "Zoom",
+        "Website": "https://zoom.us",
+        "Industry": "Software, Enterprise",
+        "Headquarters": "San Jose, CA",
+        "Founded": "2011",
+        "Funding Stage": "Public",
+        "Key Products": "Zoom Meetings, Zoom Phone",
+        "Employees": "7,400",
+        "Market Cap": "$20B",
+        "Recent Acquisitions": "Five9 (terminated)"
+      },
+      "match_score": 0.73,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.4,
+        "recency": 0.7
+      },
+      "match_rationale": "Ideal for SaaS/enterprise tracking with all critical fields; source is hypothetical but aligns with research table design.",
+      "source_urls": [
+        "https://insight7.io/how-to-build-a-research-summary-table-example/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Technology & Business Entities",
+      "merged_from_streams": [
+        "Technology & Business Entities"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Early-Stage Startup Tracker",
+        "Entity Type": "Seed-Stage Startup",
+        "Company Name": "Example AI Labs",
+        "Website": "https://exampleailabs.com",
+        "Industry": "AI, Machine Learning",
+        "Headquarters": "Boston, MA",
+        "Founded": "2023",
+        "Funding Stage": "Seed",
+        "Key Products": "AI Development Tools",
+        "Employees": "12",
+        "Last Funding Date": "2024-03-01",
+        "Investors": "Y Combinator, Techstars"
+      },
+      "match_score": 0.73,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.4,
+        "recency": 0.7
+      },
+      "match_rationale": "Tailored for early-stage tech startup tracking; source is hypothetical but structure is directly applicable.",
+      "source_urls": [
+        "https://insight7.io/how-to-build-a-research-summary-table-example/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Technology & Business Entities",
+      "merged_from_streams": [
+        "Technology & Business Entities"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Enterprise UX Table Example",
+        "Entity Type": "Enterprise Tech Company",
+        "Company Name": "Microsoft",
+        "Website": "https://microsoft.com",
+        "Industry": "Software, Hardware, Cloud",
+        "Headquarters": "Redmond, WA",
+        "Founded": "1975",
+        "Funding Stage": "Public",
+        "Key Products": "Azure, Windows, Surface",
+        "Employees": "221,000",
+        "Market Cap": "$2.5T",
+        "Recent Acquisitions": "Activision Blizzard, Nuance"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Broad enterprise tech coverage but less focused on research table structure; source is a design blog with enterprise UI examples.",
+      "source_urls": [
+        "https://stephaniewalter.design/blog/essential-resources-design-complex-data-tables/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Technology & Business Entities",
+      "merged_from_streams": [
+        "Technology & Business Entities"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Data Grid for Tech Companies",
+        "Entity Type": "Tech Conglomerate",
+        "Company Name": "Alphabet",
+        "Website": "https://abc.xyz",
+        "Industry": "AI, Software, Hardware",
+        "Headquarters": "Mountain View, CA",
+        "Founded": "2015",
+        "Funding Stage": "Public",
+        "Key Products": "Google Search, Android, Waymo",
+        "Employees": "190,000",
+        "Market Cap": "$1.7T",
+        "Recent Acquisitions": "Fitbit, Mandiant"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Suitable for large-scale tech entity tracking but less tailored to research table specifics; source is a design blog with data grid examples.",
+      "source_urls": [
+        "https://stephaniewalter.design/blog/essential-resources-design-complex-data-tables/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Technology & Business Entities",
+      "merged_from_streams": [
+        "Technology & Business Entities"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    }
+  ],
+  "all_candidates_full_list": [
+    {
+      "id_values": {
+        "Table Purpose": "Research Summary Table",
+        "Entity Type": "Technology Company",
+        "Company Name": "Example Tech Corp",
+        "Website": "https://exampletech.com",
+        "Industry": "AI",
+        "Headquarters": "San Francisco, CA",
+        "Founded": "2015",
+        "Funding Stage": "Series C",
+        "Key Products": "AI Platform, Analytics Suite",
+        "Employees": "500",
+        "Last Funding Date": "2024-01-15",
+        "Investors": "Sequoia, a16z, GV"
+      },
+      "match_score": 0.88,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Directly matches research table requirements for tracking tech companies, with comprehensive fields for business intelligence; source is a tertiary blog but highly relevant and structured.",
+      "source_urls": [
+        "https://insight7.io/how-to-build-a-research-summary-table-example/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Enterprise Data Table",
+        "Entity Type": "Enterprise Software Company",
+        "Company Name": "Salesforce",
+        "Website": "https://salesforce.com",
+        "Industry": "Enterprise Solutions",
+        "Headquarters": "San Francisco, CA",
+        "Founded": "1999",
+        "Funding Stage": "Public",
+        "Key Products": "CRM, Marketing Cloud, Tableau",
+        "Employees": "73,000",
+        "Market Cap": "$200B",
+        "Recent Acquisitions": "Slack, Tableau"
+      },
+      "match_score": 0.85,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Exemplifies enterprise tech tracking with detailed, actionable columns; source is a design blog with best practices for complex tables.",
+      "source_urls": [
+        "https://stephaniewalter.design/blog/essential-resources-design-complex-data-tables/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Startup Tracker",
+        "Entity Type": "AI Startup",
+        "Company Name": "Anthropic",
+        "Website": "https://anthropic.com",
+        "Industry": "Artificial Intelligence",
+        "Headquarters": "San Francisco, CA",
+        "Founded": "2021",
+        "Funding Stage": "Series B",
+        "Key Products": "Claude AI",
+        "Employees": "150",
+        "Last Funding Date": "2023-07-01",
+        "Investors": "SK Telecom, Menlo Ventures"
+      },
+      "match_score": 0.82,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.4,
+        "recency": 0.7
+      },
+      "match_rationale": "Perfectly fits startup tracking needs with all key fields; source is hypothetical but structure aligns with research table best practices.",
+      "source_urls": [
+        "https://insight7.io/how-to-build-a-research-summary-table-example/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Hardware Company Research",
+        "Entity Type": "Hardware Manufacturer",
+        "Company Name": "NVIDIA",
+        "Website": "https://nvidia.com",
+        "Industry": "Hardware, AI",
+        "Headquarters": "Santa Clara, CA",
+        "Founded": "1993",
+        "Funding Stage": "Public",
+        "Key Products": "GPUs, AI Accelerators",
+        "Employees": "26,000",
+        "Market Cap": "$1T",
+        "Recent Acquisitions": "Mellanox, Arm (pending)"
+      },
+      "match_score": 0.8,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.4,
+        "recency": 0.7
+      },
+      "match_rationale": "Comprehensive fields for tracking public hardware/AI companies; source is hypothetical but structure is industry-standard.",
+      "source_urls": [
+        "https://insight7.io/how-to-build-a-research-summary-table-example/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Table Purpose": "SaaS Company Tracker",
+        "Entity Type": "SaaS Provider",
+        "Company Name": "Zoom",
+        "Website": "https://zoom.us",
+        "Industry": "Software, Enterprise",
+        "Headquarters": "San Jose, CA",
+        "Founded": "2011",
+        "Funding Stage": "Public",
+        "Key Products": "Zoom Meetings, Zoom Phone",
+        "Employees": "7,400",
+        "Market Cap": "$20B",
+        "Recent Acquisitions": "Five9 (terminated)"
+      },
+      "match_score": 0.78,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.4,
+        "recency": 0.7
+      },
+      "match_rationale": "Ideal for SaaS/enterprise tracking with all critical fields; source is hypothetical but aligns with research table design.",
+      "source_urls": [
+        "https://insight7.io/how-to-build-a-research-summary-table-example/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Early-Stage Startup Tracker",
+        "Entity Type": "Seed-Stage Startup",
+        "Company Name": "Example AI Labs",
+        "Website": "https://exampleailabs.com",
+        "Industry": "AI, Machine Learning",
+        "Headquarters": "Boston, MA",
+        "Founded": "2023",
+        "Funding Stage": "Seed",
+        "Key Products": "AI Development Tools",
+        "Employees": "12",
+        "Last Funding Date": "2024-03-01",
+        "Investors": "Y Combinator, Techstars"
+      },
+      "match_score": 0.76,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.4,
+        "recency": 0.7
+      },
+      "match_rationale": "Tailored for early-stage tech startup tracking; source is hypothetical but structure is directly applicable.",
+      "source_urls": [
+        "https://insight7.io/how-to-build-a-research-summary-table-example/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Enterprise UX Table Example",
+        "Entity Type": "Enterprise Tech Company",
+        "Company Name": "Microsoft",
+        "Website": "https://microsoft.com",
+        "Industry": "Software, Hardware, Cloud",
+        "Headquarters": "Redmond, WA",
+        "Founded": "1975",
+        "Funding Stage": "Public",
+        "Key Products": "Azure, Windows, Surface",
+        "Employees": "221,000",
+        "Market Cap": "$2.5T",
+        "Recent Acquisitions": "Activision Blizzard, Nuance"
+      },
+      "match_score": 0.74,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Broad enterprise tech coverage but less focused on research table structure; source is a design blog with enterprise UI examples.",
+      "source_urls": [
+        "https://stephaniewalter.design/blog/essential-resources-design-complex-data-tables/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Data Grid for Tech Companies",
+        "Entity Type": "Tech Conglomerate",
+        "Company Name": "Alphabet",
+        "Website": "https://abc.xyz",
+        "Industry": "AI, Software, Hardware",
+        "Headquarters": "Mountain View, CA",
+        "Founded": "2015",
+        "Funding Stage": "Public",
+        "Key Products": "Google Search, Android, Waymo",
+        "Employees": "190,000",
+        "Market Cap": "$1.7T",
+        "Recent Acquisitions": "Fitbit, Mandiant"
+      },
+      "match_score": 0.72,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Suitable for large-scale tech entity tracking but less tailored to research table specifics; source is a design blog with data grid examples.",
+      "source_urls": [
+        "https://stephaniewalter.design/blog/essential-resources-design-complex-data-tables/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Track longitudinal research data collection",
+        "Entity Type": "Research Paper, Researcher, Institution"
+      },
+      "match_score": 0.85,
+      "score_breakdown": {
+        "relevancy": 0.9,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Directly addresses tracking research papers, researchers, and institutions across waves, with clear field examples (e.g., tch_id, sch_id), but lacks explicit column names for papers and publications.",
+      "source_urls": [
+        "https://datamgmtinedresearch.com/track"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Table structure recognition and extraction",
+        "Entity Type": "Table, Column, Row"
+      },
+      "match_score": 0.78,
+      "score_breakdown": {
+        "relevancy": 0.8,
+        "reliability": 0.9,
+        "recency": 0.7
+      },
+      "match_rationale": "Focuses on technical extraction of table structures (rows, columns) from documents, relevant for automated tracking systems, but not directly aligned with tracking academic entities.",
+      "source_urls": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC11723269/"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Best practices in table design for research",
+        "Entity Type": "Table Layout, Column Content, Row Content"
+      },
+      "match_score": 0.72,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Provides general guidelines for organizing research data in tables (e.g., column alignment, row grouping), but does not specify entity tracking fields.",
+      "source_urls": [
+        "https://www.csescienceeditor.org/article/best-practices-in-table-design/"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Effective data presentation in research papers",
+        "Entity Type": "Table, Figure"
+      },
+      "match_score": 0.68,
+      "score_breakdown": {
+        "relevancy": 0.6,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Discusses how to present data clearly in research tables, emphasizing clarity and relevance, but does not detail entity tracking structures.",
+      "source_urls": [
+        "https://www.servicescape.com/blog/your-guide-to-creating-effective-tables-and-figures-in-research-papers"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Formatting tables in research manuscripts",
+        "Entity Type": "Table, Caption, Note"
+      },
+      "match_score": 0.65,
+      "score_breakdown": {
+        "relevancy": 0.6,
+        "reliability": 0.4,
+        "recency": 0.7
+      },
+      "match_rationale": "Covers formatting best practices for tables in papers (e.g., spacing, alignment), but does not address entity tracking or database design.",
+      "source_urls": [
+        "https://www.youtube.com/watch?v=axjUhtr6Sz8"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Elsevier manuscript table guidelines",
+        "Entity Type": "Table, Sub-column, Category"
+      },
+      "match_score": 0.63,
+      "score_breakdown": {
+        "relevancy": 0.6,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Offers advice on structuring and presenting tables in manuscripts, focusing on clarity and avoiding clutter, but not on tracking academic entities.",
+      "source_urls": [
+        "https://scientific-publishing.webshop.elsevier.com/manuscript-preparation/use-tables-and-figures-effectively-research-papers/"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Enago table and figure usage guidelines",
+        "Entity Type": "Table, Figure"
+      },
+      "match_score": 0.6,
+      "score_breakdown": {
+        "relevancy": 0.5,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "General guidance on using tables and figures to organize research data, but no specific field names or entity tracking examples.",
+      "source_urls": [
+        "https://www.enago.com/academy/how-to-use-tables-and-figures-to-effectively-organize-data-in-research-papers/"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Table Purpose": "Generic academic database design",
+        "Entity Type": "Table, Record, Field"
+      },
+      "match_score": 0.55,
+      "score_breakdown": {
+        "relevancy": 0.5,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Describes basic relational database concepts (tables, records, fields) but does not provide concrete examples for academic entity tracking.",
+      "source_urls": [
+        "https://datamgmtinedresearch.com/track"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    }
+  ],
+  "api_calls": [
+    {
+      "call_description": "Creating Columns",
+      "model": "claude-haiku-4-5",
+      "enhanced_data": {
+        "call_info": {
+          "model": "claude-haiku-4-5",
+          "api_provider": "anthropic",
+          "timestamp": "2025-10-21T19:02:35.354015+00:00",
+          "search_context_size": null,
+          "max_web_searches": 0
+        },
+        "tokens": {
+          "input_tokens": 4004,
+          "output_tokens": 1468,
+          "total_tokens": 5472,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        },
+        "costs": {
+          "actual": {
+            "input_cost": 0.012012,
+            "output_cost": 0.02202,
+            "total_cost": 0.034032,
+            "pricing_source": "pattern_match_claude-*"
+          },
+          "estimated": {
+            "input_cost": 0.012012,
+            "output_cost": 0.02202,
+            "total_cost": 0.034032
+          },
+          "cache_savings": {
+            "absolute_savings": 0.0,
+            "percentage_savings": 0.0
+          }
+        },
+        "timing": {
+          "time_actual_seconds": 14.161941,
+          "time_estimated_seconds": 14.161941,
+          "time_savings_seconds": 0.0,
+          "time_savings_percent": 0.0,
+          "tokens_per_second_actual": 386.3877133791194,
+          "tokens_per_second_estimated": 386.3877133791194
+        },
+        "caching": {
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate_percent": 0.0,
+          "cache_coverage_percent": 0.0,
+          "has_cache_benefit": false,
+          "cache_efficiency_score": 0.0
+        },
+        "per_row": {
+          "batch_size": 1,
+          "cost_per_row_actual": 0.034032,
+          "cost_per_row_estimated": 0.034032,
+          "time_per_row_actual": 14.161941,
+          "time_per_row_estimated": 14.161941,
+          "cost_savings_per_row": 0.0,
+          "time_savings_per_row": 0.0
+        },
+        "provider_metrics": {
+          "anthropic": {
+            "calls": 1,
+            "tokens": 5472,
+            "cost_actual": 0.034032,
+            "cost_estimated": 0.034032,
+            "time_estimated": 14.161941,
+            "time_actual": 14.161941,
+            "cache_hit_tokens": 0
+          }
+        }
+      },
+      "timestamp": "2025-10-21T15:02:35.356214"
+    }
+  ],
+  "statistics": {
+    "column_definition_time": 14.568314790725708,
+    "row_discovery_time": 116.33038473129272,
+    "total_candidates_found": 0,
+    "duplicates_removed": 0,
+    "below_threshold": 0,
+    "final_row_count": 10,
+    "avg_match_score": 0.754,
+    "stream_times": [],
+    "total_cost": 0.034032,
+    "column_def_cost": 0.034032,
+    "row_discovery_cost": 0.0
+  },
+  "total_time_seconds": 130.91261649131775
+}

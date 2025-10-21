@@ -139,13 +139,15 @@ class RowDiscoveryStream:
                     candidate['context_used'] = context
                     candidate['round'] = round_idx
 
-                # Record round results
+                # PHASE 1: Record round results with enhanced_data
                 round_data = {
                     'round': round_idx,
                     'model': model,
                     'context': context,
                     'candidates': candidates,
-                    'count': len(candidates)
+                    'count': len(candidates),
+                    'enhanced_data': round_candidates.get('enhanced_data', {}),
+                    'call_description': f"Finding Rows - {subdomain_name} - Round {round_idx} ({model}-{context})"
                 }
                 all_rounds.append(round_data)
 
@@ -487,7 +489,29 @@ class RowDiscoveryStream:
 
             # Limit to target_rows
             candidates = response_data.get('candidates', [])
+
+            # PHASE 2: DEBUG logging when 0 candidates found
+            if len(candidates) == 0:
+                logger.warning(f"[DEBUG] {scoring_model} ({search_context_size}) returned 0 candidates!")
+                logger.warning(f"[DEBUG] Subdomain: {subdomain['name']}")
+                logger.warning(f"[DEBUG] Search queries: {subdomain.get('search_queries', [])}")
+                logger.warning(f"[DEBUG] Prompt (first 500 chars): {prompt[:500]}")
+                logger.warning(f"[DEBUG] Response type: {type(response_data)}")
+                logger.warning(f"[DEBUG] Response keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'N/A'}")
+
+                # Try to extract any text content
+                raw_response = result.get('response', {})
+                if 'choices' in raw_response:
+                    try:
+                        content = raw_response['choices'][0]['message']['content']
+                        logger.warning(f"[DEBUG] Response content (first 500 chars): {str(content)[:500]}")
+                    except Exception as e:
+                        logger.warning(f"[DEBUG] Could not extract response content: {e}")
+
             response_data['candidates'] = candidates[:target_rows]
+
+            # PHASE 1: Include enhanced_data in return
+            response_data['enhanced_data'] = result.get('enhanced_data', {})
 
             return response_data
 
@@ -496,7 +520,8 @@ class RowDiscoveryStream:
             # Return empty candidates on error
             return {
                 'subdomain': subdomain['name'],
-                'candidates': []
+                'candidates': [],
+                'enhanced_data': {}
             }
 
     def _build_integrated_scoring_prompt(

@@ -1,0 +1,664 @@
+{
+  "timestamp": "20251021_144157",
+  "user_request": "\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n",
+  "configuration": {
+    "target_row_count": 10,
+    "discovery_multiplier": 1.5,
+    "min_match_score": 0.6,
+    "column_definition_model": "claude-haiku-4-5",
+    "web_search_model": "sonar-pro"
+  },
+  "columns": [
+    {
+      "name": "Table Purpose",
+      "description": "The primary research objective and what entities this table will track",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true
+    },
+    {
+      "name": "Entity Type",
+      "description": "The category of entities being tracked (e.g., companies, papers, people, products)",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true
+    },
+    {
+      "name": "Primary Search Domain",
+      "description": "The main industry, field, or domain where entities are located",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Identify the core domain from user requirements and cross-reference with industry classifications and taxonomy systems"
+    },
+    {
+      "name": "Number of Subdomains",
+      "description": "How many parallel search subdomains are defined for row discovery",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Count distinct subdomains in search strategy; should be 2-5 based on search complexity"
+    },
+    {
+      "name": "Total Target Rows",
+      "description": "Total number of candidate entities to discover across all subdomains",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Sum target_rows across all subdomains; typically 20-30 candidates to yield 15-20 final rows after deduplication"
+    },
+    {
+      "name": "ID Columns Count",
+      "description": "Number of identification columns that uniquely identify each entity",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Count columns with importance='ID'; typically 2-3 columns for robust entity identification"
+    },
+    {
+      "name": "Research Columns Count",
+      "description": "Number of research/data columns that require validation and discovery",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Count columns with importance='CRITICAL' and is_identification=false; should have corresponding validation strategies"
+    },
+    {
+      "name": "Primary Data Sources",
+      "description": "Main sources where entity data will be found (e.g., company websites, Crunchbase, academic databases)",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Identify reliable primary sources for the domain; prioritize official sources over aggregators"
+    },
+    {
+      "name": "Search Query Quality Score",
+      "description": "Assessment of search query design for multi-row discovery (1-5 scale)",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Evaluate queries for multi-entity yield; prioritize list/directory queries over single-entity queries; score based on expected entity count per query"
+    }
+  ],
+  "search_strategy": {
+    "description": "Without specific user requirements, this search strategy demonstrates the framework for discovering research table configurations. The approach uses parallel subdomains to identify different types of research needs and their corresponding table specifications, enabling systematic discovery of appropriate entity tracking structures.",
+    "subdomains": [
+      {
+        "name": "Technology & AI Research Tables",
+        "focus": "Research tables tracking technology companies, AI/ML organizations, software platforms, and digital innovation entities",
+        "search_queries": [
+          "how to create research tables for AI companies tracking",
+          "entity tracking table structure for tech startups",
+          "research database design for technology sector entities",
+          "column specifications for tracking software companies"
+        ],
+        "target_rows": 6
+      },
+      {
+        "name": "Academic & Scientific Research Tables",
+        "focus": "Research tables for tracking academic papers, researchers, institutions, publications, and scientific entities",
+        "search_queries": [
+          "research table design for academic papers and citations",
+          "entity tracking structure for scientific publications",
+          "column specifications for researcher profiles and affiliations",
+          "database design for tracking research institutions"
+        ],
+        "target_rows": 6
+      },
+      {
+        "name": "Business & Market Research Tables",
+        "focus": "Research tables for tracking companies, market segments, business entities, funding rounds, and commercial organizations",
+        "search_queries": [
+          "research table structure for company tracking and analysis",
+          "entity database design for business intelligence",
+          "column specifications for market research entities",
+          "tracking table design for startups and enterprises"
+        ],
+        "target_rows": 6
+      },
+      {
+        "name": "Healthcare & Life Sciences Research Tables",
+        "focus": "Research tables for tracking medical entities, biotech companies, clinical trials, healthcare providers, and pharmaceutical organizations",
+        "search_queries": [
+          "research table design for healthcare companies and providers",
+          "entity tracking structure for biotech and pharmaceutical firms",
+          "column specifications for clinical trial tracking",
+          "database design for medical research organizations"
+        ],
+        "target_rows": 6
+      },
+      {
+        "name": "Government & Policy Research Tables",
+        "focus": "Research tables for tracking government agencies, policy entities, regulatory bodies, legislation, and public sector organizations",
+        "search_queries": [
+          "research table structure for government agencies and policy tracking",
+          "entity database design for regulatory bodies",
+          "column specifications for legislation and policy entities",
+          "tracking table design for public sector organizations"
+        ],
+        "target_rows": 6
+      }
+    ]
+  },
+  "final_rows": [
+    {
+      "id_values": {
+        "Company Name": "Google DeepMind",
+        "Website": "https://deepmind.com"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "Google DeepMind is a leading AI research organization, directly relevant to technology and AI research tables, with a highly reliable and official source, though the exact recency of the information is not specified.",
+      "source_urls": [
+        "https://deepmind.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2,
+      "source_subdomain": "Technology & AI Research Tables",
+      "merged_from_streams": [
+        "Technology & AI Research Tables"
+      ],
+      "found_by_models": [
+        "sonar(high)"
+      ],
+      "model_quality_rank": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Microsoft Research",
+        "Website": "https://www.microsoft.com/en-us/research"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "Microsoft Research is a major player in technology and AI research, directly relevant for entity tracking, with a highly reliable and official source, though recency is not specified.",
+      "source_urls": [
+        "https://www.microsoft.com/en-us/research"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2,
+      "source_subdomain": "Technology & AI Research Tables",
+      "merged_from_streams": [
+        "Technology & AI Research Tables"
+      ],
+      "found_by_models": [
+        "sonar(high)"
+      ],
+      "model_quality_rank": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "IBM Research",
+        "Website": "https://research.ibm.com"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "IBM Research is a major entity in technology and AI research, directly relevant for tracking, with a highly reliable and official source, though recency is not specified.",
+      "source_urls": [
+        "https://research.ibm.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2,
+      "source_subdomain": "Technology & AI Research Tables",
+      "merged_from_streams": [
+        "Technology & AI Research Tables"
+      ],
+      "found_by_models": [
+        "sonar(high)"
+      ],
+      "model_quality_rank": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "NVIDIA Research",
+        "Website": "https://www.nvidia.com/en-us/research"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "NVIDIA Research is a key player in AI and technology research, highly relevant for entity tracking, with an official and reliable source, though recency is not explicitly stated.",
+      "source_urls": [
+        "https://www.nvidia.com/en-us/research"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2,
+      "source_subdomain": "Technology & AI Research Tables",
+      "merged_from_streams": [
+        "Technology & AI Research Tables"
+      ],
+      "found_by_models": [
+        "sonar(high)"
+      ],
+      "model_quality_rank": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "OpenAI",
+        "Website": "https://openai.com"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "OpenAI is a leading AI research organization, but the source is a blog post, not an official company site or Crunchbase.",
+      "source_urls": [
+        "https://openai.com",
+        "https://www.openai.com"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Academic & Scientific Research Tables",
+      "merged_from_streams": [
+        "Academic & Scientific Research Tables",
+        "Technology & AI Research Tables"
+      ],
+      "found_by_models": [
+        "sonar(high)",
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Company Name": "Facebook AI Research (FAIR)",
+        "Website": "https://ai.facebook.com"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "FAIR is a significant AI research group, but the source is a blog post, not an official company site or Crunchbase.",
+      "source_urls": [
+        "https://ai.facebook.com"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Academic & Scientific Research Tables",
+      "merged_from_streams": [
+        "Academic & Scientific Research Tables",
+        "Technology & AI Research Tables"
+      ],
+      "found_by_models": [
+        "sonar(high)",
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Company Name": "Anthropic",
+        "Website": "https://anthropic.com"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Anthropic is a prominent AI research company, but the source is a blog post, not an official company site or Crunchbase.",
+      "source_urls": [
+        "https://www.anthropic.com"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Academic & Scientific Research Tables",
+      "merged_from_streams": [
+        "Academic & Scientific Research Tables"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Company Name": "DeepMind",
+        "Website": "https://deepmind.com"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "DeepMind is a well-known AI research lab, but the source is a blog post, not an official company site or Crunchbase.",
+      "source_urls": [
+        "https://www.deepmind.com"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Academic & Scientific Research Tables",
+      "merged_from_streams": [
+        "Academic & Scientific Research Tables"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Company Name": "Google AI",
+        "Website": "https://ai.google"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Google AI is a major player in AI research, but the source is a blog post, not an official company site or Crunchbase.",
+      "source_urls": [
+        "https://ai.google"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Academic & Scientific Research Tables",
+      "merged_from_streams": [
+        "Academic & Scientific Research Tables"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Company Name": "Microsoft Research AI",
+        "Website": "https://www.microsoft.com/en-us/research/group/microsoft-research-ai/"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Microsoft Research AI is a notable AI research division, but the source is a blog post, not an official company site or Crunchbase.",
+      "source_urls": [
+        "https://www.microsoft.com/en-us/research/group/microsoft-research-ai/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Academic & Scientific Research Tables",
+      "merged_from_streams": [
+        "Academic & Scientific Research Tables"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    }
+  ],
+  "all_candidates_full_list": [
+    {
+      "id_values": {
+        "Company Name": "Google DeepMind",
+        "Website": "https://deepmind.com"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "Google DeepMind is a leading AI research organization, directly relevant to technology and AI research tables, with a highly reliable and official source, though the exact recency of the information is not specified.",
+      "source_urls": [
+        "https://deepmind.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "OpenAI",
+        "Website": "https://openai.com"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "OpenAI is a prominent AI research lab, highly relevant for tracking in technology and AI research tables, with an official and reliable source, though recency is not explicitly stated.",
+      "source_urls": [
+        "https://openai.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Microsoft Research",
+        "Website": "https://www.microsoft.com/en-us/research"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "Microsoft Research is a major player in technology and AI research, directly relevant for entity tracking, with a highly reliable and official source, though recency is not specified.",
+      "source_urls": [
+        "https://www.microsoft.com/en-us/research"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Facebook AI Research (FAIR)",
+        "Website": "https://ai.facebook.com"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "FAIR is a leading AI research organization, highly relevant for technology and AI research tables, with an official and reliable source, though recency is not explicitly stated.",
+      "source_urls": [
+        "https://ai.facebook.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "IBM Research",
+        "Website": "https://research.ibm.com"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "IBM Research is a major entity in technology and AI research, directly relevant for tracking, with a highly reliable and official source, though recency is not specified.",
+      "source_urls": [
+        "https://research.ibm.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "NVIDIA Research",
+        "Website": "https://www.nvidia.com/en-us/research"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "NVIDIA Research is a key player in AI and technology research, highly relevant for entity tracking, with an official and reliable source, though recency is not explicitly stated.",
+      "source_urls": [
+        "https://www.nvidia.com/en-us/research"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Anthropic",
+        "Website": "https://anthropic.com"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Anthropic is a prominent AI research company, but the source is a blog post, not an official company site or Crunchbase.",
+      "source_urls": [
+        "https://www.anthropic.com"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "OpenAI",
+        "Website": "https://openai.com"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "OpenAI is a leading AI research organization, but the source is a blog post, not an official company site or Crunchbase.",
+      "source_urls": [
+        "https://www.openai.com"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "DeepMind",
+        "Website": "https://deepmind.com"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "DeepMind is a well-known AI research lab, but the source is a blog post, not an official company site or Crunchbase.",
+      "source_urls": [
+        "https://www.deepmind.com"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Google AI",
+        "Website": "https://ai.google"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Google AI is a major player in AI research, but the source is a blog post, not an official company site or Crunchbase.",
+      "source_urls": [
+        "https://ai.google"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Facebook AI Research (FAIR)",
+        "Website": "https://ai.facebook.com"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "FAIR is a significant AI research group, but the source is a blog post, not an official company site or Crunchbase.",
+      "source_urls": [
+        "https://ai.facebook.com"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Microsoft Research AI",
+        "Website": "https://www.microsoft.com/en-us/research/group/microsoft-research-ai/"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Microsoft Research AI is a notable AI research division, but the source is a blog post, not an official company site or Crunchbase.",
+      "source_urls": [
+        "https://www.microsoft.com/en-us/research/group/microsoft-research-ai/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    }
+  ],
+  "statistics": {
+    "column_definition_time": 16.27472734451294,
+    "row_discovery_time": 51.50057601928711,
+    "total_candidates_found": 0,
+    "duplicates_removed": 0,
+    "below_threshold": 0,
+    "final_row_count": 10,
+    "avg_match_score": 0.7959999999999999,
+    "stream_times": [],
+    "total_cost": 0.035397,
+    "column_def_cost": 0.035397,
+    "row_discovery_cost": 0.0
+  },
+  "total_time_seconds": 67.79309391975403
+}
