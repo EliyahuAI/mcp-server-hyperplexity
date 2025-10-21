@@ -303,6 +303,12 @@ class RowDiscovery:
             # Extract final rows
             result['final_rows'] = consolidation_result['final_rows']
 
+            # Keep all candidates before filtering (for later use)
+            all_candidates_before_filter = []
+            for stream in successful_streams:
+                all_candidates_before_filter.extend(stream.get('candidates', []))
+            result['all_candidates'] = all_candidates_before_filter
+
             # Mark success
             result['success'] = True
 

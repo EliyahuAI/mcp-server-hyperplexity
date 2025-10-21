@@ -114,14 +114,36 @@ class RowDiscoveryStream:
                 f"(target: {target_rows} rows)"
             )
 
-            # Execute integrated discovery and scoring in ONE call
+            # Try low context first, escalate to high if insufficient results
+            logger.info(f"Attempt 1: Trying low context search")
             candidates_data = await self._discover_and_score(
                 subdomain,
                 columns,
                 search_strategy,
                 target_rows,
-                scoring_model
+                scoring_model,
+                search_context_size='low'
             )
+
+            # Check if we got enough candidates
+            candidate_count = len(candidates_data.get('candidates', []))
+            min_required = max(3, target_rows // 2)  # At least 3 or half of target
+
+            if candidate_count < min_required:
+                logger.warning(
+                    f"Low context found only {candidate_count} candidates "
+                    f"(need {min_required}). Retrying with high context..."
+                )
+                candidates_data = await self._discover_and_score(
+                    subdomain,
+                    columns,
+                    search_strategy,
+                    target_rows,
+                    scoring_model,
+                    search_context_size='high'
+                )
+                candidate_count = len(candidates_data.get('candidates', []))
+                logger.info(f"High context search found {candidate_count} candidates")
 
             # Validate output against schema
             is_valid, error = self.schema_validator.validate(
@@ -209,7 +231,8 @@ class RowDiscoveryStream:
         columns: List[Dict[str, Any]],
         search_strategy: Dict[str, Any],
         target_rows: int,
-        scoring_model: str
+        scoring_model: str,
+        search_context_size: str = 'low'
     ) -> Dict[str, Any]:
         """
         Execute web search with integrated scoring in ONE call.
@@ -246,9 +269,9 @@ class RowDiscoveryStream:
         # Load schema for structured output
         schema = self.schema_validator.load_schema('row_discovery_response')
 
-        logger.debug(
+        logger.info(
             f"Calling {scoring_model} for integrated discovery+scoring: "
-            f"'{subdomain['name']}' (target: {target_rows} rows)"
+            f"'{subdomain['name']}' (target: {target_rows} rows, context: {search_context_size})"
         )
 
         try:
@@ -259,7 +282,9 @@ class RowDiscoveryStream:
                 model=scoring_model,
                 tool_name='row_discovery_integrated',
                 use_cache=False,  # Don't cache - web results change
-                max_tokens=8000
+                max_tokens=8000,
+                max_web_searches=len(subdomain.get('search_queries', [])),  # Use all queries
+                search_context_size=search_context_size  # Progressive: low → high
             )
 
             # call_structured_api returns dict with 'response', 'token_usage', etc.

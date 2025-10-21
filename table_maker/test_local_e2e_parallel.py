@@ -49,8 +49,8 @@ from ai_api_client import AIAPIClient
 TARGET_ROW_COUNT = 10  # Final number of rows to deliver
 DISCOVERY_MULTIPLIER = 1.5  # Find 15, keep best 10
 MIN_MATCH_SCORE = 0.6  # Minimum quality threshold
-COLUMN_DEFINITION_MODEL = "sonar-pro"  # Use sonar-pro for web search capability
-WEB_SEARCH_MODEL = "sonar"  # Use regular sonar for row discovery (faster)
+COLUMN_DEFINITION_MODEL = "sonar-pro"  # Use sonar-pro for web search
+WEB_SEARCH_MODEL = "sonar-pro"  # Use sonar-pro for row discovery (better quality)
 MAX_PARALLEL_STREAMS = 3  # PARALLEL: Process up to 3 subdomains concurrently
 
 # User request for testing

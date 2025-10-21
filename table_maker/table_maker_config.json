@@ -20,12 +20,15 @@
     "default_target_rows_total": 30
   },
 
-  "_comment_row_discovery": "Row discovery with integrated scoring. Uses discovery_multiplier (1.5) to find 30 candidates and keep best 20 after deduplication. max_parallel_streams set to 1 for initial sequential testing.",
+  "_comment_row_discovery": "Row discovery with integrated scoring using sonar-pro. Progressive context: starts with low, escalates to high if insufficient results. Saves all candidates for later use.",
   "row_discovery": {
-    "web_search_model": "sonar",
-    "scoring_model": "sonar",
+    "web_search_model": "sonar-pro",
+    "scoring_model": "sonar-pro",
     "integrated_scoring": true,
-    "model": "sonar",
+    "model": "sonar-pro",
+    "progressive_context": true,
+    "initial_context_size": "low",
+    "escalation_context_size": "high",
     "max_tokens": 8000,
     "target_row_count": 20,
     "discovery_multiplier": 1.5,

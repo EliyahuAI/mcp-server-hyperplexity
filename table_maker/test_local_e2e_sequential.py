@@ -51,8 +51,8 @@ DISCOVERY_MULTIPLIER = 1.5  # Find 15, keep best 10
 MIN_MATCH_SCORE = 0.6  # Minimum quality threshold
 
 # Models to use
-COLUMN_DEFINITION_MODEL = "sonar-pro"  # Use sonar-pro for web search capability
-WEB_SEARCH_MODEL = "sonar"  # Use regular sonar for row discovery (faster)
+COLUMN_DEFINITION_MODEL = "sonar-pro"  # Use sonar-pro for web search
+WEB_SEARCH_MODEL = "sonar-pro"  # Use sonar-pro for row discovery (better quality)
 
 # User request for testing
 USER_REQUEST = """
@@ -455,6 +455,7 @@ async def run_sequential_test():
         'columns': columns,
         'search_strategy': search_strategy,
         'final_rows': final_rows,
+        'all_candidates_full_list': discovery_result.get('all_candidates', []),  # Full list before filtering
         'statistics': stats,
         'total_time_seconds': total_time
     }
