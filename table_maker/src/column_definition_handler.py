@@ -145,6 +145,14 @@ class ColumnDefinitionHandler:
             result['table_name'] = ai_response.get('table_name', '')
             result['tablewide_research'] = ai_response.get('tablewide_research', '')
 
+            # Include cost information from enhanced_data
+            enhanced_data = api_response.get('enhanced_data', {})
+            if enhanced_data:
+                costs = enhanced_data.get('costs', {})
+                result['cost'] = costs.get('actual', {}).get('total_cost', 0.0)
+            else:
+                result['cost'] = 0.0
+
             # Calculate processing time
             result['processing_time'] = time.time() - start_time
 

@@ -130,7 +130,10 @@ async def run_sequential_test():
         'below_threshold': 0,
         'final_row_count': 0,
         'avg_match_score': 0.0,
-        'stream_times': []
+        'stream_times': [],
+        'total_cost': 0.0,
+        'column_def_cost': 0.0,
+        'row_discovery_cost': 0.0
     }
 
     # -------------------------------------------------------------------------
@@ -222,7 +225,12 @@ async def run_sequential_test():
         col_time = time.time() - col_start
         stats['column_definition_time'] = col_time
 
-        print_success(f"Defined {len(columns)} columns in {format_time(col_time)}")
+        # Track cost from enhanced_data
+        col_cost = result.get('cost', 0.0)
+        stats['column_def_cost'] = col_cost
+        stats['total_cost'] += col_cost
+
+        print_success(f"Defined {len(columns)} columns in {format_time(col_time)} (${col_cost:.4f})")
         print_info(f"Table: {table_name}")
 
         # Display columns
@@ -385,8 +393,8 @@ async def run_sequential_test():
 
     print("\n[STATISTICS]")
     print(f"  Total execution time: {format_time(total_time)}")
-    print(f"  Column definition: {format_time(stats['column_definition_time'])}")
-    print(f"  Row discovery (sequential): {format_time(stats['row_discovery_time'])}")
+    print(f"  Column definition: {format_time(stats['column_definition_time'])} (${stats['column_def_cost']:.4f})")
+    print(f"  Row discovery (sequential): {format_time(stats['row_discovery_time'])} (${stats['row_discovery_cost']:.4f})")
 
     if stats['stream_times']:
         print(f"    - Individual streams:")
@@ -399,6 +407,7 @@ async def run_sequential_test():
     print(f"  Below threshold: {stats['below_threshold']} filtered")
     print(f"  Final rows: {stats['final_row_count']}")
     print(f"  Avg match score: {stats['avg_match_score']:.2f}")
+    print(f"  Total cost: ${stats['total_cost']:.4f}")
 
     # -------------------------------------------------------------------------
     # SAVE OUTPUT (OPTIONAL)
