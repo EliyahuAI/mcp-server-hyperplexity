@@ -1794,7 +1794,7 @@ class AIAPIClient:
                         "temperature": 0.1,
                         "messages": [{"role": "user", "content": prompt}],
                         "tools": tools,
-                        "tool_choice": {"type": "auto"}
+                        "tool_choice": {"type": "tool", "name": tool_name}  # Force tool use for structured output
                     }
                     
                     result = await self._make_single_anthropic_call("https://api.anthropic.com/v1/messages",
