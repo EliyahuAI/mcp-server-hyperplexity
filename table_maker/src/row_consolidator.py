@@ -181,10 +181,16 @@ class RowConsolidator:
             # Step 4: Sort by match score descending
             sorted_candidates = self._sort_by_score(filtered)
 
-            # Step 5: Limit to top N
-            final_rows = sorted_candidates[:target_row_count]
+            # Step 5: Return ALL above-threshold rows (no limit)
+            # QC will determine final count based on quality
+            final_rows = sorted_candidates  # No [:target_row_count] cutoff
             result["stats"]["final_count"] = len(final_rows)
             result["final_rows"] = final_rows
+
+            logger.info(
+                f"Passing {len(final_rows)} above-threshold rows to QC "
+                f"(no artificial limit, target was {target_row_count})"
+            )
 
             # Calculate processing time
             processing_time = time.time() - start_time
