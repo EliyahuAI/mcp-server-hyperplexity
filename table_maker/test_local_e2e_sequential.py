@@ -365,6 +365,7 @@ async def run_sequential_test():
                         'model': round_data.get('model', 'unknown'),
                         'context': round_data.get('context', 'unknown'),
                         'enhanced_data': round_data.get('enhanced_data', {}),
+                        'prompt_used': round_data.get('prompt_used', ''),
                         'timestamp': datetime.now().isoformat()
                     })
             else:

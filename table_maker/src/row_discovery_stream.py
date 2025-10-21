@@ -139,7 +139,7 @@ class RowDiscoveryStream:
                     candidate['context_used'] = context
                     candidate['round'] = round_idx
 
-                # PHASE 1: Record round results with enhanced_data
+                # PHASE 1: Record round results with enhanced_data and prompt
                 round_data = {
                     'round': round_idx,
                     'model': model,
@@ -147,6 +147,7 @@ class RowDiscoveryStream:
                     'candidates': candidates,
                     'count': len(candidates),
                     'enhanced_data': round_candidates.get('enhanced_data', {}),
+                    'prompt_used': round_candidates.get('prompt_used', ''),
                     'call_description': f"Finding Rows - {subdomain_name} - Round {round_idx} ({model}-{context})"
                 }
                 all_rounds.append(round_data)
@@ -512,6 +513,9 @@ class RowDiscoveryStream:
 
             # PHASE 1: Include enhanced_data in return
             response_data['enhanced_data'] = result.get('enhanced_data', {})
+
+            # Save prompt for debugging/analysis
+            response_data['prompt_used'] = prompt
 
             return response_data
 
