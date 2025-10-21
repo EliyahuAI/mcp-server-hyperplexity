@@ -79,13 +79,13 @@ class RowDiscovery:
 
         # Import and initialize components (lazy import to avoid circular dependencies)
         if row_discovery_stream is None:
-            from row_discovery_stream import RowDiscoveryStream
+            from .row_discovery_stream import RowDiscoveryStream
             self.row_discovery_stream_class = RowDiscoveryStream
         else:
             self.row_discovery_stream_class = row_discovery_stream
 
         if row_consolidator is None:
-            from row_consolidator import RowConsolidator
+            from .row_consolidator import RowConsolidator
             self.row_consolidator = RowConsolidator()
         else:
             self.row_consolidator = row_consolidator
