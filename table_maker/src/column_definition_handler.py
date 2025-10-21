@@ -7,7 +7,7 @@ Defines precise column specifications and search strategy from approved conversa
 import json
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 # Configure logging
