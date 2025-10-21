@@ -334,8 +334,14 @@ TARGET: Find {target_rows} best-matching entities
 SEARCH QUERIES (prioritize multi-row results):
 {search_queries_text}
 
-ID COLUMNS TO POPULATE:
+CRITICAL: Use EXACT field names for ID columns in your response:
 {id_columns_text}
+
+For example, if columns are "Company Name" and "Website", use those EXACT names:
+  {{"id_values": {{"Company Name": "Anthropic", "Website": "https://anthropic.com"}}}}
+
+Do NOT rename to "entity_name", "Entity Name", "company", etc.
+Use the EXACT field names listed above.
 
 SCORING RUBRIC (0-1.0 scale):
 Final Score = (Relevancy × 0.4) + (Source Reliability × 0.3) + (Recency × 0.3)
@@ -359,9 +365,9 @@ Final Score = (Relevancy × 0.4) + (Source Reliability × 0.3) + (Recency × 0.3
   0.0 = >12 months or undated
 
 For each entity:
-1. Populate ID columns with accurate values
+1. Populate ID columns using EXACT field names from list above
 2. Calculate individual dimension scores (relevancy, reliability, recency)
-3. Calculate final weighted score using formula above
+3. Calculate final weighted score: (relevancy × 0.4) + (reliability × 0.3) + (recency × 0.3)
 4. Provide 1-sentence rationale explaining score
 5. Include source URLs
 

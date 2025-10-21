@@ -1,0 +1,338 @@
+{
+  "timestamp": "20251021_125142",
+  "mode": "parallel",
+  "max_parallel_streams": 3,
+  "user_request": "\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n",
+  "configuration": {
+    "target_row_count": 10,
+    "discovery_multiplier": 1.5,
+    "min_match_score": 0.6,
+    "column_definition_model": "claude-sonnet-4-5",
+    "web_search_model": "sonar-pro",
+    "max_parallel_streams": 3
+  },
+  "columns": [
+    {
+      "name": "Entity Name",
+      "description": "The primary name or title of the entity being researched",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true
+    },
+    {
+      "name": "Website URL",
+      "description": "Official website URL of the entity",
+      "format": "URL",
+      "importance": "ID",
+      "is_identification": true
+    },
+    {
+      "name": "Category",
+      "description": "Primary category or classification of the entity within its domain",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Check the entity's official website homepage, About Us page, or LinkedIn company page for primary business category or industry classification. Look for self-described category labels or industry tags."
+    },
+    {
+      "name": "Location",
+      "description": "Primary headquarters location (City, Country) of the entity",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Find headquarters location on the entity's official website footer, About Us page, Contact page, or LinkedIn company page. Look for 'Headquarters', 'HQ', or 'Location' labels."
+    },
+    {
+      "name": "Year Founded",
+      "description": "The year the entity was established or founded",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Search the entity's About Us page, company history section, Crunchbase profile, or LinkedIn company page for founding year. Look for 'Founded', 'Established', or 'Since' labels."
+    },
+    {
+      "name": "Size Indicator",
+      "description": "Metric indicating the scale or size of the entity (e.g., employee count, revenue range, user base)",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Check LinkedIn company page for employee count range, or search the entity's About Us page, press releases, or Crunchbase profile for team size, revenue figures, or user/customer counts. Report the most recent available metric."
+    },
+    {
+      "name": "Recent Activity",
+      "description": "Notable recent developments, announcements, or milestones from the past 12 months",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Search for recent press releases on the entity's website newsroom or media section, check recent news articles mentioning the entity, or look for announcements on their LinkedIn page or blog from the past 12 months. Focus on funding, product launches, partnerships, or major milestones."
+    },
+    {
+      "name": "Contact Information",
+      "description": "Primary contact method (email, contact form URL, or social media handle)",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Check the entity's official website Contact page for general inquiry email addresses or contact form URLs. If not available, look for official LinkedIn, Twitter/X, or other social media handles on the website footer or About page."
+    }
+  ],
+  "search_strategy": {
+    "description": "Since no specific requirements were provided, this search strategy is designed as a flexible template for discovering diverse entities across multiple domains. The approach focuses on finding well-documented entities with publicly available information, recent activity, and strong online presence to ensure successful data validation.",
+    "subdomains": [
+      {
+        "name": "Technology and Software Companies",
+        "focus": "Technology companies, software providers, SaaS platforms, and tech startups across various sectors including AI, cloud computing, cybersecurity, and enterprise software",
+        "search_queries": [
+          "top technology companies list 2024",
+          "fastest growing software startups 2024",
+          "tech companies that raised funding 2024",
+          "emerging technology companies directory"
+        ],
+        "target_rows": 10
+      },
+      {
+        "name": "Research and Academic Institutions",
+        "focus": "Research laboratories, academic institutions, think tanks, university departments, and research-focused organizations conducting cutting-edge work",
+        "search_queries": [
+          "leading research institutions worldwide 2024",
+          "top research labs and centers list",
+          "academic research organizations directory",
+          "university research institutes ranking"
+        ],
+        "target_rows": 10
+      },
+      {
+        "name": "Professional Services and Consulting",
+        "focus": "Consulting firms, professional services organizations, advisory companies, and specialized service providers across industries",
+        "search_queries": [
+          "top consulting firms list 2024",
+          "professional services companies directory",
+          "specialized consulting firms ranking",
+          "advisory companies by sector 2024"
+        ],
+        "target_rows": 10
+      }
+    ]
+  },
+  "final_rows": [
+    {
+      "id_values": {
+        "Entity Name": "McKinsey & Company",
+        "Website URL": "https://www.mckinsey.com"
+      },
+      "match_score": 1.0,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "McKinsey is the top-ranked global consulting firm, matching all requirements for prestige, global presence, and recent recognition, with data from reputable industry rankings[1][3][4].",
+      "source_urls": [
+        "https://igotanoffer.com/blogs/mckinsey-case-interview-blog/top-consulting-firms",
+        "https://vault.com/best-companies-to-work-for/consulting/best-consulting-firms-prestige",
+        "https://managementconsulted.com/top-consulting-firms/"
+      ],
+      "source_subdomain": "Professional Services and Consulting",
+      "merged_from_streams": [
+        "Professional Services and Consulting"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Boston Consulting Group (BCG)",
+        "Website URL": "https://www.bcg.com"
+      },
+      "match_score": 1.0,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "BCG is a leading global strategy consulting firm, consistently ranked among the most prestigious, with strong recent industry recognition[1][3][4].",
+      "source_urls": [
+        "https://igotanoffer.com/blogs/mckinsey-case-interview-blog/top-consulting-firms",
+        "https://vault.com/best-companies-to-work-for/consulting/best-consulting-firms-prestige",
+        "https://managementconsulted.com/top-consulting-firms/"
+      ],
+      "source_subdomain": "Professional Services and Consulting",
+      "merged_from_streams": [
+        "Professional Services and Consulting"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Bain & Company",
+        "Website URL": "https://www.bain.com"
+      },
+      "match_score": 1.0,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Bain is a top-tier global strategy consulting firm, recognized for prestige and recent industry rankings, fully matching the requirements[1][3][4].",
+      "source_urls": [
+        "https://igotanoffer.com/blogs/mckinsey-case-interview-blog/top-consulting-firms",
+        "https://vault.com/best-companies-to-work-for/consulting/best-consulting-firms-prestige",
+        "https://managementconsulted.com/top-consulting-firms/"
+      ],
+      "source_subdomain": "Professional Services and Consulting",
+      "merged_from_streams": [
+        "Professional Services and Consulting"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Databricks",
+        "Website URL": "https://www.databricks.com"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Databricks is a leading cloud-based data and AI platform, recently raised $15.3B at a $62B valuation, and is recognized as a top, fast-growing tech company in 2025, matching all requirements for technology, SaaS, and AI sectors[1].",
+      "source_urls": [
+        "https://explodingtopics.com/blog/tech-startups"
+      ],
+      "source_subdomain": "Technology and Software Companies",
+      "merged_from_streams": [
+        "Technology and Software Companies"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Accenture",
+        "Website URL": "https://www.accenture.com"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Accenture is a global leader in consulting and professional services, with strong recent recognition and a comprehensive service offering[1].",
+      "source_urls": [
+        "https://companiesmarketcap.com/tech/largest-tech-companies-by-market-cap/",
+        "https://explodingtopics.com/blog/tech-startups",
+        "https://igotanoffer.com/blogs/mckinsey-case-interview-blog/top-consulting-firms"
+      ],
+      "source_subdomain": "Professional Services and Consulting",
+      "merged_from_streams": [
+        "Professional Services and Consulting",
+        "Technology and Software Companies"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Technische Universit\u00e4t M\u00fcnchen",
+        "Website URL": "https://www.tum.de"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Ranked among leading global research institutions in 2025, with a strong focus on cutting-edge research and innovation, and a well-documented online presence[1].",
+      "source_urls": [
+        "https://www.scimagoir.com/rankings.php"
+      ],
+      "source_subdomain": "Research and Academic Institutions",
+      "merged_from_streams": [
+        "Research and Academic Institutions"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "The University of Manchester",
+        "Website URL": "https://www.manchester.ac.uk"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Consistently ranked as a top global research university, with extensive public documentation of research activity and a robust online presence[1].",
+      "source_urls": [
+        "https://www.scimagoir.com/rankings.php"
+      ],
+      "source_subdomain": "Research and Academic Institutions",
+      "merged_from_streams": [
+        "Research and Academic Institutions"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "University of Illinois at Urbana-Champaign",
+        "Website URL": "https://illinois.edu"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Recognized in 2025 global research rankings, known for pioneering research across disciplines, and maintains a comprehensive public research profile[1].",
+      "source_urls": [
+        "https://www.scimagoir.com/rankings.php"
+      ],
+      "source_subdomain": "Research and Academic Institutions",
+      "merged_from_streams": [
+        "Research and Academic Institutions"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Carnegie Mellon University",
+        "Website URL": "https://www.cmu.edu"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "A leading research institution with a strong emphasis on innovation and technology, featured in recent global rankings and with extensive public documentation[1].",
+      "source_urls": [
+        "https://www.scimagoir.com/rankings.php"
+      ],
+      "source_subdomain": "Research and Academic Institutions",
+      "merged_from_streams": [
+        "Research and Academic Institutions"
+      ]
+    },
+    {
+      "id_values": {
+        "Entity Name": "Georgia Institute of Technology",
+        "Website URL": "https://www.gatech.edu"
+      },
+      "match_score": 0.94,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Ranked among top global research institutions in 2025, with a focus on engineering, computing, and applied sciences, and a well-documented research presence[1].",
+      "source_urls": [
+        "https://www.scimagoir.com/rankings.php"
+      ],
+      "source_subdomain": "Research and Academic Institutions",
+      "merged_from_streams": [
+        "Research and Academic Institutions"
+      ]
+    }
+  ],
+  "statistics": {
+    "column_definition_time": 27.290494203567505,
+    "row_discovery_time": 29.21538257598877,
+    "total_candidates_found": 30,
+    "duplicates_removed": 4,
+    "below_threshold": 0,
+    "final_row_count": 10,
+    "avg_match_score": 0.958,
+    "stream_times": []
+  },
+  "total_time_seconds": 56.52568435668945
+}

@@ -365,20 +365,37 @@ async def run_sequential_test():
         score = row.get('match_score', 0)
         rationale = row.get('match_rationale', 'N/A')
 
-        # Get company name and website (handle both snake_case and Title Case)
-        company_name = id_values.get('company_name') or id_values.get('Company Name', 'Unknown')
-        website = id_values.get('website') or id_values.get('Website', 'N/A')
+        # Get company name and website (handle various field name formats)
+        company_name = (id_values.get('company_name') or
+                       id_values.get('Company Name') or
+                       id_values.get('Entity Name') or
+                       id_values.get('entity_name') or 'Unknown')
+        website = (id_values.get('website') or
+                  id_values.get('Website') or
+                  id_values.get('Website URL') or
+                  id_values.get('website_url') or 'N/A')
 
-        print(f"\n  {idx}. {company_name} ({score:.2f})")
-        print(f"     Website: {website}")
-
-        # Show score breakdown if available
+        # Show score breakdown and recalculate if available
         score_breakdown = row.get('score_breakdown', {})
         if score_breakdown:
             relevancy = score_breakdown.get('relevancy', 0)
             reliability = score_breakdown.get('reliability', 0)
             recency = score_breakdown.get('recency', 0)
+
+            # Recalculate correct score using formula
+            calculated_score = (relevancy * 0.4) + (reliability * 0.3) + (recency * 0.3)
+
+            # Show both reported and calculated scores
+            print(f"\n  {idx}. {company_name} (reported: {score:.2f}, calculated: {calculated_score:.2f})")
+            print(f"     Website: {website}")
             print(f"     Scores: Relevancy={relevancy:.2f}, Reliability={reliability:.2f}, Recency={recency:.2f}")
+
+            # Warn if mismatch
+            if abs(score - calculated_score) > 0.01:
+                print(f"     [WARNING] Score mismatch! Formula gives {calculated_score:.2f} but reported {score:.2f}")
+        else:
+            print(f"\n  {idx}. {company_name} ({score:.2f})")
+            print(f"     Website: {website}")
 
         # Show rationale (truncate if too long)
         if len(rationale) > 100:
