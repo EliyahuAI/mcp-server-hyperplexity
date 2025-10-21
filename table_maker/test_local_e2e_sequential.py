@@ -343,12 +343,12 @@ async def run_sequential_test():
         # Extract results
         final_rows = discovery_result.get('final_rows', [])
         stream_results = discovery_result.get('stream_results', [])
-        consolidation_stats = discovery_result.get('consolidation_stats', {})
+        discovery_stats = discovery_result.get('stats', {})  # Correct field name
 
         stats['final_row_count'] = len(final_rows)
-        stats['total_candidates_found'] = consolidation_stats.get('total_candidates', 0)
-        stats['duplicates_removed'] = consolidation_stats.get('duplicates_removed', 0)
-        stats['below_threshold'] = consolidation_stats.get('below_threshold', 0)
+        stats['total_candidates_found'] = discovery_stats.get('total_candidates_found', 0)
+        stats['duplicates_removed'] = discovery_stats.get('duplicates_removed', 0)
+        stats['below_threshold'] = discovery_stats.get('below_threshold', 0)
 
         # Calculate average score
         if final_rows:
@@ -433,6 +433,78 @@ async def run_sequential_test():
         import traceback
         traceback.print_exc()
         return False
+
+    # -------------------------------------------------------------------------
+    # QC REVIEW
+    # -------------------------------------------------------------------------
+
+    print_step(4, 4, "Quality Control Review")
+
+    qc_start = time.time()
+
+    try:
+        from table_maker.src.qc_reviewer import QCReviewer
+
+        qc_reviewer = QCReviewer(ai_client, prompt_loader, schema_validator)
+
+        print_info(f"Reviewing {len(final_rows)} discovered rows with QC layer...")
+
+        qc_result = await qc_reviewer.review_rows(
+            discovered_rows=final_rows,
+            columns=columns,
+            user_context=USER_REQUEST,
+            table_name=table_name,
+            table_purpose=search_strategy.get('table_purpose', ''),
+            tablewide_research=search_strategy.get('tablewide_research', ''),
+            model="claude-sonnet-4-5",
+            min_qc_score=0.5,
+            max_rows=50
+        )
+
+        qc_time = time.time() - qc_start
+        stats['qc_review_time'] = qc_time
+
+        if not qc_result.get('success'):
+            print_error(f"QC review failed: {qc_result.get('error')}")
+            # Continue with original rows
+            approved_rows = final_rows
+        else:
+            approved_rows = qc_result.get('approved_rows', final_rows)
+            qc_summary = qc_result.get('qc_summary', {})
+
+            # Track QC API call
+            api_calls_log.append({
+                'call_description': 'QC Review - Filtering and Prioritizing Rows',
+                'model': 'claude-sonnet-4-5',
+                'enhanced_data': qc_result.get('enhanced_data', {}),
+                'timestamp': datetime.now().isoformat()
+            })
+
+            # Update stats
+            stats['qc_total_reviewed'] = qc_summary.get('total_reviewed', 0)
+            stats['qc_kept'] = qc_summary.get('kept', 0)
+            stats['qc_rejected'] = qc_summary.get('rejected', 0)
+            stats['qc_promoted'] = qc_summary.get('promoted', 0)
+            stats['qc_demoted'] = qc_summary.get('demoted', 0)
+
+            print_success(f"QC review completed in {format_time(qc_time)}")
+            print_info(f"Reviewed: {qc_summary.get('total_reviewed', 0)}")
+            print_info(f"Kept: {qc_summary.get('kept', 0)}")
+            print_info(f"Rejected: {qc_summary.get('rejected', 0)}")
+            if qc_summary.get('promoted', 0) > 0:
+                print_info(f"Promoted: {qc_summary.get('promoted', 0)}")
+            if qc_summary.get('demoted', 0) > 0:
+                print_info(f"Demoted: {qc_summary.get('demoted', 0)}")
+            print_info(f"QC Reasoning: {qc_summary.get('reasoning', 'N/A')}")
+
+        # Use QC-approved rows for final output
+        final_rows = approved_rows
+
+    except Exception as e:
+        print_error(f"QC review failed with exception: {e}")
+        import traceback
+        traceback.print_exc()
+        print_info("Continuing with original discovered rows (no QC filtering)")
 
     # -------------------------------------------------------------------------
     # DISPLAY RESULTS

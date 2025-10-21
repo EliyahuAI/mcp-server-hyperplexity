@@ -1,0 +1,1330 @@
+{
+  "timestamp": "20251021_163907",
+  "user_request": "\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n",
+  "configuration": {
+    "target_row_count": 10,
+    "discovery_multiplier": 1.5,
+    "min_match_score": 0.6,
+    "column_definition_model": "claude-haiku-4-5",
+    "web_search_model": "sonar-pro"
+  },
+  "columns": [
+    {
+      "name": "Company Name",
+      "description": "The official, full legal name of the AI company as registered or publicly known. Used to uniquely identify the organization.",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true,
+      "validation_strategy": ""
+    },
+    {
+      "name": "Website",
+      "description": "Primary website URL for the company, leading to the main homepage or official careers page. Must be an active, accessible link.",
+      "format": "URL",
+      "importance": "ID",
+      "is_identification": true,
+      "validation_strategy": ""
+    },
+    {
+      "name": "Is Hiring for AI Roles?",
+      "description": "Indicates whether the company is actively hiring for AI-related positions as of Q4 2024\u2013Q1 2025. Includes both technical (e.g., ML engineer, data scientist) and non-technical (e.g., AI product manager, AI content creator) roles.",
+      "format": "Boolean (Yes/No)",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Verify by checking the company's official careers page, LinkedIn jobs, or reputable job boards for open AI-related positions posted between October 2024 and January 2025. Confirm at least one active AI job listing within this period. If ambiguous, reference recent news or press releases about hiring initiatives."
+    },
+    {
+      "name": "Team Size (Approximate)",
+      "description": "Estimated total number of employees at the company, reflecting the most recent public data (Q4 2024\u2013Q1 2025). For startups, use the latest headcount from company profiles, press releases, or LinkedIn. For large enterprises, use official reports or reputable business directories.",
+      "format": "Integer (approximate)",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Extract from company About pages, LinkedIn company profiles, Crunchbase, or recent press coverage. If a range is given, use the midpoint. For rapidly growing startups, prioritize the most recent data (within the last 6 months)."
+    },
+    {
+      "name": "Recent Funding (Last Round)",
+      "description": "Details of the most recent funding round closed by the company between October 2024 and January 2025. Include round type (e.g., Series A, B, C), amount raised (in USD), date, and lead investors if available.",
+      "format": "String (structured: 'Series X, $Amount, Month Year, Lead Investors')",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Confirm via reputable funding trackers (e.g., Crunchbase, TechCrunch, Eqvista), company press releases, or major news outlets. Ensure the round closed within the specified period. If no funding in this window, note the most recent round and its date."
+    }
+  ],
+  "search_strategy": {
+    "description": "Identify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.",
+    "subdomains": [
+      {
+        "name": "AI Research & Foundation Model Companies",
+        "focus": "Companies focused on core AI research, large language models, and foundational AI technologies (e.g., OpenAI, Anthropic, DeepMind, Cohere).",
+        "search_queries": [
+          "AI research companies hiring 2025",
+          "foundation model startups open positions 2025",
+          "top LLM companies careers 2025",
+          "recently funded AI research startups"
+        ],
+        "target_rows": 3
+      },
+      {
+        "name": "Healthcare & Life Sciences AI Companies",
+        "focus": "AI companies specializing in healthcare, drug discovery, medical imaging, and life sciences applications (e.g., Insilico Medicine, Abridge, Tempus).",
+        "search_queries": [
+          "healthcare AI startups hiring 2025",
+          "AI drug discovery companies open jobs",
+          "medical AI companies recent funding 2025",
+          "AI in life sciences startups careers"
+        ],
+        "target_rows": 3
+      },
+      {
+        "name": "Enterprise & Applied AI Startups",
+        "focus": "Startups and scale-ups applying AI to enterprise solutions, productivity, legal tech, data infrastructure, and automation (e.g., Databricks, Harvey, Supio, Runway).",
+        "search_queries": [
+          "enterprise AI startups hiring 2025",
+          "AI automation companies open positions",
+          "recently funded enterprise AI companies",
+          "legal tech AI startups jobs"
+        ],
+        "target_rows": 3
+      },
+      {
+        "name": "Other AI Companies (General & Catch-All)",
+        "focus": "AI companies not covered above, including those in robotics, creative AI, cybersecurity, and emerging sectors. Ensures coverage of unique or niche players.",
+        "search_queries": [
+          "AI robotics startups hiring 2025",
+          "creative AI companies open jobs",
+          "cybersecurity AI startups recent funding",
+          "top AI startups hiring now"
+        ],
+        "target_rows": 1
+      }
+    ],
+    "user_context": "\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n",
+    "table_purpose": "Identify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.",
+    "tablewide_research": "This table tracks AI companies across research, healthcare, enterprise, and emerging sectors that are actively hiring for AI roles as of Q4 2024\u2013Q1 2025. It emphasizes organizations with recent funding activity and includes both established leaders and high-growth startups, reflecting the latest trends in AI talent acquisition and investment."
+  },
+  "final_rows": [
+    {
+      "id_values": {
+        "Company Name": "Anthropic",
+        "Website": "https://anthropic.com"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 0.95,
+        "reliability": 1.0,
+        "recency": 0.9
+      },
+      "match_rationale": "Anthropic is a leading AI safety research company actively hiring for AI roles, with recent funding of $3.5 billion in March 2025.",
+      "source_urls": [
+        "https://anthropic.com/careers",
+        "https://techcrunch.com/2025/03/03/anthropic-raises-3-5-billion-series-e-funding/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2,
+      "source_subdomain": "AI Research & Foundation Model Companies",
+      "merged_from_streams": [
+        "AI Research & Foundation Model Companies"
+      ],
+      "found_by_models": [
+        "sonar(high)"
+      ],
+      "model_quality_rank": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "OpenAI",
+        "Website": "https://openai.com"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 0.95,
+        "reliability": 1.0,
+        "recency": 0.9
+      },
+      "match_rationale": "OpenAI is a prominent AI research company that recently raised $40 billion in funding and is actively hiring for AI roles.",
+      "source_urls": [
+        "https://openai.com/careers",
+        "https://techcrunch.com/2025/08/27/here-are-the-33-us-ai-startups-that-have-raised-100m-or-more-in-2025/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2,
+      "source_subdomain": "AI Research & Foundation Model Companies",
+      "merged_from_streams": [
+        "AI Research & Foundation Model Companies"
+      ],
+      "found_by_models": [
+        "sonar(high)"
+      ],
+      "model_quality_rank": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Manas AI",
+        "Website": "https://manas.ai"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Manas AI is a new AI-driven drug discovery startup focused on cancer research, launched in January 2025 with $24.6 million in initial funding, and is actively building its team.",
+      "source_urls": [
+        "https://www.wsj.com/articles/reid-hoffman-launches-manas-ai-to-accelerate-cancer-drug-discovery-116a5b3c"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Healthcare & Life Sciences AI Companies",
+      "merged_from_streams": [
+        "Healthcare & Life Sciences AI Companies"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Company Name": "Tempus",
+        "Website": "https://www.tempus.com"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.7
+      },
+      "match_rationale": "Tempus is a leading AI-powered precision medicine company, consistently hiring for AI/ML roles in healthcare and life sciences, and has a history of significant funding rounds.",
+      "source_urls": [
+        "https://www.tempus.com/careers"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Healthcare & Life Sciences AI Companies",
+      "merged_from_streams": [
+        "Healthcare & Life Sciences AI Companies"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Company Name": "Abridge",
+        "Website": "https://www.abridge.com"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.7
+      },
+      "match_rationale": "Abridge develops AI for clinical documentation and is actively hiring for AI/ML positions, with recent funding activity and a strong presence in healthcare AI.",
+      "source_urls": [
+        "https://www.abridge.com/careers"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Healthcare & Life Sciences AI Companies",
+      "merged_from_streams": [
+        "Healthcare & Life Sciences AI Companies"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Company Name": "Harvey",
+        "Website": "https://www.harvey.ai"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Harvey builds AI tools for the legal industry, raised a $300M round in June 2025, and is a clear example of a high-growth, well-funded legal tech AI startup actively hiring for applied AI roles.",
+      "source_urls": [
+        "https://techcrunch.com/2025/08/27/here-are-the-33-us-ai-startups-that-have-raised-100m-or-more-in-2025/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Enterprise & Applied AI Startups",
+      "merged_from_streams": [
+        "Enterprise & Applied AI Startups"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Company Name": "Legion",
+        "Website": "https://legion.co"
+      },
+      "match_score": 0.8700000000000001,
+      "score_breakdown": {
+        "relevancy": 0.9,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Legion is a next-gen enterprise AI infrastructure startup that emerged from stealth in August 2025 with $38M in funding, focusing on data transformation, model orchestration, and secure deployment for enterprises\u2014directly matching the enterprise AI and automation focus.",
+      "source_urls": [
+        "https://cohere.ai/careers",
+        "https://www.crescendo.ai/news/latest-vc-investment-deals-in-ai-startups",
+        "https://www.crunchbase.com/organization/cohere"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Enterprise & Applied AI Startups",
+      "merged_from_streams": [
+        "AI Research & Foundation Model Companies",
+        "Enterprise & Applied AI Startups"
+      ],
+      "found_by_models": [
+        "sonar(high)",
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    },
+    {
+      "id_values": {
+        "Company Name": "Sanctuary AI",
+        "Website": "https://www.sanctuary.ai"
+      },
+      "match_score": 0.7999999999999999,
+      "score_breakdown": {
+        "relevancy": 0.95,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Sanctuary AI is a robotics and general-purpose AI startup actively hiring for AI and robotics roles, reflecting both emerging sector coverage and recent hiring activity.",
+      "source_urls": [
+        "https://reclaim.ai/blog/top-ai-companies-hiring"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1,
+      "source_subdomain": "Other AI Companies (General & Catch-All)",
+      "merged_from_streams": [
+        "Other AI Companies (General & Catch-All)"
+      ],
+      "found_by_models": [
+        "sonar(low)"
+      ],
+      "model_quality_rank": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Singulr AI",
+        "Website": "https://www.singulrai.com"
+      },
+      "match_score": 0.78,
+      "score_breakdown": {
+        "relevancy": 0.9,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Singulr AI, which raised $10M in February 2025, provides an AI governance platform for enterprises, ensuring secure and compliant AI adoption\u2014fitting the enterprise AI infrastructure and automation focus.",
+      "source_urls": [
+        "https://www.crescendo.ai/news/latest-vc-investment-deals-in-ai-startups"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3,
+      "source_subdomain": "Enterprise & Applied AI Startups",
+      "merged_from_streams": [
+        "Enterprise & Applied AI Startups"
+      ],
+      "found_by_models": [
+        "sonar-pro(high)"
+      ],
+      "model_quality_rank": 5
+    }
+  ],
+  "all_candidates_full_list": [
+    {
+      "id_values": {
+        "Company Name": "Anthropic",
+        "Website": "https://anthropic.com"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 0.95,
+        "reliability": 1.0,
+        "recency": 0.9
+      },
+      "match_rationale": "Anthropic is a leading AI safety research company actively hiring for AI roles, with recent funding of $3.5 billion in March 2025.",
+      "source_urls": [
+        "https://anthropic.com/careers",
+        "https://techcrunch.com/2025/03/03/anthropic-raises-3-5-billion-series-e-funding/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "OpenAI",
+        "Website": "https://openai.com"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 0.95,
+        "reliability": 1.0,
+        "recency": 0.9
+      },
+      "match_rationale": "OpenAI is a prominent AI research company that recently raised $40 billion in funding and is actively hiring for AI roles.",
+      "source_urls": [
+        "https://openai.com/careers",
+        "https://techcrunch.com/2025/08/27/here-are-the-33-us-ai-startups-that-have-raised-100m-or-more-in-2025/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Cohere",
+        "Website": "https://cohere.ai"
+      },
+      "match_score": 0.85,
+      "score_breakdown": {
+        "relevancy": 0.85,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Cohere is a foundation model company focused on AI research and is likely hiring for AI roles, though specific recent funding details are less clear.",
+      "source_urls": [
+        "https://cohere.ai/careers",
+        "https://www.crunchbase.com/organization/cohere"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Manas AI",
+        "Website": "https://manas.ai"
+      },
+      "match_score": 0.9,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Manas AI is a new AI-driven drug discovery startup focused on cancer research, launched in January 2025 with $24.6 million in initial funding, and is actively building its team.",
+      "source_urls": [
+        "https://www.wsj.com/articles/reid-hoffman-launches-manas-ai-to-accelerate-cancer-drug-discovery-116a5b3c"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Tempus",
+        "Website": "https://www.tempus.com"
+      },
+      "match_score": 0.85,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.7
+      },
+      "match_rationale": "Tempus is a leading AI-powered precision medicine company, consistently hiring for AI/ML roles in healthcare and life sciences, and has a history of significant funding rounds.",
+      "source_urls": [
+        "https://www.tempus.com/careers"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Abridge",
+        "Website": "https://www.abridge.com"
+      },
+      "match_score": 0.85,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 0.7
+      },
+      "match_rationale": "Abridge develops AI for clinical documentation and is actively hiring for AI/ML positions, with recent funding activity and a strong presence in healthcare AI.",
+      "source_urls": [
+        "https://www.abridge.com/careers"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Legion",
+        "Website": "https://legion.co"
+      },
+      "match_score": 0.9,
+      "score_breakdown": {
+        "relevancy": 0.9,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Legion is a next-gen enterprise AI infrastructure startup that emerged from stealth in August 2025 with $38M in funding, focusing on data transformation, model orchestration, and secure deployment for enterprises\u2014directly matching the enterprise AI and automation focus.",
+      "source_urls": [
+        "https://www.crescendo.ai/news/latest-vc-investment-deals-in-ai-startups"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Harvey",
+        "Website": "https://www.harvey.ai"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Harvey builds AI tools for the legal industry, raised a $300M round in June 2025, and is a clear example of a high-growth, well-funded legal tech AI startup actively hiring for applied AI roles.",
+      "source_urls": [
+        "https://techcrunch.com/2025/08/27/here-are-the-33-us-ai-startups-that-have-raised-100m-or-more-in-2025/"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Singulr AI",
+        "Website": "https://www.singulrai.com"
+      },
+      "match_score": 0.85,
+      "score_breakdown": {
+        "relevancy": 0.9,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Singulr AI, which raised $10M in February 2025, provides an AI governance platform for enterprises, ensuring secure and compliant AI adoption\u2014fitting the enterprise AI infrastructure and automation focus.",
+      "source_urls": [
+        "https://www.crescendo.ai/news/latest-vc-investment-deals-in-ai-startups"
+      ],
+      "model_used": "sonar-pro",
+      "context_used": "high",
+      "round": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Sanctuary AI",
+        "Website": "https://www.sanctuary.ai"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 0.95,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Sanctuary AI is a robotics and general-purpose AI startup actively hiring for AI and robotics roles, reflecting both emerging sector coverage and recent hiring activity.",
+      "source_urls": [
+        "https://reclaim.ai/blog/top-ai-companies-hiring"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    }
+  ],
+  "api_calls": [
+    {
+      "call_description": "Creating Columns",
+      "model": "sonar-pro",
+      "enhanced_data": {
+        "call_info": {
+          "model": "sonar-pro",
+          "api_provider": "perplexity",
+          "timestamp": "2025-10-21T20:38:21.002776+00:00",
+          "search_context_size": null,
+          "max_web_searches": 0
+        },
+        "tokens": {
+          "input_tokens": 1718,
+          "output_tokens": 1255,
+          "total_tokens": 2973,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        },
+        "costs": {
+          "actual": {
+            "input_cost": 0.005154,
+            "output_cost": 0.018825,
+            "total_cost": 0.023979,
+            "pricing_source": "pattern_match_sonar-pro*"
+          },
+          "estimated": {
+            "input_cost": 0.005154,
+            "output_cost": 0.018825,
+            "total_cost": 0.023979
+          },
+          "cache_savings": {
+            "absolute_savings": 0.0,
+            "percentage_savings": 0.0
+          }
+        },
+        "timing": {
+          "time_actual_seconds": 22.391299,
+          "time_estimated_seconds": 22.391299,
+          "time_savings_seconds": 0.0,
+          "time_savings_percent": 0.0,
+          "tokens_per_second_actual": 132.77478899281368,
+          "tokens_per_second_estimated": 132.77478899281368
+        },
+        "caching": {
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate_percent": 0.0,
+          "cache_coverage_percent": 0.0,
+          "has_cache_benefit": false,
+          "cache_efficiency_score": 0.0
+        },
+        "per_row": {
+          "batch_size": 1,
+          "cost_per_row_actual": 0.023979,
+          "cost_per_row_estimated": 0.023979,
+          "time_per_row_actual": 22.391299,
+          "time_per_row_estimated": 22.391299,
+          "cost_savings_per_row": 0.0,
+          "time_savings_per_row": 0.0
+        },
+        "provider_metrics": {
+          "perplexity": {
+            "calls": 1,
+            "tokens": 2973,
+            "cost_actual": 0.023979,
+            "cost_estimated": 0.023979,
+            "time_estimated": 22.391299,
+            "time_actual": 22.391299,
+            "cache_hit_tokens": 0
+          }
+        }
+      },
+      "timestamp": "2025-10-21T16:38:21.005782"
+    },
+    {
+      "call_description": "Finding Rows - AI Research & Foundation Model Companies - Round 1 (sonar-low)",
+      "model": "sonar",
+      "context": "low",
+      "enhanced_data": {
+        "call_info": {
+          "model": "sonar",
+          "api_provider": "perplexity",
+          "timestamp": "2025-10-21T20:38:23.292190+00:00",
+          "search_context_size": null,
+          "max_web_searches": 0
+        },
+        "tokens": {
+          "input_tokens": 1228,
+          "output_tokens": 17,
+          "total_tokens": 1245,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        },
+        "costs": {
+          "actual": {
+            "input_cost": 0.001228,
+            "output_cost": 1.7e-05,
+            "total_cost": 0.001245,
+            "pricing_source": "pattern_match_sonar*"
+          },
+          "estimated": {
+            "input_cost": 0.001228,
+            "output_cost": 1.7e-05,
+            "total_cost": 0.001245
+          },
+          "cache_savings": {
+            "absolute_savings": 0.0,
+            "percentage_savings": 0.0
+          }
+        },
+        "timing": {
+          "time_actual_seconds": 2.280988,
+          "time_estimated_seconds": 2.280988,
+          "time_savings_seconds": 0.0,
+          "time_savings_percent": 0.0,
+          "tokens_per_second_actual": 545.8161112640663,
+          "tokens_per_second_estimated": 545.8161112640663
+        },
+        "caching": {
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate_percent": 0.0,
+          "cache_coverage_percent": 0.0,
+          "has_cache_benefit": false,
+          "cache_efficiency_score": 0.0
+        },
+        "per_row": {
+          "batch_size": 1,
+          "cost_per_row_actual": 0.001245,
+          "cost_per_row_estimated": 0.001245,
+          "time_per_row_actual": 2.280988,
+          "time_per_row_estimated": 2.280988,
+          "cost_savings_per_row": 0.0,
+          "time_savings_per_row": 0.0
+        },
+        "provider_metrics": {
+          "perplexity": {
+            "calls": 1,
+            "tokens": 1245,
+            "cost_actual": 0.001245,
+            "cost_estimated": 0.001245,
+            "time_estimated": 2.280988,
+            "time_actual": 2.280988,
+            "cache_hit_tokens": 0
+          }
+        }
+      },
+      "prompt_used": "# Row Discovery Task\n\n## Your Job\n\nYou are charged with **finding new row entries** for a research table that we are going to build.\n\nThese rows are characterized by their **ID fields** (identification columns). Your task is to:\n\n1. **Use web search** to find unique entries that match the specified requirements within the specified subdomain\n2. **Populate ID fields** with actual values from your search results\n3. **Score each entry** for relevance, source reliability, and recency\n4. **Provide reasoning** for why the entry is a good fit\n\n---\n\n## Context About This Table\n\n**User's Original Request:**\n\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n\n\n**Table Purpose:**\nIdentify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Background Research Context:**\nThis table tracks AI companies across research, healthcare, enterprise, and emerging sectors that are actively hiring for AI roles as of Q4 2024\u2013Q1 2025. It emphasizes organizations with recent funding activity and includes both established leaders and high-growth startups, reflecting the latest trends in AI talent acquisition and investment.\n\n---\n\n## Your Specific Assignment\n\n**Subdomain:** AI Research & Foundation Model Companies\n\n**Focus Area:** Companies focused on core AI research, large language models, and foundational AI technologies (e.g., OpenAI, Anthropic, DeepMind, Cohere).\n\n**Requirements:** Identify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Target:** Find **3 unique entries**\n\n---\n\n## Recommended Searches\n\nUse these search queries to find entries:\n- AI research companies hiring 2025\n- foundation model startups open positions 2025\n- top LLM companies careers 2025\n- recently funded AI research startups\n\n---\n\n## ID Fields to Populate\n\nFor each entry you find, populate these ID fields with ACTUAL values from your search:\n\n- **Company Name**: The official, full legal name of the AI company as registered or publicly known. Used to uniquely identify the organization.\n- **Website**: Primary website URL for the company, leading to the main homepage or official careers page. Must be an active, accessible link.\n\n**Example of populated ID fields:**\n```json\n{\n  \"Company Name\": \"Anthropic\",\n  \"Website\": \"https://anthropic.com\"\n}\n```\n\n**Another example:**\n```json\n{\n  \"Company Name\": \"PathAI\",\n  \"Website\": \"https://www.pathai.com\"\n}\n```\n\n---\n\n## Scoring Each Entry\n\nScore each entry on three dimensions (0-1.0 scale):\n\n### 1. Relevancy (0-1.0)\nHow well does this entry match the requirements?\n- 1.0 = Perfect match\n- 0.7 = Strong match, minor gaps\n- 0.4 = Moderate match\n- 0.0 = Weak match\n\n### 2. Source Reliability (0-1.0)\nHow reliable are your information sources?\n- 1.0 = Primary sources (official website, Crunchbase, official docs)\n- 0.7 = Secondary sources (TechCrunch, LinkedIn, major news outlets)\n- 0.4 = Tertiary sources (blogs, forums, aggregators)\n- 0.0 = Unreliable or unverified\n\n### 3. Recency (0-1.0)\nHow recent is the information?\n- 1.0 = Less than 3 months old\n- 0.7 = 3-6 months old\n- 0.4 = 6-12 months old\n- 0.0 = More than 12 months or date unknown\n\n---\n\n## Output Format\n\nReturn JSON in this exact format:\n\n```json\n{\n  \"subdomain\": \"AI Research & Foundation Model Companies\",\n  \"candidates\": [\n    {\n      \"id_values\": {\n        \"Company Name\": \"Anthropic\",\n        \"Website\": \"https://anthropic.com\"\n      },\n      \"score_breakdown\": {\n        \"relevancy\": 0.95,\n        \"reliability\": 1.0,\n        \"recency\": 0.9\n      },\n      \"match_rationale\": \"Leading AI safety research company with active hiring for ML engineers\",\n      \"source_urls\": [\n        \"https://anthropic.com/careers\",\n        \"https://www.crunchbase.com/organization/anthropic\"\n      ]\n    }\n  ]\n}\n```\n\n**Requirements:**\n- Use EXACT field names from ID fields list above\n- Populate with ACTUAL values from your web search results\n- Each entry must be UNIQUE (different from other entries)\n- Always include all three dimension scores\n- Keep rationale to 1-2 sentences\n- Include specific source URLs\n\n---\n\n## Important Notes\n\n- **Find real entries:** Don't make up placeholder names or generic examples\n- **Use exact field names:** Copy field names exactly as shown in ID fields list\n- **Return candidates array:** Even if empty, always return {\"candidates\": []}\n- **No minimum quality:** Include entries even if scores are moderate (we'll filter later)\n\nReturn your findings as valid JSON.\n",
+      "timestamp": "2025-10-21T16:39:07.293248"
+    },
+    {
+      "call_description": "Finding Rows - AI Research & Foundation Model Companies - Round 2 (sonar-high)",
+      "model": "sonar",
+      "context": "high",
+      "enhanced_data": {
+        "call_info": {
+          "model": "sonar",
+          "api_provider": "perplexity",
+          "timestamp": "2025-10-21T20:38:27.964539+00:00",
+          "search_context_size": null,
+          "max_web_searches": 0
+        },
+        "tokens": {
+          "input_tokens": 1228,
+          "output_tokens": 441,
+          "total_tokens": 1669,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        },
+        "costs": {
+          "actual": {
+            "input_cost": 0.001228,
+            "output_cost": 0.000441,
+            "total_cost": 0.001669,
+            "pricing_source": "pattern_match_sonar*"
+          },
+          "estimated": {
+            "input_cost": 0.001228,
+            "output_cost": 0.000441,
+            "total_cost": 0.001669
+          },
+          "cache_savings": {
+            "absolute_savings": 0.0,
+            "percentage_savings": 0.0
+          }
+        },
+        "timing": {
+          "time_actual_seconds": 4.668174,
+          "time_estimated_seconds": 4.668174,
+          "time_savings_seconds": 0.0,
+          "time_savings_percent": 0.0,
+          "tokens_per_second_actual": 357.52737580047364,
+          "tokens_per_second_estimated": 357.52737580047364
+        },
+        "caching": {
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate_percent": 0.0,
+          "cache_coverage_percent": 0.0,
+          "has_cache_benefit": false,
+          "cache_efficiency_score": 0.0
+        },
+        "per_row": {
+          "batch_size": 1,
+          "cost_per_row_actual": 0.001669,
+          "cost_per_row_estimated": 0.001669,
+          "time_per_row_actual": 4.668174,
+          "time_per_row_estimated": 4.668174,
+          "cost_savings_per_row": 0.0,
+          "time_savings_per_row": 0.0
+        },
+        "provider_metrics": {
+          "perplexity": {
+            "calls": 1,
+            "tokens": 1669,
+            "cost_actual": 0.001669,
+            "cost_estimated": 0.001669,
+            "time_estimated": 4.668174,
+            "time_actual": 4.668174,
+            "cache_hit_tokens": 0
+          }
+        }
+      },
+      "prompt_used": "# Row Discovery Task\n\n## Your Job\n\nYou are charged with **finding new row entries** for a research table that we are going to build.\n\nThese rows are characterized by their **ID fields** (identification columns). Your task is to:\n\n1. **Use web search** to find unique entries that match the specified requirements within the specified subdomain\n2. **Populate ID fields** with actual values from your search results\n3. **Score each entry** for relevance, source reliability, and recency\n4. **Provide reasoning** for why the entry is a good fit\n\n---\n\n## Context About This Table\n\n**User's Original Request:**\n\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n\n\n**Table Purpose:**\nIdentify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Background Research Context:**\nThis table tracks AI companies across research, healthcare, enterprise, and emerging sectors that are actively hiring for AI roles as of Q4 2024\u2013Q1 2025. It emphasizes organizations with recent funding activity and includes both established leaders and high-growth startups, reflecting the latest trends in AI talent acquisition and investment.\n\n---\n\n## Your Specific Assignment\n\n**Subdomain:** AI Research & Foundation Model Companies\n\n**Focus Area:** Companies focused on core AI research, large language models, and foundational AI technologies (e.g., OpenAI, Anthropic, DeepMind, Cohere).\n\n**Requirements:** Identify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Target:** Find **3 unique entries**\n\n---\n\n## Recommended Searches\n\nUse these search queries to find entries:\n- AI research companies hiring 2025\n- foundation model startups open positions 2025\n- top LLM companies careers 2025\n- recently funded AI research startups\n\n---\n\n## ID Fields to Populate\n\nFor each entry you find, populate these ID fields with ACTUAL values from your search:\n\n- **Company Name**: The official, full legal name of the AI company as registered or publicly known. Used to uniquely identify the organization.\n- **Website**: Primary website URL for the company, leading to the main homepage or official careers page. Must be an active, accessible link.\n\n**Example of populated ID fields:**\n```json\n{\n  \"Company Name\": \"Anthropic\",\n  \"Website\": \"https://anthropic.com\"\n}\n```\n\n**Another example:**\n```json\n{\n  \"Company Name\": \"PathAI\",\n  \"Website\": \"https://www.pathai.com\"\n}\n```\n\n---\n\n## Scoring Each Entry\n\nScore each entry on three dimensions (0-1.0 scale):\n\n### 1. Relevancy (0-1.0)\nHow well does this entry match the requirements?\n- 1.0 = Perfect match\n- 0.7 = Strong match, minor gaps\n- 0.4 = Moderate match\n- 0.0 = Weak match\n\n### 2. Source Reliability (0-1.0)\nHow reliable are your information sources?\n- 1.0 = Primary sources (official website, Crunchbase, official docs)\n- 0.7 = Secondary sources (TechCrunch, LinkedIn, major news outlets)\n- 0.4 = Tertiary sources (blogs, forums, aggregators)\n- 0.0 = Unreliable or unverified\n\n### 3. Recency (0-1.0)\nHow recent is the information?\n- 1.0 = Less than 3 months old\n- 0.7 = 3-6 months old\n- 0.4 = 6-12 months old\n- 0.0 = More than 12 months or date unknown\n\n---\n\n## Output Format\n\nReturn JSON in this exact format:\n\n```json\n{\n  \"subdomain\": \"AI Research & Foundation Model Companies\",\n  \"candidates\": [\n    {\n      \"id_values\": {\n        \"Company Name\": \"Anthropic\",\n        \"Website\": \"https://anthropic.com\"\n      },\n      \"score_breakdown\": {\n        \"relevancy\": 0.95,\n        \"reliability\": 1.0,\n        \"recency\": 0.9\n      },\n      \"match_rationale\": \"Leading AI safety research company with active hiring for ML engineers\",\n      \"source_urls\": [\n        \"https://anthropic.com/careers\",\n        \"https://www.crunchbase.com/organization/anthropic\"\n      ]\n    }\n  ]\n}\n```\n\n**Requirements:**\n- Use EXACT field names from ID fields list above\n- Populate with ACTUAL values from your web search results\n- Each entry must be UNIQUE (different from other entries)\n- Always include all three dimension scores\n- Keep rationale to 1-2 sentences\n- Include specific source URLs\n\n---\n\n## Important Notes\n\n- **Find real entries:** Don't make up placeholder names or generic examples\n- **Use exact field names:** Copy field names exactly as shown in ID fields list\n- **Return candidates array:** Even if empty, always return {\"candidates\": []}\n- **No minimum quality:** Include entries even if scores are moderate (we'll filter later)\n\nReturn your findings as valid JSON.\n",
+      "timestamp": "2025-10-21T16:39:07.293254"
+    },
+    {
+      "call_description": "Finding Rows - Healthcare & Life Sciences AI Companies - Round 1 (sonar-low)",
+      "model": "sonar",
+      "context": "low",
+      "enhanced_data": {
+        "call_info": {
+          "model": "sonar",
+          "api_provider": "perplexity",
+          "timestamp": "2025-10-21T20:38:29.836593+00:00",
+          "search_context_size": null,
+          "max_web_searches": 0
+        },
+        "tokens": {
+          "input_tokens": 1228,
+          "output_tokens": 18,
+          "total_tokens": 1246,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        },
+        "costs": {
+          "actual": {
+            "input_cost": 0.001228,
+            "output_cost": 1.8e-05,
+            "total_cost": 0.001246,
+            "pricing_source": "pattern_match_sonar*"
+          },
+          "estimated": {
+            "input_cost": 0.001228,
+            "output_cost": 1.8e-05,
+            "total_cost": 0.001246
+          },
+          "cache_savings": {
+            "absolute_savings": 0.0,
+            "percentage_savings": 0.0
+          }
+        },
+        "timing": {
+          "time_actual_seconds": 1.868055,
+          "time_estimated_seconds": 1.868055,
+          "time_savings_seconds": 0.0,
+          "time_savings_percent": 0.0,
+          "tokens_per_second_actual": 667.0039158375957,
+          "tokens_per_second_estimated": 667.0039158375957
+        },
+        "caching": {
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate_percent": 0.0,
+          "cache_coverage_percent": 0.0,
+          "has_cache_benefit": false,
+          "cache_efficiency_score": 0.0
+        },
+        "per_row": {
+          "batch_size": 1,
+          "cost_per_row_actual": 0.001246,
+          "cost_per_row_estimated": 0.001246,
+          "time_per_row_actual": 1.868055,
+          "time_per_row_estimated": 1.868055,
+          "cost_savings_per_row": 0.0,
+          "time_savings_per_row": 0.0
+        },
+        "provider_metrics": {
+          "perplexity": {
+            "calls": 1,
+            "tokens": 1246,
+            "cost_actual": 0.001246,
+            "cost_estimated": 0.001246,
+            "time_estimated": 1.868055,
+            "time_actual": 1.868055,
+            "cache_hit_tokens": 0
+          }
+        }
+      },
+      "prompt_used": "# Row Discovery Task\n\n## Your Job\n\nYou are charged with **finding new row entries** for a research table that we are going to build.\n\nThese rows are characterized by their **ID fields** (identification columns). Your task is to:\n\n1. **Use web search** to find unique entries that match the specified requirements within the specified subdomain\n2. **Populate ID fields** with actual values from your search results\n3. **Score each entry** for relevance, source reliability, and recency\n4. **Provide reasoning** for why the entry is a good fit\n\n---\n\n## Context About This Table\n\n**User's Original Request:**\n\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n\n\n**Table Purpose:**\nIdentify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Background Research Context:**\nThis table tracks AI companies across research, healthcare, enterprise, and emerging sectors that are actively hiring for AI roles as of Q4 2024\u2013Q1 2025. It emphasizes organizations with recent funding activity and includes both established leaders and high-growth startups, reflecting the latest trends in AI talent acquisition and investment.\n\n---\n\n## Your Specific Assignment\n\n**Subdomain:** Healthcare & Life Sciences AI Companies\n\n**Focus Area:** AI companies specializing in healthcare, drug discovery, medical imaging, and life sciences applications (e.g., Insilico Medicine, Abridge, Tempus).\n\n**Requirements:** Identify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Target:** Find **3 unique entries**\n\n---\n\n## Recommended Searches\n\nUse these search queries to find entries:\n- healthcare AI startups hiring 2025\n- AI drug discovery companies open jobs\n- medical AI companies recent funding 2025\n- AI in life sciences startups careers\n\n---\n\n## ID Fields to Populate\n\nFor each entry you find, populate these ID fields with ACTUAL values from your search:\n\n- **Company Name**: The official, full legal name of the AI company as registered or publicly known. Used to uniquely identify the organization.\n- **Website**: Primary website URL for the company, leading to the main homepage or official careers page. Must be an active, accessible link.\n\n**Example of populated ID fields:**\n```json\n{\n  \"Company Name\": \"Anthropic\",\n  \"Website\": \"https://anthropic.com\"\n}\n```\n\n**Another example:**\n```json\n{\n  \"Company Name\": \"PathAI\",\n  \"Website\": \"https://www.pathai.com\"\n}\n```\n\n---\n\n## Scoring Each Entry\n\nScore each entry on three dimensions (0-1.0 scale):\n\n### 1. Relevancy (0-1.0)\nHow well does this entry match the requirements?\n- 1.0 = Perfect match\n- 0.7 = Strong match, minor gaps\n- 0.4 = Moderate match\n- 0.0 = Weak match\n\n### 2. Source Reliability (0-1.0)\nHow reliable are your information sources?\n- 1.0 = Primary sources (official website, Crunchbase, official docs)\n- 0.7 = Secondary sources (TechCrunch, LinkedIn, major news outlets)\n- 0.4 = Tertiary sources (blogs, forums, aggregators)\n- 0.0 = Unreliable or unverified\n\n### 3. Recency (0-1.0)\nHow recent is the information?\n- 1.0 = Less than 3 months old\n- 0.7 = 3-6 months old\n- 0.4 = 6-12 months old\n- 0.0 = More than 12 months or date unknown\n\n---\n\n## Output Format\n\nReturn JSON in this exact format:\n\n```json\n{\n  \"subdomain\": \"Healthcare & Life Sciences AI Companies\",\n  \"candidates\": [\n    {\n      \"id_values\": {\n        \"Company Name\": \"Anthropic\",\n        \"Website\": \"https://anthropic.com\"\n      },\n      \"score_breakdown\": {\n        \"relevancy\": 0.95,\n        \"reliability\": 1.0,\n        \"recency\": 0.9\n      },\n      \"match_rationale\": \"Leading AI safety research company with active hiring for ML engineers\",\n      \"source_urls\": [\n        \"https://anthropic.com/careers\",\n        \"https://www.crunchbase.com/organization/anthropic\"\n      ]\n    }\n  ]\n}\n```\n\n**Requirements:**\n- Use EXACT field names from ID fields list above\n- Populate with ACTUAL values from your web search results\n- Each entry must be UNIQUE (different from other entries)\n- Always include all three dimension scores\n- Keep rationale to 1-2 sentences\n- Include specific source URLs\n\n---\n\n## Important Notes\n\n- **Find real entries:** Don't make up placeholder names or generic examples\n- **Use exact field names:** Copy field names exactly as shown in ID fields list\n- **Return candidates array:** Even if empty, always return {\"candidates\": []}\n- **No minimum quality:** Include entries even if scores are moderate (we'll filter later)\n\nReturn your findings as valid JSON.\n",
+      "timestamp": "2025-10-21T16:39:07.293258"
+    },
+    {
+      "call_description": "Finding Rows - Healthcare & Life Sciences AI Companies - Round 2 (sonar-high)",
+      "model": "sonar",
+      "context": "high",
+      "enhanced_data": {
+        "call_info": {
+          "model": "sonar",
+          "api_provider": "perplexity",
+          "timestamp": "2025-10-21T20:38:31.756987+00:00",
+          "search_context_size": null,
+          "max_web_searches": 0
+        },
+        "tokens": {
+          "input_tokens": 1228,
+          "output_tokens": 18,
+          "total_tokens": 1246,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        },
+        "costs": {
+          "actual": {
+            "input_cost": 0.001228,
+            "output_cost": 1.8e-05,
+            "total_cost": 0.001246,
+            "pricing_source": "pattern_match_sonar*"
+          },
+          "estimated": {
+            "input_cost": 0.001228,
+            "output_cost": 1.8e-05,
+            "total_cost": 0.001246
+          },
+          "cache_savings": {
+            "absolute_savings": 0.0,
+            "percentage_savings": 0.0
+          }
+        },
+        "timing": {
+          "time_actual_seconds": 1.915603,
+          "time_estimated_seconds": 1.915603,
+          "time_savings_seconds": 0.0,
+          "time_savings_percent": 0.0,
+          "tokens_per_second_actual": 650.4479268407912,
+          "tokens_per_second_estimated": 650.4479268407912
+        },
+        "caching": {
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate_percent": 0.0,
+          "cache_coverage_percent": 0.0,
+          "has_cache_benefit": false,
+          "cache_efficiency_score": 0.0
+        },
+        "per_row": {
+          "batch_size": 1,
+          "cost_per_row_actual": 0.001246,
+          "cost_per_row_estimated": 0.001246,
+          "time_per_row_actual": 1.915603,
+          "time_per_row_estimated": 1.915603,
+          "cost_savings_per_row": 0.0,
+          "time_savings_per_row": 0.0
+        },
+        "provider_metrics": {
+          "perplexity": {
+            "calls": 1,
+            "tokens": 1246,
+            "cost_actual": 0.001246,
+            "cost_estimated": 0.001246,
+            "time_estimated": 1.915603,
+            "time_actual": 1.915603,
+            "cache_hit_tokens": 0
+          }
+        }
+      },
+      "prompt_used": "# Row Discovery Task\n\n## Your Job\n\nYou are charged with **finding new row entries** for a research table that we are going to build.\n\nThese rows are characterized by their **ID fields** (identification columns). Your task is to:\n\n1. **Use web search** to find unique entries that match the specified requirements within the specified subdomain\n2. **Populate ID fields** with actual values from your search results\n3. **Score each entry** for relevance, source reliability, and recency\n4. **Provide reasoning** for why the entry is a good fit\n\n---\n\n## Context About This Table\n\n**User's Original Request:**\n\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n\n\n**Table Purpose:**\nIdentify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Background Research Context:**\nThis table tracks AI companies across research, healthcare, enterprise, and emerging sectors that are actively hiring for AI roles as of Q4 2024\u2013Q1 2025. It emphasizes organizations with recent funding activity and includes both established leaders and high-growth startups, reflecting the latest trends in AI talent acquisition and investment.\n\n---\n\n## Your Specific Assignment\n\n**Subdomain:** Healthcare & Life Sciences AI Companies\n\n**Focus Area:** AI companies specializing in healthcare, drug discovery, medical imaging, and life sciences applications (e.g., Insilico Medicine, Abridge, Tempus).\n\n**Requirements:** Identify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Target:** Find **3 unique entries**\n\n---\n\n## Recommended Searches\n\nUse these search queries to find entries:\n- healthcare AI startups hiring 2025\n- AI drug discovery companies open jobs\n- medical AI companies recent funding 2025\n- AI in life sciences startups careers\n\n---\n\n## ID Fields to Populate\n\nFor each entry you find, populate these ID fields with ACTUAL values from your search:\n\n- **Company Name**: The official, full legal name of the AI company as registered or publicly known. Used to uniquely identify the organization.\n- **Website**: Primary website URL for the company, leading to the main homepage or official careers page. Must be an active, accessible link.\n\n**Example of populated ID fields:**\n```json\n{\n  \"Company Name\": \"Anthropic\",\n  \"Website\": \"https://anthropic.com\"\n}\n```\n\n**Another example:**\n```json\n{\n  \"Company Name\": \"PathAI\",\n  \"Website\": \"https://www.pathai.com\"\n}\n```\n\n---\n\n## Scoring Each Entry\n\nScore each entry on three dimensions (0-1.0 scale):\n\n### 1. Relevancy (0-1.0)\nHow well does this entry match the requirements?\n- 1.0 = Perfect match\n- 0.7 = Strong match, minor gaps\n- 0.4 = Moderate match\n- 0.0 = Weak match\n\n### 2. Source Reliability (0-1.0)\nHow reliable are your information sources?\n- 1.0 = Primary sources (official website, Crunchbase, official docs)\n- 0.7 = Secondary sources (TechCrunch, LinkedIn, major news outlets)\n- 0.4 = Tertiary sources (blogs, forums, aggregators)\n- 0.0 = Unreliable or unverified\n\n### 3. Recency (0-1.0)\nHow recent is the information?\n- 1.0 = Less than 3 months old\n- 0.7 = 3-6 months old\n- 0.4 = 6-12 months old\n- 0.0 = More than 12 months or date unknown\n\n---\n\n## Output Format\n\nReturn JSON in this exact format:\n\n```json\n{\n  \"subdomain\": \"Healthcare & Life Sciences AI Companies\",\n  \"candidates\": [\n    {\n      \"id_values\": {\n        \"Company Name\": \"Anthropic\",\n        \"Website\": \"https://anthropic.com\"\n      },\n      \"score_breakdown\": {\n        \"relevancy\": 0.95,\n        \"reliability\": 1.0,\n        \"recency\": 0.9\n      },\n      \"match_rationale\": \"Leading AI safety research company with active hiring for ML engineers\",\n      \"source_urls\": [\n        \"https://anthropic.com/careers\",\n        \"https://www.crunchbase.com/organization/anthropic\"\n      ]\n    }\n  ]\n}\n```\n\n**Requirements:**\n- Use EXACT field names from ID fields list above\n- Populate with ACTUAL values from your web search results\n- Each entry must be UNIQUE (different from other entries)\n- Always include all three dimension scores\n- Keep rationale to 1-2 sentences\n- Include specific source URLs\n\n---\n\n## Important Notes\n\n- **Find real entries:** Don't make up placeholder names or generic examples\n- **Use exact field names:** Copy field names exactly as shown in ID fields list\n- **Return candidates array:** Even if empty, always return {\"candidates\": []}\n- **No minimum quality:** Include entries even if scores are moderate (we'll filter later)\n\nReturn your findings as valid JSON.\n",
+      "timestamp": "2025-10-21T16:39:07.293259"
+    },
+    {
+      "call_description": "Finding Rows - Healthcare & Life Sciences AI Companies - Round 3 (sonar-pro-high)",
+      "model": "sonar-pro",
+      "context": "high",
+      "enhanced_data": {
+        "call_info": {
+          "model": "sonar-pro",
+          "api_provider": "perplexity",
+          "timestamp": "2025-10-21T20:38:42.947040+00:00",
+          "search_context_size": null,
+          "max_web_searches": 0
+        },
+        "tokens": {
+          "input_tokens": 1228,
+          "output_tokens": 426,
+          "total_tokens": 1654,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        },
+        "costs": {
+          "actual": {
+            "input_cost": 0.003684,
+            "output_cost": 0.00639,
+            "total_cost": 0.010074,
+            "pricing_source": "pattern_match_sonar-pro*"
+          },
+          "estimated": {
+            "input_cost": 0.003684,
+            "output_cost": 0.00639,
+            "total_cost": 0.010074
+          },
+          "cache_savings": {
+            "absolute_savings": 0.0,
+            "percentage_savings": 0.0
+          }
+        },
+        "timing": {
+          "time_actual_seconds": 11.186331,
+          "time_estimated_seconds": 11.186331,
+          "time_savings_seconds": 0.0,
+          "time_savings_percent": 0.0,
+          "tokens_per_second_actual": 147.85902544811165,
+          "tokens_per_second_estimated": 147.85902544811165
+        },
+        "caching": {
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate_percent": 0.0,
+          "cache_coverage_percent": 0.0,
+          "has_cache_benefit": false,
+          "cache_efficiency_score": 0.0
+        },
+        "per_row": {
+          "batch_size": 1,
+          "cost_per_row_actual": 0.010074,
+          "cost_per_row_estimated": 0.010074,
+          "time_per_row_actual": 11.186331,
+          "time_per_row_estimated": 11.186331,
+          "cost_savings_per_row": 0.0,
+          "time_savings_per_row": 0.0
+        },
+        "provider_metrics": {
+          "perplexity": {
+            "calls": 1,
+            "tokens": 1654,
+            "cost_actual": 0.010074,
+            "cost_estimated": 0.010074,
+            "time_estimated": 11.186331,
+            "time_actual": 11.186331,
+            "cache_hit_tokens": 0
+          }
+        }
+      },
+      "prompt_used": "# Row Discovery Task\n\n## Your Job\n\nYou are charged with **finding new row entries** for a research table that we are going to build.\n\nThese rows are characterized by their **ID fields** (identification columns). Your task is to:\n\n1. **Use web search** to find unique entries that match the specified requirements within the specified subdomain\n2. **Populate ID fields** with actual values from your search results\n3. **Score each entry** for relevance, source reliability, and recency\n4. **Provide reasoning** for why the entry is a good fit\n\n---\n\n## Context About This Table\n\n**User's Original Request:**\n\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n\n\n**Table Purpose:**\nIdentify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Background Research Context:**\nThis table tracks AI companies across research, healthcare, enterprise, and emerging sectors that are actively hiring for AI roles as of Q4 2024\u2013Q1 2025. It emphasizes organizations with recent funding activity and includes both established leaders and high-growth startups, reflecting the latest trends in AI talent acquisition and investment.\n\n---\n\n## Your Specific Assignment\n\n**Subdomain:** Healthcare & Life Sciences AI Companies\n\n**Focus Area:** AI companies specializing in healthcare, drug discovery, medical imaging, and life sciences applications (e.g., Insilico Medicine, Abridge, Tempus).\n\n**Requirements:** Identify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Target:** Find **3 unique entries**\n\n---\n\n## Recommended Searches\n\nUse these search queries to find entries:\n- healthcare AI startups hiring 2025\n- AI drug discovery companies open jobs\n- medical AI companies recent funding 2025\n- AI in life sciences startups careers\n\n---\n\n## ID Fields to Populate\n\nFor each entry you find, populate these ID fields with ACTUAL values from your search:\n\n- **Company Name**: The official, full legal name of the AI company as registered or publicly known. Used to uniquely identify the organization.\n- **Website**: Primary website URL for the company, leading to the main homepage or official careers page. Must be an active, accessible link.\n\n**Example of populated ID fields:**\n```json\n{\n  \"Company Name\": \"Anthropic\",\n  \"Website\": \"https://anthropic.com\"\n}\n```\n\n**Another example:**\n```json\n{\n  \"Company Name\": \"PathAI\",\n  \"Website\": \"https://www.pathai.com\"\n}\n```\n\n---\n\n## Scoring Each Entry\n\nScore each entry on three dimensions (0-1.0 scale):\n\n### 1. Relevancy (0-1.0)\nHow well does this entry match the requirements?\n- 1.0 = Perfect match\n- 0.7 = Strong match, minor gaps\n- 0.4 = Moderate match\n- 0.0 = Weak match\n\n### 2. Source Reliability (0-1.0)\nHow reliable are your information sources?\n- 1.0 = Primary sources (official website, Crunchbase, official docs)\n- 0.7 = Secondary sources (TechCrunch, LinkedIn, major news outlets)\n- 0.4 = Tertiary sources (blogs, forums, aggregators)\n- 0.0 = Unreliable or unverified\n\n### 3. Recency (0-1.0)\nHow recent is the information?\n- 1.0 = Less than 3 months old\n- 0.7 = 3-6 months old\n- 0.4 = 6-12 months old\n- 0.0 = More than 12 months or date unknown\n\n---\n\n## Output Format\n\nReturn JSON in this exact format:\n\n```json\n{\n  \"subdomain\": \"Healthcare & Life Sciences AI Companies\",\n  \"candidates\": [\n    {\n      \"id_values\": {\n        \"Company Name\": \"Anthropic\",\n        \"Website\": \"https://anthropic.com\"\n      },\n      \"score_breakdown\": {\n        \"relevancy\": 0.95,\n        \"reliability\": 1.0,\n        \"recency\": 0.9\n      },\n      \"match_rationale\": \"Leading AI safety research company with active hiring for ML engineers\",\n      \"source_urls\": [\n        \"https://anthropic.com/careers\",\n        \"https://www.crunchbase.com/organization/anthropic\"\n      ]\n    }\n  ]\n}\n```\n\n**Requirements:**\n- Use EXACT field names from ID fields list above\n- Populate with ACTUAL values from your web search results\n- Each entry must be UNIQUE (different from other entries)\n- Always include all three dimension scores\n- Keep rationale to 1-2 sentences\n- Include specific source URLs\n\n---\n\n## Important Notes\n\n- **Find real entries:** Don't make up placeholder names or generic examples\n- **Use exact field names:** Copy field names exactly as shown in ID fields list\n- **Return candidates array:** Even if empty, always return {\"candidates\": []}\n- **No minimum quality:** Include entries even if scores are moderate (we'll filter later)\n\nReturn your findings as valid JSON.\n",
+      "timestamp": "2025-10-21T16:39:07.293261"
+    },
+    {
+      "call_description": "Finding Rows - Enterprise & Applied AI Startups - Round 1 (sonar-low)",
+      "model": "sonar",
+      "context": "low",
+      "enhanced_data": {
+        "call_info": {
+          "model": "sonar",
+          "api_provider": "perplexity",
+          "timestamp": "2025-10-21T20:38:44.494831+00:00",
+          "search_context_size": null,
+          "max_web_searches": 0
+        },
+        "tokens": {
+          "input_tokens": 1228,
+          "output_tokens": 17,
+          "total_tokens": 1245,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        },
+        "costs": {
+          "actual": {
+            "input_cost": 0.001228,
+            "output_cost": 1.7e-05,
+            "total_cost": 0.001245,
+            "pricing_source": "pattern_match_sonar*"
+          },
+          "estimated": {
+            "input_cost": 0.001228,
+            "output_cost": 1.7e-05,
+            "total_cost": 0.001245
+          },
+          "cache_savings": {
+            "absolute_savings": 0.0,
+            "percentage_savings": 0.0
+          }
+        },
+        "timing": {
+          "time_actual_seconds": 1.54441,
+          "time_estimated_seconds": 1.54441,
+          "time_savings_seconds": 0.0,
+          "time_savings_percent": 0.0,
+          "tokens_per_second_actual": 806.1330864213518,
+          "tokens_per_second_estimated": 806.1330864213518
+        },
+        "caching": {
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate_percent": 0.0,
+          "cache_coverage_percent": 0.0,
+          "has_cache_benefit": false,
+          "cache_efficiency_score": 0.0
+        },
+        "per_row": {
+          "batch_size": 1,
+          "cost_per_row_actual": 0.001245,
+          "cost_per_row_estimated": 0.001245,
+          "time_per_row_actual": 1.54441,
+          "time_per_row_estimated": 1.54441,
+          "cost_savings_per_row": 0.0,
+          "time_savings_per_row": 0.0
+        },
+        "provider_metrics": {
+          "perplexity": {
+            "calls": 1,
+            "tokens": 1245,
+            "cost_actual": 0.001245,
+            "cost_estimated": 0.001245,
+            "time_estimated": 1.54441,
+            "time_actual": 1.54441,
+            "cache_hit_tokens": 0
+          }
+        }
+      },
+      "prompt_used": "# Row Discovery Task\n\n## Your Job\n\nYou are charged with **finding new row entries** for a research table that we are going to build.\n\nThese rows are characterized by their **ID fields** (identification columns). Your task is to:\n\n1. **Use web search** to find unique entries that match the specified requirements within the specified subdomain\n2. **Populate ID fields** with actual values from your search results\n3. **Score each entry** for relevance, source reliability, and recency\n4. **Provide reasoning** for why the entry is a good fit\n\n---\n\n## Context About This Table\n\n**User's Original Request:**\n\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n\n\n**Table Purpose:**\nIdentify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Background Research Context:**\nThis table tracks AI companies across research, healthcare, enterprise, and emerging sectors that are actively hiring for AI roles as of Q4 2024\u2013Q1 2025. It emphasizes organizations with recent funding activity and includes both established leaders and high-growth startups, reflecting the latest trends in AI talent acquisition and investment.\n\n---\n\n## Your Specific Assignment\n\n**Subdomain:** Enterprise & Applied AI Startups\n\n**Focus Area:** Startups and scale-ups applying AI to enterprise solutions, productivity, legal tech, data infrastructure, and automation (e.g., Databricks, Harvey, Supio, Runway).\n\n**Requirements:** Identify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Target:** Find **3 unique entries**\n\n---\n\n## Recommended Searches\n\nUse these search queries to find entries:\n- enterprise AI startups hiring 2025\n- AI automation companies open positions\n- recently funded enterprise AI companies\n- legal tech AI startups jobs\n\n---\n\n## ID Fields to Populate\n\nFor each entry you find, populate these ID fields with ACTUAL values from your search:\n\n- **Company Name**: The official, full legal name of the AI company as registered or publicly known. Used to uniquely identify the organization.\n- **Website**: Primary website URL for the company, leading to the main homepage or official careers page. Must be an active, accessible link.\n\n**Example of populated ID fields:**\n```json\n{\n  \"Company Name\": \"Anthropic\",\n  \"Website\": \"https://anthropic.com\"\n}\n```\n\n**Another example:**\n```json\n{\n  \"Company Name\": \"PathAI\",\n  \"Website\": \"https://www.pathai.com\"\n}\n```\n\n---\n\n## Scoring Each Entry\n\nScore each entry on three dimensions (0-1.0 scale):\n\n### 1. Relevancy (0-1.0)\nHow well does this entry match the requirements?\n- 1.0 = Perfect match\n- 0.7 = Strong match, minor gaps\n- 0.4 = Moderate match\n- 0.0 = Weak match\n\n### 2. Source Reliability (0-1.0)\nHow reliable are your information sources?\n- 1.0 = Primary sources (official website, Crunchbase, official docs)\n- 0.7 = Secondary sources (TechCrunch, LinkedIn, major news outlets)\n- 0.4 = Tertiary sources (blogs, forums, aggregators)\n- 0.0 = Unreliable or unverified\n\n### 3. Recency (0-1.0)\nHow recent is the information?\n- 1.0 = Less than 3 months old\n- 0.7 = 3-6 months old\n- 0.4 = 6-12 months old\n- 0.0 = More than 12 months or date unknown\n\n---\n\n## Output Format\n\nReturn JSON in this exact format:\n\n```json\n{\n  \"subdomain\": \"Enterprise & Applied AI Startups\",\n  \"candidates\": [\n    {\n      \"id_values\": {\n        \"Company Name\": \"Anthropic\",\n        \"Website\": \"https://anthropic.com\"\n      },\n      \"score_breakdown\": {\n        \"relevancy\": 0.95,\n        \"reliability\": 1.0,\n        \"recency\": 0.9\n      },\n      \"match_rationale\": \"Leading AI safety research company with active hiring for ML engineers\",\n      \"source_urls\": [\n        \"https://anthropic.com/careers\",\n        \"https://www.crunchbase.com/organization/anthropic\"\n      ]\n    }\n  ]\n}\n```\n\n**Requirements:**\n- Use EXACT field names from ID fields list above\n- Populate with ACTUAL values from your web search results\n- Each entry must be UNIQUE (different from other entries)\n- Always include all three dimension scores\n- Keep rationale to 1-2 sentences\n- Include specific source URLs\n\n---\n\n## Important Notes\n\n- **Find real entries:** Don't make up placeholder names or generic examples\n- **Use exact field names:** Copy field names exactly as shown in ID fields list\n- **Return candidates array:** Even if empty, always return {\"candidates\": []}\n- **No minimum quality:** Include entries even if scores are moderate (we'll filter later)\n\nReturn your findings as valid JSON.\n",
+      "timestamp": "2025-10-21T16:39:07.293263"
+    },
+    {
+      "call_description": "Finding Rows - Enterprise & Applied AI Startups - Round 2 (sonar-high)",
+      "model": "sonar",
+      "context": "high",
+      "enhanced_data": {
+        "call_info": {
+          "model": "sonar",
+          "api_provider": "perplexity",
+          "timestamp": "2025-10-21T20:38:46.787164+00:00",
+          "search_context_size": null,
+          "max_web_searches": 0
+        },
+        "tokens": {
+          "input_tokens": 1228,
+          "output_tokens": 17,
+          "total_tokens": 1245,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        },
+        "costs": {
+          "actual": {
+            "input_cost": 0.001228,
+            "output_cost": 1.7e-05,
+            "total_cost": 0.001245,
+            "pricing_source": "pattern_match_sonar*"
+          },
+          "estimated": {
+            "input_cost": 0.001228,
+            "output_cost": 1.7e-05,
+            "total_cost": 0.001245
+          },
+          "cache_savings": {
+            "absolute_savings": 0.0,
+            "percentage_savings": 0.0
+          }
+        },
+        "timing": {
+          "time_actual_seconds": 2.288795,
+          "time_estimated_seconds": 2.288795,
+          "time_savings_seconds": 0.0,
+          "time_savings_percent": 0.0,
+          "tokens_per_second_actual": 543.9543515255845,
+          "tokens_per_second_estimated": 543.9543515255845
+        },
+        "caching": {
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate_percent": 0.0,
+          "cache_coverage_percent": 0.0,
+          "has_cache_benefit": false,
+          "cache_efficiency_score": 0.0
+        },
+        "per_row": {
+          "batch_size": 1,
+          "cost_per_row_actual": 0.001245,
+          "cost_per_row_estimated": 0.001245,
+          "time_per_row_actual": 2.288795,
+          "time_per_row_estimated": 2.288795,
+          "cost_savings_per_row": 0.0,
+          "time_savings_per_row": 0.0
+        },
+        "provider_metrics": {
+          "perplexity": {
+            "calls": 1,
+            "tokens": 1245,
+            "cost_actual": 0.001245,
+            "cost_estimated": 0.001245,
+            "time_estimated": 2.288795,
+            "time_actual": 2.288795,
+            "cache_hit_tokens": 0
+          }
+        }
+      },
+      "prompt_used": "# Row Discovery Task\n\n## Your Job\n\nYou are charged with **finding new row entries** for a research table that we are going to build.\n\nThese rows are characterized by their **ID fields** (identification columns). Your task is to:\n\n1. **Use web search** to find unique entries that match the specified requirements within the specified subdomain\n2. **Populate ID fields** with actual values from your search results\n3. **Score each entry** for relevance, source reliability, and recency\n4. **Provide reasoning** for why the entry is a good fit\n\n---\n\n## Context About This Table\n\n**User's Original Request:**\n\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n\n\n**Table Purpose:**\nIdentify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Background Research Context:**\nThis table tracks AI companies across research, healthcare, enterprise, and emerging sectors that are actively hiring for AI roles as of Q4 2024\u2013Q1 2025. It emphasizes organizations with recent funding activity and includes both established leaders and high-growth startups, reflecting the latest trends in AI talent acquisition and investment.\n\n---\n\n## Your Specific Assignment\n\n**Subdomain:** Enterprise & Applied AI Startups\n\n**Focus Area:** Startups and scale-ups applying AI to enterprise solutions, productivity, legal tech, data infrastructure, and automation (e.g., Databricks, Harvey, Supio, Runway).\n\n**Requirements:** Identify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Target:** Find **3 unique entries**\n\n---\n\n## Recommended Searches\n\nUse these search queries to find entries:\n- enterprise AI startups hiring 2025\n- AI automation companies open positions\n- recently funded enterprise AI companies\n- legal tech AI startups jobs\n\n---\n\n## ID Fields to Populate\n\nFor each entry you find, populate these ID fields with ACTUAL values from your search:\n\n- **Company Name**: The official, full legal name of the AI company as registered or publicly known. Used to uniquely identify the organization.\n- **Website**: Primary website URL for the company, leading to the main homepage or official careers page. Must be an active, accessible link.\n\n**Example of populated ID fields:**\n```json\n{\n  \"Company Name\": \"Anthropic\",\n  \"Website\": \"https://anthropic.com\"\n}\n```\n\n**Another example:**\n```json\n{\n  \"Company Name\": \"PathAI\",\n  \"Website\": \"https://www.pathai.com\"\n}\n```\n\n---\n\n## Scoring Each Entry\n\nScore each entry on three dimensions (0-1.0 scale):\n\n### 1. Relevancy (0-1.0)\nHow well does this entry match the requirements?\n- 1.0 = Perfect match\n- 0.7 = Strong match, minor gaps\n- 0.4 = Moderate match\n- 0.0 = Weak match\n\n### 2. Source Reliability (0-1.0)\nHow reliable are your information sources?\n- 1.0 = Primary sources (official website, Crunchbase, official docs)\n- 0.7 = Secondary sources (TechCrunch, LinkedIn, major news outlets)\n- 0.4 = Tertiary sources (blogs, forums, aggregators)\n- 0.0 = Unreliable or unverified\n\n### 3. Recency (0-1.0)\nHow recent is the information?\n- 1.0 = Less than 3 months old\n- 0.7 = 3-6 months old\n- 0.4 = 6-12 months old\n- 0.0 = More than 12 months or date unknown\n\n---\n\n## Output Format\n\nReturn JSON in this exact format:\n\n```json\n{\n  \"subdomain\": \"Enterprise & Applied AI Startups\",\n  \"candidates\": [\n    {\n      \"id_values\": {\n        \"Company Name\": \"Anthropic\",\n        \"Website\": \"https://anthropic.com\"\n      },\n      \"score_breakdown\": {\n        \"relevancy\": 0.95,\n        \"reliability\": 1.0,\n        \"recency\": 0.9\n      },\n      \"match_rationale\": \"Leading AI safety research company with active hiring for ML engineers\",\n      \"source_urls\": [\n        \"https://anthropic.com/careers\",\n        \"https://www.crunchbase.com/organization/anthropic\"\n      ]\n    }\n  ]\n}\n```\n\n**Requirements:**\n- Use EXACT field names from ID fields list above\n- Populate with ACTUAL values from your web search results\n- Each entry must be UNIQUE (different from other entries)\n- Always include all three dimension scores\n- Keep rationale to 1-2 sentences\n- Include specific source URLs\n\n---\n\n## Important Notes\n\n- **Find real entries:** Don't make up placeholder names or generic examples\n- **Use exact field names:** Copy field names exactly as shown in ID fields list\n- **Return candidates array:** Even if empty, always return {\"candidates\": []}\n- **No minimum quality:** Include entries even if scores are moderate (we'll filter later)\n\nReturn your findings as valid JSON.\n",
+      "timestamp": "2025-10-21T16:39:07.293264"
+    },
+    {
+      "call_description": "Finding Rows - Enterprise & Applied AI Startups - Round 3 (sonar-pro-high)",
+      "model": "sonar-pro",
+      "context": "high",
+      "enhanced_data": {
+        "call_info": {
+          "model": "sonar-pro",
+          "api_provider": "perplexity",
+          "timestamp": "2025-10-21T20:38:58.783072+00:00",
+          "search_context_size": null,
+          "max_web_searches": 0
+        },
+        "tokens": {
+          "input_tokens": 1228,
+          "output_tokens": 490,
+          "total_tokens": 1718,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        },
+        "costs": {
+          "actual": {
+            "input_cost": 0.003684,
+            "output_cost": 0.00735,
+            "total_cost": 0.011034,
+            "pricing_source": "pattern_match_sonar-pro*"
+          },
+          "estimated": {
+            "input_cost": 0.003684,
+            "output_cost": 0.00735,
+            "total_cost": 0.011034
+          },
+          "cache_savings": {
+            "absolute_savings": 0.0,
+            "percentage_savings": 0.0
+          }
+        },
+        "timing": {
+          "time_actual_seconds": 11.992655,
+          "time_estimated_seconds": 11.992655,
+          "time_savings_seconds": 0.0,
+          "time_savings_percent": 0.0,
+          "tokens_per_second_actual": 143.25435026689254,
+          "tokens_per_second_estimated": 143.25435026689254
+        },
+        "caching": {
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate_percent": 0.0,
+          "cache_coverage_percent": 0.0,
+          "has_cache_benefit": false,
+          "cache_efficiency_score": 0.0
+        },
+        "per_row": {
+          "batch_size": 1,
+          "cost_per_row_actual": 0.011034,
+          "cost_per_row_estimated": 0.011034,
+          "time_per_row_actual": 11.992655,
+          "time_per_row_estimated": 11.992655,
+          "cost_savings_per_row": 0.0,
+          "time_savings_per_row": 0.0
+        },
+        "provider_metrics": {
+          "perplexity": {
+            "calls": 1,
+            "tokens": 1718,
+            "cost_actual": 0.011034,
+            "cost_estimated": 0.011034,
+            "time_estimated": 11.992655,
+            "time_actual": 11.992655,
+            "cache_hit_tokens": 0
+          }
+        }
+      },
+      "prompt_used": "# Row Discovery Task\n\n## Your Job\n\nYou are charged with **finding new row entries** for a research table that we are going to build.\n\nThese rows are characterized by their **ID fields** (identification columns). Your task is to:\n\n1. **Use web search** to find unique entries that match the specified requirements within the specified subdomain\n2. **Populate ID fields** with actual values from your search results\n3. **Score each entry** for relevance, source reliability, and recency\n4. **Provide reasoning** for why the entry is a good fit\n\n---\n\n## Context About This Table\n\n**User's Original Request:**\n\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n\n\n**Table Purpose:**\nIdentify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Background Research Context:**\nThis table tracks AI companies across research, healthcare, enterprise, and emerging sectors that are actively hiring for AI roles as of Q4 2024\u2013Q1 2025. It emphasizes organizations with recent funding activity and includes both established leaders and high-growth startups, reflecting the latest trends in AI talent acquisition and investment.\n\n---\n\n## Your Specific Assignment\n\n**Subdomain:** Enterprise & Applied AI Startups\n\n**Focus Area:** Startups and scale-ups applying AI to enterprise solutions, productivity, legal tech, data infrastructure, and automation (e.g., Databricks, Harvey, Supio, Runway).\n\n**Requirements:** Identify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Target:** Find **3 unique entries**\n\n---\n\n## Recommended Searches\n\nUse these search queries to find entries:\n- enterprise AI startups hiring 2025\n- AI automation companies open positions\n- recently funded enterprise AI companies\n- legal tech AI startups jobs\n\n---\n\n## ID Fields to Populate\n\nFor each entry you find, populate these ID fields with ACTUAL values from your search:\n\n- **Company Name**: The official, full legal name of the AI company as registered or publicly known. Used to uniquely identify the organization.\n- **Website**: Primary website URL for the company, leading to the main homepage or official careers page. Must be an active, accessible link.\n\n**Example of populated ID fields:**\n```json\n{\n  \"Company Name\": \"Anthropic\",\n  \"Website\": \"https://anthropic.com\"\n}\n```\n\n**Another example:**\n```json\n{\n  \"Company Name\": \"PathAI\",\n  \"Website\": \"https://www.pathai.com\"\n}\n```\n\n---\n\n## Scoring Each Entry\n\nScore each entry on three dimensions (0-1.0 scale):\n\n### 1. Relevancy (0-1.0)\nHow well does this entry match the requirements?\n- 1.0 = Perfect match\n- 0.7 = Strong match, minor gaps\n- 0.4 = Moderate match\n- 0.0 = Weak match\n\n### 2. Source Reliability (0-1.0)\nHow reliable are your information sources?\n- 1.0 = Primary sources (official website, Crunchbase, official docs)\n- 0.7 = Secondary sources (TechCrunch, LinkedIn, major news outlets)\n- 0.4 = Tertiary sources (blogs, forums, aggregators)\n- 0.0 = Unreliable or unverified\n\n### 3. Recency (0-1.0)\nHow recent is the information?\n- 1.0 = Less than 3 months old\n- 0.7 = 3-6 months old\n- 0.4 = 6-12 months old\n- 0.0 = More than 12 months or date unknown\n\n---\n\n## Output Format\n\nReturn JSON in this exact format:\n\n```json\n{\n  \"subdomain\": \"Enterprise & Applied AI Startups\",\n  \"candidates\": [\n    {\n      \"id_values\": {\n        \"Company Name\": \"Anthropic\",\n        \"Website\": \"https://anthropic.com\"\n      },\n      \"score_breakdown\": {\n        \"relevancy\": 0.95,\n        \"reliability\": 1.0,\n        \"recency\": 0.9\n      },\n      \"match_rationale\": \"Leading AI safety research company with active hiring for ML engineers\",\n      \"source_urls\": [\n        \"https://anthropic.com/careers\",\n        \"https://www.crunchbase.com/organization/anthropic\"\n      ]\n    }\n  ]\n}\n```\n\n**Requirements:**\n- Use EXACT field names from ID fields list above\n- Populate with ACTUAL values from your web search results\n- Each entry must be UNIQUE (different from other entries)\n- Always include all three dimension scores\n- Keep rationale to 1-2 sentences\n- Include specific source URLs\n\n---\n\n## Important Notes\n\n- **Find real entries:** Don't make up placeholder names or generic examples\n- **Use exact field names:** Copy field names exactly as shown in ID fields list\n- **Return candidates array:** Even if empty, always return {\"candidates\": []}\n- **No minimum quality:** Include entries even if scores are moderate (we'll filter later)\n\nReturn your findings as valid JSON.\n",
+      "timestamp": "2025-10-21T16:39:07.293265"
+    },
+    {
+      "call_description": "Finding Rows - Other AI Companies (General & Catch-All) - Round 1 (sonar-low)",
+      "model": "sonar",
+      "context": "low",
+      "enhanced_data": {
+        "call_info": {
+          "model": "sonar",
+          "api_provider": "perplexity",
+          "timestamp": "2025-10-21T20:39:07.289809+00:00",
+          "search_context_size": null,
+          "max_web_searches": 0
+        },
+        "tokens": {
+          "input_tokens": 1226,
+          "output_tokens": 153,
+          "total_tokens": 1379,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        },
+        "costs": {
+          "actual": {
+            "input_cost": 0.001226,
+            "output_cost": 0.000153,
+            "total_cost": 0.001379,
+            "pricing_source": "pattern_match_sonar*"
+          },
+          "estimated": {
+            "input_cost": 0.001226,
+            "output_cost": 0.000153,
+            "total_cost": 0.001379
+          },
+          "cache_savings": {
+            "absolute_savings": 0.0,
+            "percentage_savings": 0.0
+          }
+        },
+        "timing": {
+          "time_actual_seconds": 8.503679,
+          "time_estimated_seconds": 8.503679,
+          "time_savings_seconds": 0.0,
+          "time_savings_percent": 0.0,
+          "tokens_per_second_actual": 162.16510524444772,
+          "tokens_per_second_estimated": 162.16510524444772
+        },
+        "caching": {
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate_percent": 0.0,
+          "cache_coverage_percent": 0.0,
+          "has_cache_benefit": false,
+          "cache_efficiency_score": 0.0
+        },
+        "per_row": {
+          "batch_size": 1,
+          "cost_per_row_actual": 0.001379,
+          "cost_per_row_estimated": 0.001379,
+          "time_per_row_actual": 8.503679,
+          "time_per_row_estimated": 8.503679,
+          "cost_savings_per_row": 0.0,
+          "time_savings_per_row": 0.0
+        },
+        "provider_metrics": {
+          "perplexity": {
+            "calls": 1,
+            "tokens": 1379,
+            "cost_actual": 0.001379,
+            "cost_estimated": 0.001379,
+            "time_estimated": 8.503679,
+            "time_actual": 8.503679,
+            "cache_hit_tokens": 0
+          }
+        }
+      },
+      "prompt_used": "# Row Discovery Task\n\n## Your Job\n\nYou are charged with **finding new row entries** for a research table that we are going to build.\n\nThese rows are characterized by their **ID fields** (identification columns). Your task is to:\n\n1. **Use web search** to find unique entries that match the specified requirements within the specified subdomain\n2. **Populate ID fields** with actual values from your search results\n3. **Score each entry** for relevance, source reliability, and recency\n4. **Provide reasoning** for why the entry is a good fit\n\n---\n\n## Context About This Table\n\n**User's Original Request:**\n\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n\n\n**Table Purpose:**\nIdentify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Background Research Context:**\nThis table tracks AI companies across research, healthcare, enterprise, and emerging sectors that are actively hiring for AI roles as of Q4 2024\u2013Q1 2025. It emphasizes organizations with recent funding activity and includes both established leaders and high-growth startups, reflecting the latest trends in AI talent acquisition and investment.\n\n---\n\n## Your Specific Assignment\n\n**Subdomain:** Other AI Companies (General & Catch-All)\n\n**Focus Area:** AI companies not covered above, including those in robotics, creative AI, cybersecurity, and emerging sectors. Ensures coverage of unique or niche players.\n\n**Requirements:** Identify a diverse set of AI companies actively hiring for AI roles as of Q4 2024\u2013Q1 2025, spanning research, healthcare, enterprise, and other sectors. Include both established leaders and high-growth startups, prioritizing those with recent funding activity.\n\n**Target:** Find **1 unique entries**\n\n---\n\n## Recommended Searches\n\nUse these search queries to find entries:\n- AI robotics startups hiring 2025\n- creative AI companies open jobs\n- cybersecurity AI startups recent funding\n- top AI startups hiring now\n\n---\n\n## ID Fields to Populate\n\nFor each entry you find, populate these ID fields with ACTUAL values from your search:\n\n- **Company Name**: The official, full legal name of the AI company as registered or publicly known. Used to uniquely identify the organization.\n- **Website**: Primary website URL for the company, leading to the main homepage or official careers page. Must be an active, accessible link.\n\n**Example of populated ID fields:**\n```json\n{\n  \"Company Name\": \"Anthropic\",\n  \"Website\": \"https://anthropic.com\"\n}\n```\n\n**Another example:**\n```json\n{\n  \"Company Name\": \"PathAI\",\n  \"Website\": \"https://www.pathai.com\"\n}\n```\n\n---\n\n## Scoring Each Entry\n\nScore each entry on three dimensions (0-1.0 scale):\n\n### 1. Relevancy (0-1.0)\nHow well does this entry match the requirements?\n- 1.0 = Perfect match\n- 0.7 = Strong match, minor gaps\n- 0.4 = Moderate match\n- 0.0 = Weak match\n\n### 2. Source Reliability (0-1.0)\nHow reliable are your information sources?\n- 1.0 = Primary sources (official website, Crunchbase, official docs)\n- 0.7 = Secondary sources (TechCrunch, LinkedIn, major news outlets)\n- 0.4 = Tertiary sources (blogs, forums, aggregators)\n- 0.0 = Unreliable or unverified\n\n### 3. Recency (0-1.0)\nHow recent is the information?\n- 1.0 = Less than 3 months old\n- 0.7 = 3-6 months old\n- 0.4 = 6-12 months old\n- 0.0 = More than 12 months or date unknown\n\n---\n\n## Output Format\n\nReturn JSON in this exact format:\n\n```json\n{\n  \"subdomain\": \"Other AI Companies (General & Catch-All)\",\n  \"candidates\": [\n    {\n      \"id_values\": {\n        \"Company Name\": \"Anthropic\",\n        \"Website\": \"https://anthropic.com\"\n      },\n      \"score_breakdown\": {\n        \"relevancy\": 0.95,\n        \"reliability\": 1.0,\n        \"recency\": 0.9\n      },\n      \"match_rationale\": \"Leading AI safety research company with active hiring for ML engineers\",\n      \"source_urls\": [\n        \"https://anthropic.com/careers\",\n        \"https://www.crunchbase.com/organization/anthropic\"\n      ]\n    }\n  ]\n}\n```\n\n**Requirements:**\n- Use EXACT field names from ID fields list above\n- Populate with ACTUAL values from your web search results\n- Each entry must be UNIQUE (different from other entries)\n- Always include all three dimension scores\n- Keep rationale to 1-2 sentences\n- Include specific source URLs\n\n---\n\n## Important Notes\n\n- **Find real entries:** Don't make up placeholder names or generic examples\n- **Use exact field names:** Copy field names exactly as shown in ID fields list\n- **Return candidates array:** Even if empty, always return {\"candidates\": []}\n- **No minimum quality:** Include entries even if scores are moderate (we'll filter later)\n\nReturn your findings as valid JSON.\n",
+      "timestamp": "2025-10-21T16:39:07.293267"
+    }
+  ],
+  "statistics": {
+    "column_definition_time": 22.803107261657715,
+    "row_discovery_time": 46.28506255149841,
+    "total_candidates_found": 0,
+    "duplicates_removed": 0,
+    "below_threshold": 0,
+    "final_row_count": 9,
+    "avg_match_score": 0.8877777777777777,
+    "stream_times": [
+      6.956082105636597,
+      14.981414556503296,
+      15.835354328155518,
+      8.506650924682617
+    ],
+    "total_cost": 0.023979,
+    "column_def_cost": 0.023979,
+    "row_discovery_cost": 0.0
+  },
+  "total_time_seconds": 69.11491465568542
+}
