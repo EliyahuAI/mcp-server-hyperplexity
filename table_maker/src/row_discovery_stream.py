@@ -554,7 +554,9 @@ class RowDiscoveryStream:
                 'SEARCH_REQUIREMENTS': search_strategy.get('description', 'Find relevant entities'),
                 'SEARCH_QUERIES': '\n'.join(f'- {q}' for q in subdomain['search_queries']),
                 'TARGET_ROWS': str(target_rows),
-                'ID_COLUMNS': '\n'.join(f'- {col}' for col in id_columns)
+                'ID_COLUMNS': '\n'.join(f'- {col}' for col in id_columns),
+                'USER_CONTEXT': search_strategy.get('user_context', 'General research table'),
+                'TABLE_PURPOSE': search_strategy.get('table_purpose', search_strategy.get('description', ''))
             }
 
             # Try template first

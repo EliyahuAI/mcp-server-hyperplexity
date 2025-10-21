@@ -168,6 +168,12 @@ class ColumnDefinitionHandler:
             result['table_name'] = ai_response.get('table_name', '')
             result['tablewide_research'] = ai_response.get('tablewide_research', '')
 
+            # Add user context to search_strategy for row discovery
+            user_request = conversation_context.get('user_request', '')
+            if user_request and result['search_strategy']:
+                result['search_strategy']['user_context'] = user_request
+                result['search_strategy']['table_purpose'] = result['search_strategy'].get('description', '')
+
             # PHASE 1: Capture enhanced_data and call metadata
             enhanced_data = api_response.get('enhanced_data', {})
             result['enhanced_data'] = enhanced_data

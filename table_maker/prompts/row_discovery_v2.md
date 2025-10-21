@@ -4,6 +4,13 @@
 
 Find and score entities that match the criteria for this table subdomain.
 
+## Full Context
+
+**User's Original Request:**
+{{USER_CONTEXT}}
+
+**Table Purpose:** {{TABLE_PURPOSE}}
+
 ## Subdomain
 
 **Name:** {{SUBDOMAIN_NAME}}
