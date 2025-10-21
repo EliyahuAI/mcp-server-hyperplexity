@@ -1,0 +1,902 @@
+{
+  "timestamp": "20251021_153046",
+  "user_request": "\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n",
+  "configuration": {
+    "target_row_count": 10,
+    "discovery_multiplier": 1.5,
+    "min_match_score": 0.6,
+    "column_definition_model": "claude-haiku-4-5",
+    "web_search_model": "sonar-pro"
+  },
+  "columns": [
+    {
+      "name": "Company Name",
+      "description": "Official name of the AI company or organization",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true,
+      "validation_strategy": ""
+    },
+    {
+      "name": "Website",
+      "description": "Official company website URL where company information and careers page can be accessed",
+      "format": "URL",
+      "importance": "ID",
+      "is_identification": true,
+      "validation_strategy": ""
+    },
+    {
+      "name": "Is Hiring for AI Roles?",
+      "description": "Confirmed status of whether the company currently has open positions specifically for AI-related roles (machine learning engineer, AI researcher, data scientist, AI product manager, etc.). Must be verified as of the research date.",
+      "format": "Boolean",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Check company careers page, LinkedIn jobs section, and major job boards (Indeed, Glassdoor, AngelList) for open AI-specific positions. Verify positions are currently active and not archived. Document at least one specific open AI role title as evidence."
+    },
+    {
+      "name": "Team Size (Approximate)",
+      "description": "Estimated total number of employees at the company. Provide range if exact number unavailable (e.g., '50-100', '500+', '1000-5000'). Include source of estimate.",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Extract from company website (About/Team section), LinkedIn company page (employee count), Crunchbase, or recent news articles. Prioritize LinkedIn employee count as most reliable source. Note if this is a startup (under 50), scale-up (50-500), or established company (500+)."
+    },
+    {
+      "name": "Recent Funding (Last Round)",
+      "description": "Details of the most recent funding round including round type (Seed, Series A/B/C, etc.), amount raised, date of funding, and lead investors if available. Include 'Bootstrapped' or 'Profitable' if not venture-funded. Include 'N/A' if information unavailable.",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Research on Crunchbase, PitchBook, company press releases, and TechCrunch. Look for most recent funding announcement. Include round designation, dollar amount, and approximate date (month/year). Verify information is from official sources or reputable business databases."
+    },
+    {
+      "name": "AI Sector Focus",
+      "description": "Primary sector or domain where the company applies AI technology. Categorize as: Research (foundational AI/ML), Healthcare (medical AI, biotech), Enterprise (B2B software, productivity), or Other (specify). A company may span multiple sectors; list primary focus.",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Review company mission statement, product descriptions, and recent news. Identify whether company focuses on AI research/models, healthcare applications, enterprise software, or other domain. Verify through company website, pitch deck, or recent announcements."
+    },
+    {
+      "name": "Company Stage",
+      "description": "Classification of company maturity: Startup (pre-Series A or early stage), Scale-up (Series A-C), Established (Series D+, IPO, or major tech company), or Acquired (if recently acquired by larger company). Note acquisition details if applicable.",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Determine based on funding history, employee count, and market presence. Cross-reference funding data with company age and growth trajectory. Check if company has been acquired or is a subsidiary of a larger organization."
+    },
+    {
+      "name": "Example Open AI Roles",
+      "description": "Specific examples of currently open AI-related positions at the company (e.g., 'Machine Learning Engineer', 'AI Research Scientist', 'Data Scientist'). List 2-3 representative titles if multiple positions available.",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Extract from company careers page or LinkedIn jobs. List actual job titles as posted. Verify these are currently active postings (not archived). Include link or reference to where positions were found."
+    }
+  ],
+  "search_strategy": {
+    "description": "Identify AI companies across research, healthcare, and enterprise sectors that are actively hiring for AI roles, including both established companies and startups",
+    "subdomains": [
+      {
+        "name": "AI Research & Foundational Model Companies",
+        "focus": "Companies focused on foundational AI research, large language models, and core AI/ML technology development",
+        "search_queries": [
+          "AI research companies hiring machine learning engineers 2025",
+          "large language model companies recruiting AI researchers",
+          "foundational AI startups hiring positions",
+          "AI safety and alignment research organizations hiring"
+        ],
+        "target_rows": 10
+      },
+      {
+        "name": "Healthcare & Biotech AI Companies",
+        "focus": "Organizations applying AI to healthcare, medical imaging, drug discovery, and biotech applications",
+        "search_queries": [
+          "healthcare AI companies hiring data scientists 2025",
+          "medical AI startups recruiting machine learning engineers",
+          "biotech AI companies open positions",
+          "clinical AI and medical imaging companies hiring"
+        ],
+        "target_rows": 10
+      },
+      {
+        "name": "Enterprise AI & B2B Software Companies",
+        "focus": "Companies building AI-powered enterprise software, productivity tools, and B2B AI solutions",
+        "search_queries": [
+          "enterprise AI software companies hiring 2025",
+          "B2B AI startups recruiting engineers",
+          "AI productivity tools companies open positions",
+          "business intelligence AI companies hiring"
+        ],
+        "target_rows": 10
+      },
+      {
+        "name": "Established Tech Companies with AI Divisions",
+        "focus": "Major technology companies (Google, Microsoft, Meta, Amazon, Apple) and established AI-focused subsidiaries actively hiring",
+        "search_queries": [
+          "Google DeepMind AI researcher positions hiring",
+          "Microsoft AI research hiring machine learning engineers",
+          "Meta AI research positions open",
+          "Amazon AWS AI hiring positions 2025"
+        ],
+        "target_rows": 10
+      },
+      {
+        "name": "AI Infrastructure & Tools Startups",
+        "focus": "Companies building AI infrastructure, MLOps platforms, and developer tools for AI applications",
+        "search_queries": [
+          "AI infrastructure startups hiring engineers 2025",
+          "MLOps platform companies recruiting positions",
+          "AI developer tools companies open roles",
+          "machine learning infrastructure companies hiring"
+        ],
+        "target_rows": 10
+      }
+    ],
+    "user_context": "\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n",
+    "table_purpose": "Identify AI companies across research, healthcare, and enterprise sectors that are actively hiring for AI roles, including both established companies and startups"
+  },
+  "final_rows": [
+    {
+      "id_values": {
+        "Company Name": "Novartis",
+        "Website": "https://www.novartis.com"
+      },
+      "match_score": 1.0,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 1.0
+      },
+      "match_rationale": "Novartis is a global pharma leader using AI for clinical trial design, site selection, and drug discovery, with ongoing public research and digital transformation efforts likely requiring AI hires[7].",
+      "source_urls": [
+        "https://fundraiseinsider.com/blog/biotech-startups/",
+        "https://www.greyb.com/blog/pharma-tech-companies/",
+        "https://www.labiotech.eu/best-biotech/ai-drug-discovery-companies/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2,
+      "source_subdomain": "Healthcare & Biotech AI Companies",
+      "merged_from_streams": [
+        "Healthcare & Biotech AI Companies"
+      ],
+      "found_by_models": [
+        "sonar(high)"
+      ],
+      "model_quality_rank": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Moderna",
+        "Website": "https://www.modernatx.com"
+      },
+      "match_score": 1.0,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 1.0
+      },
+      "match_rationale": "Moderna is a major biotech firm aggressively integrating AI across R&D, manufacturing, and operations, with public initiatives like its AI Academy and hundreds of custom GPT agents, indicating active hiring for AI talent[7].",
+      "source_urls": [
+        "https://www.greyb.com/blog/pharma-tech-companies/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2,
+      "source_subdomain": "Healthcare & Biotech AI Companies",
+      "merged_from_streams": [
+        "Healthcare & Biotech AI Companies"
+      ],
+      "found_by_models": [
+        "sonar(high)"
+      ],
+      "model_quality_rank": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "OpenAI",
+        "Website": "https://openai.com"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 0.95,
+        "reliability": 1.0,
+        "recency": 0.9
+      },
+      "match_rationale": "OpenAI is a leading AI research company actively hiring for AI roles, particularly in foundational models like ChatGPT.",
+      "source_urls": [
+        "https://edisonandblack.com/pages/what-ai-companies-are-hiring-the-most-right-now.html",
+        "https://www.signalfire.com/blog/signalfire-state-of-talent-report-2025"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1,
+      "source_subdomain": "AI Research & Foundational Model Companies",
+      "merged_from_streams": [
+        "AI Research & Foundational Model Companies"
+      ],
+      "found_by_models": [
+        "sonar(low)"
+      ],
+      "model_quality_rank": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Anthropic",
+        "Website": "https://anthropic.com"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 0.95,
+        "reliability": 1.0,
+        "recency": 0.9
+      },
+      "match_rationale": "Anthropic is a prominent AI research startup known for its high retention rate and active hiring of AI talent.",
+      "source_urls": [
+        "https://www.signalfire.com/blog/signalfire-state-of-talent-report-2025"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1,
+      "source_subdomain": "AI Research & Foundational Model Companies",
+      "merged_from_streams": [
+        "AI Research & Foundational Model Companies"
+      ],
+      "found_by_models": [
+        "sonar(low)"
+      ],
+      "model_quality_rank": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Insilico Medicine",
+        "Website": "https://insilico.com"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Insilico Medicine is a prominent AI-driven drug discovery company, recently raised $110M in Series E funding, and is actively advancing AI-discovered drugs into clinical trials[5][12].",
+      "source_urls": [
+        "https://www.labiotech.eu/best-biotech/ai-drug-discovery-companies/",
+        "https://techcrunch.com/2025/08/27/here-are-the-33-us-ai-startups-that-have-raised-100m-or-more-in-2025/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2,
+      "source_subdomain": "Healthcare & Biotech AI Companies",
+      "merged_from_streams": [
+        "Healthcare & Biotech AI Companies"
+      ],
+      "found_by_models": [
+        "sonar(high)"
+      ],
+      "model_quality_rank": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Aidoc",
+        "Website": "https://www.aidoc.com"
+      },
+      "match_score": 0.9099999999999999,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Aidoc is a leading AI medical imaging company that recently raised $150M, indicating growth and likely hiring for AI roles in healthcare[8].",
+      "source_urls": [
+        "https://www.medtechdive.com/news/ai-medtech-investment-mergers-roundup/759993/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2,
+      "source_subdomain": "Healthcare & Biotech AI Companies",
+      "merged_from_streams": [
+        "Healthcare & Biotech AI Companies"
+      ],
+      "found_by_models": [
+        "sonar(high)"
+      ],
+      "model_quality_rank": 3
+    },
+    {
+      "id_values": {
+        "Company Name": "Google (DeepMind)",
+        "Website": "https://www.deepmind.com"
+      },
+      "match_score": 0.9,
+      "score_breakdown": {
+        "relevancy": 0.9,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "Google's DeepMind is a leading AI research organization that continues to hire for AI roles, especially after merging with Google Brain.",
+      "source_urls": [
+        "https://reclaim.ai/blog/top-ai-companies-hiring",
+        "https://www.deepmind.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1,
+      "source_subdomain": "AI Research & Foundational Model Companies",
+      "merged_from_streams": [
+        "AI Research & Foundational Model Companies"
+      ],
+      "found_by_models": [
+        "sonar(low)"
+      ],
+      "model_quality_rank": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Meta AI",
+        "Website": "https://ai.facebook.com"
+      },
+      "match_score": 0.9,
+      "score_breakdown": {
+        "relevancy": 0.9,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "Meta AI is a significant player in AI research and development, actively hiring for various AI roles.",
+      "source_urls": [
+        "https://edisonandblack.com/pages/what-ai-companies-are-hiring-the-most-right-now.html",
+        "https://ai.facebook.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1,
+      "source_subdomain": "AI Research & Foundational Model Companies",
+      "merged_from_streams": [
+        "AI Research & Foundational Model Companies"
+      ],
+      "found_by_models": [
+        "sonar(low)"
+      ],
+      "model_quality_rank": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Microsoft",
+        "Website": "https://www.microsoft.com"
+      },
+      "match_score": 0.88,
+      "score_breakdown": {
+        "relevancy": 0.85,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "Microsoft is actively involved in AI research through its partnership with OpenAI and is hiring AI talent.",
+      "source_urls": [
+        "https://reclaim.ai/blog/top-ai-companies-hiring",
+        "https://www.microsoft.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1,
+      "source_subdomain": "AI Research & Foundational Model Companies",
+      "merged_from_streams": [
+        "AI Research & Foundational Model Companies"
+      ],
+      "found_by_models": [
+        "sonar(low)"
+      ],
+      "model_quality_rank": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Tempus",
+        "Website": "https://www.tempus.com"
+      },
+      "match_score": 0.82,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Tempus is a leading healthcare AI company specializing in precision medicine and clinical data analytics, consistently recognized as a top healthcare AI firm and actively expanding its AI team[3].",
+      "source_urls": [
+        "https://reclaim.ai/blog/top-ai-companies-hiring",
+        "https://thehealthcaretechnologyreport.com/the-top-25-healthcare-ai-companies-of-2025/",
+        "https://www.nvidia.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2,
+      "source_subdomain": "Healthcare & Biotech AI Companies",
+      "merged_from_streams": [
+        "AI Research & Foundational Model Companies",
+        "Healthcare & Biotech AI Companies"
+      ],
+      "found_by_models": [
+        "sonar(low)",
+        "sonar(high)"
+      ],
+      "model_quality_rank": 3
+    }
+  ],
+  "all_candidates_full_list": [
+    {
+      "id_values": {
+        "Company Name": "OpenAI",
+        "Website": "https://openai.com"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 0.95,
+        "reliability": 1.0,
+        "recency": 0.9
+      },
+      "match_rationale": "OpenAI is a leading AI research company actively hiring for AI roles, particularly in foundational models like ChatGPT.",
+      "source_urls": [
+        "https://edisonandblack.com/pages/what-ai-companies-are-hiring-the-most-right-now.html",
+        "https://www.signalfire.com/blog/signalfire-state-of-talent-report-2025"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Company Name": "Anthropic",
+        "Website": "https://anthropic.com"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 0.95,
+        "reliability": 1.0,
+        "recency": 0.9
+      },
+      "match_rationale": "Anthropic is a prominent AI research startup known for its high retention rate and active hiring of AI talent.",
+      "source_urls": [
+        "https://www.signalfire.com/blog/signalfire-state-of-talent-report-2025"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Company Name": "Google (DeepMind)",
+        "Website": "https://www.deepmind.com"
+      },
+      "match_score": 0.9,
+      "score_breakdown": {
+        "relevancy": 0.9,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "Google's DeepMind is a leading AI research organization that continues to hire for AI roles, especially after merging with Google Brain.",
+      "source_urls": [
+        "https://reclaim.ai/blog/top-ai-companies-hiring",
+        "https://www.deepmind.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Company Name": "Microsoft",
+        "Website": "https://www.microsoft.com"
+      },
+      "match_score": 0.85,
+      "score_breakdown": {
+        "relevancy": 0.85,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "Microsoft is actively involved in AI research through its partnership with OpenAI and is hiring AI talent.",
+      "source_urls": [
+        "https://reclaim.ai/blog/top-ai-companies-hiring",
+        "https://www.microsoft.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Company Name": "Meta AI",
+        "Website": "https://ai.facebook.com"
+      },
+      "match_score": 0.9,
+      "score_breakdown": {
+        "relevancy": 0.9,
+        "reliability": 1.0,
+        "recency": 0.8
+      },
+      "match_rationale": "Meta AI is a significant player in AI research and development, actively hiring for various AI roles.",
+      "source_urls": [
+        "https://edisonandblack.com/pages/what-ai-companies-are-hiring-the-most-right-now.html",
+        "https://ai.facebook.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Company Name": "Amazon",
+        "Website": "https://www.amazon.com"
+      },
+      "match_score": 0.8,
+      "score_breakdown": {
+        "relevancy": 0.8,
+        "reliability": 1.0,
+        "recency": 0.7
+      },
+      "match_rationale": "Amazon is a large enterprise with significant AI research and hiring efforts across various departments.",
+      "source_urls": [
+        "https://reclaim.ai/blog/top-ai-companies-hiring"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Company Name": "NVIDIA",
+        "Website": "https://www.nvidia.com"
+      },
+      "match_score": 0.75,
+      "score_breakdown": {
+        "relevancy": 0.75,
+        "reliability": 1.0,
+        "recency": 0.6
+      },
+      "match_rationale": "NVIDIA is a key player in AI hardware and software, though its hiring focus is more on engineering and development.",
+      "source_urls": [
+        "https://www.nvidia.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Company Name": "Cerebras Systems",
+        "Website": "https://www.cerebras.net"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.5
+      },
+      "match_rationale": "Cerebras Systems is a startup focused on AI hardware, actively hiring for AI-related roles.",
+      "source_urls": [
+        "https://www.cerebras.net"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Company Name": "Zoox",
+        "Website": "https://zoox.com"
+      },
+      "match_score": 0.65,
+      "score_breakdown": {
+        "relevancy": 0.65,
+        "reliability": 0.7,
+        "recency": 0.4
+      },
+      "match_rationale": "Zoox is an autonomous vehicle startup with AI research components, though its primary focus is not foundational AI.",
+      "source_urls": [
+        "https://zoox.com"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Company Name": "Inflection AI",
+        "Website": "https://inflection.ai"
+      },
+      "match_score": 0.6,
+      "score_breakdown": {
+        "relevancy": 0.6,
+        "reliability": 0.7,
+        "recency": 0.4
+      },
+      "match_rationale": "Inflection AI is a startup focused on conversational AI, actively hiring for AI roles.",
+      "source_urls": [
+        "https://inflection.ai"
+      ],
+      "model_used": "sonar",
+      "context_used": "low",
+      "round": 1
+    },
+    {
+      "id_values": {
+        "Company Name": "Tempus",
+        "Website": "https://www.tempus.com"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Tempus is a leading healthcare AI company specializing in precision medicine and clinical data analytics, consistently recognized as a top healthcare AI firm and actively expanding its AI team[3].",
+      "source_urls": [
+        "https://thehealthcaretechnologyreport.com/the-top-25-healthcare-ai-companies-of-2025/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "PathAI",
+        "Website": "https://www.pathai.com"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "PathAI applies AI to pathology for drug discovery and diagnostics, is listed among top healthcare AI companies, and is known for hiring AI/ML talent[3].",
+      "source_urls": [
+        "https://thehealthcaretechnologyreport.com/the-top-25-healthcare-ai-companies-of-2025/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Insilico Medicine",
+        "Website": "https://insilico.com"
+      },
+      "match_score": 0.95,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Insilico Medicine is a prominent AI-driven drug discovery company, recently raised $110M in Series E funding, and is actively advancing AI-discovered drugs into clinical trials[5][12].",
+      "source_urls": [
+        "https://www.labiotech.eu/best-biotech/ai-drug-discovery-companies/",
+        "https://techcrunch.com/2025/08/27/here-are-the-33-us-ai-startups-that-have-raised-100m-or-more-in-2025/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Anima Biotech",
+        "Website": "https://www.animabiotech.com"
+      },
+      "match_score": 0.9,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Anima Biotech uses AI for mRNA biology and drug discovery, has multiple preclinical candidates, and collaborates with major pharma companies, indicating ongoing R&D and likely hiring[5].",
+      "source_urls": [
+        "https://www.labiotech.eu/best-biotech/ai-drug-discovery-companies/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Atomwise",
+        "Website": "https://www.atomwise.com"
+      },
+      "match_score": 0.9,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Atomwise is a well-known AI drug discovery company with published results on its AI platform, suggesting active research and potential hiring for AI roles[5].",
+      "source_urls": [
+        "https://www.labiotech.eu/best-biotech/ai-drug-discovery-companies/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Moderna",
+        "Website": "https://www.modernatx.com"
+      },
+      "match_score": 0.9,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 1.0
+      },
+      "match_rationale": "Moderna is a major biotech firm aggressively integrating AI across R&D, manufacturing, and operations, with public initiatives like its AI Academy and hundreds of custom GPT agents, indicating active hiring for AI talent[7].",
+      "source_urls": [
+        "https://www.greyb.com/blog/pharma-tech-companies/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Novartis",
+        "Website": "https://www.novartis.com"
+      },
+      "match_score": 0.9,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 1.0,
+        "recency": 1.0
+      },
+      "match_rationale": "Novartis is a global pharma leader using AI for clinical trial design, site selection, and drug discovery, with ongoing public research and digital transformation efforts likely requiring AI hires[7].",
+      "source_urls": [
+        "https://www.greyb.com/blog/pharma-tech-companies/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Aidoc",
+        "Website": "https://www.aidoc.com"
+      },
+      "match_score": 0.85,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Aidoc is a leading AI medical imaging company that recently raised $150M, indicating growth and likely hiring for AI roles in healthcare[8].",
+      "source_urls": [
+        "https://www.medtechdive.com/news/ai-medtech-investment-mergers-roundup/759993/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Formation Bio",
+        "Website": "https://www.formation.bio"
+      },
+      "match_score": 0.85,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Formation Bio focuses on AI-driven biomanufacturing optimization, recently raised a Series D, and is scaling operations, suggesting active hiring for AI and biotech roles[10].",
+      "source_urls": [
+        "https://fundraiseinsider.com/blog/biotech-startups/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    },
+    {
+      "id_values": {
+        "Company Name": "Trilobio",
+        "Website": "https://www.trilobio.com"
+      },
+      "match_score": 0.8,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 1.0
+      },
+      "match_rationale": "Trilobio is an AI-driven single-cell proteomics startup that recently raised an $8M seed round led by AI-focused VCs, indicating active hiring in AI for biotech[10].",
+      "source_urls": [
+        "https://fundraiseinsider.com/blog/biotech-startups/"
+      ],
+      "model_used": "sonar",
+      "context_used": "high",
+      "round": 2
+    }
+  ],
+  "api_calls": [
+    {
+      "call_description": "Creating Columns",
+      "model": "claude-haiku-4-5",
+      "enhanced_data": {
+        "call_info": {
+          "model": "claude-haiku-4-5",
+          "api_provider": "anthropic",
+          "timestamp": "2025-10-21T19:29:30.410339+00:00",
+          "search_context_size": null,
+          "max_web_searches": 0
+        },
+        "tokens": {
+          "input_tokens": 2984,
+          "output_tokens": 1850,
+          "total_tokens": 4834,
+          "cache_creation_tokens": 0,
+          "cache_read_tokens": 0
+        },
+        "costs": {
+          "actual": {
+            "input_cost": 0.008952,
+            "output_cost": 0.02775,
+            "total_cost": 0.036702,
+            "pricing_source": "pattern_match_claude-*"
+          },
+          "estimated": {
+            "input_cost": 0.008952,
+            "output_cost": 0.02775,
+            "total_cost": 0.036702
+          },
+          "cache_savings": {
+            "absolute_savings": 0.0,
+            "percentage_savings": 0.0
+          }
+        },
+        "timing": {
+          "time_actual_seconds": 17.940202,
+          "time_estimated_seconds": 17.940202,
+          "time_savings_seconds": 0.0,
+          "time_savings_percent": 0.0,
+          "tokens_per_second_actual": 269.45070072232187,
+          "tokens_per_second_estimated": 269.45070072232187
+        },
+        "caching": {
+          "cache_read_tokens": 0,
+          "cache_creation_tokens": 0,
+          "cache_hit_rate_percent": 0.0,
+          "cache_coverage_percent": 0.0,
+          "has_cache_benefit": false,
+          "cache_efficiency_score": 0.0
+        },
+        "per_row": {
+          "batch_size": 1,
+          "cost_per_row_actual": 0.036702,
+          "cost_per_row_estimated": 0.036702,
+          "time_per_row_actual": 17.940202,
+          "time_per_row_estimated": 17.940202,
+          "cost_savings_per_row": 0.0,
+          "time_savings_per_row": 0.0
+        },
+        "provider_metrics": {
+          "anthropic": {
+            "calls": 1,
+            "tokens": 4834,
+            "cost_actual": 0.036702,
+            "cost_estimated": 0.036702,
+            "time_estimated": 17.940202,
+            "time_actual": 17.940202,
+            "cache_hit_tokens": 0
+          }
+        }
+      },
+      "timestamp": "2025-10-21T15:29:30.413456"
+    }
+  ],
+  "statistics": {
+    "column_definition_time": 18.443119287490845,
+    "row_discovery_time": 76.21067643165588,
+    "total_candidates_found": 0,
+    "duplicates_removed": 0,
+    "below_threshold": 0,
+    "final_row_count": 10,
+    "avg_match_score": 0.9219999999999999,
+    "stream_times": [
+      8.425591945648193,
+      67.77853894233704
+    ],
+    "total_cost": 0.036702,
+    "column_def_cost": 0.036702,
+    "row_discovery_cost": 0.0
+  },
+  "total_time_seconds": 94.68184971809387
+}

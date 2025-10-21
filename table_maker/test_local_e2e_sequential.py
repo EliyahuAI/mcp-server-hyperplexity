@@ -353,13 +353,26 @@ async def run_sequential_test():
             stats['avg_match_score'] = total_score / len(final_rows)
 
         # PHASE 1: Track API calls from row discovery rounds
-        for stream_result in stream_results:
-            for round_data in stream_result.get('all_rounds', []):
+        for idx, stream_result in enumerate(stream_results, 1):
+            subdomain_name = stream_result.get('subdomain', f'Subdomain {idx}')
+            all_rounds = stream_result.get('all_rounds', [])
+
+            if all_rounds:
+                # Progressive escalation mode - has all_rounds
+                for round_data in all_rounds:
+                    api_calls_log.append({
+                        'call_description': f"Finding Rows - {subdomain_name} - Round {round_data.get('round', '?')} ({round_data.get('model', 'unknown')}-{round_data.get('context', 'unknown')})",
+                        'model': round_data.get('model', 'unknown'),
+                        'context': round_data.get('context', 'unknown'),
+                        'enhanced_data': round_data.get('enhanced_data', {}),
+                        'timestamp': datetime.now().isoformat()
+                    })
+            else:
+                # Legacy mode or single call - just log the subdomain
                 api_calls_log.append({
-                    'call_description': round_data.get('call_description', 'Finding Rows'),
-                    'model': round_data.get('model', 'unknown'),
-                    'context': round_data.get('context', 'unknown'),
-                    'enhanced_data': round_data.get('enhanced_data', {}),
+                    'call_description': f"Finding Rows - {subdomain_name}",
+                    'model': WEB_SEARCH_MODEL,
+                    'enhanced_data': stream_result.get('enhanced_data', {}),
                     'timestamp': datetime.now().isoformat()
                 })
 
