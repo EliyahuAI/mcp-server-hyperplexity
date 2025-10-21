@@ -20,7 +20,7 @@
     "default_target_rows_total": 30
   },
 
-  "_comment_row_discovery": "Row discovery with integrated scoring using sonar-pro. Progressive context: starts with low, escalates to high if insufficient results. Saves all candidates for later use.",
+  "_comment_row_discovery": "Row discovery with progressive model escalation. Starts with sonar (low context), escalates to sonar (high), then sonar-pro (high) only if needed. Saves all candidates for later use.",
   "row_discovery": {
     "web_search_model": "sonar-pro",
     "scoring_model": "sonar-pro",
@@ -34,7 +34,29 @@
     "discovery_multiplier": 1.5,
     "min_match_score": 0.6,
     "max_parallel_streams": 1,
-    "web_searches_per_stream": 3
+    "web_searches_per_stream": 3,
+    "escalation_strategy": [
+      {
+        "model": "sonar",
+        "search_context_size": "low",
+        "description": "Fast initial search",
+        "min_candidates_percentage": 50
+      },
+      {
+        "model": "sonar",
+        "search_context_size": "high",
+        "description": "More thorough search",
+        "min_candidates_percentage": 75
+      },
+      {
+        "model": "sonar-pro",
+        "search_context_size": "high",
+        "description": "Highest quality search",
+        "min_candidates_percentage": null
+      }
+    ],
+    "check_targets_between_subdomains": true,
+    "early_stop_threshold_percentage": 120
   },
 
   "table_population": {

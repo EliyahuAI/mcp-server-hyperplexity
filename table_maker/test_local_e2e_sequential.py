@@ -274,17 +274,38 @@ async def run_sequential_test():
         return False
 
     # -------------------------------------------------------------------------
-    # STEP 3: ROW DISCOVERY (SEQUENTIAL)
+    # STEP 3: ROW DISCOVERY (SEQUENTIAL WITH PROGRESSIVE ESCALATION)
     # -------------------------------------------------------------------------
 
-    print_step(3, 3, "Discovering rows (SEQUENTIAL mode)")
+    print_step(3, 3, "Discovering rows (SEQUENTIAL mode with progressive escalation)")
 
     discovery_start = time.time()
 
     try:
+        # Load escalation strategy from config
+        import json
+        config_path = Path('table_maker/table_maker_config.json')
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+
+        row_discovery_config = config.get('row_discovery', {})
+        escalation_strategy = row_discovery_config.get('escalation_strategy', None)
+        check_targets_between_subdomains = row_discovery_config.get('check_targets_between_subdomains', False)
+        early_stop_threshold_percentage = row_discovery_config.get('early_stop_threshold_percentage', 120)
+
         # Run discovery in SEQUENTIAL mode (max_parallel_streams=1)
-        print_info("Starting sequential row discovery...")
+        print_info("Starting sequential row discovery with progressive escalation...")
         print_info("(Processing one subdomain at a time)")
+
+        if escalation_strategy:
+            print_info(f"Progressive escalation strategy: {len(escalation_strategy)} rounds")
+            for idx, strategy in enumerate(escalation_strategy, 1):
+                model = strategy['model']
+                context = strategy['search_context_size']
+                threshold = strategy.get('min_candidates_percentage')
+                print_info(f"  Round {idx}: {model} ({context}) - stop at {threshold}% if set")
+        else:
+            print_info("No escalation strategy - using legacy mode")
 
         discovery_result = await row_discovery.discover_rows(
             search_strategy=search_strategy,
@@ -292,7 +313,10 @@ async def run_sequential_test():
             target_row_count=TARGET_ROW_COUNT,
             discovery_multiplier=DISCOVERY_MULTIPLIER,
             min_match_score=MIN_MATCH_SCORE,
-            max_parallel_streams=1  # SEQUENTIAL MODE
+            max_parallel_streams=1,  # SEQUENTIAL MODE
+            escalation_strategy=escalation_strategy,
+            check_targets_between_subdomains=check_targets_between_subdomains,
+            early_stop_threshold_percentage=early_stop_threshold_percentage
         )
 
         if not discovery_result.get('success'):
@@ -323,10 +347,26 @@ async def run_sequential_test():
             subdomain_name = stream_result.get('subdomain', 'Unknown')
             candidates = stream_result.get('candidates', [])
             stream_time = stream_result.get('processing_time', 0)
+            rounds_executed = stream_result.get('rounds_executed', 0)
+            rounds_skipped = stream_result.get('rounds_skipped', 0)
             stats['stream_times'].append(stream_time)
 
             print(f"Stream {idx}/{len(stream_results)}: {subdomain_name}")
-            print(f"  [INFO] Executing integrated scoring search...")
+
+            # Show progressive escalation info if available
+            if rounds_executed > 0:
+                print(f"  [INFO] Progressive escalation: {rounds_executed} round(s) executed, {rounds_skipped} skipped")
+                # Count candidates by model
+                models_used = {}
+                for candidate in candidates:
+                    model = candidate.get('model_used', 'unknown')
+                    context = candidate.get('context_used', 'unknown')
+                    key = f"{model}({context})"
+                    models_used[key] = models_used.get(key, 0) + 1
+
+                if models_used:
+                    print(f"  [INFO] Candidates by model: {', '.join(f'{k}: {v}' for k, v in models_used.items())}")
+
             print(f"  [SUCCESS] Found {len(candidates)} candidates in {format_time(stream_time)}")
 
             if candidates:
@@ -335,7 +375,9 @@ async def run_sequential_test():
                 # Handle both snake_case and Title Case
                 top_name = id_vals.get('company_name') or id_vals.get('Company Name', 'Unknown')
                 top_score = top_candidate.get('match_score', 0)
-                print(f"  [INFO] Top candidate: {top_name} (score: {top_score:.2f})")
+                top_model = top_candidate.get('model_used', 'unknown')
+                top_context = top_candidate.get('context_used', 'unknown')
+                print(f"  [INFO] Top candidate: {top_name} (score: {top_score:.2f}, from {top_model}({top_context}))")
             print()
 
         # Display consolidation results
@@ -380,6 +422,12 @@ async def run_sequential_test():
                   id_values.get('Website URL') or
                   id_values.get('website_url') or 'N/A')
 
+        # Get model info
+        model_used = row.get('model_used', 'unknown')
+        context_used = row.get('context_used', 'unknown')
+        found_by_models = row.get('found_by_models', [])
+        model_quality_rank = row.get('model_quality_rank', 0)
+
         # Show score breakdown and recalculate if available
         score_breakdown = row.get('score_breakdown', {})
         if score_breakdown:
@@ -391,9 +439,14 @@ async def run_sequential_test():
             calculated_score = (relevancy * 0.4) + (reliability * 0.3) + (recency * 0.3)
 
             # Show both reported and calculated scores
-            print(f"\n  {idx}. {company_name} (reported: {score:.2f}, calculated: {calculated_score:.2f})")
+            print(f"\n  {idx}. {company_name} (score: {score:.2f}, quality_rank: {model_quality_rank})")
             print(f"     Website: {website}")
             print(f"     Scores: Relevancy={relevancy:.2f}, Reliability={reliability:.2f}, Recency={recency:.2f}")
+            print(f"     Model: {model_used}({context_used})")
+
+            # Show if found by multiple models (deduplication happened)
+            if len(found_by_models) > 1:
+                print(f"     [MERGED] Found by: {', '.join(found_by_models)}")
 
             # Warn if mismatch
             if abs(score - calculated_score) > 0.01:
@@ -401,6 +454,7 @@ async def run_sequential_test():
         else:
             print(f"\n  {idx}. {company_name} ({score:.2f})")
             print(f"     Website: {website}")
+            print(f"     Model: {model_used}({context_used})")
 
         # Show rationale (truncate if too long)
         if len(rationale) > 100:

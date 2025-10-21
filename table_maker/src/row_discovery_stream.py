@@ -52,16 +52,175 @@ class RowDiscoveryStream:
 
         logger.info("RowDiscoveryStream initialized")
 
+    async def discover_rows_progressive(
+        self,
+        subdomain: Dict[str, Any],
+        columns: List[Dict[str, Any]],
+        search_strategy: Dict[str, Any],
+        target_rows: int,
+        escalation_strategy: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Discover rows using progressive model escalation.
+
+        Tries each strategy in order, stopping early if sufficient candidates found.
+        Returns ALL candidates from all rounds for later consolidation.
+
+        Args:
+            subdomain: Subdomain definition
+            columns: Column definitions
+            search_strategy: Overall search strategy
+            target_rows: Number of rows to target for this subdomain
+            escalation_strategy: List of strategies to try:
+              [
+                {"model": "sonar", "search_context_size": "low", "min_candidates_percentage": 50},
+                {"model": "sonar", "search_context_size": "high", "min_candidates_percentage": 75},
+                {"model": "sonar-pro", "search_context_size": "high", "min_candidates_percentage": null}
+              ]
+
+        Returns:
+            {
+              "subdomain": str,
+              "all_rounds": [
+                {
+                  "round": 1,
+                  "model": "sonar",
+                  "context": "low",
+                  "candidates": [...],
+                  "count": 5
+                },
+                ...
+              ],
+              "candidates": [...],  # All candidates combined
+              "total_candidates": 15,
+              "rounds_executed": 2,
+              "rounds_skipped": 1,
+              "processing_time": float
+            }
+        """
+        start_time = time.time()
+        subdomain_name = subdomain.get('name', 'Unknown')
+
+        try:
+            # Validate inputs
+            self._validate_inputs(subdomain, columns, search_strategy)
+
+            logger.info(
+                f"Starting progressive row discovery for subdomain: {subdomain_name} "
+                f"(target: {target_rows} rows, {len(escalation_strategy)} round(s) max)"
+            )
+
+            all_rounds = []
+            accumulated_candidates = []
+
+            for round_idx, strategy in enumerate(escalation_strategy, 1):
+                model = strategy['model']
+                context = strategy['search_context_size']
+                min_percentage = strategy.get('min_candidates_percentage')
+
+                logger.info(
+                    f"Round {round_idx}/{len(escalation_strategy)}: {model} ({context} context)"
+                )
+
+                # Execute this round
+                round_candidates = await self._discover_and_score(
+                    subdomain,
+                    columns,
+                    search_strategy,
+                    target_rows,
+                    model,
+                    context
+                )
+
+                # Tag each candidate with model/context info
+                candidates = round_candidates.get('candidates', [])
+                for candidate in candidates:
+                    candidate['model_used'] = model
+                    candidate['context_used'] = context
+                    candidate['round'] = round_idx
+
+                # Record round results
+                round_data = {
+                    'round': round_idx,
+                    'model': model,
+                    'context': context,
+                    'candidates': candidates,
+                    'count': len(candidates)
+                }
+                all_rounds.append(round_data)
+
+                # Accumulate candidates
+                accumulated_candidates.extend(candidates)
+                total_so_far = len(accumulated_candidates)
+
+                logger.info(f"Round {round_idx}: Found {len(candidates)} candidates (total: {total_so_far})")
+
+                # Check if we should stop early
+                if min_percentage is not None:
+                    threshold = int(target_rows * (min_percentage / 100))
+
+                    if total_so_far >= threshold:
+                        rounds_skipped = len(escalation_strategy) - round_idx
+                        logger.info(
+                            f"Early stop: {total_so_far} candidates >= {threshold} threshold "
+                            f"({min_percentage}% of {target_rows}). Skipping {rounds_skipped} round(s)"
+                        )
+                        break
+
+            # Prepare result
+            processing_time = time.time() - start_time
+            rounds_executed = len(all_rounds)
+            rounds_skipped = len(escalation_strategy) - rounds_executed
+
+            result = {
+                'subdomain': subdomain_name,
+                'all_rounds': all_rounds,
+                'candidates': accumulated_candidates,
+                'total_candidates': len(accumulated_candidates),
+                'rounds_executed': rounds_executed,
+                'rounds_skipped': rounds_skipped,
+                'processing_time': processing_time
+            }
+
+            logger.info(
+                f"Progressive discovery completed for '{subdomain_name}': "
+                f"{len(accumulated_candidates)} candidates from {rounds_executed} round(s) "
+                f"in {processing_time:.2f}s"
+            )
+
+            return result
+
+        except Exception as e:
+            processing_time = time.time() - start_time
+            error_msg = f"Progressive row discovery failed for '{subdomain_name}': {str(e)}"
+            logger.error(error_msg)
+
+            # Return empty result on error
+            return {
+                'subdomain': subdomain_name,
+                'all_rounds': [],
+                'candidates': [],
+                'total_candidates': 0,
+                'rounds_executed': 0,
+                'rounds_skipped': len(escalation_strategy),
+                'processing_time': processing_time,
+                'error': error_msg
+            }
+
     async def discover_rows(
         self,
         subdomain: Dict[str, Any],
         columns: List[Dict[str, Any]],
         search_strategy: Dict[str, Any],
         target_rows: int = 7,
-        scoring_model: str = 'sonar-pro'
+        scoring_model: str = 'sonar-pro',
+        escalation_strategy: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Discover candidate rows for a single subdomain using integrated scoring.
+
+        If escalation_strategy is provided, uses progressive escalation.
+        Otherwise, uses legacy two-step context escalation.
 
         Uses a single sonar-pro call to both search and score candidates.
         Scoring is based on three dimensions:
@@ -79,6 +238,7 @@ class RowDiscoveryStream:
             search_strategy: Overall search strategy with description
             target_rows: Number of candidates to find for this subdomain (default: 7)
             scoring_model: Model to use for integrated search+scoring (default: 'sonar-pro')
+            escalation_strategy: Optional list of progressive strategies (default: None for legacy mode)
 
         Returns:
             Dictionary with:
@@ -93,7 +253,10 @@ class RowDiscoveryStream:
                         "recency": float (0-1)
                     },
                     "match_rationale": str,
-                    "source_urls": List[str]
+                    "source_urls": List[str],
+                    "model_used": str (if progressive),
+                    "context_used": str (if progressive),
+                    "round": int (if progressive)
                 }],
                 "processing_time": float
             }
@@ -102,6 +265,22 @@ class RowDiscoveryStream:
             ValueError: If subdomain or columns are malformed
             Exception: If integrated search/scoring fails
         """
+        # If escalation_strategy provided, use progressive mode
+        if escalation_strategy is not None:
+            result = await self.discover_rows_progressive(
+                subdomain, columns, search_strategy, target_rows, escalation_strategy
+            )
+            # Return in legacy format (extract candidates)
+            return {
+                'subdomain': result['subdomain'],
+                'candidates': result['candidates'],
+                'processing_time': result['processing_time'],
+                'rounds_executed': result.get('rounds_executed', 0),
+                'rounds_skipped': result.get('rounds_skipped', 0),
+                'error': result.get('error')
+            }
+
+        # Legacy mode: two-step context escalation
         start_time = time.time()
         subdomain_name = subdomain.get('name', 'Unknown')
 

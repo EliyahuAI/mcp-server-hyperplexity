@@ -100,7 +100,10 @@ class RowDiscovery:
         discovery_multiplier: float = 1.5,
         min_match_score: float = 0.6,
         max_parallel_streams: int = 1,
-        scoring_model: str = 'sonar-pro'
+        scoring_model: str = 'sonar-pro',
+        escalation_strategy: Optional[List[Dict[str, Any]]] = None,
+        check_targets_between_subdomains: bool = False,
+        early_stop_threshold_percentage: float = 120
     ) -> Dict[str, Any]:
         """
         Discover rows using subdomains from search_strategy.
@@ -121,6 +124,9 @@ class RowDiscovery:
             min_match_score: Minimum match score threshold (default: 0.6)
             max_parallel_streams: Max concurrent streams (default: 1 for sequential testing)
             scoring_model: Model for integrated scoring (default: sonar-pro)
+            escalation_strategy: Optional progressive model escalation strategy (default: None)
+            check_targets_between_subdomains: Check if enough candidates found between subdomains (default: False)
+            early_stop_threshold_percentage: Percentage threshold for early stopping (default: 120)
 
         Returns:
             Dictionary with:
@@ -211,6 +217,8 @@ class RowDiscovery:
                 # SEQUENTIAL MODE (for initial testing)
                 logger.info("Step 2/3: Processing subdomains SEQUENTIALLY (testing mode)")
                 stream_results = []
+                accumulated_candidates = 0
+
                 for i, subdomain in enumerate(subdomains, 1):
                     logger.info(
                         f"Processing subdomain {i}/{len(subdomains)}: {subdomain['name']} "
@@ -221,9 +229,25 @@ class RowDiscovery:
                         columns,
                         search_strategy,
                         subdomain.get('target_rows', 7),
-                        scoring_model
+                        scoring_model,
+                        escalation_strategy
                     )
                     stream_results.append(result_item)
+
+                    # Accumulate candidate count
+                    accumulated_candidates += len(result_item.get('candidates', []))
+
+                    # Check if we should stop early between subdomains
+                    if check_targets_between_subdomains and i < len(subdomains):
+                        stop_threshold = target_row_count * (early_stop_threshold_percentage / 100)
+
+                        if accumulated_candidates >= stop_threshold:
+                            logger.info(
+                                f"Early stop between subdomains: {accumulated_candidates} candidates "
+                                f">= {stop_threshold:.0f} threshold ({early_stop_threshold_percentage}% of {target_row_count}). "
+                                f"Skipping {len(subdomains) - i} remaining subdomain(s)"
+                            )
+                            break
             else:
                 # PARALLEL MODE (for production)
                 logger.info(
@@ -246,7 +270,8 @@ class RowDiscovery:
                     subdomains_to_process,
                     columns,
                     search_strategy,
-                    scoring_model
+                    scoring_model,
+                    escalation_strategy
                 )
 
             result['stats']['parallel_streams'] = len(stream_results)
@@ -345,7 +370,8 @@ class RowDiscovery:
         columns: List[Dict[str, Any]],
         search_strategy: Dict[str, Any],
         target_rows: int,
-        scoring_model: str
+        scoring_model: str,
+        escalation_strategy: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Execute a single row discovery stream.
@@ -356,6 +382,7 @@ class RowDiscovery:
             search_strategy: Overall search strategy
             target_rows: Number of rows to find for this subdomain
             scoring_model: Model for integrated scoring
+            escalation_strategy: Optional progressive escalation strategy
 
         Returns:
             Stream result dictionary
@@ -373,7 +400,8 @@ class RowDiscovery:
             columns=columns,
             search_strategy=search_strategy,
             target_rows=target_rows,
-            scoring_model=scoring_model
+            scoring_model=scoring_model,
+            escalation_strategy=escalation_strategy
         )
 
         return result
@@ -383,7 +411,8 @@ class RowDiscovery:
         subdomains: List[Dict[str, Any]],
         columns: List[Dict[str, Any]],
         search_strategy: Dict[str, Any],
-        scoring_model: str
+        scoring_model: str,
+        escalation_strategy: Optional[List[Dict[str, Any]]] = None
     ) -> List[Dict[str, Any]]:
         """
         Execute row discovery streams in parallel using asyncio.gather().
@@ -397,6 +426,7 @@ class RowDiscovery:
             columns: Column definitions
             search_strategy: Overall search strategy
             scoring_model: Model for integrated scoring
+            escalation_strategy: Optional progressive escalation strategy
 
         Returns:
             List of stream results (may include errors for failed streams)
@@ -419,7 +449,8 @@ class RowDiscovery:
                 columns=columns,
                 search_strategy=search_strategy,
                 target_rows=subdomain.get('target_rows', 7),
-                scoring_model=scoring_model
+                scoring_model=scoring_model,
+                escalation_strategy=escalation_strategy
             )
             tasks.append(task)
 
@@ -568,7 +599,10 @@ async def discover_rows(
     discovery_multiplier: float = 1.5,
     min_match_score: float = 0.6,
     max_parallel_streams: int = 1,
-    scoring_model: str = 'sonar-pro'
+    scoring_model: str = 'sonar-pro',
+    escalation_strategy: Optional[List[Dict[str, Any]]] = None,
+    check_targets_between_subdomains: bool = False,
+    early_stop_threshold_percentage: float = 120
 ) -> Dict[str, Any]:
     """
     Convenience function to discover rows without creating RowDiscovery instance.
@@ -584,6 +618,9 @@ async def discover_rows(
         min_match_score: Minimum match score (default: 0.6)
         max_parallel_streams: Maximum concurrent streams (default: 1 for sequential)
         scoring_model: Model for integrated scoring (default: sonar-pro)
+        escalation_strategy: Optional progressive model escalation strategy (default: None)
+        check_targets_between_subdomains: Check if enough candidates found between subdomains (default: False)
+        early_stop_threshold_percentage: Percentage threshold for early stopping (default: 120)
 
     Returns:
         Row discovery results dictionary
@@ -596,5 +633,8 @@ async def discover_rows(
         discovery_multiplier=discovery_multiplier,
         min_match_score=min_match_score,
         max_parallel_streams=max_parallel_streams,
-        scoring_model=scoring_model
+        scoring_model=scoring_model,
+        escalation_strategy=escalation_strategy,
+        check_targets_between_subdomains=check_targets_between_subdomains,
+        early_stop_threshold_percentage=early_stop_threshold_percentage
     )

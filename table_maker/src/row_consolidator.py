@@ -478,14 +478,42 @@ class RowConsolidator:
 
         return base_similarity
 
+    def _get_model_quality_rank(self, candidate: Dict) -> int:
+        """
+        Assign quality rank based on model and context.
+
+        Rankings (higher = better):
+        - sonar-pro + high: 5
+        - sonar-pro + low: 4
+        - sonar + high: 3
+        - sonar + low: 2
+        - unknown: 1
+
+        Args:
+            candidate: Candidate with optional model_used and context_used fields
+
+        Returns:
+            Quality rank (1-5)
+        """
+        model = candidate.get('model_used', 'unknown')
+        context = candidate.get('context_used', 'unknown')
+
+        if 'sonar-pro' in model:
+            return 5 if context == 'high' else 4
+        elif 'sonar' in model:
+            return 3 if context == 'high' else 2
+        else:
+            return 1
+
     def _merge_group(self, group: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Merge a group of duplicate candidates into a single candidate.
 
         Strategy:
-        - Keep candidate with highest match_score
+        - Prefer candidates from better models (sonar-pro > sonar, high > low)
+        - If same model quality, prefer higher match_score
         - Merge all source_urls (deduplicated)
-        - Track which subdomains contributed
+        - Track which subdomains and models contributed
 
         Args:
             group: List of duplicate candidates to merge
@@ -497,12 +525,21 @@ class RowConsolidator:
             # No merging needed - add metadata
             merged = group[0].copy()
             merged['merged_from_streams'] = [merged.get('source_subdomain', 'Unknown')]
+            if 'model_used' in merged:
+                merged['found_by_models'] = [
+                    f"{merged['model_used']}({merged.get('context_used', '?')})"
+                ]
+                merged['model_quality_rank'] = self._get_model_quality_rank(merged)
             return merged
 
-        # Sort by match_score descending
-        sorted_group = sorted(group, key=lambda c: c.get('match_score', 0), reverse=True)
+        # Sort by model quality rank first, then by match_score
+        sorted_group = sorted(
+            group,
+            key=lambda c: (self._get_model_quality_rank(c), c.get('match_score', 0)),
+            reverse=True
+        )
 
-        # Start with highest-scored candidate
+        # Start with best candidate (highest quality model + highest score)
         best_candidate = sorted_group[0].copy()
 
         # Collect all source URLs
@@ -517,14 +554,26 @@ class RowConsolidator:
             subdomain = candidate.get('source_subdomain', 'Unknown')
             all_subdomains.add(subdomain)
 
+        # Track which models found this entity
+        found_by_models = []
+        for candidate in group:
+            if 'model_used' in candidate:
+                model_info = f"{candidate['model_used']}({candidate.get('context_used', '?')})"
+                if model_info not in found_by_models:
+                    found_by_models.append(model_info)
+
         # Update merged candidate
         best_candidate['source_urls'] = sorted(list(all_urls))
         best_candidate['merged_from_streams'] = sorted(list(all_subdomains))
+        if found_by_models:
+            best_candidate['found_by_models'] = found_by_models
+            best_candidate['model_quality_rank'] = self._get_model_quality_rank(best_candidate)
 
         logger.debug(
             f"Merged {len(group)} duplicate(s) for "
             f"'{best_candidate.get('id_values', {})}' "
             f"from streams: {best_candidate['merged_from_streams']}"
+            + (f", models: {found_by_models}" if found_by_models else "")
         )
 
         return best_candidate
