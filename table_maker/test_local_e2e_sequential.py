@@ -51,8 +51,8 @@ DISCOVERY_MULTIPLIER = 1.5  # Find 15, keep best 10
 MIN_MATCH_SCORE = 0.6  # Minimum quality threshold
 
 # Models to use
-COLUMN_DEFINITION_MODEL = "sonar-pro"  # Use sonar-pro for web search
-WEB_SEARCH_MODEL = "sonar-pro"  # Use sonar-pro for row discovery (better quality)
+COLUMN_DEFINITION_MODEL = "claude-sonnet-4-5"  # Claude for understanding task context
+WEB_SEARCH_MODEL = "sonar-pro"  # sonar-pro for row discovery with web search
 
 # User request for testing
 USER_REQUEST = """

@@ -36,7 +36,7 @@ class ColumnDefinitionHandler:
         self,
         conversation_context: Dict[str, Any],
         context_web_research: List[str] = None,
-        model: str = "sonar-pro",
+        model: str = "claude-sonnet-4-5",
         max_tokens: int = 8000
     ) -> Dict[str, Any]:
         """
@@ -100,17 +100,27 @@ class ColumnDefinitionHandler:
             # Load response schema
             schema = self.schema_validator.load_schema('column_definition_response')
 
-            # Call AI API with structured output using sonar-pro (has web search for context research)
-            web_searches = 3 if (context_web_research and len(context_web_research) > 0) else 0
-            logger.info(f"Calling AI API with model: {model}, web_searches: {web_searches}")
+            # Determine if we need web search
+            has_context_research = context_web_research and len(context_web_research) > 0
+            web_searches = 3 if has_context_research else 0
+
+            # If context research needed, use sonar-pro; otherwise use provided model (Claude)
+            actual_model = "sonar-pro" if has_context_research else model
+
+            logger.info(
+                f"Calling AI API with model: {actual_model}, "
+                f"web_searches: {web_searches}, "
+                f"context_items: {len(context_web_research) if context_web_research else 0}"
+            )
+
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
-                model=model,
+                model=actual_model,
                 max_tokens=max_tokens,
                 use_cache=False,  # Disable cache for local testing
                 max_web_searches=web_searches,  # Enable web search if context items provided
-                search_context_size='high',  # Use high context for better research
+                search_context_size='high' if has_context_research else 'low',
                 debug_name="column_definition"
             )
 
