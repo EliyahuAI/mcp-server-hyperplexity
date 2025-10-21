@@ -27,18 +27,23 @@ Use these queries to find entities:
 
 ## Target
 
-Find **{{TARGET_ROWS}} entities** that best match the requirements.
+Find **{{TARGET_ROWS}} unique entities** that best match the requirements.
 
 ---
 
-## Output Format
+## Your Responsibility
 
-For each entity found, populate:
+**You must populate the ID columns with specific, unique entries based on your research within this subdomain.**
 
-### ID Columns (Use EXACT names)
+Each entity you find must have UNIQUE values for the ID columns. These are the actual identifiers (names, URLs, IDs) of the entities you discover through web search.
+
+### ID Columns to Populate
 {{ID_COLUMNS}}
 
+**Your job:** For each entity found in your searches, fill in these ID columns with the ACTUAL values.
+
 **Example:**
+If you find Anthropic in your search results, populate:
 ```json
 {
   "id_values": {
@@ -47,6 +52,22 @@ For each entity found, populate:
   }
 }
 ```
+
+If you find OpenAI, populate:
+```json
+{
+  "id_values": {
+    "Company Name": "OpenAI",
+    "Website": "https://openai.com"
+  }
+}
+```
+
+**CRITICAL:**
+- Use EXACT field names from the list above
+- Populate with ACTUAL entity identifiers from your search results
+- Each entity must be UNIQUE (different company name, different website)
+- Find real entities, don't make up placeholder names
 
 ### Scoring (Three Dimensions)
 

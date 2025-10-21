@@ -543,8 +543,15 @@ class RowDiscoveryStream:
         Returns:
             Filled prompt string from template
         """
-        # Extract ID columns
-        id_columns = [col['name'] for col in columns if col.get('is_identification')]
+        # Extract ID columns with descriptions
+        id_columns = [col for col in columns if col.get('is_identification')]
+
+        # Format ID columns with descriptions
+        id_columns_text = []
+        for col in id_columns:
+            name = col['name']
+            desc = col.get('description', 'No description')
+            id_columns_text.append(f"- **{name}**: {desc}")
 
         # Try to load template (if exists), otherwise use inline
         try:
@@ -554,7 +561,7 @@ class RowDiscoveryStream:
                 'SEARCH_REQUIREMENTS': search_strategy.get('description', 'Find relevant entities'),
                 'SEARCH_QUERIES': '\n'.join(f'- {q}' for q in subdomain['search_queries']),
                 'TARGET_ROWS': str(target_rows),
-                'ID_COLUMNS': '\n'.join(f'- {col}' for col in id_columns),
+                'ID_COLUMNS': '\n'.join(id_columns_text),
                 'USER_CONTEXT': search_strategy.get('user_context', 'General research table'),
                 'TABLE_PURPOSE': search_strategy.get('table_purpose', search_strategy.get('description', ''))
             }
