@@ -3,7 +3,7 @@
 Local End-to-End Test for Independent Row Discovery (PARALLEL MODE)
 
 Tests the complete pipeline with real API keys in parallel mode (max_parallel_streams=3).
-This validates that concurrent subdomain processing works correctly.
+This allows us to validate each component independently before enabling parallelization.
 
 Requirements:
 - ANTHROPIC_API_KEY environment variable set
@@ -12,8 +12,8 @@ Requirements:
 Usage:
     python3 test_local_e2e_parallel.py
 
-Duration: ~1-2 minutes (faster than sequential due to parallelization)
-Estimated Cost: ~$0.10-0.15 (same as sequential, just faster)
+Duration: ~2-3 minutes
+Estimated Cost: ~$0.10-0.15
 """
 
 import os
@@ -45,13 +45,14 @@ from ai_api_client import AIAPIClient
 # CONFIGURATION
 # =============================================================================
 
-# Test parameters - same as sequential but with parallelization
+# Test parameters - start small for validation
 TARGET_ROW_COUNT = 10  # Final number of rows to deliver
 DISCOVERY_MULTIPLIER = 1.5  # Find 15, keep best 10
 MIN_MATCH_SCORE = 0.6  # Minimum quality threshold
+
+# Models to use
 COLUMN_DEFINITION_MODEL = "claude-haiku-4-5"  # Claude Haiku (faster, cheaper)
 WEB_SEARCH_MODEL = "sonar-pro"  # sonar-pro for row discovery with web search
-MAX_PARALLEL_STREAMS = 3  # PARALLEL: Process up to 3 subdomains concurrently
 
 # User request for testing
 USER_REQUEST = """
@@ -70,35 +71,45 @@ Make sure to include both established companies and startups.
 
 
 # =============================================================================
-# HELPER FUNCTIONS
+# UTILITY FUNCTIONS
 # =============================================================================
 
-def print_header(text):
-    """Print a section header."""
-    print("\n" + "="*60)
-    print(f"  {text:^56}")
-    print("="*60 + "\n")
+def print_header(text: str, char: str = "="):
+    """Print a formatted header."""
+    width = 60
+    print("\n" + char * width)
+    print(text.center(width))
+    print(char * width + "\n")
 
-def print_success(text):
+
+def print_success(text: str):
     """Print success message."""
     print(f"[SUCCESS] {text}")
 
-def print_error(text):
-    """Print error message."""
-    print(f"[ERROR] {text}")
 
-def print_info(text):
+def print_info(text: str):
     """Print info message."""
     print(f"[INFO] {text}")
 
-def format_time(seconds):
-    """Format seconds into human-readable string."""
+
+def print_error(text: str):
+    """Print error message."""
+    print(f"[ERROR] {text}")
+
+
+def print_step(step_num: int, total_steps: int, description: str):
+    """Print step header."""
+    print(f"\n[{step_num}/{total_steps}] {description}...")
+
+
+def format_time(seconds: float) -> str:
+    """Format seconds as readable time."""
     if seconds < 60:
         return f"{seconds:.1f}s"
     else:
-        minutes = int(seconds // 60)
+        mins = int(seconds // 60)
         secs = seconds % 60
-        return f"{minutes}m {secs:.1f}s"
+        return f"{mins}m {secs:.1f}s"
 
 
 # =============================================================================
@@ -106,33 +117,68 @@ def format_time(seconds):
 # =============================================================================
 
 async def run_parallel_test():
-    """Run the complete E2E test in parallel mode."""
+    """Run complete parallel E2E test."""
 
-    overall_start = time.time()
-
-    # Print test header
     print_header("INDEPENDENT ROW DISCOVERY - LOCAL E2E TEST (PARALLEL)")
 
-    # Check environment
+    overall_start = time.time()
+    stats = {
+        'column_definition_time': 0,
+        'row_discovery_time': 0,
+        'total_candidates_found': 0,
+        'duplicates_removed': 0,
+        'below_threshold': 0,
+        'final_row_count': 0,
+        'avg_match_score': 0.0,
+        'stream_times': [],
+        'total_cost': 0.0,
+        'column_def_cost': 0.0,
+        'row_discovery_cost': 0.0
+    }
+
+    # PHASE 1: Track all API calls with enhanced_data
+    api_calls_log = []
+
+    # -------------------------------------------------------------------------
+    # PRE-FLIGHT CHECKS
+    # -------------------------------------------------------------------------
+
     print_info("Checking environment...")
-    if not os.getenv('ANTHROPIC_API_KEY'):
-        print_error("ANTHROPIC_API_KEY not set in environment")
-        print_info("Set it with: export ANTHROPIC_API_KEY='your-key-here'")
+
+    # Check for required API key
+    if not os.environ.get('ANTHROPIC_API_KEY'):
+        print_error("ANTHROPIC_API_KEY not set")
+        print_info("Please set it in your environment:")
+        print_info("  export ANTHROPIC_API_KEY=sk-ant-...")
+        print_info("Or create a .env file (see .env.example)")
         return False
 
     print_success("API keys found")
-    print_info("Using Perplexity API for web search")
-    print_info(f"Parallel mode: Up to {MAX_PARALLEL_STREAMS} concurrent streams")
 
-    # Initialize components
-    print("\n[1/3] Initializing components...")
+    # Check for optional Perplexity key
+    if os.environ.get('PERPLEXITY_API_KEY'):
+        print_info("Using Perplexity API for web search")
+    else:
+        print_info("No PERPLEXITY_API_KEY - will use Anthropic's search capabilities")
+
+    # -------------------------------------------------------------------------
+    # STEP 1: INITIALIZE COMPONENTS
+    # -------------------------------------------------------------------------
+
+    print_step(1, 3, "Initializing components")
+
     try:
         ai_client = AIAPIClient()
-        prompt_loader = PromptLoader(prompts_dir='table_maker/prompts')
-        schema_validator = SchemaValidator(schemas_dir='table_maker/schemas')
+        prompt_loader = PromptLoader('table_maker/prompts')
+        schema_validator = SchemaValidator('table_maker/schemas')
 
-        column_handler = ColumnDefinitionHandler(ai_client, prompt_loader, schema_validator)
-        row_discovery = RowDiscovery(ai_client, prompt_loader, schema_validator)
+        column_handler = ColumnDefinitionHandler(
+            ai_client, prompt_loader, schema_validator
+        )
+
+        row_discovery = RowDiscovery(
+            ai_client, prompt_loader, schema_validator
+        )
 
         print_success("All components initialized")
 
@@ -142,74 +188,96 @@ async def run_parallel_test():
         traceback.print_exc()
         return False
 
-    # Step 2: Column Definition
-    print("\n[2/3] Defining columns and search strategy (with subdomains)...")
+    # -------------------------------------------------------------------------
+    # STEP 2: COLUMN DEFINITION (WITH SUBDOMAINS)
+    # -------------------------------------------------------------------------
 
-    stats = {
-        'column_definition_time': 0,
-        'row_discovery_time': 0,
-        'total_candidates_found': 0,
-        'duplicates_removed': 0,
-        'below_threshold': 0,
-        'final_row_count': 0,
-        'avg_match_score': 0.0,
-        'stream_times': []
-    }
+    print_step(2, 3, "Defining columns and search strategy (with subdomains)")
+
+    col_start = time.time()
 
     try:
+        # Create conversation context (match what handler expects)
         conversation_context = {
-            'messages': [
+            'messages': [  # For simple format
                 {'role': 'user', 'content': USER_REQUEST}
-            ]
+            ],
+            'conversation_log': [  # What handler actually reads
+                {'role': 'user', 'content': USER_REQUEST}
+            ],
+            'user_request': USER_REQUEST,
+            'approved': True,
+            'target_row_count': TARGET_ROW_COUNT
         }
 
+        # Define columns (this should now include subdomains in search_strategy)
         # Provide context_web_research for UNKNOWNS that affect column design
         # Only include items that state-of-the-art LLM would NOT know
-        # Example: ["Eliyahu.AI background", "Proprietary methodology X"]
-        context_web_research = []  # Empty for this generic test
+        context_web_research = [
+            "Latest AI hiring trends Q4 2024-Q1 2025",
+            "Recent AI funding rounds and valuations October 2024-January 2025"
+        ]  # Test with some context items to enable web search
 
-        column_start = time.time()
-        column_result = await column_handler.define_columns(
+        result = await column_handler.define_columns(
             conversation_context=conversation_context,
             context_web_research=context_web_research,
             model=COLUMN_DEFINITION_MODEL,
-            max_tokens=8000
+            max_tokens=12000  # Increased for comprehensive column definitions
         )
-        column_time = time.time() - column_start
-        stats['column_definition_time'] = column_time
 
-        if not column_result['success']:
-            print_error(f"Column definition failed: {column_result.get('error')}")
+        if not result.get('success'):
+            print_error(f"Column definition failed: {result.get('error', 'Unknown error')}")
             return False
 
-        columns = column_result['columns']
-        search_strategy = column_result['search_strategy']
-        table_name = column_result.get('table_name', 'Unknown Table')
+        columns = result['columns']
+        search_strategy = result['search_strategy']
+        table_name = result.get('table_name', 'Unknown Table')
 
-        print_success(f"Defined {len(columns)} columns in {format_time(column_time)}")
+        col_time = time.time() - col_start
+        stats['column_definition_time'] = col_time
+
+        # Track cost from enhanced_data
+        col_cost = result.get('cost', 0.0)
+        stats['column_def_cost'] = col_cost
+        stats['total_cost'] += col_cost
+
+        # PHASE 1: Track column definition API call
+        api_calls_log.append({
+            'call_description': result.get('call_description', 'Creating Columns'),
+            'model': result.get('model_used', COLUMN_DEFINITION_MODEL),
+            'enhanced_data': result.get('enhanced_data', {}),
+            'timestamp': datetime.now().isoformat()
+        })
+
+        print_success(f"Defined {len(columns)} columns in {format_time(col_time)} (${col_cost:.4f})")
         print_info(f"Table: {table_name}")
 
-        # Display ID vs data columns
-        id_cols = [c['name'] for c in columns if c.get('is_identification')]
-        data_cols = [c['name'] for c in columns if not c.get('is_identification')]
-
+        # Display columns
+        id_cols = [c for c in columns if c.get('is_identification')]
+        data_cols = [c for c in columns if not c.get('is_identification')]
         print_info(f"  ID columns: {len(id_cols)}")
         for col in id_cols:
-            print(f"    - {col}")
-
+            print(f"    - {col['name']}")
         print_info(f"  Data columns: {len(data_cols)}")
         for col in data_cols:
-            print(f"    - {col}")
+            print(f"    - {col['name']}")
 
-        # Display subdomains
+        # Check for subdomains in search strategy
         subdomains = search_strategy.get('subdomains', [])
+
+        if not subdomains:
+            print_error("No subdomains defined in search_strategy!")
+            print_info("This is expected if using OLD architecture.")
+            print_info("Please update column_definition.md prompt and schema.")
+            return False
+
         print_success(f"Search strategy with {len(subdomains)} subdomains:")
         total_target = 0
         for subdomain in subdomains:
             target = subdomain.get('target_rows', 0)
             total_target += target
             print(f"  - {subdomain['name']} (target: {target} rows)")
-            print(f"    Focus: {subdomain['focus']}")
+            print(f"    Focus: {subdomain.get('focus', 'N/A')}")
 
         print_info(f"  Total target: {total_target} rows (will keep best {TARGET_ROW_COUNT})")
 
@@ -219,58 +287,225 @@ async def run_parallel_test():
         traceback.print_exc()
         return False
 
-    # Step 3: Row Discovery (PARALLEL)
-    print("\n[3/3] Discovering rows (PARALLEL mode)...")
-    print_info("Starting parallel row discovery...")
-    print_info(f"(Processing up to {MAX_PARALLEL_STREAMS} subdomains concurrently)")
+    # -------------------------------------------------------------------------
+    # STEP 3: ROW DISCOVERY (PARALLEL WITH PROGRESSIVE ESCALATION)
+    # -------------------------------------------------------------------------
+
+    print_step(3, 3, "Discovering rows (PARALLEL mode with progressive escalation)")
+
+    discovery_start = time.time()
 
     try:
-        discovery_start = time.time()
+        # Load escalation strategy from config
+        import json
+        config_path = Path('table_maker/table_maker_config.json')
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+
+        row_discovery_config = config.get('row_discovery', {})
+        escalation_strategy = row_discovery_config.get('escalation_strategy', None)
+        check_targets_between_subdomains = row_discovery_config.get('check_targets_between_subdomains', False)
+        early_stop_threshold_percentage = row_discovery_config.get('early_stop_threshold_percentage', 120)
+
+        # Run discovery in PARALLEL mode (max_parallel_streams=3)
+        print_info("Starting parallel row discovery with progressive escalation...")
+        print_info("(Processing one subdomain at a time)")
+
+        if escalation_strategy:
+            print_info(f"Progressive escalation strategy: {len(escalation_strategy)} rounds")
+            for idx, strategy in enumerate(escalation_strategy, 1):
+                model = strategy['model']
+                context = strategy['search_context_size']
+                threshold = strategy.get('min_candidates_percentage')
+                print_info(f"  Round {idx}: {model} ({context}) - stop at {threshold}% if set")
+        else:
+            print_info("No escalation strategy - using legacy mode")
+
         discovery_result = await row_discovery.discover_rows(
             search_strategy=search_strategy,
             columns=columns,
             target_row_count=TARGET_ROW_COUNT,
             discovery_multiplier=DISCOVERY_MULTIPLIER,
             min_match_score=MIN_MATCH_SCORE,
-            max_parallel_streams=MAX_PARALLEL_STREAMS,  # PARALLEL MODE
-            scoring_model=WEB_SEARCH_MODEL
+            max_parallel_streams=3,  # PARALLEL MODE
+            escalation_strategy=escalation_strategy,
+            check_targets_between_subdomains=check_targets_between_subdomains,
+            early_stop_threshold_percentage=early_stop_threshold_percentage
         )
+
+        if not discovery_result.get('success'):
+            print_error(f"Row discovery failed: {discovery_result.get('error', 'Unknown error')}")
+            return False
+
         discovery_time = time.time() - discovery_start
         stats['row_discovery_time'] = discovery_time
 
-        if not discovery_result['success']:
-            print_error(f"Row discovery failed: {discovery_result.get('error')}")
-            return False
-
+        # Extract results
         final_rows = discovery_result.get('final_rows', [])
-        discovery_stats = discovery_result.get('stats', {})
+        stream_results = discovery_result.get('stream_results', [])
+        discovery_stats = discovery_result.get('stats', {})  # Correct field name
 
-        # Update stats
+        stats['final_row_count'] = len(final_rows)
         stats['total_candidates_found'] = discovery_stats.get('total_candidates_found', 0)
         stats['duplicates_removed'] = discovery_stats.get('duplicates_removed', 0)
         stats['below_threshold'] = discovery_stats.get('below_threshold', 0)
-        stats['final_row_count'] = len(final_rows)
 
         # Calculate average score
         if final_rows:
             total_score = sum(row.get('match_score', 0) for row in final_rows)
             stats['avg_match_score'] = total_score / len(final_rows)
 
+        # PHASE 1: Track API calls from row discovery rounds
+        for idx, stream_result in enumerate(stream_results, 1):
+            subdomain_name = stream_result.get('subdomain', f'Subdomain {idx}')
+            all_rounds = stream_result.get('all_rounds', [])
+
+            if all_rounds:
+                # Progressive escalation mode - has all_rounds
+                for round_data in all_rounds:
+                    api_calls_log.append({
+                        'call_description': f"Finding Rows - {subdomain_name} - Round {round_data.get('round', '?')} ({round_data.get('model', 'unknown')}-{round_data.get('context', 'unknown')})",
+                        'model': round_data.get('model', 'unknown'),
+                        'context': round_data.get('context', 'unknown'),
+                        'enhanced_data': round_data.get('enhanced_data', {}),
+                        'prompt_used': round_data.get('prompt_used', ''),
+                        'timestamp': datetime.now().isoformat()
+                    })
+            else:
+                # Legacy mode or single call - just log the subdomain
+                api_calls_log.append({
+                    'call_description': f"Finding Rows - {subdomain_name}",
+                    'model': WEB_SEARCH_MODEL,
+                    'enhanced_data': stream_result.get('enhanced_data', {}),
+                    'timestamp': datetime.now().isoformat()
+                })
+
+        # Display stream results
+        print()
+        for idx, stream_result in enumerate(stream_results, 1):
+            subdomain_name = stream_result.get('subdomain', 'Unknown')
+            candidates = stream_result.get('candidates', [])
+            stream_time = stream_result.get('processing_time', 0)
+            rounds_executed = stream_result.get('rounds_executed', 0)
+            rounds_skipped = stream_result.get('rounds_skipped', 0)
+            stats['stream_times'].append(stream_time)
+
+            print(f"Stream {idx}/{len(stream_results)}: {subdomain_name}")
+
+            # Show progressive escalation info if available
+            if rounds_executed > 0:
+                print(f"  [INFO] Progressive escalation: {rounds_executed} round(s) executed, {rounds_skipped} skipped")
+                # Count candidates by model
+                models_used = {}
+                for candidate in candidates:
+                    model = candidate.get('model_used', 'unknown')
+                    context = candidate.get('context_used', 'unknown')
+                    key = f"{model}({context})"
+                    models_used[key] = models_used.get(key, 0) + 1
+
+                if models_used:
+                    print(f"  [INFO] Candidates by model: {', '.join(f'{k}: {v}' for k, v in models_used.items())}")
+
+            print(f"  [SUCCESS] Found {len(candidates)} candidates in {format_time(stream_time)}")
+
+            if candidates:
+                top_candidate = candidates[0]
+                id_vals = top_candidate.get('id_values', {})
+                # Handle both snake_case and Title Case
+                top_name = id_vals.get('company_name') or id_vals.get('Company Name', 'Unknown')
+                top_score = top_candidate.get('match_score', 0)
+                top_model = top_candidate.get('model_used', 'unknown')
+                top_context = top_candidate.get('context_used', 'unknown')
+                print(f"  [INFO] Top candidate: {top_name} (score: {top_score:.2f}, from {top_model}({top_context}))")
+            print()
+
         # Display consolidation results
-        print("\n[CONSOLIDATION]")
+        print("[CONSOLIDATION]")
         print(f"  Total candidates: {stats['total_candidates_found']}")
         print(f"  Duplicates removed: {stats['duplicates_removed']}")
         print(f"  Below threshold (<{MIN_MATCH_SCORE}): {stats['below_threshold']}")
         print(f"  Final count: {stats['final_row_count']}")
 
         print_success(f"Row discovery completed in {format_time(discovery_time)}")
-        print_info(f"[PARALLEL SPEEDUP] Compare to sequential: Sequential would take ~{format_time(discovery_time * MAX_PARALLEL_STREAMS / 1.8)}")
 
     except Exception as e:
         print_error(f"Row discovery failed with exception: {e}")
         import traceback
         traceback.print_exc()
         return False
+
+    # -------------------------------------------------------------------------
+    # QC REVIEW
+    # -------------------------------------------------------------------------
+
+    print_step(4, 4, "Quality Control Review")
+
+    qc_start = time.time()
+
+    try:
+        from table_maker.src.qc_reviewer import QCReviewer
+
+        qc_reviewer = QCReviewer(ai_client, prompt_loader, schema_validator)
+
+        print_info(f"Reviewing {len(final_rows)} discovered rows with QC layer...")
+
+        qc_result = await qc_reviewer.review_rows(
+            discovered_rows=final_rows,
+            columns=columns,
+            user_context=USER_REQUEST,
+            table_name=table_name,
+            table_purpose=search_strategy.get('table_purpose', ''),
+            tablewide_research=search_strategy.get('tablewide_research', ''),
+            model="claude-sonnet-4-5",
+            max_tokens=16000,  # Generous tokens for reviewing all rows
+            min_qc_score=0.5,
+            max_rows=50
+        )
+
+        qc_time = time.time() - qc_start
+        stats['qc_review_time'] = qc_time
+
+        if not qc_result.get('success'):
+            print_error(f"QC review failed: {qc_result.get('error')}")
+            # Continue with original rows
+            approved_rows = final_rows
+        else:
+            approved_rows = qc_result.get('approved_rows', final_rows)
+            qc_summary = qc_result.get('qc_summary', {})
+
+            # Track QC API call
+            api_calls_log.append({
+                'call_description': 'QC Review - Filtering and Prioritizing Rows',
+                'model': 'claude-sonnet-4-5',
+                'enhanced_data': qc_result.get('enhanced_data', {}),
+                'timestamp': datetime.now().isoformat()
+            })
+
+            # Update stats
+            stats['qc_total_reviewed'] = qc_summary.get('total_reviewed', 0)
+            stats['qc_kept'] = qc_summary.get('kept', 0)
+            stats['qc_rejected'] = qc_summary.get('rejected', 0)
+            stats['qc_promoted'] = qc_summary.get('promoted', 0)
+            stats['qc_demoted'] = qc_summary.get('demoted', 0)
+
+            print_success(f"QC review completed in {format_time(qc_time)}")
+            print_info(f"Reviewed: {qc_summary.get('total_reviewed', 0)}")
+            print_info(f"Kept: {qc_summary.get('kept', 0)}")
+            print_info(f"Rejected: {qc_summary.get('rejected', 0)}")
+            if qc_summary.get('promoted', 0) > 0:
+                print_info(f"Promoted: {qc_summary.get('promoted', 0)}")
+            if qc_summary.get('demoted', 0) > 0:
+                print_info(f"Demoted: {qc_summary.get('demoted', 0)}")
+            print_info(f"QC Reasoning: {qc_summary.get('reasoning', 'N/A')}")
+
+        # Use QC-approved rows for final output
+        final_rows = approved_rows
+
+    except Exception as e:
+        print_error(f"QC review failed with exception: {e}")
+        import traceback
+        traceback.print_exc()
+        print_info("Continuing with original discovered rows (no QC filtering)")
 
     # -------------------------------------------------------------------------
     # DISPLAY RESULTS
@@ -289,25 +524,74 @@ async def run_parallel_test():
         score = row.get('match_score', 0)
         rationale = row.get('match_rationale', 'N/A')
 
-        # Get company name and website (handle both snake_case and Title Case)
-        company_name = id_values.get('company_name') or id_values.get('Company Name', 'Unknown')
-        website = id_values.get('website') or id_values.get('Website', 'N/A')
+        # Get company name and website (handle various field name formats)
+        company_name = (id_values.get('company_name') or
+                       id_values.get('Company Name') or
+                       id_values.get('Entity Name') or
+                       id_values.get('entity_name') or 'Unknown')
+        website = (id_values.get('website') or
+                  id_values.get('Website') or
+                  id_values.get('Website URL') or
+                  id_values.get('website_url') or 'N/A')
 
-        print(f"\n  {idx}. {company_name} ({score:.2f})")
-        print(f"     Website: {website}")
+        # Get model info
+        model_used = row.get('model_used', 'unknown')
+        context_used = row.get('context_used', 'unknown')
+        found_by_models = row.get('found_by_models', [])
+        model_quality_rank = row.get('model_quality_rank', 0)
 
-        # Show score breakdown if available
+        # Show score breakdown and recalculate if available
         score_breakdown = row.get('score_breakdown', {})
         if score_breakdown:
             relevancy = score_breakdown.get('relevancy', 0)
             reliability = score_breakdown.get('reliability', 0)
             recency = score_breakdown.get('recency', 0)
+
+            # Recalculate correct score using formula
+            calculated_score = (relevancy * 0.4) + (reliability * 0.3) + (recency * 0.3)
+
+            # Show both reported and calculated scores
+            print(f"\n  {idx}. {company_name} (score: {score:.2f}, quality_rank: {model_quality_rank})")
+            print(f"     Website: {website}")
             print(f"     Scores: Relevancy={relevancy:.2f}, Reliability={reliability:.2f}, Recency={recency:.2f}")
+            print(f"     Model: {model_used}({context_used})")
+
+            # Show if found by multiple models (deduplication happened)
+            if len(found_by_models) > 1:
+                print(f"     [MERGED] Found by: {', '.join(found_by_models)}")
+
+            # Warn if mismatch
+            if abs(score - calculated_score) > 0.01:
+                print(f"     [WARNING] Score mismatch! Formula gives {calculated_score:.2f} but reported {score:.2f}")
+        else:
+            print(f"\n  {idx}. {company_name} ({score:.2f})")
+            print(f"     Website: {website}")
+            print(f"     Model: {model_used}({context_used})")
 
         # Show rationale (truncate if too long)
         if len(rationale) > 100:
             rationale = rationale[:97] + "..."
         print(f"     Rationale: {rationale}")
+
+    # -------------------------------------------------------------------------
+    # PHASE 1: API CALLS SUMMARY
+    # -------------------------------------------------------------------------
+
+    print("\n[API CALLS SUMMARY]")
+    total_api_cost = sum(
+        call.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0)
+        for call in api_calls_log
+    )
+    print(f"  Total API calls: {len(api_calls_log)}")
+    print(f"  Total cost: ${total_api_cost:.4f}")
+
+    for call in api_calls_log:
+        desc = call.get('call_description', 'Unknown')
+        model = call.get('model', 'unknown')
+        context = call.get('context', '')
+        context_str = f" ({context})" if context else ""
+        cost = call.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0)
+        print(f"    - {desc}: ${cost:.4f} ({model}{context_str})")
 
     # -------------------------------------------------------------------------
     # STATISTICS
@@ -317,18 +601,27 @@ async def run_parallel_test():
 
     print("\n[STATISTICS]")
     print(f"  Total execution time: {format_time(total_time)}")
-    print(f"  Column definition: {format_time(stats['column_definition_time'])}")
-    print(f"  Row discovery (PARALLEL): {format_time(stats['row_discovery_time'])}")
+    print(f"  Column definition: {format_time(stats['column_definition_time'])} (${stats['column_def_cost']:.4f})")
+    print(f"  Row discovery (parallel): {format_time(stats['row_discovery_time'])} (${stats['row_discovery_cost']:.4f})")
+
+    if stats['stream_times']:
+        print(f"    - Individual streams:")
+        for idx, stream_time in enumerate(stats['stream_times'], 1):
+            print(f"      Stream {idx}: {format_time(stream_time)}")
+        print(f"    - (Note: Sequential = sum of all streams)")
+
     print(f"  Candidates found: {stats['total_candidates_found']}")
     print(f"  Deduplication: {stats['duplicates_removed']} removed")
     print(f"  Below threshold: {stats['below_threshold']} filtered")
     print(f"  Final rows: {stats['final_row_count']}")
     print(f"  Avg match score: {stats['avg_match_score']:.2f}")
+    print(f"  Total cost: ${stats['total_cost']:.4f}")
 
     # -------------------------------------------------------------------------
-    # SAVE RESULTS
+    # SAVE OUTPUT (OPTIONAL)
     # -------------------------------------------------------------------------
 
+    # Save results to file for inspection
     output_dir = Path('table_maker/output/local_tests')
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -337,20 +630,19 @@ async def run_parallel_test():
 
     output_data = {
         'timestamp': timestamp,
-        'mode': 'parallel',
-        'max_parallel_streams': MAX_PARALLEL_STREAMS,
         'user_request': USER_REQUEST,
         'configuration': {
             'target_row_count': TARGET_ROW_COUNT,
             'discovery_multiplier': DISCOVERY_MULTIPLIER,
             'min_match_score': MIN_MATCH_SCORE,
             'column_definition_model': COLUMN_DEFINITION_MODEL,
-            'web_search_model': WEB_SEARCH_MODEL,
-            'max_parallel_streams': MAX_PARALLEL_STREAMS
+            'web_search_model': WEB_SEARCH_MODEL
         },
         'columns': columns,
         'search_strategy': search_strategy,
         'final_rows': final_rows,
+        'all_candidates_full_list': discovery_result.get('all_candidates', []),  # Full list before filtering
+        'api_calls': api_calls_log,  # PHASE 1: Include all API calls with enhanced_data
         'statistics': stats,
         'total_time_seconds': total_time
     }
@@ -358,37 +650,50 @@ async def run_parallel_test():
     with open(output_file, 'w') as f:
         json.dump(output_data, f, indent=2)
 
-    print_info(f"Results saved to: {output_file}")
+    print(f"\n[INFO] Results saved to: {output_file}")
 
     # -------------------------------------------------------------------------
-    # COMPLETION
+    # SUCCESS
     # -------------------------------------------------------------------------
 
     print_header("[SUCCESS] LOCAL E2E TEST COMPLETE")
 
     print("Next steps:")
-    print("  1. Compare timing to sequential test (~2m 30s)")
-    print("  2. Verify parallel speedup achieved")
-    print("  3. Check for any race conditions or data issues")
-    print("  4. Scale up to full parallelization (max_parallel_streams=5)")
-
-    print_header("TEST PASSED")
+    print("  1. Review the results above")
+    print("  2. Check match scores and quality")
+    print("  3. If quality looks good, test parallel mode (max_parallel_streams=2)")
+    print("  4. Then scale up to full parallelization (max_parallel_streams=5)")
 
     return True
 
 
 # =============================================================================
-# MAIN ENTRY POINT
+# ENTRY POINT
 # =============================================================================
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print(f"\nStarting parallel E2E test at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
 
-    success = asyncio.run(run_parallel_test())
+    try:
+        success = asyncio.run(run_parallel_test())
+        exit_code = 0 if success else 1
 
-    if success:
-        print("\n[SUCCESS] Parallel test completed successfully!")
-        sys.exit(0)
-    else:
-        print("\n[ERROR] Parallel test failed!")
+        if success:
+            print("\n" + "="*60)
+            print("TEST PASSED".center(60))
+            print("="*60 + "\n")
+        else:
+            print("\n" + "="*60)
+            print("TEST FAILED".center(60))
+            print("="*60 + "\n")
+
+        sys.exit(exit_code)
+
+    except KeyboardInterrupt:
+        print("\n\n[INFO] Test interrupted by user")
+        sys.exit(130)
+    except Exception as e:
+        print(f"\n[ERROR] Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
