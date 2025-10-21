@@ -156,6 +156,17 @@ Using the information provided above:
    - Each subdomain has: name, focus, search_queries (3-5), target_rows
    - Search queries should yield multiple entities (lists, directories)
 
+   **Subdomain Design Guidelines:**
+   - First subdomains: Specific, focused categories (e.g., "AI Research", "Healthcare AI")
+   - Last subdomain: Catch-all for remaining entities (e.g., "Other AI Companies", "Additional Opportunities Not in Above Categories")
+   - This ensures complete coverage - nothing is excluded
+   - Distribute target_rows: larger numbers for main categories, smaller for catch-all
+
+   **Example for 3 subdomains (total target: 15):**
+   - Subdomain 1: "AI Research Companies" - target_rows: 6
+   - Subdomain 2: "Healthcare AI Companies" - target_rows: 6
+   - Subdomain 3: "Other AI Companies (Not in Research or Healthcare)" - target_rows: 3
+
 3. **Name the table** clearly and descriptively
 
 4. **Provide tablewide_research** context (2-3 sentences about overall goals)

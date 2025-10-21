@@ -76,8 +76,8 @@
               },
               "target_rows": {
                 "type": "integer",
-                "description": "Number of candidate rows to find for this subdomain",
-                "minimum": 3
+                "description": "Number of candidate rows to find for this subdomain (allows small allocations for niche subdomains)",
+                "minimum": 1
               }
             }
           }

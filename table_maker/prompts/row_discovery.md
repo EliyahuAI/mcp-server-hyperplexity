@@ -1,96 +1,138 @@
-You are discovering candidate rows for a research table by analyzing web search results.
+# Row Discovery Task
 
-## Subdomain Focus
-{{SUBDOMAIN}}
+## What You're Doing
 
-## Overall Search Strategy
-{{SEARCH_STRATEGY}}
+Find and score entities that match the criteria for this table subdomain.
 
-## Table Columns
-The table uses these columns (ID columns are used to uniquely identify each row):
-{{COLUMNS}}
+## Full Context
 
-## Web Search Results
-{{WEB_SEARCH_RESULTS}}
+**User's Original Request:**
+{{USER_CONTEXT}}
 
-## Your Task
-Extract candidate entities from the web search results and evaluate each against the table criteria.
+**Table Purpose:** {{TABLE_PURPOSE}}
 
-### Instructions:
-1. **Extract Candidates**: Identify entities mentioned in the web search results that match the subdomain focus
-2. **Score Each Candidate**: Assign a match score between 0.0 and 1.0 based on:
-   - **Relevance to subdomain** (0.4 weight): How well does this entity fit the subdomain focus?
-   - **Information availability** (0.3 weight): Can we find data for the research columns?
-   - **Entity quality** (0.3 weight): Is this a significant/notable entity worth including?
-3. **Provide Clear Rationale**: Explain why each candidate received its score
-4. **Include Source URLs**: List the specific URLs where you found information about each candidate
-5. **Quality Over Quantity**: Only include candidates with match scores >= 0.5
+## Subdomain
 
-### Match Score Guidelines:
-- **0.9-1.0**: Perfect match - highly relevant, complete information available, significant entity
-- **0.7-0.89**: Strong match - clearly relevant, good information available, notable entity
-- **0.5-0.69**: Moderate match - somewhat relevant, limited information, or less notable
-- **Below 0.5**: Poor match - don't include in results
+**Name:** {{SUBDOMAIN_NAME}}
+**Focus:** {{SUBDOMAIN_FOCUS}}
 
-### ID Values Format:
-For each candidate, populate ONLY the ID columns (columns where `is_identification: true`).
-Use the exact column names as keys.
+## Requirements
 
-### Example Output Structure:
-```json
-{
-  "subdomain": "AI Research Companies",
-  "candidates": [
-    {
-      "id_values": {
-        "Company Name": "Anthropic",
-        "Website": "anthropic.com"
-      },
-      "match_score": 0.95,
-      "match_rationale": "Leading AI safety research company with active hiring for ML engineers. Significant presence in search results with clear focus on AI research. Multiple sources confirm hiring activity and research focus.",
-      "source_urls": ["https://anthropic.com/careers", "https://techcrunch.com/anthropic-hiring"]
-    }
-  ]
-}
-```
+{{SEARCH_REQUIREMENTS}}
 
-## Important Notes:
-- Only extract entities that are explicitly mentioned or clearly referenced in the web search results
-- Don't fabricate or infer entities not supported by the search results
-- If web search results are empty or unhelpful, return an empty candidates array
-- Ensure ID values are clean strings (no extra formatting, URLs, etc.)
-- Source URLs should be specific to each candidate (not generic search URLs)
+## Search Queries
+
+Use these queries to find entities:
+{{SEARCH_QUERIES}}
+
+## Target
+
+Find **{{TARGET_ROWS}} unique entities** that best match the requirements.
 
 ---
 
-## CRITICAL OUTPUT REQUIREMENTS
+## Your Responsibility
 
-You MUST return a valid JSON object with a "candidates" array.
+**You must populate the ID columns with specific, unique entries based on your research within this subdomain.**
 
-**ALWAYS return candidates, even if only partial matches:**
-- If you find 10 great matches, return all 10
-- If you find 3 weak matches, return those 3
-- If you find 1 marginal match, return that 1
-- If truly NO matches exist, return empty array: {"candidates": []}
+Each entity you find must have UNIQUE values for the ID columns. These are the actual identifiers (names, URLs, IDs) of the entities you discover through web search.
 
-**Example valid outputs:**
+### ID Columns to Populate
+{{ID_COLUMNS}}
+
+**Your job:** For each entity found in your searches, fill in these ID columns with the ACTUAL values.
+
+**Example:**
+If you find Anthropic in your search results, populate:
 ```json
 {
-  "subdomain": "AI Research Companies",
+  "id_values": {
+    "Company Name": "Anthropic",
+    "Website": "https://anthropic.com"
+  }
+}
+```
+
+If you find OpenAI, populate:
+```json
+{
+  "id_values": {
+    "Company Name": "OpenAI",
+    "Website": "https://openai.com"
+  }
+}
+```
+
+**CRITICAL:**
+- Use EXACT field names from the list above
+- Populate with ACTUAL entity identifiers from your search results
+- Each entity must be UNIQUE (different company name, different website)
+- Find real entities, don't make up placeholder names
+
+### Scoring (Three Dimensions)
+
+Score each entity on three dimensions (0-1.0 scale):
+
+**1. Relevancy (0-1.0):** How well does it match the requirements?
+- 1.0 = Perfect match
+- 0.7 = Strong match, minor gaps
+- 0.4 = Moderate match
+- 0.0 = Weak match
+
+**2. Source Reliability (0-1.0):** How reliable are your sources?
+- 1.0 = Primary (company site, Crunchbase, official)
+- 0.7 = Secondary (TechCrunch, LinkedIn, major news)
+- 0.4 = Tertiary (blogs, forums)
+- 0.0 = Unreliable
+
+**3. Recency (0-1.0):** How recent is the information?
+- 1.0 = <3 months old
+- 0.7 = 3-6 months old
+- 0.4 = 6-12 months old
+- 0.0 = >12 months or unknown
+
+### Required Output
+
+For each entity, provide:
+```json
+{
+  "id_values": {
+    "Company Name": "Anthropic",
+    "Website": "https://anthropic.com"
+  },
+  "score_breakdown": {
+    "relevancy": 0.95,
+    "reliability": 1.0,
+    "recency": 0.9
+  },
+  "match_rationale": "One sentence explaining why this entity matches (or doesn't match perfectly)",
+  "source_urls": ["https://source1.com", "https://source2.com"]
+}
+```
+
+**Notes:**
+- Use EXACT field names from ID columns list
+- Provide all three dimension scores
+- Include specific source URLs
+- Keep rationale concise (1 sentence)
+- Return top {{TARGET_ROWS}} entities
+
+---
+
+## Return Format
+
+```json
+{
+  "subdomain": "{{SUBDOMAIN_NAME}}",
   "candidates": [
     {
-      "id_values": {"Company Name": "Anthropic", "Website": "https://anthropic.com"},
-      "match_score": 0.95,
-      "score_breakdown": {"relevancy": 0.95, "reliability": 1.0, "recency": 0.9},
-      "match_rationale": "Leading AI safety company...",
-      "source_urls": ["https://anthropic.com"]
+      "id_values": {...},
+      "score_breakdown": {...},
+      "match_rationale": "...",
+      "source_urls": [...]
     }
   ]
 }
 ```
 
-**NEVER:**
-- Return text explanations instead of JSON
-- Omit the candidates array
-- Return error messages in the JSON
-- Return null or undefined
+Return candidates array with your findings. If no matches found, return empty array.

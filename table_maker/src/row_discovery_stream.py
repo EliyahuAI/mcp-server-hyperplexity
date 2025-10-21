@@ -567,7 +567,7 @@ class RowDiscoveryStream:
             }
 
             # Try template first
-            prompt = self.prompt_loader.load_prompt('row_discovery_v2', variables)
+            prompt = self.prompt_loader.load_prompt('row_discovery', variables)
             return prompt
 
         except Exception as e:
