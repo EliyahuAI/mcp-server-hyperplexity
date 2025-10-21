@@ -668,6 +668,19 @@ async def run_sequential_test():
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     output_file = output_dir / f'sequential_test_{timestamp}.json'
 
+    # Final stats update: Recalculate all costs from api_calls_log for accuracy
+    stats['row_discovery_cost'] = sum(
+        call.get('cost', 0) for call in api_calls_log
+        if 'Finding Rows' in call.get('call_description', '')
+    )
+    stats['qc_cost'] = sum(
+        call.get('cost', 0) for call in api_calls_log
+        if 'QC Review' in call.get('call_description', '')
+    )
+    stats['total_cost'] = sum(
+        call.get('cost', 0) for call in api_calls_log
+    )
+
     output_data = {
         'timestamp': timestamp,
         'user_request': USER_REQUEST,
