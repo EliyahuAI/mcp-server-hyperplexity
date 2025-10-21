@@ -1150,18 +1150,9 @@ class AIAPIClient:
                 logger.warning("[AGGREGATE_DEBUG] No call metrics provided for aggregation")
                 return {'providers': {}, 'totals': {}, 'error': 'no_metrics_provided'}
 
-            # Convert any Decimal objects to float (happens when reading from DynamoDB)
-            def decimal_to_float(obj):
-                if isinstance(obj, Decimal):
-                    return float(obj)
-                elif isinstance(obj, dict):
-                    return {k: decimal_to_float(v) for k, v in obj.items()}
-                elif isinstance(obj, list):
-                    return [decimal_to_float(item) for item in obj]
-                else:
-                    return obj
-
-            call_metrics_list = decimal_to_float(call_metrics_list)
+            # NOTE: Don't convert Decimals to float - DynamoDB will reject floats when writing back
+            # Python's arithmetic works fine with Decimals, and convert_floats_to_decimal() will
+            # ensure consistency when writing. Removing decimal_to_float() conversion.
             
             providers = {}
             # Initialize totals - use int for counts, float for costs/times
