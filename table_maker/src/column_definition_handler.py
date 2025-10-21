@@ -96,7 +96,7 @@ class ColumnDefinitionHandler:
                 schema=schema,
                 model=model,
                 max_tokens=max_tokens,
-                use_cache=True,
+                use_cache=False,  # Disable cache for local testing
                 debug_name=None
             )
 

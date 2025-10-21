@@ -1,0 +1,140 @@
+{
+  "timestamp": "20251021_091350",
+  "user_request": "\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n",
+  "configuration": {
+    "target_row_count": 10,
+    "discovery_multiplier": 1.5,
+    "min_match_score": 0.6,
+    "column_definition_model": "claude-sonnet-4-5",
+    "web_search_model": "sonar-pro"
+  },
+  "columns": [
+    {
+      "name": "entity_id",
+      "description": "Unique identifier for the entity (company, research lab, etc.)",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true,
+      "validation_strategy": "Assign a unique ID based on the entity's official name and domain, cross-checked with primary sources (company website, Crunchbase, official documentation)."
+    },
+    {
+      "name": "entity_name",
+      "description": "Official name of the entity as listed on primary sources",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true,
+      "validation_strategy": "Verify against the entity's official website, Crunchbase, LinkedIn, or other authoritative directories."
+    },
+    {
+      "name": "domain",
+      "description": "Primary industry or research domain of the entity (e.g., healthcare, enterprise, research)",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Extract from the entity's 'About Us' or 'Products/Services' section on their website; cross-reference with industry directories and news articles."
+    },
+    {
+      "name": "founding_year",
+      "description": "Year the entity was founded",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Check Crunchbase, company website 'About' page, LinkedIn company profile, or press releases for founding date."
+    },
+    {
+      "name": "headquarters_location",
+      "description": "City and country of the entity's headquarters",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Verify on the company website's 'Contact' or 'About' page, Crunchbase, LinkedIn, or official press releases."
+    },
+    {
+      "name": "team_size",
+      "description": "Approximate number of employees or researchers",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Search LinkedIn company page for employee count, check 'About Us' or 'Careers' page, or find in recent news articles or Crunchbase."
+    },
+    {
+      "name": "recent_funding",
+      "description": "Most recent funding round (amount and date, if available)",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Search Crunchbase, TechCrunch, PitchBook, or company press releases for recent funding announcements."
+    },
+    {
+      "name": "key_technologies",
+      "description": "Primary technologies, platforms, or research areas",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Extract from 'Products', 'Research', or 'Technology' sections on the company website; review recent publications or news for mentions of specific technologies."
+    },
+    {
+      "name": "website_url",
+      "description": "Official website URL",
+      "format": "URL",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Confirm via Crunchbase, LinkedIn, or direct search for the entity's official domain."
+    },
+    {
+      "name": "source_last_updated",
+      "description": "Date when the information was last verified",
+      "format": "Date",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Record the date of the most recent source (news article, Crunchbase update, website update) used to validate the row."
+    }
+  ],
+  "search_strategy": {
+    "description": "This table aims to catalog prominent entities (companies, research labs, institutes) actively engaged in artificial intelligence (AI) across research, healthcare, and enterprise domains. Targets must have a public presence, recent activity, and verifiable data. Focus is on entities with clear evidence of AI focus, recent funding, hiring, or research output, and avoid those with only historical or unverifiable information.",
+    "subdomains": [
+      {
+        "name": "AI Research Organizations",
+        "focus": "Academic labs, university-affiliated institutes, and independent research organizations with a primary focus on AI/ML research.",
+        "search_queries": [
+          "top AI research labs 2024 list",
+          "university AI institutes hiring researchers",
+          "independent AI research organizations directory"
+        ],
+        "target_rows": 10
+      },
+      {
+        "name": "Healthcare AI Companies",
+        "focus": "Startups and established companies applying AI to healthcare, biotech, and medical diagnostics.",
+        "search_queries": [
+          "healthcare AI startups with recent funding",
+          "medical AI companies list 2024",
+          "biotech AI firms hiring engineers"
+        ],
+        "target_rows": 10
+      },
+      {
+        "name": "Enterprise AI Providers",
+        "focus": "B2B companies offering AI-powered automation, analytics, and business solutions.",
+        "search_queries": [
+          "enterprise AI software companies ranking",
+          "B2B AI automation providers directory",
+          "AI analytics platforms for business comparison"
+        ],
+        "target_rows": 10
+      }
+    ]
+  },
+  "final_rows": [],
+  "statistics": {
+    "column_definition_time": 40.36169219017029,
+    "row_discovery_time": 18.73544454574585,
+    "total_candidates_found": 0,
+    "duplicates_removed": 0,
+    "below_threshold": 0,
+    "final_row_count": 0,
+    "avg_match_score": 0.0,
+    "stream_times": []
+  },
+  "total_time_seconds": 59.11274528503418
+}
