@@ -49,8 +49,8 @@ from ai_api_client import AIAPIClient
 TARGET_ROW_COUNT = 10  # Final number of rows to deliver
 DISCOVERY_MULTIPLIER = 1.5  # Find 15, keep best 10
 MIN_MATCH_SCORE = 0.6  # Minimum quality threshold
-COLUMN_DEFINITION_MODEL = "claude-sonnet-4-5"
-WEB_SEARCH_MODEL = "sonar"  # Changed from sonar-pro (faster, cheaper)
+COLUMN_DEFINITION_MODEL = "sonar-pro"  # Use sonar-pro for web search capability
+WEB_SEARCH_MODEL = "sonar"  # Use regular sonar for row discovery (faster)
 MAX_PARALLEL_STREAMS = 3  # PARALLEL: Process up to 3 subdomains concurrently
 
 # User request for testing
@@ -163,9 +163,16 @@ async def run_parallel_test():
             ]
         }
 
+        # Provide context_web_research for items that affect column design
+        context_web_research = [
+            "Latest AI hiring trends 2025",
+            "Common AI job titles and roles"
+        ]
+
         column_start = time.time()
         column_result = await column_handler.define_columns(
             conversation_context=conversation_context,
+            context_web_research=context_web_research,
             model=COLUMN_DEFINITION_MODEL,
             max_tokens=8000
         )

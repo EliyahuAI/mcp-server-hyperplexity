@@ -9,6 +9,8 @@ The user has completed a conversation about their research needs and approved a 
 ## User's Approved Requirements
 {{USER_REQUIREMENTS}}
 
+{{CONTEXT_RESEARCH}}
+
 ## Your Task
 
 ### 1. Define Precise Column Specifications

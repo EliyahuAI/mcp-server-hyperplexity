@@ -35,7 +35,8 @@ class ColumnDefinitionHandler:
     async def define_columns(
         self,
         conversation_context: Dict[str, Any],
-        model: str = "claude-sonnet-4-5",
+        context_web_research: List[str] = None,
+        model: str = "sonar-pro",
         max_tokens: int = 8000
     ) -> Dict[str, Any]:
         """
@@ -77,27 +78,39 @@ class ColumnDefinitionHandler:
             conversation_history = self._format_conversation_history(conversation_context)
             user_requirements = self._extract_user_requirements(conversation_context)
 
+            # Format context research items if provided
+            research_context = ""
+            if context_web_research and len(context_web_research) > 0:
+                research_context = "\n\n**CONTEXT TO RESEARCH** (affects column design and validation):\n"
+                for item in context_web_research:
+                    research_context += f"- {item}\n"
+                research_context += "\nUse web search to understand these items, then incorporate findings into column descriptions and validation strategies."
+
             # Build prompt with variables
             variables = {
                 'CONVERSATION_CONTEXT': conversation_history,
-                'USER_REQUIREMENTS': user_requirements
+                'USER_REQUIREMENTS': user_requirements,
+                'CONTEXT_RESEARCH': research_context
             }
 
             logger.debug(f"Loading prompt template with {len(variables)} variables")
+            logger.info(f"Context research items: {len(context_web_research) if context_web_research else 0}")
             prompt = self.prompt_loader.load_prompt('column_definition', variables)
 
             # Load response schema
             schema = self.schema_validator.load_schema('column_definition_response')
 
-            # Call AI API with structured output (same pattern as interview.py)
-            logger.info(f"Calling AI API with model: {model}")
+            # Call AI API with structured output using sonar-pro (has web search for context research)
+            web_searches = 3 if (context_web_research and len(context_web_research) > 0) else 0
+            logger.info(f"Calling AI API with model: {model}, web_searches: {web_searches}")
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
                 model=model,
                 max_tokens=max_tokens,
                 use_cache=False,  # Disable cache for local testing
-                max_web_searches=0,  # Disable web search for column definition
+                max_web_searches=web_searches,  # Enable web search if context items provided
+                search_context_size='high',  # Use high context for better research
                 debug_name="column_definition"
             )
 
