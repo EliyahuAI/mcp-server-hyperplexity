@@ -59,6 +59,16 @@
     "early_stop_threshold_percentage": 120
   },
 
+  "_comment_qc_review": "QC layer reviews discovered rows and decides which to keep, reject, or reprioritize. Uses Claude Sonnet 4.5 without web search.",
+  "qc_review": {
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 8000,
+    "min_qc_score": 0.5,
+    "min_row_count": 3,
+    "max_row_count": 50,
+    "enable_qc": true
+  },
+
   "table_population": {
     "model": "claude-sonnet-4-5",
     "max_tokens": 16000,

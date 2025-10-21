@@ -213,7 +213,10 @@ async def run_sequential_test():
         # Define columns (this should now include subdomains in search_strategy)
         # Provide context_web_research for UNKNOWNS that affect column design
         # Only include items that state-of-the-art LLM would NOT know
-        context_web_research = []  # Empty for this generic test (LLM knows AI companies)
+        context_web_research = [
+            "Latest AI hiring trends Q4 2024-Q1 2025",
+            "Recent AI funding rounds and valuations October 2024-January 2025"
+        ]  # Test with some context items to enable web search
 
         result = await column_handler.define_columns(
             conversation_context=conversation_context,

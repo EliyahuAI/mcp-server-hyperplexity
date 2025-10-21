@@ -568,7 +568,8 @@ class RowDiscoveryStream:
                 'TARGET_ROWS': str(target_rows),
                 'ID_COLUMNS': '\n'.join(id_columns_text),
                 'USER_CONTEXT': search_strategy.get('user_context', 'General research table'),
-                'TABLE_PURPOSE': search_strategy.get('table_purpose', search_strategy.get('description', ''))
+                'TABLE_PURPOSE': search_strategy.get('table_purpose', search_strategy.get('description', '')),
+                'TABLEWIDE_RESEARCH': search_strategy.get('tablewide_research', '')
             }
 
             # Try template first

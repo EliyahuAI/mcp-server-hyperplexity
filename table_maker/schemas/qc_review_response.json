@@ -1,0 +1,91 @@
+{
+  "type": "object",
+  "required": ["reviewed_rows", "qc_summary"],
+  "properties": {
+    "reviewed_rows": {
+      "type": "array",
+      "description": "All rows after QC review with keep/reject decisions",
+      "items": {
+        "type": "object",
+        "required": ["id_values", "row_score", "qc_score", "qc_rationale", "keep"],
+        "properties": {
+          "id_values": {
+            "type": "object",
+            "description": "ID column values (copied from input)"
+          },
+          "row_score": {
+            "type": "number",
+            "description": "Original discovery score (copied from input)"
+          },
+          "qc_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "QC assessment score - more flexible than discovery rubric"
+          },
+          "qc_rationale": {
+            "type": "string",
+            "description": "1-2 sentence explanation of QC decision"
+          },
+          "keep": {
+            "type": "boolean",
+            "description": "Whether to include this row in final table"
+          },
+          "priority_adjustment": {
+            "type": "string",
+            "enum": ["promote", "demote", "none"],
+            "description": "Whether to adjust priority vs discovery ranking"
+          }
+        }
+      }
+    },
+    "rejected_rows": {
+      "type": "array",
+      "description": "Rows that were rejected (keep=false)",
+      "items": {
+        "type": "object",
+        "required": ["id_values", "rejection_reason"],
+        "properties": {
+          "id_values": {
+            "type": "object",
+            "description": "ID column values of rejected row"
+          },
+          "rejection_reason": {
+            "type": "string",
+            "description": "1-2 sentence explanation of why row was rejected"
+          }
+        }
+      }
+    },
+    "qc_summary": {
+      "type": "object",
+      "required": ["total_reviewed", "kept", "rejected"],
+      "properties": {
+        "total_reviewed": {
+          "type": "integer",
+          "description": "Total number of rows reviewed"
+        },
+        "kept": {
+          "type": "integer",
+          "description": "Number of rows marked keep=true"
+        },
+        "rejected": {
+          "type": "integer",
+          "description": "Number of rows marked keep=false"
+        },
+        "promoted": {
+          "type": "integer",
+          "description": "Number of rows with priority_adjustment=promote"
+        },
+        "demoted": {
+          "type": "integer",
+          "description": "Number of rows with priority_adjustment=demote"
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "Overall summary of QC decisions (1-2 sentences)"
+        }
+      }
+    }
+  }
+}

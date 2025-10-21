@@ -21,6 +21,9 @@ These rows are characterized by their **ID fields** (identification columns). Yo
 **Table Purpose:**
 {{TABLE_PURPOSE}}
 
+**Background Research Context:**
+{{TABLEWIDE_RESEARCH}}
+
 ---
 
 ## Your Specific Assignment
