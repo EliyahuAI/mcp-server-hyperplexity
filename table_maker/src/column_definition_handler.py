@@ -150,10 +150,18 @@ class ColumnDefinitionHandler:
             if enhanced_data:
                 costs = enhanced_data.get('costs', {})
                 result['cost'] = costs.get('actual', {}).get('total_cost', 0.0)
-                logger.info(f"Column definition cost: ${result['cost']:.4f}")
+                logger.info(f"Column definition cost from enhanced_data: ${result['cost']:.4f}")
             else:
-                logger.warning("No enhanced_data in API response, cost tracking unavailable")
-                result['cost'] = 0.0
+                # Fallback: Calculate cost manually from token_usage
+                logger.warning("No enhanced_data in API response, calculating cost from token_usage")
+                token_usage = api_response.get('token_usage', {})
+                input_tokens = token_usage.get('input_tokens', 0)
+                output_tokens = token_usage.get('output_tokens', 0)
+
+                # Claude Sonnet 4.5 pricing: $3/MTok input, $15/MTok output
+                cost = (input_tokens / 1_000_000 * 3.0) + (output_tokens / 1_000_000 * 15.0)
+                result['cost'] = cost
+                logger.info(f"Column definition cost calculated: ${cost:.4f} (input={input_tokens}, output={output_tokens})")
 
             # Calculate processing time
             result['processing_time'] = time.time() - start_time
