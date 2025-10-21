@@ -619,6 +619,16 @@ async def run_sequential_test():
 
     total_time = time.time() - overall_start
 
+    # Recalculate total cost from api_calls_log (authoritative source)
+    total_api_cost = sum(
+        call.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0)
+        for call in api_calls_log
+    )
+    stats['total_cost'] = total_api_cost  # Override with accurate calculation
+
+    # Calculate QC cost if available
+    qc_cost = stats.get('qc_cost', 0.0)
+
     print("\n[STATISTICS]")
     print(f"  Total execution time: {format_time(total_time)}")
     print(f"  Column definition: {format_time(stats['column_definition_time'])} (${stats['column_def_cost']:.4f})")
@@ -630,12 +640,22 @@ async def run_sequential_test():
             print(f"      Stream {idx}: {format_time(stream_time)}")
         print(f"    - (Note: Sequential = sum of all streams)")
 
+    if qc_cost > 0:
+        qc_time = stats.get('qc_review_time', 0)
+        print(f"  QC review: {format_time(qc_time)} (${qc_cost:.4f})")
+
     print(f"  Candidates found: {stats['total_candidates_found']}")
     print(f"  Deduplication: {stats['duplicates_removed']} removed")
     print(f"  Below threshold: {stats['below_threshold']} filtered")
-    print(f"  Final rows: {stats['final_row_count']}")
+
+    if 'qc_total_reviewed' in stats:
+        print(f"  QC reviewed: {stats['qc_total_reviewed']}")
+        print(f"  QC kept: {stats['qc_kept']}")
+        print(f"  QC rejected: {stats['qc_rejected']}")
+
+    print(f"  Final rows: {len(final_rows)} (QC-determined)")
     print(f"  Avg match score: {stats['avg_match_score']:.2f}")
-    print(f"  Total cost: ${stats['total_cost']:.4f}")
+    print(f"  Total cost: ${total_api_cost:.4f}")
 
     # -------------------------------------------------------------------------
     # SAVE OUTPUT (OPTIONAL)
