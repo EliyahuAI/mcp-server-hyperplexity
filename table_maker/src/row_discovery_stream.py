@@ -57,19 +57,28 @@ class RowDiscoveryStream:
         subdomain: Dict[str, Any],
         columns: List[Dict[str, Any]],
         search_strategy: Dict[str, Any],
-        web_search_limit: int = 3
+        target_rows: int = 7,
+        scoring_model: str = 'sonar-pro'
     ) -> Dict[str, Any]:
         """
-        Discover candidate rows for a single subdomain.
+        Discover candidate rows for a single subdomain using integrated scoring.
+
+        Uses a single sonar-pro call to both search and score candidates.
+        Scoring is based on three dimensions:
+        - Relevancy to requirements (40%)
+        - Source reliability (30%)
+        - Recency of information (30%)
 
         Args:
             subdomain: Subdomain definition with:
                 - name: str (e.g., "AI Research Companies")
                 - focus: str (description of focus area)
                 - search_queries: List[str] (specific queries for this subdomain)
+                - target_rows: int (how many to find)
             columns: List of column definitions (ID + research columns)
             search_strategy: Overall search strategy with description
-            web_search_limit: Maximum number of web searches to perform (default: 3)
+            target_rows: Number of candidates to find for this subdomain (default: 7)
+            scoring_model: Model to use for integrated search+scoring (default: 'sonar-pro')
 
         Returns:
             Dictionary with:
@@ -78,16 +87,20 @@ class RowDiscoveryStream:
                 "candidates": List[{
                     "id_values": Dict[str, str],
                     "match_score": float (0-1),
+                    "score_breakdown": {
+                        "relevancy": float (0-1),
+                        "reliability": float (0-1),
+                        "recency": float (0-1)
+                    },
                     "match_rationale": str,
                     "source_urls": List[str]
                 }],
-                "web_searches_performed": int,
                 "processing_time": float
             }
 
         Raises:
             ValueError: If subdomain or columns are malformed
-            Exception: If web search or LLM processing fails
+            Exception: If integrated search/scoring fails
         """
         start_time = time.time()
         subdomain_name = subdomain.get('name', 'Unknown')
@@ -96,22 +109,21 @@ class RowDiscoveryStream:
             # Validate inputs
             self._validate_inputs(subdomain, columns, search_strategy)
 
-            logger.info(f"Starting row discovery for subdomain: {subdomain_name}")
-            # Step 1: Execute web searches
-            web_search_results = await self._execute_web_searches(
-                subdomain,
-                web_search_limit
+            logger.info(
+                f"Starting integrated row discovery for subdomain: {subdomain_name} "
+                f"(target: {target_rows} rows)"
             )
 
-            # Step 2: Extract and score candidates using LLM
-            candidates_data = await self._extract_and_score_candidates(
+            # Execute integrated discovery and scoring in ONE call
+            candidates_data = await self._discover_and_score(
                 subdomain,
                 columns,
                 search_strategy,
-                web_search_results
+                target_rows,
+                scoring_model
             )
 
-            # Step 3: Validate output against schema
+            # Validate output against schema
             is_valid, error = self.schema_validator.validate(
                 candidates_data,
                 'row_discovery_response'
@@ -123,7 +135,6 @@ class RowDiscoveryStream:
 
             # Add metadata
             processing_time = time.time() - start_time
-            candidates_data['web_searches_performed'] = len(web_search_results)
             candidates_data['processing_time'] = processing_time
 
             candidate_count = len(candidates_data.get('candidates', []))
@@ -143,7 +154,6 @@ class RowDiscoveryStream:
             return {
                 'subdomain': subdomain_name,
                 'candidates': [],
-                'web_searches_performed': 0,
                 'processing_time': processing_time,
                 'error': error_msg
             }
@@ -193,151 +203,61 @@ class RowDiscoveryStream:
         if not isinstance(search_strategy, dict):
             raise ValueError("Search strategy must be a dictionary")
 
-    async def _execute_web_searches(
-        self,
-        subdomain: Dict[str, Any],
-        limit: int
-    ) -> List[Dict[str, Any]]:
-        """
-        Execute web searches for the subdomain.
-
-        Args:
-            subdomain: Subdomain definition with search_queries
-            limit: Maximum number of searches to perform
-
-        Returns:
-            List of search results, each containing:
-            {
-                "query": str,
-                "response": str,
-                "sources": List[str],
-                "success": bool
-            }
-        """
-        search_queries = subdomain['search_queries'][:limit]  # Limit to max searches
-        subdomain_name = subdomain['name']
-
-        logger.info(f"Executing {len(search_queries)} web searches for '{subdomain_name}'")
-
-        search_results = []
-
-        for query in search_queries:
-            try:
-                logger.debug(f"Searching: {query}")
-
-                # Use Perplexity API for web search
-                # Using high context for comprehensive research
-                result = await self.ai_client.validate_with_perplexity(
-                    prompt=query,
-                    model='sonar-pro',
-                    search_context_size='high',
-                    use_cache=True
-                )
-
-                # Extract response and citations
-                search_result = {
-                    'query': query,
-                    'response': self._extract_response_text(result.get('response', {})),
-                    'sources': result.get('citations', []),
-                    'success': True
-                }
-
-                search_results.append(search_result)
-                logger.debug(f"Search successful: {len(search_result['sources'])} sources found")
-
-            except Exception as e:
-                logger.warning(f"Web search failed for query '{query}': {str(e)}")
-                # Add failed search with empty results
-                search_results.append({
-                    'query': query,
-                    'response': '',
-                    'sources': [],
-                    'success': False,
-                    'error': str(e)
-                })
-
-        successful_searches = sum(1 for r in search_results if r['success'])
-        logger.info(f"Web searches completed: {successful_searches}/{len(search_results)} successful")
-
-        return search_results
-
-    def _extract_response_text(self, response: Dict[str, Any]) -> str:
-        """
-        Extract response text from API response.
-
-        Args:
-            response: API response dictionary
-
-        Returns:
-            Extracted response text
-        """
-        try:
-            # Handle different response formats
-            if isinstance(response, str):
-                return response
-
-            if 'choices' in response:
-                # OpenAI/Perplexity format
-                content = response['choices'][0]['message']['content']
-                if isinstance(content, str):
-                    return content
-                elif isinstance(content, dict):
-                    return content.get('text', str(content))
-
-            if 'content' in response:
-                # Anthropic format
-                content = response['content']
-                if isinstance(content, str):
-                    return content
-                elif isinstance(content, list) and len(content) > 0:
-                    return content[0].get('text', '')
-
-            # Fallback: convert to string
-            return str(response)
-
-        except Exception as e:
-            logger.error(f"Error extracting response text: {e}")
-            return str(response)
-
-    async def _extract_and_score_candidates(
+    async def _discover_and_score(
         self,
         subdomain: Dict[str, Any],
         columns: List[Dict[str, Any]],
         search_strategy: Dict[str, Any],
-        web_search_results: List[Dict[str, Any]]
+        target_rows: int,
+        scoring_model: str
     ) -> Dict[str, Any]:
         """
-        Use LLM to extract and score candidates from web search results.
+        Execute web search with integrated scoring in ONE call.
+
+        Uses sonar-pro (or configured model) to:
+        1. Search for entities matching subdomain focus
+        2. Score each entity using the rubric
+        3. Return top N scored candidates
+
+        Returns candidates with score_breakdown showing:
+        - relevancy_score (0-1)
+        - reliability_score (0-1)
+        - recency_score (0-1)
+        - final_score (weighted average)
 
         Args:
             subdomain: Subdomain definition
             columns: Column definitions
             search_strategy: Search strategy
-            web_search_results: Results from web searches
+            target_rows: How many rows to find
+            scoring_model: Model to use (default: sonar-pro)
 
         Returns:
-            Dictionary matching row_discovery_response schema
+            Dictionary matching row_discovery_response schema with score_breakdown
         """
-        # Load and fill prompt template
-        prompt = self._build_prompt(
+        # Build prompt with integrated scoring rubric
+        prompt = self._build_integrated_scoring_prompt(
             subdomain,
             columns,
             search_strategy,
-            web_search_results
+            target_rows
         )
 
         # Load schema for structured output
         schema = self.schema_validator.load_schema('row_discovery_response')
 
-        logger.debug(f"Calling LLM to extract candidates for '{subdomain['name']}'")
+        logger.debug(
+            f"Calling {scoring_model} for integrated discovery+scoring: "
+            f"'{subdomain['name']}' (target: {target_rows} rows)"
+        )
 
         try:
-            # Call LLM with structured output
+            # Single call to sonar-pro with structured output
             result = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
-                model='claude-sonnet-4-5',
-                tool_name='row_discovery',
+                model=scoring_model,
+                tool_name='row_discovery_integrated',
                 use_cache=False,  # Don't cache - web results change
                 max_tokens=8000
             )
@@ -351,99 +271,93 @@ class RowDiscoveryStream:
             # Ensure subdomain is set correctly
             response_data['subdomain'] = subdomain['name']
 
+            # Limit to target_rows
+            candidates = response_data.get('candidates', [])
+            response_data['candidates'] = candidates[:target_rows]
+
             return response_data
 
         except Exception as e:
-            logger.error(f"Error extracting candidates: {str(e)}")
+            logger.error(f"Error in integrated discovery+scoring: {str(e)}")
             # Return empty candidates on error
             return {
                 'subdomain': subdomain['name'],
                 'candidates': []
             }
 
-    def _build_prompt(
+    def _build_integrated_scoring_prompt(
         self,
         subdomain: Dict[str, Any],
         columns: List[Dict[str, Any]],
         search_strategy: Dict[str, Any],
-        web_search_results: List[Dict[str, Any]]
+        target_rows: int
     ) -> str:
         """
-        Build prompt for candidate extraction using template.
+        Build prompt with integrated scoring rubric.
 
         Args:
             subdomain: Subdomain definition
             columns: Column definitions
             search_strategy: Search strategy
-            web_search_results: Web search results
+            target_rows: How many rows to find
 
         Returns:
-            Filled prompt string
+            Filled prompt string with scoring rubric
         """
-        # Format subdomain
-        subdomain_text = f"{subdomain['name']}\n{subdomain['focus']}"
+        # Extract ID columns
+        id_columns = [col['name'] for col in columns if col.get('is_identification')]
 
-        # Format search strategy
-        strategy_text = search_strategy.get('description', 'Find relevant entities')
+        # Build search queries section
+        search_queries_text = '\n'.join(f'- {q}' for q in subdomain['search_queries'])
 
-        # Format columns as JSON
-        columns_json = json.dumps(columns, indent=2)
+        # Build ID columns section
+        id_columns_text = '\n'.join(f'- {col}' for col in id_columns)
 
-        # Format web search results
-        web_results_text = self._format_web_search_results(web_search_results)
+        prompt = f"""You are finding and scoring entities for: {subdomain['name']}
 
-        # Load and fill template
-        variables = {
-            'SUBDOMAIN': subdomain_text,
-            'SEARCH_STRATEGY': strategy_text,
-            'COLUMNS': columns_json,
-            'WEB_SEARCH_RESULTS': web_results_text
-        }
+FOCUS: {subdomain['focus']}
 
-        prompt = self.prompt_loader.load_prompt('row_discovery', variables)
+REQUIREMENTS: {search_strategy.get('description', 'Find relevant entities')}
 
+TARGET: Find {target_rows} best-matching entities
+
+SEARCH QUERIES (prioritize multi-row results):
+{search_queries_text}
+
+ID COLUMNS TO POPULATE:
+{id_columns_text}
+
+SCORING RUBRIC (0-1.0 scale):
+Final Score = (Relevancy × 0.4) + (Source Reliability × 0.3) + (Recency × 0.3)
+
+**Relevancy (0-1.0):** How well does the entity match requirements?
+  1.0 = Perfect match to all requirements
+  0.7 = Matches most requirements, minor gaps
+  0.4 = Matches core requirements only
+  0.0 = Weak or no match
+
+**Source Reliability (0-1.0):** How reliable are your sources?
+  1.0 = Primary sources (company site, Crunchbase, official docs)
+  0.7 = Secondary sources (TechCrunch, LinkedIn, WSJ, Bloomberg)
+  0.4 = Tertiary sources (blogs, aggregators, forums)
+  0.0 = Unreliable or unverified
+
+**Recency (0-1.0):** How recent is the information?
+  1.0 = <3 months old
+  0.7 = 3-6 months old
+  0.4 = 6-12 months old
+  0.0 = >12 months or undated
+
+For each entity:
+1. Populate ID columns with accurate values
+2. Calculate individual dimension scores (relevancy, reliability, recency)
+3. Calculate final weighted score using formula above
+4. Provide 1-sentence rationale explaining score
+5. Include source URLs
+
+Return top {target_rows} candidates sorted by final score (highest first).
+"""
         return prompt
-
-    def _format_web_search_results(self, search_results: List[Dict[str, Any]]) -> str:
-        """
-        Format web search results for prompt.
-
-        Args:
-            search_results: List of search result dictionaries
-
-        Returns:
-            Formatted string with all search results
-        """
-        if not search_results or all(not r['success'] for r in search_results):
-            return "No web search results available."
-
-        formatted_parts = []
-
-        for i, result in enumerate(search_results, 1):
-            if not result['success']:
-                continue
-
-            formatted_parts.append(f"### Search {i}: {result['query']}")
-            formatted_parts.append("")
-            formatted_parts.append(result['response'])
-            formatted_parts.append("")
-
-            if result.get('sources'):
-                formatted_parts.append("**Sources:**")
-                for source in result['sources'][:5]:  # Limit to 5 sources per search
-                    if isinstance(source, dict):
-                        url = source.get('url', '')
-                    else:
-                        url = str(source)
-
-                    if url:
-                        formatted_parts.append(f"- {url}")
-                formatted_parts.append("")
-
-        if not formatted_parts:
-            return "No successful web search results."
-
-        return "\n".join(formatted_parts)
 
 
 # Convenience function for easy usage
@@ -454,10 +368,11 @@ async def discover_rows(
     subdomain: Dict[str, Any],
     columns: List[Dict[str, Any]],
     search_strategy: Dict[str, Any],
-    web_search_limit: int = 3
+    target_rows: int = 7,
+    scoring_model: str = 'sonar-pro'
 ) -> Dict[str, Any]:
     """
-    Convenience function to discover rows for a subdomain.
+    Convenience function to discover rows for a subdomain with integrated scoring.
 
     Args:
         ai_client: AI API client instance
@@ -466,10 +381,11 @@ async def discover_rows(
         subdomain: Subdomain definition
         columns: Column definitions
         search_strategy: Search strategy
-        web_search_limit: Maximum web searches (default: 3)
+        target_rows: Number of rows to find (default: 7)
+        scoring_model: Model for integrated scoring (default: sonar-pro)
 
     Returns:
         Row discovery results dictionary
     """
     stream = RowDiscoveryStream(ai_client, prompt_loader, schema_validator)
-    return await stream.discover_rows(subdomain, columns, search_strategy, web_search_limit)
+    return await stream.discover_rows(subdomain, columns, search_strategy, target_rows, scoring_model)

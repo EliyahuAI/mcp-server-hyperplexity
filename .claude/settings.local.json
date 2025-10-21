@@ -28,7 +28,10 @@
       "Bash(test:*)",
       "Bash(git reset:*)",
       "Bash(chmod:*)",
-      "Bash(python3.exe:*)"
+      "Bash(python3.exe:*)",
+      "Bash(/dev/null)",
+      "Bash(python3:*)",
+      "Bash(awk '{print $9, \"\"\"\"(\"\"\"\" $5 \"\"\"\")\"\"\"\"}')"
     ],
     "deny": []
   }

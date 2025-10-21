@@ -7,23 +7,31 @@
     "emphasis": "sketch_approval"
   },
 
+  "_comment_column_definition": "Column definition now includes subdomain specification within the search_strategy output",
   "column_definition": {
     "model": "claude-sonnet-4-5",
     "max_tokens": 8000,
     "use_web_search": true,
     "web_searches": 3,
-    "show_preview_table": false
+    "show_preview_table": false,
+    "include_subdomains": true,
+    "subdomain_count_min": 2,
+    "subdomain_count_max": 5,
+    "default_target_rows_total": 30
   },
 
+  "_comment_row_discovery": "Row discovery with integrated scoring. Uses discovery_multiplier (1.5) to find 30 candidates and keep best 20 after deduplication. max_parallel_streams set to 1 for initial sequential testing.",
   "row_discovery": {
-    "model": "claude-sonnet-4-5",
+    "web_search_model": "sonar-pro",
+    "scoring_model": "sonar-pro",
+    "integrated_scoring": true,
+    "model": "sonar-pro",
     "max_tokens": 8000,
     "target_row_count": 20,
+    "discovery_multiplier": 1.5,
     "min_match_score": 0.6,
-    "max_parallel_streams": 5,
-    "web_searches_per_stream": 3,
-    "automatic_subdomain_splitting": true,
-    "subdomain_analysis_model": "claude-sonnet-4-5"
+    "max_parallel_streams": 1,
+    "web_searches_per_stream": 3
   },
 
   "table_population": {

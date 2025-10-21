@@ -1,5 +1,31 @@
 #!/usr/bin/env python3
 """
+DEPRECATED: This component is no longer used in the table generation system.
+
+Date Deprecated: October 20, 2025
+Reason: Subdomains are now defined directly in the column_definition step,
+        eliminating the need for a separate subdomain analysis call.
+
+Replaced By: Subdomain specification in column_definition_response.json schema.
+             The search_strategy now includes a 'subdomains' array with 2-5
+             subdomain definitions, each containing name, focus, search_queries,
+             and target_rows.
+
+Original Purpose: Analyze search strategies to identify natural subdivisions (subdomains)
+                 for parallel row discovery. This required a separate AI call to split
+                 a broad search strategy into 2-5 focused subdomains.
+
+Migration Path: Instead of calling subdomain_analyzer.analyze(), subdomains are now
+               returned directly from the column definition step as part of the
+               search_strategy object.
+
+Code Kept For: Reference and potential future use if manual subdomain splitting
+              becomes needed outside the column definition flow.
+
+See: table_maker/src/SUBDOMAIN_ANALYZER_DEPRECATED.md for more details.
+
+---
+
 Subdomain analyzer for table generation system.
 Analyzes search strategies to identify natural subdivisions for parallel row discovery.
 """

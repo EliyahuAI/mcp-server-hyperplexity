@@ -21,12 +21,14 @@ logger = logging.getLogger(__name__)
 
 class RowDiscovery:
     """
-    Orchestrate parallel row discovery across multiple subdomains.
+    Orchestrate row discovery across subdomains with integrated scoring.
 
-    This class coordinates three sub-components:
-    - SubdomainAnalyzer: Identifies 2-5 natural subdivisions for parallel search
-    - RowDiscoveryStream: Discovers and scores candidates in each subdomain
+    This class coordinates two sub-components:
+    - RowDiscoveryStream: Discovers and scores candidates in each subdomain (integrated scoring)
     - RowConsolidator: Deduplicates and prioritizes final row list
+
+    Subdomains are now defined in the column definition (search_strategy.subdomains),
+    not via separate analysis.
 
     Example:
         >>> from row_discovery import RowDiscovery
@@ -34,13 +36,21 @@ class RowDiscovery:
         >>> result = await discovery.discover_rows(
         ...     search_strategy={
         ...         "description": "Find AI companies...",
-        ...         "subdomain_hints": ["Research", "Healthcare", "Enterprise"]
+        ...         "subdomains": [
+        ...             {
+        ...                 "name": "AI Research",
+        ...                 "focus": "Academic AI research companies",
+        ...                 "search_queries": ["AI research labs", "ML institutes"],
+        ...                 "target_rows": 10
+        ...             }
+        ...         ]
         ...     },
         ...     columns=[
         ...         {"name": "Company Name", "is_identification": True},
         ...         {"name": "Website", "is_identification": True}
         ...     ],
-        ...     target_row_count=20
+        ...     target_row_count=20,
+        ...     max_parallel_streams=1  # Sequential for testing
         ... )
         >>> print(f"Found {len(result['final_rows'])} rows")
     """
@@ -50,7 +60,6 @@ class RowDiscovery:
         ai_client,
         prompt_loader,
         schema_validator,
-        subdomain_analyzer=None,
         row_discovery_stream=None,
         row_consolidator=None
     ):
@@ -61,7 +70,6 @@ class RowDiscovery:
             ai_client: AI API client instance
             prompt_loader: PromptLoader instance
             schema_validator: SchemaValidator instance
-            subdomain_analyzer: Optional pre-configured SubdomainAnalyzer (for testing)
             row_discovery_stream: Optional pre-configured RowDiscoveryStream (for testing)
             row_consolidator: Optional pre-configured RowConsolidator (for testing)
         """
@@ -70,14 +78,6 @@ class RowDiscovery:
         self.schema_validator = schema_validator
 
         # Import and initialize components (lazy import to avoid circular dependencies)
-        if subdomain_analyzer is None:
-            from subdomain_analyzer import SubdomainAnalyzer
-            self.subdomain_analyzer = SubdomainAnalyzer(
-                ai_client, prompt_loader, schema_validator
-            )
-        else:
-            self.subdomain_analyzer = subdomain_analyzer
-
         if row_discovery_stream is None:
             from row_discovery_stream import RowDiscoveryStream
             self.row_discovery_stream_class = RowDiscoveryStream
@@ -97,28 +97,30 @@ class RowDiscovery:
         search_strategy: Dict[str, Any],
         columns: List[Dict[str, Any]],
         target_row_count: int = 20,
+        discovery_multiplier: float = 1.5,
         min_match_score: float = 0.6,
-        web_searches_per_stream: int = 3,
-        max_parallel_streams: int = 5
+        max_parallel_streams: int = 1,
+        scoring_model: str = 'sonar-pro'
     ) -> Dict[str, Any]:
         """
-        Discover rows through parallel subdomain search and consolidation.
+        Discover rows using subdomains from search_strategy.
 
-        This is the main method that orchestrates the entire row discovery pipeline:
-        1. Analyze search strategy to identify 2-5 subdomains
-        2. Launch parallel discovery streams (up to max_parallel_streams)
+        This method orchestrates the row discovery pipeline:
+        1. Extract subdomains from search_strategy (already defined in column definition)
+        2. Launch discovery streams (sequential or parallel based on max_parallel_streams)
         3. Consolidate results: deduplicate, filter, sort, limit to top N
 
         Args:
-            search_strategy: Dictionary with search strategy information:
+            search_strategy: Must contain 'subdomains' array from column definition:
                 - description: str - What to search for
-                - subdomain_hints: List[str] - Optional subdivision hints
-                - search_queries: List[str] - General search queries
+                - subdomains: List[Dict] - Pre-defined subdomains with search queries
             columns: List of column definitions (ID + research columns)
-            target_row_count: Number of final rows to return (default: 20)
+            target_row_count: Final number of rows to return (default: 20)
+            discovery_multiplier: Overshooting factor for discovery (default: 1.5)
+                                  Note: Overshooting is achieved by sum of subdomain target_rows
             min_match_score: Minimum match score threshold (default: 0.6)
-            web_searches_per_stream: Web searches per subdomain stream (default: 3)
-            max_parallel_streams: Maximum concurrent streams (default: 5)
+            max_parallel_streams: Max concurrent streams (default: 1 for sequential testing)
+            scoring_model: Model for integrated scoring (default: sonar-pro)
 
         Returns:
             Dictionary with:
@@ -127,6 +129,7 @@ class RowDiscovery:
                 "final_rows": List[Dict] - Top N deduplicated candidates with:
                     - id_values: Dict[str, str]
                     - match_score: float (0-1)
+                    - score_breakdown: {relevancy, reliability, recency}
                     - match_rationale: str
                     - source_urls: List[str]
                     - merged_from_streams: List[str]
@@ -168,61 +171,85 @@ class RowDiscovery:
 
             logger.info(
                 f"Starting row discovery: target={target_row_count}, "
-                f"min_score={min_match_score}, max_streams={max_parallel_streams}"
+                f"min_score={min_match_score}, max_streams={max_parallel_streams}, "
+                f"scoring_model={scoring_model}"
             )
 
             # ================================================================
-            # STEP 1: SUBDOMAIN ANALYSIS
+            # STEP 1: GET SUBDOMAINS FROM SEARCH_STRATEGY
             # ================================================================
-            logger.info("Step 1/3: Analyzing search strategy to identify subdomains")
-            subdomain_result = await self.subdomain_analyzer.analyze(search_strategy)
+            logger.info("Step 1/3: Loading subdomains from search_strategy")
 
-            if not subdomain_result.get('success'):
-                error_msg = f"Subdomain analysis failed: {subdomain_result.get('error', 'Unknown error')}"
+            # Get subdomains from search_strategy (not separate analysis)
+            subdomains = search_strategy.get('subdomains', [])
+
+            if not subdomains:
+                error_msg = "No subdomains found in search_strategy"
                 logger.error(error_msg)
                 result['error'] = error_msg
                 result['processing_time'] = round(time.time() - start_time, 2)
                 return result
 
-            subdomains = subdomain_result.get('subdomains', [])
             result['stats']['subdomains_analyzed'] = len(subdomains)
 
-            if len(subdomains) == 0:
-                logger.warning("No subdomains identified - returning empty results")
-                result['success'] = True
-                result['processing_time'] = round(time.time() - start_time, 2)
-                return result
-
             logger.info(
-                f"Identified {len(subdomains)} subdomain(s): "
+                f"Using {len(subdomains)} subdomain(s) from column definition: "
                 f"{[s.get('name', 'Unknown') for s in subdomains]}"
             )
 
-            # ================================================================
-            # STEP 2: PARALLEL STREAM EXECUTION
-            # ================================================================
+            # Log overshooting strategy
+            total_target_rows = sum(s.get('target_rows', 0) for s in subdomains)
             logger.info(
-                f"Step 2/3: Launching parallel discovery streams "
-                f"(max {max_parallel_streams} concurrent)"
+                f"Overshooting: Finding up to {total_target_rows} candidates "
+                f"to select best {target_row_count}"
             )
 
-            # Limit to max_parallel_streams
-            subdomains_to_process = subdomains[:max_parallel_streams]
-            result['stats']['parallel_streams'] = len(subdomains_to_process)
-
-            if len(subdomains) > max_parallel_streams:
-                logger.warning(
-                    f"Limiting to {max_parallel_streams} streams "
-                    f"(identified {len(subdomains)} subdomains)"
+            # ================================================================
+            # STEP 2: EXECUTE STREAMS (SEQUENTIAL OR PARALLEL)
+            # ================================================================
+            if max_parallel_streams == 1:
+                # SEQUENTIAL MODE (for initial testing)
+                logger.info("Step 2/3: Processing subdomains SEQUENTIALLY (testing mode)")
+                stream_results = []
+                for i, subdomain in enumerate(subdomains, 1):
+                    logger.info(
+                        f"Processing subdomain {i}/{len(subdomains)}: {subdomain['name']} "
+                        f"(target: {subdomain.get('target_rows', 7)} rows)"
+                    )
+                    result_item = await self._execute_single_stream(
+                        subdomain,
+                        columns,
+                        search_strategy,
+                        subdomain.get('target_rows', 7),
+                        scoring_model
+                    )
+                    stream_results.append(result_item)
+            else:
+                # PARALLEL MODE (for production)
+                logger.info(
+                    f"Step 2/3: Processing subdomains in PARALLEL "
+                    f"(max {max_parallel_streams} concurrent)"
                 )
 
-            # Execute streams in parallel
-            stream_results = await self._execute_parallel_streams(
-                subdomains_to_process,
-                columns,
-                search_strategy,
-                web_searches_per_stream
-            )
+                # Limit to max_parallel_streams
+                subdomains_to_process = subdomains[:max_parallel_streams]
+                result['stats']['parallel_streams'] = len(subdomains_to_process)
+
+                if len(subdomains) > max_parallel_streams:
+                    logger.warning(
+                        f"Limiting to {max_parallel_streams} streams "
+                        f"(defined {len(subdomains)} subdomains)"
+                    )
+
+                # Execute streams in parallel
+                stream_results = await self._execute_parallel_streams(
+                    subdomains_to_process,
+                    columns,
+                    search_strategy,
+                    scoring_model
+                )
+
+            result['stats']['parallel_streams'] = len(stream_results)
 
             # Check if ALL streams failed
             successful_streams = [s for s in stream_results if not s.get('error')]
@@ -241,7 +268,10 @@ class RowDiscovery:
                     f"continuing with {len(successful_streams)} successful stream(s)"
                 )
                 for failed_stream in failed_streams:
-                    logger.warning(f"  - {failed_stream.get('subdomain', 'Unknown')}: {failed_stream.get('error')}")
+                    logger.warning(
+                        f"  - {failed_stream.get('subdomain', 'Unknown')}: "
+                        f"{failed_stream.get('error')}"
+                    )
 
             # Count total candidates
             total_candidates = sum(
@@ -303,12 +333,51 @@ class RowDiscovery:
             result['processing_time'] = round(time.time() - start_time, 2)
             return result
 
+    async def _execute_single_stream(
+        self,
+        subdomain: Dict[str, Any],
+        columns: List[Dict[str, Any]],
+        search_strategy: Dict[str, Any],
+        target_rows: int,
+        scoring_model: str
+    ) -> Dict[str, Any]:
+        """
+        Execute a single row discovery stream.
+
+        Args:
+            subdomain: Subdomain definition
+            columns: Column definitions
+            search_strategy: Overall search strategy
+            target_rows: Number of rows to find for this subdomain
+            scoring_model: Model for integrated scoring
+
+        Returns:
+            Stream result dictionary
+        """
+        # Create a new stream instance
+        stream = self.row_discovery_stream_class(
+            self.ai_client,
+            self.prompt_loader,
+            self.schema_validator
+        )
+
+        # Execute discovery with integrated scoring
+        result = await stream.discover_rows(
+            subdomain=subdomain,
+            columns=columns,
+            search_strategy=search_strategy,
+            target_rows=target_rows,
+            scoring_model=scoring_model
+        )
+
+        return result
+
     async def _execute_parallel_streams(
         self,
         subdomains: List[Dict[str, Any]],
         columns: List[Dict[str, Any]],
         search_strategy: Dict[str, Any],
-        web_search_limit: int
+        scoring_model: str
     ) -> List[Dict[str, Any]]:
         """
         Execute row discovery streams in parallel using asyncio.gather().
@@ -321,7 +390,7 @@ class RowDiscovery:
             subdomains: List of subdomain definitions
             columns: Column definitions
             search_strategy: Overall search strategy
-            web_search_limit: Maximum web searches per stream
+            scoring_model: Model for integrated scoring
 
         Returns:
             List of stream results (may include errors for failed streams)
@@ -338,12 +407,13 @@ class RowDiscovery:
                 self.schema_validator
             )
 
-            # Create async task
+            # Create async task with integrated scoring
             task = stream.discover_rows(
                 subdomain=subdomain,
                 columns=columns,
                 search_strategy=search_strategy,
-                web_search_limit=web_search_limit
+                target_rows=subdomain.get('target_rows', 7),
+                scoring_model=scoring_model
             )
             tasks.append(task)
 
@@ -489,9 +559,10 @@ async def discover_rows(
     search_strategy: Dict[str, Any],
     columns: List[Dict[str, Any]],
     target_row_count: int = 20,
+    discovery_multiplier: float = 1.5,
     min_match_score: float = 0.6,
-    web_searches_per_stream: int = 3,
-    max_parallel_streams: int = 5
+    max_parallel_streams: int = 1,
+    scoring_model: str = 'sonar-pro'
 ) -> Dict[str, Any]:
     """
     Convenience function to discover rows without creating RowDiscovery instance.
@@ -500,12 +571,13 @@ async def discover_rows(
         ai_client: AI API client instance
         prompt_loader: PromptLoader instance
         schema_validator: SchemaValidator instance
-        search_strategy: Search strategy dictionary
+        search_strategy: Search strategy dictionary with subdomains
         columns: Column definitions
         target_row_count: Number of final rows (default: 20)
+        discovery_multiplier: Overshooting factor (default: 1.5)
         min_match_score: Minimum match score (default: 0.6)
-        web_searches_per_stream: Web searches per stream (default: 3)
-        max_parallel_streams: Maximum concurrent streams (default: 5)
+        max_parallel_streams: Maximum concurrent streams (default: 1 for sequential)
+        scoring_model: Model for integrated scoring (default: sonar-pro)
 
     Returns:
         Row discovery results dictionary
@@ -515,7 +587,8 @@ async def discover_rows(
         search_strategy=search_strategy,
         columns=columns,
         target_row_count=target_row_count,
+        discovery_multiplier=discovery_multiplier,
         min_match_score=min_match_score,
-        web_searches_per_stream=web_searches_per_stream,
-        max_parallel_streams=max_parallel_streams
+        max_parallel_streams=max_parallel_streams,
+        scoring_model=scoring_model
     )
