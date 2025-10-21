@@ -89,7 +89,7 @@ class ColumnDefinitionHandler:
             # Load response schema
             schema = self.schema_validator.load_schema('column_definition_response')
 
-            # Call AI API with structured output
+            # Call AI API with structured output (same pattern as interview.py)
             logger.info(f"Calling AI API with model: {model}")
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
@@ -97,7 +97,8 @@ class ColumnDefinitionHandler:
                 model=model,
                 max_tokens=max_tokens,
                 use_cache=False,  # Disable cache for local testing
-                debug_name=None
+                max_web_searches=3,  # Enable web search for context (like config generator)
+                debug_name="column_definition"
             )
 
             # Check for API errors
@@ -106,9 +107,20 @@ class ColumnDefinitionHandler:
                 logger.error(f"API call failed: {error_detail}")
                 raise Exception(f"AI API call failed: {error_detail}")
 
-            # Extract structured response
+            # Extract structured response (same pattern as interview.py)
             raw_response = api_response.get('response', {})
-            ai_response = self._extract_structured_response(raw_response)
+
+            # Parse the structured content from choices[0].message.content
+            if 'choices' in raw_response and len(raw_response['choices']) > 0:
+                content = raw_response['choices'][0]['message']['content']
+                ai_response = json.loads(content) if isinstance(content, str) else content
+            elif 'columns' in raw_response and 'search_strategy' in raw_response:
+                # Response is already structured (from cache or direct format)
+                ai_response = raw_response
+            else:
+                logger.error(f"Unexpected response structure: {json.dumps(raw_response, indent=2)[:500]}")
+                # Fallback to old extraction method
+                ai_response = self._extract_structured_response(raw_response)
 
             logger.debug(f"Extracted AI response keys: {list(ai_response.keys())}")
 
