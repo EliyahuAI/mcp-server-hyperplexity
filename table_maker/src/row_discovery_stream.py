@@ -262,11 +262,21 @@ class RowDiscoveryStream:
                 max_tokens=8000
             )
 
-            if not result.get('success', False):
-                raise ValueError(f"LLM call failed: {result.get('error', 'Unknown error')}")
+            # call_structured_api returns dict with 'response', 'token_usage', etc.
+            # Check if we got a valid response
+            if 'response' not in result:
+                raise ValueError(f"LLM call failed: {result.get('error', 'No response returned')}")
 
             # Extract structured response
             response_data = result.get('response', {})
+
+            # If response is in Perplexity unified format, extract the JSON
+            if isinstance(response_data, dict) and 'choices' in response_data:
+                content = response_data['choices'][0]['message']['content']
+                if isinstance(content, str):
+                    response_data = json.loads(content)
+            elif isinstance(response_data, str):
+                response_data = json.loads(response_data)
 
             # Ensure subdomain is set correctly
             response_data['subdomain'] = subdomain['name']
