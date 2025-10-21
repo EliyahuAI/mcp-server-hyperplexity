@@ -50,7 +50,7 @@ TARGET_ROW_COUNT = 10  # Final number of rows to deliver
 DISCOVERY_MULTIPLIER = 1.5  # Find 15, keep best 10
 MIN_MATCH_SCORE = 0.6  # Minimum quality threshold
 COLUMN_DEFINITION_MODEL = "claude-sonnet-4-5"
-WEB_SEARCH_MODEL = "sonar-pro"
+WEB_SEARCH_MODEL = "sonar"  # Changed from sonar-pro (faster, cheaper)
 MAX_PARALLEL_STREAMS = 3  # PARALLEL: Process up to 3 subdomains concurrently
 
 # User request for testing

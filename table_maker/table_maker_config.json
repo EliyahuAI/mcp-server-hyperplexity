@@ -22,10 +22,10 @@
 
   "_comment_row_discovery": "Row discovery with integrated scoring. Uses discovery_multiplier (1.5) to find 30 candidates and keep best 20 after deduplication. max_parallel_streams set to 1 for initial sequential testing.",
   "row_discovery": {
-    "web_search_model": "sonar-pro",
-    "scoring_model": "sonar-pro",
+    "web_search_model": "sonar",
+    "scoring_model": "sonar",
     "integrated_scoring": true,
-    "model": "sonar-pro",
+    "model": "sonar",
     "max_tokens": 8000,
     "target_row_count": 20,
     "discovery_multiplier": 1.5,

@@ -52,7 +52,7 @@ MIN_MATCH_SCORE = 0.6  # Minimum quality threshold
 
 # Models to use
 COLUMN_DEFINITION_MODEL = "claude-sonnet-4-5"
-WEB_SEARCH_MODEL = "sonar-pro"
+WEB_SEARCH_MODEL = "sonar"  # Changed from sonar-pro (faster, cheaper)
 
 # User request for testing
 USER_REQUEST = """

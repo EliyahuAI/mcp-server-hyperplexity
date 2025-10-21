@@ -2195,7 +2195,7 @@ class AIAPIClient:
         
         try:
             async with aiohttp.ClientSession() as session:
-                timeout = aiohttp.ClientTimeout(total=60)
+                timeout = aiohttp.ClientTimeout(total=180)  # 3 minutes for row discovery
                 async with session.post(
                     "https://api.perplexity.ai/chat/completions",
                     headers=headers,
@@ -2637,7 +2637,7 @@ class AIAPIClient:
         
         try:
             async with aiohttp.ClientSession() as session:
-                timeout = aiohttp.ClientTimeout(total=60)
+                timeout = aiohttp.ClientTimeout(total=180)  # 3 minutes for row discovery
                 async with session.post(
                     "https://api.perplexity.ai/chat/completions",
                     headers=headers,
