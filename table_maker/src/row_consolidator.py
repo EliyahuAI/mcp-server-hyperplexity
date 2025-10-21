@@ -264,12 +264,12 @@ class RowConsolidator:
 
     def _recalculate_scores(self, candidates: List[Dict[str, Any]]) -> None:
         """
-        Recalculate match scores from score_breakdown using correct formula.
+        Calculate match scores from score_breakdown using formula in CODE.
 
-        sonar-pro sometimes returns incorrect final scores. This method recalculates
-        the match_score using the formula: (Relevancy × 0.4) + (Reliability × 0.3) + (Recency × 0.3)
+        LLMs should NOT calculate weighted averages - we do it here in code.
+        Formula: match_score = (Relevancy × 0.4) + (Reliability × 0.3) + (Recency × 0.3)
 
-        Modifies candidates in-place.
+        Modifies candidates in-place, ALWAYS overwrites match_score from breakdown.
 
         Args:
             candidates: List of candidates with score_breakdown
@@ -284,21 +284,22 @@ class RowConsolidator:
                 reliability = score_breakdown.get('reliability', 0)
                 recency = score_breakdown.get('recency', 0)
 
-                # Calculate correct score
+                # ALWAYS calculate score from breakdown (don't trust LLM calculation)
                 calculated_score = (relevancy * 0.4) + (reliability * 0.3) + (recency * 0.3)
 
-                # Update if different from reported score
+                # Log if LLM gave different score (for monitoring)
                 reported_score = candidate.get('match_score', 0)
                 if abs(calculated_score - reported_score) > 0.01:
                     logger.debug(
-                        f"Score correction: {reported_score:.2f} → {calculated_score:.2f} "
-                        f"(R={relevancy:.2f}, Rl={reliability:.2f}, Rc={recency:.2f})"
+                        f"Score calculated: {calculated_score:.2f} (LLM said {reported_score:.2f}) "
+                        f"- R={relevancy:.2f}, Rl={reliability:.2f}, Rc={recency:.2f}"
                     )
-                    candidate['match_score'] = calculated_score
-                    recalculated_count += 1
 
-        if recalculated_count > 0:
-            logger.info(f"Recalculated {recalculated_count} incorrect score(s)")
+                # ALWAYS set to calculated score
+                candidate['match_score'] = calculated_score
+                recalculated_count += 1
+
+        logger.info(f"Calculated match_score for {recalculated_count} candidate(s) from score_breakdown")
 
     def _detect_id_columns(self, candidates: List[Dict[str, Any]]) -> List[str]:
         """

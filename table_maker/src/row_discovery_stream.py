@@ -532,7 +532,7 @@ class RowDiscoveryStream:
         target_rows: int
     ) -> str:
         """
-        Build prompt with integrated scoring rubric.
+        Build prompt with integrated scoring rubric using template.
 
         Args:
             subdomain: Subdomain definition
@@ -541,15 +541,31 @@ class RowDiscoveryStream:
             target_rows: How many rows to find
 
         Returns:
-            Filled prompt string with scoring rubric
+            Filled prompt string from template
         """
         # Extract ID columns
         id_columns = [col['name'] for col in columns if col.get('is_identification')]
 
-        # Build search queries section
-        search_queries_text = '\n'.join(f'- {q}' for q in subdomain['search_queries'])
+        # Try to load template (if exists), otherwise use inline
+        try:
+            variables = {
+                'SUBDOMAIN_NAME': subdomain['name'],
+                'SUBDOMAIN_FOCUS': subdomain['focus'],
+                'SEARCH_REQUIREMENTS': search_strategy.get('description', 'Find relevant entities'),
+                'SEARCH_QUERIES': '\n'.join(f'- {q}' for q in subdomain['search_queries']),
+                'TARGET_ROWS': str(target_rows),
+                'ID_COLUMNS': '\n'.join(f'- {col}' for col in id_columns)
+            }
 
-        # Build ID columns section
+            # Try template first
+            prompt = self.prompt_loader.load_prompt('row_discovery_v2', variables)
+            return prompt
+
+        except Exception as e:
+            logger.debug(f"Could not load template, using inline prompt: {e}")
+
+        # Fallback: Build inline (for backward compat)
+        search_queries_text = '\n'.join(f'- {q}' for q in subdomain['search_queries'])
         id_columns_text = '\n'.join(f'- {col}' for col in id_columns)
 
         prompt = f"""You are finding and scoring entities for: {subdomain['name']}
