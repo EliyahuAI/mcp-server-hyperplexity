@@ -160,12 +160,20 @@ Using the information provided above:
    - First subdomains: Specific, focused categories (e.g., "AI Research", "Healthcare AI")
    - Last subdomain: Catch-all for remaining entities (e.g., "Other AI Companies", "Additional Opportunities Not in Above Categories")
    - This ensures complete coverage - nothing is excluded
-   - Distribute target_rows: larger numbers for main categories, smaller for catch-all
 
-   **Example for 3 subdomains (total target: 15):**
-   - Subdomain 1: "AI Research Companies" - target_rows: 6
-   - Subdomain 2: "Healthcare AI Companies" - target_rows: 6
-   - Subdomain 3: "Other AI Companies (Not in Research or Healthcare)" - target_rows: 3
+   **target_rows Strategy:**
+   - Use "up to N" approach where N = total target for entire table
+   - Each subdomain can return UP TO the full target
+   - Richer subdomains will naturally return more candidates
+   - Less relevant subdomains will return fewer
+   - Deduplication and QC will select the best from all subdomains
+
+   **Example for 3 subdomains (total target: 10 rows):**
+   - Subdomain 1: "AI Research Companies" - target_rows: 10 (up to 10)
+   - Subdomain 2: "Healthcare AI Companies" - target_rows: 10 (up to 10)
+   - Subdomain 3: "Other AI Companies" - target_rows: 10 (up to 10)
+   - Total discovered: might be 8 + 7 + 3 = 18 candidates
+   - After deduplication + QC: final 10 best selected
 
 3. **Name the table** clearly and descriptively
 

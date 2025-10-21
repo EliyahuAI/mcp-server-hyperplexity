@@ -188,16 +188,26 @@ class QCReviewer:
             # QC returns: id_values, row_score, qc_score, qc_rationale, keep, priority_adjustment
             # Original has: id_values, match_score, score_breakdown, model_used, context_used, match_rationale, source_urls, etc.
 
+            # Create mapping of discovered rows by ID values (for fast lookup)
+            discovered_map = {}
+            for orig in discovered_rows:
+                # Create a stable key from id_values
+                id_vals = orig.get('id_values', {})
+                # Sort keys for consistent comparison
+                key = json.dumps(id_vals, sort_keys=True)
+                discovered_map[key] = orig
+
+            logger.info(f"Created mapping of {len(discovered_map)} discovered rows")
+
             merged_rows = []
+            matches_found = 0
+
             for qc_row in reviewed_rows:
                 # Find matching original row by id_values
                 qc_id_values = qc_row.get('id_values', {})
+                qc_key = json.dumps(qc_id_values, sort_keys=True)
 
-                original_row = None
-                for orig in discovered_rows:
-                    if orig.get('id_values') == qc_id_values:
-                        original_row = orig
-                        break
+                original_row = discovered_map.get(qc_key)
 
                 if original_row:
                     # Merge: start with original, overlay QC fields
@@ -207,10 +217,13 @@ class QCReviewer:
                     merged['keep'] = qc_row.get('keep', False)
                     merged['priority_adjustment'] = qc_row.get('priority_adjustment', 'none')
                     merged_rows.append(merged)
+                    matches_found += 1
                 else:
                     # QC row has no matching original (shouldn't happen)
                     logger.warning(f"QC row has no matching original: {qc_id_values}")
                     merged_rows.append(qc_row)
+
+            logger.info(f"Merged {matches_found}/{len(reviewed_rows)} QC rows with original metadata")
 
             # Filter approved rows (keep=true, qc_score >= threshold)
             approved_rows = [
