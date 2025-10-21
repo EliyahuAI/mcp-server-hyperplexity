@@ -9,7 +9,7 @@
 
   "_comment_column_definition": "Column definition now includes subdomain specification within the search_strategy output",
   "column_definition": {
-    "model": "claude-sonnet-4-5",
+    "model": "sonar-pro",
     "max_tokens": 8000,
     "use_web_search": true,
     "web_searches": 3,

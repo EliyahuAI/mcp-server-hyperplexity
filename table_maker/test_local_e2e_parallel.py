@@ -163,11 +163,10 @@ async def run_parallel_test():
             ]
         }
 
-        # Provide context_web_research for items that affect column design
-        context_web_research = [
-            "Latest AI hiring trends 2025",
-            "Common AI job titles and roles"
-        ]
+        # Provide context_web_research for UNKNOWNS that affect column design
+        # Only include items that state-of-the-art LLM would NOT know
+        # Example: ["Eliyahu.AI background", "Proprietary methodology X"]
+        context_web_research = []  # Empty for this generic test
 
         column_start = time.time()
         column_result = await column_handler.define_columns(
