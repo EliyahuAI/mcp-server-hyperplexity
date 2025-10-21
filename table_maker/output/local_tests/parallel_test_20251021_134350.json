@@ -1,0 +1,332 @@
+{
+  "timestamp": "20251021_134350",
+  "mode": "parallel",
+  "max_parallel_streams": 3,
+  "user_request": "\nI want to create a table tracking AI companies that are actively hiring.\n\nColumns needed:\n- Company Name\n- Website\n- Is hiring for AI roles? (yes/no)\n- Team size (approximate)\n- Recent funding (last round)\n\nFind about 10 companies across different AI sectors like research, healthcare, and enterprise.\nMake sure to include both established companies and startups.\n",
+  "configuration": {
+    "target_row_count": 10,
+    "discovery_multiplier": 1.5,
+    "min_match_score": 0.6,
+    "column_definition_model": "claude-haiku-4-5",
+    "web_search_model": "sonar-pro",
+    "max_parallel_streams": 3
+  },
+  "columns": [
+    {
+      "name": "Table Name",
+      "description": "The concise, descriptive name for the research table being defined",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true
+    },
+    {
+      "name": "Research Objective",
+      "description": "Clear summary of what entities this table tracks and the overall research goals",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Verify that the objective clearly defines the entity type (companies, people, papers, etc.) and the research purpose"
+    },
+    {
+      "name": "Entity Type",
+      "description": "The category of real-world entities this table will track (e.g., companies, researchers, publications, products)",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Confirm entity type is concrete and findable through web research, not abstract or meta-level"
+    },
+    {
+      "name": "ID Columns",
+      "description": "List of columns used to uniquely identify each entity row",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Verify that ID columns are findable through public sources and uniquely identify entities without ambiguity"
+    },
+    {
+      "name": "Research Columns",
+      "description": "List of data columns that will be researched and validated for each entity",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Ensure each research column has a specific validation strategy describing how to find and verify the data"
+    },
+    {
+      "name": "Number of Subdomains",
+      "description": "Count of distinct search subdomains for parallel row discovery",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Verify subdomain count is between 2-5 and appropriate for the search complexity"
+    },
+    {
+      "name": "Total Target Rows",
+      "description": "Total number of candidate entities to discover across all subdomains",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Confirm target rows are distributed across subdomains and account for deduplication multiplier"
+    },
+    {
+      "name": "Data Sources",
+      "description": "Primary and secondary sources for finding and validating entity data",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Verify sources are reliable, publicly accessible, and appropriate for the entity type"
+    },
+    {
+      "name": "Search Query Quality",
+      "description": "Assessment of whether search queries are designed to yield multiple entities per query",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Check that queries are list-based, aggregator-focused, or comparative rather than single-entity queries"
+    }
+  ],
+  "search_strategy": {
+    "description": "This search strategy is for defining research table specifications themselves. We are looking for guidance on how to structure research tables, define columns for real entities, and create search strategies for finding those entities. The focus is on meta-level documentation of table design patterns.",
+    "subdomains": [
+      {
+        "name": "Table Definition Framework",
+        "focus": "Understanding the core components of a well-designed research table including entity type definition, ID column selection, and research column specification",
+        "search_queries": [
+          "how to define research table structure and columns",
+          "best practices for entity identification in research databases",
+          "designing research tables for web-based entity discovery"
+        ],
+        "target_rows": 5
+      },
+      {
+        "name": "Search Strategy Design",
+        "focus": "Techniques for creating effective search strategies including subdomain definition, query formulation, and parallel discovery approaches",
+        "search_queries": [
+          "search strategy design for entity discovery",
+          "parallel search techniques for finding multiple entities",
+          "query formulation for comprehensive entity coverage"
+        ],
+        "target_rows": 5
+      },
+      {
+        "name": "Data Validation Approaches",
+        "focus": "Methods for validating research data including source reliability assessment, recency evaluation, and relevancy scoring",
+        "search_queries": [
+          "data validation strategies for research tables",
+          "source reliability assessment for web research",
+          "scoring and ranking entities for research quality"
+        ],
+        "target_rows": 5
+      }
+    ]
+  },
+  "final_rows": [
+    {
+      "id_values": {
+        "Table Name": "Design of tables for the presentation and communication of data in ecology and evolutionary biology"
+      },
+      "match_score": 0.82,
+      "score_breakdown": {
+        "relevancy": 1.0,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Directly addresses meta-level documentation of table design patterns, including column definition, alignment, and readability, but focuses on academic publishing rather than entity discovery or parallel search.",
+      "source_urls": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC10346464/"
+      ],
+      "source_subdomain": "Search Strategy Design",
+      "merged_from_streams": [
+        "Search Strategy Design"
+      ]
+    },
+    {
+      "id_values": {
+        "Table Name": "Elsevier Manuscript Preparation Guidelines"
+      },
+      "match_score": 0.81,
+      "score_breakdown": {
+        "relevancy": 0.9,
+        "reliability": 0.7,
+        "recency": 0.8
+      },
+      "match_rationale": "Directly addresses research table structure, column definition, and best practices for clarity and consistency, but lacks explicit guidance on entity ID column selection and search strategy documentation.",
+      "source_urls": [
+        "https://scientific-publishing.webshop.elsevier.com/manuscript-preparation/use-tables-and-figures-effectively-research-papers/",
+        "https://www.xenonstack.com/blog/data-validation-methods-and-best-practices"
+      ],
+      "source_subdomain": "Table Definition Framework",
+      "merged_from_streams": [
+        "Data Validation Approaches",
+        "Table Definition Framework"
+      ]
+    },
+    {
+      "id_values": {
+        "Table Name": "Beginner's Guide to Data Validation",
+        "Website": "https://flatfile.com/blog/the-beginners-guide-to-data-validation"
+      },
+      "match_score": 0.74,
+      "score_breakdown": {
+        "relevancy": 0.8,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Comprehensive guide covering validation rules, error handling, and documentation\u2014excellent for table specification, but less focused on source reliability assessment and recency scoring specifically.",
+      "source_urls": [
+        "https://flatfile.com/blog/the-beginners-guide-to-data-validation"
+      ],
+      "source_subdomain": "Data Validation Approaches",
+      "merged_from_streams": [
+        "Data Validation Approaches"
+      ]
+    },
+    {
+      "id_values": {
+        "Table Name": "Data Validation: Key Techniques and Best Practices",
+        "Website": "https://www.future-processing.com/blog/data-validation/"
+      },
+      "match_score": 0.71,
+      "score_breakdown": {
+        "relevancy": 0.8,
+        "reliability": 0.7,
+        "recency": 0.6
+      },
+      "match_rationale": "Details validation techniques and best practices, useful for defining table columns and validation logic, but lacks explicit guidance on source reliability and recency scoring.",
+      "source_urls": [
+        "https://www.future-processing.com/blog/data-validation/"
+      ],
+      "source_subdomain": "Data Validation Approaches",
+      "merged_from_streams": [
+        "Data Validation Approaches"
+      ]
+    },
+    {
+      "id_values": {
+        "Table Name": "Enterprise UX: essential resources to design complex data tables"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Aggregates best practices and design patterns for complex data tables, including column customization and user interaction, but does not specifically address entity discovery or parallel search strategies.",
+      "source_urls": [
+        "https://stephaniewalter.design/blog/essential-resources-design-complex-data-tables/"
+      ],
+      "source_subdomain": "Search Strategy Design",
+      "merged_from_streams": [
+        "Search Strategy Design"
+      ]
+    },
+    {
+      "id_values": {
+        "Table Name": "Designing effective data table UI \u2013 best practices and tips"
+      },
+      "match_score": 0.7,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.7
+      },
+      "match_rationale": "Covers UI best practices for data tables, including column alignment, filtering, and search, but lacks explicit guidance on entity discovery or parallel search techniques.",
+      "source_urls": [
+        "https://www.justinmind.com/ui-design/data-table"
+      ],
+      "source_subdomain": "Search Strategy Design",
+      "merged_from_streams": [
+        "Search Strategy Design"
+      ]
+    },
+    {
+      "id_values": {
+        "Table Name": "Ref-n-Write Research Paper Tables Guide"
+      },
+      "match_score": 0.68,
+      "score_breakdown": {
+        "relevancy": 0.8,
+        "reliability": 0.4,
+        "recency": 0.8
+      },
+      "match_rationale": "Provides clear examples and tips for structuring research tables, referencing, and captioning, but does not specifically cover entity ID columns or search strategies.",
+      "source_urls": [
+        "https://guides.library.yale.edu/datamanagement/validate",
+        "https://www.ref-n-write.com/blog/figures-and-tables-in-research-papers-tips-and-examples/"
+      ],
+      "source_subdomain": "Table Definition Framework",
+      "merged_from_streams": [
+        "Data Validation Approaches",
+        "Table Definition Framework"
+      ]
+    },
+    {
+      "id_values": {
+        "Table Name": "How to Improve Data Quality Through Validation and Quality Checks",
+        "Website": "https://data.org/guides/how-to-improve-data-quality-through-validation-and-quality-checks/"
+      },
+      "match_score": 0.6699999999999999,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.7,
+        "recency": 0.6
+      },
+      "match_rationale": "Covers validation and quality checks broadly, with some attention to source reliability, but less specific on table design patterns and recency scoring.",
+      "source_urls": [
+        "https://data.org/guides/how-to-improve-data-quality-through-validation-and-quality-checks/"
+      ],
+      "source_subdomain": "Data Validation Approaches",
+      "merged_from_streams": [
+        "Data Validation Approaches"
+      ]
+    },
+    {
+      "id_values": {
+        "Table Name": "Pencil & Paper Data Table Design UX Patterns"
+      },
+      "match_score": 0.6399999999999999,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.4,
+        "recency": 0.8
+      },
+      "match_rationale": "Focuses on UX best practices for data tables, including column alignment and readability, but is oriented toward software interfaces rather than research table specification or entity discovery.",
+      "source_urls": [
+        "https://www.pencilandpaper.io/articles/ux-pattern-analysis-enterprise-data-tables"
+      ],
+      "source_subdomain": "Table Definition Framework",
+      "merged_from_streams": [
+        "Table Definition Framework"
+      ]
+    },
+    {
+      "id_values": {
+        "Table Name": "Decision Foundry Table Construction Guidelines"
+      },
+      "match_score": 0.61,
+      "score_breakdown": {
+        "relevancy": 0.7,
+        "reliability": 0.4,
+        "recency": 0.7
+      },
+      "match_rationale": "Offers general formatting advice for tables, such as clear titles and headers, but lacks specific guidance on entity identification or research column specification.",
+      "source_urls": [
+        "https://www.decisionfoundry.com/misc/articles/understanding-the-anatomy-and-proper-construction-of-tables/"
+      ],
+      "source_subdomain": "Table Definition Framework",
+      "merged_from_streams": [
+        "Table Definition Framework"
+      ]
+    }
+  ],
+  "statistics": {
+    "column_definition_time": 12.860862493515015,
+    "row_discovery_time": 24.386971950531006,
+    "total_candidates_found": 15,
+    "duplicates_removed": 2,
+    "below_threshold": 2,
+    "final_row_count": 10,
+    "avg_match_score": 0.708,
+    "stream_times": []
+  },
+  "total_time_seconds": 37.26699781417847
+}

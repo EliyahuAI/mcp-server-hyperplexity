@@ -4,18 +4,18 @@
   "properties": {
     "columns": {
       "type": "array",
-      "description": "Array of column objects including ID and research columns",
+      "description": "ACTUAL SPECIFIC columns for tracking the entities the user wants to research (e.g., if tracking AI companies: 'Company Name', 'Website', 'Is Hiring for AI?'). DO NOT create meta-columns like 'Table Name', 'Column Name', 'Description', 'Format' - those are for describing tables, not for tracking the actual entities.",
       "items": {
         "type": "object",
         "required": ["name", "description", "format", "importance", "is_identification"],
         "properties": {
           "name": {
             "type": "string",
-            "description": "Column name"
+            "description": "SPECIFIC column name for the entity being tracked (e.g., 'Company Name', 'Paper Title', 'Product Name') - NOT generic like 'Entity Name' or 'Table Name'"
           },
           "description": {
             "type": "string",
-            "description": "Detailed description of what this column contains"
+            "description": "What data this SPECIFIC column contains for the entity (e.g., 'Name of the AI company', 'URL of company website')"
           },
           "format": {
             "type": "string",

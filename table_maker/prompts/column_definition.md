@@ -39,6 +39,51 @@ You are designing columns for a table that will track REAL ENTITIES (companies, 
 
 **NOT meta-columns like:** Table Name, Column Name, etc.
 
+### Complete Example for "AI Companies"
+
+If the user wants to track AI companies, return this structure:
+
+```json
+{
+  "columns": [
+    {
+      "name": "Company Name",
+      "description": "Name of the AI company",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true
+    },
+    {
+      "name": "Website",
+      "description": "Company website URL",
+      "format": "URL",
+      "importance": "ID",
+      "is_identification": true
+    },
+    {
+      "name": "Is Hiring for AI?",
+      "description": "Whether actively hiring for AI/ML roles",
+      "format": "Boolean",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Check careers page for AI/ML job postings"
+    }
+  ],
+  "search_strategy": {
+    "description": "Find AI companies actively hiring",
+    "subdomains": [
+      {
+        "name": "AI Research Companies",
+        "focus": "Research-focused AI companies",
+        "search_queries": ["top AI research companies 2024"],
+        "target_rows": 10
+      }
+    ]
+  },
+  "table_name": "AI Companies Hiring Status"
+}
+```
+
 ---
 
 ## Your Task
