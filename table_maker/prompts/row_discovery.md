@@ -141,4 +141,24 @@ Return JSON in this exact format:
 - **Return candidates array:** Even if empty, always return {"candidates": []}
 - **No minimum quality:** Include entries even if scores are moderate (we'll filter later)
 
+## If No Matches Found
+
+If your searches return 0 candidates, you MUST provide a "no_matches_reason" field explaining why:
+
+```json
+{
+  "subdomain": "Healthcare AI Companies",
+  "no_matches_reason": "Search queries returned general information about healthcare but no specific company matches. Queries may need to be more specific or use different search terms.",
+  "candidates": []
+}
+```
+
+**Possible reasons to report:**
+- "Search queries too broad/narrow, no specific entity results"
+- "Web search returned no relevant results for this subdomain"
+- "Queries found general information but no identifiable entities"
+- "Technical/niche subdomain with limited public information"
+
+This helps us improve search strategies for future runs.
+
 Return your findings as valid JSON.

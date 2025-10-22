@@ -6,6 +6,10 @@
       "type": "string",
       "description": "The subdomain focus area being searched"
     },
+    "no_matches_reason": {
+      "type": "string",
+      "description": "If candidates array is empty, explain why no matches were found (search issues, no results, unclear queries, etc.)"
+    },
     "candidates": {
       "type": "array",
       "description": "List of candidate rows discovered for this subdomain",
