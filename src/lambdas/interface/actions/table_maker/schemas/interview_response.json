@@ -1,7 +1,12 @@
 {
   "type": "object",
-  "required": ["trigger_execution", "show_structure", "ai_message", "context_web_research", "processing_steps", "table_name"],
+  "required": ["mode", "trigger_execution", "show_structure", "ai_message", "context_web_research", "processing_steps", "table_name"],
   "properties": {
+    "mode": {
+      "type": "integer",
+      "enum": [1, 2, 3],
+      "description": "Which mode you're using: 1=Ask Questions, 2=Show Structure for Approval, 3=User Approved (Start Execution). REQUIRED."
+    },
     "trigger_execution": {
       "type": "boolean",
       "description": "Set to true ONLY when user has explicitly approved (said 'yes', 'go for it', 'looks good'). Set to false when asking questions OR when showing structure for approval."
@@ -12,8 +17,8 @@
     },
     "ai_message": {
       "type": "string",
-      "minLength": 10,
-      "description": "Your response to the user. REQUIRED. Three modes: (1) Questions only, (2) Table structure + 'Ready to generate?', (3) Confirmation + specific value statement. Use markdown formatting."
+      "minLength": 20,
+      "description": "Your response to the user. NEVER EMPTY. ALWAYS has content. MODE 1: Your questions. MODE 2: Table structure description. MODE 3: Confirmation message with timing. Use markdown formatting."
     },
     "context_web_research": {
       "type": "array",

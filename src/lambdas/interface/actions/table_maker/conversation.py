@@ -886,8 +886,9 @@ async def handle_table_conversation_start(request_data, context):
 
             return create_response(500, result)
 
-        # Extract interview response (backward compatible with old and new schema)
+        # Extract interview response (using new schema)
         result['success'] = True
+        result['mode'] = interview_result.get('mode', 0)
         result['trigger_execution'] = interview_result.get('trigger_execution', False)
         result['show_structure'] = interview_result.get('show_structure', False)
         result['ai_message'] = interview_result.get('ai_message', '')
@@ -935,6 +936,7 @@ async def handle_table_conversation_start(request_data, context):
                     'conversation_id': conversation_id,
                     'progress': 100,
                     'status': 'Interview turn 1 complete',
+                    'mode': result['mode'],
                     'trigger_execution': result['trigger_execution'],
                     'show_structure': result['show_structure'],
                     'ai_message': result['ai_message'],
@@ -944,7 +946,7 @@ async def handle_table_conversation_start(request_data, context):
                     'turn_count': result['turn_count']
                 }
                 websocket_client.send_to_session(session_id, interview_message)
-                logger.info(f"[TABLE_MAKER] Sent interview results via WebSocket: trigger_execution={result['trigger_execution']}, show_structure={result['show_structure']}, ai_message length={len(result['ai_message'])}")
+                logger.info(f"[TABLE_MAKER] Sent interview results via WebSocket: mode={result['mode']}, trigger_execution={result['trigger_execution']}, show_structure={result['show_structure']}, ai_message length={len(result['ai_message'])}")
             except Exception as e:
                 logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
 
@@ -1193,8 +1195,9 @@ async def handle_table_conversation_continue(request_data, context):
 
             return create_response(500, result)
 
-        # Extract interview response (backward compatible with old and new schema)
+        # Extract interview response (using new schema)
         result['success'] = True
+        result['mode'] = interview_result.get('mode', 0)
         result['trigger_execution'] = interview_result.get('trigger_execution', False)
         result['show_structure'] = interview_result.get('show_structure', False)
         result['ai_message'] = interview_result.get('ai_message', '')
@@ -1234,10 +1237,10 @@ async def handle_table_conversation_continue(request_data, context):
                     'conversation_id': conversation_id,
                     'progress': 100,
                     'status': f'Interview turn {result["turn_count"]} complete',
+                    'mode': result['mode'],
                     'trigger_execution': result['trigger_execution'],
                     'show_structure': result['show_structure'],
                     'ai_message': result['ai_message'],
-                    'follow_up_question': result['ai_message'],  # Backward compatibility
                     'context_web_research': result['context_web_research'],
                     'processing_steps': result['processing_steps'],
                     'table_name': result['table_name'],
