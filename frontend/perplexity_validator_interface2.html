@@ -11141,8 +11141,13 @@ Please provide any additional context, or simply proceed to generate your initia
                 return;
             }
 
-            // Hide input container (but keep button visible for state change)
-            document.getElementById(`${cardId}-input-container`).style.display = 'none';
+            // Remove input container and buttons - user submitted
+            const inputContainer = document.getElementById(`${cardId}-input-container`);
+            if (inputContainer) inputContainer.remove();
+
+            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+            if (buttonsContainer) buttonsContainer.remove();
+
             showThinkingInCard(cardId, 'Starting conversation with AI...', true);
 
             // Add user message to chat
@@ -11185,17 +11190,6 @@ Please provide any additional context, or simply proceed to generate your initia
                         localStorage.setItem('sessionId', data.session_id);
                         console.log(`[TABLE_MAKER] Stored new session ID: ${data.session_id}`);
                     }
-
-                    // Update button to show generation state
-                    createButtonRow(`${cardId}-buttons`, [
-                        {
-                            text: 'Creating validated preview (3-4 min): Columns → Research → Rows → First 3 validated',
-                            variant: 'primary',
-                            width: 'full',
-                            callback: () => {},
-                            disabled: true
-                        }
-                    ]);
 
                     // Connect to WebSocket session
                     connectToSession(globalState.sessionId);
@@ -11607,8 +11601,13 @@ Please provide any additional context, or simply proceed to generate your initia
             addChatMessage(cardId, 'user', userMessage);
             tableMakerState.messages.push({ role: 'user', content: userMessage });
 
-            // Clear input and show thinking
-            input.value = '';
+            // Remove refinement div and buttons - user submitted
+            const refinementDiv = document.getElementById(`${cardId}-refinement`);
+            if (refinementDiv) refinementDiv.remove();
+
+            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+            if (buttonsContainer) buttonsContainer.remove();
+
             showThinkingInCard(cardId, 'Processing your request...', true);
 
             // Send to backend
@@ -11628,17 +11627,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 const data = await response.json();
 
                 if (data.success && data.status === 'processing') {
-                    // Update button to show processing state
-                    createButtonRow(`${cardId}-buttons`, [
-                        {
-                            text: 'Processing...',
-                            variant: 'primary',
-                            width: 'full',
-                            callback: () => {},
-                            disabled: true
-                        }
-                    ]);
-
+                    // Request queued - thinking indicator already showing, no button needed
                     console.log(`[TABLE_MAKER] Conversation continue queued, waiting for updates`);
                 } else {
                     completeThinkingInCard(cardId, 'Error');
