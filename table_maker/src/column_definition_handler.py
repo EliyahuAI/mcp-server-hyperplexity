@@ -319,11 +319,19 @@ class ColumnDefinitionHandler:
             # Fallback 2: Extract from messages array (new interview system)
             messages = conversation_context.get('messages', [])
             if messages:
-                # Get all user messages
-                user_messages = [msg.get('content', '') for msg in messages if msg.get('role') == 'user']
-                if user_messages:
-                    logger.info("Extracting requirements from conversation messages")
-                    return "User's Research Description:\n" + '\n\n'.join(user_messages)
+                # Get full conversation (user + AI)
+                conversation_lines = []
+                for msg in messages:
+                    role = msg.get('role', 'unknown')
+                    content = msg.get('content', '')
+                    if role == 'user':
+                        conversation_lines.append(f"**User:** {content}")
+                    elif role == 'assistant':
+                        conversation_lines.append(f"**AI:** {content}")
+
+                if conversation_lines:
+                    logger.info("Extracting full conversation as context for column definition")
+                    return "Conversation History:\n\n" + '\n\n'.join(conversation_lines)
 
             return "No specific requirements captured"
 
