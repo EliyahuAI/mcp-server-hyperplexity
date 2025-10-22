@@ -1254,7 +1254,8 @@ def handle_main_processing(event, context):
         # Check if this is a config generation request
         if event.get('request_type') == 'config_generation':
             logger.info("Detected config generation request, processing with merged config module")
-            return await handle_config_generation_async(event, context)
+            import asyncio
+            return asyncio.run(handle_config_generation_async(event, context))
 
         # Check if this is a table conversation request
         if event.get('request_type') == 'table_conversation':
