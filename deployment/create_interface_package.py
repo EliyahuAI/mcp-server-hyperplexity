@@ -161,7 +161,8 @@ def install_dependencies(mode='unified'):
                 "--only-binary", ":all:",
                 "--no-binary", ":none:",
                 "--upgrade",
-                "--no-cache-dir"
+                "--no-cache-dir",
+                "--ignore-installed"  # Ignore system packages, force clean install
             ])
             logger.info("Dependencies installed successfully.")
             break
