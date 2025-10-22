@@ -1318,9 +1318,10 @@ def wait_for_all_deployments(region):
     logger.info("\n=== DEPLOYMENT VERIFICATION ===")
 
     # Use actual deployed function names (with environment suffixes applied)
+    # Note: Config Lambda merged into Interface Lambda - no separate verification needed
     deployments_to_verify = [
         (LAMBDA_CONFIG["FunctionName"], "Interface Lambda"),
-        (LAMBDA_CONFIG["Environment"]["Variables"]["CONFIG_LAMBDA_NAME"], "Config Lambda"),
+        # Config Lambda merged into Interface Lambda - skip verification
         ("perplexity-validator-ws-handler", "WebSocket Lambda")  # WebSocket is shared across all environments
     ]
     
