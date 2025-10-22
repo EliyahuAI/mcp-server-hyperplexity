@@ -38,6 +38,8 @@ package/
 
 # Deployment packages and ZIP files
 deployment/interface_package/
+deployment/interface_package_lightweight/
+deployment/interface_package_background/
 deployment/config_lambda_deploy/
 deployment/config_package/
 deployment/temp_update/

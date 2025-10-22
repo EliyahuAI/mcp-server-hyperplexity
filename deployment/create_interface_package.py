@@ -46,6 +46,8 @@ PROJECT_DIR = SCRIPT_DIR.parent
 SRC_DIR = PROJECT_DIR / "src"
 LAMBDA_SRC_DIR = SRC_DIR / "lambdas" / "interface"
 SHARED_SRC_DIR = SRC_DIR / "shared"
+
+# Package directory and output ZIP will be set based on mode
 PACKAGE_DIR = SCRIPT_DIR / "interface_package"
 OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package.zip"
 
@@ -103,6 +105,24 @@ WEBSOCKET_LAMBDA_CONFIG = {
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
 }
 
+
+def set_package_paths_for_mode(mode):
+    """Set package directory and ZIP output path based on deployment mode."""
+    global PACKAGE_DIR, OUTPUT_ZIP
+
+    if mode == 'lightweight':
+        PACKAGE_DIR = SCRIPT_DIR / "interface_package_lightweight"
+        OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package_lightweight.zip"
+    elif mode == 'background':
+        PACKAGE_DIR = SCRIPT_DIR / "interface_package_background"
+        OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package_background.zip"
+    else:  # unified
+        PACKAGE_DIR = SCRIPT_DIR / "interface_package"
+        OUTPUT_ZIP = SCRIPT_DIR / "interface_lambda_package.zip"
+
+    logger.info(f"[PACKAGE PATHS] Mode: {mode}")
+    logger.info(f"[PACKAGE PATHS] Package dir: {PACKAGE_DIR}")
+    logger.info(f"[PACKAGE PATHS] Output ZIP: {OUTPUT_ZIP}")
 
 def clean_directory(dir_path):
     """Remove all contents of a directory."""
@@ -1571,7 +1591,10 @@ def main():
                        default='unified',
                        help='Lambda deployment mode: lightweight (API only), background (SQS + heavy ops), unified (legacy - all ops)')
     args = parser.parse_args()
-    
+
+    # Set package paths based on deployment mode (BEFORE building package)
+    set_package_paths_for_mode(args.mode)
+
     # Apply environment configuration
     print_environment_info(args.environment)
     global LAMBDA_CONFIG, WEBSOCKET_LAMBDA_CONFIG, API_GATEWAY_CONFIG
