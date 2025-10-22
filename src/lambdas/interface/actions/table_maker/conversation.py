@@ -890,7 +890,7 @@ async def handle_table_conversation_start(request_data, context):
         result['success'] = True
         result['trigger_execution'] = interview_result.get('trigger_execution', False)
         result['show_structure'] = interview_result.get('show_structure', False)
-        result['ai_message'] = interview_result.get('ai_message') or interview_result.get('follow_up_question', '')
+        result['ai_message'] = interview_result.get('ai_message', '')
         result['context_web_research'] = interview_result.get('context_web_research', [])
         result['processing_steps'] = interview_result.get('processing_steps', [])
         result['table_name'] = interview_result.get('table_name', '')
@@ -938,7 +938,6 @@ async def handle_table_conversation_start(request_data, context):
                     'trigger_execution': result['trigger_execution'],
                     'show_structure': result['show_structure'],
                     'ai_message': result['ai_message'],
-                    'follow_up_question': result['ai_message'],  # Backward compatibility
                     'context_web_research': result['context_web_research'],
                     'processing_steps': result['processing_steps'],
                     'table_name': result['table_name'],
@@ -1198,7 +1197,7 @@ async def handle_table_conversation_continue(request_data, context):
         result['success'] = True
         result['trigger_execution'] = interview_result.get('trigger_execution', False)
         result['show_structure'] = interview_result.get('show_structure', False)
-        result['ai_message'] = interview_result.get('ai_message') or interview_result.get('follow_up_question', '')
+        result['ai_message'] = interview_result.get('ai_message', '')
         result['context_web_research'] = interview_result.get('context_web_research', [])
         result['processing_steps'] = interview_result.get('processing_steps', [])
         result['table_name'] = interview_result.get('table_name', '')
