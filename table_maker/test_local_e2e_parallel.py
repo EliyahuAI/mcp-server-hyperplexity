@@ -355,7 +355,9 @@ async def run_parallel_test():
             total_score = sum(row.get('match_score', 0) for row in final_rows)
             stats['avg_match_score'] = total_score / len(final_rows)
 
-        # PHASE 1: Track API calls from row discovery rounds
+        # PHASE 1: Track API calls from row discovery rounds and calculate costs
+        row_discovery_total_cost = 0.0
+
         for idx, stream_result in enumerate(stream_results, 1):
             subdomain_name = stream_result.get('subdomain', f'Subdomain {idx}')
             all_rounds = stream_result.get('all_rounds', [])
@@ -363,22 +365,35 @@ async def run_parallel_test():
             if all_rounds:
                 # Progressive escalation mode - has all_rounds
                 for round_data in all_rounds:
+                    enhanced = round_data.get('enhanced_data', {})
+                    round_cost = enhanced.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                    row_discovery_total_cost += round_cost
+
                     api_calls_log.append({
                         'call_description': f"Finding Rows - {subdomain_name} - Round {round_data.get('round', '?')} ({round_data.get('model', 'unknown')}-{round_data.get('context', 'unknown')})",
                         'model': round_data.get('model', 'unknown'),
                         'context': round_data.get('context', 'unknown'),
-                        'enhanced_data': round_data.get('enhanced_data', {}),
+                        'enhanced_data': enhanced,
                         'prompt_used': round_data.get('prompt_used', ''),
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': datetime.now().isoformat(),
+                        'cost': round_cost
                     })
             else:
                 # Legacy mode or single call - just log the subdomain
+                enhanced = stream_result.get('enhanced_data', {})
+                round_cost = enhanced.get('costs', {}).get('actual', {}).get('total_cost', 0.0)
+                row_discovery_total_cost += round_cost
+
                 api_calls_log.append({
                     'call_description': f"Finding Rows - {subdomain_name}",
                     'model': WEB_SEARCH_MODEL,
-                    'enhanced_data': stream_result.get('enhanced_data', {}),
-                    'timestamp': datetime.now().isoformat()
+                    'enhanced_data': enhanced,
+                    'timestamp': datetime.now().isoformat(),
+                    'cost': round_cost
                 })
+
+        stats['row_discovery_cost'] = row_discovery_total_cost
+        stats['total_cost'] += row_discovery_total_cost
 
         # Display stream results
         print()
@@ -459,7 +474,7 @@ async def run_parallel_test():
             model="claude-sonnet-4-5",
             max_tokens=16000,  # Generous tokens for reviewing all rows
             min_qc_score=0.5,
-            max_rows=50
+            max_rows=999  # No artificial cutoff - keep all quality rows
         )
 
         qc_time = time.time() - qc_start
@@ -473,12 +488,17 @@ async def run_parallel_test():
             approved_rows = qc_result.get('approved_rows', final_rows)
             qc_summary = qc_result.get('qc_summary', {})
 
-            # Track QC API call
+            # Track QC API call and cost
+            qc_cost = qc_result.get('cost', 0.0)
+            stats['qc_cost'] = qc_cost
+            stats['total_cost'] += qc_cost
+
             api_calls_log.append({
                 'call_description': 'QC Review - Filtering and Prioritizing Rows',
                 'model': 'claude-sonnet-4-5',
                 'enhanced_data': qc_result.get('enhanced_data', {}),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
+                'cost': qc_cost
             })
 
             # Update stats
@@ -599,6 +619,16 @@ async def run_parallel_test():
 
     total_time = time.time() - overall_start
 
+    # Recalculate total cost from api_calls_log (authoritative source)
+    total_api_cost = sum(
+        call.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0)
+        for call in api_calls_log
+    )
+    stats['total_cost'] = total_api_cost  # Override with accurate calculation
+
+    # Calculate QC cost if available
+    qc_cost = stats.get('qc_cost', 0.0)
+
     print("\n[STATISTICS]")
     print(f"  Total execution time: {format_time(total_time)}")
     print(f"  Column definition: {format_time(stats['column_definition_time'])} (${stats['column_def_cost']:.4f})")
@@ -610,12 +640,22 @@ async def run_parallel_test():
             print(f"      Stream {idx}: {format_time(stream_time)}")
         print(f"    - (Note: Sequential = sum of all streams)")
 
+    if qc_cost > 0:
+        qc_time = stats.get('qc_review_time', 0)
+        print(f"  QC review: {format_time(qc_time)} (${qc_cost:.4f})")
+
     print(f"  Candidates found: {stats['total_candidates_found']}")
     print(f"  Deduplication: {stats['duplicates_removed']} removed")
     print(f"  Below threshold: {stats['below_threshold']} filtered")
-    print(f"  Final rows: {stats['final_row_count']}")
+
+    if 'qc_total_reviewed' in stats:
+        print(f"  QC reviewed: {stats['qc_total_reviewed']}")
+        print(f"  QC kept: {stats['qc_kept']}")
+        print(f"  QC rejected: {stats['qc_rejected']}")
+
+    print(f"  Final rows: {len(final_rows)} (QC-determined)")
     print(f"  Avg match score: {stats['avg_match_score']:.2f}")
-    print(f"  Total cost: ${stats['total_cost']:.4f}")
+    print(f"  Total cost: ${total_api_cost:.4f}")
 
     # -------------------------------------------------------------------------
     # SAVE OUTPUT (OPTIONAL)
@@ -627,6 +667,22 @@ async def run_parallel_test():
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     output_file = output_dir / f'parallel_test_{timestamp}.json'
+
+    # Final stats update: Recalculate all costs from api_calls_log enhanced_data
+    stats['row_discovery_cost'] = sum(
+        call.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0)
+        for call in api_calls_log
+        if 'Finding Rows' in call.get('call_description', '')
+    )
+    stats['qc_cost'] = sum(
+        call.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0)
+        for call in api_calls_log
+        if 'QC Review' in call.get('call_description', '')
+    )
+    stats['total_cost'] = sum(
+        call.get('enhanced_data', {}).get('costs', {}).get('actual', {}).get('total_cost', 0)
+        for call in api_calls_log
+    )
 
     output_data = {
         'timestamp': timestamp,
