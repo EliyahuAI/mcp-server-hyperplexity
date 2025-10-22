@@ -11305,9 +11305,11 @@ Please provide any additional context, or simply proceed to generate your initia
 
         // Show refinement input
         function showRefinementInput(cardId) {
-            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+            const card = document.getElementById(cardId);
+            if (!card) return;
+
             const chatContainer = document.getElementById(`${cardId}-chat`);
-            if (!buttonsContainer) return;
+            let buttonsContainer = document.getElementById(`${cardId}-buttons`);
 
             // Add chat bubbles for refinement guidance
             if (chatContainer && (tableMakerState.reasoning || tableMakerState.clarifying_questions)) {
@@ -11356,11 +11358,24 @@ Please provide any additional context, or simply proceed to generate your initia
                         style="width: 100%; min-height: 60px; resize: vertical; margin-bottom: 8px;"
                         onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const btn=document.querySelector('#${cardId}-buttons button.primary');if(btn){btn.focus();btn.classList.add('hover');setTimeout(()=>btn.classList.remove('hover'),1500);}}"></textarea>
                 `;
-                buttonsContainer.parentNode.insertBefore(refinementDiv, buttonsContainer);
+
+                // Append to card content (not using buttonsContainer.parentNode which may not exist)
+                const cardContent = card.querySelector('.card-content');
+                if (cardContent) {
+                    cardContent.appendChild(refinementDiv);
+                }
             }
 
             // Make sure refinement input is visible (may have been hidden after previous submit)
             refinementDiv.style.display = 'block';
+
+            // Create buttons container if it doesn't exist
+            if (!buttonsContainer) {
+                buttonsContainer = document.createElement('div');
+                buttonsContainer.id = `${cardId}-buttons`;
+                buttonsContainer.className = 'card-buttons';
+                card.appendChild(buttonsContainer);
+            }
 
             // Update buttons
             createButtonRow(`${cardId}-buttons`, [
@@ -11372,10 +11387,8 @@ Please provide any additional context, or simply proceed to generate your initia
                 }
             ]);
 
-            // Make sure buttons container is visible (may have been hidden after previous submit)
-            if (buttonsContainer) {
-                buttonsContainer.style.display = 'flex';
-            }
+            // Make sure buttons container is visible
+            buttonsContainer.style.display = 'flex';
         }
 
         // Create a new "Table Preview" card
