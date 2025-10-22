@@ -1,6 +1,6 @@
 boto3>=1.26.0
 botocore>=1.29.0
-aioboto3>=13.0.0
+# aioboto3>=13.0.0  # Removed - not used anywhere in interface Lambda, causes version conflicts
 python-multipart>=0.0.5
 openpyxl>=3.0.0
 typing-extensions>=4.0.0
