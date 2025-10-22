@@ -6,10 +6,22 @@ source (API Gateway, SQS, etc.) and delegates to the appropriate handler module.
 """
 import json
 import logging
+import os
 
 # Set up logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# Runtime mode detection
+IS_LIGHTWEIGHT_INTERFACE = os.environ.get('IS_LIGHTWEIGHT_INTERFACE', 'false').lower() == 'true'
+IS_BACKGROUND_PROCESSOR = os.environ.get('IS_BACKGROUND_PROCESSOR', 'false').lower() == 'true'
+
+if IS_LIGHTWEIGHT_INTERFACE:
+    logger.info("[RUNTIME] LIGHTWEIGHT INTERFACE (API routing only)")
+elif IS_BACKGROUND_PROCESSOR:
+    logger.info("[RUNTIME] BACKGROUND PROCESSOR (SQS + heavy operations)")
+else:
+    logger.info("[RUNTIME] UNIFIED (legacy mode - all operations)")
 
 # Conditional imports for handlers
 # We import them here and not globally inside the functions to avoid circular dependencies
@@ -24,7 +36,21 @@ def lambda_handler(event, context):
     """
     logger.info("=== Perplexity Validator Interface Lambda - Main Handler ===")
 
-    # Determine the execution mode based on the event structure
+    # Lightweight mode: Only allow HTTP requests
+    if IS_LIGHTWEIGHT_INTERFACE:
+        if 'httpMethod' not in event:
+            error_msg = "Lightweight interface Lambda can only process HTTP requests. SQS/background events must go to background Lambda."
+            logger.error(error_msg)
+            return {
+                'statusCode': 403,
+                'body': json.dumps({'error': error_msg, 'mode': 'lightweight_interface'})
+            }
+
+        logger.info("Execution mode: HTTP_API_GATEWAY (lightweight)")
+        from interface_lambda.handlers import http_handler
+        return http_handler.handle(event, context)
+
+    # Background mode or unified mode: Allow all event types
     if 'Records' in event and event['Records'][0].get('eventSource') == 'aws:sqs':
         logger.info("Execution mode: SQS_PROCESSING")
         from interface_lambda.handlers import sqs_handler

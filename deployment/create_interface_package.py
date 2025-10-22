@@ -55,7 +55,7 @@ LAMBDA_CONFIG = {
     "Runtime": "python3.9",
     "Handler": "interface_lambda_function.lambda_handler", # This will be created in the package root
     "Timeout": 900,  # 15 minutes for file uploads and processing
-    "MemorySize": 512,  # Optimized: was 2048MB, max used 275MB
+    "MemorySize": 128,  # Lightweight mode: API routing only (background Lambda uses 3008MB)
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
     "Environment": {
         "Variables": {
@@ -342,7 +342,7 @@ def configure_sqs_event_source_mappings(lambda_client, function_name, region):
         logger.error(f"Error configuring SQS event source mappings: {e}")
         logger.info("This is not critical for basic functionality, continuing deployment...")
 
-def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, stage_name="prod"):
+def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, stage_name="prod", mode="unified"):
     """Deploy the Lambda function and optionally set up API Gateway."""
     function_name = function_name or LAMBDA_CONFIG["FunctionName"]
     region = region or "us-east-1"
@@ -635,8 +635,8 @@ def deploy_to_lambda(function_name=None, region=None, deploy_api_gateway=True, s
                 # Set log retention policy
                 set_log_retention_policy(function_name, region)
         
-        # Configure SQS event source mappings for Smart Delegation System
-        configure_sqs_event_source_mappings(lambda_client, function_name, region)
+        # Configure SQS event source mappings based on deployment mode
+        configure_sqs_mappings_for_mode(mode, lambda_client, function_name, region)
 
         # Deploy API Gateway if requested
         if deploy_api_gateway:
@@ -1462,16 +1462,76 @@ def set_log_retention_policy(function_name, region, retention_days=3):
             else:
                 logger.info(f"Log group '{log_group_name}' not found. Waiting {wait_time} seconds... (Attempt {i+1}/{retries})")
                 time.sleep(wait_time)
-        
+
         logger.warning(f"Could not find log group '{log_group_name}' after multiple attempts. Please set retention manually.")
 
     except Exception as e:
         logger.warning(f"Could not set retention policy for {log_group_name}: {e}")
 
+def get_lambda_config_for_mode(mode, base_config):
+    """Get Lambda configuration based on deployment mode."""
+    config = base_config.copy()
+
+    if mode == 'lightweight':
+        config['FunctionName'] = config['FunctionName']  # Keep same name or could be different
+        config['MemorySize'] = 128  # Absolute minimum for API routing only
+        config['Timeout'] = 30  # Short timeout for API responses
+        config['Description'] = 'Lightweight API routing and quick operations'
+        config['Environment'] = config.get('Environment', {}).copy()
+        config['Environment']['Variables'] = config['Environment'].get('Variables', {}).copy()
+        config['Environment']['Variables']['IS_LIGHTWEIGHT_INTERFACE'] = 'true'
+        config['Environment']['Variables']['IS_BACKGROUND_PROCESSOR'] = 'false'
+        return config
+
+    elif mode == 'background':
+        # Change function name for background processor
+        base_name = config['FunctionName']
+        # Replace 'interface' with 'background' in the function name
+        if 'interface' in base_name:
+            config['FunctionName'] = base_name.replace('interface', 'background')
+        else:
+            config['FunctionName'] = base_name + '-background'
+
+        config['MemorySize'] = 3008  # Heavy provisioning for AI operations
+        config['Timeout'] = 900  # 15 minutes for complex operations
+        config['Description'] = 'Heavy background processing (SQS, AI operations, reports)'
+        config['Environment'] = config.get('Environment', {}).copy()
+        config['Environment']['Variables'] = config['Environment'].get('Variables', {}).copy()
+        config['Environment']['Variables']['IS_LIGHTWEIGHT_INTERFACE'] = 'false'
+        config['Environment']['Variables']['IS_BACKGROUND_PROCESSOR'] = 'true'
+        return config
+
+    else:  # unified (legacy)
+        config['MemorySize'] = 3008
+        config['Timeout'] = 900
+        config['Description'] = 'Unified Lambda (legacy mode - all operations)'
+        config['Environment'] = config.get('Environment', {}).copy()
+        config['Environment']['Variables'] = config['Environment'].get('Variables', {}).copy()
+        config['Environment']['Variables']['IS_LIGHTWEIGHT_INTERFACE'] = 'false'
+        config['Environment']['Variables']['IS_BACKGROUND_PROCESSOR'] = 'false'
+        return config
+
+def configure_sqs_mappings_for_mode(mode, lambda_client, function_name, region):
+    """Configure SQS event sources based on mode."""
+    if mode == 'lightweight':
+        # NO SQS mappings for lightweight
+        logger.info("[MAPPINGS] Lightweight mode: Skipping SQS event source mappings")
+        return
+
+    elif mode == 'background':
+        # ALL SQS mappings for background
+        logger.info("[MAPPINGS] Background mode: Configuring ALL SQS event source mappings")
+        configure_sqs_event_source_mappings(lambda_client, function_name, region)
+
+    else:  # unified
+        # Legacy behavior - configure mappings
+        logger.info("[MAPPINGS] Unified mode: Configuring SQS event source mappings (legacy)")
+        configure_sqs_event_source_mappings(lambda_client, function_name, region)
+
 def main():
     """Main function."""
     global PACKAGE_DIR
-    
+
     parser = argparse.ArgumentParser(description='Create and deploy AWS Lambda interface package')
     parser.add_argument('--deploy', action='store_true', help='Deploy to AWS Lambda after creating package')
     parser.add_argument('--function-name', help='Lambda function name (default: perplexity-validator-interface)')
@@ -1487,6 +1547,9 @@ def main():
     parser.add_argument('--setup-s3', action='store_true', help='Set up unified S3 bucket')
     parser.add_argument('--skip-s3-setup', action='store_true', help='Skip S3 bucket setup during deployment')
     parser.add_argument('--environment', '-e', default='prod', choices=['dev', 'test', 'staging', 'prod'], help='Deployment environment (default: prod)')
+    parser.add_argument('--mode', choices=['lightweight', 'background', 'unified'],
+                       default='unified',
+                       help='Lambda deployment mode: lightweight (API only), background (SQS + heavy ops), unified (legacy - all ops)')
     args = parser.parse_args()
     
     # Apply environment configuration
@@ -1495,11 +1558,21 @@ def main():
     LAMBDA_CONFIG = apply_environment_to_lambda_config(LAMBDA_CONFIG, args.environment)
     WEBSOCKET_LAMBDA_CONFIG = apply_environment_to_lambda_config(WEBSOCKET_LAMBDA_CONFIG, args.environment)
     API_GATEWAY_CONFIG = apply_environment_to_api_gateway_config(API_GATEWAY_CONFIG, args.environment)
-    
+
+    # Apply mode-based configuration
+    logger.info(f"[DEPLOYMENT MODE] Applying '{args.mode}' mode configuration...")
+    LAMBDA_CONFIG = get_lambda_config_for_mode(args.mode, LAMBDA_CONFIG)
+    logger.info(f"[DEPLOYMENT MODE] Function Name: {LAMBDA_CONFIG['FunctionName']}")
+    logger.info(f"[DEPLOYMENT MODE] Memory: {LAMBDA_CONFIG['MemorySize']} MB")
+    logger.info(f"[DEPLOYMENT MODE] Timeout: {LAMBDA_CONFIG['Timeout']} seconds")
+    logger.info(f"[DEPLOYMENT MODE] Description: {LAMBDA_CONFIG.get('Description', 'N/A')}")
+    logger.info(f"[DEPLOYMENT MODE] IS_LIGHTWEIGHT_INTERFACE: {LAMBDA_CONFIG['Environment']['Variables'].get('IS_LIGHTWEIGHT_INTERFACE', 'N/A')}")
+    logger.info(f"[DEPLOYMENT MODE] IS_BACKGROUND_PROCESSOR: {LAMBDA_CONFIG['Environment']['Variables'].get('IS_BACKGROUND_PROCESSOR', 'N/A')}")
+
     # Get environment-specific stage name
     env_config = load_environment_config(args.environment)
     stage_name = env_config["api_gateway_stage"]
-    
+
     # Get Lambda function name
     function_name = args.function_name or LAMBDA_CONFIG["FunctionName"]
     
@@ -1609,7 +1682,8 @@ def main():
                 args.function_name,
                 args.region,
                 deploy_api_gateway,
-                stage_name
+                stage_name,
+                args.mode
             )
             
             if not success:

@@ -22,6 +22,22 @@ sqs_client = boto3.client('sqs')
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Runtime mode detection
+IS_LIGHTWEIGHT_INTERFACE = os.environ.get('IS_LIGHTWEIGHT_INTERFACE', 'false').lower() == 'true'
+
+if IS_LIGHTWEIGHT_INTERFACE:
+    import sys
+    error_msg = (
+        "CRITICAL: background_handler.py cannot be imported in lightweight interface Lambda. "
+        "Background processing must run in the background processor Lambda. "
+        "Check Lambda configuration: IS_LIGHTWEIGHT_INTERFACE should be false."
+    )
+    logger.error(error_msg)
+    # Raise error immediately to prevent any background handler usage
+    raise RuntimeError(error_msg)
+
+logger.info("Background handler loaded successfully (heavy operations mode)")
+
 # Import DynamoDB functions at module level
 # Define dummy functions first as fallback
 def update_processing_metrics(*args, **kwargs): 
@@ -1085,7 +1101,18 @@ def handle_async_completion_in_background_handler(event, context):
 
 
 def handle(event, context):
-    """Handle background processing for both normal and preview mode validation."""
+    """
+    Main background handler entry point.
+
+    ARCHITECTURE NOTE: This handler processes heavy background operations:
+    - Validation execution
+    - Email sending
+    - Excel report generation
+    - PDF generation
+
+    This should ONLY run in the background processor Lambda (IS_BACKGROUND_PROCESSOR=true).
+    Lightweight interface Lambda (IS_LIGHTWEIGHT_INTERFACE=true) will raise an error if this is imported.
+    """
     import uuid
 
     # Generate instance ID for tracking concurrent executions
