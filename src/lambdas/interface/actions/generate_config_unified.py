@@ -468,21 +468,11 @@ async def handle_generate_config_unified(event_data, websocket_callback=None, ta
             if existing_config:
                 logger.info(f"Found existing config version {existing_config.get('storage_metadata', {}).get('version', 'unknown')}")
         
-        # Call config lambda with unified architecture
+        # Call config generation module directly (merged from config Lambda)
         try:
-            from botocore.config import Config
-            
-            # Configure longer timeouts for Opus processing
-            config = Config(
-                read_timeout=900,  # 15 minutes read timeout  
-                connect_timeout=60,  # 1 minute connect timeout
-                retries={'max_attempts': 1}  # Don't retry on timeout
-            )
-            
-            lambda_client = boto3.client('lambda', config=config)
-            config_lambda_name = os.environ.get('CONFIG_LAMBDA_NAME', 'perplexity-validator-config')
-            
-            # Prepare payload for config lambda
+            from .config_generation import generate_config
+
+            # Prepare payload for config generation
             # Ensure conversation history is preserved by including current conversation log
             conversation_history = []
             if existing_config and existing_config.get('config_change_log'):
@@ -574,20 +564,10 @@ async def handle_generate_config_unified(event_data, websocket_callback=None, ta
                     'status': '⚙️ Processing AI configuration generation...'
                 })
             
-            # Invoke config lambda
-            response = lambda_client.invoke(
-                FunctionName=config_lambda_name,
-                InvocationType='RequestResponse',
-                Payload=json.dumps(payload)
-            )
-            
-            # Parse response
-            result = json.loads(response['Payload'].read())
-            
-            if response['StatusCode'] != 200:
-                return {'success': False, 'error': f'Config lambda failed with status {response["StatusCode"]}'}
-            
-            body = json.loads(result['body']) if isinstance(result.get('body'), str) else result.get('body', {})
+            # Call config generation module directly (merged from config Lambda)
+            from .config_generation import generate_config
+
+            body = await generate_config(payload)
             
             if not body.get('success'):
                 error_message = body.get('error', 'Unknown error')

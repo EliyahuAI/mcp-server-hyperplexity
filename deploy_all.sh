@@ -64,7 +64,9 @@ python.exe deployment/create_interface_package.py --deploy --environment "$ENVIR
 echo "--- Deploying Validation Lambda ---"
 python.exe deployment/create_package.py --deploy --environment "$ENVIRONMENT" $REBUILD_OPTION
 
-echo "--- Deploying Config Lambda ---"
-python.exe deployment/deploy_config_lambda.py --deploy --environment "$ENVIRONMENT" $REBUILD_OPTION
+# Config Lambda merged into Interface Lambda - no separate deployment needed
+# echo "--- Deploying Config Lambda ---"
+# python.exe deployment/deploy_config_lambda.py --deploy --environment "$ENVIRONMENT" $REBUILD_OPTION
 
-echo "--- All lambdas deployed successfully to $ENVIRONMENT! ---" 
+echo "--- All lambdas deployed successfully to $ENVIRONMENT! ---"
+echo "[INFO] Config generation now runs within Interface Lambda (merged)" 
