@@ -11359,7 +11359,7 @@ Please provide any additional context, or simply proceed to generate your initia
                 refinementDiv.style.cssText = 'margin-top: 16px;';
                 refinementDiv.innerHTML = `
                     <textarea id="${cardId}-refine-input" class="table-maker-textarea"
-                        placeholder="Add more details or ask questions..."
+                        placeholder="Confirm or ask for changes (blank to confirm)..."
                         style="width: 100%; min-height: 60px; resize: vertical; margin-bottom: 8px;"
                         onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const btn=document.querySelector('#${cardId}-buttons button.primary');if(btn){btn.focus();btn.classList.add('hover');setTimeout(()=>btn.classList.remove('hover'),1500);}}"></textarea>
                 `;
@@ -11579,14 +11579,14 @@ Please provide any additional context, or simply proceed to generate your initia
             if (!input) return;
 
             const userMessage = input.value.trim();
-            if (!userMessage) {
-                showMessage(`${cardId}-messages`, 'Please enter a message', 'error');
-                return;
-            }
 
-            // Add user message to chat
-            addChatMessage(cardId, 'user', userMessage);
-            tableMakerState.messages.push({ role: 'user', content: userMessage });
+            // Blank submission = affirmative (user approves)
+            const messageToSend = userMessage || 'Yes, looks good. Please generate this table.';
+
+            // Add user message to chat (show actual message or affirmative)
+            const displayMessage = userMessage || '✓ Confirmed';
+            addChatMessage(cardId, 'user', displayMessage);
+            tableMakerState.messages.push({ role: 'user', content: messageToSend });
 
             // Remove refinement div and buttons - user submitted
             const refinementDiv = document.getElementById(`${cardId}-refinement`);
@@ -11607,7 +11607,7 @@ Please provide any additional context, or simply proceed to generate your initia
                         email: globalState.email,
                         session_id: globalState.sessionId,
                         conversation_id: tableMakerState.conversationId,
-                        user_message: userMessage
+                        user_message: messageToSend
                     })
                 });
 
