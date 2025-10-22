@@ -1522,8 +1522,18 @@ def get_lambda_config_for_mode(mode, base_config):
 def configure_sqs_mappings_for_mode(mode, lambda_client, function_name, region):
     """Configure SQS event sources based on mode."""
     if mode == 'lightweight':
-        # NO SQS mappings for lightweight
-        logger.info("[MAPPINGS] Lightweight mode: Skipping SQS event source mappings")
+        # REMOVE any existing SQS mappings from lightweight Lambda
+        logger.info("[MAPPINGS] Lightweight mode: Removing any existing SQS event source mappings")
+        try:
+            existing_mappings = lambda_client.list_event_source_mappings(FunctionName=function_name)
+            for mapping in existing_mappings.get('EventSourceMappings', []):
+                if 'sqs' in mapping['EventSourceArn'].lower():
+                    uuid = mapping['UUID']
+                    logger.info(f"[MAPPINGS] Removing SQS mapping: {mapping['EventSourceArn'].split(':')[-1]} (UUID: {uuid})")
+                    lambda_client.delete_event_source_mapping(UUID=uuid)
+            logger.info("[MAPPINGS] Lightweight Lambda: All SQS triggers removed")
+        except Exception as e:
+            logger.warning(f"[MAPPINGS] Error removing SQS mappings: {e}")
         return
 
     elif mode == 'background':
