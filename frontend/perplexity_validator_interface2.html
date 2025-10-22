@@ -4908,12 +4908,15 @@
             }
 
             function showColumnsBoxes(conversationId, columns) {
-                // Find the most recent card's message container
+                // Find the most recent card
                 if (cardHandlers.size === 0) return;
 
                 const latestCardId = Array.from(cardHandlers.keys()).pop();
-                const messagesContainer = document.getElementById(`${latestCardId}-messages`);
-                if (!messagesContainer) return;
+                const card = document.getElementById(latestCardId);
+                if (!card) return;
+
+                const cardContent = card.querySelector('.card-content');
+                if (!cardContent) return;
 
                 // Separate ID and research columns
                 const idColumns = columns.filter(c => c.is_identification);
@@ -4947,20 +4950,23 @@
                     </div>
                 `;
 
-                // Add both boxes to messages container
-                messagesContainer.innerHTML += idBoxHtml + researchBoxHtml;
+                // Add both boxes to card content
+                cardContent.innerHTML += idBoxHtml + researchBoxHtml;
 
-                // Scroll to show the new boxes
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                // Scroll card into view
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
 
             function showDiscoveredRowsBox(conversationId, discoveredRows, totalCount) {
-                // Find the most recent card's message container
+                // Find the most recent card
                 if (cardHandlers.size === 0) return;
 
                 const latestCardId = Array.from(cardHandlers.keys()).pop();
-                const messagesContainer = document.getElementById(`${latestCardId}-messages`);
-                if (!messagesContainer) return;
+                const card = document.getElementById(latestCardId);
+                if (!card) return;
+
+                const cardContent = card.querySelector('.card-content');
+                if (!cardContent) return;
 
                 // Build rows list (top 10 or all if <= 10)
                 const rowsToShow = discoveredRows.slice(0, 10);
@@ -4989,11 +4995,11 @@
                     </div>
                 `;
 
-                // Add to messages container
-                messagesContainer.innerHTML += rowsBoxHtml;
+                // Add to card content
+                cardContent.innerHTML += rowsBoxHtml;
 
-                // Scroll to show the new box
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                // Scroll card into view
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
 
             function updateApprovedRowCount(conversationId, approvedCount) {

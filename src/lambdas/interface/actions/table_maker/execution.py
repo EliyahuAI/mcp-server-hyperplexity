@@ -487,7 +487,7 @@ async def execute_full_table_generation(
             import csv
             import io
             csv_buffer = io.StringIO()
-            csv_writer = csv.writer(csv_buffer)
+            csv_writer = csv.writer(csv_buffer, quoting=csv.QUOTE_ALL)  # Quote all fields to handle commas
 
             # Write column headers
             column_names = [col['name'] for col in columns]
