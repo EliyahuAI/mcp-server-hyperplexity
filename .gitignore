@@ -135,8 +135,14 @@ test_cases/simple_*.json
 # Don't ignore essential test files
 !run_lambda_test.py
 !src/run_ratio_test.py
-!src/test_logging.py 
-!test_validation.py 
+!src/test_logging.py
+!test_validation.py
 .claude/
 frontend/hyperplexity-credits-api-key.txt
 events/
+
+# Table Maker test outputs
+table_maker/output/
+
+# Lambda config copies (duplicates of source)
+src/lambdas/interface/table_maker_config.json
