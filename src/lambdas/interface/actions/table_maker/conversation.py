@@ -944,7 +944,7 @@ async def handle_table_conversation_start(request_data, context):
                     'turn_count': result['turn_count']
                 }
                 websocket_client.send_to_session(session_id, interview_message)
-                logger.info(f"[TABLE_MAKER] Sent interview results via WebSocket: trigger_execution={result['trigger_execution']}, follow_up_question length={len(result['follow_up_question'])}")
+                logger.info(f"[TABLE_MAKER] Sent interview results via WebSocket: trigger_execution={result['trigger_execution']}, show_structure={result['show_structure']}, ai_message length={len(result['ai_message'])}")
             except Exception as e:
                 logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
 
