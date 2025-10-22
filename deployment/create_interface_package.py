@@ -55,7 +55,7 @@ LAMBDA_CONFIG = {
     "Runtime": "python3.9",
     "Handler": "interface_lambda_function.lambda_handler", # This will be created in the package root
     "Timeout": 900,  # 15 minutes for file uploads and processing
-    "MemorySize": 128,  # Lightweight mode: API routing only (background Lambda uses 3008MB)
+    "MemorySize": 256,  # Lightweight mode: API routing only (background Lambda uses 512MB)
     "Role": "arn:aws:iam::400232868802:role/service-role/chatGPT-role-j84fj9y7",
     "Environment": {
         "Variables": {
@@ -1481,7 +1481,7 @@ def get_lambda_config_for_mode(mode, base_config):
 
     if mode == 'lightweight':
         config['FunctionName'] = config['FunctionName']  # Keep same name or could be different
-        config['MemorySize'] = 128  # Absolute minimum for API routing only
+        config['MemorySize'] = 256  # Lightweight for API routing (128MB too aggressive with all imports)
         config['Timeout'] = 30  # Short timeout for API responses
         config['Description'] = 'Lightweight API routing and quick operations'
         config['Environment'] = config.get('Environment', {}).copy()
