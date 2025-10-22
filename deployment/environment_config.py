@@ -107,6 +107,8 @@ def apply_environment_to_lambda_config(base_config: Dict[str, Any], environment:
         config["Environment"]["Variables"]["VALIDATOR_LAMBDA_NAME"] = env_config["validator_lambda_name"]
     if "interface_lambda_name" in env_config:
         config["Environment"]["Variables"]["INTERFACE_LAMBDA_NAME"] = env_config["interface_lambda_name"]
+    if "background_lambda_name" in env_config:
+        config["Environment"]["Variables"]["BACKGROUND_LAMBDA_NAME"] = env_config["background_lambda_name"]
 
     # Apply environment-specific SQS queue names for interface self-triggering
     if "sqs_preview_queue" in env_config:

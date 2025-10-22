@@ -2586,18 +2586,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                 # Direct Lambda invocation (async)
                 lambda_client = boto3.client('lambda')
-                interface_lambda_name = os.environ.get('INTERFACE_LAMBDA_NAME', 'perplexity-interface-function')
+                # Use background Lambda for async completion processing (not lightweight interface)
+                background_lambda_name = os.environ.get('BACKGROUND_LAMBDA_NAME') or os.environ.get('INTERFACE_LAMBDA_NAME', 'perplexity-validator-background')
 
-                logger.debug(f"[COMPLETION_TRIGGER] Sending completion via direct invocation to {interface_lambda_name}")
+                logger.debug(f"[COMPLETION_TRIGGER] Sending completion via direct invocation to {background_lambda_name}")
                 logger.debug(f"[COMPLETION_TRIGGER] Payload: {json.dumps(completion_payload, indent=2, default=str)}")
 
                 response = lambda_client.invoke(
-                    FunctionName=interface_lambda_name,
+                    FunctionName=background_lambda_name,
                     InvocationType='Event',  # Async invocation
                     Payload=json.dumps(completion_payload, default=str)
                 )
 
-                logger.debug(f"[COMPLETION_TRIGGER] Successfully triggered interface completion for session {session_id}, status: {response['StatusCode']}")
+                logger.debug(f"[COMPLETION_TRIGGER] Successfully triggered background completion for session {session_id}, status: {response['StatusCode']}")
                 return True
 
             except Exception as e:

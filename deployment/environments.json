@@ -7,6 +7,7 @@
     "environment_tag": "development",
     "validator_lambda_name": "perplexity-validator-dev",
     "interface_lambda_name": "perplexity-validator-interface-dev",
+    "background_lambda_name": "perplexity-validator-background-dev",
     "sqs_preview_queue": "perplexity-validator-preview-queue-dev",
     "sqs_standard_queue": "perplexity-validator-standard-queue-dev"
   },
@@ -18,6 +19,7 @@
     "environment_tag": "testing",
     "validator_lambda_name": "perplexity-validator-test",
     "interface_lambda_name": "perplexity-validator-interface-test",
+    "background_lambda_name": "perplexity-validator-background-test",
     "sqs_preview_queue": "perplexity-validator-preview-queue-test",
     "sqs_standard_queue": "perplexity-validator-standard-queue-test"
   },
@@ -29,6 +31,7 @@
     "environment_tag": "staging",
     "validator_lambda_name": "perplexity-validator-staging",
     "interface_lambda_name": "perplexity-validator-interface-staging",
+    "background_lambda_name": "perplexity-validator-background-staging",
     "sqs_preview_queue": "perplexity-validator-preview-queue-staging",
     "sqs_standard_queue": "perplexity-validator-standard-queue-staging"
   },
@@ -40,6 +43,7 @@
     "environment_tag": "production",
     "validator_lambda_name": "perplexity-validator",
     "interface_lambda_name": "perplexity-validator-interface",
+    "background_lambda_name": "perplexity-validator-background",
     "sqs_preview_queue": "perplexity-validator-preview-queue",
     "sqs_standard_queue": "perplexity-validator-standard-queue"
   }
