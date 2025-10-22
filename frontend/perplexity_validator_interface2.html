@@ -8490,27 +8490,20 @@ Please provide any additional context, or simply proceed to generate your initia
             async function streamText(element, text) {
                 const htmlText = renderMarkdown(text);
 
-                // For markdown, stream by sentences to avoid breaking formatting
-                if (text.includes('**') || text.includes('*') || text.includes('#') || text.includes('`') || text.includes('[')) {
-                    // Split by sentence boundaries
-                    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-                    let currentText = '';
+                // For complex markdown (lists, headers), render instantly to preserve formatting
+                if (text.includes('\n-') || text.includes('\n*') || text.includes('\n#') || text.includes('```')) {
+                    element.innerHTML = htmlText;
+                    return;
+                }
 
-                    for (let i = 0; i < sentences.length; i++) {
-                        currentText += sentences[i];
-                        element.innerHTML = renderMarkdown(currentText);
-                        await sleep(300); // 300ms between sentences
-                    }
-                } else {
-                    // Plain text - stream by words (faster)
-                    const words = text.split(' ');
-                    let currentText = '';
+                // For simple markdown (just bold/italic), stream by words
+                const words = text.split(' ');
+                let currentText = '';
 
-                    for (let i = 0; i < words.length; i++) {
-                        currentText += (i > 0 ? ' ' : '') + words[i];
-                        element.textContent = currentText;
-                        await sleep(30); // ~33 words per second
-                    }
+                for (let i = 0; i < words.length; i++) {
+                    currentText += (i > 0 ? ' ' : '') + words[i];
+                    element.innerHTML = renderMarkdown(currentText);
+                    await sleep(40); // ~25 words per second
                 }
             }
 

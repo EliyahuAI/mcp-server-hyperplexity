@@ -231,21 +231,22 @@ class ColumnDefinitionHandler:
             Formatted conversation history string
         """
         try:
-            # Extract conversation log
-            conversation_log = conversation_context.get('conversation_log', [])
+            # Extract conversation log (try new 'messages' field first, then fall back to old 'conversation_log')
+            conversation_log = conversation_context.get('messages', []) or conversation_context.get('conversation_log', [])
 
             if not conversation_log:
+                logger.warning("No conversation history found in conversation_context")
                 return "No conversation history available"
 
             history_lines = []
 
             for idx, msg in enumerate(conversation_log, 1):
-                role = msg.get('role', 'unknown').upper()
+                role = msg.get('role', 'unknown').lower()
                 content = msg.get('content', '')
 
-                if role == 'USER':
+                if role == 'user':
                     history_lines.append(f"Turn {idx} - USER: {content}")
-                elif role == 'ASSISTANT':
+                elif role == 'assistant':
                     # For assistant, extract the natural language message
                     if isinstance(content, dict):
                         ai_message = content.get('ai_message', '')
