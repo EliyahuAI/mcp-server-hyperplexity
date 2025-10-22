@@ -9,6 +9,9 @@ botocore>=1.29.0
 # File upload handling
 python-multipart>=0.0.5
 
+# Excel handling (needed by validator_invoker which is imported by generate_config_unified)
+openpyxl>=3.0.0
+
 # Config files
 pyyaml>=6.0.0
 
