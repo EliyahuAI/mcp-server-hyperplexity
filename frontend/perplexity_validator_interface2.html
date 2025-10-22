@@ -7507,10 +7507,12 @@
                 const content = `
                     <div id="${cardId}-chat" class="chat-container"></div>
                     <div id="${cardId}-refinement" style="display: none;">
-                        <textarea 
-                            id="${cardId}-refinement-input" 
-                            class="refinement-input" 
+                        <textarea
+                            id="${cardId}-refinement-input"
+                            class="refinement-input"
                             placeholder="The AI has detected the issues. You can provide additional guidance or simply submit for automatic repair..."
+                            data-error-message="${errorMessage.replace(/"/g, '&quot;')}"
+                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const cardId='${cardId}';const input=document.getElementById('${cardId}-refinement-input').value.trim();const errorMsg=this.getAttribute('data-error-message');submitConfigRepairWithError(cardId,errorMsg,input);}"
                         ></textarea>
                     </div>
                     <div id="${cardId}-messages"></div>
@@ -8042,10 +8044,11 @@
                 const content = `
                     <div id="${cardId}-chat" class="chat-container"></div>
                     <div id="${cardId}-refinement" style="display: block;">
-                        <textarea 
-                            id="${cardId}-refinement-input" 
-                            class="refinement-input" 
+                        <textarea
+                            id="${cardId}-refinement-input"
+                            class="refinement-input"
                             placeholder="Describe how you'd like to refine the configuration based on the preview results..."
+                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const cardId='${cardId}';const input=document.getElementById('${cardId}-refinement-input').value.trim();if(!input){showMessage('${cardId}-messages','Please enter refinement instructions','error');return;}submitConfigRefinementWithAutoPreview(cardId,input);}"
                         ></textarea>
                     </div>
                     <div id="${cardId}-progress"></div>
@@ -8171,9 +8174,22 @@ Please provide any additional context, or simply proceed to generate your initia
                     const input = document.getElementById(`${cardId}-refinement-input`);
                     if (input) {
                         input.placeholder = 'Please answer the questions above to help me create the best configuration for your table...';
+                        input.onkeydown = (event) => {
+                            if (event.key === 'Enter' && !event.shiftKey) {
+                                event.preventDefault();
+                                const userInput = input.value.trim();
+                                // Trigger the submit button click
+                                refinementContainer.style.display = 'none';
+                                const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+                                if (buttonsContainer) buttonsContainer.style.display = 'none';
+                                addChatMessage(cardId, 'user', userInput).then(() => {
+                                    startConfigGenerationWithContext(cardId, userInput);
+                                });
+                            }
+                        };
                     }
                 }
-                
+
                 // Add submit button
                 createButtonRow(`${cardId}-buttons`, [
                     {
@@ -8382,8 +8398,19 @@ Please provide any additional context, or simply proceed to generate your initia
                 const refinementInput = document.getElementById(`${cardId}-refinement-input`);
                 if (refinementInput) {
                     refinementInput.value = ''; // Clear previous text
+                    refinementInput.onkeydown = (event) => {
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                            event.preventDefault();
+                            const input = refinementInput.value.trim();
+                            if (!input) {
+                                showMessage(`${cardId}-messages`, 'Please enter repair instructions', 'error');
+                                return;
+                            }
+                            submitConfigRefinementWithAutoPreview(cardId, input);
+                        }
+                    };
                 }
-                
+
                 // Add submit button
                 createButtonRow(`${cardId}-buttons`, [
                     {
@@ -8740,6 +8767,17 @@ Please provide any additional context, or simply proceed to generate your initia
                 const refinementInput = document.getElementById(`${cardId}-refinement-input`);
                 refinementInput.value = ''; // Clear previous text
                 refinementInput.focus();
+                refinementInput.onkeydown = (event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        const input = refinementInput.value.trim();
+                        if (!input) {
+                            showMessage(`${cardId}-messages`, 'Please enter refinement instructions', 'error');
+                            return;
+                        }
+                        submitConfigRefinementWithAutoPreview(cardId, input);
+                    }
+                };
 
                 // Update buttons - include both Submit Refinement and Accept options
                 createButtonRow(`${cardId}-buttons`, [
@@ -9081,8 +9119,20 @@ Please provide any additional context, or simply proceed to generate your initia
                             markButtonSelected(button, '🔧 Refining...');
                             // Show refinement input again
                             document.getElementById(`${cardId}-refinement`).style.display = 'block';
-                            document.getElementById(`${cardId}-refinement-input`).value = '';
-                            document.getElementById(`${cardId}-refinement-input`).focus();
+                            const refInput = document.getElementById(`${cardId}-refinement-input`);
+                            refInput.value = '';
+                            refInput.focus();
+                            refInput.onkeydown = (event) => {
+                                if (event.key === 'Enter' && !event.shiftKey) {
+                                    event.preventDefault();
+                                    const input = refInput.value.trim();
+                                    if (!input) {
+                                        showMessage(`${cardId}-messages`, 'Please enter refinement instructions', 'error');
+                                        return;
+                                    }
+                                    submitConfigRefinementWithAutoPreview(cardId, input);
+                                }
+                            };
                             // Update button to submit
                             createButtonRow(`${cardId}-buttons`, [
                                 {
@@ -11032,7 +11082,8 @@ Please provide any additional context, or simply proceed to generate your initia
                 <div id="${cardId}-input-container">
                     <textarea id="${cardId}-input" class="table-maker-textarea"
                         placeholder="Example: Track AI research papers on transformers. Each row is a paper (defined by title and authors). I want columns for citation count, publication venue, key findings, and code availability. This is for my literature review."
-                        style="width: 100%; min-height: 100px; resize: vertical;"></textarea>
+                        style="width: 100%; min-height: 100px; resize: vertical;"
+                        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();startTableConversationFromCard('${cardId}');}"></textarea>
                 </div>
             `;
 
@@ -11083,7 +11134,7 @@ Please provide any additional context, or simply proceed to generate your initia
             showThinkingInCard(cardId, 'Starting conversation with AI...', true);
 
             // Add user message to chat
-            addMessageToTableChat(cardId, 'user', userMessage);
+            addChatMessage(cardId, 'user', userMessage);
             tableMakerState.messages.push({ role: 'user', content: userMessage });
 
             // Register WebSocket handler
@@ -11164,7 +11215,7 @@ Please provide any additional context, or simply proceed to generate your initia
             if (data.progress === 100 && aiMessage && !isGenerating && !previewGenerated) {
                 completeThinkingInCard(cardId, 'Response received');
                 tableMakerState.messages.push({ role: 'ai', content: aiMessage });
-                addMessageToTableChat(cardId, 'ai', aiMessage);
+                addChatMessage(cardId, 'ai', aiMessage, false, 'normal');
 
                 // Store table name if provided
                 if (data.table_name) {
@@ -11243,31 +11294,6 @@ Please provide any additional context, or simply proceed to generate your initia
             }
         }
 
-        // Add message to table chat
-        function addMessageToTableChat(cardId, role, content) {
-            const chatContainer = document.getElementById(`${cardId}-chat`);
-            if (!chatContainer) return;
-
-            // Strip citation tags from AI responses (e.g., <cite index="11-1">text</cite>)
-            let cleanContent = content;
-            if (role === 'ai') {
-                cleanContent = content.replace(/<cite[^>]*>(.*?)<\/cite>/g, '$1');
-            }
-
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `chat-message ${role}`;
-
-            // Render markdown for AI messages
-            if (role === 'ai') {
-                messageDiv.innerHTML = renderMarkdown(cleanContent);
-            } else {
-                messageDiv.textContent = cleanContent;
-            }
-
-            chatContainer.appendChild(messageDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
-
         // Show refinement input
         function showRefinementInput(cardId) {
             const buttonsContainer = document.getElementById(`${cardId}-buttons`);
@@ -11277,12 +11303,12 @@ Please provide any additional context, or simply proceed to generate your initia
             // Add chat bubbles for refinement guidance
             if (chatContainer && (tableMakerState.reasoning || tableMakerState.clarifying_questions)) {
                 // First bubble: prompt for changes with better language
-                addMessageToTableChat(cardId, 'ai', '**What do you like about the columns and rows? What can I change?**');
+                addChatMessage(cardId, 'ai', '**What do you like about the columns and rows? What can I change?**', false, 'normal');
 
                 // Second bubble: reasoning as context paragraph (if exists)
                 if (tableMakerState.reasoning && tableMakerState.reasoning.trim()) {
                     const reasoningText = tableMakerState.reasoning.trim();
-                    addMessageToTableChat(cardId, 'ai', reasoningText);
+                    addChatMessage(cardId, 'ai', reasoningText, false, 'normal');
                 }
 
                 // Third bubble: clarifying questions as markdown list with alternatives
@@ -11304,7 +11330,7 @@ Please provide any additional context, or simply proceed to generate your initia
                         .join('\n');
 
                     if (formattedQuestions) {
-                        addMessageToTableChat(cardId, 'ai', `**Here are some things to consider:**\n\n${formattedQuestions}\n\n*Or would you prefer something else?*`);
+                        addChatMessage(cardId, 'ai', `**Here are some things to consider:**\n\n${formattedQuestions}\n\n*Or would you prefer something else?*`, false, 'normal');
                     }
                 }
             }
@@ -11318,7 +11344,8 @@ Please provide any additional context, or simply proceed to generate your initia
                 refinementDiv.innerHTML = `
                     <textarea id="${cardId}-refine-input" class="table-maker-textarea"
                         placeholder="Add more details or ask questions..."
-                        style="width: 100%; min-height: 60px; resize: vertical; margin-bottom: 8px;"></textarea>
+                        style="width: 100%; min-height: 60px; resize: vertical; margin-bottom: 8px;"
+                        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();continueTableConversationFromCard('${cardId}');}"></textarea>
                 `;
                 buttonsContainer.parentNode.insertBefore(refinementDiv, buttonsContainer);
             }
@@ -11536,7 +11563,7 @@ Please provide any additional context, or simply proceed to generate your initia
             }
 
             // Add user message to chat
-            addMessageToTableChat(cardId, 'user', userMessage);
+            addChatMessage(cardId, 'user', userMessage);
             tableMakerState.messages.push({ role: 'user', content: userMessage });
 
             // Clear input and show thinking
@@ -11714,7 +11741,8 @@ Please provide any additional context, or simply proceed to generate your initia
                     <div id="table-maker-preview-container"></div>
                     <div class="table-maker-input-area" id="table-maker-input-area">
                         <textarea id="table-maker-chat-input" class="table-maker-textarea"
-                            placeholder="Add more details or ask questions..."></textarea>
+                            placeholder="Add more details or ask questions..."
+                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();continueTableConversation();}"></textarea>
                         <div class="table-maker-buttons">
                             <button class="std-button secondary" onclick="closeTableMakerChatModal()">Cancel</button>
                             <button class="std-button primary" onclick="continueTableConversation()">Submit</button>
