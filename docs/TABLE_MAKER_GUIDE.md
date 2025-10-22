@@ -1,6 +1,6 @@
 # Table Maker - Independent Row Discovery System
 
-**Version:** 2.0 (Independent Row Discovery)
+**Version:** 2.1 (Dynamic Parallelism + Global Counter + Phase-Aware Frontend)
 **Last Updated:** October 22, 2025
 **Status:** Production Ready (Lambda Integrated)
 
@@ -53,6 +53,33 @@ python test_local_e2e_sequential.py
 - Duration: 1-3 minutes
 - Cost: $0.05-0.15
 - Output: 8-15 validated companies in `output/local_tests/`
+
+---
+
+## What's New in Version 2.1
+
+### Dynamic Parallelism
+- **Auto-scales** based on subdomain count: `max_parallel_streams = min(num_subdomains, 5)`
+- 2 subdomains → 2 streams, 10 subdomains → 5 streams (capped for API safety)
+- Set `max_parallel_streams: null` in config to enable dynamic mode
+
+### Global Counter with Cross-Subdomain Early Stopping
+- Tracks total discovered rows across ALL subdomains
+- Stops discovering once target is met globally (saves costs)
+- Example: Found 16 rows after 3 subdomains → Skip remaining subdomains
+- Logs show `[GLOBAL STOP]` vs `[LOCAL STOP]` decisions
+
+### Phase-Aware Frontend
+- **Interview Phase:** Dummy progress messages (10%, 25%, 40%) keep user engaged
+- **Execution Phase:** Real progress with subdomain updates
+- Frontend distinguishes phases via `phase='interview'` vs `phase='execution'`
+- Smooth 2.5s transition: Progress complete → Pause → Fade → Auto-preview
+
+### Real-Time WebSocket Updates
+- Per-subdomain progress: "Finding rows in Healthcare AI..."
+- Running total: "8 of 15 target found"
+- Colored info boxes appear progressively (ID/Research/Discovered rows)
+- Auto-trigger preview when complete
 
 ---
 
@@ -248,7 +275,10 @@ Level 2: sonar-pro-high (better quality, more expensive)
       }
     ],
     "max_tokens": 16000,
-    "min_match_score": 0.6  // Filter threshold after consolidation
+    "min_match_score": 0.6,  // Filter threshold after consolidation
+    "max_parallel_streams": null,  // null = dynamic (based on subdomain count, capped at 5)
+    "check_targets_between_subdomains": true,  // Enable global counter
+    "early_stop_threshold_percentage": 100  // Stop when global count = 100% of target
   }
 }
 ```
@@ -266,17 +296,37 @@ Level 2: sonar-pro-high (better quality, more expensive)
 
 ### Key Settings to Tune
 
+**`max_parallel_streams` (null):**
+- `null` → Dynamic mode (uses subdomain count, capped at 5)
+- `1` → Sequential mode (slower but predictable)
+- `3` → Fixed 3 parallel streams (override dynamic)
+- **Recommended:** `null` for optimal performance
+
+**`check_targets_between_subdomains` (true):**
+- `true` → Enable global counter (stop early if target met)
+- `false` → Each subdomain decides independently
+- **Recommended:** `true` for cost savings
+
+**`early_stop_threshold_percentage` (100):**
+- `100` → Stop when global count = target exactly
+- `120` → Discover 20% extra before stopping (more QC options)
+- `80` → Stop early at 80% of target (aggressive cost savings)
+- **Recommended:** `100` for balanced approach
+
 **`min_candidates_percentage` (75):**
-- Higher → More early stops (cheaper, faster, fewer rows)
+- Higher → More early stops per subdomain (cheaper, faster)
 - Lower → More escalations (more expensive, more rows)
+- **Recommended:** `75` for balanced quality/cost
 
 **`min_match_score` (0.6):**
 - Higher → Fewer candidates pass to QC (stricter)
 - Lower → More candidates pass to QC (more lenient)
+- **Recommended:** `0.6` for good quality baseline
 
 **`min_qc_score` (0.5):**
 - Higher → Fewer final rows (stricter quality)
 - Lower → More final rows (more lenient quality)
+- **Recommended:** `0.5` for flexible quality
 
 ---
 
@@ -308,15 +358,22 @@ python test_local_e2e_sequential.py
 ```
 [INFO] Step 1/4: Defining columns and search strategy...
 [SUCCESS] Defined 5 columns in 12.3s ($0.015)
+[INFO] [GLOBAL COUNTER] Enabled. Target: 15, Threshold: 100%
 [INFO] Step 2/4: Discovering rows (SEQUENTIAL mode)...
 [INFO]   Subdomain: AI Research Companies
-[INFO]     Level 1 (sonar-high): 8 candidates → Stop (80% of target)
+[INFO]     Round 1 (sonar-high): 8 candidates
+[INFO]     [GLOBAL COUNTER] AI Research Companies Round 1: +8 candidates. Subdomain: 8, Global: 8/15
+[INFO]     [LOCAL STOP] Round 1: 8 candidates >= 7 threshold (75% of 10). Skipping 1 round(s)
 [INFO]   Subdomain: Healthcare AI
-[INFO]     Level 1 (sonar-high): 4 candidates → Continue (40%)
-[INFO]     Level 2 (sonar-pro-high): 7 candidates → Stop
-[SUCCESS] Discovered 25 candidates, consolidated to 19
+[INFO]     Round 1 (sonar-high): 4 candidates
+[INFO]     [GLOBAL COUNTER] Healthcare AI Round 1: +4 candidates. Subdomain: 4, Global: 12/15
+[INFO]     Round 2 (sonar-pro-high): 7 candidates
+[INFO]     [GLOBAL COUNTER] Healthcare AI Round 2: +7 candidates. Subdomain: 11, Global: 19/15
+[INFO]   Subdomain: Enterprise AI
+[INFO]     [GLOBAL STOP] Enterprise AI Round 1: Global count 19 >= threshold 15. Skipping 2 round(s)
+[SUCCESS] Discovered 19 candidates, consolidated to 15
 [INFO] Step 4/4: Quality control review...
-[SUCCESS] QC approved 15 rows
+[SUCCESS] QC approved 14 rows
 [SUCCESS] Total cost: $0.087, Total time: 142.5s
 ```
 
@@ -378,27 +435,53 @@ _save_to_s3(storage_manager, email, session_id, conversation_id, 'column_result.
 
 ### WebSocket Messages
 
-**Progress updates:**
+**Interview progress (dummy messages):**
+```json
+{
+  "type": "table_interview_progress",
+  "conversation_id": "...",
+  "phase": "interview",
+  "status": "Understanding your table requirements...",
+  "progress_percent": 10,
+  "turn_number": 1
+}
+```
+
+**Execution progress updates:**
 ```json
 {
   "type": "table_execution_update",
   "conversation_id": "...",
+  "phase": "execution",
   "current_step": 2,
   "total_steps": 4,
-  "status": "Step 2/4: Discovering rows...",
-  "progress_percent": 25
+  "status": "Finding rows in Healthcare AI...",
+  "progress_percent": 45,
+  "subdomain": "Healthcare AI",
+  "subdomain_index": 1,
+  "total_subdomains": 3,
+  "global_discovered": 8,
+  "global_target": 15
 }
 ```
+
+**Step-specific fields:**
+- **Step 1 complete:** Includes `columns` array and `table_name`
+- **Step 3 complete:** Includes `discovered_rows` (top 10) and `total_discovered`
+- **Step 4 complete:** Includes `approved_row_count`
 
 **Completion:**
 ```json
 {
   "type": "table_execution_complete",
   "conversation_id": "...",
-  "status": "Independent Row Discovery complete",
+  "phase": "execution",
+  "status": "Table ready for validation!",
   "table_name": "AI Companies Hiring Status",
   "row_count": 15,
-  "approved_rows": [...]
+  "approved_rows": [...],
+  "config_s3_key": "path/to/config.json",
+  "csv_s3_key": "path/to/template.csv"
 }
 ```
 
@@ -436,29 +519,61 @@ config_result = await config_task
 
 ### WebSocket Event Handlers
 
-Listen for `table_execution_update` and `table_execution_complete` events.
+Listen for `table_interview_progress`, `table_execution_update`, and `table_execution_complete` events.
 
-**Progress display:**
+**Key handlers (lines 4740-5049):**
+- `handleTableExecutionUpdate()` - Phase-aware progress updates
+- `handleTableExecutionComplete()` - 2.5s transition sequence
+- `showColumnsBoxes()` - Blue/purple colored boxes
+- `showDiscoveredRowsBox()` - Orange box with top 10 rows
+- `collapseConversation()` - Smooth fade animation
+- `autoTriggerPreview()` - Auto-trigger validation preview
+
+### Phase-Aware Updates
+
+**Interview phase (dummy messages):**
 ```javascript
 {
-  current_step: 2,
-  total_steps: 4,
-  status: "Step 2/4: Discovering rows...",
+  type: 'table_interview_progress',
+  phase: 'interview',  // Frontend only updates progress bar
+  status: "Analyzing table structure...",
   progress_percent: 25
 }
 ```
 
-**Completion:**
+**Execution phase (real progress):**
 ```javascript
 {
-  type: 'table_execution_complete',
-  table_name: 'AI Companies Hiring Status',
-  row_count: 15,
-  approved_rows: [...],
-  csv_s3_key: 'path/to/template.csv',
-  config_s3_key: 'path/to/config.json'
+  type: 'table_execution_update',
+  phase: 'execution',  // Frontend triggers UI changes
+  current_step: 2,
+  status: "Finding rows in Healthcare AI...",
+  progress_percent: 45,
+  subdomain: "Healthcare AI",
+  global_discovered: 8,
+  global_target: 15
 }
 ```
+
+### UI Flow
+
+**Step 1 Complete (Columns Defined):**
+- Conversation collapses with smooth animation
+- Blue box appears: ID Columns (Company Name, Website)
+- Purple box appears: Research Columns (Is Hiring?, Team Size)
+
+**Step 3 Complete (Rows Discovered):**
+- Orange box appears: Discovered Rows (14 candidates)
+- Shows top 10 rows with ID values
+- "+4 more rows in full CSV" indicator
+
+**Step 4 Complete (QC Done):**
+- Orange box updates: "12 approved of 14 discovered"
+
+**Execution Complete:**
+- 2.5s transition: Progress → Pause → Fade
+- Auto-trigger preview (no button click needed)
+- Preview card appears with CSV template + config
 
 ### CSV Download
 
@@ -584,35 +699,24 @@ aws logs filter-pattern "{$.conversation_id = 'abc123'}"
 
 ### Near-Term Enhancements
 
-**1. Global Counter with Exclusion**
+**1. Global Counter with Exclusion** ✅ IMPLEMENTED (v2.1)
 
-Track discovered entities across subdomains to avoid duplicates:
+Cross-subdomain early stopping is now active:
+- Tracks `global_counter['total_discovered']` across all subdomains
+- Checks before each escalation level: "Do we have enough globally?"
+- Logs `[GLOBAL STOP]` when target met
+- **Result:** Saves costs by skipping unnecessary escalations
+
+**Next enhancement:** Add exclusion list to prevent rediscovery:
 ```json
 {
-  "global_discovered": ["Anthropic", "OpenAI", ...],
   "subdomain_exclusions": {
-    "Healthcare AI": ["Anthropic"]  // Don't rediscover
+    "Healthcare AI": ["Anthropic"]  // Already found, don't search again
   }
 }
 ```
 
-**2. Level-by-Level Escalation**
-
-More granular escalation across ALL subdomains:
-```
-Round 1: All subdomains try sonar-low
-  → Aggregate results
-  → If total < target: Continue to Round 2
-
-Round 2: All subdomains try sonar-high
-  → Aggregate results
-  → If total < target: Continue to Round 3
-
-Round 3: All subdomains try sonar-pro-high
-  → Final round
-```
-
-**3. Enhanced QC Feedback**
+**2. Enhanced QC Feedback**
 
 QC layer provides feedback to improve future discoveries:
 ```json
@@ -624,6 +728,13 @@ QC layer provides feedback to improve future discoveries:
   }
 }
 ```
+
+**3. Phase-Aware Progress** ✅ IMPLEMENTED (v2.1)
+
+Two-phase progress tracking now working:
+- **Interview phase:** Dummy messages keep user engaged (10%, 25%, 40%)
+- **Execution phase:** Real subdomain updates with running totals
+- Frontend uses `phase` field to distinguish and handle appropriately
 
 ### Long-Term
 

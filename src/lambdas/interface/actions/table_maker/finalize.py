@@ -59,40 +59,6 @@ def title_to_snake_case(title: str) -> str:
     return snake
 
 
-async def populate_batch(
-    rows: List[Dict[str, Any]],
-    columns: List[Dict[str, Any]],
-    model: str = "claude-sonnet-4-5"
-) -> List[Dict[str, Any]]:
-    """
-    Populate data columns for a batch of rows.
-
-    This function is for FUTURE USE when we implement data population within finalize.
-    Currently, data population happens during validation.
-
-    Args:
-        rows: Rows with ID columns already filled (from row discovery)
-        columns: Column definitions (ID + research columns)
-        model: Model to use for population
-
-    Returns:
-        Rows with all columns populated
-
-    Note:
-        ID columns already have values from row discovery.
-        This function would use LLM + web search to fill research columns.
-        Not currently used - placeholder for future enhancement.
-    """
-    # PLACEHOLDER: Currently not implemented
-    # In future, this would:
-    # 1. Extract ID values from each row
-    # 2. For each research column, use LLM + web search to find data
-    # 3. Populate the column values
-    # 4. Return completed rows
-    logger.info(f"populate_batch called with {len(rows)} rows (currently a placeholder)")
-    return rows
-
-
 async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Generate validation configuration and optionally populate table with discovered row IDs.
@@ -426,93 +392,6 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                                 placeholder_row[col_name] = ''
                         all_rows.append(placeholder_row)
                     logger.info(f"Added {len(future_ids[:additional_rows_needed])} placeholder rows. Total rows: {len(all_rows)}")
-
-                # REMOVED: Internal row expansion logic
-                # Row expansion is no longer done here because:
-                # 1. NEW SYSTEM: Row discovery happens independently before finalization
-                # 2. LEGACY SYSTEM: Validator fills in placeholder rows during validation
-                # 3. This eliminates quality drop-off from ad-hoc row generation
-                #
-                # The code below is kept for reference but disabled with if False
-                if False and additional_rows_needed > 0:
-                    # Build expansion request based on future IDs and conversation context
-                    research_purpose = ""
-                    if conversation_state.get('messages'):
-                        research_purpose = conversation_state['messages'][0].get('content', '')
-
-                    # Fallback: use preview_data description if available
-                    if not research_purpose and preview_data.get('metadata'):
-                        research_purpose = preview_data['metadata'].get('description', 'Generate comprehensive research data')
-
-                    # Create expansion request
-                    expansion_request = f"""
-Generate {additional_rows_needed} additional rows based on the research purpose: {research_purpose}
-
-Use these future ID combinations as a guide:
-{json.dumps(future_ids, indent=2)}
-
-Ensure variety and relevance to the research domain.
-"""
-
-                    # Calculate batches for progress tracking
-                    batch_size = 10
-                    batches_needed = (additional_rows_needed + batch_size - 1) // batch_size
-
-                    # Progress update
-                    if websocket_client and session_id:
-                        try:
-                            websocket_client.send_to_session(session_id, {
-                                'type': 'table_finalization_progress',
-                                'session_id': session_id,
-                                'progress': 20,
-                                'status': f'Expanding table to {row_count} rows ({batches_needed} batches)...'
-                            })
-                        except Exception as e:
-                            logger.warning(f"[TABLE_FINALIZE] Failed to send WebSocket update: {e}")
-
-                    # Define progress callback for batch updates
-                    def send_batch_progress(batch_num, total_batches, rows_generated):
-                        """Send WebSocket progress update after each batch. Progress range: 20-80%"""
-                        if websocket_client and session_id:
-                            try:
-                                # Linear progress from 20% to 80% across batches
-                                batch_progress = 20 + int((batch_num / total_batches) * 60)
-                                websocket_client.send_to_session(session_id, {
-                                    'type': 'table_finalization_progress',
-                                    'session_id': session_id,
-                                    'progress': batch_progress,
-                                    'status': f'Generated {rows_generated}/{additional_rows_needed} rows (batch {batch_num}/{total_batches})...'
-                                })
-                                logger.info(f"[TABLE_FINALIZE] Sent batch progress: {batch_progress}% (batch {batch_num}/{total_batches})")
-                            except Exception as e:
-                                logger.warning(f"[TABLE_FINALIZE] Failed to send batch progress: {e}")
-
-                    # Expand rows iteratively
-                    table_structure = {
-                        'columns': columns,
-                        'proposed_columns': columns
-                    }
-
-                    logger.info("[DEBUG] About to call expand_rows_iteratively...")
-                    expansion_result = await row_expander.expand_rows_iteratively(
-                        table_structure=table_structure,
-                        existing_rows=sample_rows,
-                        expansion_request=expansion_request,
-                        total_rows_needed=additional_rows_needed,
-                        batch_size=batch_size,
-                        model="claude-sonnet-4-5",
-                        progress_callback=send_batch_progress
-                    )
-
-                    logger.info("[DEBUG] expand_rows_iteratively returned, checking success...")
-
-                    if not expansion_result['success']:
-                        logger.error(f"Row expansion failed: {expansion_result.get('errors', [])}")
-                        raise Exception(f"Failed to generate full table: {expansion_result.get('errors', ['Unknown error'])}")
-
-                    logger.info(f"[DEBUG] Expansion successful, extending all_rows with {len(expansion_result['expanded_rows'])} rows...")
-                    all_rows.extend(expansion_result['expanded_rows'])
-                    logger.info(f"Generated {len(expansion_result['expanded_rows'])} additional rows")
 
                 # Progress update
                 if websocket_client and session_id:
@@ -898,41 +777,15 @@ def handle_table_accept_and_validate_async(event_data: Dict[str, Any], context) 
         return create_response(500, {'success': False, 'error': str(e)})
 
 
-def handle_table_accept_and_validate_sync(event_data: Dict[str, Any], context) -> Dict[str, Any]:
-    """
-    Synchronous wrapper for table finalization (for direct HTTP calls)
-    DEPRECATED: Use handle_table_accept_and_validate_async instead to avoid timeouts.
-    """
-    from interface_lambda.utils.helpers import create_response
-
-    try:
-        logger.info(f"[TABLE_FINALIZE_SYNC] Starting sync wrapper with event_data: {event_data.keys()}")
-
-        # Run the async function
-        result = asyncio.run(handle_table_accept_and_validate(event_data))
-
-        logger.info(f"[TABLE_FINALIZE_SYNC] Async function completed with success={result.get('success')}")
-
-        if result.get('success'):
-            return create_response(200, result)
-        else:
-            logger.error(f"[TABLE_FINALIZE_SYNC] Result indicated failure: {result.get('error')}")
-            return create_response(500, result)
-
-    except Exception as e:
-        logger.error(f"[TABLE_FINALIZE_SYNC] Sync table finalization failed: {str(e)}")
-        import traceback
-        logger.error(f"[TABLE_FINALIZE_SYNC] Traceback: {traceback.format_exc()}")
-        return create_response(500, {'success': False, 'error': str(e)})
-
-
 # Main handler
 def handle(request_data, context):
     """Main handler that routes table finalization requests"""
+    from interface_lambda.utils.helpers import create_response
+
     action = request_data.get('action', 'acceptTableAndValidate')
 
     if action == 'acceptTableAndValidate':
-        return handle_table_accept_and_validate_sync(request_data, context)
+        # Use async wrapper to avoid timeouts
+        return handle_table_accept_and_validate_async(request_data, context)
     else:
-        from interface_lambda.utils.helpers import create_response
         return create_response(400, {'error': f'Unknown table finalization action: {action}'})
