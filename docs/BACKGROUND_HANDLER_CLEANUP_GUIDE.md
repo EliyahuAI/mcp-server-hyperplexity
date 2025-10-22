@@ -222,23 +222,23 @@ Remove these from background_handler.py:
 - **Rationale:** API routing, balance checks, file upload handlers are extremely lightweight
 
 ### Background Lambda
-- **Provisioned:** 3008 MB
-- **Typical usage:** 1024-2048 MB
-- **Rationale:** AI operations, Excel processing, PDF generation are memory-intensive
+- **Provisioned:** 512 MB
+- **Typical usage:** 256-400 MB
+- **Rationale:** Background processing, AI operations, report generation
 
 ---
 
 ## Cost Impact
 
 ### Before (Single Lambda):
-- All requests use 3008 MB
-- API routing overpays for memory
-- ~$0.000002 per API call (wasted 95% of memory)
+- All requests use 512 MB
+- API routing overpays for memory (uses ~64MB, pays for 512MB)
+- ~$0.0000008 per API call (wasted 87% of memory)
 
 ### After (Dual Lambda):
-- API routing uses 128 MB → ~$0.00000006 per call (23x cheaper!)
-- Heavy processing still uses 3008 MB
-- **Estimated savings:** 60-70% on Lambda costs (most requests are lightweight API routing)
+- API routing uses 128 MB → ~$0.0000002 per call (4x cheaper!)
+- Background processing uses 512 MB (same as before)
+- **Estimated savings:** 50-60% on Lambda costs (most requests are lightweight API routing)
 
 ---
 

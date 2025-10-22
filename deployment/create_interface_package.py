@@ -1492,7 +1492,7 @@ def get_lambda_config_for_mode(mode, base_config):
         else:
             config['FunctionName'] = base_name + '-background'
 
-        config['MemorySize'] = 3008  # Heavy provisioning for AI operations
+        config['MemorySize'] = 512  # Optimized for background processing
         config['Timeout'] = 900  # 15 minutes for complex operations
         config['Description'] = 'Heavy background processing (SQS, AI operations, reports)'
         config['Environment'] = config.get('Environment', {}).copy()
@@ -1502,7 +1502,7 @@ def get_lambda_config_for_mode(mode, base_config):
         return config
 
     else:  # unified (legacy)
-        config['MemorySize'] = 3008
+        config['MemorySize'] = 512  # Standard allocation
         config['Timeout'] = 900
         config['Description'] = 'Unified Lambda (legacy mode - all operations)'
         config['Environment'] = config.get('Environment', {}).copy()
