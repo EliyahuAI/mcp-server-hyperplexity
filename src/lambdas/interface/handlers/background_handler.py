@@ -1253,8 +1253,8 @@ def handle_main_processing(event, context):
         
         # Check if this is a config generation request
         if event.get('request_type') == 'config_generation':
-            logger.info("Detected config generation request, forwarding to validation lambda")
-            return handle_config_generation(event, context)
+            logger.info("Detected config generation request, processing with merged config module")
+            return await handle_config_generation_async(event, context)
 
         # Check if this is a table conversation request
         if event.get('request_type') == 'table_conversation':
@@ -5544,8 +5544,8 @@ def handle_main_processing(event, context):
                         logger.error(f"Failed to send error notification via email: {email_error}")
         return {'statusCode': 500, 'body': json.dumps({'status': 'background_failed', 'error': str(e)})}
 
-def handle_config_generation(event, context):
-    """Handle config generation requests by forwarding to config lambda."""
+async def handle_config_generation_async(event, context):
+    """Handle config generation requests using merged config module."""
     try:
         import time
         execution_id = f"{context.aws_request_id if context else 'no-context'}_{int(time.time() * 1000)}"
@@ -5618,7 +5618,21 @@ def handle_config_generation(event, context):
             'session_id': session_id
         }, "config_progress_ai_invoke")
         
-        response = invoke_config_lambda(event)
+        # Call merged config generation module directly (no Lambda invoke)
+        from interface_lambda.actions.config_generation import generate_config
+
+        # Build payload for config generation
+        payload = {
+            'table_analysis': event.get('table_analysis'),
+            'existing_config': event.get('existing_config'),
+            'instructions': event.get('instructions', ''),
+            'session_id': session_id,
+            'email': config_email,
+            'conversation_history': event.get('conversation_history', []),
+            'latest_validation_results': event.get('latest_validation_results')
+        }
+
+        response = await generate_config(payload)
         
         logger.info(f"Config generation response: {response}")
         logger.info(f"Response keys: {list(response.keys()) if isinstance(response, dict) else 'Not a dict'}")
@@ -6068,22 +6082,15 @@ def handle_config_generation(event, context):
         }
 
 def invoke_config_lambda(event: Dict) -> Dict:
-    """Invoke the config lambda function."""
-    try:
-        import boto3
-        from botocore.config import Config
-        
-        # Configure longer timeouts for Opus processing
-        config = Config(
-            read_timeout=900,  # 15 minutes read timeout  
-            connect_timeout=60,  # 1 minute connect timeout
-            retries={'max_attempts': 1}  # Don't retry on timeout
-        )
-        
-        lambda_client = boto3.client('lambda', config=config)
-        config_lambda_name = os.environ.get('CONFIG_LAMBDA_NAME', 'perplexity-validator-config')
-        
-        logger.info(f"Invoking config lambda: {config_lambda_name}")
+    """
+    DEPRECATED: Old function that invoked standalone config Lambda.
+    Config Lambda is now merged into interface Lambda.
+    Use handle_config_generation_async() instead.
+    """
+    raise RuntimeError(
+        "invoke_config_lambda() is deprecated. Config Lambda merged into interface Lambda. "
+        "Use handle_config_generation_async() which calls config_generation module directly."
+    )
         
         # Always try to retrieve existing config and validation results for config generation
         if event.get('email') and event.get('session_id'):
