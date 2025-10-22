@@ -32,7 +32,8 @@
       "Bash(/dev/null)",
       "Bash(python3:*)",
       "Bash(awk '{print $9, \"\"\"\"(\"\"\"\" $5 \"\"\"\")\"\"\"\"}')",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(git show:*)"
     ],
     "deny": []
   }
