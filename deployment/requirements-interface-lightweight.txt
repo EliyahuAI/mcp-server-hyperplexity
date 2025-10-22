@@ -2,9 +2,9 @@
 # Minimal dependencies for API routing, balance checks, file uploads ONLY
 # NO AI operations, NO heavy processing, NO report generation
 
-# Core AWS
+# Core AWS (pin botocore to avoid aiobotocore conflicts from cached builds)
 boto3>=1.26.0
-botocore>=1.29.0
+botocore>=1.29.0,<1.40.19
 
 # File upload handling
 python-multipart>=0.0.5
