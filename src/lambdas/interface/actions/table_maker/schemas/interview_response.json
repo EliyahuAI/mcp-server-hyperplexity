@@ -12,7 +12,8 @@
     },
     "ai_message": {
       "type": "string",
-      "description": "Your response to the user. Three modes: (1) Questions only, (2) Table structure + 'Ready to generate?', (3) Confirmation + specific value statement about the table. Use markdown formatting."
+      "minLength": 10,
+      "description": "Your response to the user. REQUIRED. Three modes: (1) Questions only, (2) Table structure + 'Ready to generate?', (3) Confirmation + specific value statement. Use markdown formatting."
     },
     "context_web_research": {
       "type": "array",
