@@ -38,6 +38,13 @@ Your follow_up_question:
 - **Paper type**: Academic research papers or industry whitepapers?
 - **Information to track**: Citations and metrics, or methodology and findings?
 - **Scope**: 10-15 papers for focused review, or 30-40 for comprehensive analysis?"
+
+Other fields:
+- trigger_execution: false
+- show_structure: false
+- context_web_research: []
+- processing_steps: []
+- table_name: ""
 ```
 
 ---
@@ -57,7 +64,7 @@ Your follow_up_question:
 - `follow_up_question`: Table outline ending with "Ready to generate this table?"
 - `trigger_execution`: true
 - `context_web_research`: Array of specific research items (see guidelines below)
-- `processing_steps`: Array of 3-5 action phrases
+- `processing_steps`: Array of 3-10 specific action phrases (include context, not generic)
 - `table_name`: Clear title in Title Case
 
 **context_web_research Guidelines - Include ONLY:**
@@ -87,8 +94,9 @@ Ready to generate this table?"
 
 Other fields:
 - trigger_execution: true
+- show_structure: true
 - context_web_research: ["Eliyahu.AI background and services"]
-- processing_steps: ["Defining Columns", "Finding Companies", "Validating Data"]
+- processing_steps: ["Researching Eliyahu.AI Context", "Finding GenAI Job Postings", "Analyzing Hiring Companies", "Validating Outreach Fit"]
 - table_name: "GenAI Hiring Companies for Outreach"
 ```
 

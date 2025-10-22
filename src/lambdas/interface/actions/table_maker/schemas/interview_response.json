@@ -1,36 +1,38 @@
 {
   "type": "object",
-  "required": ["trigger_execution", "follow_up_question", "context_web_research", "processing_steps", "table_name"],
+  "required": ["trigger_execution", "show_structure", "follow_up_question", "context_web_research", "processing_steps", "table_name"],
   "properties": {
     "trigger_execution": {
       "type": "boolean",
-      "description": "Set to true ONLY when user has approved the table sketch and you're ready to start execution phase (3-4 minute pipeline). Set to false if you need more clarification or user hasn't approved yet."
+      "description": "Set to true when user has approved the table and you're ready to start execution. Set to false if you need more clarification or user hasn't approved yet."
+    },
+    "show_structure": {
+      "type": "boolean",
+      "description": "Set to true when showing the complete table structure (OPTION B). Set to false when asking questions only (OPTION A)."
     },
     "follow_up_question": {
       "type": "string",
-      "description": "If trigger_execution is false, ask a focused question to gather more context or present the table sketch for approval. If trigger_execution is true, confirm execution start with timing: 'I'll need 3-4 minutes to build the complete table.' Use markdown formatting (bold, lists, bullets) for clarity."
+      "description": "OPTION A (show_structure=false): Ask clarifying questions only. OPTION B (show_structure=true): Describe table structure briefly and ask 'Ready to generate this table?'. Use markdown formatting (bold, lists, bullets) for clarity. DO NOT mention timing."
     },
     "context_web_research": {
       "type": "array",
       "items": {
         "type": "string"
       },
-      "description": "List of specific research questions that help define the COLUMNS and provide context for table generation (NOT about the rows themselves). These should be research questions that will inform column descriptions and configuration. Examples: 'What metrics define GenAI job postings?', 'What are standard citation metrics for research papers?', 'What validation criteria exist for AI company claims?'. These will be researched by the preview generator and embedded in column descriptions. Leave empty if no research needed."
+      "description": "List of specific research items the LLM doesn't already know. Include ONLY: specific entities mentioned, very recent information, or specialized knowledge. Exclude general domain knowledge. Leave empty if not needed."
     },
     "processing_steps": {
       "type": "array",
       "items": {
         "type": "string"
       },
-      "minItems": 3,
-      "maxItems": 5,
-      "description": "List of 3-5 word action phrases describing the steps you'll take to generate the table. These should be specific to the problem at hand. Examples: 'Researching Eliyahu.AI', 'Looking for Job Applications', 'Considering Applicability', 'Extracting Paper Citations', 'Validating Company Information'."
+      "minItems": 0,
+      "maxItems": 10,
+      "description": "List of specific action phrases for execution steps (3-10 steps). Include specific context to avoid generic phrases. Examples: 'Researching Eliyahu.AI Background', 'Finding GenAI Job Postings', 'Analyzing Political Coverage Sources' (not just 'Finding Companies' or 'Analyzing Data'). Required when trigger_execution=true. Can be empty when trigger_execution=false."
     },
     "table_name": {
       "type": "string",
-      "minLength": 3,
-      "maxLength": 100,
-      "description": "Short, descriptive table name in proper title case (e.g., 'Research Applications for Internal Programs', 'New Clients with GenAI Job Postings'). Use clear, human-readable titles that describe the table's purpose. This will be converted to snake_case for file naming."
+      "description": "Short, descriptive table name in Title Case. Required when trigger_execution=true. Can be empty when trigger_execution=false."
     }
   }
 }
