@@ -11273,7 +11273,9 @@ Please provide any additional context, or simply proceed to generate your initia
                     showRefinementInput(cardId);
                 } else if (isReady) {
                     // MODE 3: User approved, execution starting (no input needed)
-                    console.log('[TABLE_MAKER] MODE 3: Execution starting');
+                    console.log('[TABLE_MAKER] MODE 3: Execution starting - showing progress indicator');
+                    // Show progress indicator for execution (will be updated by execution messages)
+                    showThinkingInCard(cardId, 'Starting table generation...', true);
                 }
             }
 
