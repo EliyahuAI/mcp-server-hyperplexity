@@ -1,0 +1,30 @@
+# Lightweight Interface Lambda Requirements
+# Minimal dependencies for API routing, balance checks, file uploads ONLY
+# NO AI operations, NO heavy processing, NO report generation
+
+# Core AWS
+boto3>=1.26.0
+botocore>=1.29.0
+
+# File upload handling
+python-multipart>=0.0.5
+
+# Config files
+pyyaml>=6.0.0
+
+# HTTP requests (lightweight)
+requests>=2.25.0
+
+# Type hints
+typing-extensions>=4.0.0
+
+# JSON schema validation (lightweight)
+jsonschema>=4.0.0
+
+# Note: Removed heavy dependencies that are in background Lambda:
+# - PyMuPDF (24MB) - PDF generation (background only)
+# - openpyxl (250KB) - Excel reading (background only)
+# - xlsxwriter (175KB) - Excel writing (background only)
+# - aioboto3 (async AWS - background only)
+# - aiohttp (async HTTP - background only)
+# - async-timeout (background only)

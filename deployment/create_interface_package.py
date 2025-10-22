@@ -134,9 +134,16 @@ def clean_directory(dir_path):
     dir_path.mkdir(exist_ok=True)
     return dir_path
 
-def install_dependencies():
-    """Install dependencies to package directory."""
-    logger.info(f"Installing interface Lambda dependencies from {SCRIPT_DIR / 'requirements-interface-lambda.txt'}...")
+def install_dependencies(mode='unified'):
+    """Install dependencies to package directory based on deployment mode."""
+    # Choose requirements file based on mode
+    if mode == 'lightweight':
+        requirements_file = SCRIPT_DIR / 'requirements-interface-lightweight.txt'
+        logger.info(f"Installing LIGHTWEIGHT Lambda dependencies (minimal) from {requirements_file}...")
+        logger.info("Skipping heavy deps: PyMuPDF, openpyxl, xlsxwriter, aioboto3, aiohttp")
+    else:
+        requirements_file = SCRIPT_DIR / 'requirements-interface-lambda.txt'
+        logger.info(f"Installing FULL Lambda dependencies from {requirements_file}...")
 
     max_attempts = 3
     for attempt in range(1, max_attempts + 1):
@@ -146,7 +153,7 @@ def install_dependencies():
             # This ensures all packages get correct Linux manylinux wheels for the Lambda runtime
             subprocess.check_call([
                 sys.executable, "-m", "pip", "install",
-                "-r", str(SCRIPT_DIR / "requirements-interface-lambda.txt"),
+                "-r", str(requirements_file),
                 "-t", str(PACKAGE_DIR),
                 "--platform", "manylinux2014_x86_64",
                 "--implementation", "cp",
@@ -1624,10 +1631,10 @@ def main():
             PACKAGE_DIR = package_dir
             
             logger.info(f"Using package directory: {PACKAGE_DIR}")
-            
-            # Install dependencies
-            install_dependencies()
-            
+
+            # Install dependencies based on mode
+            install_dependencies(args.mode)
+
             # Copy source files
             copy_source_files()
             
