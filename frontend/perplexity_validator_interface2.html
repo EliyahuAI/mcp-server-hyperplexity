@@ -11225,7 +11225,7 @@ Please provide any additional context, or simply proceed to generate your initia
 
             // Add AI message when complete (handle both old and new schema)
             const aiMessage = data.ai_message || data.follow_up_question;
-            const isReady = data.ready_to_generate || data.trigger_preview;
+            const isReady = data.trigger_execution || data.ready_to_generate || data.trigger_preview;
             const showStructure = data.show_structure || false;
             const isGenerating = data.is_generating;
             const previewGenerated = data.preview_generated;
