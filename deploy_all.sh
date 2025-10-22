@@ -75,11 +75,11 @@ echo "======================================"
 
 # Deploy Interface Lambda based on mode
 if [[ "$DEPLOY_MODE" == "dual" ]]; then
-    echo "--- Deploying Lightweight Interface Lambda ---"
+    echo "--- Deploying Lightweight Interface Lambda (with infrastructure setup) ---"
     python.exe deployment/create_interface_package.py --deploy --environment "$ENVIRONMENT" --mode lightweight $REBUILD_OPTION
 
-    echo "--- Deploying Background Processor Lambda ---"
-    python.exe deployment/create_interface_package.py --deploy --environment "$ENVIRONMENT" --mode background $REBUILD_OPTION
+    echo "--- Deploying Background Processor Lambda (skip infrastructure setup) ---"
+    python.exe deployment/create_interface_package.py --deploy --environment "$ENVIRONMENT" --mode background $REBUILD_OPTION --skip-db-setup --skip-s3-setup --skip-ws-test
 else
     echo "--- Deploying Unified Interface Lambda (legacy) ---"
     python.exe deployment/create_interface_package.py --deploy --environment "$ENVIRONMENT" --mode unified $REBUILD_OPTION

@@ -1554,6 +1554,7 @@ def main():
     parser.add_argument('--skip-db-setup', action='store_true', help='Skip DynamoDB table setup during deployment')
     parser.add_argument('--setup-s3', action='store_true', help='Set up unified S3 bucket')
     parser.add_argument('--skip-s3-setup', action='store_true', help='Skip S3 bucket setup during deployment')
+    parser.add_argument('--skip-ws-test', action='store_true', help='Skip WebSocket connection testing during deployment')
     parser.add_argument('--environment', '-e', default='prod', choices=['dev', 'test', 'staging', 'prod'], help='Deployment environment (default: prod)')
     parser.add_argument('--mode', choices=['lightweight', 'background', 'unified'],
                        default='unified',
@@ -1797,12 +1798,15 @@ def main():
 
 
         # --- Test WebSocket Connection ---
-        logger.info("\n=== TESTING WEBSOCKET CONNECTION ===")
-        if ws_api_url:
-            if test_websocket_connection(ws_api_url):
-                logger.info("✅ WebSocket connection test passed!")
-            else:
-                logger.warning("⚠️ WebSocket connection test failed - but continuing deployment")
+        if not args.skip_ws_test:
+            logger.info("\n=== TESTING WEBSOCKET CONNECTION ===")
+            if ws_api_url:
+                if test_websocket_connection(ws_api_url):
+                    logger.info("✅ WebSocket connection test passed!")
+                else:
+                    logger.warning("⚠️ WebSocket connection test failed - but continuing deployment")
+        else:
+            logger.info("\n=== SKIPPING WEBSOCKET CONNECTION TEST (--skip-ws-test) ===")
         
         # --- Verify All Deployments ---
         logger.info("\n=== VERIFYING ALL DEPLOYMENTS ===")
