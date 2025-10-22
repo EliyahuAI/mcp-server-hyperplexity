@@ -12,7 +12,7 @@
     },
     "follow_up_question": {
       "type": "string",
-      "description": "OPTION A (show_structure=false): Ask clarifying questions only. OPTION B (show_structure=true): Describe table structure briefly and ask 'Ready to generate this table?'. Use markdown formatting (bold, lists, bullets) for clarity. DO NOT mention timing."
+      "description": "OPTION A (show_structure=false): Ask clarifying questions only. OPTION B (show_structure=true): Describe table structure briefly and ask 'Ready to generate this table?'. Use markdown formatting (bold, lists, bullets) for clarity."
     },
     "context_web_research": {
       "type": "array",
