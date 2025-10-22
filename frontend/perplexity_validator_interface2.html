@@ -4794,18 +4794,29 @@
                             // Get the latest card ID
                             if (cardHandlers.size > 0) {
                                 const latestCardId = Array.from(cardHandlers.keys()).pop();
+                                const card = document.getElementById(latestCardId);
 
-                                // Remove chat container completely
-                                const chatContainer = document.getElementById(`${latestCardId}-chat`);
-                                if (chatContainer) chatContainer.remove();
+                                if (card) {
+                                    // Remove all chat messages (including initial "Tell me about your research table!")
+                                    const allChatMessages = card.querySelectorAll('.chat-message');
+                                    allChatMessages.forEach(msg => msg.remove());
 
-                                // Remove refinement input if exists
-                                const refinementDiv = document.getElementById(`${latestCardId}-refinement`);
-                                if (refinementDiv) refinementDiv.remove();
+                                    // Remove chat container
+                                    const chatContainer = document.getElementById(`${latestCardId}-chat`);
+                                    if (chatContainer) chatContainer.remove();
 
-                                // Remove buttons
-                                const buttonsContainer = document.getElementById(`${latestCardId}-buttons`);
-                                if (buttonsContainer) buttonsContainer.remove();
+                                    // Remove messages div
+                                    const messagesDiv = document.getElementById(`${latestCardId}-messages`);
+                                    if (messagesDiv) messagesDiv.remove();
+
+                                    // Remove refinement input if exists
+                                    const refinementDiv = document.getElementById(`${latestCardId}-refinement`);
+                                    if (refinementDiv) refinementDiv.remove();
+
+                                    // Remove buttons
+                                    const buttonsContainer = document.getElementById(`${latestCardId}-buttons`);
+                                    if (buttonsContainer) buttonsContainer.remove();
+                                }
                             }
 
                             // Show colored boxes

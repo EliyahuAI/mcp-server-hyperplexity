@@ -542,11 +542,15 @@ async def execute_full_table_generation(
             # Create WebSocket callback for row discovery
             def websocket_callback(**kwargs):
                 """Wrapper to send row discovery progress updates via WebSocket."""
+                # Extract progress_percent from kwargs (required positional arg)
+                progress_percent = kwargs.pop('progress_percent', 25)
                 send_execution_progress(
                     session_id=session_id,
                     conversation_id=conversation_id,
                     current_step=2,
                     total_steps=4,
+                    status=kwargs.get('status', 'Discovering rows...'),
+                    progress_percent=progress_percent,
                     **kwargs
                 )
 
