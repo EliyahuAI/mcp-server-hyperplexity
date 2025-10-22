@@ -483,6 +483,31 @@ async def execute_full_table_generation(
 
             logger.info(f"[EXECUTION] Step 1 complete: {len(columns)} columns, table: {table_name}")
 
+            # Create minimal CSV with column headers for config generation
+            import csv
+            import io
+            csv_buffer = io.StringIO()
+            csv_writer = csv.writer(csv_buffer)
+
+            # Write column headers
+            column_names = [col['name'] for col in columns]
+            csv_writer.writerow(column_names)
+
+            csv_content = csv_buffer.getvalue()
+
+            # Save minimal CSV to standard uploads location so config generation can find it
+            csv_filename = f"{table_name.replace(' ', '_')}_template.csv"
+            session_path = storage_manager.get_session_path(email, session_id)
+            csv_s3_key = f"{session_path}uploads/{csv_filename}"
+
+            storage_manager.s3_client.put_object(
+                Bucket=storage_manager.bucket_name,
+                Key=csv_s3_key,
+                Body=csv_content,
+                ContentType='text/csv'
+            )
+            logger.info(f"[EXECUTION] Created minimal CSV for config generation: {csv_s3_key}")
+
             # Send progress update with columns and table_name
             send_execution_progress(
                 session_id=session_id,
