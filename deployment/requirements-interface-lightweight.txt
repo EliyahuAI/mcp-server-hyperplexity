@@ -18,6 +18,9 @@ pyyaml>=6.0.0
 # HTTP requests (lightweight)
 requests>=2.25.0
 
+# Async HTTP (needed by ai_api_client import chain, even though not executed in lightweight mode)
+aiohttp>=3.8.0
+
 # Type hints
 typing-extensions>=4.0.0
 
@@ -26,8 +29,5 @@ jsonschema>=4.0.0
 
 # Note: Removed heavy dependencies that are in background Lambda:
 # - PyMuPDF (24MB) - PDF generation (background only)
-# - openpyxl (250KB) - Excel reading (background only)
 # - xlsxwriter (175KB) - Excel writing (background only)
 # - aioboto3 (async AWS - background only)
-# - aiohttp (async HTTP - background only)
-# - async-timeout (background only)
