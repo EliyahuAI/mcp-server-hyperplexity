@@ -97,12 +97,13 @@ Ready to generate this table?",
 - `ai_message`: Include ALL of these elements (NEVER EMPTY):
   1. "Building out rows and columns for {table_name}."
   2. Specific value statement: How this table will help them (be specific to their use case)
-  3. Process description: "In the next 3-4 minutes, I will:"
+  3. Process description: "In the next 3-4 minutes, I will:" followed by BLANK LINE, then bulleted list:
      - Research {specific context items} (ONLY if context_web_research has items)
      - Formally structure the columns
      - Find relevant, reliable, and recent rows to populate the table
      - Develop a validation strategy
      - Validate the first few rows
+  4. CRITICAL: Use proper markdown - blank line before bullet lists!
 - `trigger_execution`: true (start execution)
 - `show_structure`: false (no longer showing structure)
 - `context_web_research`: [keep same as MODE 2]
@@ -119,6 +120,7 @@ Output:
   "ai_message": "Building out rows and columns for GenAI Hiring Companies for Outreach. This will give you a targeted list of companies actively hiring for GenAI roles, with personalized outreach drafts customized for Eliyahu.AI's expertise.
 
 In the next 3-4 minutes, I will:
+
 - Research Eliyahu.AI's background and services
 - Formally structure the columns
 - Find relevant, reliable, and recent rows to populate the table
