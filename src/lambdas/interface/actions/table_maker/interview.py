@@ -169,21 +169,25 @@ class TableInterviewHandler:
             trigger_execution = structured_data.get('trigger_execution', structured_data.get('trigger_preview', False))
 
             self.interview_context = {
+                'mode': structured_data.get('mode', 0),
                 'trigger_execution': trigger_execution,
-                'follow_up_question': structured_data.get('follow_up_question', ''),
+                'show_structure': structured_data.get('show_structure', False),
+                'ai_message': structured_data.get('ai_message', ''),
                 'context_web_research': structured_data.get('context_web_research', []),
                 'processing_steps': structured_data.get('processing_steps', []),
                 'table_name': structured_data.get('table_name', '')
             }
 
-            logger.info(f"[INTERVIEW] Interview turn complete. Trigger execution: {self.interview_context['trigger_execution']}")
+            logger.info(f"[INTERVIEW] Interview turn complete. Mode: {self.interview_context['mode']}, Trigger execution: {self.interview_context['trigger_execution']}, AI message length: {len(self.interview_context['ai_message'])}")
 
             # Return FULL API response for enhanced metrics aggregation
             # The response from call_structured_api contains everything needed
             return {
                 'success': True,
+                'mode': self.interview_context['mode'],
                 'trigger_execution': self.interview_context['trigger_execution'],
-                'follow_up_question': self.interview_context['follow_up_question'],
+                'show_structure': self.interview_context['show_structure'],
+                'ai_message': self.interview_context['ai_message'],
                 'context_web_research': self.interview_context['context_web_research'],
                 'processing_steps': self.interview_context['processing_steps'],
                 'table_name': self.interview_context['table_name'],
@@ -301,21 +305,25 @@ class TableInterviewHandler:
             trigger_execution = structured_data.get('trigger_execution', structured_data.get('trigger_preview', False))
 
             self.interview_context = {
+                'mode': structured_data.get('mode', 0),
                 'trigger_execution': trigger_execution,
-                'follow_up_question': structured_data.get('follow_up_question', ''),
+                'show_structure': structured_data.get('show_structure', False),
+                'ai_message': structured_data.get('ai_message', ''),
                 'context_web_research': structured_data.get('context_web_research', []),
                 'processing_steps': structured_data.get('processing_steps', []),
                 'table_name': structured_data.get('table_name', '')
             }
 
-            logger.info(f"[INTERVIEW] Interview turn complete. Trigger execution: {self.interview_context['trigger_execution']}")
+            logger.info(f"[INTERVIEW] Interview turn complete. Mode: {self.interview_context['mode']}, Trigger execution: {self.interview_context['trigger_execution']}, AI message length: {len(self.interview_context['ai_message'])}")
 
             # Return FULL API response for enhanced metrics aggregation
             # The response from call_structured_api contains everything needed
             return {
                 'success': True,
+                'mode': self.interview_context['mode'],
                 'trigger_execution': self.interview_context['trigger_execution'],
-                'follow_up_question': self.interview_context['follow_up_question'],
+                'show_structure': self.interview_context['show_structure'],
+                'ai_message': self.interview_context['ai_message'],
                 'context_web_research': self.interview_context['context_web_research'],
                 'processing_steps': self.interview_context['processing_steps'],
                 'table_name': self.interview_context['table_name'],
