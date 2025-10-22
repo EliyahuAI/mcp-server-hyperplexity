@@ -7,4 +7,5 @@ claude-sonnet-4,anthropic,3.00,15.00,Claude 4 Sonnet generic
 claude-3.5-sonnet,anthropic,3.00,15.00,Claude 3.5 Sonnet (fallback pricing)
 claude-3-sonnet,anthropic,3.00,15.00,Claude 3 Sonnet (fallback pricing)
 claude-3-opus,anthropic,15.00,75.00,Claude 3 Opus (estimated higher tier pricing)
-claude-3-haiku,anthropic,0.25,1.25,Claude 3 Haiku (estimated lower tier pricing) 
+claude-haiku-4-5,anthropic,1.00,5.00,Claude Haiku 4.5 (latest fast model)
+claude-3-haiku,anthropic,0.25,1.25,Claude 3 Haiku (legacy - deprecated) 

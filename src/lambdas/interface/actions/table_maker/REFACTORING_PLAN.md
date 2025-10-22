@@ -23,7 +23,7 @@ Refactoring table maker to use a two-phase approach:
 
 3. **Interview Handler** (`interview.py`)
    - `TableInterviewHandler` class
-   - Uses fast Haiku model (`claude-3-5-haiku-20241022`)
+   - Uses fast Haiku model (`claude-haiku-4-5`)
    - No web search access
    - Manages interview conversation history
 
@@ -50,7 +50,7 @@ interview_handler = TableInterviewHandler(
     schemas_dir=schemas_dir
 )
 interview_config = config.get('interview', {})
-model = interview_config.get('model', 'claude-3-5-haiku-20241022')
+model = interview_config.get('model', 'claude-haiku-4-5')
 max_tokens = interview_config.get('max_tokens', 4000)
 
 interview_result = await interview_handler.start_interview(
@@ -131,7 +131,7 @@ interview_handler.messages = conversation_state['messages']
 interview_handler.interview_context = conversation_state.get('interview_context', {})
 
 interview_config = config.get('interview', {})
-model = interview_config.get('model', 'claude-3-5-haiku-20241022')
+model = interview_config.get('model', 'claude-haiku-4-5')
 max_tokens = interview_config.get('max_tokens', 4000)
 
 interview_result = await interview_handler.continue_interview(

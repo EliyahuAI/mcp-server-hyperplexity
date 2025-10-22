@@ -38,8 +38,8 @@ class AIAPIClient:
         "claude-sonnet-4-0",
         "sonar-pro",
         "claude-3-7-sonnet-latest",
-        "sonar",
-        "claude-3-5-haiku-latest"
+        "claude-haiku-4-5",
+        "sonar"
     ]
 
     # Token limits now retrieved from model configuration database
