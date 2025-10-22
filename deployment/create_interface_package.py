@@ -233,13 +233,9 @@ def copy_source_files():
         shutil.copy(root_logo_file, PACKAGE_DIR / "EliyahuLogo_NoText_Crop.png")
         logger.info("Copied EliyahuLogo_NoText_Crop.png from project root")
 
-    # 5. Copy table_maker directory for Table Maker Lambda Integration
-    table_maker_src = PROJECT_DIR / "table_maker"
-    if table_maker_src.exists():
-        shutil.copytree(table_maker_src, PACKAGE_DIR / "table_maker", dirs_exist_ok=True)
-        logger.info("Copied table_maker directory for Table Maker Lambda Integration")
-    else:
-        logger.warning(f"table_maker directory not found at {table_maker_src}")
+    # 5. Table Maker prompts and code are in interface_lambda/actions/table_maker/
+    # No need to copy root table_maker directory - Lambda uses the local copy
+    logger.info("Table Maker prompts/schemas already in interface_lambda/actions/table_maker/ (no root copy needed)")
 
 def create_zip():
     """Create ZIP file for Lambda deployment."""
