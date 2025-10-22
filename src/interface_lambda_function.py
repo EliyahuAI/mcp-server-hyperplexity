@@ -36,6 +36,21 @@ def lambda_handler(event, context):
     """
     logger.info("=== Perplexity Validator Interface Lambda - Main Handler ===")
 
+    # Handle /health check IMMEDIATELY with zero imports (deployment verification)
+    if event.get('path') == '/health' and event.get('httpMethod') == 'GET':
+        logger.info("[HEALTH] Health check - returning immediately with no imports")
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            'body': json.dumps({
+                'status': 'ok',
+                'mode': 'lightweight' if IS_LIGHTWEIGHT_INTERFACE else ('background' if IS_BACKGROUND_PROCESSOR else 'unified')
+            })
+        }
+
     # Lightweight mode: Only allow HTTP requests
     if IS_LIGHTWEIGHT_INTERFACE:
         if 'httpMethod' not in event:
