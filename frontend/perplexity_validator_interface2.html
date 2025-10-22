@@ -11256,12 +11256,10 @@ Please provide any additional context, or simply proceed to generate your initia
                     showTablePreviewInCard(cardId, data.preview_data, null);
                 }
 
-                // Check if ready to generate
-                if (isReady && showStructure) {
-                    // Structure shown and ready for user confirmation
-                    console.log('[TABLE_MAKER] Ready for user confirmation to generate');
-
-                    // Change button to "Generate Table"
+                // Determine which UI to show based on mode
+                if (showStructure && !isReady) {
+                    // MODE 2: Structure shown, waiting for user approval
+                    console.log('[TABLE_MAKER] MODE 2: Showing Generate Table button');
                     createButtonRow(`${cardId}-buttons`, [
                         {
                             text: 'Generate Table',
@@ -11270,32 +11268,13 @@ Please provide any additional context, or simply proceed to generate your initia
                             callback: () => triggerTableGeneration(cardId)
                         }
                     ]);
-                } else if (isReady && !showStructure && !data.about_to_generate) {
-                    // Old behavior: Interview complete, create preview card
-                    console.log('[TABLE_MAKER] Interview ready for preview, creating preview card now');
-
-                    // Complete interview card
-                    completeThinkingInCard(cardId, 'Interview complete');
-
-                    // Wait 2 seconds for smooth transition before creating preview card
-                    setTimeout(() => {
-                        // Create preview card with loading state
-                        const previewCardId = createTablePreviewCard(null, null, data.table_name);
-
-                        // Store preview card ID for later population
-                        tableMakerState.previewCardId = previewCardId;
-
-                        // Register the preview card to receive WebSocket updates
-                        registerCardHandler(previewCardId, ['table_conversation_update'], (wsData, handlerCardId) => {
-                            handleTableConversationUpdate(wsData, handlerCardId);
-                        });
-
-                        // Show progress indicator immediately (messages may already be arriving)
-                        showThinkingInCard(previewCardId, 'Generating preview...', true);
-                    }, 2000);
-                } else if (!isReady) {
-                    // Show refinement input (more conversation needed)
+                } else if (!showStructure && !isReady) {
+                    // MODE 1: Questions asked, waiting for user response
+                    console.log('[TABLE_MAKER] MODE 1: Showing refinement input');
                     showRefinementInput(cardId);
+                } else if (isReady) {
+                    // MODE 3: User approved, execution starting (handled by triggerTableGeneration)
+                    console.log('[TABLE_MAKER] MODE 3: Execution will start');
                 }
             }
 
