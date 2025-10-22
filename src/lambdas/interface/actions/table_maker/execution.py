@@ -495,10 +495,11 @@ async def execute_full_table_generation(
 
             csv_content = csv_buffer.getvalue()
 
-            # Save minimal CSV to results folder so config generation can find it
+            # Save minimal CSV directly in session folder so config generation can find it
+            # Session path already includes results/{domain}/{email}/{session_id}/
             csv_filename = f"{table_name.replace(' ', '_')}_template.csv"
             session_path = storage_manager.get_session_path(email, session_id)
-            csv_s3_key = f"{session_path}results/{csv_filename}"
+            csv_s3_key = f"{session_path}{csv_filename}"
 
             storage_manager.s3_client.put_object(
                 Bucket=storage_manager.bucket_name,
