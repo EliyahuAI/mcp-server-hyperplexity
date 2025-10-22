@@ -11257,24 +11257,14 @@ Please provide any additional context, or simply proceed to generate your initia
                 }
 
                 // Determine which UI to show based on mode
-                if (showStructure && !isReady) {
-                    // MODE 2: Structure shown, waiting for user approval
-                    console.log('[TABLE_MAKER] MODE 2: Showing Generate Table button');
-                    createButtonRow(`${cardId}-buttons`, [
-                        {
-                            text: 'Generate Table',
-                            variant: 'primary',
-                            width: 'full',
-                            callback: () => triggerTableGeneration(cardId)
-                        }
-                    ]);
-                } else if (!showStructure && !isReady) {
-                    // MODE 1: Questions asked, waiting for user response
-                    console.log('[TABLE_MAKER] MODE 1: Showing refinement input');
+                if (!isReady) {
+                    // MODE 1 or MODE 2: Show refinement input with Submit button
+                    // User can answer questions, request changes, or approve
+                    console.log(`[TABLE_MAKER] MODE ${showStructure ? '2' : '1'}: Showing refinement input with Submit button`);
                     showRefinementInput(cardId);
                 } else if (isReady) {
-                    // MODE 3: User approved, execution starting (handled by triggerTableGeneration)
-                    console.log('[TABLE_MAKER] MODE 3: Execution will start');
+                    // MODE 3: User approved, execution starting (no input needed)
+                    console.log('[TABLE_MAKER] MODE 3: Execution starting');
                 }
             }
 
