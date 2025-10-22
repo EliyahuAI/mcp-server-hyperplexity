@@ -1,25 +1,25 @@
 {
   "type": "object",
-  "required": ["trigger_execution", "show_structure", "follow_up_question", "context_web_research", "processing_steps", "table_name"],
+  "required": ["trigger_execution", "show_structure", "ai_message", "context_web_research", "processing_steps", "table_name"],
   "properties": {
     "trigger_execution": {
       "type": "boolean",
-      "description": "Set to true when user has approved the table and you're ready to start execution. Set to false if you need more clarification or user hasn't approved yet."
+      "description": "Set to true ONLY when user has explicitly approved (said 'yes', 'go for it', 'looks good'). Set to false when asking questions OR when showing structure for approval."
     },
     "show_structure": {
       "type": "boolean",
-      "description": "Set to true when showing the complete table structure (OPTION B). Set to false when asking questions only (OPTION A)."
+      "description": "Set to true when proposing a table structure for approval. Set to false when asking questions OR when user has approved and execution is starting."
     },
-    "follow_up_question": {
+    "ai_message": {
       "type": "string",
-      "description": "OPTION A (show_structure=false): Ask clarifying questions only. OPTION B (show_structure=true): Describe table structure briefly and ask 'Ready to generate this table?'. Use markdown formatting (bold, lists, bullets) for clarity."
+      "description": "Your response to the user. Three modes: (1) Questions only, (2) Table structure + 'Ready to generate?', (3) Confirmation + specific value statement about the table. Use markdown formatting."
     },
     "context_web_research": {
       "type": "array",
       "items": {
         "type": "string"
       },
-      "description": "List of specific research items the LLM doesn't already know. Include ONLY: specific entities mentioned, very recent information, or specialized knowledge. Exclude general domain knowledge. Leave empty if not needed."
+      "description": "Specific research items the LLM doesn't know: specific entities, very recent info, specialized knowledge. Empty when asking questions."
     },
     "processing_steps": {
       "type": "array",
@@ -28,11 +28,11 @@
       },
       "minItems": 0,
       "maxItems": 10,
-      "description": "List of specific action phrases for execution steps (3-10 steps). Include specific context to avoid generic phrases. Examples: 'Researching Eliyahu.AI Background', 'Finding GenAI Job Postings', 'Analyzing Political Coverage Sources' (not just 'Finding Companies' or 'Analyzing Data'). Required when trigger_execution=true. Can be empty when trigger_execution=false."
+      "description": "Specific action phrases with context (e.g., 'Researching Eliyahu.AI Background', 'Finding GenAI Job Postings'). NOT generic phrases like 'Finding Companies'. Required when trigger_execution=true or show_structure=true."
     },
     "table_name": {
       "type": "string",
-      "description": "Short, descriptive table name in Title Case. Required when trigger_execution=true. Can be empty when trigger_execution=false."
+      "description": "Table name in Title Case. Required when trigger_execution=true or show_structure=true. Empty when asking questions."
     }
   }
 }
