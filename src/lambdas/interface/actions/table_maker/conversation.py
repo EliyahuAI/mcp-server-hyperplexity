@@ -53,6 +53,54 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+def _send_interview_progress(session_id: str, conversation_id: str, turn_number: int) -> None:
+    """
+    Send dummy progress messages during interview phase to keep user engaged.
+
+    These are purely cosmetic updates to show the system is working during the interview.
+    They do NOT represent actual execution progress (which uses phase='execution').
+
+    Progress messages:
+    - Turn 1: "Understanding your table requirements..." (10%)
+    - Turn 2: "Analyzing table structure..." (25%)
+    - Turn 3: "Table concept ready. Approve to generate..." (40%)
+
+    Args:
+        session_id: Session identifier
+        conversation_id: Conversation identifier
+        turn_number: Current turn number (1, 2, 3, etc.)
+    """
+    if not websocket_client or not session_id:
+        return
+
+    # Only send progress for turns 1-3
+    if turn_number not in [1, 2, 3]:
+        return
+
+    progress_messages = {
+        1: {"message": "Understanding your table requirements...", "progress": 10},
+        2: {"message": "Analyzing table structure...", "progress": 25},
+        3: {"message": "Table concept ready. Approve to generate...", "progress": 40}
+    }
+
+    progress_info = progress_messages.get(turn_number)
+    if not progress_info:
+        return
+
+    try:
+        websocket_client.send_to_session(session_id, {
+            'type': 'table_interview_progress',
+            'conversation_id': conversation_id,
+            'phase': 'interview',  # Distinguish from execution progress
+            'status': progress_info['message'],
+            'progress_percent': progress_info['progress'],
+            'turn_number': turn_number
+        })
+        logger.info(f"[TABLE_MAKER] Sent interview progress for turn {turn_number}: {progress_info['message']}")
+    except Exception as e:
+        logger.warning(f"[TABLE_MAKER] Failed to send interview progress: {e}")
+
+
 def _add_api_call_to_runs(
     session_id: str,
     run_key: Optional[str],
@@ -983,6 +1031,9 @@ async def handle_table_conversation_start(request_data, context):
             except Exception as e:
                 logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
 
+        # Send dummy interview progress message (cosmetic, to keep user engaged)
+        _send_interview_progress(session_id, conversation_id, turn_number=1)
+
         # Update runs database with interview API call metrics (using enhanced aggregation)
         if run_key:
             try:
@@ -1274,6 +1325,9 @@ async def handle_table_conversation_continue(request_data, context):
                 })
             except Exception as e:
                 logger.warning(f"[TABLE_MAKER] Failed to send WebSocket update: {e}")
+
+        # Send dummy interview progress message (cosmetic, to keep user engaged)
+        _send_interview_progress(session_id, conversation_id, turn_number=result['turn_count'])
 
         # Update runs database with interview API call metrics (using enhanced aggregation)
         if run_key:

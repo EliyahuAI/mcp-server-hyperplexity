@@ -80,6 +80,7 @@ def send_execution_progress(
             'total_steps': total_steps,
             'status': status,
             'progress_percent': progress_percent,
+            'phase': 'execution',
             **kwargs
         }
         websocket_client.send_to_session(session_id, message)
@@ -482,6 +483,18 @@ async def execute_full_table_generation(
 
             logger.info(f"[EXECUTION] Step 1 complete: {len(columns)} columns, table: {table_name}")
 
+            # Send progress update with columns and table_name
+            send_execution_progress(
+                session_id=session_id,
+                conversation_id=conversation_id,
+                current_step=1,
+                total_steps=4,
+                status=f'Column definition complete: {table_name}',
+                progress_percent=20,
+                columns=columns,
+                table_name=table_name
+            )
+
         except Exception as e:
             result['error'] = f"Column definition error: {str(e)}"
             logger.error(f"[EXECUTION] {result['error']}", exc_info=True)
@@ -510,6 +523,32 @@ async def execute_full_table_generation(
             min_match_score = discovery_config.get('min_match_score', 0.6)
             check_targets_between_subdomains = discovery_config.get('check_targets_between_subdomains', False)
             early_stop_threshold_percentage = discovery_config.get('early_stop_threshold_percentage', 120)
+            config_max_parallel = discovery_config.get('max_parallel_streams')
+
+            # Calculate dynamic max_parallel_streams
+            num_subdomains = len(search_strategy.get('subdomains', []))
+            if config_max_parallel is None:
+                max_parallel_streams = min(num_subdomains, 5)
+                logger.info(
+                    f"[EXECUTION] Dynamic max_parallel_streams: {max_parallel_streams} "
+                    f"(min of {num_subdomains} subdomains and 5)"
+                )
+            else:
+                max_parallel_streams = config_max_parallel
+                logger.info(
+                    f"[EXECUTION] Using config max_parallel_streams: {max_parallel_streams}"
+                )
+
+            # Create WebSocket callback for row discovery
+            def websocket_callback(**kwargs):
+                """Wrapper to send row discovery progress updates via WebSocket."""
+                send_execution_progress(
+                    session_id=session_id,
+                    conversation_id=conversation_id,
+                    current_step=2,
+                    total_steps=4,
+                    **kwargs
+                )
 
             # Start config generation in background (don't wait for it)
             logger.info("[EXECUTION] Starting config generation in background")
@@ -532,10 +571,11 @@ async def execute_full_table_generation(
                 target_row_count=conversation_state.get('target_row_count', 15),
                 discovery_multiplier=1.5,
                 min_match_score=min_match_score,
-                max_parallel_streams=3,  # Parallel mode (faster)
+                max_parallel_streams=max_parallel_streams,
                 escalation_strategy=escalation_strategy,
                 check_targets_between_subdomains=check_targets_between_subdomains,
-                early_stop_threshold_percentage=early_stop_threshold_percentage
+                early_stop_threshold_percentage=early_stop_threshold_percentage,
+                websocket_callback=websocket_callback
             )
 
             # Check if row discovery succeeded (critical)
@@ -570,6 +610,17 @@ async def execute_full_table_generation(
 
             logger.info(f"[EXECUTION] Step 2 complete: {len(final_rows)} consolidated rows")
             logger.info(f"[EXECUTION] Config generation still running in background...")
+
+            # Send progress update with discovered_rows
+            send_execution_progress(
+                session_id=session_id,
+                conversation_id=conversation_id,
+                current_step=2,
+                total_steps=4,
+                status='Reviewing and prioritizing rows by relevance, reliability, and recency...',
+                progress_percent=55,
+                discovered_rows=final_rows
+            )
 
         except Exception as e:
             result['error'] = f"Row discovery error: {str(e)}"
@@ -649,6 +700,17 @@ async def execute_full_table_generation(
             result['row_count'] = len(approved_rows)
 
             logger.info(f"[EXECUTION] Step 4 complete: {len(approved_rows)} approved rows")
+
+            # Send progress update with approved_row_count
+            send_execution_progress(
+                session_id=session_id,
+                conversation_id=conversation_id,
+                current_step=4,
+                total_steps=4,
+                status='Finalizing validation configuration...',
+                progress_percent=80,
+                approved_row_count=len(approved_rows)
+            )
 
         except Exception as e:
             logger.error(f"[EXECUTION] QC review error: {e}", exc_info=True)
@@ -781,7 +843,7 @@ async def execute_full_table_generation(
             conversation_id=conversation_id,
             current_step=4,
             total_steps=4,
-            status=f'Complete! {len(approved_rows)} rows approved, CSV ready',
+            status='Table ready for validation!',
             progress_percent=100
         )
 

@@ -9,6 +9,7 @@ Discovers and scores candidate rows for a SINGLE subdomain by:
 4. Returning scored candidates with rationale
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -58,7 +59,9 @@ class RowDiscoveryStream:
         columns: List[Dict[str, Any]],
         search_strategy: Dict[str, Any],
         target_rows: int,
-        escalation_strategy: List[Dict[str, Any]]
+        escalation_strategy: List[Dict[str, Any]],
+        global_counter: Optional[Dict[str, Any]] = None,
+        global_counter_lock: Optional['asyncio.Lock'] = None
     ) -> Dict[str, Any]:
         """
         Discover rows using progressive model escalation.
@@ -118,6 +121,32 @@ class RowDiscoveryStream:
                 context = strategy['search_context_size']
                 min_percentage = strategy.get('min_candidates_percentage')
 
+                # === GLOBAL COUNTER CHECK (BEFORE executing this level) ===
+                if global_counter:
+                    # Get current global count (with lock if parallel)
+                    if global_counter_lock:
+                        async with global_counter_lock:
+                            current_global = global_counter['total_discovered']
+                            global_target = global_counter['target']
+                            threshold_pct = global_counter['threshold_percentage']
+                    else:
+                        current_global = global_counter['total_discovered']
+                        global_target = global_counter['target']
+                        threshold_pct = global_counter['threshold_percentage']
+
+                    # Calculate threshold
+                    stop_at_count = int((global_target * threshold_pct) / 100)
+
+                    # Check: Do we have enough globally?
+                    if current_global >= stop_at_count:
+                        rounds_skipped = len(escalation_strategy) - round_idx + 1
+                        logger.info(
+                            f"[GLOBAL STOP] {subdomain_name} Round {round_idx}: "
+                            f"Global count {current_global} >= threshold {stop_at_count} "
+                            f"({threshold_pct}% of {global_target}). Skipping {rounds_skipped} round(s)"
+                        )
+                        break
+
                 logger.info(
                     f"Round {round_idx}/{len(escalation_strategy)}: {model} ({context} context)"
                 )
@@ -156,16 +185,37 @@ class RowDiscoveryStream:
                 accumulated_candidates.extend(candidates)
                 total_so_far = len(accumulated_candidates)
 
-                logger.info(f"Round {round_idx}: Found {len(candidates)} candidates (total: {total_so_far})")
+                # === UPDATE GLOBAL COUNTER (AFTER executing this level) ===
+                if global_counter:
+                    if global_counter_lock:
+                        async with global_counter_lock:
+                            global_counter['total_discovered'] += len(candidates)
+                            global_counter['by_subdomain'][subdomain_name] = global_counter['by_subdomain'].get(subdomain_name, 0) + len(candidates)
+                            global_counter['by_level'][f"Round {round_idx}"] = global_counter['by_level'].get(f"Round {round_idx}", 0) + len(candidates)
+                            updated_global = global_counter['total_discovered']
+                    else:
+                        global_counter['total_discovered'] += len(candidates)
+                        global_counter['by_subdomain'][subdomain_name] = global_counter['by_subdomain'].get(subdomain_name, 0) + len(candidates)
+                        global_counter['by_level'][f"Round {round_idx}"] = global_counter['by_level'].get(f"Round {round_idx}", 0) + len(candidates)
+                        updated_global = global_counter['total_discovered']
 
-                # Check if we should stop early
+                    logger.info(
+                        f"[GLOBAL COUNTER] {subdomain_name} Round {round_idx}: "
+                        f"+{len(candidates)} candidates. "
+                        f"Subdomain: {total_so_far}, Global: {updated_global}/{global_target}"
+                    )
+                else:
+                    logger.info(f"Round {round_idx}: Found {len(candidates)} candidates (total: {total_so_far})")
+
+                # Check if we should stop early (LOCAL check)
                 if min_percentage is not None:
                     threshold = int(target_rows * (min_percentage / 100))
 
                     if total_so_far >= threshold:
                         rounds_skipped = len(escalation_strategy) - round_idx
                         logger.info(
-                            f"Early stop: {total_so_far} candidates >= {threshold} threshold "
+                            f"[LOCAL STOP] {subdomain_name} Round {round_idx}: "
+                            f"{total_so_far} candidates >= {threshold} threshold "
                             f"({min_percentage}% of {target_rows}). Skipping {rounds_skipped} round(s)"
                         )
                         break
@@ -217,7 +267,9 @@ class RowDiscoveryStream:
         search_strategy: Dict[str, Any],
         target_rows: int = 7,
         scoring_model: str = 'sonar-pro',
-        escalation_strategy: Optional[List[Dict[str, Any]]] = None
+        escalation_strategy: Optional[List[Dict[str, Any]]] = None,
+        global_counter: Optional[Dict[str, Any]] = None,
+        global_counter_lock: Optional['asyncio.Lock'] = None
     ) -> Dict[str, Any]:
         """
         Discover candidate rows for a single subdomain using integrated scoring.
@@ -271,7 +323,8 @@ class RowDiscoveryStream:
         # If escalation_strategy provided, use progressive mode
         if escalation_strategy is not None:
             result = await self.discover_rows_progressive(
-                subdomain, columns, search_strategy, target_rows, escalation_strategy
+                subdomain, columns, search_strategy, target_rows, escalation_strategy,
+                global_counter, global_counter_lock
             )
             # Return progressive result with all_rounds for detailed tracking
             return {
@@ -464,7 +517,7 @@ class RowDiscoveryStream:
                 schema=schema,
                 model=scoring_model,
                 tool_name='row_discovery_integrated',
-                use_cache=True,  # Enable cache for Lambda
+                use_cache=False,  # Don't cache - web results change
                 max_tokens=16000,  # Increased for finding multiple entities with details
                 max_web_searches=len(subdomain.get('search_queries', [])),  # Use all queries
                 search_context_size=search_context_size  # Progressive: low → high

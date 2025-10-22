@@ -33,7 +33,7 @@
     "target_row_count": 20,
     "discovery_multiplier": 1.5,
     "min_match_score": 0.6,
-    "max_parallel_streams": 1,
+    "max_parallel_streams": null,
     "web_searches_per_stream": 3,
     "escalation_strategy": [
       {
@@ -50,7 +50,7 @@
       }
     ],
     "check_targets_between_subdomains": true,
-    "early_stop_threshold_percentage": 120
+    "early_stop_threshold_percentage": 100
   },
 
   "_comment_qc_review": "QC layer reviews discovered rows and decides which to keep, reject, or reprioritize. Uses Claude Sonnet 4.5 without web search.",

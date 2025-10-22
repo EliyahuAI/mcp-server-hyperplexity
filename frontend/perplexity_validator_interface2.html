@@ -4737,6 +4737,317 @@
                 return null;
             }
 
+            // ============================================
+            // TABLE MAKER EXECUTION FLOW HANDLERS
+            // ============================================
+
+            function handleTableExecutionUpdate(message) {
+                const conversationId = message.conversation_id;
+                const phase = message.phase;
+                const currentStep = message.current_step;
+                const progressPercent = message.progress_percent;
+                const status = message.status;
+
+                // CRITICAL: Check phase field
+                // If phase='interview', these are dummy messages - show progress but don't trigger actions
+                // If phase='execution', these are real - trigger UI changes
+                const isRealExecution = (phase === 'execution');
+
+                // Always update progress bar (for both interview and execution phases)
+                if (progressPercent !== undefined && status) {
+                    // Find the most recent card to update progress
+                    if (cardHandlers.size > 0) {
+                        const latestCardId = Array.from(cardHandlers.keys()).pop();
+                        const progressText = document.querySelector(`#${latestCardId} .progress-text`);
+                        const progressTrack = document.querySelector(`#${latestCardId} .progress-track`);
+                        const progressSquare = document.querySelector(`#${latestCardId} .progress-square`);
+
+                        if (progressText) {
+                            progressText.textContent = status;
+                        }
+
+                        if (progressSquare && progressTrack) {
+                            const trackWidth = progressTrack.offsetWidth;
+                            const squareSize = 12;
+                            const maxPosition = trackWidth - squareSize;
+                            const position = (progressPercent / 100) * maxPosition;
+                            progressSquare.style.left = position + 'px';
+                        }
+                    }
+                }
+
+                // Only trigger UI changes for real execution messages
+                if (!isRealExecution) {
+                    return; // Dummy message, just update progress, don't trigger boxes
+                }
+
+                // Handle step-specific updates (ONLY for real execution)
+                switch(currentStep) {
+                    case 1:
+                        // Columns complete - collapse conversation, show colored boxes
+                        if (message.columns && message.table_name) {
+                            collapseConversation(conversationId);
+                            showColumnsBoxes(conversationId, message.columns);
+                        }
+                        break;
+
+                    case 3:
+                        // Rows discovered - show rows box
+                        if (message.discovered_rows) {
+                            showDiscoveredRowsBox(
+                                conversationId,
+                                message.discovered_rows,
+                                message.total_discovered || message.discovered_rows.length
+                            );
+                        }
+                        break;
+
+                    case 4:
+                        // QC complete - update row count
+                        if (message.approved_row_count !== undefined) {
+                            updateApprovedRowCount(conversationId, message.approved_row_count);
+                        }
+                        break;
+                }
+            }
+
+            function handleTableExecutionComplete(message) {
+                const conversationId = message.conversation_id;
+
+                // Step 1: Complete progress bar (0.5s animation)
+                if (cardHandlers.size > 0) {
+                    const latestCardId = Array.from(cardHandlers.keys()).pop();
+                    const progressText = document.querySelector(`#${latestCardId} .progress-text`);
+                    const progressSquare = document.querySelector(`#${latestCardId} .progress-square`);
+                    const progressTrack = document.querySelector(`#${latestCardId} .progress-track`);
+
+                    if (progressText) {
+                        progressText.textContent = 'Table ready for validation!';
+                    }
+
+                    if (progressSquare && progressTrack) {
+                        const trackWidth = progressTrack.offsetWidth;
+                        const squareSize = 12;
+                        const maxPosition = trackWidth - squareSize;
+                        progressSquare.style.left = maxPosition + 'px';
+                    }
+                }
+
+                // Step 2: Let progress indicator close naturally (1.5s pause)
+                setTimeout(() => {
+                    // Step 3: Fade out Table Maker card (0.5s animation)
+                    if (cardHandlers.size > 0) {
+                        const latestCardId = Array.from(cardHandlers.keys()).pop();
+                        const tableMakerCard = document.getElementById(latestCardId);
+
+                        if (tableMakerCard) {
+                            tableMakerCard.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+                            tableMakerCard.style.opacity = '0';
+                            tableMakerCard.style.transform = 'translateY(-10px)';
+                        }
+                    }
+
+                    // Step 4: Wait for fade out, then trigger preview (0.5s pause)
+                    setTimeout(() => {
+                        // Remove table maker card from DOM
+                        if (cardHandlers.size > 0) {
+                            const latestCardId = Array.from(cardHandlers.keys()).pop();
+                            const tableMakerCard = document.getElementById(latestCardId);
+                            if (tableMakerCard) {
+                                tableMakerCard.remove();
+                            }
+                            // Unregister the card handler
+                            cardHandlers.delete(latestCardId);
+                        }
+
+                        // Step 5: Auto-trigger preview (backend call)
+                        autoTriggerPreview(
+                            message.csv_s3_key,
+                            message.config_s3_key,
+                            message.table_name,
+                            message.row_count
+                        );
+
+                        // Step 6: Preview Validation card will appear with natural fade-in
+                        // (handled by existing preview response handler)
+                    }, 500);
+                }, 1500);
+            }
+
+            function showColumnsBoxes(conversationId, columns) {
+                // Find the most recent card's message container
+                if (cardHandlers.size === 0) return;
+
+                const latestCardId = Array.from(cardHandlers.keys()).pop();
+                const messagesContainer = document.getElementById(`${latestCardId}-messages`);
+                if (!messagesContainer) return;
+
+                // Separate ID and research columns
+                const idColumns = columns.filter(c => c.is_identification);
+                const researchColumns = columns.filter(c => !c.is_identification);
+
+                // Create ID columns box HTML (REUSE existing pattern from lines 11097-11110)
+                const idListHtml = idColumns.map(col => {
+                    const name = col.name || col;
+                    const desc = col.description || col.validation_strategy || '';
+                    return `<span style="display: inline-block; width: 0.8em; height: 0.8em; background: #007bff; border-radius: 50%; margin-right: 6px; vertical-align: middle;"></span><strong>${name}</strong>${desc ? ': ' + desc : ''}`;
+                }).join('<br>');
+
+                const idBoxHtml = `
+                    <div class="message" style="margin-bottom: 1rem; background-color: #e0f7fa; color: #00838f; border: 1px solid #b2ebf2;">
+                        <span class="message-icon">ℹ️</span>
+                        <div><strong>ID Columns</strong> (define the row, not validated):<br>${idListHtml}</div>
+                    </div>
+                `;
+
+                // Create research columns box HTML (REUSE existing pattern from lines 11113-11126)
+                const researchListHtml = researchColumns.map(col => {
+                    const name = col.name || col;
+                    const desc = col.description || col.validation_strategy || '';
+                    return `<strong>${name}</strong>${desc ? ': ' + desc : ''}`;
+                }).join('<br>');
+
+                const researchBoxHtml = `
+                    <div class="message" style="margin-bottom: 1rem; background-color: #f3e5f5; color: #6a1b9a; border: 1px solid #ce93d8;">
+                        <span class="message-icon">ℹ️</span>
+                        <div><strong>Research Columns</strong> (to be validated):<br>${researchListHtml}</div>
+                    </div>
+                `;
+
+                // Add both boxes to messages container
+                messagesContainer.innerHTML += idBoxHtml + researchBoxHtml;
+
+                // Scroll to show the new boxes
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+
+            function showDiscoveredRowsBox(conversationId, discoveredRows, totalCount) {
+                // Find the most recent card's message container
+                if (cardHandlers.size === 0) return;
+
+                const latestCardId = Array.from(cardHandlers.keys()).pop();
+                const messagesContainer = document.getElementById(`${latestCardId}-messages`);
+                if (!messagesContainer) return;
+
+                // Build rows list (top 10 or all if <= 10)
+                const rowsToShow = discoveredRows.slice(0, 10);
+                const rowsListHtml = rowsToShow.map(row => {
+                    // Build display string from ID values
+                    const idValues = row.id_values || {};
+                    const displayParts = Object.entries(idValues)
+                        .filter(([k, v]) => v)
+                        .map(([k, v]) => v);
+                    return `• ${displayParts.join(', ')}`;
+                }).join('<br>');
+
+                // Add "more rows" indicator if needed
+                const moreRowsHtml = totalCount > 10
+                    ? `<br><em>+ ${totalCount - 10} more rows in full CSV</em>`
+                    : '';
+
+                // Create rows box HTML (REUSE existing "Additional Rows" pattern from lines 11129-11139)
+                const rowsBoxHtml = `
+                    <div class="message discovered-rows-box" data-total-count="${totalCount}" style="margin-bottom: 1rem; background-color: #fff3e0; color: #e65100; border: 1px solid #ffcc80;">
+                        <span class="message-icon">ℹ️</span>
+                        <div class="discovered-rows-content">
+                            <strong>Discovered Rows</strong> (<span class="row-count-text">${totalCount} candidates</span>):<br>
+                            ${rowsListHtml}${moreRowsHtml}
+                        </div>
+                    </div>
+                `;
+
+                // Add to messages container
+                messagesContainer.innerHTML += rowsBoxHtml;
+
+                // Scroll to show the new box
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+
+            function updateApprovedRowCount(conversationId, approvedCount) {
+                // Find the discovered rows box in the most recent card
+                if (cardHandlers.size === 0) return;
+
+                const latestCardId = Array.from(cardHandlers.keys()).pop();
+                const rowsBox = document.querySelector(`#${latestCardId}-messages .discovered-rows-box`);
+                if (!rowsBox) return;
+
+                // Get total count from data attribute
+                const totalCount = parseInt(rowsBox.getAttribute('data-total-count')) || 0;
+
+                // Update the row count text
+                const rowCountText = rowsBox.querySelector('.row-count-text');
+                if (rowCountText) {
+                    rowCountText.textContent = `${approvedCount} approved of ${totalCount} discovered`;
+                }
+            }
+
+            function collapseConversation(conversationId) {
+                // Find the conversation messages in the most recent card
+                if (cardHandlers.size === 0) return;
+
+                const latestCardId = Array.from(cardHandlers.keys()).pop();
+                const messagesContainer = document.getElementById(`${latestCardId}-messages`);
+                if (!messagesContainer) return;
+
+                // Find all conversation messages (those without special classes like info boxes)
+                const conversationMessages = messagesContainer.querySelectorAll('.message:not([style*="background-color"])');
+
+                // Fade out and collapse each conversation message
+                conversationMessages.forEach(msg => {
+                    msg.style.transition = 'max-height 0.5s ease, opacity 0.5s ease, margin 0.5s ease';
+                    msg.style.opacity = '0';
+                    msg.style.maxHeight = '0';
+                    msg.style.marginBottom = '0';
+                    msg.style.overflow = 'hidden';
+
+                    // After animation, hide completely
+                    setTimeout(() => {
+                        msg.style.display = 'none';
+                    }, 500);
+                });
+            }
+
+            function autoTriggerPreview(csvS3Key, configS3Key, tableName, rowCount) {
+                // Get current session info
+                const currentEmail = getCurrentUserEmail();
+                const currentSession = globalState.sessionId;
+
+                if (!currentEmail || !currentSession) {
+                    console.error('Cannot auto-trigger preview: missing email or session');
+                    showMessage('Failed to load preview: missing session info', 'error');
+                    return;
+                }
+
+                // Build preview request (same format as current preview flow)
+                const previewRequest = {
+                    action: 'preview_table',
+                    email: currentEmail,
+                    session_id: currentSession,
+                    csv_s3_key: csvS3Key,
+                    config_s3_key: configS3Key,
+                    table_name: tableName,
+                    row_count: rowCount,
+                    source: 'table_maker'
+                };
+
+                // Send to backend
+                fetch(API_BASE + '/validate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(previewRequest)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // The existing preview card rendering logic will handle the response
+                    // through WebSocket messages
+                    console.log('Preview auto-triggered successfully');
+                })
+                .catch(error => {
+                    console.error('Preview auto-trigger failed:', error);
+                    showMessage('Failed to load preview', 'error');
+                });
+            }
+
             function routeMessage(data, sessionId) {
 
                 // Safety check: ensure data is valid
@@ -4802,6 +5113,18 @@
                 if (data.type === 'ticker_update') {
                     handleTickerUpdate(data);
                     return; // Ticker updates don't need routing to card handlers
+                }
+
+                // Handle Table Maker execution updates
+                if (data.type === 'table_execution_update') {
+                    handleTableExecutionUpdate(data);
+                    return; // Table execution updates are handled by dedicated function
+                }
+
+                // Handle Table Maker execution complete
+                if (data.type === 'table_execution_complete') {
+                    handleTableExecutionComplete(data);
+                    return; // Table execution complete is handled by dedicated function
                 }
 
                 // General error handler - handles all error message types

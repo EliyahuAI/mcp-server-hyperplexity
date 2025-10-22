@@ -103,7 +103,8 @@ class RowDiscovery:
         scoring_model: str = 'sonar-pro',
         escalation_strategy: Optional[List[Dict[str, Any]]] = None,
         check_targets_between_subdomains: bool = False,
-        early_stop_threshold_percentage: float = 120
+        early_stop_threshold_percentage: float = 120,
+        websocket_callback: Optional[callable] = None
     ) -> Dict[str, Any]:
         """
         Discover rows using subdomains from search_strategy.
@@ -181,6 +182,26 @@ class RowDiscovery:
                 f"scoring_model={scoring_model}"
             )
 
+            # Initialize global counter if cross-subdomain checking enabled
+            global_counter = None
+            global_counter_lock = None
+
+            if check_targets_between_subdomains:
+                global_counter = {
+                    'total_discovered': 0,
+                    'by_subdomain': {},
+                    'by_level': {},
+                    'target': target_row_count,
+                    'threshold_percentage': early_stop_threshold_percentage
+                }
+                # Create lock for parallel mode (will be used if max_parallel_streams > 1)
+                global_counter_lock = asyncio.Lock()
+
+                logger.info(
+                    f"[GLOBAL COUNTER] Enabled. Target: {target_row_count}, "
+                    f"Threshold: {early_stop_threshold_percentage}%"
+                )
+
             # ================================================================
             # STEP 1: GET SUBDOMAINS FROM SEARCH_STRATEGY
             # ================================================================
@@ -217,37 +238,37 @@ class RowDiscovery:
                 # SEQUENTIAL MODE (for initial testing)
                 logger.info("Step 2/3: Processing subdomains SEQUENTIALLY (testing mode)")
                 stream_results = []
-                accumulated_candidates = 0
 
                 for i, subdomain in enumerate(subdomains, 1):
+                    # Send WebSocket update before processing subdomain
+                    if websocket_callback:
+                        current_global = global_counter['total_discovered'] if global_counter else 0
+                        websocket_callback(
+                            status=f"Finding rows in {subdomain['name']}...",
+                            progress_percent=25 + int((i / len(subdomains)) * 40),
+                            subdomain=subdomain['name'],
+                            subdomain_index=i - 1,
+                            total_subdomains=len(subdomains),
+                            global_discovered=current_global,
+                            global_target=target_row_count
+                        )
+
                     logger.info(
                         f"Processing subdomain {i}/{len(subdomains)}: {subdomain['name']} "
                         f"(target: {subdomain.get('target_rows', 7)} rows)"
                     )
+
                     result_item = await self._execute_single_stream(
                         subdomain,
                         columns,
                         search_strategy,
                         subdomain.get('target_rows', 7),
                         scoring_model,
-                        escalation_strategy
+                        escalation_strategy,
+                        global_counter,
+                        None  # No lock needed for sequential mode
                     )
                     stream_results.append(result_item)
-
-                    # Accumulate candidate count
-                    accumulated_candidates += len(result_item.get('candidates', []))
-
-                    # Check if we should stop early between subdomains
-                    if check_targets_between_subdomains and i < len(subdomains):
-                        stop_threshold = target_row_count * (early_stop_threshold_percentage / 100)
-
-                        if accumulated_candidates >= stop_threshold:
-                            logger.info(
-                                f"Early stop between subdomains: {accumulated_candidates} candidates "
-                                f">= {stop_threshold:.0f} threshold ({early_stop_threshold_percentage}% of {target_row_count}). "
-                                f"Skipping {len(subdomains) - i} remaining subdomain(s)"
-                            )
-                            break
             else:
                 # PARALLEL MODE (for production)
                 logger.info(
@@ -271,7 +292,11 @@ class RowDiscovery:
                     columns,
                     search_strategy,
                     scoring_model,
-                    escalation_strategy
+                    escalation_strategy,
+                    global_counter,
+                    global_counter_lock,
+                    websocket_callback,
+                    target_row_count
                 )
 
             result['stats']['parallel_streams'] = len(stream_results)
@@ -374,7 +399,9 @@ class RowDiscovery:
         search_strategy: Dict[str, Any],
         target_rows: int,
         scoring_model: str,
-        escalation_strategy: Optional[List[Dict[str, Any]]] = None
+        escalation_strategy: Optional[List[Dict[str, Any]]] = None,
+        global_counter: Optional[Dict[str, Any]] = None,
+        global_counter_lock: Optional[asyncio.Lock] = None
     ) -> Dict[str, Any]:
         """
         Execute a single row discovery stream.
@@ -404,7 +431,9 @@ class RowDiscovery:
             search_strategy=search_strategy,
             target_rows=target_rows,
             scoring_model=scoring_model,
-            escalation_strategy=escalation_strategy
+            escalation_strategy=escalation_strategy,
+            global_counter=global_counter,
+            global_counter_lock=global_counter_lock
         )
 
         return result
@@ -415,7 +444,11 @@ class RowDiscovery:
         columns: List[Dict[str, Any]],
         search_strategy: Dict[str, Any],
         scoring_model: str,
-        escalation_strategy: Optional[List[Dict[str, Any]]] = None
+        escalation_strategy: Optional[List[Dict[str, Any]]] = None,
+        global_counter: Optional[Dict[str, Any]] = None,
+        global_counter_lock: Optional[asyncio.Lock] = None,
+        websocket_callback: Optional[callable] = None,
+        target_row_count: int = 20
     ) -> List[Dict[str, Any]]:
         """
         Execute row discovery streams in parallel using asyncio.gather().
@@ -436,26 +469,47 @@ class RowDiscovery:
         """
         logger.info(f"Launching {len(subdomains)} parallel discovery stream(s)")
 
-        # Create tasks for parallel execution
-        tasks = []
-        for subdomain in subdomains:
-            # Create a new stream instance for each subdomain
+        # Create wrapper function for each subdomain to handle websocket updates
+        async def discover_with_updates(subdomain_info: Dict[str, Any], idx: int):
+            # Send WebSocket update before starting this subdomain
+            if websocket_callback and global_counter_lock:
+                async with global_counter_lock:
+                    current_global = global_counter['total_discovered'] if global_counter else 0
+                    websocket_callback(
+                        status=f"Finding rows in {subdomain_info['name']}...",
+                        subdomain=subdomain_info['name'],
+                        subdomain_index=idx,
+                        total_subdomains=len(subdomains),
+                        global_discovered=current_global,
+                        global_target=target_row_count
+                    )
+
+            # Create stream instance
             stream = self.row_discovery_stream_class(
                 self.ai_client,
                 self.prompt_loader,
                 self.schema_validator
             )
 
-            # Create async task with integrated scoring
-            task = stream.discover_rows(
-                subdomain=subdomain,
+            # Execute discovery with global counter
+            result = await stream.discover_rows(
+                subdomain=subdomain_info,
                 columns=columns,
                 search_strategy=search_strategy,
-                target_rows=subdomain.get('target_rows', 7),
+                target_rows=subdomain_info.get('target_rows', 7),
                 scoring_model=scoring_model,
-                escalation_strategy=escalation_strategy
+                escalation_strategy=escalation_strategy,
+                global_counter=global_counter,
+                global_counter_lock=global_counter_lock
             )
-            tasks.append(task)
+
+            return result
+
+        # Create tasks for parallel execution
+        tasks = [
+            discover_with_updates(subdomain, idx)
+            for idx, subdomain in enumerate(subdomains)
+        ]
 
         # Execute all tasks in parallel
         # Note: asyncio.gather() returns results in order, even if some fail
@@ -605,7 +659,8 @@ async def discover_rows(
     scoring_model: str = 'sonar-pro',
     escalation_strategy: Optional[List[Dict[str, Any]]] = None,
     check_targets_between_subdomains: bool = False,
-    early_stop_threshold_percentage: float = 120
+    early_stop_threshold_percentage: float = 120,
+    websocket_callback: Optional[callable] = None
 ) -> Dict[str, Any]:
     """
     Convenience function to discover rows without creating RowDiscovery instance.
@@ -639,5 +694,6 @@ async def discover_rows(
         scoring_model=scoring_model,
         escalation_strategy=escalation_strategy,
         check_targets_between_subdomains=check_targets_between_subdomains,
-        early_stop_threshold_percentage=early_stop_threshold_percentage
+        early_stop_threshold_percentage=early_stop_threshold_percentage,
+        websocket_callback=websocket_callback
     )
