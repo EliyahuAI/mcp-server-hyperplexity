@@ -3321,6 +3321,11 @@
                 const buttonRow = document.createElement('div');
                 buttonRow.className = 'button-row';
 
+                // For single full-width buttons, remove centering
+                if (buttons.length === 1 && buttons[0].width === 'full') {
+                    buttonRow.style.justifyContent = 'stretch';
+                }
+
                 // Color cycle: green, purple, orange, cyan, pink
                 const colorCycle = ['primary', 'secondary', 'tertiary', 'quaternary', 'quinary'];
 
