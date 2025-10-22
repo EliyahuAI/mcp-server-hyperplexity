@@ -43,6 +43,7 @@ from ai_api_client import AIAPIClient
 # Import config generation
 from .config_bridge import build_table_analysis_from_conversation
 from ..generate_config_unified import handle_generate_config_unified
+from .table_maker_lib.config_generator import ConfigGenerator
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -277,7 +278,11 @@ async def _generate_validation_config(
             'instructions': f'Generate validation configuration for table: {table_name}'
         }
 
-        config_result = await handle_generate_config_unified(config_event, websocket_callback=None)
+        config_result = await handle_generate_config_unified(
+            config_event,
+            websocket_callback=None,
+            table_maker_mode=True  # Use Table Maker mode - skip CSV parsing
+        )
 
         if config_result.get('success'):
             logger.info(f"[CONFIG_GEN] Config generation succeeded")
@@ -482,6 +487,11 @@ async def execute_full_table_generation(
             )
 
             logger.info(f"[EXECUTION] Step 1 complete: {len(columns)} columns, table: {table_name}")
+
+            # Add tablewide_research to conversation_state for config generation
+            conversation_state['tablewide_research'] = column_result.get('tablewide_research', '')
+            if conversation_state.get('tablewide_research'):
+                logger.info(f"[EXECUTION] Stored tablewide_research in conversation_state for config generation")
 
             # Create minimal CSV with column headers for config generation
             import csv

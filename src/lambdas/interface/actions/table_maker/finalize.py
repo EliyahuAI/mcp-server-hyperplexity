@@ -603,7 +603,8 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                         'column_details': columns,
                         'identification_columns': identification_columns,
                         'conversation_history': conversation_state.get('messages', []),
-                        'context_research': conversation_state.get('context_research', {})
+                        'context_research': conversation_state.get('context_research', {}),
+                        'tablewide_research': conversation_state.get('tablewide_research', '')  # Add tablewide_research
                     }
                 }
 
@@ -631,9 +632,11 @@ async def handle_table_accept_and_validate(event_data: Dict[str, Any]) -> Dict[s
                 }
 
                 # The function signature expects positional args
+                # Pass table_maker_mode=True to skip CSV parsing
                 config_result = await handle_generate_config_unified(
                     config_generation_payload,
-                    config_websocket_callback  # Pass as second positional arg, not keyword
+                    config_websocket_callback,  # Pass as second positional arg, not keyword
+                    table_maker_mode=True  # Enable Table Maker mode to skip CSV parsing
                 )
 
                 if not config_result.get('success'):

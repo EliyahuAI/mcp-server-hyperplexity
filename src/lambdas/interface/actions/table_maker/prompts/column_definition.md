@@ -119,6 +119,23 @@ We have an outline of a series of columns for a research table. Your job is to:
 
 ## Key Principles
 
+### Column Naming Guidelines
+
+**Keep column names SHORT and friendly:**
+- ✅ "Far-Right US Coverage"
+- ✅ "Publication Date"
+- ✅ "Meta-Analysis"
+- ❌ "Far-Right US Coverage (Breitbart, Daily Wire, etc.)"
+- ❌ "International Right Coverage (Daily Mail UK, The Telegraph, etc.)"
+
+**Put details in the description field:**
+- Column name: "Far-Right US Coverage"
+- Description: "How far-right US sources like Breitbart, Daily Wire, OAN report this story"
+
+**Avoid special characters in column names:**
+- Don't use: Parentheses (), Commas, Quotes
+- Use simple alphanumeric with spaces and hyphens
+
 ### ID Columns (Define the row, NOT validated)
 - Simple identifiers: Job Title, Company Name, Paper Title, Product Name
 - No validation strategy needed (empty string)
@@ -150,6 +167,11 @@ Using the information provided above:
    - Expand brief mentions into detailed specifications
    - Add comprehensive descriptions
    - Create specific validation strategies for research columns
+
+**CRITICAL Column Naming Rules:**
+- Column names: Short, friendly, CSV-safe (no commas, parentheses, quotes)
+- Column descriptions: Detailed, include source examples and specifics
+- Example sources/details go in description, NOT in the column name
 
 2. **Create search strategy**
    - 2-5 subdomains that cover the search space

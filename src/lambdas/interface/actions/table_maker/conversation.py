@@ -910,6 +910,7 @@ async def handle_table_conversation_start(request_data, context):
             'config': config,  # Store config for reference
             'messages': interview_handler.get_interview_history(),
             'interview_context': interview_handler.get_interview_context(),
+            'context_web_research': result['context_web_research'],  # Background research items for config generation
             'trigger_execution': result['trigger_execution']
         }
 
@@ -1212,6 +1213,7 @@ async def handle_table_conversation_continue(request_data, context):
         conversation_state['turn_count'] = result['turn_count']
         conversation_state['messages'] = interview_handler.get_interview_history()
         conversation_state['interview_context'] = interview_handler.get_interview_context()
+        conversation_state['context_web_research'] = result['context_web_research']  # Update research items
         conversation_state['trigger_execution'] = result['trigger_execution']
 
         # Save updated conversation state to S3

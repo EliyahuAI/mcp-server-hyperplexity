@@ -277,19 +277,21 @@ def find_latest_config_in_session(s3_client, bucket_name, session_path):
         logger.error(f"Error finding latest config: {e}")
         return None
 
-async def handle_generate_config_unified(event_data, websocket_callback=None):
+async def handle_generate_config_unified(event_data, websocket_callback=None, table_maker_mode=False):
     """
     Generate configuration from uploaded table data using AI with unified storage
-    
+
     Args:
         event_data: {
             'email': 'user@example.com',
             'session_id': 'session_identifier',
             'existing_config': {...} (optional - for iterative improvements),
-            'instructions': 'string describing what to generate/modify'
+            'instructions': 'string describing what to generate/modify',
+            'table_analysis': {...} (optional - pre-built table analysis for table_maker_mode)
         }
         websocket_callback: Function to send progress updates via WebSocket
-    
+        table_maker_mode: If True, uses provided table_analysis and skips CSV parsing
+
     Returns:
         {
             'success': True,
@@ -368,63 +370,88 @@ async def handle_generate_config_unified(event_data, websocket_callback=None):
                 'progress': 10,
                 'status': '📊 Analyzing Excel file from unified storage...'
             })
-        
-        # Get Excel file from unified storage
-        logger.info(f"Getting Excel file from unified storage: {email}/{session_id}")
-        excel_content, excel_s3_key = storage_manager.get_excel_file(email, session_id)
-        if not excel_content:
-            return {'success': False, 'error': 'No Excel file found in unified storage for this session'}
-        
-        # Progress update
-        if websocket_callback:
-            await websocket_callback({
-                'type': 'config_generation_progress',
-                'progress': 25,
-                'status': '🧠 Detecting data domain and patterns...'
-            })
-        
-        # Use consolidated table parser with formula extraction
-        try:
-            from shared_table_parser import s3_table_parser
 
-            # First, analyze table structure with formula extraction for config generation
-            table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
+        # Table Maker mode: Use provided table_analysis, skip CSV parsing
+        if table_maker_mode:
+            logger.info("[CONFIG_GEN] Table Maker mode: Using provided table_analysis, skipping CSV parsing")
 
+            # Extract table_analysis from event_data
+            table_analysis = event_data.get('table_analysis')
             if not table_analysis:
-                return {'success': False, 'error': 'Failed to analyze table structure'}
+                return {'success': False, 'error': 'Table Maker mode requires table_analysis in event_data'}
 
-            logger.info(f"Table analysis completed: {table_analysis.get('basic_info', {}).get('filename', 'Unknown')}")
+            # Validate that table_analysis has required fields
+            if not table_analysis.get('column_analysis'):
+                return {'success': False, 'error': 'table_analysis missing column_analysis'}
 
-            # For Excel files, also extract formulas to enhance config generation
-            formula_data = None
-            if table_analysis.get('metadata', {}).get('file_type') == 'excel':
-                try:
-                    logger.info("Extracting formulas from Excel file for enhanced config generation...")
-                    full_table_data = s3_table_parser.parse_s3_table(
-                        storage_manager.bucket_name,
-                        excel_s3_key,
-                        extract_formulas=True
-                    )
+            logger.info(f"[CONFIG_GEN] Table Maker mode: Using {len(table_analysis.get('column_analysis', {}))} columns from table_analysis")
 
-                    if full_table_data.get('formulas'):
-                        formula_data = full_table_data['formulas']
-                        formula_count = full_table_data['metadata'].get('formula_count', 0)
-                        logger.info(f"[SUCCESS] Extracted {formula_count} formulas from Excel file")
+            # Progress update
+            if websocket_callback:
+                await websocket_callback({
+                    'type': 'config_generation_progress',
+                    'progress': 25,
+                    'status': '🧠 Using Table Maker conversation context...'
+                })
 
-                        # Add formula information to table analysis
-                        table_analysis['formula_data'] = formula_data
-                        table_analysis['metadata']['has_formulas'] = True
-                        table_analysis['metadata']['formula_count'] = formula_count
-                    else:
-                        logger.info("No formulas found in Excel file")
+        # Normal mode: Parse CSV from unified storage
+        else:
+            # Get Excel file from unified storage
+            logger.info(f"Getting Excel file from unified storage: {email}/{session_id}")
+            excel_content, excel_s3_key = storage_manager.get_excel_file(email, session_id)
+            if not excel_content:
+                return {'success': False, 'error': 'No Excel file found in unified storage for this session'}
 
-                except Exception as formula_error:
-                    logger.warning(f"Formula extraction failed (non-critical): {formula_error}")
-                    # Continue without formulas - this shouldn't break config generation
-            
-        except Exception as e:
-            logger.error(f"Table analysis failed: {str(e)}")
-            return {'success': False, 'error': f'Table analysis failed: {str(e)}'}
+            # Progress update
+            if websocket_callback:
+                await websocket_callback({
+                    'type': 'config_generation_progress',
+                    'progress': 25,
+                    'status': '🧠 Detecting data domain and patterns...'
+                })
+
+            # Use consolidated table parser with formula extraction
+            try:
+                from shared_table_parser import s3_table_parser
+
+                # First, analyze table structure with formula extraction for config generation
+                table_analysis = s3_table_parser.analyze_table_structure(storage_manager.bucket_name, excel_s3_key, extract_formulas=True)
+
+                if not table_analysis:
+                    return {'success': False, 'error': 'Failed to analyze table structure'}
+
+                logger.info(f"Table analysis completed: {table_analysis.get('basic_info', {}).get('filename', 'Unknown')}")
+
+                # For Excel files, also extract formulas to enhance config generation
+                formula_data = None
+                if table_analysis.get('metadata', {}).get('file_type') == 'excel':
+                    try:
+                        logger.info("Extracting formulas from Excel file for enhanced config generation...")
+                        full_table_data = s3_table_parser.parse_s3_table(
+                            storage_manager.bucket_name,
+                            excel_s3_key,
+                            extract_formulas=True
+                        )
+
+                        if full_table_data.get('formulas'):
+                            formula_data = full_table_data['formulas']
+                            formula_count = full_table_data['metadata'].get('formula_count', 0)
+                            logger.info(f"[SUCCESS] Extracted {formula_count} formulas from Excel file")
+
+                            # Add formula information to table analysis
+                            table_analysis['formula_data'] = formula_data
+                            table_analysis['metadata']['has_formulas'] = True
+                            table_analysis['metadata']['formula_count'] = formula_count
+                        else:
+                            logger.info("No formulas found in Excel file")
+
+                    except Exception as formula_error:
+                        logger.warning(f"Formula extraction failed (non-critical): {formula_error}")
+                        # Continue without formulas - this shouldn't break config generation
+
+            except Exception as e:
+                logger.error(f"Table analysis failed: {str(e)}")
+                return {'success': False, 'error': f'Table analysis failed: {str(e)}'}
         
         # Progress update
         if websocket_callback:
