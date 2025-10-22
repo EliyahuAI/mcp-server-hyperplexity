@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["ai_message", "proposed_rows", "proposed_columns", "clarifying_questions", "confidence", "ready_to_generate", "reasoning"],
+  "required": ["ai_message", "proposed_rows", "proposed_columns", "clarifying_questions", "confidence", "ready_to_generate", "show_structure", "reasoning"],
   "properties": {
     "ai_message": {
       "type": "string",
@@ -52,6 +52,10 @@
     "ready_to_generate": {
       "type": "boolean",
       "description": "Whether table is ready to be generated"
+    },
+    "show_structure": {
+      "type": "boolean",
+      "description": "Whether to show the proposed table structure (columns and sample rows) to the user. Set to false in early turns when still asking clarifying questions. Set to true when confident and ready to show structure."
     },
     "reasoning": {
       "type": "string",

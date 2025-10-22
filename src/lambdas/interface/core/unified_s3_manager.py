@@ -37,12 +37,20 @@ class UnifiedS3Manager:
         # Extract domain and create safe email prefix
         domain = email.split('@')[-1] if '@' in email else 'unknown'
         email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_plus_')[:20]
-        
+
         # Use session_id directly as folder name - no duplicate timestamps
         session_folder = session_id
-        
+
         return f"results/{domain}/{email_prefix}/{session_folder}/"
-    
+
+    def get_table_maker_path(self, email: str, session_id: str, conversation_id: str, file_name: str) -> str:
+        """
+        Generate Table Maker storage path for conversation files.
+        Format: results/{domain}/{email_prefix}/{session_id}/table_maker/{conversation_id}/{file_name}
+        """
+        session_path = self.get_session_path(email, session_id)
+        return f"{session_path}table_maker/{conversation_id}/{file_name}"
+
     def _calculate_config_content_hash(self, config_data: Dict) -> str:
         """
         Calculate SHA256 hash of configuration content for deduplication.

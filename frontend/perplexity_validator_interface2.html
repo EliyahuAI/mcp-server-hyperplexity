@@ -4784,9 +4784,26 @@
                 // Handle step-specific updates (ONLY for real execution)
                 switch(currentStep) {
                     case 1:
-                        // Columns complete - collapse conversation, show colored boxes
+                        // Columns complete - clean up card and show colored boxes
                         if (message.columns && message.table_name) {
-                            collapseConversation(conversationId);
+                            // Get the latest card ID
+                            if (cardHandlers.size > 0) {
+                                const latestCardId = Array.from(cardHandlers.keys()).pop();
+
+                                // Remove chat container completely
+                                const chatContainer = document.getElementById(`${latestCardId}-chat`);
+                                if (chatContainer) chatContainer.remove();
+
+                                // Remove refinement input if exists
+                                const refinementDiv = document.getElementById(`${latestCardId}-refinement`);
+                                if (refinementDiv) refinementDiv.remove();
+
+                                // Remove buttons
+                                const buttonsContainer = document.getElementById(`${latestCardId}-buttons`);
+                                if (buttonsContainer) buttonsContainer.remove();
+                            }
+
+                            // Show colored boxes
                             showColumnsBoxes(conversationId, message.columns);
                         }
                         break;
@@ -7512,7 +7529,7 @@
                             class="refinement-input"
                             placeholder="The AI has detected the issues. You can provide additional guidance or simply submit for automatic repair..."
                             data-error-message="${errorMessage.replace(/"/g, '&quot;')}"
-                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const cardId='${cardId}';const input=document.getElementById('${cardId}-refinement-input').value.trim();const errorMsg=this.getAttribute('data-error-message');submitConfigRepairWithError(cardId,errorMsg,input);}"
+                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const btn=document.querySelector('#${cardId}-buttons button.primary');if(btn){btn.focus();btn.classList.add('hover');setTimeout(()=>btn.classList.remove('hover'),1500);}}"
                         ></textarea>
                     </div>
                     <div id="${cardId}-messages"></div>
@@ -8048,7 +8065,7 @@
                             id="${cardId}-refinement-input"
                             class="refinement-input"
                             placeholder="Describe how you'd like to refine the configuration based on the preview results..."
-                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const cardId='${cardId}';const input=document.getElementById('${cardId}-refinement-input').value.trim();if(!input){showMessage('${cardId}-messages','Please enter refinement instructions','error');return;}submitConfigRefinementWithAutoPreview(cardId,input);}"
+                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const btn=document.querySelector('#${cardId}-buttons button.primary');if(btn){btn.focus();btn.classList.add('hover');setTimeout(()=>btn.classList.remove('hover'),1500);}}"
                         ></textarea>
                     </div>
                     <div id="${cardId}-progress"></div>
@@ -8468,30 +8485,25 @@ Please provide any additional context, or simply proceed to generate your initia
             async function streamText(element, text) {
                 // Convert markdown to HTML
                 const htmlText = renderMarkdown(text);
-                
-                // Check if the content has markdown formatting (HTML tags)
-                if (htmlText !== text.replace(/\n/g, '<br>') || text.includes('**') || text.includes('*') || text.includes('#') || text.includes('`') || text.includes('[')) {
-                    // For markdown content, set it directly without streaming to preserve formatting
-                    element.innerHTML = htmlText;
-                    return;
-                }
-                
-                // For plain text, use fast streaming
+
+                // Stream even with markdown - show progressively
+                // Split by words while preserving markdown
                 const words = text.split(' ');
                 let currentText = '';
-                
+
                 for (let i = 0; i < words.length; i++) {
                     currentText += (i > 0 ? ' ' : '') + words[i];
-                    element.textContent = currentText;
-                    
-                    // 5x faster than original - good balance
+                    // Render as markdown incrementally
+                    element.innerHTML = renderMarkdown(currentText);
+
+                    // Slower streaming for better readability (15-20 words/sec)
                     const lastChar = words[i].slice(-1);
                     if (['.', '!', '?'].includes(lastChar) || words[i].includes('\n')) {
-                        await sleep(40); // 0.04s pause for sentences
+                        await sleep(150); // 0.15s pause for sentences (more dramatic)
                     } else if ([',', ';', ':'].includes(lastChar)) {
-                        await sleep(20); // 0.02s pause for punctuation
+                        await sleep(80); // 0.08s pause for punctuation
                     } else {
-                        await sleep(20); // ~50 words per second (5x faster than original 10 wps)
+                        await sleep(50); // ~20 words per second (visible streaming)
                     }
                 }
             }
@@ -11072,7 +11084,9 @@ Please provide any additional context, or simply proceed to generate your initia
             tableMakerState.cardId = cardId;
 
             const initialPrompt = `<div class="chat-message ai">
-                <p>Tell me about your research table!</p>
+                <p><strong>Let's build a research table!</strong></p>
+                <p>I'll help you design columns, find relevant rows, and create a validated preview with the first 3 rows completed (3-4 minutes).</p>
+                <p>What would you like to research and validate?</p>
             </div>`;
 
             const content = `
@@ -11083,7 +11097,7 @@ Please provide any additional context, or simply proceed to generate your initia
                     <textarea id="${cardId}-input" class="table-maker-textarea"
                         placeholder="Example: Track AI research papers on transformers. Each row is a paper (defined by title and authors). I want columns for citation count, publication venue, key findings, and code availability. This is for my literature review."
                         style="width: 100%; min-height: 100px; resize: vertical;"
-                        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();startTableConversationFromCard('${cardId}');}"></textarea>
+                        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const btn=document.querySelector('#${cardId}-buttons button.primary');if(btn){btn.focus();btn.classList.add('hover');setTimeout(()=>btn.classList.remove('hover'),1500);}}"></textarea>
                 </div>
             `;
 
@@ -11095,8 +11109,9 @@ Please provide any additional context, or simply proceed to generate your initia
                 content,
                 buttons: [
                     {
-                        text: '📝 Submit',
+                        text: 'Submit',
                         variant: 'primary',
+                        width: 'full',
                         callback: () => startTableConversationFromCard(cardId)
                     }
                 ]
@@ -11127,10 +11142,8 @@ Please provide any additional context, or simply proceed to generate your initia
                 return;
             }
 
-            // Hide input and button, show thinking
+            // Hide input container (but keep button visible for state change)
             document.getElementById(`${cardId}-input-container`).style.display = 'none';
-            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-            if (buttonsContainer) buttonsContainer.style.display = 'none';
             showThinkingInCard(cardId, 'Starting conversation with AI...', true);
 
             // Add user message to chat
@@ -11174,6 +11187,17 @@ Please provide any additional context, or simply proceed to generate your initia
                         console.log(`[TABLE_MAKER] Stored new session ID: ${data.session_id}`);
                     }
 
+                    // Update button to show generation state
+                    createButtonRow(`${cardId}-buttons`, [
+                        {
+                            text: 'Creating validated preview (3-4 min): Columns → Research → Rows → First 3 validated',
+                            variant: 'primary',
+                            width: 'full',
+                            callback: () => {},
+                            disabled: true
+                        }
+                    ]);
+
                     // Connect to WebSocket session
                     connectToSession(globalState.sessionId);
 
@@ -11209,12 +11233,15 @@ Please provide any additional context, or simply proceed to generate your initia
             // Add AI message when complete (handle both old and new schema)
             const aiMessage = data.ai_message || data.follow_up_question;
             const isReady = data.ready_to_generate || data.trigger_preview;
+            const showStructure = data.show_structure || false;
             const isGenerating = data.is_generating;
             const previewGenerated = data.preview_generated;
 
             if (data.progress === 100 && aiMessage && !isGenerating && !previewGenerated) {
                 completeThinkingInCard(cardId, 'Response received');
                 tableMakerState.messages.push({ role: 'ai', content: aiMessage });
+
+                // Add AI message with streaming
                 addChatMessage(cardId, 'ai', aiMessage, false, 'normal');
 
                 // Store table name if provided
@@ -11229,9 +11256,29 @@ Please provide any additional context, or simply proceed to generate your initia
                     subtitle.textContent = `Turn ${data.turn_count || tableMakerState.messages.length / 2}`;
                 }
 
-                // Check if ready to generate preview
-                if (isReady && !data.about_to_generate) {
-                    // Interview complete, ready for preview
+                // Check if showing structure (columns and rows preview)
+                if (showStructure && data.preview_data) {
+                    console.log('[TABLE_MAKER] Showing proposed table structure');
+                    // Show proposed table structure in the same card
+                    showTablePreviewInCard(cardId, data.preview_data, null);
+                }
+
+                // Check if ready to generate
+                if (isReady && showStructure) {
+                    // Structure shown and ready for user confirmation
+                    console.log('[TABLE_MAKER] Ready for user confirmation to generate');
+
+                    // Change button to "Generate Table"
+                    createButtonRow(`${cardId}-buttons`, [
+                        {
+                            text: 'Generate Table',
+                            variant: 'primary',
+                            width: 'full',
+                            callback: () => triggerTableGeneration(cardId)
+                        }
+                    ]);
+                } else if (isReady && !showStructure && !data.about_to_generate) {
+                    // Old behavior: Interview complete, create preview card
                     console.log('[TABLE_MAKER] Interview ready for preview, creating preview card now');
 
                     // Complete interview card
@@ -11345,7 +11392,7 @@ Please provide any additional context, or simply proceed to generate your initia
                     <textarea id="${cardId}-refine-input" class="table-maker-textarea"
                         placeholder="Add more details or ask questions..."
                         style="width: 100%; min-height: 60px; resize: vertical; margin-bottom: 8px;"
-                        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();continueTableConversationFromCard('${cardId}');}"></textarea>
+                        onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const btn=document.querySelector('#${cardId}-buttons button.primary');if(btn){btn.focus();btn.classList.add('hover');setTimeout(()=>btn.classList.remove('hover'),1500);}}"></textarea>
                 `;
                 buttonsContainer.parentNode.insertBefore(refinementDiv, buttonsContainer);
             }
@@ -11356,8 +11403,9 @@ Please provide any additional context, or simply proceed to generate your initia
             // Update buttons
             createButtonRow(`${cardId}-buttons`, [
                 {
-                    text: '📝 Update Table',
+                    text: 'Submit',
                     variant: 'primary',
+                    width: 'full',
                     callback: () => continueTableConversationFromCard(cardId)
                 }
             ]);
@@ -11547,12 +11595,6 @@ Please provide any additional context, or simply proceed to generate your initia
 
         // Continue table conversation from card
         async function continueTableConversationFromCard(cardId) {
-            // Hide the Update Table button to prevent duplicate submissions
-            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-            if (buttonsContainer) {
-                buttonsContainer.style.display = 'none';
-            }
-
             const input = document.getElementById(`${cardId}-refine-input`);
             if (!input) return;
 
@@ -11569,10 +11611,6 @@ Please provide any additional context, or simply proceed to generate your initia
             // Clear input and show thinking
             input.value = '';
             showThinkingInCard(cardId, 'Processing your request...', true);
-
-            // Hide refinement input
-            const refinementDiv = document.getElementById(`${cardId}-refinement`);
-            if (refinementDiv) refinementDiv.style.display = 'none';
 
             // Send to backend
             try {
@@ -11591,13 +11629,23 @@ Please provide any additional context, or simply proceed to generate your initia
                 const data = await response.json();
 
                 if (data.success && data.status === 'processing') {
+                    // Update button to show processing state
+                    createButtonRow(`${cardId}-buttons`, [
+                        {
+                            text: 'Processing...',
+                            variant: 'primary',
+                            width: 'full',
+                            callback: () => {},
+                            disabled: true
+                        }
+                    ]);
+
                     console.log(`[TABLE_MAKER] Conversation continue queued, waiting for updates`);
                 } else {
                     completeThinkingInCard(cardId, 'Error');
                     showMessage(`${cardId}-messages`,
                         'Failed to continue conversation: ' + (data.error || data.message || 'Unknown error'),
                         'error');
-                    if (refinementDiv) refinementDiv.style.display = 'block';
                 }
             } catch (error) {
                 console.error('Error continuing conversation:', error);
@@ -11605,7 +11653,62 @@ Please provide any additional context, or simply proceed to generate your initia
                 showMessage(`${cardId}-messages`,
                     'Failed to send message. Please try again.',
                     'error');
-                if (refinementDiv) refinementDiv.style.display = 'block';
+            }
+        }
+
+        // Trigger table generation after user confirms the structure
+        async function triggerTableGeneration(cardId) {
+            console.log('[TABLE_MAKER] User confirmed structure, triggering generation');
+
+            // Hide the refinement input if it exists
+            const refinementDiv = document.getElementById(`${cardId}-refinement`);
+            if (refinementDiv) {
+                refinementDiv.style.display = 'none';
+            }
+
+            // Update button to show generation state
+            createButtonRow(`${cardId}-buttons`, [
+                {
+                    text: 'Creating validated preview (3-4 min): Columns → Research → Rows → First 3 validated',
+                    variant: 'primary',
+                    width: 'full',
+                    disabled: true
+                }
+            ]);
+
+            // Show thinking indicator
+            showThinkingInCard(cardId, 'Preparing to generate table...', true);
+
+            try {
+                // Send affirmative response to backend to trigger execution
+                const response = await fetch(`${API_BASE}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'continueTableConversation',
+                        email: globalState.email,
+                        session_id: globalState.sessionId,
+                        conversation_id: tableMakerState.conversationId,
+                        user_message: 'Yes, generate this table'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.status === 'processing') {
+                    console.log('[TABLE_MAKER] Generation triggered successfully, waiting for preview card');
+                } else {
+                    completeThinkingInCard(cardId, 'Error');
+                    showMessage(`${cardId}-messages`,
+                        'Failed to start generation: ' + (data.error || data.message || 'Unknown error'),
+                        'error');
+                }
+            } catch (error) {
+                console.error('Error triggering table generation:', error);
+                completeThinkingInCard(cardId, 'Error');
+                showMessage(`${cardId}-messages`,
+                    'Failed to start generation. Please try again.',
+                    'error');
             }
         }
 
@@ -11742,7 +11845,7 @@ Please provide any additional context, or simply proceed to generate your initia
                     <div class="table-maker-input-area" id="table-maker-input-area">
                         <textarea id="table-maker-chat-input" class="table-maker-textarea"
                             placeholder="Add more details or ask questions..."
-                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();continueTableConversation();}"></textarea>
+                            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();const btn=document.querySelector('.table-maker-buttons button.primary');if(btn){btn.focus();btn.classList.add('hover');setTimeout(()=>btn.classList.remove('hover'),1500);}}"></textarea>
                         <div class="table-maker-buttons">
                             <button class="std-button secondary" onclick="closeTableMakerChatModal()">Cancel</button>
                             <button class="std-button primary" onclick="continueTableConversation()">Submit</button>
