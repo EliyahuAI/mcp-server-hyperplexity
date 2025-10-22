@@ -622,15 +622,15 @@ async def _trigger_execution(
     run_key: Optional[str]
 ) -> None:
     """
-    Trigger full table execution pipeline directly when interview is complete.
+    Trigger Independent Row Discovery pipeline when interview is complete.
 
     This is the entry point to Phase 2 of the two-phase workflow.
     Once the user approves the table concept during the interview, this function
-    executes the complete 4-step pipeline (3-4 minutes):
-    1. Column Definition
-    2. Row Discovery (parallel with config generation)
-    3. Table Population
-    4. Validation
+    executes the complete 4-step pipeline (1-3 minutes):
+    1. Column Definition - Define columns and search strategy with subdomains
+    2. Row Discovery - Progressive escalation (sonar -> sonar-pro) across subdomains
+    3. Consolidation - Deduplicate and score discovered rows
+    4. QC Review - Final quality control and prioritization
 
     Since we're already running in the background processor, we can call
     execution directly without queueing to SQS again.
@@ -642,7 +642,7 @@ async def _trigger_execution(
         conversation_state: Complete conversation state with interview_context
         run_key: Run tracking key (optional)
     """
-    logger.info(f"[TABLE_MAKER] Triggering full table execution for {conversation_id}")
+    logger.info(f"[TABLE_MAKER] Triggering Independent Row Discovery for {conversation_id}")
 
     # Import execution orchestrator
     from .execution import execute_full_table_generation
@@ -653,16 +653,16 @@ async def _trigger_execution(
             websocket_client.send_to_session(session_id, {
                 'type': 'table_execution_update',
                 'conversation_id': conversation_id,
-                'status': 'Starting execution pipeline (3-4 minutes)...',
-                'estimated_duration_seconds': 240,
+                'status': 'Starting Independent Row Discovery pipeline (1-3 minutes)...',
+                'estimated_duration_seconds': 120,
                 'current_step': 0,
                 'total_steps': 4,
                 'progress_percent': 0,
                 'steps': [
-                    'Defining columns and search strategy',
-                    'Discovering matching entities',
-                    'Populating all data',
-                    'Validating results'
+                    'Column Definition',
+                    'Row Discovery (Progressive Escalation)',
+                    'Consolidation',
+                    'QC Review'
                 ]
             })
             logger.info(f"[TABLE_MAKER] Sent execution start message via WebSocket")
@@ -687,10 +687,10 @@ async def _trigger_execution(
                     completion_message = {
                         'type': 'table_execution_complete',
                         'conversation_id': conversation_id,
-                        'status': 'Table generation complete',
-                        'table_data': execution_result.get('table_data'),
-                        'validation_summary': execution_result.get('validation_summary'),
-                        'download_url': execution_result.get('download_url')
+                        'status': 'Independent Row Discovery complete',
+                        'table_name': execution_result.get('table_name'),
+                        'row_count': execution_result.get('row_count', 0),
+                        'approved_rows': execution_result.get('approved_rows', [])
                     }
                     websocket_client.send_to_session(session_id, completion_message)
                     logger.info(f"[TABLE_MAKER] Sent execution completion message via WebSocket")

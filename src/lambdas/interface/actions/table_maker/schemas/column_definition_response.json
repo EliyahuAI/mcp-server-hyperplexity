@@ -4,18 +4,18 @@
   "properties": {
     "columns": {
       "type": "array",
-      "description": "Array of column objects including ID and research columns",
+      "description": "ACTUAL SPECIFIC columns for tracking the entities the user wants to research (e.g., if tracking AI companies: 'Company Name', 'Website', 'Is Hiring for AI?'). DO NOT create meta-columns like 'Table Name', 'Column Name', 'Description', 'Format' - those are for describing tables, not for tracking the actual entities.",
       "items": {
         "type": "object",
         "required": ["name", "description", "format", "importance", "is_identification"],
         "properties": {
           "name": {
             "type": "string",
-            "description": "Column name"
+            "description": "SPECIFIC column name for the entity being tracked (e.g., 'Company Name', 'Paper Title', 'Product Name') - NOT generic like 'Entity Name' or 'Table Name'"
           },
           "description": {
             "type": "string",
-            "description": "Detailed description of what this column contains"
+            "description": "What data this SPECIFIC column contains for the entity (e.g., 'Name of the AI company', 'URL of company website')"
           },
           "format": {
             "type": "string",
@@ -39,28 +39,48 @@
     },
     "search_strategy": {
       "type": "object",
-      "required": ["description", "subdomain_hints", "search_queries"],
+      "required": ["description", "subdomains"],
       "properties": {
         "description": {
           "type": "string",
           "description": "Clear description of what entities to find"
         },
-        "subdomain_hints": {
+        "subdomains": {
           "type": "array",
-          "description": "2-5 subdomain hints for parallel row discovery",
-          "items": {
-            "type": "string"
-          },
+          "description": "2-5 subdomains for parallel row discovery with search queries and targets",
           "minItems": 2,
-          "maxItems": 5
-        },
-        "search_queries": {
-          "type": "array",
-          "description": "Specific search queries to help find matching entities",
+          "maxItems": 5,
           "items": {
-            "type": "string"
-          },
-          "minItems": 1
+            "type": "object",
+            "required": ["name", "focus", "search_queries", "target_rows"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Concise name for this subdomain",
+                "minLength": 5
+              },
+              "focus": {
+                "type": "string",
+                "description": "Detailed description of this subdomain's focus area",
+                "minLength": 10
+              },
+              "search_queries": {
+                "type": "array",
+                "description": "Search queries specific to this subdomain that yield MULTIPLE entities",
+                "minItems": 2,
+                "maxItems": 5,
+                "items": {
+                  "type": "string",
+                  "minLength": 10
+                }
+              },
+              "target_rows": {
+                "type": "integer",
+                "description": "Number of candidate rows to find for this subdomain (allows small allocations for niche subdomains)",
+                "minimum": 1
+              }
+            }
+          }
         }
       }
     },

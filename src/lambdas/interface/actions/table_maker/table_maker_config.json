@@ -7,9 +7,9 @@
     "emphasis": "sketch_approval"
   },
 
-  "_comment_column_definition": "Column definition now includes subdomain specification within the search_strategy output",
+  "_comment_column_definition": "Column definition uses Claude Haiku (fast, cheap). Uses sonar-pro only when context_web_research items provided.",
   "column_definition": {
-    "model": "claude-sonnet-4-5",
+    "model": "claude-haiku-4-5",
     "max_tokens": 8000,
     "use_web_search": true,
     "web_searches": 3,
@@ -20,18 +20,47 @@
     "default_target_rows_total": 30
   },
 
-  "_comment_row_discovery": "Row discovery with integrated scoring. Uses discovery_multiplier (1.5) to find 30 candidates and keep best 20 after deduplication. max_parallel_streams set to 1 for initial sequential testing.",
+  "_comment_row_discovery": "Row discovery with 2-level escalation. Starts with sonar (high context) for quality, escalates to sonar-pro (high) only if insufficient results. Global counter checks total across all subdomains before escalating. Exclusion list prevents duplicate discovery.",
   "row_discovery": {
     "web_search_model": "sonar-pro",
     "scoring_model": "sonar-pro",
     "integrated_scoring": true,
     "model": "sonar-pro",
-    "max_tokens": 8000,
+    "progressive_context": true,
+    "initial_context_size": "low",
+    "escalation_context_size": "high",
+    "max_tokens": 16000,
     "target_row_count": 20,
     "discovery_multiplier": 1.5,
     "min_match_score": 0.6,
     "max_parallel_streams": 1,
-    "web_searches_per_stream": 3
+    "web_searches_per_stream": 3,
+    "escalation_strategy": [
+      {
+        "model": "sonar",
+        "search_context_size": "high",
+        "description": "Initial thorough search with sonar",
+        "min_candidates_percentage": 75
+      },
+      {
+        "model": "sonar-pro",
+        "search_context_size": "high",
+        "description": "Premium search if sonar insufficient",
+        "min_candidates_percentage": null
+      }
+    ],
+    "check_targets_between_subdomains": true,
+    "early_stop_threshold_percentage": 120
+  },
+
+  "_comment_qc_review": "QC layer reviews discovered rows and decides which to keep, reject, or reprioritize. Uses Claude Sonnet 4.5 without web search.",
+  "qc_review": {
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 8000,
+    "min_qc_score": 0.5,
+    "min_row_count": 3,
+    "max_row_count": 50,
+    "enable_qc": true
   },
 
   "table_population": {

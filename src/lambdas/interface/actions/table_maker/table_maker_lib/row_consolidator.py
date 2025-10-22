@@ -150,6 +150,9 @@ class RowConsolidator:
 
             logger.info(f"Consolidating {total_count} candidates from {len(stream_results)} stream(s)")
 
+            # Step 1.5: Recalculate scores from breakdown (fix sonar-pro incorrect calculations)
+            self._recalculate_scores(all_candidates)
+
             # Auto-detect ID columns if not provided
             if id_columns is None:
                 id_columns = self._detect_id_columns(all_candidates)
@@ -178,10 +181,16 @@ class RowConsolidator:
             # Step 4: Sort by match score descending
             sorted_candidates = self._sort_by_score(filtered)
 
-            # Step 5: Limit to top N
-            final_rows = sorted_candidates[:target_row_count]
+            # Step 5: Return ALL above-threshold rows (no limit)
+            # QC will determine final count based on quality
+            final_rows = sorted_candidates  # No [:target_row_count] cutoff
             result["stats"]["final_count"] = len(final_rows)
             result["final_rows"] = final_rows
+
+            logger.info(
+                f"Passing {len(final_rows)} above-threshold rows to QC "
+                f"(no artificial limit, target was {target_row_count})"
+            )
 
             # Calculate processing time
             processing_time = time.time() - start_time
@@ -258,6 +267,45 @@ class RowConsolidator:
                 all_candidates.append(candidate_copy)
 
         return all_candidates
+
+    def _recalculate_scores(self, candidates: List[Dict[str, Any]]) -> None:
+        """
+        Calculate match scores from score_breakdown using formula in CODE.
+
+        LLMs should NOT calculate weighted averages - we do it here in code.
+        Formula: match_score = (Relevancy × 0.4) + (Reliability × 0.3) + (Recency × 0.3)
+
+        Modifies candidates in-place, ALWAYS overwrites match_score from breakdown.
+
+        Args:
+            candidates: List of candidates with score_breakdown
+        """
+        recalculated_count = 0
+
+        for candidate in candidates:
+            score_breakdown = candidate.get('score_breakdown', {})
+
+            if score_breakdown:
+                relevancy = score_breakdown.get('relevancy', 0)
+                reliability = score_breakdown.get('reliability', 0)
+                recency = score_breakdown.get('recency', 0)
+
+                # ALWAYS calculate score from breakdown (don't trust LLM calculation)
+                calculated_score = (relevancy * 0.4) + (reliability * 0.3) + (recency * 0.3)
+
+                # Log if LLM gave different score (for monitoring)
+                reported_score = candidate.get('match_score', 0)
+                if abs(calculated_score - reported_score) > 0.01:
+                    logger.debug(
+                        f"Score calculated: {calculated_score:.2f} (LLM said {reported_score:.2f}) "
+                        f"- R={relevancy:.2f}, Rl={reliability:.2f}, Rc={recency:.2f}"
+                    )
+
+                # ALWAYS set to calculated score
+                candidate['match_score'] = calculated_score
+                recalculated_count += 1
+
+        logger.info(f"Calculated match_score for {recalculated_count} candidate(s) from score_breakdown")
 
     def _detect_id_columns(self, candidates: List[Dict[str, Any]]) -> List[str]:
         """
@@ -437,14 +485,42 @@ class RowConsolidator:
 
         return base_similarity
 
+    def _get_model_quality_rank(self, candidate: Dict) -> int:
+        """
+        Assign quality rank based on model and context.
+
+        Rankings (higher = better):
+        - sonar-pro + high: 5
+        - sonar-pro + low: 4
+        - sonar + high: 3
+        - sonar + low: 2
+        - unknown: 1
+
+        Args:
+            candidate: Candidate with optional model_used and context_used fields
+
+        Returns:
+            Quality rank (1-5)
+        """
+        model = candidate.get('model_used', 'unknown')
+        context = candidate.get('context_used', 'unknown')
+
+        if 'sonar-pro' in model:
+            return 5 if context == 'high' else 4
+        elif 'sonar' in model:
+            return 3 if context == 'high' else 2
+        else:
+            return 1
+
     def _merge_group(self, group: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Merge a group of duplicate candidates into a single candidate.
 
         Strategy:
-        - Keep candidate with highest match_score
+        - Prefer candidates from better models (sonar-pro > sonar, high > low)
+        - If same model quality, prefer higher match_score
         - Merge all source_urls (deduplicated)
-        - Track which subdomains contributed
+        - Track which subdomains and models contributed
 
         Args:
             group: List of duplicate candidates to merge
@@ -456,12 +532,21 @@ class RowConsolidator:
             # No merging needed - add metadata
             merged = group[0].copy()
             merged['merged_from_streams'] = [merged.get('source_subdomain', 'Unknown')]
+            if 'model_used' in merged:
+                merged['found_by_models'] = [
+                    f"{merged['model_used']}({merged.get('context_used', '?')})"
+                ]
+                merged['model_quality_rank'] = self._get_model_quality_rank(merged)
             return merged
 
-        # Sort by match_score descending
-        sorted_group = sorted(group, key=lambda c: c.get('match_score', 0), reverse=True)
+        # Sort by model quality rank first, then by match_score
+        sorted_group = sorted(
+            group,
+            key=lambda c: (self._get_model_quality_rank(c), c.get('match_score', 0)),
+            reverse=True
+        )
 
-        # Start with highest-scored candidate
+        # Start with best candidate (highest quality model + highest score)
         best_candidate = sorted_group[0].copy()
 
         # Collect all source URLs
@@ -476,14 +561,26 @@ class RowConsolidator:
             subdomain = candidate.get('source_subdomain', 'Unknown')
             all_subdomains.add(subdomain)
 
+        # Track which models found this entity
+        found_by_models = []
+        for candidate in group:
+            if 'model_used' in candidate:
+                model_info = f"{candidate['model_used']}({candidate.get('context_used', '?')})"
+                if model_info not in found_by_models:
+                    found_by_models.append(model_info)
+
         # Update merged candidate
         best_candidate['source_urls'] = sorted(list(all_urls))
         best_candidate['merged_from_streams'] = sorted(list(all_subdomains))
+        if found_by_models:
+            best_candidate['found_by_models'] = found_by_models
+            best_candidate['model_quality_rank'] = self._get_model_quality_rank(best_candidate)
 
         logger.debug(
             f"Merged {len(group)} duplicate(s) for "
             f"'{best_candidate.get('id_values', {})}' "
             f"from streams: {best_candidate['merged_from_streams']}"
+            + (f", models: {found_by_models}" if found_by_models else "")
         )
 
         return best_candidate

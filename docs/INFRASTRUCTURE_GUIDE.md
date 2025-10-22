@@ -5,8 +5,9 @@
 2. [Infrastructure Components](#infrastructure-components)
 3. [Setup Guide](#setup-guide)
 4. [Workflow Overview](#workflow-overview)
-5. [Testing Guide](#testing-guide)
-6. [Troubleshooting](#troubleshooting)
+5. [Table Maker System](#table-maker-system)
+6. [Testing Guide](#testing-guide)
+7. [Troubleshooting](#troubleshooting)
 
 ## Architecture Overview
 
@@ -125,6 +126,73 @@ The primary user workflow is as follows:
 5.  **Preview**: The **Validation Lambda** runs a quick validation on the first few rows of the table and returns a preview with cost and time estimates.
 6.  **Full Processing**: Upon approval, the **Validation Lambda** processes the entire table asynchronously.
 7.  **Results**: The results are delivered to the user via email and stored in the S3 bucket.
+
+## Table Maker System
+
+The **Table Maker** is an independent system integrated into the Interface Lambda that generates research tables by discovering entities through web search and validating them through progressive model escalation and quality control.
+
+### Purpose
+
+Creates research tables from natural language requests (e.g., "Track AI companies that are hiring") by:
+1. Defining column structure and search strategy
+2. Discovering entities through progressive web search escalation
+3. Validating and prioritizing results through QC review
+4. Generating CSV templates and validation configs
+
+### Architecture
+
+The Table Maker uses a **4-step pipeline**:
+
+```
+Column Definition → Row Discovery (+ Config Gen) → QC Review → CSV + Config Output
+     (10-40s)           (60-120s parallel)          (8-15s)       (instant)
+```
+
+**Key Features:**
+- **Progressive Escalation**: Start cheap (sonar), escalate if needed (sonar-pro)
+- **Parallel Config Generation**: Validation config generated during row discovery
+- **Quality Over Quantity**: QC layer ensures relevance, no artificial row limits
+- **Cost Optimization**: Early stopping when targets met ($0.05-0.20 per table)
+
+### Integration Points
+
+**Location:** `src/lambdas/interface/actions/table_maker/`
+
+**Entry Points:**
+- `conversation.py` - Interview and conversation management
+- `execution.py` - Main pipeline orchestrator
+
+**Local Components:** `table_maker/src/`
+- Used directly in Lambda (no modifications)
+- Tested independently before Lambda integration
+
+### Documentation
+
+**Primary Guide:** [TABLE_MAKER_GUIDE.md](TABLE_MAKER_GUIDE.md)
+
+**Detailed Documentation:**
+- Architecture: `table_maker/architecture/overview.md`
+- Deployment: `table_maker/deployment/lambda_integration.md`
+- Configuration: `table_maker/configuration/`
+
+### Quick Start
+
+**Local Testing:**
+```bash
+cd table_maker
+export ANTHROPIC_API_KEY="sk-ant-..."
+python test_local_e2e_sequential.py
+```
+
+**Lambda Flow:**
+1. User requests table via conversational interface
+2. Interview phase gathers requirements
+3. Execution phase (1-3 minutes):
+   - Column definition
+   - Row discovery (parallel with config generation)
+   - QC review
+   - CSV + config output
+4. User receives CSV template with ID columns filled
 
 ## Testing Guide
 

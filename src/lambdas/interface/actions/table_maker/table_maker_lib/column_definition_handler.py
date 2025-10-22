@@ -2,14 +2,12 @@
 """
 Column definition handler for table generation system.
 Defines precise column specifications and search strategy from approved conversation context.
-
-Lambda-integrated version - adapted from table_maker/src/column_definition_handler.py
 """
 
 import json
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 # Configure logging
@@ -24,7 +22,7 @@ class ColumnDefinitionHandler:
         Initialize column definition handler.
 
         Args:
-            ai_client: AI API client instance (from shared/ai_api_client.py)
+            ai_client: AI API client instance (from ../../src/shared/ai_api_client.py)
             prompt_loader: PromptLoader instance
             schema_validator: SchemaValidator instance
         """
@@ -37,7 +35,8 @@ class ColumnDefinitionHandler:
     async def define_columns(
         self,
         conversation_context: Dict[str, Any],
-        model: str = "claude-sonnet-4-5",
+        context_web_research: List[str] = None,
+        model: str = "claude-haiku-4-5",
         max_tokens: int = 8000
     ) -> Dict[str, Any]:
         """
@@ -57,8 +56,7 @@ class ColumnDefinitionHandler:
                 'table_name': str,
                 'tablewide_research': str,
                 'processing_time': float,  # Seconds
-                'error': Optional[str],
-                'api_response': Dict  # Full API response for metrics tracking
+                'error': Optional[str]
             }
         """
         result = {
@@ -68,8 +66,7 @@ class ColumnDefinitionHandler:
             'table_name': '',
             'tablewide_research': '',
             'processing_time': 0.0,
-            'error': None,
-            'api_response': {}
+            'error': None
         }
 
         start_time = time.time()
@@ -81,27 +78,50 @@ class ColumnDefinitionHandler:
             conversation_history = self._format_conversation_history(conversation_context)
             user_requirements = self._extract_user_requirements(conversation_context)
 
+            # Format context research items if provided
+            research_context = ""
+            if context_web_research and len(context_web_research) > 0:
+                research_context = "\n\n**CONTEXT TO RESEARCH** (affects column design and validation):\n"
+                for item in context_web_research:
+                    research_context += f"- {item}\n"
+                research_context += "\nUse web search to understand these items, then incorporate findings into column descriptions and validation strategies."
+
             # Build prompt with variables
             variables = {
                 'CONVERSATION_CONTEXT': conversation_history,
-                'USER_REQUIREMENTS': user_requirements
+                'USER_REQUIREMENTS': user_requirements,
+                'CONTEXT_RESEARCH': research_context
             }
 
             logger.debug(f"Loading prompt template with {len(variables)} variables")
+            logger.info(f"Context research items: {len(context_web_research) if context_web_research else 0}")
             prompt = self.prompt_loader.load_prompt('column_definition', variables)
 
             # Load response schema
             schema = self.schema_validator.load_schema('column_definition_response')
 
-            # Call AI API with structured output
-            logger.info(f"Calling AI API with model: {model}")
+            # Determine if we need web search
+            has_context_research = context_web_research and len(context_web_research) > 0
+            web_searches = 3 if has_context_research else 0
+
+            # If context research needed, use sonar-pro; otherwise use provided model (Claude)
+            actual_model = "sonar-pro" if has_context_research else model
+
+            logger.info(
+                f"Calling AI API with model: {actual_model}, "
+                f"web_searches: {web_searches}, "
+                f"context_items: {len(context_web_research) if context_web_research else 0}"
+            )
+
             api_response = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
-                model=model,
+                model=actual_model,
                 max_tokens=max_tokens,
-                use_cache=True,
-                debug_name=None
+                use_cache=True,  # Enable cache for Lambda
+                max_web_searches=web_searches,  # Enable web search if context items provided
+                search_context_size='high' if has_context_research else 'low',
+                debug_name="column_definition"
             )
 
             # Check for API errors
@@ -110,9 +130,20 @@ class ColumnDefinitionHandler:
                 logger.error(f"API call failed: {error_detail}")
                 raise Exception(f"AI API call failed: {error_detail}")
 
-            # Extract structured response
+            # Extract structured response (same pattern as interview.py)
             raw_response = api_response.get('response', {})
-            ai_response = self._extract_structured_response(raw_response)
+
+            # Parse the structured content from choices[0].message.content
+            if 'choices' in raw_response and len(raw_response['choices']) > 0:
+                content = raw_response['choices'][0]['message']['content']
+                ai_response = json.loads(content) if isinstance(content, str) else content
+            elif 'columns' in raw_response and 'search_strategy' in raw_response:
+                # Response is already structured (from cache or direct format)
+                ai_response = raw_response
+            else:
+                logger.error(f"Unexpected response structure: {json.dumps(raw_response, indent=2)[:500]}")
+                # Fallback to old extraction method
+                ai_response = self._extract_structured_response(raw_response)
 
             logger.debug(f"Extracted AI response keys: {list(ai_response.keys())}")
 
@@ -136,7 +167,36 @@ class ColumnDefinitionHandler:
             result['search_strategy'] = ai_response.get('search_strategy', {})
             result['table_name'] = ai_response.get('table_name', '')
             result['tablewide_research'] = ai_response.get('tablewide_research', '')
-            result['api_response'] = api_response  # Include full API response for metrics
+
+            # Add full context to search_strategy for row discovery and QC
+            user_request = conversation_context.get('user_request', '')
+            if user_request and result['search_strategy']:
+                result['search_strategy']['user_context'] = user_request
+                result['search_strategy']['table_purpose'] = result['search_strategy'].get('description', '')
+                result['search_strategy']['tablewide_research'] = result.get('tablewide_research', '')
+
+            # PHASE 1: Capture enhanced_data and call metadata
+            enhanced_data = api_response.get('enhanced_data', {})
+            result['enhanced_data'] = enhanced_data
+            result['call_description'] = "Creating Columns"
+            result['model_used'] = actual_model
+
+            # Include cost information from enhanced_data
+            if enhanced_data:
+                costs = enhanced_data.get('costs', {})
+                result['cost'] = costs.get('actual', {}).get('total_cost', 0.0)
+                logger.info(f"Column definition cost from enhanced_data: ${result['cost']:.4f}")
+            else:
+                # Fallback: Calculate cost manually from token_usage
+                logger.warning("No enhanced_data in API response, calculating cost from token_usage")
+                token_usage = api_response.get('token_usage', {})
+                input_tokens = token_usage.get('input_tokens', 0)
+                output_tokens = token_usage.get('output_tokens', 0)
+
+                # Claude Sonnet 4.5 pricing: $3/MTok input, $15/MTok output
+                cost = (input_tokens / 1_000_000 * 3.0) + (output_tokens / 1_000_000 * 15.0)
+                result['cost'] = cost
+                logger.info(f"Column definition cost calculated: ${cost:.4f} (input={input_tokens}, output={output_tokens})")
 
             # Calculate processing time
             result['processing_time'] = time.time() - start_time
@@ -247,10 +307,23 @@ class ColumnDefinitionHandler:
             if sample_rows:
                 requirements_parts.append(f"\n**Sample Rows Provided**: {len(sample_rows)}")
 
-            return '\n'.join(requirements_parts)
+            if requirements_parts:
+                return '\n'.join(requirements_parts)
+
+            # Fallback: Use raw user request if no proposal structure
+            user_request = conversation_context.get('user_request', '')
+            if user_request:
+                logger.info("No current_proposal found, using raw user_request")
+                return f"User Request:\n{user_request}"
+
+            return "No specific requirements captured"
 
         except Exception as e:
             logger.warning(f"Error extracting user requirements: {e}")
+            # Fallback: Use raw user request
+            user_request = conversation_context.get('user_request', '')
+            if user_request:
+                return f"User Request:\n{user_request}"
             return "Error extracting user requirements"
 
     def _extract_structured_response(self, raw_response: Dict[str, Any]) -> Dict[str, Any]:

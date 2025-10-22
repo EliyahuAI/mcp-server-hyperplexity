@@ -1,80 +1,182 @@
-You are defining precise column specifications and search strategy for a research table generation system.
+# Column Definition Task
 
-## Context
-The user has completed a conversation about their research needs and approved a table concept. Your task is to create a detailed column specification and search strategy for finding the right entities.
+## What You're Doing
 
-## Conversation Context
+We have an outline of a series of columns for a research table. Your job is to:
+1. **Precisely specify these columns** with detailed descriptions and validation strategies
+2. **Provide background research** from specific research topics (if provided)
+3. **Create a search strategy** to find the entities that will populate this table
+
+## Information Provided
+
+**Conversation History:** The discussion with the user that led to this table
 {{CONVERSATION_CONTEXT}}
 
-## User's Approved Requirements
+**User's Requirements:** What the user wants to track
 {{USER_REQUIREMENTS}}
+
+**Background Research Topics:** Specific items to research that affect column design (if any)
+{{CONTEXT_RESEARCH}}
+
+---
+
+## Example: Job Search Table
+
+**User wants:** Track great jobs for Jenifer Siegelman (see LinkedIn profile)
+
+**Column outline from user:**
+- Job title and company
+- Responsibilities
+- Goodness of fit
+- Location
+- Job posting URL
+
+**Your output should be:**
+
+```json
+{
+  "columns": [
+    {
+      "name": "Job Title",
+      "description": "Official job title as listed in the posting",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true,
+      "validation_strategy": ""
+    },
+    {
+      "name": "Company",
+      "description": "Organization or institution offering the position",
+      "format": "String",
+      "importance": "ID",
+      "is_identification": true,
+      "validation_strategy": ""
+    },
+    {
+      "name": "Job Responsibilities",
+      "description": "Key duties and expectations for the role, including clinical, technical, research, and leadership responsibilities. Focus on specific tasks related to medical imaging, AI/ML development, protocol development, or team leadership.",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Extract from job posting description section, focusing on day-to-day responsibilities, required tasks, and key deliverables. Look for bullet points under 'Responsibilities' or 'What You'll Do' sections."
+    },
+    {
+      "name": "Goodness of Fit",
+      "description": "Detailed analysis of why this role matches Jenifer's background, including alignment with her radiology expertise, AI/ML skills, research experience, public health training, and leadership capabilities. Cite specific qualifications or experiences that make her an excellent candidate.",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Compare job requirements against Jenifer's LinkedIn profile. Match required skills with her background in radiology, AI/ML, public health. Note specific experiences that align with the role. Reference her publications, projects, or positions that demonstrate relevant expertise."
+    },
+    {
+      "name": "Location",
+      "description": "Geographic location of the position (city, state/region). Note if remote, hybrid, or on-site. Include relocation considerations if relevant.",
+      "format": "String",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Extract from job posting location field or description. Check if remote/hybrid options mentioned. Note any relocation assistance or geographic flexibility mentioned in the posting."
+    },
+    {
+      "name": "Job Posting URL",
+      "description": "Direct link to the job application page or posting. Must be an active, accessible URL that leads to the specific position.",
+      "format": "URL",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Verify URL is active and leads to the correct job posting. Check that it's a direct link (not a search results page) and includes application instructions or an apply button."
+    }
+  ],
+  "search_strategy": {
+    "description": "Find medical imaging and AI/healthcare job opportunities matching Jenifer Siegelman's expertise in radiology, AI/ML, and public health",
+    "subdomains": [
+      {
+        "name": "Medical Imaging & Radiology Positions",
+        "focus": "Radiologist roles, medical imaging directors, and clinical AI positions in healthcare",
+        "search_queries": [
+          "radiologist AI positions 2025",
+          "medical imaging director jobs with AI focus",
+          "clinical radiology positions with machine learning"
+        ],
+        "target_rows": 10
+      },
+      {
+        "name": "AI/ML Healthcare Roles",
+        "focus": "AI research and development positions in healthcare and medical technology companies",
+        "search_queries": [
+          "healthcare AI researcher jobs 2025",
+          "medical AI/ML engineer positions",
+          "AI for healthcare product manager roles"
+        ],
+        "target_rows": 10
+      }
+    ]
+  },
+  "table_name": "Job Opportunities for Jenifer Siegelman",
+  "tablewide_research": "Target roles combining radiology expertise with AI/ML skills in healthcare settings"
+}
+```
+
+---
+
+## Key Principles
+
+### ID Columns (Define the row, NOT validated)
+- Simple identifiers: Job Title, Company Name, Paper Title, Product Name
+- No validation strategy needed (empty string)
+- Used to uniquely identify each row
+
+### Research Columns (To be validated)
+- Detailed descriptions explaining EXACTLY what data to find
+- Specific validation strategies explaining HOW to find the data
+- May reference specific sources, methods, or criteria
+- Focus on actionable, findable information
+
+### Detailed Descriptions
+Make descriptions comprehensive and specific:
+- ✅ "Key duties and expectations for the role, including clinical, technical, research, and leadership responsibilities"
+- ❌ "Job responsibilities"
+
+### Validation Strategies
+Be explicit and actionable:
+- ✅ "Extract from job posting description section, focusing on day-to-day responsibilities. Look for bullet points under 'Responsibilities' or 'What You'll Do' sections."
+- ❌ "Check job posting"
+
+---
 
 ## Your Task
 
-### 1. Define Precise Column Specifications
+Using the information provided above:
 
-For each column (both ID columns and research columns):
-- **Name**: Clear, concise column name
-- **Description**: Detailed explanation of what this column contains
-- **Format**: Data type (String, Number, Boolean, URL, Date, etc.)
-- **Importance**: "ID" for identification columns, "CRITICAL" for research columns
-- **Is Identification**: true for ID columns, false for research columns
-- **Validation Strategy**: HOW to validate/find this data (REQUIRED for research columns)
+1. **Define columns** based on what the user outlined
+   - Expand brief mentions into detailed specifications
+   - Add comprehensive descriptions
+   - Create specific validation strategies for research columns
 
-**Validation Strategy Examples:**
-- "Check company careers page for job postings with 'AI', 'ML', or 'Machine Learning' keywords"
-- "Search for recent press releases or news mentioning funding rounds in the past 12 months"
-- "Look for team size on LinkedIn company page or About Us section"
-- "Verify GitHub repository exists and check star count"
+2. **Create search strategy**
+   - 2-5 subdomains that cover the search space
+   - Each subdomain has: name, focus, search_queries (3-5), target_rows
+   - Search queries should yield multiple entities (lists, directories)
 
-### 2. Create Comprehensive Search Strategy
+   **Subdomain Design Guidelines:**
+   - First subdomains: Specific, focused categories (e.g., "AI Research", "Healthcare AI")
+   - Last subdomain: Catch-all for remaining entities (e.g., "Other AI Companies", "Additional Opportunities Not in Above Categories")
+   - This ensures complete coverage - nothing is excluded
 
-Define how to FIND the entities that will populate this table:
+   **target_rows Strategy:**
+   - Use "up to N" approach where N = total target for entire table
+   - Each subdomain can return UP TO the full target
+   - Richer subdomains will naturally return more candidates
+   - Less relevant subdomains will return fewer
+   - Deduplication and QC will select the best from all subdomains
 
-**A. Description**:
-- Write 2-3 sentences describing what entities we're looking for
-- Be specific about the domain, characteristics, and scope
+   **Example for 3 subdomains (total target: 10 rows):**
+   - Subdomain 1: "AI Research Companies" - target_rows: 10 (up to 10)
+   - Subdomain 2: "Healthcare AI Companies" - target_rows: 10 (up to 10)
+   - Subdomain 3: "Other AI Companies" - target_rows: 10 (up to 10)
+   - Total discovered: might be 8 + 7 + 3 = 18 candidates
+   - After deduplication + QC: final 10 best selected
 
-**B. Subdomain Hints** (2-5 hints):
-- Identify natural subdivisions of the search space for parallelization
-- Each subdomain should be distinct and cover a portion of the target entities
-- Examples: "AI Research Companies", "Healthcare AI Startups", "Enterprise AI Solutions"
-- Balance: Don't over-split (too many subdomains) or under-split (too few)
+3. **Name the table** clearly and descriptively
 
-**C. Search Queries** (1-5 queries):
-- Specific search queries that will help discover matching entities
-- Should be Google-searchable and return relevant results
-- Examples: "top AI companies hiring 2024", "artificial intelligence startups funding"
+4. **Provide tablewide_research** context (2-3 sentences about overall goals)
 
-## Guidelines
-
-### Focus on Findability
-- Design columns around data that CAN be found through web search
-- Avoid columns requiring insider knowledge or private data
-- Validation strategies should be actionable and specific
-
-### Search Strategy Quality
-- Subdomain hints should enable parallel discovery without overlap
-- Search queries should be diverse and comprehensive
-- Balance breadth (finding many candidates) with relevance (finding good matches)
-
-### NO Sample Data
-- Do NOT generate sample rows or data
-- Do NOT provide example entities
-- Focus ONLY on defining the structure and search approach
-- Row discovery is a separate step that will use your specifications
-
-### Table-Wide Research Context
-- Provide a clear summary of the overall research objectives
-- Include any domain-specific knowledge or constraints
-- Mention data sources and validation approaches
-
-## Output Format
-
-Respond using the structured schema provided with:
-- `columns`: Array of column definitions with validation strategies
-- `search_strategy`: Comprehensive search approach with subdomain hints
-- `table_name`: Concise descriptive name for the table
-- `tablewide_research`: Overall research context and objectives
-
-**IMPORTANT**: Every research column (is_identification: false) MUST have a validation_strategy. This tells the row population system HOW to find and validate that specific data point.
+Return valid JSON matching the schema.

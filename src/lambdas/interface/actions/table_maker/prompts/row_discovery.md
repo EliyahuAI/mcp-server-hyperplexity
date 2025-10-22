@@ -1,62 +1,164 @@
-You are discovering candidate rows for a research table by analyzing web search results.
+# Row Discovery Task
 
-## Subdomain Focus
-{{SUBDOMAIN}}
+## Your Job
 
-## Overall Search Strategy
-{{SEARCH_STRATEGY}}
+You are charged with **finding new row entries** for a research table that we are going to build.
 
-## Table Columns
-The table uses these columns (ID columns are used to uniquely identify each row):
-{{COLUMNS}}
+These rows are characterized by their **ID fields** (identification columns). Your task is to:
 
-## Web Search Results
-{{WEB_SEARCH_RESULTS}}
+1. **Use web search** to find unique entries that match the specified requirements within the specified subdomain
+2. **Populate ID fields** with actual values from your search results
+3. **Score each entry** for relevance, source reliability, and recency
+4. **Provide reasoning** for why the entry is a good fit
 
-## Your Task
-Extract candidate entities from the web search results and evaluate each against the table criteria.
+---
 
-### Instructions:
-1. **Extract Candidates**: Identify entities mentioned in the web search results that match the subdomain focus
-2. **Score Each Candidate**: Assign a match score between 0.0 and 1.0 based on:
-   - **Relevance to subdomain** (0.4 weight): How well does this entity fit the subdomain focus?
-   - **Information availability** (0.3 weight): Can we find data for the research columns?
-   - **Entity quality** (0.3 weight): Is this a significant/notable entity worth including?
-3. **Provide Clear Rationale**: Explain why each candidate received its score
-4. **Include Source URLs**: List the specific URLs where you found information about each candidate
-5. **Quality Over Quantity**: Only include candidates with match scores >= 0.5
+## Context About This Table
 
-### Match Score Guidelines:
-- **0.9-1.0**: Perfect match - highly relevant, complete information available, significant entity
-- **0.7-0.89**: Strong match - clearly relevant, good information available, notable entity
-- **0.5-0.69**: Moderate match - somewhat relevant, limited information, or less notable
-- **Below 0.5**: Poor match - don't include in results
+**User's Original Request:**
+{{USER_CONTEXT}}
 
-### ID Values Format:
-For each candidate, populate ONLY the ID columns (columns where `is_identification: true`).
-Use the exact column names as keys.
+**Table Purpose:**
+{{TABLE_PURPOSE}}
 
-### Example Output Structure:
+**Background Research Context:**
+{{TABLEWIDE_RESEARCH}}
+
+---
+
+## Your Specific Assignment
+
+**Subdomain:** {{SUBDOMAIN_NAME}}
+
+**Focus Area:** {{SUBDOMAIN_FOCUS}}
+
+**Requirements:** {{SEARCH_REQUIREMENTS}}
+
+**Target:** Find **{{TARGET_ROWS}} unique entries**
+
+---
+
+## Recommended Searches
+
+Use these search queries to find entries:
+{{SEARCH_QUERIES}}
+
+---
+
+## ID Fields to Populate
+
+For each entry you find, populate these ID fields with ACTUAL values from your search:
+
+{{ID_COLUMNS}}
+
+**Example of populated ID fields:**
 ```json
 {
-  "subdomain": "AI Research Companies",
+  "Company Name": "Anthropic",
+  "Website": "https://anthropic.com"
+}
+```
+
+**Another example:**
+```json
+{
+  "Company Name": "PathAI",
+  "Website": "https://www.pathai.com"
+}
+```
+
+---
+
+## Scoring Each Entry
+
+Score each entry on three dimensions (0-1.0 scale):
+
+### 1. Relevancy (0-1.0)
+How well does this entry match the requirements?
+- 1.0 = Perfect match
+- 0.7 = Strong match, minor gaps
+- 0.4 = Moderate match
+- 0.0 = Weak match
+
+### 2. Source Reliability (0-1.0)
+How reliable are your information sources?
+- 1.0 = Primary sources (official website, Crunchbase, official docs)
+- 0.7 = Secondary sources (TechCrunch, LinkedIn, major news outlets)
+- 0.4 = Tertiary sources (blogs, forums, aggregators)
+- 0.0 = Unreliable or unverified
+
+### 3. Recency (0-1.0)
+How recent is the information?
+- 1.0 = Less than 3 months old
+- 0.7 = 3-6 months old
+- 0.4 = 6-12 months old
+- 0.0 = More than 12 months or date unknown
+
+---
+
+## Output Format
+
+Return JSON in this exact format:
+
+```json
+{
+  "subdomain": "{{SUBDOMAIN_NAME}}",
   "candidates": [
     {
       "id_values": {
         "Company Name": "Anthropic",
-        "Website": "anthropic.com"
+        "Website": "https://anthropic.com"
       },
-      "match_score": 0.95,
-      "match_rationale": "Leading AI safety research company with active hiring for ML engineers. Significant presence in search results with clear focus on AI research. Multiple sources confirm hiring activity and research focus.",
-      "source_urls": ["https://anthropic.com/careers", "https://techcrunch.com/anthropic-hiring"]
+      "score_breakdown": {
+        "relevancy": 0.95,
+        "reliability": 1.0,
+        "recency": 0.9
+      },
+      "match_rationale": "Leading AI safety research company with active hiring for ML engineers",
+      "source_urls": [
+        "https://anthropic.com/careers",
+        "https://www.crunchbase.com/organization/anthropic"
+      ]
     }
   ]
 }
 ```
 
-## Important Notes:
-- Only extract entities that are explicitly mentioned or clearly referenced in the web search results
-- Don't fabricate or infer entities not supported by the search results
-- If web search results are empty or unhelpful, return an empty candidates array
-- Ensure ID values are clean strings (no extra formatting, URLs, etc.)
-- Source URLs should be specific to each candidate (not generic search URLs)
+**Requirements:**
+- Use EXACT field names from ID fields list above
+- Populate with ACTUAL values from your web search results
+- Each entry must be UNIQUE (different from other entries)
+- Always include all three dimension scores
+- Keep rationale to 1-2 sentences
+- Include specific source URLs
+
+---
+
+## Important Notes
+
+- **Find real entries:** Don't make up placeholder names or generic examples
+- **Use exact field names:** Copy field names exactly as shown in ID fields list
+- **Return candidates array:** Even if empty, always return {"candidates": []}
+- **No minimum quality:** Include entries even if scores are moderate (we'll filter later)
+
+## If No Matches Found
+
+If your searches return 0 candidates, you MUST provide a "no_matches_reason" field explaining why:
+
+```json
+{
+  "subdomain": "Healthcare AI Companies",
+  "no_matches_reason": "Search queries returned general information about healthcare but no specific company matches. Queries may need to be more specific or use different search terms.",
+  "candidates": []
+}
+```
+
+**Possible reasons to report:**
+- "Search queries too broad/narrow, no specific entity results"
+- "Web search returned no relevant results for this subdomain"
+- "Queries found general information but no identifiable entities"
+- "Technical/niche subdomain with limited public information"
+
+This helps us improve search strategies for future runs.
+
+Return your findings as valid JSON.
