@@ -11323,6 +11323,9 @@ Please provide any additional context, or simply proceed to generate your initia
                 buttonsContainer.parentNode.insertBefore(refinementDiv, buttonsContainer);
             }
 
+            // Make sure refinement input is visible (may have been hidden after previous submit)
+            refinementDiv.style.display = 'block';
+
             // Update buttons
             createButtonRow(`${cardId}-buttons`, [
                 {
@@ -11331,6 +11334,11 @@ Please provide any additional context, or simply proceed to generate your initia
                     callback: () => continueTableConversationFromCard(cardId)
                 }
             ]);
+
+            // Make sure buttons container is visible (may have been hidden after previous submit)
+            if (buttonsContainer) {
+                buttonsContainer.style.display = 'flex';
+            }
         }
 
         // Create a new "Table Preview" card
