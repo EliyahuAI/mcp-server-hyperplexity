@@ -218,8 +218,8 @@ Remove these from background_handler.py:
 
 ### Interface Lambda (Lightweight)
 - **Provisioned:** 128 MB (absolute minimum)
-- **Typical usage:** 64-100 MB
-- **Rationale:** API routing, balance checks, file upload handlers are extremely lightweight
+- **Typical usage:** 50-80 MB
+- **Rationale:** /health handled before imports, lazy-loading of actions, API routing only
 
 ### Background Lambda
 - **Provisioned:** 512 MB
