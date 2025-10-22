@@ -889,7 +889,8 @@ async def handle_table_conversation_start(request_data, context):
         # Extract interview response (using new interview schema)
         result['success'] = True
         result['trigger_execution'] = interview_result.get('trigger_execution', False)
-        result['follow_up_question'] = interview_result.get('follow_up_question', '')
+        result['show_structure'] = interview_result.get('show_structure', False)
+        result['ai_message'] = interview_result.get('ai_message', '')
         result['context_web_research'] = interview_result.get('context_web_research', [])
         result['processing_steps'] = interview_result.get('processing_steps', [])
         result['table_name'] = interview_result.get('table_name', '')
@@ -935,7 +936,8 @@ async def handle_table_conversation_start(request_data, context):
                     'progress': 100,
                     'status': 'Interview turn 1 complete',
                     'trigger_execution': result['trigger_execution'],
-                    'follow_up_question': result['follow_up_question'],
+                    'show_structure': result['show_structure'],
+                    'ai_message': result['ai_message'],
                     'context_web_research': result['context_web_research'],
                     'processing_steps': result['processing_steps'],
                     'table_name': result['table_name'],
@@ -1194,7 +1196,8 @@ async def handle_table_conversation_continue(request_data, context):
         # Extract interview response (using new interview schema)
         result['success'] = True
         result['trigger_execution'] = interview_result.get('trigger_execution', False)
-        result['follow_up_question'] = interview_result.get('follow_up_question', '')
+        result['show_structure'] = interview_result.get('show_structure', False)
+        result['ai_message'] = interview_result.get('ai_message', '')
         result['context_web_research'] = interview_result.get('context_web_research', [])
         result['processing_steps'] = interview_result.get('processing_steps', [])
         result['table_name'] = interview_result.get('table_name', '')
@@ -1232,7 +1235,8 @@ async def handle_table_conversation_continue(request_data, context):
                     'progress': 100,
                     'status': f'Interview turn {result["turn_count"]} complete',
                     'trigger_execution': result['trigger_execution'],
-                    'follow_up_question': result['follow_up_question'],
+                    'show_structure': result['show_structure'],
+                    'ai_message': result['ai_message'],
                     'context_web_research': result['context_web_research'],
                     'processing_steps': result['processing_steps'],
                     'table_name': result['table_name'],
