@@ -8483,27 +8483,28 @@ Please provide any additional context, or simply proceed to generate your initia
 
             // Stream text with pauses at punctuation
             async function streamText(element, text) {
-                // Convert markdown to HTML
                 const htmlText = renderMarkdown(text);
 
-                // Stream even with markdown - show progressively
-                // Split by words while preserving markdown
-                const words = text.split(' ');
-                let currentText = '';
+                // For markdown, stream by sentences to avoid breaking formatting
+                if (text.includes('**') || text.includes('*') || text.includes('#') || text.includes('`') || text.includes('[')) {
+                    // Split by sentence boundaries
+                    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+                    let currentText = '';
 
-                for (let i = 0; i < words.length; i++) {
-                    currentText += (i > 0 ? ' ' : '') + words[i];
-                    // Render as markdown incrementally
-                    element.innerHTML = renderMarkdown(currentText);
+                    for (let i = 0; i < sentences.length; i++) {
+                        currentText += sentences[i];
+                        element.innerHTML = renderMarkdown(currentText);
+                        await sleep(300); // 300ms between sentences
+                    }
+                } else {
+                    // Plain text - stream by words (faster)
+                    const words = text.split(' ');
+                    let currentText = '';
 
-                    // Slower streaming for better readability (15-20 words/sec)
-                    const lastChar = words[i].slice(-1);
-                    if (['.', '!', '?'].includes(lastChar) || words[i].includes('\n')) {
-                        await sleep(150); // 0.15s pause for sentences (more dramatic)
-                    } else if ([',', ';', ':'].includes(lastChar)) {
-                        await sleep(80); // 0.08s pause for punctuation
-                    } else {
-                        await sleep(50); // ~20 words per second (visible streaming)
+                    for (let i = 0; i < words.length; i++) {
+                        currentText += (i > 0 ? ' ' : '') + words[i];
+                        element.textContent = currentText;
+                        await sleep(30); // ~33 words per second
                     }
                 }
             }
@@ -11084,9 +11085,7 @@ Please provide any additional context, or simply proceed to generate your initia
             tableMakerState.cardId = cardId;
 
             const initialPrompt = `<div class="chat-message ai">
-                <p><strong>Let's build a research table!</strong></p>
-                <p>I'll help you design columns, find relevant rows, and create a validated preview with the first 3 rows completed (3-4 minutes).</p>
-                <p>What would you like to research and validate?</p>
+                <p>Tell me about your research table!</p>
             </div>`;
 
             const content = `
@@ -11658,29 +11657,20 @@ Please provide any additional context, or simply proceed to generate your initia
 
         // Trigger table generation after user confirms the structure
         async function triggerTableGeneration(cardId) {
-            console.log('[TABLE_MAKER] User confirmed structure, triggering generation');
+            // Add final AI message
+            await addChatMessage(cardId, 'ai', 'Building out rows and validating the first rows. Will be ready for review in 3-4 minutes.', false, 'normal');
 
-            // Hide the refinement input if it exists
+            // Hide input/button and show progress
             const refinementDiv = document.getElementById(`${cardId}-refinement`);
-            if (refinementDiv) {
-                refinementDiv.style.display = 'none';
-            }
+            if (refinementDiv) refinementDiv.remove();
 
-            // Update button to show generation state
-            createButtonRow(`${cardId}-buttons`, [
-                {
-                    text: 'Creating validated preview (3-4 min): Columns → Research → Rows → First 3 validated',
-                    variant: 'primary',
-                    width: 'full',
-                    disabled: true
-                }
-            ]);
+            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
+            if (buttonsContainer) buttonsContainer.remove();
 
-            // Show thinking indicator
-            showThinkingInCard(cardId, 'Preparing to generate table...', true);
+            showThinkingInCard(cardId, 'Generating columns and rows...', true);
 
+            // Send affirmative response to backend - this will trigger execution
             try {
-                // Send affirmative response to backend to trigger execution
                 const response = await fetch(`${API_BASE}/validate`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -11689,25 +11679,24 @@ Please provide any additional context, or simply proceed to generate your initia
                         email: globalState.email,
                         session_id: globalState.sessionId,
                         conversation_id: tableMakerState.conversationId,
-                        user_message: 'Yes, generate this table'
+                        user_message: 'Yes, looks good. Please generate this table.'
                     })
                 });
 
                 const data = await response.json();
 
-                if (data.success && data.status === 'processing') {
-                    console.log('[TABLE_MAKER] Generation triggered successfully, waiting for preview card');
-                } else {
+                if (!data.success) {
                     completeThinkingInCard(cardId, 'Error');
                     showMessage(`${cardId}-messages`,
-                        'Failed to start generation: ' + (data.error || data.message || 'Unknown error'),
+                        `Failed to start table generation: ${data.error || 'Unknown error'}`,
                         'error');
                 }
+                // If successful, execution will start and we'll get WebSocket updates
             } catch (error) {
                 console.error('Error triggering table generation:', error);
                 completeThinkingInCard(cardId, 'Error');
                 showMessage(`${cardId}-messages`,
-                    'Failed to start generation. Please try again.',
+                    'Failed to start table generation. Please try again.',
                     'error');
             }
         }

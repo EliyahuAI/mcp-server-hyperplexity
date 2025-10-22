@@ -509,9 +509,13 @@ def _save_conversation_state_to_s3(
         Dictionary with save results: {'success': bool, 's3_key': str, 'error': str}
     """
     try:
-        # Store in table_maker subfolder: email/domain/session_id/table_maker/conversation_{conv_id}.json
-        session_path = storage_manager.get_session_path(email, session_id)
-        s3_key = f"{session_path}table_maker/conversation_{conversation_id}.json"
+        # Use get_table_maker_path for consistency with execution.py
+        s3_key = storage_manager.get_table_maker_path(
+            email=email,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            file_name='conversation_state.json'
+        )
 
         storage_manager.s3_client.put_object(
             Bucket=storage_manager.bucket_name,
@@ -548,8 +552,13 @@ def _load_conversation_state_from_s3(
         Conversation state dictionary or None if not found
     """
     try:
-        session_path = storage_manager.get_session_path(email, session_id)
-        s3_key = f"{session_path}table_maker/conversation_{conversation_id}.json"
+        # Use get_table_maker_path for consistency
+        s3_key = storage_manager.get_table_maker_path(
+            email=email,
+            session_id=session_id,
+            conversation_id=conversation_id,
+            file_name='conversation_state.json'
+        )
 
         response = storage_manager.s3_client.get_object(
             Bucket=storage_manager.bucket_name,

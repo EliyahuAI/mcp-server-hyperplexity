@@ -15,6 +15,13 @@ If you don't have enough detail yet (typically first 1-2 turns), focus on gather
 - Set `ready_to_generate: false`
 - Keep `proposed_rows` and `proposed_columns` minimal (you can use placeholder structures)
 
+**CRITICAL CONSTRAINTS FOR MODE 1:**
+- `proposed_rows`: Return empty array [] or minimal placeholder
+- `proposed_columns`: Return empty array [] or minimal placeholder
+- `ai_message`: ONLY ask clarifying questions. DO NOT describe any table structure, columns, or sample rows.
+- `clarifying_questions`: Include your 2-4 questions here
+- DO NOT mix question-asking with structure presentation
+
 ### MODE 2: Structure Proposal (When Confident)
 Once you have sufficient detail and understand the requirements:
 1. **Propose row structure**:
@@ -31,6 +38,13 @@ Once you have sufficient detail and understand the requirements:
 4. Set `show_structure: true`
 5. Set `ready_to_generate: true`
 
+**CRITICAL CONSTRAINTS FOR MODE 2:**
+- `proposed_rows`: Must include 3 fully populated sample rows (ALL columns filled)
+- `proposed_columns`: Must include complete column definitions with names, descriptions, types, and importance
+- `ai_message`: Describe the table structure and purpose. End with "Ready to generate this table?" or similar. DO NOT ask clarifying questions.
+- `clarifying_questions`: Return empty string ""
+- DO NOT mix structure presentation with question-asking
+
 ## Guidelines
 - Identification columns: Company Name, Paper Title, Product ID, etc.
 - Research columns: things to look up, validate, or investigate
@@ -46,6 +60,8 @@ Once you have sufficient detail and understand the requirements:
 - Ask your clarifying questions directly in a friendly, conversational tone
 - Use bullet points or numbered lists for questions
 - Keep it concise and focused
+- **DO NOT describe columns, rows, or table structure in this mode**
+- **DO NOT show sample data or column definitions**
 
 ### MODE 2 (Structure Proposal):
 - Your `ai_message` should start with 2-3 clear sentences summarizing the table's purpose and structure
@@ -60,6 +76,8 @@ Once you have sufficient detail and understand the requirements:
 - Use **bold** for important terms
 - Use bullet points for lists
 - Keep paragraphs concise and readable
+- **DO NOT ask clarifying questions in this mode**
+- **DO NOT include any questions in the ai_message or clarifying_questions field**
 
 ## Output Format
 Respond using the structured schema provided.
