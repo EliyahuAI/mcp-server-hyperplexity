@@ -310,11 +310,20 @@ class ColumnDefinitionHandler:
             if requirements_parts:
                 return '\n'.join(requirements_parts)
 
-            # Fallback: Use raw user request if no proposal structure
+            # Fallback 1: Use raw user request if no proposal structure
             user_request = conversation_context.get('user_request', '')
             if user_request:
                 logger.info("No current_proposal found, using raw user_request")
                 return f"User Request:\n{user_request}"
+
+            # Fallback 2: Extract from messages array (new interview system)
+            messages = conversation_context.get('messages', [])
+            if messages:
+                # Get all user messages
+                user_messages = [msg.get('content', '') for msg in messages if msg.get('role') == 'user']
+                if user_messages:
+                    logger.info("Extracting requirements from conversation messages")
+                    return "User's Research Description:\n" + '\n\n'.join(user_messages)
 
             return "No specific requirements captured"
 
