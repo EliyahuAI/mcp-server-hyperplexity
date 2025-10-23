@@ -47,8 +47,21 @@ If the user has provided enough detail to design a good table, show the structur
 - DO NOT mention "3-4 minutes" or any time estimates (frontend handles this)
 
 ## Guidelines
-- Identification columns: Company Name, Paper Title, Product ID, etc.
-- Research columns: things to look up, validate, or investigate
+
+**ID Column Requirements (CRITICAL):**
+- Must be SHORT and simple (1-5 words typically)
+- Must be easily discoverable from web searches, lists, or directories
+- Should NOT require synthesis, analysis, or reading multiple paragraphs
+- Good examples: Company Name, Job Title, Paper Title, Product Name, Date, Person Name, URL
+- Bad examples: Story Description, Key Responsibilities, Detailed Analysis, Summary of Findings
+- **Rule of Thumb**: If it appears in a bullet-point list or index, it's a good ID column. If it requires reading and synthesizing paragraphs, make it a research column instead.
+
+**Research Column Requirements:**
+- Things to look up, validate, or investigate
+- Can be complex, detailed, or require analysis
+- Examples: Market Analysis, Hiring Status, Political Coverage Comparison, Technical Specifications
+
+**General Guidelines:**
 - Be specific and actionable
 - Focus on feasibility - can this realistically be researched?
 - Aim for 5-15 total columns (including identification)

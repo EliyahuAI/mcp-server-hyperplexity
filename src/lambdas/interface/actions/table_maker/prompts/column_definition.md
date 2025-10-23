@@ -61,12 +61,20 @@ We have an outline of a series of columns for a research table. Your job is to:
       "validation_strategy": "Extract from job posting description section, focusing on day-to-day responsibilities, required tasks, and key deliverables. Look for bullet points under 'Responsibilities' or 'What You'll Do' sections."
     },
     {
-      "name": "Goodness of Fit",
-      "description": "Detailed analysis of why this role matches Jenifer's background, including alignment with her radiology expertise, AI/ML skills, research experience, public health training, and leadership capabilities. Cite specific qualifications or experiences that make her an excellent candidate.",
+      "name": "Match Score",
+      "description": "Numerical score (1-10) indicating how well this role matches Jenifer's background in radiology, AI/ML, public health, and leadership. Higher scores indicate better alignment with her expertise.",
+      "format": "Number",
+      "importance": "CRITICAL",
+      "is_identification": false,
+      "validation_strategy": "Compare job requirements against Jenifer's LinkedIn profile. Score based on: radiology/medical imaging requirements (0-3 points), AI/ML technical skills (0-3 points), public health or research focus (0-2 points), leadership opportunities (0-2 points). Sum for total score."
+    },
+    {
+      "name": "Key Match Reasons",
+      "description": "2-3 bullet points explaining the strongest alignment points between this role and Jenifer's background. Focus on specific skills, experiences, or qualifications that make her an excellent candidate.",
       "format": "String",
       "importance": "CRITICAL",
       "is_identification": false,
-      "validation_strategy": "Compare job requirements against Jenifer's LinkedIn profile. Match required skills with her background in radiology, AI/ML, public health. Note specific experiences that align with the role. Reference her publications, projects, or positions that demonstrate relevant expertise."
+      "validation_strategy": "Extract top 2-3 requirements from job posting that match Jenifer's background. Reference specific experiences from her LinkedIn: radiology board certification, AI/ML publications, public health MPH, leadership roles. Format as concise bullet points."
     },
     {
       "name": "Location",
@@ -137,9 +145,36 @@ We have an outline of a series of columns for a research table. Your job is to:
 - Use simple alphanumeric with spaces and hyphens
 
 ### ID Columns (Define the row, NOT validated)
-- Simple identifiers: Job Title, Company Name, Paper Title, Product Name
+
+**CRITICAL CONSTRAINTS FOR ID COLUMNS:**
+- Must be SHORT, simple, repeatable identifiers
+- Maximum 1-5 words typically (e.g., "Google", "2025-01-15", "Chief Data Officer")
+- Must be easily discoverable from web searches or listings
+- Should NOT require complex reasoning or synthesis
+- Should NOT be paragraphs or detailed descriptions
+
+**Good ID Column Examples:**
+- ✅ Company Name (e.g., "Anthropic", "OpenAI")
+- ✅ Job Title (e.g., "Senior ML Engineer", "Product Manager")
+- ✅ Paper Title (e.g., "Attention Is All You Need")
+- ✅ Product Name (e.g., "ChatGPT", "Claude")
+- ✅ Date (e.g., "2025-01-15")
+- ✅ Person Name (e.g., "Sam Altman")
+- ✅ URL (e.g., "https://example.com/article")
+
+**Bad ID Column Examples:**
+- ❌ "Basic Story Description" - Too detailed, requires synthesis
+- ❌ "Key Responsibilities" - Paragraphs of text, not a simple identifier
+- ❌ "Detailed Analysis" - Requires research, not straightforward
+- ❌ "Summary of Findings" - Multiple sentences, too complex
+- ❌ "Goodness of Fit Analysis" - Requires reasoning and comparison
+
+**Rule of Thumb:** If you can find this value in a bullet-point list, directory, or index, it's a good ID column. If it requires reading multiple paragraphs and synthesizing information, it should be a research column instead.
+
+**Technical Requirements:**
 - No validation strategy needed (empty string)
 - Used to uniquely identify each row
+- Will be discovered during row discovery phase (not validated later)
 
 ### Research Columns (To be validated)
 - Detailed descriptions explaining EXACTLY what data to find

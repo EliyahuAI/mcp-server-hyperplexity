@@ -50,6 +50,14 @@ Output:
 
 **Use when:** You can propose a concrete table and need user approval.
 
+**CRITICAL - ID Column Guidelines:**
+When proposing ID columns, ensure they are:
+- SHORT and simple (1-5 words typically)
+- Easy to discover from web searches or listings
+- NOT requiring synthesis or analysis
+- Examples: Company Name, Job Title, Paper Title, Date, Person Name, URL
+- AVOID: Story Description, Key Responsibilities, Analysis, Summary, Detailed Findings
+
 **Output:**
 - `mode`: 2
 - `ai_message`: Briefly describe table structure, list ID and research columns, state scope, end with "Ready to generate this table?" (NEVER EMPTY)
@@ -59,7 +67,7 @@ Output:
 - `processing_steps`: [3-10 specific phrases with context]
 - `table_name`: "Title Case Name"
 
-**Example:**
+**Example 1:**
 ```
 User: "Track AI companies that posted GenAI jobs. I'm from Eliyahu.AI"
 
@@ -83,6 +91,44 @@ Ready to generate this table?",
   "context_web_research": ["Eliyahu.AI background and services"],
   "processing_steps": ["Researching Eliyahu.AI Context", "Finding GenAI Job Postings", "Analyzing Hiring Companies", "Drafting Outreach Emails"],
   "table_name": "GenAI Hiring Companies for Outreach"
+}
+```
+
+**Example 2 (News Stories):**
+```
+User: "Track major US national news stories with political coverage analysis"
+
+GOOD Output:
+{
+  "mode": 2,
+  "ai_message": "I'll create a news coverage analysis table with:
+
+**ID columns**: Story Headline, Publication Date, Primary Source URL
+
+**Research columns**:
+- Story Summary (2-3 sentences)
+- Left-leaning Coverage Analysis
+- Right-leaning Coverage Analysis
+- Centrist Coverage Analysis
+
+**Scope**: ~15 major national news stories
+
+Ready to generate this table?",
+  ...
+}
+
+BAD Output (DO NOT DO THIS):
+{
+  "mode": 2,
+  "ai_message": "I'll create a news coverage analysis table with:
+
+**ID columns**: Story Title, Basic Story Description, Date  ❌ WRONG - "Basic Story Description" is too complex for ID column
+
+**Research columns**:
+- Left Coverage
+- Right Coverage
+
+This is wrong because "Basic Story Description" requires synthesis and multiple sentences. Use "Story Headline" or "Story Title" (short phrase) instead, and move detailed description to a research column.
 }
 ```
 

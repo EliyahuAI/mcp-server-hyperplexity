@@ -644,13 +644,16 @@ async def _trigger_execution(
         logger.info(f"[TABLE_MAKER] Execution pipeline complete. Success: {execution_result.get('success')}")
 
         # Send completion message via WebSocket
+        # NOTE: csv_s3_key and config_s3_key are NOT included - preview handler will
+        # find them from session_info.json (table_path and versions.X.config.config_path)
         if execution_result['success']:
             if websocket_client and session_id:
                 try:
                     completion_message = {
                         'type': 'table_execution_complete',
                         'conversation_id': conversation_id,
-                        'status': 'Independent Row Discovery complete',
+                        'phase': 'execution',
+                        'status': 'Table ready for validation!',
                         'table_name': execution_result.get('table_name'),
                         'row_count': execution_result.get('row_count', 0),
                         'approved_rows': execution_result.get('approved_rows', [])

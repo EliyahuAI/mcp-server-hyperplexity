@@ -700,6 +700,7 @@ async def handle_generate_config_unified(event_data, websocket_callback=None, ta
                 return {'success': False, 'error': f'Failed to store generated config: {storage_result["error"]}'}
             
             # Update comprehensive session tracking
+            update_success = False
             try:
                 # Update session config tracking with comprehensive data
                 config_description = updated_config.get('general_notes', 'AI generated configuration')
@@ -713,27 +714,28 @@ async def handle_generate_config_unified(event_data, websocket_callback=None, ta
                     source='ai_generated',
                     description=config_description
                 )
-                
+
                 if update_success:
                     logger.info(f"Updated session_info.json with AI generated config v{version}")
                 else:
                     logger.warning(f"Failed to update session_info.json (will fall back to legacy tracking)")
-                    
+
             except Exception as e:
                 logger.warning(f"Failed to update session_info.json: {e}")
-            
-            # Legacy session info update (fallback)
-            try:
-                # Get table name from session or use default
-                table_name = f"table_{session_id.split('_')[-1]}"
-                session_info_result = storage_manager.create_session_info(
-                    email, session_id, table_name, current_config_version=version,
-                    config_source='ai_generated'
-                )
-                if session_info_result['success']:
-                    logger.info(f"Legacy session info updated with config version {version}")
-            except Exception as e:
-                logger.warning(f"Failed to update legacy session info: {e}")
+
+            # Legacy session info update (fallback) - ONLY if new structure failed
+            if not update_success:
+                try:
+                    # Get table name from session or use default
+                    table_name = f"table_{session_id.split('_')[-1]}"
+                    session_info_result = storage_manager.create_session_info(
+                        email, session_id, table_name, current_config_version=version,
+                        config_source='ai_generated'
+                    )
+                    if session_info_result['success']:
+                        logger.info(f"Legacy session info updated with config version {version}")
+                except Exception as e:
+                    logger.warning(f"Failed to update legacy session info: {e}")
             
             # Create download link for the config (separate bucket)
             download_url = storage_manager.create_public_download_link(updated_config, f"config_v{version}_{session_id}.json")
