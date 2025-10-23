@@ -1,10 +1,7 @@
-# Pin boto3/botocore/aioboto3 to compatible versions (based on aioboto3 13.0.0 requirements)
-# aioboto3 13.0.0 requires aiobotocore==2.13.0
-# aiobotocore 2.13.0 requires botocore>=1.34.34,<1.35.0
-boto3==1.34.131  # Matches botocore 1.34.x series
-botocore==1.34.131  # Compatible with aiobotocore 2.13.0
-aioboto3==13.0.0
-aiobotocore==2.13.0
+# Use latest aioboto3 (15.4.0 released Oct 18, 2025) for modern boto3/botocore compatibility
+boto3>=1.40.0  # Latest stable
+botocore>=1.40.0  # Latest stable
+aioboto3>=15.4.0  # Latest version supports modern botocore
 python-multipart>=0.0.5
 openpyxl>=3.0.0
 typing-extensions>=4.0.0
