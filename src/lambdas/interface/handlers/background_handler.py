@@ -5625,6 +5625,8 @@ async def handle_config_generation_async(event, context):
         # Build payload for config generation
         payload = {
             'table_analysis': event.get('table_analysis'),
+            'excel_s3_key': event.get('excel_s3_key'),  # Pass excel_s3_key for table analysis generation if needed
+            'csv_s3_key': event.get('csv_s3_key'),  # Also support CSV
             'existing_config': event.get('existing_config'),
             'instructions': event.get('instructions', ''),
             'session_id': session_id,

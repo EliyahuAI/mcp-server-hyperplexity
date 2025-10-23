@@ -1731,10 +1731,19 @@ def main():
             
             if not success:
                 return 1
-            
-            # After successful deployment, set up the SQS triggers
-            lambda_client = boto3.client('lambda', region_name=args.region)
-            setup_sqs_triggers(lambda_client, function_name, args.region)
+
+            # IMPORTANT: Only set up SQS triggers for background Lambda
+            # The lightweight interface Lambda should NEVER have SQS triggers
+            if args.mode == 'background':
+                logger.info("[SQS TRIGGERS] Setting up SQS triggers for background Lambda...")
+                lambda_client = boto3.client('lambda', region_name=args.region)
+                setup_sqs_triggers(lambda_client, function_name, args.region)
+            elif args.mode == 'lightweight':
+                logger.info("[SQS TRIGGERS] Skipping SQS triggers for lightweight interface Lambda (handles HTTP only)")
+            else:  # unified
+                logger.info("[SQS TRIGGERS] Setting up SQS triggers for unified Lambda (legacy mode)...")
+                lambda_client = boto3.client('lambda', region_name=args.region)
+                setup_sqs_triggers(lambda_client, function_name, args.region)
 
             if api_url and args.test_api:
                 logger.info("Testing API endpoint...")

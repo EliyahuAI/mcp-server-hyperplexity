@@ -109,12 +109,13 @@ async def generate_config(payload: Dict[str, Any]) -> Dict[str, Any]:
         excel_s3_key = payload.get('excel_s3_key')
         csv_s3_key = payload.get('csv_s3_key')
         table_data = payload.get('table_data')  # Direct table data
+        email = payload.get('email', '')
 
         # Need either table_analysis or a way to generate it
-        if not table_analysis and not any([excel_s3_key, csv_s3_key, table_data]):
+        if not table_analysis and not any([excel_s3_key, csv_s3_key, table_data, (email and session_id)]):
             return {
                 'success': False,
-                'error': 'Missing table_analysis or table data (excel_s3_key, csv_s3_key, or table_data)'
+                'error': 'Missing table_analysis or table data (excel_s3_key, csv_s3_key, table_data, or email+session_id for lookup)'
             }
 
         # Generate table analysis if not provided
@@ -124,6 +125,26 @@ async def generate_config(payload: Dict[str, Any]) -> Dict[str, Any]:
                 send_websocket_progress(session_id, "Analyzing table structure...", 25)
             try:
                 bucket = os.environ.get('S3_UNIFIED_BUCKET', 'hyperplexity-storage')
+
+                # If no explicit excel_s3_key provided, use unified method to find latest table in session folder
+                if not excel_s3_key and not csv_s3_key and not table_data:
+                    if email and session_id:
+                        logger.info(f"No excel_s3_key provided, using UnifiedS3Manager to find table for session {session_id}")
+                        from interface_lambda.core.unified_s3_manager import UnifiedS3Manager
+                        s3_manager = UnifiedS3Manager()
+                        excel_content, excel_s3_key = s3_manager.get_excel_file(email, session_id)
+
+                        if not excel_content or not excel_s3_key:
+                            return {
+                                'success': False,
+                                'error': f'No Excel file found in session folder for session {session_id}'
+                            }
+                        logger.info(f"Found Excel file in session folder: {excel_s3_key}")
+                    else:
+                        return {
+                            'success': False,
+                            'error': 'Need email and session_id to locate table file'
+                        }
 
                 if excel_s3_key:
                     logger.info(f"Analyzing Excel from S3: {excel_s3_key}")
