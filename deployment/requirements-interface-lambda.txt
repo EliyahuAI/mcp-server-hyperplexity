@@ -1,7 +1,6 @@
 boto3>=1.26.0
-botocore>=1.29.0,<1.40.19
-# aioboto3>=13.0.0  # Removed - not used anywhere in interface Lambda, causes version conflicts
-# Note: botocore pinned to <1.40.19 to avoid aiobotocore conflicts from cached builds
+botocore>=1.29.0
+# Note: aiobotocore version conflicts are just build warnings, not runtime errors
 python-multipart>=0.0.5
 openpyxl>=3.0.0
 typing-extensions>=4.0.0
