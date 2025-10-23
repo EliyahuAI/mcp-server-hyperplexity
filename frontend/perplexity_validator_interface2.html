@@ -11246,7 +11246,17 @@ Please provide any additional context, or simply proceed to generate your initia
             const previewGenerated = data.preview_generated;
 
             if (data.progress === 100 && aiMessage && !isGenerating && !previewGenerated) {
-                completeThinkingInCard(cardId, 'Response received');
+                // Only complete thinking if we're moving to a new card (MODE 3)
+                // For MODE 1 and MODE 2, just hide the indicator but keep the card active
+                if (isReady) {
+                    // MODE 3: User approved, execution starting - complete current indicator
+                    completeThinkingInCard(cardId, 'Response received');
+                } else {
+                    // MODE 1 or MODE 2: Just hide the indicator without completing
+                    const indicator = document.getElementById(`${cardId}-thinking`);
+                    if (indicator) indicator.remove();
+                }
+
                 tableMakerState.messages.push({ role: 'ai', content: aiMessage });
 
                 // Add AI message with streaming
