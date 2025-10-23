@@ -11246,52 +11246,65 @@ Please provide any additional context, or simply proceed to generate your initia
             const previewGenerated = data.preview_generated;
 
             if (data.progress === 100 && aiMessage && !isGenerating && !previewGenerated) {
-                // Only complete thinking if we're moving to a new card (MODE 3)
-                // For MODE 1 and MODE 2, just hide the indicator but keep the card active
-                if (isReady) {
-                    // MODE 3: User approved, execution starting - complete current indicator
-                    completeThinkingInCard(cardId, 'Response received');
-                } else {
-                    // MODE 1 or MODE 2: Just hide the indicator without completing
-                    const indicator = document.getElementById(`${cardId}-thinking`);
-                    if (indicator) indicator.remove();
-                }
-
                 tableMakerState.messages.push({ role: 'ai', content: aiMessage });
-
-                // Add AI message with streaming
-                addChatMessage(cardId, 'ai', aiMessage, false, 'normal');
-
-                // Store table name if provided
-                if (data.table_name) {
-                    tableMakerState.table_name = data.table_name;
-                }
-
-                // Update subtitle
-                const card = document.getElementById(cardId);
-                const subtitle = card.querySelector('.card-subtitle');
-                if (subtitle) {
-                    subtitle.textContent = `Turn ${data.turn_count || tableMakerState.messages.length / 2}`;
-                }
-
-                // Check if showing structure (columns and rows preview)
-                if (showStructure && data.preview_data) {
-                    console.log('[TABLE_MAKER] Showing proposed table structure');
-                    // Show proposed table structure in the same card
-                    showTablePreviewInCard(cardId, data.preview_data, null);
-                }
 
                 // Determine which UI to show based on mode
                 if (!isReady) {
-                    // MODE 1 or MODE 2: Show refinement input with Submit button
-                    // User can answer questions, request changes, or approve
+                    // MODE 1 or MODE 2: Remove indicator, show refinement UI
+                    const indicator = document.getElementById(`${cardId}-thinking`);
+                    if (indicator) indicator.remove();
+
+                    // Add AI message with streaming
+                    addChatMessage(cardId, 'ai', aiMessage, false, 'normal');
+
+                    // Store table name if provided
+                    if (data.table_name) {
+                        tableMakerState.table_name = data.table_name;
+                    }
+
+                    // Update subtitle
+                    const card = document.getElementById(cardId);
+                    const subtitle = card.querySelector('.card-subtitle');
+                    if (subtitle) {
+                        subtitle.textContent = `Turn ${data.turn_count || tableMakerState.messages.length / 2}`;
+                    }
+
+                    // Check if showing structure (columns and rows preview)
+                    if (showStructure && data.preview_data) {
+                        console.log('[TABLE_MAKER] Showing proposed table structure');
+                        // Show proposed table structure in the same card
+                        showTablePreviewInCard(cardId, data.preview_data, null);
+                    }
+
+                    // Show refinement input with Submit button
                     console.log(`[TABLE_MAKER] MODE ${showStructure ? '2' : '1'}: Showing refinement input with Submit button`);
                     showRefinementInput(cardId);
                 } else if (isReady) {
-                    // MODE 3: User approved, execution starting (no input needed)
-                    console.log('[TABLE_MAKER] MODE 3: Execution starting - showing progress indicator');
-                    // Show progress indicator for execution (will be updated by execution messages)
-                    showThinkingInCard(cardId, 'Starting table generation...', true);
+                    // MODE 3: Keep indicator, just update message - don't remove/recreate
+                    console.log('[TABLE_MAKER] MODE 3: Execution starting - updating progress indicator');
+                    updateThinkingInCard(cardId, 'Starting table generation...');
+
+                    // Add AI message with streaming
+                    addChatMessage(cardId, 'ai', aiMessage, false, 'normal');
+
+                    // Store table name if provided
+                    if (data.table_name) {
+                        tableMakerState.table_name = data.table_name;
+                    }
+
+                    // Update subtitle
+                    const card = document.getElementById(cardId);
+                    const subtitle = card.querySelector('.card-subtitle');
+                    if (subtitle) {
+                        subtitle.textContent = `Turn ${data.turn_count || tableMakerState.messages.length / 2}`;
+                    }
+
+                    // Check if showing structure (columns and rows preview)
+                    if (showStructure && data.preview_data) {
+                        console.log('[TABLE_MAKER] Showing proposed table structure');
+                        // Show proposed table structure in the same card
+                        showTablePreviewInCard(cardId, data.preview_data, null);
+                    }
                 }
             }
 
