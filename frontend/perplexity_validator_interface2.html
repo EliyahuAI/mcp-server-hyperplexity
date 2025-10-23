@@ -215,12 +215,19 @@
         color: #2e7d32;
     }
 
+    /* Card buttons container */
+    .card-buttons {
+        width: 100%;
+        padding: 0 1.5rem 1.5rem 1.5rem;
+    }
+
     /* Standardized Button Component */
     .button-row {
         display: flex;
         gap: 1rem;
         margin: 1rem 0;
         justify-content: center;
+        width: 100%;
     }
 
     .std-button {
@@ -525,11 +532,41 @@
     }
 
     .std-button.selected {
-        background-color: var(--text-color) !important;
-        color: white !important;
-        border-color: var(--text-color) !important;
         cursor: default;
         transform: none;
+        opacity: 0.6;
+        filter: grayscale(0.3);
+    }
+
+    /* Keep original colors for each variant when selected */
+    .std-button.primary.selected {
+        background-color: white !important;
+        color: var(--primary-color) !important;
+        border-color: var(--primary-color) !important;
+    }
+
+    .std-button.secondary.selected {
+        background-color: white !important;
+        color: var(--secondary-color) !important;
+        border-color: var(--secondary-color) !important;
+    }
+
+    .std-button.tertiary.selected {
+        background-color: white !important;
+        color: var(--tertiary-color) !important;
+        border-color: var(--tertiary-color) !important;
+    }
+
+    .std-button.quaternary.selected {
+        background-color: white !important;
+        color: var(--quaternary-color) !important;
+        border-color: var(--quaternary-color) !important;
+    }
+
+    .std-button.quinary.selected {
+        background-color: white !important;
+        color: var(--quinary-color) !important;
+        border-color: var(--quinary-color) !important;
     }
 
     .std-button .spinner {
@@ -1141,6 +1178,7 @@
         z-index: 1;
         transform-style: preserve-3d;
         backface-visibility: visible;
+        transform-origin: center center; /* Scale from center, not top-left corner */
         /* Animate the entire wrapper as one unit */
     }
 
@@ -4771,12 +4809,14 @@
                             progressText.textContent = status;
                         }
 
-                        if (progressSquare && progressTrack) {
-                            const trackWidth = progressTrack.offsetWidth;
-                            const squareSize = 12;
-                            const maxPosition = trackWidth - squareSize;
-                            const position = (progressPercent / 100) * maxPosition;
-                            progressSquare.style.left = position + 'px';
+                        // Find the wrapper and move it (not the square directly)
+                        const progressWrapper = document.querySelector(`#${latestCardId} .progress-square-wrapper`);
+                        if (progressWrapper && progressTrack) {
+                            const trackWidth = progressTrack.offsetWidth || 120; // default to 120px if not measured
+                            const wrapperWidth = 37.5; // wrapper is 37.5px wide
+                            const wrapperOffset = wrapperWidth / 2; // offset to center it
+                            const position = (progressPercent / 100) * trackWidth - wrapperOffset;
+                            progressWrapper.style.left = `${position}px`;
                         }
                     }
                 }
@@ -4797,25 +4837,30 @@
                                 const card = document.getElementById(latestCardId);
 
                                 if (card) {
-                                    // Remove all chat messages (including initial "Tell me about your research table!")
-                                    const allChatMessages = card.querySelectorAll('.chat-message');
-                                    allChatMessages.forEach(msg => msg.remove());
+                                    // Preserve the thinking indicator if it exists
+                                    const thinkingIndicator = document.getElementById(`${latestCardId}-thinking`);
 
-                                    // Remove chat container
-                                    const chatContainer = document.getElementById(`${latestCardId}-chat`);
-                                    if (chatContainer) chatContainer.remove();
+                                    // Clear the card-content but keep the container
+                                    const cardContent = card.querySelector('.card-content');
+                                    if (cardContent) {
+                                        // Clear all existing content EXCEPT the thinking indicator
+                                        const elementsToRemove = [];
+                                        for (let child of cardContent.children) {
+                                            if (child.id !== `${latestCardId}-thinking`) {
+                                                elementsToRemove.push(child);
+                                            }
+                                        }
+                                        elementsToRemove.forEach(el => el.remove());
 
-                                    // Remove messages div
-                                    const messagesDiv = document.getElementById(`${latestCardId}-messages`);
-                                    if (messagesDiv) messagesDiv.remove();
+                                        // Add a container for the progress messages and boxes
+                                        const progressContainer = document.createElement('div');
+                                        progressContainer.id = `${latestCardId}-progress-content`;
+                                        cardContent.appendChild(progressContainer);
+                                    }
 
-                                    // Remove refinement input if exists
-                                    const refinementDiv = document.getElementById(`${latestCardId}-refinement`);
-                                    if (refinementDiv) refinementDiv.remove();
-
-                                    // Remove buttons
+                                    // Hide buttons during execution
                                     const buttonsContainer = document.getElementById(`${latestCardId}-buttons`);
-                                    if (buttonsContainer) buttonsContainer.remove();
+                                    if (buttonsContainer) buttonsContainer.style.display = 'none';
                                 }
                             }
 
@@ -4847,64 +4892,64 @@
             function handleTableExecutionComplete(message) {
                 const conversationId = message.conversation_id;
 
-                // Step 1: Complete progress bar (0.5s animation)
+                // Get the table maker card ID
+                let tableMakerCardId = null;
                 if (cardHandlers.size > 0) {
-                    const latestCardId = Array.from(cardHandlers.keys()).pop();
-                    const progressText = document.querySelector(`#${latestCardId} .progress-text`);
-                    const progressSquare = document.querySelector(`#${latestCardId} .progress-square`);
-                    const progressTrack = document.querySelector(`#${latestCardId} .progress-track`);
+                    tableMakerCardId = Array.from(cardHandlers.keys()).pop();
+                }
 
-                    if (progressText) {
-                        progressText.textContent = 'Table ready for validation!';
-                    }
+                if (tableMakerCardId) {
+                    // Update the progress indicator to show completion (but don't hide it yet)
+                    updateThinkingProgress(tableMakerCardId, 100, 'Table generation complete!');
 
-                    if (progressSquare && progressTrack) {
-                        const trackWidth = progressTrack.offsetWidth;
-                        const squareSize = 12;
-                        const maxPosition = trackWidth - squareSize;
-                        progressSquare.style.left = maxPosition + 'px';
+                    // Update the card to show it's complete
+                    const card = document.getElementById(tableMakerCardId);
+                    if (card) {
+                        const cardSubtitle = card.querySelector('.card-subtitle');
+                        if (cardSubtitle) {
+                            cardSubtitle.textContent = `${message.table_name} - ${message.row_count} rows generated`;
+                        }
+
+                        // Add a success message to the card
+                        const messagesDiv = document.getElementById(`${tableMakerCardId}-messages`);
+                        if (messagesDiv) {
+                            const successMsg = document.createElement('div');
+                            successMsg.className = 'message message-success';
+                            successMsg.innerHTML = `
+                                <span class="message-icon">[SUCCESS]</span>
+                                <div>Table generation complete! ${message.row_count} rows ready for validation.</div>
+                            `;
+                            messagesDiv.appendChild(successMsg);
+                        }
                     }
                 }
 
-                // Step 2: Let progress indicator close naturally (1.5s pause)
-                setTimeout(() => {
-                    // Step 3: Fade out Table Maker card (0.5s animation)
-                    if (cardHandlers.size > 0) {
-                        const latestCardId = Array.from(cardHandlers.keys()).pop();
-                        const tableMakerCard = document.getElementById(latestCardId);
+                // Store the table data in global state for the preview
+                if (message.csv_s3_key) globalState.csvS3Key = message.csv_s3_key;
+                if (message.config_s3_key) globalState.configS3Key = message.config_s3_key;
+                if (message.table_name) globalState.tableName = message.table_name;
+                if (message.row_count) globalState.rowCount = message.row_count;
 
-                        if (tableMakerCard) {
-                            tableMakerCard.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
-                            tableMakerCard.style.opacity = '0';
-                            tableMakerCard.style.transform = 'translateY(-10px)';
-                        }
+                // Mark config as ready (similar to after AI configuration)
+                globalState.configValidated = true;
+                globalState.configStored = true;
+                globalState.excelFileUploaded = true;
+
+                // Auto-generate preview after a delay to allow progress indicator to complete
+                setTimeout(() => {
+                    // Complete the thinking indicator (triggers shrink animation)
+                    if (tableMakerCardId) {
+                        completeThinkingInCard(tableMakerCardId, 'Complete!');
                     }
 
-                    // Step 4: Wait for fade out, then trigger preview (0.5s pause)
+                    // Wait for shrink animation, then create preview card
                     setTimeout(() => {
-                        // Remove table maker card from DOM
-                        if (cardHandlers.size > 0) {
-                            const latestCardId = Array.from(cardHandlers.keys()).pop();
-                            const tableMakerCard = document.getElementById(latestCardId);
-                            if (tableMakerCard) {
-                                tableMakerCard.remove();
-                            }
-                            // Unregister the card handler
-                            cardHandlers.delete(latestCardId);
-                        }
-
-                        // Step 5: Auto-trigger preview (backend call)
-                        autoTriggerPreview(
-                            message.csv_s3_key,
-                            message.config_s3_key,
-                            message.table_name,
-                            message.row_count
-                        );
-
-                        // Step 6: Preview Validation card will appear with natural fade-in
-                        // (handled by existing preview response handler)
-                    }, 500);
-                }, 1500);
+                        console.log('[TABLE_EXECUTION_COMPLETE] Creating preview validation card');
+                        // Clear any existing preview card state to allow new preview
+                        globalState.activePreviewCard = null;
+                        createPreviewCard();
+                    }, 600); // Wait for shrink animation
+                }, 500);
             }
 
             function showColumnsBoxes(conversationId, columns) {
@@ -4915,8 +4960,13 @@
                 const card = document.getElementById(latestCardId);
                 if (!card) return;
 
-                const cardContent = card.querySelector('.card-content');
-                if (!cardContent) return;
+                // Find the progress-content container created in step 1
+                let progressContent = document.getElementById(`${latestCardId}-progress-content`);
+                if (!progressContent) {
+                    // Fallback: use card-content if progress-content doesn't exist
+                    progressContent = card.querySelector('.card-content');
+                }
+                if (!progressContent) return;
 
                 // Separate ID and research columns
                 const idColumns = columns.filter(c => c.is_identification);
@@ -4950,8 +5000,8 @@
                     </div>
                 `;
 
-                // Add both boxes to card content
-                cardContent.innerHTML += idBoxHtml + researchBoxHtml;
+                // Add both boxes to progress content
+                progressContent.innerHTML += idBoxHtml + researchBoxHtml;
 
                 // Scroll card into view
                 card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -4965,8 +5015,13 @@
                 const card = document.getElementById(latestCardId);
                 if (!card) return;
 
-                const cardContent = card.querySelector('.card-content');
-                if (!cardContent) return;
+                // Find the progress-content container created in step 1
+                let progressContent = document.getElementById(`${latestCardId}-progress-content`);
+                if (!progressContent) {
+                    // Fallback: use card-content if progress-content doesn't exist
+                    progressContent = card.querySelector('.card-content');
+                }
+                if (!progressContent) return;
 
                 // Build rows list (top 10 or all if <= 10)
                 const rowsToShow = discoveredRows.slice(0, 10);
@@ -4995,8 +5050,8 @@
                     </div>
                 `;
 
-                // Add to card content
-                cardContent.innerHTML += rowsBoxHtml;
+                // Add to progress content
+                progressContent.innerHTML += rowsBoxHtml;
 
                 // Scroll card into view
                 card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -8102,8 +8157,7 @@
                     content,
                     buttons: [
                         {
-                            text: 'Submit Refinement',
-                            icon: '📤',
+                            text: 'Submit',
                             variant: 'primary',
                             width: 'full',
                             callback: async (e) => {
@@ -8113,7 +8167,7 @@
                                     showMessage(`${cardId}-messages`, 'Please enter refinement instructions', 'error');
                                     return;
                                 }
-                                markButtonSelected(button, '📤 Submitting...');
+                                markButtonSelected(button, 'Thinking...');
                                 await submitConfigRefinementWithAutoPreview(cardId, input);
                             }
                         }
@@ -8232,21 +8286,21 @@ Please provide any additional context, or simply proceed to generate your initia
                 // Add submit button
                 createButtonRow(`${cardId}-buttons`, [
                     {
-                        text: 'Submit Answers & Generate Config',
-                        icon: '🤖',
+                        text: 'Submit',
                         variant: 'primary',
                         callback: debounceConfigAction(`generate-config-${cardId}`, async (e) => {
                             const button = e.target.closest('button');
                             const input = document.getElementById(`${cardId}-refinement-input`).value.trim();
-                            
-                            // Hide the input and button
+
+                            // Mark button as thinking
+                            markButtonSelected(button, 'Thinking...');
+
+                            // Hide the input (keep button visible to show thinking state)
                             refinementContainer.style.display = 'none';
-                            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-                            if (buttonsContainer) buttonsContainer.style.display = 'none';
-                            
+
                             // Add user answers to chat
                             await addChatMessage(cardId, 'user', input);
-                            
+
                             // Now start the actual config generation with the context
                             await startConfigGenerationWithContext(cardId, input);
                         })
@@ -8807,11 +8861,10 @@ Please provide any additional context, or simply proceed to generate your initia
                     }
                 };
 
-                // Update buttons - include both Submit Refinement and Accept options
+                // Update buttons - include both Submit and Accept options
                 createButtonRow(`${cardId}-buttons`, [
                     {
-                        text: 'Submit Refinement',
-                        icon: '📤',
+                        text: 'Submit',
                         variant: 'secondary',
                         width: 'full',
                         callback: async (e) => {
@@ -8822,8 +8875,8 @@ Please provide any additional context, or simply proceed to generate your initia
                                 return;
                             }
                             
-                            // Mark button as submitting and disabled
-                            markButtonSelected(button, '📤 Submitting...');
+                            // Mark button as thinking and disabled
+                            markButtonSelected(button, 'Thinking...');
                             
                             // Hide all content and show completion message
                             const messagesContainer = document.getElementById(`${cardId}-messages`);
@@ -9164,8 +9217,7 @@ Please provide any additional context, or simply proceed to generate your initia
                             // Update button to submit
                             createButtonRow(`${cardId}-buttons`, [
                                 {
-                                    text: 'Submit Refinement',
-                                    icon: '📤',
+                                    text: 'Submit',
                                     variant: 'primary',
                                     width: 'full',
                                     callback: async (e) => {
@@ -9175,7 +9227,7 @@ Please provide any additional context, or simply proceed to generate your initia
                                             showMessage(`${cardId}-messages`, 'Please enter refinement instructions', 'error');
                                             return;
                                         }
-                                        markButtonSelected(button, '📤 Submitting...');
+                                        markButtonSelected(button, 'Thinking...');
                                         await submitConfigRefinementWithAutoPreview(cardId, input);
                                     }
                                 }
@@ -11126,7 +11178,11 @@ Please provide any additional context, or simply proceed to generate your initia
                         text: 'Submit',
                         variant: 'primary',
                         width: 'full',
-                        callback: () => startTableConversationFromCard(cardId)
+                        callback: async (e) => {
+                            const button = e.target.closest('button');
+                            markButtonSelected(button, 'Thinking...');
+                            await startTableConversationFromCard(cardId);
+                        }
                     }
                 ]
             });
@@ -11156,13 +11212,11 @@ Please provide any additional context, or simply proceed to generate your initia
                 return;
             }
 
-            // Remove input container and buttons - user submitted
+            // Hide input container but keep buttons to show "Thinking..." state
             const inputContainer = document.getElementById(`${cardId}-input-container`);
-            if (inputContainer) inputContainer.remove();
+            if (inputContainer) inputContainer.style.display = 'none';
 
-            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-            if (buttonsContainer) buttonsContainer.remove();
-
+            // Keep buttons visible to show "Thinking..." state
             showThinkingInCard(cardId, 'Starting conversation with AI...', true);
 
             // Add user message to chat
@@ -11250,9 +11304,9 @@ Please provide any additional context, or simply proceed to generate your initia
 
                 // Determine which UI to show based on mode
                 if (!isReady) {
-                    // MODE 1 or MODE 2: Remove indicator, show refinement UI
-                    const indicator = document.getElementById(`${cardId}-thinking`);
-                    if (indicator) indicator.remove();
+                    // MODE 1 or MODE 2: Complete the indicator properly
+                    console.log(`[TABLE_MAKER] MODE ${showStructure ? '2' : '1'}: Completing progress indicator`);
+                    completeThinkingInCard(cardId, 'Response received');
 
                     // Add AI message with streaming
                     addChatMessage(cardId, 'ai', aiMessage, false, 'normal');
@@ -11280,8 +11334,8 @@ Please provide any additional context, or simply proceed to generate your initia
                     console.log(`[TABLE_MAKER] MODE ${showStructure ? '2' : '1'}: Showing refinement input with Submit button`);
                     showRefinementInput(cardId);
                 } else if (isReady) {
-                    // MODE 3: Keep indicator, just update message - don't remove/recreate
-                    console.log('[TABLE_MAKER] MODE 3: Execution starting - updating progress indicator');
+                    // MODE 3: Don't complete the indicator, keep it running for table generation
+                    console.log('[TABLE_MAKER] MODE 3: Execution starting - keeping progress indicator active');
                     updateThinkingInCard(cardId, 'Starting table generation...');
 
                     // Add AI message with streaming
@@ -11423,7 +11477,11 @@ Please provide any additional context, or simply proceed to generate your initia
                     text: 'Submit',
                     variant: 'primary',
                     width: 'full',
-                    callback: () => continueTableConversationFromCard(cardId)
+                    callback: async (e) => {
+                        const button = e.target.closest('button');
+                        markButtonSelected(button, 'Thinking...');
+                        await continueTableConversationFromCard(cardId);
+                    }
                 }
             ]);
 
@@ -11623,13 +11681,11 @@ Please provide any additional context, or simply proceed to generate your initia
             addChatMessage(cardId, 'user', displayMessage);
             tableMakerState.messages.push({ role: 'user', content: messageToSend });
 
-            // Remove refinement div and buttons - user submitted
+            // Hide refinement input but keep buttons to show "Thinking..." state
             const refinementDiv = document.getElementById(`${cardId}-refinement`);
-            if (refinementDiv) refinementDiv.remove();
+            if (refinementDiv) refinementDiv.style.display = 'none';
 
-            const buttonsContainer = document.getElementById(`${cardId}-buttons`);
-            if (buttonsContainer) buttonsContainer.remove();
-
+            // Show thinking indicator in card (buttons will remain showing "Thinking...")
             showThinkingInCard(cardId, 'Processing your request...', true);
 
             // Send to backend
