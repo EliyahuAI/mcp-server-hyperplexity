@@ -20,6 +20,7 @@ requests>=2.25.0
 
 # Async HTTP (needed by ai_api_client import chain, even though not executed in lightweight mode)
 aiohttp>=3.8.0
+async-timeout>=4.0.0  # Required by aiohttp
 
 # Type hints
 typing-extensions>=4.0.0
