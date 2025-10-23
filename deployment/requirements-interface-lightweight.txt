@@ -2,9 +2,10 @@
 # Minimal dependencies for API routing, balance checks, file uploads ONLY
 # NO AI operations, NO heavy processing, NO report generation
 
-# Core AWS (use latest - no aioboto3 needed in lightweight)
+# Core AWS (aioboto3 needed for ai_api_client imports - table_maker → interview → ai_api_client)
 boto3>=1.40.0
 botocore>=1.40.0
+aioboto3>=15.4.0  # Latest (Oct 18, 2025) - compatible with boto3 1.40.x
 
 # File upload handling
 python-multipart>=0.0.5
