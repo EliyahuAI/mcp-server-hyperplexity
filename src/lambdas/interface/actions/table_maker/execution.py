@@ -743,7 +743,7 @@ async def execute_full_table_generation(
 
             logger.info(f"[EXECUTION] Step 4 complete: {len(approved_rows)} approved rows")
 
-            # Send progress update with approved_row_count
+            # Send progress update with approved_rows data (top 10 for display)
             send_execution_progress(
                 session_id=session_id,
                 conversation_id=conversation_id,
@@ -751,7 +751,9 @@ async def execute_full_table_generation(
                 total_steps=4,
                 status='Finalizing validation configuration...',
                 progress_percent=80,
-                approved_row_count=len(approved_rows)
+                approved_rows=approved_rows[:10],  # Send top 10 for frontend display
+                approved_row_count=len(approved_rows),
+                total_discovered=len(final_rows)  # Total before QC filtering
             )
 
         except Exception as e:
@@ -860,6 +862,17 @@ async def execute_full_table_generation(
             result['csv_filename'] = csv_filename
 
             logger.info(f"[EXECUTION] CSV generated with {len(approved_rows)} rows, {len(id_columns)} ID columns filled")
+
+            # Update session_info.json with table_path
+            try:
+                session_info = storage_manager.load_session_info(email, session_id)
+                session_info['table_path'] = csv_s3_key
+                session_info['table_name'] = table_name
+                session_info['last_updated'] = datetime.now().isoformat()
+                storage_manager.save_session_info(email, session_id, session_info)
+                logger.info(f"[EXECUTION] Updated session_info.json with table_path: {csv_s3_key}")
+            except Exception as e_session:
+                logger.warning(f"[EXECUTION] Failed to update session_info with table_path: {e_session}")
 
         except Exception as e:
             logger.error(f"[EXECUTION] Failed to generate CSV: {e}", exc_info=True)
