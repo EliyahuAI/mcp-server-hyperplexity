@@ -2,9 +2,9 @@
 # Minimal dependencies for API routing, balance checks, file uploads ONLY
 # NO AI operations, NO heavy processing, NO report generation
 
-# Core AWS
-boto3>=1.26.0
-botocore>=1.29.0
+# Core AWS (pin to avoid version conflicts with aioboto3 in other Lambdas)
+boto3==1.40.18
+botocore==1.40.18
 
 # File upload handling
 python-multipart>=0.0.5
