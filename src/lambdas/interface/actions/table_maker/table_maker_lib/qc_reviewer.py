@@ -143,7 +143,8 @@ class QCReviewer:
                 use_cache=True,  # Enable cache for Lambda
                 max_web_searches=0,  # No web search for QC
                 search_context_size='low',
-                debug_name="qc_review"
+                debug_name="qc_review",
+                soft_schema=True  # Use soft schema for more robust responses
             )
 
             # Check for API errors

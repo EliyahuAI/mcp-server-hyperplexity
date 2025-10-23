@@ -1609,10 +1609,10 @@ class AIAPIClient:
     async def call_structured_api(self, prompt: str, schema: Dict, model: Union[str, List[str]] = "claude-sonnet-4-5",
                                  tool_name: str = "structured_response", use_cache: bool = True,
                                  context: str = "", max_tokens: int = None, max_web_searches: int = 3,
-                                 search_context_size: str = "low", debug_name: str = None) -> Dict:
+                                 search_context_size: str = "low", debug_name: str = None, soft_schema: bool = False) -> Dict:
         """
         Call AI API with structured output using JSON response format.
-        
+
         Args:
             prompt: The prompt to send to the AI
             schema: JSON schema for the expected response structure
@@ -1623,7 +1623,9 @@ class AIAPIClient:
             max_web_searches: Maximum web searches for Anthropic models
             search_context_size: Search context size for Perplexity models ("low", "medium", or "high")
             debug_name: Optional name to include in debug filenames for easier identification
-            
+            soft_schema: If True, requests JSON in prompt but doesn't enforce via API schema (Perplexity only).
+                        This allows more flexible/comprehensive responses while maintaining structure.
+
         Returns:
             Dict containing the structured response and metadata
         """
@@ -1769,42 +1771,58 @@ class AIAPIClient:
                         'X-API-Key': self.anthropic_api_key,
                         'anthropic-version': '2023-06-01'
                     }
-                    
-                    # Build tools list - only include web search if max_web_searches > 0
-                    tools = []
-                    if max_web_searches > 0:
-                        tools.append({
-                            "type": "web_search_20250305",
-                            "name": "web_search",
-                            "max_uses": max_web_searches
-                        })
-                    
-                    tools.append({
-                        "name": tool_name,
-                        "description": f"Provide structured response using {tool_name}",
-                        "input_schema": schema
-                    })
-                    
+
                     # Enforce provider token limits to prevent API errors
                     enforced_max_tokens = self._enforce_provider_token_limit(current_model, max_tokens or 8000)
 
-                    data = {
-                        "model": current_model_normalized,
-                        "max_tokens": enforced_max_tokens,
-                        "temperature": 0.1,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "tools": tools,
-                        "tool_choice": {"type": "tool", "name": tool_name}  # Force tool use for structured output
-                    }
-                    
+                    # Store schema for soft schema cleaning
+                    anthropic_schema = schema
+
+                    if soft_schema:
+                        # Soft schema: no tools, just request JSON in the message
+                        logger.info(f"[SOFT_SCHEMA] Using soft schema for Anthropic - JSON requested in prompt only")
+                        data = {
+                            "model": current_model_normalized,
+                            "max_tokens": enforced_max_tokens,
+                            "temperature": 0.1,
+                            "messages": [
+                                {"role": "user", "content": f"{prompt}\n\nIMPORTANT: Return your response as valid JSON only, without any markdown code fences or additional text."}
+                            ]
+                        }
+                    else:
+                        # Hard schema: use tools to enforce structure
+                        # Build tools list - only include web search if max_web_searches > 0
+                        tools = []
+                        if max_web_searches > 0:
+                            tools.append({
+                                "type": "web_search_20250305",
+                                "name": "web_search",
+                                "max_uses": max_web_searches
+                            })
+
+                        tools.append({
+                            "name": tool_name,
+                            "description": f"Provide structured response using {tool_name}",
+                            "input_schema": schema
+                        })
+
+                        data = {
+                            "model": current_model_normalized,
+                            "max_tokens": enforced_max_tokens,
+                            "temperature": 0.1,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "tools": tools,
+                            "tool_choice": {"type": "tool", "name": tool_name}  # Force tool use for structured output
+                        }
+
                     result = await self._make_single_anthropic_call("https://api.anthropic.com/v1/messages",
                                                                    headers, data, current_model_normalized,
-                                                                   use_cache, cache_key, call_start_time, max_web_searches)
+                                                                   use_cache, cache_key, call_start_time, max_web_searches, soft_schema, anthropic_schema if soft_schema else None)
                     
                 elif api_provider == 'perplexity':
                     # Perplexity API call for structured output
                     result = await self._make_single_perplexity_structured_call(prompt, schema, current_model,
-                                                                               use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 8000)
+                                                                               use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 8000, soft_schema)
                 else:
                     logger.warning(f"[SKIP] Unknown provider for model {current_model}")
                     continue
@@ -1841,6 +1859,37 @@ class AIAPIClient:
                     if 'sonnet-3' in response_str or '3-5-sonnet' in response_str or '3.5-sonnet' in response_str or 'claude-3' in response_str:
                         logger.warning(f"[LEGACY_MODEL_REFERENCE] Response from {current_model} contains references to legacy Sonnet 3.x models. This may indicate model confusion.")
 
+                    # Post-processing: Validate all URLs in response against citations (only if citations exist)
+                    try:
+                        citations_list = result.get('citations', [])
+                        if citations_list and len(citations_list) > 0 and 'response' in result and 'choices' in result['response']:
+                            # Extract and parse the content
+                            content_str = result['response']['choices'][0]['message']['content']
+
+                            # Only validate if content is valid JSON
+                            if content_str and isinstance(content_str, str):
+                                try:
+                                    parsed_content = json.loads(content_str)
+
+                                    # Validate URLs recursively
+                                    validated_content = self._validate_urls_in_response(parsed_content, citations_list)
+
+                                    # Update the response with validated content
+                                    result['response']['choices'][0]['message']['content'] = json.dumps(validated_content)
+                                    logger.debug(f"[URL_VALIDATION] Completed URL validation against {len(citations_list)} citations")
+
+                                except json.JSONDecodeError as e:
+                                    # Content is not JSON - skip URL validation
+                                    logger.debug(f"[URL_VALIDATION] Skipped - content is not JSON: {content_str[:100]}")
+                        else:
+                            logger.debug(f"[URL_VALIDATION] Skipped - no citations (citations={len(citations_list)})")
+
+                    except Exception as e:
+                        logger.error(f"[URL_VALIDATION] Error during validation: {e}")
+                        import traceback
+                        logger.error(f"[URL_VALIDATION] Traceback: {traceback.format_exc()}")
+                        # Continue with original response if validation fails
+
                     logger.debug(f"[SUCCESS] Model {current_model} succeeded with unified response format")
                     return result
                     
@@ -1848,7 +1897,81 @@ class AIAPIClient:
                 error_msg = str(e)
                 logger.warning(f"[FAILED] Model {current_model} failed: {error_msg}")
                 last_error = e
-                
+
+                # If soft_schema failed, retry with hard schema before trying next model
+                if soft_schema and model_index == 0:
+                    logger.warning(f"[SOFT_SCHEMA_FALLBACK] Soft schema failed for {current_model}, retrying with hard schema")
+                    try:
+                        # Retry the same model with hard schema
+                        if api_provider == 'anthropic':
+                            headers = {
+                                'Content-Type': 'application/json',
+                                'X-API-Key': self.anthropic_api_key,
+                                'anthropic-version': '2023-06-01'
+                            }
+                            enforced_max_tokens = self._enforce_provider_token_limit(current_model, max_tokens or 8000)
+
+                            # Build tools for hard schema
+                            tools = []
+                            if max_web_searches > 0:
+                                tools.append({
+                                    "type": "web_search_20250305",
+                                    "name": "web_search",
+                                    "max_uses": max_web_searches
+                                })
+                            tools.append({
+                                "name": tool_name,
+                                "description": f"Provide structured response using {tool_name}",
+                                "input_schema": schema
+                            })
+
+                            data = {
+                                "model": current_model_normalized,
+                                "max_tokens": enforced_max_tokens,
+                                "temperature": 0.1,
+                                "messages": [{"role": "user", "content": prompt}],
+                                "tools": tools,
+                                "tool_choice": {"type": "tool", "name": tool_name}
+                            }
+
+                            result = await self._make_single_anthropic_call("https://api.anthropic.com/v1/messages",
+                                                                           headers, data, current_model_normalized,
+                                                                           use_cache, cache_key, call_start_time, max_web_searches, soft_schema=False, schema=None)
+
+                        elif api_provider == 'perplexity':
+                            result = await self._make_single_perplexity_structured_call(prompt, schema, current_model,
+                                                                                       use_cache, cache_key, call_start_time, search_context_size, debug_name, max_tokens or 8000, soft_schema=False)
+
+                        # If hard schema succeeded, return the result
+                        if result:
+                            result['model_used'] = current_model
+                            result['used_backup_model'] = model_index > 0
+                            result['soft_schema_fallback'] = True  # Mark that we fell back to hard schema
+
+                            # Normalize response format
+                            if api_provider == 'anthropic':
+                                claude_response = result['response']
+                                structured_data = self.extract_structured_response(claude_response, tool_name)
+                                validation_results = structured_data.get('validation_results', structured_data)
+                                result['response'] = {
+                                    'choices': [{
+                                        'message': {
+                                            'role': 'assistant',
+                                            'content': json.dumps(validation_results)
+                                        }
+                                    }]
+                                }
+                                result['citations'] = self.extract_citations_from_response(claude_response)
+                            else:
+                                result['citations'] = self.extract_citations_from_perplexity_response(result.get('response', {}))
+
+                            logger.info(f"[SOFT_SCHEMA_FALLBACK] Hard schema succeeded for {current_model}")
+                            return result
+
+                    except Exception as fallback_error:
+                        logger.warning(f"[SOFT_SCHEMA_FALLBACK] Hard schema also failed: {str(fallback_error)}")
+                        last_error = fallback_error
+
                 # If this is a 529 overload, try next model. For other errors, continue trying too.
                 if "overloaded" in error_msg and "529" in error_msg:
                     logger.debug(f"[OVERLOAD] Model {current_model} overloaded, trying next model")
@@ -2529,8 +2652,15 @@ class AIAPIClient:
     
     async def _make_single_anthropic_call(self, url: str, headers: Dict, data: Dict,
                                          normalized_model: str, use_cache: bool,
-                                         cache_key: str, start_time: datetime, max_web_searches: int = 0) -> Dict:
-        """Make a single Anthropic API call without retries."""
+                                         cache_key: str, start_time: datetime, max_web_searches: int = 0,
+                                         soft_schema: bool = False, schema: Dict = None) -> Dict:
+        """
+        Make a single Anthropic API call without retries.
+
+        Args:
+            soft_schema: If True, response is text-based JSON (no tools), needs cleaning
+            schema: JSON schema for soft schema validation/normalization
+        """
         debug_request = {
             'url': url,
             'headers': {k: v if k != 'X-API-Key' else 'REDACTED' for k, v in headers.items()},
@@ -2545,9 +2675,13 @@ class AIAPIClient:
                     
                     if response.status == 200:
                         response_json = json.loads(response_text)
-                        
+
+                        # If soft schema, clean the text response and convert to unified format
+                        if soft_schema:
+                            response_json = self._clean_anthropic_soft_schema_response(response_json, schema)
+
                         # Save debug data for successful call
-                        await self._save_debug_data('anthropic', normalized_model, debug_request, 
+                        await self._save_debug_data('anthropic', normalized_model, debug_request,
                                                   response_json, context="single_call_success")
                         
                         token_usage = self._extract_token_usage(response_json, normalized_model)
@@ -2585,28 +2719,611 @@ class AIAPIClient:
                                       None, error=e, context="single_call_exception")
             raise
     
+    def _clean_anthropic_soft_schema_response(self, response_json: Dict, schema: Dict = None) -> Dict:
+        """
+        Clean and validate a soft schema response from Anthropic.
+        Extracts text content, strips markdown fences, validates JSON,
+        normalizes types/keys, and converts to Perplexity-style format.
+
+        Args:
+            response_json: The raw response from Anthropic API
+            schema: Optional JSON schema for validation/normalization
+
+        Returns:
+            Cleaned response in Perplexity-style format
+        """
+        import re
+
+        try:
+            # Extract text content from Anthropic response
+            if 'content' in response_json and len(response_json['content']) > 0:
+                # Anthropic returns content as array of blocks
+                text_content = ""
+                for block in response_json['content']:
+                    if block.get('type') == 'text':
+                        text_content += block.get('text', '')
+
+                # Strip markdown code fences if present
+                cleaned_content = re.sub(r'^```json\s*|\s*```$', '', text_content.strip(), flags=re.MULTILINE)
+
+                # Try to extract JSON from prose if it's embedded
+                # Look for JSON object starting with { and ending with }
+                json_match = re.search(r'(\{.*\})', cleaned_content, re.DOTALL)
+                if json_match:
+                    cleaned_content = json_match.group(1)
+
+                # Validate it's valid JSON
+                try:
+                    parsed_json = json.loads(cleaned_content)
+                    logger.info(f"[SOFT_SCHEMA] Successfully cleaned and validated Anthropic response JSON")
+
+                    # Normalize and validate against schema if provided
+                    if schema:
+                        normalized_json, warnings = self._validate_and_normalize_soft_schema(parsed_json, schema, fuzzy_keys=True)
+
+                        if warnings:
+                            logger.warning(f"[SOFT_SCHEMA] Anthropic schema validation warnings: {warnings}")
+                            # Save to debug folder
+                            asyncio.create_task(self._save_debug_data(
+                                'anthropic', 'schema_validation_warnings',
+                                {'original': parsed_json, 'schema': schema},
+                                {'normalized': normalized_json, 'warnings': warnings},
+                                context="soft_schema_validation_warnings"
+                            ))
+
+                        parsed_json = normalized_json
+
+                    # Convert to Perplexity-style format for unified parsing
+                    # This allows the rest of the code to handle it consistently
+                    converted_response = {
+                        'choices': [{
+                            'message': {
+                                'role': 'assistant',
+                                'content': json.dumps(parsed_json)
+                            }
+                        }],
+                        # Preserve original Anthropic metadata
+                        'id': response_json.get('id'),
+                        'model': response_json.get('model'),
+                        'usage': response_json.get('usage'),
+                        'stop_reason': response_json.get('stop_reason')
+                    }
+
+                    return converted_response
+
+                except json.JSONDecodeError as e:
+                    logger.warning(f"[SOFT_SCHEMA] Anthropic response content is not valid JSON after cleaning: {e}")
+                    logger.warning(f"[SOFT_SCHEMA] First 500 chars: {cleaned_content[:500]}")
+
+                    # Save failure to debug folder
+                    asyncio.create_task(self._save_debug_data(
+                        'anthropic', 'json_decode_error',
+                        {'raw_content': text_content, 'cleaned_content': cleaned_content},
+                        None,
+                        error=e,
+                        context="soft_schema_json_decode_failure"
+                    ))
+
+                    # Keep original response if cleaning fails
+                    return response_json
+
+            return response_json
+
+        except Exception as e:
+            logger.error(f"[SOFT_SCHEMA] Error cleaning Anthropic response: {e}")
+
+            # Save error to debug folder
+            asyncio.create_task(self._save_debug_data(
+                'anthropic', 'cleaning_error',
+                {'response': response_json},
+                None,
+                error=e,
+                context="soft_schema_cleaning_error"
+            ))
+
+            # Return original response if cleaning fails
+            return response_json
+
+    def _fuzzy_match_keys(self, data: Dict, schema_properties: Dict, threshold: float = 0.8) -> Dict:
+        """
+        Fuzzy match keys in data to schema property names.
+        Handles case variations, underscores vs spaces, etc.
+
+        Args:
+            data: The data dictionary to normalize
+            schema_properties: Expected schema properties
+            threshold: Similarity threshold (0.0-1.0)
+
+        Returns:
+            Normalized dictionary with matched keys
+        """
+        from difflib import SequenceMatcher
+
+        def similarity(a: str, b: str) -> float:
+            """Calculate string similarity (0.0-1.0)."""
+            # Normalize for comparison
+            a_norm = a.lower().replace('_', ' ').replace('-', ' ').strip()
+            b_norm = b.lower().replace('_', ' ').replace('-', ' ').strip()
+            return SequenceMatcher(None, a_norm, b_norm).ratio()
+
+        if not isinstance(data, dict):
+            return data
+
+        normalized = {}
+        matched_keys = set()
+
+        # First pass: exact matches (case-insensitive)
+        for key, value in data.items():
+            exact_match = None
+            for schema_key in schema_properties.keys():
+                if key.lower() == schema_key.lower():
+                    exact_match = schema_key
+                    break
+
+            if exact_match:
+                normalized[exact_match] = value
+                matched_keys.add(key)
+
+        # Second pass: fuzzy matches for unmatched keys
+        for key, value in data.items():
+            if key in matched_keys:
+                continue
+
+            best_match = None
+            best_score = 0.0
+
+            for schema_key in schema_properties.keys():
+                if schema_key in normalized:  # Already matched
+                    continue
+
+                score = similarity(key, schema_key)
+                if score > best_score and score >= threshold:
+                    best_score = score
+                    best_match = schema_key
+
+            if best_match:
+                logger.info(f"[FUZZY_MATCH] Matched '{key}' → '{best_match}' (similarity: {best_score:.2f})")
+                normalized[best_match] = value
+            else:
+                # Keep original key if no match found
+                normalized[key] = value
+
+        return normalized
+
+    def _is_url(self, value: str) -> bool:
+        """Check if a string looks like a URL."""
+        if not isinstance(value, str):
+            return False
+        return value.startswith('http://') or value.startswith('https://') or value.startswith('www.')
+
+    def _normalize_url_for_comparison(self, url: str) -> str:
+        """
+        Normalize URL for fuzzy matching.
+        Removes protocol, www, trailing slashes, query params for comparison.
+        """
+        import re
+        normalized = url.lower().strip()
+
+        # Remove protocol
+        normalized = re.sub(r'^https?://', '', normalized)
+
+        # Remove www
+        normalized = re.sub(r'^www\.', '', normalized)
+
+        # Remove trailing slashes
+        normalized = normalized.rstrip('/')
+
+        # Remove query params and fragments for comparison
+        normalized = re.sub(r'[?#].*$', '', normalized)
+
+        return normalized
+
+    def _validate_urls_in_response(self, data: any, citations: list) -> any:
+        """
+        Post-processing function to validate all URLs in response against citations.
+        Recursively walks through data structure and validates/replaces URLs.
+
+        Args:
+            data: The response data (dict, list, or primitive)
+            citations: List of citation dicts or URLs
+
+        Returns:
+            Data with validated URLs (canonical or with warnings)
+        """
+        if isinstance(data, dict):
+            # Recursively validate dict values
+            validated = {}
+            for key, value in data.items():
+                if isinstance(value, str) and self._is_url(value):
+                    # Validate URL
+                    found, canonical_or_warning = self._fuzzy_match_url_to_citations(value, citations)
+                    validated[key] = canonical_or_warning
+                elif isinstance(value, (dict, list)):
+                    # Recursively validate nested structures
+                    validated[key] = self._validate_urls_in_response(value, citations)
+                else:
+                    validated[key] = value
+            return validated
+
+        elif isinstance(data, list):
+            # Recursively validate list items
+            validated = []
+            for item in data:
+                if isinstance(item, str) and self._is_url(item):
+                    # Validate URL
+                    found, canonical_or_warning = self._fuzzy_match_url_to_citations(item, citations)
+                    validated.append(canonical_or_warning)
+                elif isinstance(item, (dict, list)):
+                    # Recursively validate nested structures
+                    validated.append(self._validate_urls_in_response(item, citations))
+                else:
+                    validated.append(item)
+            return validated
+
+        else:
+            # Primitive value - check if it's a URL string
+            if isinstance(data, str) and self._is_url(data):
+                found, canonical_or_warning = self._fuzzy_match_url_to_citations(data, citations)
+                return canonical_or_warning
+            return data
+
+    def _fuzzy_match_url_to_citations(self, url: str, citations: list) -> tuple[bool, str]:
+        """
+        Fuzzy match a URL to citations list.
+
+        Args:
+            url: The URL to check
+            citations: List of citation dicts or URLs
+
+        Returns:
+            Tuple of (found, canonical_url_or_warning)
+            - If found: (True, canonical_citation_url)
+            - If not found: (False, original_url + warning)
+        """
+        if not self._is_url(url):
+            return (True, url)  # Not a URL, no validation needed
+
+        url_normalized = self._normalize_url_for_comparison(url)
+
+        # Extract URLs from citations (handle both dict and string formats)
+        citation_urls = []
+        for citation in citations:
+            if isinstance(citation, dict):
+                citation_urls.append(citation.get('url', ''))
+            elif isinstance(citation, str):
+                citation_urls.append(citation)
+
+        # Try exact normalized match first
+        for citation_url in citation_urls:
+            if not citation_url:
+                continue
+
+            citation_normalized = self._normalize_url_for_comparison(citation_url)
+
+            # Exact match on normalized URLs
+            if url_normalized == citation_normalized:
+                # No logging for exact matches - expected behavior
+                return (True, citation_url)
+
+        # Try fuzzy match - check if URLs share same domain and similar path
+        from difflib import SequenceMatcher
+
+        best_match = None
+        best_score = 0.0
+
+        for citation_url in citation_urls:
+            if not citation_url:
+                continue
+
+            citation_normalized = self._normalize_url_for_comparison(citation_url)
+
+            # Check if one is substring of the other
+            if url_normalized in citation_normalized or citation_normalized in url_normalized:
+                score = 0.95  # High score for substring matches
+            else:
+                # Check if they share the same domain
+                url_domain = url_normalized.split('/')[0]
+                citation_domain = citation_normalized.split('/')[0]
+
+                if url_domain == citation_domain:
+                    # Same domain - check path similarity
+                    url_path = '/'.join(url_normalized.split('/')[1:])
+                    citation_path = '/'.join(citation_normalized.split('/')[1:])
+
+                    # High base score for same domain
+                    domain_score = 0.5
+
+                    # Add path similarity
+                    if url_path and citation_path:
+                        path_similarity = SequenceMatcher(None, url_path, citation_path).ratio()
+                        score = domain_score + (path_similarity * 0.5)
+                    else:
+                        score = domain_score
+                else:
+                    # Different domains - full URL similarity
+                    score = SequenceMatcher(None, url_normalized, citation_normalized).ratio()
+
+            if score > best_score:
+                best_score = score
+                best_match = citation_url
+
+        # Accept fuzzy matches above 0.6 threshold (lowered from 0.7 to catch same-domain variations)
+        if best_score >= 0.6:
+            logger.info(f"[URL_VALIDATION] Fuzzy match: {url} → {best_match} (similarity: {best_score:.2f})")
+            return (True, best_match)
+
+        # No match found - add warning
+        logger.warning(f"[URL_VALIDATION] URL not in citations: {url}")
+        return (False, f"{url} (Warning: Not in citations!)")
+
+    def _coerce_value_to_type(self, value: any, expected_type: str) -> any:
+        """
+        Coerce a value to the expected type.
+
+        Args:
+            value: The value to coerce
+            expected_type: The expected JSON schema type
+
+        Returns:
+            Coerced value
+        """
+        if value is None:
+            return value
+
+        try:
+            if expected_type == 'number' or expected_type == 'float':
+                if isinstance(value, str):
+                    return float(value)
+                return float(value)
+            elif expected_type == 'integer':
+                if isinstance(value, str):
+                    return int(float(value))  # Handle "42.0" → 42
+                return int(value)
+            elif expected_type == 'boolean':
+                if isinstance(value, str):
+                    return value.lower() in ('true', 'yes', '1', 't', 'y')
+                return bool(value)
+            elif expected_type == 'string':
+                return str(value)
+            elif expected_type == 'array':
+                if not isinstance(value, list):
+                    return [value]
+                return value
+            elif expected_type == 'object':
+                if not isinstance(value, dict):
+                    logger.warning(f"[TYPE_COERCE] Cannot coerce {type(value)} to object")
+                return value
+            else:
+                return value
+        except Exception as e:
+            logger.warning(f"[TYPE_COERCE] Failed to coerce {value} to {expected_type}: {e}")
+            return value
+
+    def _validate_and_normalize_soft_schema(self, data: Dict, schema: Dict, fuzzy_keys: bool = True, citations: list = None) -> tuple[Dict, list]:
+        """
+        Validate and normalize data against schema with flexible matching.
+
+        Args:
+            data: The data to validate
+            schema: JSON schema
+            fuzzy_keys: Whether to use fuzzy key matching
+            citations: List of citations to validate URLs against
+
+        Returns:
+            Tuple of (normalized_data, warnings_list)
+        """
+        warnings = []
+
+        if not isinstance(data, dict) or not isinstance(schema, dict):
+            return data, warnings
+
+        schema_properties = schema.get('properties', {})
+        required_fields = schema.get('required', [])
+        citations = citations or []
+
+        # Step 1: Fuzzy key matching (if enabled)
+        if fuzzy_keys and schema_properties:
+            data = self._fuzzy_match_keys(data, schema_properties)
+
+        # Step 2: Type coercion
+        normalized = {}
+        for key, value in data.items():
+            if key in schema_properties:
+                prop_schema = schema_properties[key]
+                expected_type = prop_schema.get('type')
+
+                if expected_type and not isinstance(value, dict) and not isinstance(value, list):
+                    # Simple type coercion
+                    coerced = self._coerce_value_to_type(value, expected_type)
+                    if coerced != value:
+                        logger.info(f"[TYPE_COERCE] Coerced '{key}': {value} ({type(value).__name__}) → {coerced} ({expected_type})")
+                    normalized[key] = coerced
+                elif expected_type == 'object' and isinstance(value, dict):
+                    # Recursive validation for nested objects
+                    nested_normalized, nested_warnings = self._validate_and_normalize_soft_schema(value, prop_schema, fuzzy_keys)
+                    normalized[key] = nested_normalized
+                    warnings.extend([f"{key}.{w}" for w in nested_warnings])
+                elif expected_type == 'array' and isinstance(value, list):
+                    # Handle arrays of objects
+                    item_schema = prop_schema.get('items', {})
+                    if item_schema.get('type') == 'object':
+                        normalized_items = []
+                        for i, item in enumerate(value):
+                            if isinstance(item, dict):
+                                norm_item, item_warnings = self._validate_and_normalize_soft_schema(item, item_schema, fuzzy_keys)
+                                normalized_items.append(norm_item)
+                                warnings.extend([f"{key}[{i}].{w}" for w in item_warnings])
+                            else:
+                                normalized_items.append(item)
+                        normalized[key] = normalized_items
+                    else:
+                        normalized[key] = value
+                else:
+                    normalized[key] = value
+            else:
+                # Extra field not in schema (allowed with soft schema)
+                normalized[key] = value
+
+        # Step 3: Auto-calculate missing fields if possible
+        # Special case: Calculate match_score from score_breakdown if missing
+        if 'match_score' in required_fields and 'match_score' not in normalized:
+            if 'score_breakdown' in normalized:
+                try:
+                    breakdown = normalized['score_breakdown']
+                    relevancy = float(breakdown.get('relevancy', 0))
+                    reliability = float(breakdown.get('reliability', 0))
+                    recency = float(breakdown.get('recency', 0))
+
+                    # Formula from schema: (Relevancy × 0.4) + (Reliability × 0.3) + (Recency × 0.3)
+                    match_score = (relevancy * 0.4) + (reliability * 0.3) + (recency * 0.3)
+                    normalized['match_score'] = round(match_score, 3)
+
+                    logger.info(f"[AUTO_CALCULATE] Calculated match_score={match_score:.3f} from score_breakdown")
+                except Exception as e:
+                    logger.warning(f"[AUTO_CALCULATE] Failed to calculate match_score: {e}")
+
+        # Special case: Calculate qc_summary from reviewed_rows if missing
+        if 'qc_summary' in required_fields and 'qc_summary' not in normalized:
+            if 'reviewed_rows' in normalized:
+                try:
+                    reviewed_rows = normalized['reviewed_rows']
+                    total_reviewed = len(reviewed_rows)
+                    kept = sum(1 for row in reviewed_rows if row.get('keep', False))
+                    rejected = sum(1 for row in reviewed_rows if not row.get('keep', True))
+                    promoted = sum(1 for row in reviewed_rows if row.get('priority_adjustment') == 'promote')
+                    demoted = sum(1 for row in reviewed_rows if row.get('priority_adjustment') == 'demote')
+
+                    normalized['qc_summary'] = {
+                        'total_reviewed': total_reviewed,
+                        'kept': kept,
+                        'rejected': rejected,
+                        'promoted': promoted,
+                        'demoted': demoted,
+                        'reasoning': f"Reviewed {total_reviewed} rows: {kept} kept, {rejected} rejected"
+                    }
+
+                    logger.info(f"[AUTO_CALCULATE] Calculated qc_summary from {total_reviewed} reviewed_rows")
+                except Exception as e:
+                    logger.warning(f"[AUTO_CALCULATE] Failed to calculate qc_summary: {e}")
+
+        # Step 4: Check for missing required fields
+        for field in required_fields:
+            if field not in normalized:
+                warnings.append(f"Missing required field: {field}")
+                logger.warning(f"[SOFT_SCHEMA] Missing required field: {field}")
+
+        return normalized, warnings
+
+    def _clean_soft_schema_response(self, response_json: Dict, schema: Dict) -> Dict:
+        """
+        Clean and validate a soft schema response from Perplexity.
+        Strips markdown code fences, validates JSON structure, normalizes types,
+        and optionally fuzzy-matches keys.
+
+        Args:
+            response_json: The raw response from Perplexity API
+            schema: The expected JSON schema (for validation/normalization)
+
+        Returns:
+            Cleaned response with validated and normalized JSON content
+        """
+        import re
+
+        try:
+            # Extract content from response
+            if 'choices' in response_json and len(response_json['choices']) > 0:
+                content = response_json['choices'][0]['message']['content']
+
+                # Strip markdown code fences if present
+                cleaned_content = re.sub(r'^```json\s*|\s*```$', '', content.strip(), flags=re.MULTILINE)
+
+                # Try to extract JSON from prose if it's embedded
+                # Look for JSON object starting with { and ending with }
+                json_match = re.search(r'(\{.*\})', cleaned_content, re.DOTALL)
+                if json_match:
+                    cleaned_content = json_match.group(1)
+
+                # Validate it's valid JSON
+                try:
+                    parsed_json = json.loads(cleaned_content)
+                    logger.info(f"[SOFT_SCHEMA] Successfully cleaned and validated response JSON")
+
+                    # Normalize and validate against schema
+                    normalized_json, warnings = self._validate_and_normalize_soft_schema(parsed_json, schema, fuzzy_keys=True)
+
+                    if warnings:
+                        logger.warning(f"[SOFT_SCHEMA] Schema validation warnings: {warnings}")
+                        # Save to debug folder
+                        asyncio.create_task(self._save_debug_data(
+                            'perplexity', 'schema_validation_warnings',
+                            {'original': parsed_json, 'schema': schema},
+                            {'normalized': normalized_json, 'warnings': warnings},
+                            context="soft_schema_validation_warnings"
+                        ))
+
+                    # Replace content with normalized version
+                    response_json['choices'][0]['message']['content'] = json.dumps(normalized_json)
+
+                except json.JSONDecodeError as e:
+                    logger.warning(f"[SOFT_SCHEMA] Response content is not valid JSON after cleaning: {e}")
+                    logger.warning(f"[SOFT_SCHEMA] First 500 chars: {cleaned_content[:500]}")
+
+                    # Save failure to debug folder
+                    asyncio.create_task(self._save_debug_data(
+                        'perplexity', 'json_decode_error',
+                        {'raw_content': content, 'cleaned_content': cleaned_content},
+                        None,
+                        error=e,
+                        context="soft_schema_json_decode_failure"
+                    ))
+                    # Keep original content if cleaning fails
+
+            return response_json
+
+        except Exception as e:
+            logger.error(f"[SOFT_SCHEMA] Error cleaning response: {e}")
+
+            # Save error to debug folder
+            asyncio.create_task(self._save_debug_data(
+                'perplexity', 'cleaning_error',
+                {'response': response_json},
+                None,
+                error=e,
+                context="soft_schema_cleaning_error"
+            ))
+
+            # Return original response if cleaning fails
+            return response_json
+
     async def _make_single_perplexity_structured_call(self, prompt: str, schema: Dict, model: str,
                                                      use_cache: bool, cache_key: str, start_time: datetime,
-                                                     search_context_size: str = "low", debug_name: str = None, max_tokens: int = 8000) -> Dict:
-        """Make a single Perplexity API call for structured output."""
+                                                     search_context_size: str = "low", debug_name: str = None,
+                                                     max_tokens: int = 8000, soft_schema: bool = False) -> Dict:
+        """
+        Make a single Perplexity API call for structured output.
+
+        Args:
+            soft_schema: If True, requests JSON via prompt only (no API enforcement).
+                        This allows more flexible responses but requires post-validation.
+        """
         # Perplexity supports structured output via response_format
         headers = {
             "Authorization": f"Bearer {self.perplexity_api_key}",
             "Content-Type": "application/json"
         }
-        
+
         # Extract the actual validation schema from the tool schema format
         # The schema comes in as {"type": "object", "properties": {"validation_results": {...}}, "required": [...]}
         # We need to extract the validation_results schema and use the proper Perplexity format
         actual_schema = schema
-        if (isinstance(schema, dict) and 
-            schema.get('type') == 'object' and 
-            'properties' in schema and 
+        if (isinstance(schema, dict) and
+            schema.get('type') == 'object' and
+            'properties' in schema and
             'validation_results' in schema['properties']):
             # Extract the actual validation results schema
             actual_schema = schema['properties']['validation_results']
             logger.debug(f"Extracted validation_results schema from tool format for Perplexity API")
-        
+
         # Enforce provider token limits to prevent API errors
         enforced_max_tokens = self._enforce_provider_token_limit(model, max_tokens)
 
@@ -2618,16 +3335,22 @@ class AIAPIClient:
             ],
             "temperature": 0.1,
             "max_tokens": enforced_max_tokens,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "schema": actual_schema
-                }
-            },
             "web_search_options": {
                 "search_context_size": search_context_size
             }
         }
+
+        # Only add response_format if NOT using soft schema
+        if not soft_schema:
+            data["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "schema": actual_schema
+                }
+            }
+            logger.debug(f"Using hard schema enforcement via API response_format")
+        else:
+            logger.info(f"[SOFT_SCHEMA] Using soft schema - JSON requested in prompt only, no API enforcement")
         
         debug_request = {
             'url': "https://api.perplexity.ai/chat/completions",
@@ -2648,11 +3371,15 @@ class AIAPIClient:
                     
                     if response.status == 200:
                         response_json = await response.json()
-                        
+
+                        # If using soft schema, clean and validate the response
+                        if soft_schema:
+                            response_json = self._clean_soft_schema_response(response_json, actual_schema)
+
                         # Save debug data for successful call
-                        await self._save_debug_data('perplexity', model, debug_request, 
+                        await self._save_debug_data('perplexity', model, debug_request,
                                                   response_json, context="structured_call_success", debug_name=debug_name)
-                        
+
                         token_usage = self._extract_token_usage(response_json, model, "low")
                         
                         # Generate enhanced metrics for this call

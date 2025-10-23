@@ -61,7 +61,8 @@ class RowDiscoveryStream:
         target_rows: int,
         escalation_strategy: List[Dict[str, Any]],
         global_counter: Optional[Dict[str, Any]] = None,
-        global_counter_lock: Optional['asyncio.Lock'] = None
+        global_counter_lock: Optional['asyncio.Lock'] = None,
+        previous_search_improvements: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Discover rows using progressive model escalation.
@@ -115,10 +116,15 @@ class RowDiscoveryStream:
 
             all_rounds = []
             accumulated_candidates = []
+            all_search_improvements = []
+
+            # Combine previous improvements from other subdomains with current subdomain's improvements
+            combined_improvements = list(previous_search_improvements) if previous_search_improvements else []
 
             for round_idx, strategy in enumerate(escalation_strategy, 1):
                 model = strategy['model']
-                context = strategy['search_context_size']
+                context = strategy.get('search_context_size', 'high')  # Default to 'high' if not specified
+                max_web_searches = strategy.get('max_web_searches', 3)  # For Claude models
                 min_percentage = strategy.get('min_candidates_percentage')
 
                 # === GLOBAL COUNTER CHECK (BEFORE executing this level) ===
@@ -147,18 +153,26 @@ class RowDiscoveryStream:
                         )
                         break
 
-                logger.info(
-                    f"Round {round_idx}/{len(escalation_strategy)}: {model} ({context} context)"
-                )
+                # Log round info with appropriate details
+                if 'claude' in model.lower():
+                    logger.info(
+                        f"Round {round_idx}/{len(escalation_strategy)}: {model} ({max_web_searches} web searches)"
+                    )
+                else:
+                    logger.info(
+                        f"Round {round_idx}/{len(escalation_strategy)}: {model} ({context} context)"
+                    )
 
-                # Execute this round
+                # Execute this round with combined improvements (from other subdomains + previous rounds)
                 round_candidates = await self._discover_and_score(
                     subdomain,
                     columns,
                     search_strategy,
                     target_rows,
                     model,
-                    context
+                    context,
+                    combined_improvements,  # Pass improvements from other subdomains AND previous rounds
+                    max_web_searches
                 )
 
                 # Tag each candidate with model/context info
@@ -168,6 +182,17 @@ class RowDiscoveryStream:
                     candidate['context_used'] = context
                     candidate['round'] = round_idx
 
+                # Collect search improvements from this round
+                search_improvements = round_candidates.get('search_improvements', [])
+                if search_improvements:
+                    all_search_improvements.extend(search_improvements)
+                    # Add to combined list so next round can use them
+                    combined_improvements.extend(search_improvements)
+                    logger.info(
+                        f"Round {round_idx}: Collected {len(search_improvements)} search improvement(s). "
+                        f"Total improvements available: {len(combined_improvements)}"
+                    )
+
                 # PHASE 1: Record round results with enhanced_data and prompt
                 round_data = {
                     'round': round_idx,
@@ -175,6 +200,7 @@ class RowDiscoveryStream:
                     'context': context,
                     'candidates': candidates,
                     'count': len(candidates),
+                    'search_improvements': search_improvements,
                     'enhanced_data': round_candidates.get('enhanced_data', {}),
                     'prompt_used': round_candidates.get('prompt_used', ''),
                     'call_description': f"Finding Rows - {subdomain_name} - Round {round_idx} ({model}-{context})"
@@ -232,6 +258,7 @@ class RowDiscoveryStream:
                 'total_candidates': len(accumulated_candidates),
                 'rounds_executed': rounds_executed,
                 'rounds_skipped': rounds_skipped,
+                'search_improvements': all_search_improvements,
                 'processing_time': processing_time
             }
 
@@ -269,7 +296,8 @@ class RowDiscoveryStream:
         scoring_model: str = 'sonar-pro',
         escalation_strategy: Optional[List[Dict[str, Any]]] = None,
         global_counter: Optional[Dict[str, Any]] = None,
-        global_counter_lock: Optional['asyncio.Lock'] = None
+        global_counter_lock: Optional['asyncio.Lock'] = None,
+        previous_search_improvements: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Discover candidate rows for a single subdomain using integrated scoring.
@@ -324,7 +352,7 @@ class RowDiscoveryStream:
         if escalation_strategy is not None:
             result = await self.discover_rows_progressive(
                 subdomain, columns, search_strategy, target_rows, escalation_strategy,
-                global_counter, global_counter_lock
+                global_counter, global_counter_lock, previous_search_improvements
             )
             # Return progressive result with all_rounds for detailed tracking
             return {
@@ -333,6 +361,7 @@ class RowDiscoveryStream:
                 'processing_time': result['processing_time'],
                 'rounds_executed': result.get('rounds_executed', 0),
                 'rounds_skipped': result.get('rounds_skipped', 0),
+                'search_improvements': result.get('search_improvements', []),
                 'all_rounds': result.get('all_rounds', []),  # Include all rounds with prompts/enhanced_data
                 'error': result.get('error')
             }
@@ -468,7 +497,9 @@ class RowDiscoveryStream:
         search_strategy: Dict[str, Any],
         target_rows: int,
         scoring_model: str,
-        search_context_size: str = 'low'
+        search_context_size: str = 'low',
+        previous_search_improvements: Optional[List[str]] = None,
+        max_web_searches: int = 3
     ) -> Dict[str, Any]:
         """
         Execute web search with integrated scoring in ONE call.
@@ -499,19 +530,29 @@ class RowDiscoveryStream:
             subdomain,
             columns,
             search_strategy,
-            target_rows
+            target_rows,
+            previous_search_improvements
         )
 
         # Load schema for structured output
         schema = self.schema_validator.load_schema('row_discovery_response')
 
-        logger.info(
-            f"Calling {scoring_model} for integrated discovery+scoring: "
-            f"'{subdomain['name']}' (target: {target_rows} rows, context: {search_context_size})"
-        )
+        # Determine appropriate parameters based on model type
+        is_claude = 'claude' in scoring_model.lower()
+
+        if is_claude:
+            logger.info(
+                f"Calling {scoring_model} for integrated discovery+scoring: "
+                f"'{subdomain['name']}' (target: {target_rows} rows, {max_web_searches} web searches)"
+            )
+        else:
+            logger.info(
+                f"Calling {scoring_model} for integrated discovery+scoring: "
+                f"'{subdomain['name']}' (target: {target_rows} rows, context: {search_context_size})"
+            )
 
         try:
-            # Single call to sonar-pro with structured output
+            # Single call with structured output (Perplexity or Claude with web search)
             result = await self.ai_client.call_structured_api(
                 prompt=prompt,
                 schema=schema,
@@ -519,8 +560,9 @@ class RowDiscoveryStream:
                 tool_name='row_discovery_integrated',
                 use_cache=False,  # Don't cache - web results change
                 max_tokens=16000,  # Increased for finding multiple entities with details
-                max_web_searches=len(subdomain.get('search_queries', [])),  # Use all queries
-                search_context_size=search_context_size  # Progressive: low → high
+                max_web_searches=max_web_searches,  # For Claude models (Perplexity uses subdomain queries)
+                search_context_size=search_context_size,  # For Perplexity models
+                soft_schema=True  # Use soft schema for Perplexity - more flexible results
             )
 
             # call_structured_api returns dict with 'response', 'token_usage', etc.
@@ -587,7 +629,8 @@ class RowDiscoveryStream:
         subdomain: Dict[str, Any],
         columns: List[Dict[str, Any]],
         search_strategy: Dict[str, Any],
-        target_rows: int
+        target_rows: int,
+        previous_search_improvements: Optional[List[str]] = None
     ) -> str:
         """
         Build prompt with integrated scoring rubric using template.
@@ -611,6 +654,15 @@ class RowDiscoveryStream:
             desc = col.get('description', 'No description')
             id_columns_text.append(f"- **{name}**: {desc}")
 
+        # Format previous search improvements if provided
+        improvements_text = ""
+        if previous_search_improvements and len(previous_search_improvements) > 0:
+            improvements_text = "\n\n**Previous Search Improvements:**\n"
+            improvements_text += "Based on earlier searches (from other subdomains and previous rounds), here are suggestions to improve your results:\n"
+            for improvement in previous_search_improvements:
+                improvements_text += f"- {improvement}\n"
+            improvements_text += "\nConsider these insights when formulating your searches."
+
         # Try to load template (if exists), otherwise use inline
         try:
             variables = {
@@ -622,7 +674,8 @@ class RowDiscoveryStream:
                 'ID_COLUMNS': '\n'.join(id_columns_text),
                 'USER_CONTEXT': search_strategy.get('user_context', 'General research table'),
                 'TABLE_PURPOSE': search_strategy.get('table_purpose', search_strategy.get('description', '')),
-                'TABLEWIDE_RESEARCH': search_strategy.get('tablewide_research', '')
+                'TABLEWIDE_RESEARCH': search_strategy.get('tablewide_research', ''),
+                'PREVIOUS_SEARCH_IMPROVEMENTS': improvements_text
             }
 
             # Try template first

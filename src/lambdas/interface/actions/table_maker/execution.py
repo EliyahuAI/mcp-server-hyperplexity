@@ -95,63 +95,158 @@ def send_execution_progress(
 def _add_api_call_to_runs(
     session_id: str,
     run_key: Optional[str],
-    api_result: Dict[str, Any],
-    call_description: str
+    api_response: Dict[str, Any],
+    model: str,
+    processing_time: float,
+    call_type: str,
+    status: str = 'IN_PROGRESS',
+    verbose_status: str = None,
+    percent_complete: int = None
 ) -> None:
     """
-    Add API call metrics to runs database.
+    Add a single API call's metrics to the runs database, aggregating with existing calls.
+
+    This uses the SAME pattern as conversation.py to ensure consistent metrics tracking.
+
+    Flow:
+    1. READ existing run record
+    2. Extract existing call_metrics_list and models list
+    3. Add new call metrics (tagged with call_type)
+    4. Build model entry (extracts max_web_searches from enhanced_data)
+    5. Re-aggregate ALL calls
+    6. WRITE back to database
 
     Args:
         session_id: Session identifier
         run_key: Run tracking key
-        api_result: Result dict from handler with enhanced_data
-        call_description: Description of the call
+        api_response: API response dict from handler with structure:
+            {'enhanced_data': {...}, 'model_used': str, 'processing_time': float, ...}
+        model: Model name used
+        processing_time: Processing time in seconds
+        call_type: Type of call (e.g., 'column_definition', 'row_discovery', 'qc_review')
+        status: Run status (default: IN_PROGRESS)
+        verbose_status: Human-readable status
+        percent_complete: Progress percentage (optional)
     """
     if not run_key:
-        logger.warning("[EXECUTION] No run_key, skipping metrics update")
+        logger.warning("[EXECUTION] No run_key provided, skipping metrics update")
         return
 
     try:
-        from dynamodb_schemas import get_run_status, create_or_update_run_with_aggregated_metrics
+        from dynamodb_schemas import get_run_status
 
-        # Extract enhanced_data from result
-        enhanced_data = api_result.get('enhanced_data', {})
-        model_used = api_result.get('model_used', 'unknown')
-        cost = api_result.get('cost', 0.0)
-
-        # Read existing run
+        # Step 1: READ existing run record
         existing_run = get_run_status(session_id, run_key)
-        if not existing_run:
-            logger.warning(f"[EXECUTION] Run not found: {session_id}/{run_key}")
-            return
 
-        # Extract existing metrics
-        existing_calls = existing_run.get('call_metrics_list', [])
+        # Step 2: Extract existing call_metrics_list and models list (if any)
+        existing_call_metrics = []
+        existing_models_list = []
+        logger.info(f"[EXECUTION] Read existing run: exists={existing_run is not None}")
+        if existing_run:
+            if 'call_metrics_list' in existing_run:
+                existing_call_metrics = existing_run.get('call_metrics_list', [])
+                logger.info(f"[EXECUTION] Found {len(existing_call_metrics)} existing API calls in runs database")
+            if 'models' in existing_run and isinstance(existing_run['models'], list):
+                existing_models_list = existing_run['models']
+        else:
+            logger.warning(f"[EXECUTION] No existing run found for session_id={session_id}, run_key={run_key}")
 
-        # Build new call entry
-        new_call = {
-            'call_description': call_description,
-            'model': model_used,
-            'enhanced_data': enhanced_data,
-            'timestamp': datetime.now().isoformat(),
-            'cost': cost
+        # Step 3: Add NEW call metrics with call_type tag
+        # Use enhanced_data directly from API response (already computed by handlers)
+        if 'enhanced_data' in api_response and api_response['enhanced_data']:
+            new_call_metrics = api_response['enhanced_data']
+            logger.debug(f"[EXECUTION] Using pre-computed enhanced_data from API response")
+        else:
+            # Fallback: regenerate enhanced metrics if not present
+            logger.warning(f"[EXECUTION] enhanced_data not found in api_response, regenerating...")
+            new_call_metrics = AIAPIClient().get_enhanced_call_metrics(
+                response=api_response.get('response', api_response),
+                model=model,
+                processing_time=processing_time,
+                pre_extracted_token_usage=api_response.get('token_usage'),
+                is_cached=api_response.get('is_cached', False)
+            )
+
+        # Tag with call type for tracking
+        new_call_metrics['call_type'] = call_type
+        existing_call_metrics.append(new_call_metrics)
+
+        # Extract max_web_searches from enhanced data
+        max_web_searches_value = new_call_metrics.get('call_info', {}).get('max_web_searches', 0)
+
+        # Build model entry with web search info
+        model_entry = {
+            'model': model,
+            'call_type': call_type,
+            'max_web_searches': max_web_searches_value,
+            'is_cached': api_response.get('is_cached', False)
+        }
+        existing_models_list.append(model_entry)
+
+        logger.info(f"[EXECUTION] Added new {call_type} call metrics for {model}, total calls: {len(existing_call_metrics)}")
+
+        # Step 4: Re-aggregate ALL calls
+        aggregated = AIAPIClient.aggregate_provider_metrics(existing_call_metrics)
+        providers = aggregated.get('providers', {})
+        totals = aggregated.get('totals', {})
+
+        # Step 5: WRITE back to database with aggregated metrics
+        total_actual_cost = totals.get('total_cost_actual', 0.0)
+        total_estimated_cost = totals.get('total_cost_estimated', 0.0)
+        total_actual_time = totals.get('total_actual_processing_time', 0.0)
+        total_calls = totals.get('total_calls', 0)
+
+        # Build run_type with operation details
+        call_type_names = {
+            'column_definition': 'Column Definition',
+            'row_discovery': 'Row Discovery',
+            'qc_review': 'QC Review',
+            'config_generation': 'Config Generation'
+        }
+        operation_sequence = ', '.join([call_type_names.get(c.get('call_type'), c.get('call_type', 'Unknown'))
+                                       for c in existing_call_metrics])
+        run_type = f"Table Generation ({operation_sequence})" if operation_sequence else "Table Generation"
+
+        update_params = {
+            'session_id': session_id,
+            'run_key': run_key,
+            'status': status,
+            'run_type': run_type,
+            'verbose_status': verbose_status or f"Completed {total_calls} API calls",
+            'models': existing_models_list,
+            'eliyahu_cost': total_actual_cost,
+            'provider_metrics': providers,
+            'total_provider_cost_actual': total_actual_cost,
+            'total_provider_cost_estimated': total_estimated_cost,
+            'total_provider_tokens': totals.get('total_tokens', 0),
+            'total_provider_calls': total_calls,
+            'overall_cache_efficiency_percent': totals.get('overall_cache_efficiency', 0.0),
+            'actual_processing_time_seconds': total_actual_time,
+            'run_time_s': total_actual_time,
+            'time_per_row_seconds': total_actual_time / max(total_calls, 1),
+            'call_metrics_list': existing_call_metrics,
+            'enhanced_metrics_aggregated': aggregated,
+            'table_maker_breakdown': {
+                'column_definition_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'column_definition']),
+                'row_discovery_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'row_discovery']),
+                'qc_review_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'qc_review']),
+                'config_generation_calls': len([c for c in existing_call_metrics if c.get('call_type') == 'config_generation']),
+                'total_calls': len(existing_call_metrics)
+            }
         }
 
-        # Append to calls list
-        updated_calls = existing_calls + [new_call]
+        if percent_complete is not None:
+            update_params['percent_complete'] = percent_complete
 
-        # Re-aggregate all calls
-        create_or_update_run_with_aggregated_metrics(
-            session_id=session_id,
-            run_key=run_key,
-            call_metrics_list=updated_calls,
-            status='IN_PROGRESS'
-        )
+        update_run_status(**update_params)
 
-        logger.info(f"[EXECUTION] Added API call to runs: {call_description} (${cost:.4f})")
+        logger.info(f"[EXECUTION] Updated runs database: {total_calls} total calls, ${total_actual_cost:.6f} total cost")
+        logger.info(f"[EXECUTION] Stored enhanced metrics: {len(existing_call_metrics)} call details, {len(providers)} providers")
 
     except Exception as e:
         logger.error(f"[EXECUTION] Failed to add API call to runs: {e}")
+        import traceback
+        logger.error(f"[EXECUTION] Traceback: {traceback.format_exc()}")
 
 
 def _load_conversation_state(
@@ -476,8 +571,15 @@ async def execute_full_table_generation(
 
             # Track API call
             _add_api_call_to_runs(
-                session_id, run_key, column_result,
-                'Column Definition - Defining columns and search strategy'
+                session_id=session_id,
+                run_key=run_key,
+                api_response=column_result,
+                model=column_result.get('model_used', col_model),
+                processing_time=column_result.get('processing_time', 0.0),
+                call_type='column_definition',
+                status='IN_PROGRESS',
+                verbose_status='Column definition complete',
+                percent_complete=20
             )
 
             # Save to S3
@@ -638,10 +740,17 @@ async def execute_full_table_generation(
                     round_num = round_data.get('round', '?')
                     model = round_data.get('model', 'unknown')
                     context = round_data.get('context', 'unknown')
+                    processing_time = round_data.get('processing_time', 0.0)
 
                     _add_api_call_to_runs(
-                        session_id, run_key, round_data,
-                        f"Row Discovery - {subdomain_name} - Round {round_num} ({model}-{context})"
+                        session_id=session_id,
+                        run_key=run_key,
+                        api_response=round_data,
+                        model=model,
+                        processing_time=processing_time,
+                        call_type='row_discovery',
+                        status='IN_PROGRESS',
+                        verbose_status=f'Row discovery: {subdomain_name} round {round_num}'
                     )
 
             # Save discovery results to S3
@@ -728,8 +837,15 @@ async def execute_full_table_generation(
 
                 # Track API call
                 _add_api_call_to_runs(
-                    session_id, run_key, qc_result,
-                    'QC Review - Filtering and prioritizing rows'
+                    session_id=session_id,
+                    run_key=run_key,
+                    api_response=qc_result,
+                    model=qc_model,
+                    processing_time=qc_result.get('processing_time', 0.0),
+                    call_type='qc_review',
+                    status='IN_PROGRESS',
+                    verbose_status=f'QC review complete: {len(approved_rows)} rows approved',
+                    percent_complete=80
                 )
 
                 # Save to S3

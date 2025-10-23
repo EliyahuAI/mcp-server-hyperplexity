@@ -10,12 +10,19 @@
       "type": "string",
       "description": "If candidates array is empty, explain why no matches were found (search issues, no results, unclear queries, etc.)"
     },
+    "search_improvements": {
+      "type": "array",
+      "description": "Suggestions for improving search results in future subdomains (e.g., better query terms, different approaches, missing context). Only include if searches yielded poor results or required multiple attempts.",
+      "items": {
+        "type": "string"
+      }
+    },
     "candidates": {
       "type": "array",
       "description": "List of candidate rows discovered for this subdomain",
       "items": {
         "type": "object",
-        "required": ["id_values", "match_score", "match_rationale"],
+        "required": ["id_values", "match_rationale"],
         "properties": {
           "id_values": {
             "type": "object",
@@ -23,12 +30,6 @@
             "additionalProperties": {
               "type": "string"
             }
-          },
-          "match_score": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1,
-            "description": "Match quality score (0.0 = poor match, 1.0 = perfect match). Calculated as: (Relevancy × 0.4) + (Reliability × 0.3) + (Recency × 0.3)"
           },
           "score_breakdown": {
             "type": "object",

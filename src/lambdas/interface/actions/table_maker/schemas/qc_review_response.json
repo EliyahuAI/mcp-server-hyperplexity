@@ -1,6 +1,6 @@
 {
   "type": "object",
-  "required": ["reviewed_rows", "qc_summary"],
+  "required": [],
   "properties": {
     "reviewed_rows": {
       "type": "array",
