@@ -267,6 +267,7 @@ class QCReviewer:
                     if not qc_rationale and abs(qc_score - row_score) < 0.01:
                         qc_rationale = "QC confirms discovery assessment"
 
+                    merged['row_score'] = row_score  # Set row_score for frontend display
                     merged['qc_score'] = qc_score
                     merged['qc_rationale'] = qc_rationale
                     merged['keep'] = qc_row.get('keep', False)

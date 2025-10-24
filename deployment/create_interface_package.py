@@ -1224,7 +1224,7 @@ def setup_websocket_api(lambda_function_name, region, stage_name="prod"):
 
     # Create routes and attach integration
     routes = apigw_client.get_routes(ApiId=api_id).get('Items', [])
-    route_keys = ['$connect', '$disconnect', 'subscribe']
+    route_keys = ['$connect', '$disconnect', 'subscribe', 'ping']
     for route_key in route_keys:
         if not any(r['RouteKey'] == route_key for r in routes):
             apigw_client.create_route(ApiId=api_id, RouteKey=route_key, Target=f'integrations/{integration_id}')
