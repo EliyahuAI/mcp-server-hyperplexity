@@ -4864,6 +4864,11 @@
                                 }
                             }
 
+                            // Show requirements box first if available
+                            if (message.requirements) {
+                                showRequirementsBox(conversationId, message.requirements);
+                            }
+
                             // Show colored boxes
                             showColumnsBoxes(conversationId, message.columns);
                         }
@@ -4881,9 +4886,15 @@
                         break;
 
                     case 4:
-                        // QC complete - update row count
-                        if (message.approved_row_count !== undefined) {
-                            updateApprovedRowCount(conversationId, message.approved_row_count);
+                        // QC complete - update rows box with approved rows
+                        if (message.approved_rows || message.approved_row_count !== undefined) {
+                            updateRowsBoxWithApproved(
+                                conversationId,
+                                message.approved_rows || [],
+                                message.total_approved || message.approved_row_count || 0,
+                                message.qc_summary,
+                                message.total_discovered
+                            );
                         }
                         break;
                 }
@@ -4950,6 +4961,47 @@
                         createPreviewCard();
                     }, 600); // Wait for shrink animation
                 }, 500);
+            }
+
+            function showRequirementsBox(conversationId, requirements) {
+                // Find the most recent card
+                if (cardHandlers.size === 0) return;
+
+                const latestCardId = Array.from(cardHandlers.keys()).pop();
+                const card = document.getElementById(latestCardId);
+                if (!card) return;
+
+                // Find the progress-content container created in step 1
+                let progressContent = document.getElementById(`${latestCardId}-progress-content`);
+                if (!progressContent) {
+                    // Fallback: use card-content if progress-content doesn't exist
+                    progressContent = card.querySelector('.card-content');
+                }
+                if (!progressContent) return;
+
+                // Format hard requirements
+                const hardReqs = requirements.hard || '(None)';
+                const softReqs = requirements.soft || '(None)';
+
+                // Create requirements box HTML (Quinary color - pink/magenta)
+                const requirementsBoxHtml = `
+                    <div class="message" style="margin-bottom: 1rem; background-color: #fce4ec; color: #880e4f; border: 1px solid #f8bbd0;">
+                        <span class="message-icon">ℹ️</span>
+                        <div>
+                            <strong>Table Requirements</strong><br>
+                            <strong style="font-weight: 700;">Hard Requirements:</strong><br>
+                            <span style="margin-left: 1em; display: block;">${hardReqs}</span><br>
+                            <strong>Soft Requirements:</strong><br>
+                            <span style="margin-left: 1em; display: block;">${softReqs}</span>
+                        </div>
+                    </div>
+                `;
+
+                // Add to progress content
+                progressContent.innerHTML += requirementsBoxHtml;
+
+                // Scroll card into view
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
 
             function showColumnsBoxes(conversationId, columns) {
@@ -5023,28 +5075,34 @@
                 }
                 if (!progressContent) return;
 
-                // Build rows list (top 10 or all if <= 10)
-                const rowsToShow = discoveredRows.slice(0, 10);
+                // Build rows list (top 10-15 rows)
+                const rowsToShow = discoveredRows.slice(0, 15);
                 const rowsListHtml = rowsToShow.map(row => {
                     // Build display string from ID values
                     const idValues = row.id_values || {};
                     const displayParts = Object.entries(idValues)
                         .filter(([k, v]) => v)
-                        .map(([k, v]) => v);
-                    return `• ${displayParts.join(', ')}`;
+                        .map(([k, v]) => `${k}: ${v}`);
+
+                    // Add row score if available
+                    const scoreText = row.row_score !== undefined
+                        ? ` (score: ${row.row_score})`
+                        : '';
+
+                    return `• ${displayParts.join(', ')}${scoreText}`;
                 }).join('<br>');
 
                 // Add "more rows" indicator if needed
-                const moreRowsHtml = totalCount > 10
-                    ? `<br><em>+ ${totalCount - 10} more rows in full CSV</em>`
+                const moreRowsHtml = totalCount > 15
+                    ? `<br><em>+ ${totalCount - 15} more rows</em>`
                     : '';
 
-                // Create rows box HTML (REUSE existing "Additional Rows" pattern from lines 11129-11139)
+                // Create rows box HTML (Primary color - green)
                 const rowsBoxHtml = `
-                    <div class="message discovered-rows-box" data-total-count="${totalCount}" style="margin-bottom: 1rem; background-color: #fff3e0; color: #e65100; border: 1px solid #ffcc80;">
+                    <div class="message discovered-rows-box" data-total-count="${totalCount}" style="margin-bottom: 1rem; background-color: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7;">
                         <span class="message-icon">ℹ️</span>
                         <div class="discovered-rows-content">
-                            <strong>Discovered Rows</strong> (<span class="row-count-text">${totalCount} candidates</span>):<br>
+                            <strong>Discovered Rows: <span class="row-count-text">${totalCount} total</span></strong><br>
                             ${rowsListHtml}${moreRowsHtml}
                         </div>
                     </div>
@@ -5057,22 +5115,72 @@
                 card.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
 
-            function updateApprovedRowCount(conversationId, approvedCount) {
+            function updateRowsBoxWithApproved(conversationId, approvedRows, totalApproved, qcSummary, totalDiscovered) {
                 // Find the discovered rows box in the most recent card
                 if (cardHandlers.size === 0) return;
 
                 const latestCardId = Array.from(cardHandlers.keys()).pop();
-                const rowsBox = document.querySelector(`#${latestCardId}-messages .discovered-rows-box`);
+                const card = document.getElementById(latestCardId);
+                if (!card) return;
+
+                // Find the existing rows box
+                const rowsBox = card.querySelector('.discovered-rows-box');
                 if (!rowsBox) return;
 
-                // Get total count from data attribute
-                const totalCount = parseInt(rowsBox.getAttribute('data-total-count')) || 0;
-
-                // Update the row count text
-                const rowCountText = rowsBox.querySelector('.row-count-text');
-                if (rowCountText) {
-                    rowCountText.textContent = `${approvedCount} approved of ${totalCount} discovered`;
+                // Get total discovered from data attribute if not provided
+                if (!totalDiscovered) {
+                    totalDiscovered = parseInt(rowsBox.getAttribute('data-total-count')) || 0;
                 }
+
+                // Build approved rows list (top 10-15 rows)
+                const rowsToShow = approvedRows.slice(0, 15);
+                let rowsListHtml = '';
+
+                if (rowsToShow.length > 0) {
+                    rowsListHtml = rowsToShow.map(row => {
+                        // Build display string from ID values
+                        const idValues = row.id_values || {};
+                        const displayParts = Object.entries(idValues)
+                            .filter(([k, v]) => v)
+                            .map(([k, v]) => `${k}: ${v}`);
+
+                        // Add row score if available
+                        const scoreText = row.row_score !== undefined
+                            ? ` (score: ${row.row_score})`
+                            : '';
+
+                        return `• ${displayParts.join(', ')}${scoreText}`;
+                    }).join('<br>');
+                }
+
+                // Add "more rows" indicator if needed
+                const moreRowsHtml = totalApproved > 15
+                    ? `<br><em>+ ${totalApproved - 15} more rows</em>`
+                    : '';
+
+                // Build QC summary if available
+                let qcSummaryHtml = '';
+                if (qcSummary) {
+                    const promoted = qcSummary.promoted || 0;
+                    const demoted = qcSummary.demoted || 0;
+                    const rejected = qcSummary.rejected || 0;
+                    qcSummaryHtml = `<br><em>QC Review: +${promoted} promoted, ~${demoted} demoted, -${rejected} rejected</em>`;
+                }
+
+                // Update the content of the rows box
+                const contentDiv = rowsBox.querySelector('.discovered-rows-content');
+                if (contentDiv) {
+                    contentDiv.innerHTML = `
+                        <strong>Approved Rows: <span class="row-count-text">${totalApproved} of ${totalDiscovered} discovered</span></strong>${qcSummaryHtml}<br>
+                        ${rowsListHtml}${moreRowsHtml}
+                    `;
+                }
+
+                // Update data attribute
+                rowsBox.setAttribute('data-approved-count', totalApproved);
+
+                // Scroll card into view
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
 
             function collapseConversation(conversationId) {
