@@ -152,6 +152,8 @@ We have an outline of a series of columns for a research table. Your job is to:
 
 **CRITICAL:** You must define at least ONE requirement for what makes a good row. You can specify hard requirements, soft requirements, or both.
 
+**NOTE:** It is completely valid to have NO hard requirements and ONLY soft requirements. The schema requires at least 1 requirement total, but it can be entirely soft.
+
 ### Requirements Must Be Self-Contained and Comprehensive
 
 **GOLDEN RULE:** Requirements should be comprehensive enough that someone could understand exactly what rows are needed by ONLY reading the requirements, WITHOUT needing to see the user's original request or table purpose.
@@ -227,13 +229,12 @@ Columns:
 - Website
 ```
 
-✅ **CORRECT (minimal hard requirements, maximal research columns):**
+✅ **CORRECT (Option 1 - no hard requirements, maximal soft + research columns):**
 ```
-Hard Requirements for Discovery:
-- Must be a company (not a person, paper, or organization)
+Hard Requirements for Discovery: (none)
 
 Soft Requirements:
-- Prefers companies in biotechnology sector
+- Prefers biotech companies
 - Prefers midsized companies (100-500 employees)
 - Prefers companies with active GenAI leadership job postings
 - Prefers companies without existing GenAI programs
@@ -247,12 +248,32 @@ Columns:
 - Has Existing GenAI Program (Research) - Yes/No, description if yes
 ```
 
-**Why this is better:**
-- Discovery finds ALL companies broadly, not just a narrow subset
+✅ **ALSO CORRECT (Option 2 - specific hard requirement):**
+```
+Hard Requirements for Discovery:
+- Must be a biotech company
+
+Soft Requirements:
+- Prefers midsized companies (100-500 employees)
+- Prefers companies with active GenAI leadership job postings
+- Prefers companies without existing GenAI programs
+
+Columns:
+- Company Name (ID)
+- Website (ID)
+- Industry Sector (Research) - Primary industry classification
+- Employee Count (Research) - Approximate number of employees
+- Has GenAI Leadership Job Posting (Research) - Yes/No, URL if yes
+- Has Existing GenAI Program (Research) - Yes/No, description if yes
+```
+
+**Why these are better:**
+- Discovery finds ALL companies broadly (Option 1) or biotech specifically (Option 2), not overly constrained
 - Soft requirements guide discovery toward better matches without excluding entities
 - Research columns validate and filter each candidate
 - Much more efficient, comprehensive, and flexible
 - Clear separation of concerns
+- Avoids overly generic hard requirements like "Must be a company" as the only constraint
 
 ### Hard vs Soft Requirements
 
@@ -265,21 +286,39 @@ Columns:
 - Instantly verifiable from basic search results
 - Part of the entity's fundamental identity
 
+**IMPORTANT:** If your only hard requirement would be a generic entity type (e.g., "Must be a company"), consider one of these approaches:
+
+1. **No hard requirements (preferred):** If there are no other fundamental constraints, use ONLY soft requirements
+   - Example: User wants "biotech companies" → Hard: (none), Soft: "Prefers biotech companies"
+
+2. **Make entity type more specific:** If entity type can be more specific, do so
+   - Example: User wants "biotech companies" → Hard: "Must be a biotech company"
+   - Example: User wants "AI companies" → Hard: "Must be an AI/ML company"
+
+3. **Only use generic "must be a company" if there are OTHER hard requirements:**
+   - Example: Hard: "Must be a company", "Must be US-based"
+   - In this case, geography justifies having entity type as well
+
+**In most cases:** Prefer approach #1 (no hard requirements) or #2 (specific entity type).
+
 **Typically, you should have 0-2 hard requirements:**
-- Entity type (required): "Must be a company" / "Must be a research paper" / "Must be a person"
+- Entity type (optional): "Must be a company" / "Must be a research paper" / "Must be a person"
+  - Only include if made more specific OR if combined with other hard requirements
 - Geography (optional): "Must be US-based" (only if absolutely critical to user's request)
 - Time period (optional): "Must be from 2024" (only if absolutely critical to user's request)
 
 **Examples:**
-- ✅ "Must be a company" (entity type)
-- ✅ "Must be based in the United States" (if geography is critical)
-- ✅ "Must be a paper published in 2024" (if time period is critical)
+- ✅ "Must be a biotech company" (specific entity type)
+- ✅ "Must be an AI/ML company" (specific entity type)
+- ✅ "Must be a company" AND "Must be US-based" (entity type + geography)
+- ✅ No hard requirements, only soft (when entity type would be too generic)
+- ❌ "Must be a company" as the ONLY hard requirement → Make it specific or remove it
 - ❌ "Must be midsized" → SOFT requirement + research column "Employee Count"
-- ❌ "Must be in biotech" → SOFT requirement + research column "Industry Sector"
+- ❌ "Must be in biotech" → Either make it a specific hard requirement "Must be a biotech company" OR soft requirement + research column
 - ❌ "Must have job postings" → SOFT requirement + research column "Has Job Postings"
 - ❌ "Must not have X" → SOFT requirement + research column "Has X"
 
-**Default to 1 hard requirement (entity type). Add geography/time only if absolutely critical.**
+**Default approach:** No hard requirements, OR 1 specific hard requirement. Add geography/time only if absolutely critical.
 
 **Soft Requirements (Preferences - Most Requirements Go Here):**
 
@@ -322,14 +361,14 @@ Soft: Prefers companies founded after 2020
 Problem: Size, industry, and hiring status require research - they're not basic identity!
 ```
 
-✅ **CORRECT** - Minimal hard, maximal soft + research:
+✅ **CORRECT (Option 1 - No hard requirements):**
 ```
 User request: "Find midsized biotech companies actively hiring for GenAI leadership roles"
 
-Hard: Must be a company (not person, paper, organization)
+Hard Requirements: (none)
 
 Soft:
-- Prefers biotechnology sector
+- Prefers biotech companies
 - Prefers midsized companies (100-500 employees)
 - Prefers companies with active GenAI leadership job postings
 
@@ -338,7 +377,25 @@ Research Columns:
 - Employee Count (to validate midsized)
 - Has GenAI Leadership Job Posting (to validate hiring status)
 
-Why? Only entity type is universally agreed upon. Everything else validated through research.
+Why? "Company" is the only entity type, but it's too generic to be useful alone. Better to have no hard requirements.
+```
+
+✅ **ALSO CORRECT (Option 2 - Specific entity type):**
+```
+User request: "Find midsized biotech companies actively hiring for GenAI leadership roles"
+
+Hard: Must be a biotech company
+
+Soft:
+- Prefers midsized companies (100-500 employees)
+- Prefers companies with active GenAI leadership job postings
+
+Research Columns:
+- Industry Sector (to validate biotech)
+- Employee Count (to validate midsized)
+- Has GenAI Leadership Job Posting (to validate hiring status)
+
+Why? Made entity type specific to "biotech company" rather than generic "company". Everything else validated through research.
 ```
 
 **More Examples:**
@@ -347,11 +404,11 @@ Example 1:
 ```
 User: "Find AI companies that have raised Series B funding, preferably in healthcare"
 
-Hard: Must be a company
-Soft: Prefers AI/ML focus, prefers Series B funding stage, prefers healthcare sector
+Hard Requirements: (none)
+Soft: Prefers AI/ML companies, prefers Series B funding stage, prefers healthcare sector
 Research Columns: Industry Focus, Funding Stage, Healthcare Involvement
 
-Rationale: Entity type is the only basic identity. Funding and industry require research.
+Rationale: Generic "company" would be the only hard requirement, so better to use all soft. Funding and industry require research.
 ```
 
 Example 2:
@@ -362,7 +419,7 @@ Hard: Must be a research paper, must be from 2024
 Soft: Prefers papers on transformer models, prefers papers with available code
 Research Columns: Primary Topic, Code Availability
 
-Rationale: Entity type (paper) and time (2024) are basic. Topic and code require validation.
+Rationale: Entity type (paper) and time (2024) are both critical and specific. Topic and code require validation.
 ```
 
 Example 3:
@@ -373,16 +430,21 @@ Hard: Must be a company, must be US-based
 Soft: Prefers companies focused on AI safety tools
 Research Columns: Primary Focus Area, AI Safety Product/Service
 
-Rationale: Entity type and geography (explicitly mentioned) are basic. "Building X" requires research.
+Rationale: Geography (US-based) is explicitly critical, which justifies also including generic entity type. "Building X" requires research.
 ```
 
 ### Guidance on Hard vs Soft
 
-**New Default:** Start with 1 hard requirement (entity type). Add geography/time only if critical.
+**New Default:** Start with NO hard requirements, OR 1 specific hard requirement. Add geography/time only if critical.
+
+**Decision tree for hard requirements:**
+1. Would the only hard requirement be generic entity type ("Must be a company")? → Use NO hard requirements instead
+2. Can entity type be made specific ("Must be a biotech company")? → Use that as the hard requirement
+3. Is geography/time critical to the request? → Include as hard requirement along with entity type
 
 **Everything else is soft + research columns:**
 - Size/scale → Soft + research column
-- Industry/sector → Soft + research column
+- Industry/sector → Soft + research column (unless made specific in hard requirement)
 - Activities/characteristics → Soft + research column
 - Programs/initiatives → Soft + research column
 
@@ -392,6 +454,7 @@ Rationale: Entity type and geography (explicitly mentioned) are basic. "Building
 - Research columns provide validation and filtering
 - More efficient and comprehensive results
 - Flexibility to handle edge cases
+- Avoids overly basic hard requirements that provide little value
 
 ### Requirements Notes
 

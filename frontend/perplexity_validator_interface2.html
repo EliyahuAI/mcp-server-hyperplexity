@@ -4826,6 +4826,9 @@
                     return; // Dummy message, just update progress, don't trigger boxes
                 }
 
+                // DEBUG: Log execution updates to help debug info boxes
+                console.log('[DEBUG] handleTableExecutionUpdate - step:', currentStep, 'discovered_rows:', message.discovered_rows ? message.discovered_rows.length : 'none', 'total_discovered:', message.total_discovered);
+
                 // Handle step-specific updates (ONLY for real execution)
                 switch(currentStep) {
                     case 1:
@@ -4874,9 +4877,11 @@
                         }
                         break;
 
-                    case 3:
+                    case 2:
                         // Rows discovered - show rows box
+                        // Backend sends discovered_rows during step 2 (row discovery phase)
                         if (message.discovered_rows) {
+                            console.log('[DEBUG] Showing discovered rows box:', message.discovered_rows.length, 'rows');
                             showDiscoveredRowsBox(
                                 conversationId,
                                 message.discovered_rows,
@@ -4979,9 +4984,21 @@
                 }
                 if (!progressContent) return;
 
+                // Helper function to strip citations and format text
+                function stripCitationsAndFormat(text) {
+                    if (!text) return text;
+                    // Remove citation markers like [1], [2], [8]
+                    let cleaned = text.replace(/\[\d+\]/g, '');
+                    // Add blank line before each bullet for better readability
+                    cleaned = cleaned.replace(/\n- /g, '<br><br>- ');
+                    // Convert any remaining newlines to breaks
+                    cleaned = cleaned.replace(/\n/g, '<br>');
+                    return cleaned;
+                }
+
                 // Format hard requirements
-                const hardReqs = requirements.hard || '(None)';
-                const softReqs = requirements.soft || '(None)';
+                const hardReqs = stripCitationsAndFormat(requirements.hard) || '(None)';
+                const softReqs = stripCitationsAndFormat(requirements.soft) || '(None)';
 
                 // Create requirements box HTML (Quinary color - pink/magenta)
                 const requirementsBoxHtml = `
@@ -5060,20 +5077,34 @@
             }
 
             function showDiscoveredRowsBox(conversationId, discoveredRows, totalCount) {
+                console.log('[DEBUG] showDiscoveredRowsBox called with:', discoveredRows.length, 'rows, total:', totalCount);
+
                 // Find the most recent card
-                if (cardHandlers.size === 0) return;
+                if (cardHandlers.size === 0) {
+                    console.log('[DEBUG] No card handlers found');
+                    return;
+                }
 
                 const latestCardId = Array.from(cardHandlers.keys()).pop();
                 const card = document.getElementById(latestCardId);
-                if (!card) return;
+                if (!card) {
+                    console.log('[DEBUG] Card not found:', latestCardId);
+                    return;
+                }
 
                 // Find the progress-content container created in step 1
                 let progressContent = document.getElementById(`${latestCardId}-progress-content`);
                 if (!progressContent) {
+                    console.log('[DEBUG] progress-content not found, using fallback');
                     // Fallback: use card-content if progress-content doesn't exist
                     progressContent = card.querySelector('.card-content');
                 }
-                if (!progressContent) return;
+                if (!progressContent) {
+                    console.log('[DEBUG] No progress content found at all');
+                    return;
+                }
+
+                console.log('[DEBUG] Found progress content, building rows box');
 
                 // Build rows list (top 10-15 rows)
                 const rowsToShow = discoveredRows.slice(0, 15);

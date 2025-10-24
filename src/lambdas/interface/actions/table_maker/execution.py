@@ -176,6 +176,14 @@ def send_execution_progress(
             'phase': 'execution',
             **kwargs
         }
+
+        # DEBUG: Log if discovered_rows is in the message
+        if 'discovered_rows' in kwargs:
+            logger.info(
+                f"[DEBUG] WebSocket message includes discovered_rows: "
+                f"{len(kwargs['discovered_rows'])} rows, total_discovered: {kwargs.get('total_discovered', 'N/A')}"
+            )
+
         websocket_client.send_to_session(session_id, message)
         logger.info(
             f"[EXECUTION] Progress {progress_percent}% (Step {current_step}/{total_steps}): {status}"
@@ -912,6 +920,9 @@ async def execute_full_table_generation(
                 f"[DEBUG] Sending WebSocket with discovered_rows: "
                 f"count={len(discovered_rows_preview)}, total={total_discovered_count}"
             )
+            logger.info(
+                f"[DEBUG] Sample discovered_rows data: {discovered_rows_preview[:2] if discovered_rows_preview else 'NONE'}"
+            )
 
             send_execution_progress(
                 session_id=session_id,
@@ -922,6 +933,10 @@ async def execute_full_table_generation(
                 progress_percent=55,
                 discovered_rows=discovered_rows_preview,  # First 15 rows for display
                 total_discovered=total_discovered_count   # Total count
+            )
+
+            logger.info(
+                f"[DEBUG] WebSocket message sent for step 2 with discovered_rows"
             )
 
         except Exception as e:
