@@ -104,7 +104,8 @@ class RowDiscovery:
         escalation_strategy: Optional[List[Dict[str, Any]]] = None,
         check_targets_between_subdomains: bool = False,
         early_stop_threshold_percentage: float = 120,
-        websocket_callback: Optional[callable] = None
+        websocket_callback: Optional[callable] = None,
+        soft_schema: bool = True
     ) -> Dict[str, Any]:
         """
         Discover rows using subdomains from search_strategy.
@@ -268,7 +269,8 @@ class RowDiscovery:
                         escalation_strategy,
                         global_counter,
                         None,  # No lock needed for sequential mode
-                        aggregated_search_improvements
+                        aggregated_search_improvements,
+                        soft_schema
                     )
                     stream_results.append(result_item)
 
@@ -323,7 +325,8 @@ class RowDiscovery:
                     global_counter,
                     global_counter_lock,
                     websocket_callback,
-                    target_row_count
+                    target_row_count,
+                    soft_schema
                 )
 
             result['stats']['parallel_streams'] = len(stream_results)
@@ -433,7 +436,8 @@ class RowDiscovery:
         escalation_strategy: Optional[List[Dict[str, Any]]] = None,
         global_counter: Optional[Dict[str, Any]] = None,
         global_counter_lock: Optional[asyncio.Lock] = None,
-        previous_search_improvements: Optional[List[str]] = None
+        previous_search_improvements: Optional[List[str]] = None,
+        soft_schema: bool = True
     ) -> Dict[str, Any]:
         """
         Execute a single row discovery stream.
@@ -466,7 +470,8 @@ class RowDiscovery:
             escalation_strategy=escalation_strategy,
             global_counter=global_counter,
             global_counter_lock=global_counter_lock,
-            previous_search_improvements=previous_search_improvements
+            previous_search_improvements=previous_search_improvements,
+            soft_schema=soft_schema
         )
 
         return result
@@ -481,7 +486,8 @@ class RowDiscovery:
         global_counter: Optional[Dict[str, Any]] = None,
         global_counter_lock: Optional[asyncio.Lock] = None,
         websocket_callback: Optional[callable] = None,
-        target_row_count: int = 20
+        target_row_count: int = 20,
+        soft_schema: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Execute row discovery streams in parallel using asyncio.gather().
@@ -533,7 +539,8 @@ class RowDiscovery:
                 scoring_model=scoring_model,
                 escalation_strategy=escalation_strategy,
                 global_counter=global_counter,
-                global_counter_lock=global_counter_lock
+                global_counter_lock=global_counter_lock,
+                soft_schema=soft_schema
             )
 
             return result
@@ -759,7 +766,8 @@ async def discover_rows(
     escalation_strategy: Optional[List[Dict[str, Any]]] = None,
     check_targets_between_subdomains: bool = False,
     early_stop_threshold_percentage: float = 120,
-    websocket_callback: Optional[callable] = None
+    websocket_callback: Optional[callable] = None,
+    soft_schema: bool = True
 ) -> Dict[str, Any]:
     """
     Convenience function to discover rows without creating RowDiscovery instance.
@@ -794,5 +802,6 @@ async def discover_rows(
         escalation_strategy=escalation_strategy,
         check_targets_between_subdomains=check_targets_between_subdomains,
         early_stop_threshold_percentage=early_stop_threshold_percentage,
-        websocket_callback=websocket_callback
+        websocket_callback=websocket_callback,
+        soft_schema=soft_schema
     )

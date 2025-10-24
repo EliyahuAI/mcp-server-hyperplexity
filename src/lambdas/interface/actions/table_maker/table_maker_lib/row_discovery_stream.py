@@ -62,7 +62,8 @@ class RowDiscoveryStream:
         escalation_strategy: List[Dict[str, Any]],
         global_counter: Optional[Dict[str, Any]] = None,
         global_counter_lock: Optional['asyncio.Lock'] = None,
-        previous_search_improvements: Optional[List[str]] = None
+        previous_search_improvements: Optional[List[str]] = None,
+        soft_schema: bool = True
     ) -> Dict[str, Any]:
         """
         Discover rows using progressive model escalation.
@@ -172,7 +173,8 @@ class RowDiscoveryStream:
                     model,
                     context,
                     combined_improvements,  # Pass improvements from other subdomains AND previous rounds
-                    max_web_searches
+                    max_web_searches,
+                    soft_schema
                 )
 
                 # Tag each candidate with model/context info
@@ -305,7 +307,8 @@ class RowDiscoveryStream:
         escalation_strategy: Optional[List[Dict[str, Any]]] = None,
         global_counter: Optional[Dict[str, Any]] = None,
         global_counter_lock: Optional['asyncio.Lock'] = None,
-        previous_search_improvements: Optional[List[str]] = None
+        previous_search_improvements: Optional[List[str]] = None,
+        soft_schema: bool = True
     ) -> Dict[str, Any]:
         """
         Discover candidate rows for a single subdomain using integrated scoring.
@@ -360,7 +363,7 @@ class RowDiscoveryStream:
         if escalation_strategy is not None:
             result = await self.discover_rows_progressive(
                 subdomain, columns, search_strategy, target_rows, escalation_strategy,
-                global_counter, global_counter_lock, previous_search_improvements
+                global_counter, global_counter_lock, previous_search_improvements, soft_schema
             )
             # Return progressive result with all_rounds for detailed tracking
             return {
@@ -395,7 +398,10 @@ class RowDiscoveryStream:
                 search_strategy,
                 target_rows,
                 scoring_model,
-                search_context_size='low'
+                search_context_size='low',
+                previous_search_improvements=None,
+                max_web_searches=3,
+                soft_schema=soft_schema
             )
 
             # Check if we got enough candidates
@@ -413,7 +419,10 @@ class RowDiscoveryStream:
                     search_strategy,
                     target_rows,
                     scoring_model,
-                    search_context_size='high'
+                    search_context_size='high',
+                    previous_search_improvements=None,
+                    max_web_searches=3,
+                    soft_schema=soft_schema
                 )
                 candidate_count = len(candidates_data.get('candidates', []))
                 logger.info(f"High context search found {candidate_count} candidates")
@@ -507,7 +516,8 @@ class RowDiscoveryStream:
         scoring_model: str,
         search_context_size: str = 'low',
         previous_search_improvements: Optional[List[str]] = None,
-        max_web_searches: int = 3
+        max_web_searches: int = 3,
+        soft_schema: bool = True
     ) -> Dict[str, Any]:
         """
         Execute web search with integrated scoring in ONE call.
@@ -588,7 +598,7 @@ class RowDiscoveryStream:
                 max_tokens=16000,  # Increased for finding multiple entities with details
                 max_web_searches=max_web_searches,  # For Claude models (Perplexity uses subdomain queries)
                 search_context_size=search_context_size,  # For Perplexity models
-                soft_schema=False,  # Use hard schema for more accurate results
+                soft_schema=soft_schema,  # Use config setting for schema strictness
                 include_domains=include_domains,  # Domain filtering
                 exclude_domains=exclude_domains   # Domain filtering
             )

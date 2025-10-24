@@ -20,7 +20,7 @@
     "default_target_rows_total": 30
   },
 
-  "_comment_row_discovery": "Row discovery with 2-level escalation (premium models). Starts with sonar-pro (high context) for quality, escalates to Claude Sonnet 4.5 with web searches if insufficient. Global counter checks total across all subdomains before escalating.",
+  "_comment_row_discovery": "Row discovery with 2-level escalation (premium models). Starts with sonar-pro (high context) for quality, escalates to Claude Sonnet 4.5 with web searches if insufficient. Global counter checks total across all subdomains before escalating. Uses soft_schema for flexible JSON parsing.",
   "row_discovery": {
     "web_search_model": "sonar-pro",
     "scoring_model": "sonar-pro",
@@ -30,6 +30,7 @@
     "initial_context_size": "high",
     "escalation_context_size": "high",
     "max_tokens": 16000,
+    "soft_schema": true,
     "target_row_count": 20,
     "discovery_multiplier": 1.5,
     "min_match_score": 0.6,

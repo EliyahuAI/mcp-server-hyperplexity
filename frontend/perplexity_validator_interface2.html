@@ -4986,14 +4986,20 @@
 
                 // Helper function to strip citations and format text
                 function stripCitationsAndFormat(text) {
-                    if (!text) return text;
-                    // Remove citation markers like [1], [2], [8]
-                    let cleaned = text.replace(/\[\d+\]/g, '');
-                    // Add blank line before each bullet for better readability
-                    cleaned = cleaned.replace(/\n- /g, '<br><br>- ');
-                    // Convert any remaining newlines to breaks
-                    cleaned = cleaned.replace(/\n/g, '<br>');
-                    return cleaned;
+                    if (!text || text === '(None)') return text;
+
+                    // Strip citations [1], [2], etc.
+                    let formatted = text.replace(/\[\d+\]/g, '');
+
+                    // Split into lines and build HTML list
+                    const lines = formatted.split('\n').filter(line => line.trim());
+                    const listItems = lines.map(line => {
+                        // Remove leading "- " if present
+                        const content = line.replace(/^- /, '').trim();
+                        return content ? `<li>${content}</li>` : '';
+                    }).filter(item => item).join('');
+
+                    return listItems ? `<ul style="margin: 0.5em 0; padding-left: 1.5em;">${listItems}</ul>` : '(None)';
                 }
 
                 // Format hard requirements
@@ -5006,10 +5012,10 @@
                         <span class="message-icon">ℹ️</span>
                         <div>
                             <strong>Table Requirements</strong><br>
-                            <strong style="font-weight: 700;">Hard Requirements:</strong><br>
-                            <span style="margin-left: 1em; display: block;">${hardReqs}</span><br>
-                            <strong>Soft Requirements:</strong><br>
-                            <span style="margin-left: 1em; display: block;">${softReqs}</span>
+                            <strong style="font-weight: 700;">Hard Requirements:</strong>
+                            <div style="margin-left: 1em;">${hardReqs}</div>
+                            <strong>Soft Requirements:</strong>
+                            <div style="margin-left: 1em;">${softReqs}</div>
                         </div>
                     </div>
                 `;

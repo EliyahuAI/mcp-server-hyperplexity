@@ -791,6 +791,7 @@ async def execute_full_table_generation(
             min_match_score = discovery_config.get('min_match_score', 0.6)
             check_targets_between_subdomains = discovery_config.get('check_targets_between_subdomains', False)
             early_stop_threshold_percentage = discovery_config.get('early_stop_threshold_percentage', 120)
+            soft_schema = discovery_config.get('soft_schema', True)
             config_max_parallel = discovery_config.get('max_parallel_streams')
 
             # Calculate dynamic max_parallel_streams
@@ -849,7 +850,8 @@ async def execute_full_table_generation(
                 escalation_strategy=escalation_strategy,
                 check_targets_between_subdomains=check_targets_between_subdomains,
                 early_stop_threshold_percentage=early_stop_threshold_percentage,
-                websocket_callback=websocket_callback
+                websocket_callback=websocket_callback,
+                soft_schema=soft_schema
             )
 
             # Check if row discovery succeeded (critical)
@@ -1144,7 +1146,8 @@ async def execute_full_table_generation(
                         check_targets_between_subdomains=check_targets_between_subdomains,
                         early_stop_threshold_percentage=early_stop_threshold_percentage,
                         # exclusion_list=exclusion_list,  # TODO: Add when parameter is supported
-                        websocket_callback=websocket_callback
+                        websocket_callback=websocket_callback,
+                        soft_schema=soft_schema
                     )
 
                     if not retrigger_discovery_result.get('success'):
