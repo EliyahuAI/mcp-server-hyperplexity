@@ -53,17 +53,19 @@ Output:
 
 **Use when:** You can propose a concrete table and need user approval.
 
-**CRITICAL - ID Column Guidelines:**
-When proposing ID columns, ensure they are:
+**CRITICAL - Column Guidelines:**
+When proposing what information to track, ensure simple identifiers are:
 - SHORT and simple (1-5 words typically)
 - Easy to discover from web searches or listings
 - NOT requiring synthesis or analysis
 - Examples: Company Name, Job Title, Paper Title, Date, Person Name, URL
-- AVOID: Story Description, Key Responsibilities, Analysis, Summary, Detailed Findings
+- AVOID as simple identifiers: Story Description, Key Responsibilities, Analysis, Summary, Detailed Findings
+
+Note: The system will later determine which columns serve as identifiers vs research columns based on optimal table design.
 
 **Output:**
 - `mode`: 2
-- `ai_message`: Briefly describe table structure, list ID and research columns, state scope, end with "Ready to generate this table?" (NEVER EMPTY)
+- `ai_message`: Briefly describe table structure, list all columns, state scope, end with "Ready to generate this table?" (NEVER EMPTY)
 - `trigger_execution`: false (wait for user approval)
 - `show_structure`: true (show structure in UI)
 - `context_web_research`: [specific items] or []
@@ -77,11 +79,10 @@ User: "Track AI companies that posted GenAI jobs. I'm from Eliyahu.AI"
 Output:
 {
   "mode": 2,
-  "ai_message": "I'll create a GenAI hiring outreach table with:
+  "ai_message": "I'll create a GenAI hiring outreach table with these columns:
 
-**ID columns**: Company Name, Website
-
-**Research columns**:
+- Company Name
+- Website
 - Recent GenAI job postings
 - Company focus (B2B, B2C, infrastructure)
 - Outreach email draft
@@ -104,11 +105,11 @@ User: "Track major US national news stories with political coverage analysis"
 GOOD Output:
 {
   "mode": 2,
-  "ai_message": "I'll create a news coverage analysis table with:
+  "ai_message": "I'll create a news coverage analysis table with these columns:
 
-**ID columns**: Story Headline, Publication Date, Primary Source URL
-
-**Research columns**:
+- Story Headline
+- Publication Date
+- Primary Source URL
 - Story Summary (2-3 sentences)
 - Left-leaning Coverage Analysis
 - Right-leaning Coverage Analysis
@@ -123,15 +124,15 @@ Ready to generate this table?",
 BAD Output (DO NOT DO THIS):
 {
   "mode": 2,
-  "ai_message": "I'll create a news coverage analysis table with:
+  "ai_message": "I'll create a news coverage analysis table with these columns:
 
-**ID columns**: Story Title, Basic Story Description, Date  ❌ WRONG - "Basic Story Description" is too complex for ID column
-
-**Research columns**:
+- Story Title
+- Basic Story Description  ❌ WRONG - This is too vague and complex
+- Date
 - Left Coverage
 - Right Coverage
 
-This is wrong because "Basic Story Description" requires synthesis and multiple sentences. Use "Story Headline" or "Story Title" (short phrase) instead, and move detailed description to a research column.
+This is wrong because "Basic Story Description" is ambiguous and could require synthesis. Use clear, specific column names like "Story Headline" (short phrase) and "Story Summary" (detailed analysis).
 }
 ```
 
