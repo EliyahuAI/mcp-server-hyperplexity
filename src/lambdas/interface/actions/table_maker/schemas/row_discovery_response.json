@@ -19,15 +19,8 @@
     },
     "domain_filtering_recommendations": {
       "type": "object",
-      "description": "Recommendations for domain filtering based on search results",
+      "description": "Recommendations for domain filtering based on search results. Only exclusions can be recommended - included domains are set by the user.",
       "properties": {
-        "add_to_included": {
-          "type": "array",
-          "description": "Domains that would be valuable to include",
-          "items": {
-            "type": "string"
-          }
-        },
         "add_to_excluded": {
           "type": "array",
           "description": "Domains that should be excluded to improve results",
@@ -37,7 +30,7 @@
         },
         "reasoning": {
           "type": "string",
-          "description": "Why these domain changes would help"
+          "description": "Why these domain exclusions would help"
         }
       }
     },
