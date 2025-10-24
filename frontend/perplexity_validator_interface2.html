@@ -5038,18 +5038,18 @@
 
                 // Auto-generate preview after a delay to allow progress indicator to complete
                 setTimeout(() => {
-                    // Complete the thinking indicator (triggers shrink animation)
-                    if (tableMakerCardId) {
-                        completeThinkingInCard(tableMakerCardId, 'Complete!');
-                    }
-
-                    // Wait for shrink animation, then create preview card
+                    // Create preview card first
                     setTimeout(() => {
                         console.log('[TABLE_EXECUTION_COMPLETE] Creating preview validation card');
                         // Clear any existing preview card state to allow new preview
                         globalState.activePreviewCard = null;
                         createPreviewCard();
-                    }, 600); // Wait for shrink animation
+                    }, 100); // Preview appears at T+600ms
+
+                    // Complete the thinking indicator with longer hideDelay to stay visible until preview appears
+                    if (tableMakerCardId) {
+                        completeThinkingInCard(tableMakerCardId, 'Complete!', 1500); // Stay visible longer
+                    }
                 }, 500);
             }
 
