@@ -139,7 +139,7 @@ class QCReviewer:
                 prompt=prompt,
                 schema=schema,
                 model=model,
-                max_tokens=16000,  # Increased for thorough review
+                max_tokens=8000,
                 use_cache=True,  # Enable cache for Lambda
                 max_web_searches=0,  # No web search for QC
                 search_context_size='low',
