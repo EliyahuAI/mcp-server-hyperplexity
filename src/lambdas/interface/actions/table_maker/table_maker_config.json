@@ -40,6 +40,13 @@
         "_note": "Stop early if we get 75% of target_row_count (15/20 rows)"
       },
       {
+        "model": "claude-haiku-4-5",
+        "max_web_searches": 10,
+        "description": "Fallback: Claude haiku with web search for comprehensive coverage",
+        "min_candidates_percentage": 75,
+        "_note": "Moving to claude haiku for comprehensive coverage"
+      },
+      {
         "model": "claude-sonnet-4-5",
         "max_web_searches": 10,
         "description": "Fallback: Claude Sonnet with web search for comprehensive coverage",
@@ -54,7 +61,7 @@
     "_note_threshold": "100% means stop when total_discovered >= target_row_count. 120% would allow 20% overshooting",
 
     "_schema_validation_info": "soft_schema=true allows LLM to omit optional fields in JSON responses (more flexible). false enforces strict schema adherence",
-    "soft_schema": true,
+    "soft_schema": false,
 
     "_basic_settings": "Core discovery parameters",
     "target_row_count": 20,

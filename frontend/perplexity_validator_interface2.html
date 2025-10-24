@@ -4891,7 +4891,17 @@
                         break;
 
                     case 4:
-                        // QC complete - update rows box with approved rows
+                        // QC complete - check for insufficient rows scenario first
+                        if (message.insufficient_rows && message.total_approved < 4) {
+                            showInsufficientRowsMessage(
+                                conversationId,
+                                message.insufficient_rows_statement,
+                                message.insufficient_rows_recommendations,
+                                message.total_approved || 0
+                            );
+                        }
+
+                        // Still update rows box with what we have
                         if (message.approved_rows || message.approved_row_count !== undefined) {
                             updateRowsBoxWithApproved(
                                 conversationId,
@@ -4903,6 +4913,55 @@
                         }
                         break;
                 }
+            }
+
+            function showInsufficientRowsMessage(conversationId, statement, recommendations, approvedCount) {
+                if (cardHandlers.size === 0) return;
+
+                const latestCardId = Array.from(cardHandlers.keys()).pop();
+                const card = document.getElementById(latestCardId);
+                if (!card) return;
+
+                let progressContent = document.getElementById(`${latestCardId}-progress-content`);
+                if (!progressContent) {
+                    progressContent = card.querySelector('.card-content');
+                }
+                if (!progressContent) return;
+
+                // Build recommendations HTML
+                let recsHtml = '';
+                if (recommendations && recommendations.length > 0) {
+                    recsHtml = '<ul style="margin: 0.5em 0; padding-left: 1.5em;">';
+                    recommendations.forEach(rec => {
+                        recsHtml += `<li><strong>${rec.issue}:</strong> ${rec.recommendation}</li>`;
+                    });
+                    recsHtml += '</ul>';
+                }
+
+                // Create insufficient rows message box (warning color - orange/yellow)
+                const messageHtml = `
+                    <div class="message" style="margin: 1rem 0; background-color: #fff3e0; color: #e65100; border: 2px solid #ffb74d;">
+                        <span class="message-icon">[!]</span>
+                        <div>
+                            <strong>Insufficient Results (${approvedCount} rows found)</strong><br><br>
+                            ${statement}<br><br>
+                            ${recsHtml ? '<strong>Suggestions for better results:</strong>' + recsHtml : ''}
+                            <div style="margin-top: 1em;">
+                                <button class="std-button secondary" onclick="restartTableMaker('${conversationId}')">
+                                    <span class="button-text">Start New Table</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                progressContent.innerHTML += messageHtml;
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            function restartTableMaker(conversationId) {
+                // Create a new table maker card to start fresh
+                createTableMakerCard();
             }
 
             function handleTableExecutionComplete(message) {
