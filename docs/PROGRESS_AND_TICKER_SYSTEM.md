@@ -66,6 +66,35 @@ The progress square position represents completion percentage:
 
 Position updates are smooth with 0.3s CSS transition.
 
+#### Critical Architecture Details
+
+**Two-Part Structure**:
+1. **Progress Square Wrapper** (`.progress-square-wrapper`): 37.5px × 37.5px black border box
+   - Positioned absolutely with `top: -16.25px`, `left: -18.75px` (initial position)
+   - **MUST** have `transform-origin: center center` to scale from center, not top-left corner
+   - Moves along the track by updating `wrapper.style.left` property
+   - Scales during grow/shrink animations
+
+2. **Progress Square** (`.progress-square`): 22.5px × 22.5px green center
+   - Positioned inside wrapper with `position: absolute; top: 50%; left: 50%`
+   - **MUST** have `transform: translate(-50%, -50%)` to stay centered in wrapper
+   - Never moves independently - always stays centered in wrapper
+   - Pulsates with animations that preserve the centering transform
+
+**CRITICAL**: Always move the wrapper, never the square directly:
+```javascript
+// CORRECT:
+progressWrapper.style.left = `${position}px`;
+
+// WRONG - causes misalignment:
+progressSquare.style.left = `${position}px`;
+```
+
+**Animation Requirements**:
+- Wrapper animations (grow/shrink) use simple `scale(0)` to `scale(1)`
+- Square animations (pulse, complete, error) MUST include `translate(-50%, -50%)` in every keyframe
+- During spin/flip animations, pulse is paused via `animation-play-state: paused`
+
 ### Backend Integration
 
 #### Confidence Score Calculation
@@ -347,6 +376,26 @@ if importance_level >= 4:
 **Progress indicator doesn't reset to green**:
 - Check `completeThinkingInCard()` sets `globalState.currentConfidenceScore = null`
 
+**Green square appears at bottom-right corner instead of centered**:
+- Verify `.progress-square-wrapper` has `transform-origin: center center`
+- Check that wrapper animations use simple `scale()`, not `translate()` + `scale()`
+- Ensure `.progress-square` has `transform: translate(-50%, -50%)` in CSS
+- Verify all square animations include `translate(-50%, -50%)` in keyframes
+
+**Progress indicator disappears during execution**:
+- Check that card content clearing preserves the thinking indicator element
+- Ensure `completeThinkingInCard()` is called at the right time (not too early)
+- For table maker: Progress should stay visible through all execution steps until completion
+
+**Progress square moves incorrectly**:
+- Always update `progressWrapper.style.left`, never `progressSquare.style.left`
+- Calculate wrapper position accounting for wrapper width offset:
+  ```javascript
+  const wrapperOffset = 37.5 / 2; // half of wrapper width
+  const position = (progress / 100) * trackWidth - wrapperOffset;
+  progressWrapper.style.left = `${position}px`;
+  ```
+
 ### Ticker Issues
 
 **Ticker messages not showing**:
@@ -362,15 +411,84 @@ if importance_level >= 4:
 - Verify `isPortraitMode()` detection is correct
 - Adjust character limits in `updateTickerDisplay()` function
 
+## Table Maker Execution Flow
+
+The table maker has a specific progress indicator flow during table generation:
+
+### Execution Phases
+
+**Phase 1: Interview** (dummy progress, phase='interview')
+- Shows simulated progress during conversation with user
+- Progress updates display but don't trigger UI changes
+- Used to give user feedback while AI plans the table
+
+**Phase 2: Execution** (real progress, phase='execution')
+- Real table generation with actual progress
+- Triggers step-specific UI updates (boxes for columns, rows, QC)
+
+### Execution Steps
+
+**Step 1: Column Definition**
+- Progress indicator continues running
+- ID Columns box appears (cyan background)
+- Research Columns box appears (purple background)
+- Card content cleared except for thinking indicator and progress-content container
+
+**Step 2: (Reserved for future use)**
+
+**Step 3: Row Discovery**
+- Progress indicator continues running
+- Discovered Rows box appears (orange background)
+- Shows first 10 rows with ID column values
+
+**Step 4: QC Review**
+- Progress indicator continues running
+- Updates approved row count in rows box
+
+**Step 5: Completion**
+- WebSocket message `table_execution_complete` arrives
+- Progress updates to 100% with message "Table generation complete!"
+- After 500ms: `completeThinkingInCard()` triggers shrink animation (600ms)
+- After shrink completes: Preview Validation card appears
+
+### Expected Visual Flow
+1. User confirms table structure → Submit button shows "Thinking..."
+2. Progress indicator appears and runs through interview phase
+3. Execution begins → ID columns box appears
+4. Rows box appears below research columns
+5. Progress reaches 100% → "Table generation complete!"
+6. Progress indicator shrinks away (600ms animation)
+7. Preview Validation card appears with new progress indicator
+
+### Common Issues
+
+**Rows box not appearing**:
+- Check backend sends `table_execution_update` with `current_step: 3`
+- Verify `message.discovered_rows` array is present
+- Ensure `phase: 'execution'` (not 'interview')
+- Check `${cardId}-progress-content` container exists
+
+**Progress indicator disappears too early**:
+- Verify `handleTableExecutionComplete` uses `updateThinkingProgress(100)` not `completeThinkingInCard()`
+- Only complete the indicator in the setTimeout before creating preview card
+
+**Long gap between table completion and preview start**:
+- Check setTimeout delays in `handleTableExecutionComplete`
+- Should be 500ms before completion + 600ms shrink + immediate preview creation
+
 ## Related Files
 
 ### Backend
 - `src/lambdas/validation/lambda_function.py`: Confidence calculation, progress updates
 - `src/shared/websocket_client.py`: WebSocket message sending
 - `src/shared/qc_module.py`: QC confidence extraction
+- `src/lambdas/interface/actions/table_maker/`: Table maker execution flow
 
 ### Frontend
 - `frontend/perplexity_validator_interface2.html`: Progress indicator UI, ticker UI, WebSocket handlers
+  - `handleTableExecutionUpdate()`: Processes step-specific updates
+  - `handleTableExecutionComplete()`: Manages completion and preview transition
+  - `showColumnsBoxes()`, `showDiscoveredRowsBox()`: Display execution step boxes
 
 ### Configuration
 - `src/prompts.yml`: Update Importance scale definition (0-5)
