@@ -3940,6 +3940,9 @@
                         if (existingWs._healthCheckInterval) {
                             clearInterval(existingWs._healthCheckInterval);
                         }
+                        if (existingWs._pingInterval) {
+                            clearInterval(existingWs._pingInterval);
+                        }
                         try {
                             existingWs.close();
                         } catch (error) {
@@ -3956,20 +3959,36 @@
                 ws.onopen = () => {
                     if (ws.readyState === WebSocket.OPEN) {
                         try {
+                            console.log(`[WEBSOCKET] Connection opened for session ${sessionId}${reconnectAttempt > 0 ? ` (reconnect attempt ${reconnectAttempt})` : ''}`);
                             ws.send(JSON.stringify({
                                 action: 'subscribe',
                                 sessionId: sessionId
                             }));
-                            
+                            console.log(`[WEBSOCKET] Subscribed to session ${sessionId}`);
+
                             // Removed fallback polling - focusing on main WebSocket path
-                            
+
                             // Track last message time for health monitoring
                             ws._lastMessageTime = Date.now();
-                            
+
+                            // Start keepalive ping to prevent idle timeout (AWS API Gateway default is 10 min)
+                            ws._pingInterval = setInterval(() => {
+                                if (ws.readyState === WebSocket.OPEN) {
+                                    try {
+                                        ws.send(JSON.stringify({ action: 'ping' }));
+                                    } catch (error) {
+                                        console.error(`Error sending ping for session ${sessionId}:`, error);
+                                    }
+                                } else {
+                                    clearInterval(ws._pingInterval);
+                                }
+                            }, 45000); // Send ping every 45 seconds to keep connection alive
+
                             // Start periodic health checks - less aggressive
                             ws._healthCheckInterval = setInterval(() => {
                                 if (ws.readyState !== WebSocket.OPEN) {
                                     clearInterval(ws._healthCheckInterval);
+                                    clearInterval(ws._pingInterval);
                                     sessionWebSockets.delete(sessionId);
                                 }
                             }, 60000); // Check every 60 seconds, only check readyState
@@ -4004,23 +4023,30 @@
                 };
 
                 ws.onclose = (event) => {
+                    console.log(`[WEBSOCKET] Connection closed for session ${sessionId}, code: ${event.code}, reason: ${event.reason}`);
                     sessionWebSockets.delete(sessionId);
-                    
-                    // Clean up health check interval
+
+                    // Clean up all intervals
                     if (ws._healthCheckInterval) {
                         clearInterval(ws._healthCheckInterval);
                     }
-                    
+                    if (ws._pingInterval) {
+                        clearInterval(ws._pingInterval);
+                    }
+
                     const isUnexpectedClose = event.code !== 1000 && event.code !== 1001;
                     const maxReconnectAttempts = 5;
                     const wasIntentionallyClosed = ws._intentionallyClosed;
-                    
+
                     if (isUnexpectedClose && reconnectAttempt < maxReconnectAttempts && !wasIntentionallyClosed) {
                         const reconnectDelay = Math.min(1000 * Math.pow(2, reconnectAttempt), 10000);
-                        
+                        console.log(`[WEBSOCKET] Reconnecting in ${reconnectDelay}ms (attempt ${reconnectAttempt + 1}/${maxReconnectAttempts})`);
+
                         setTimeout(() => {
                             connectToSession(sessionId, reconnectAttempt + 1);
                         }, reconnectDelay);
+                    } else if (isUnexpectedClose) {
+                        console.error(`[WEBSOCKET] Max reconnection attempts reached for session ${sessionId}`);
                     }
                 };
 
@@ -5043,27 +5069,33 @@
                 }
                 if (!progressContent) return;
 
-                // Helper function to strip citations and format text
-                function stripCitationsAndFormat(text) {
-                    if (!text || text === '(None)') return text;
+                // Helper function to strip citations and format text (using ID columns pattern)
+                function formatRequirementsText(text) {
+                    if (!text || text === '(None)') return '(None)';
 
                     // Strip citations [1], [2], etc.
                     let formatted = text.replace(/\[\d+\]/g, '');
 
-                    // Split into lines and build HTML list
+                    // Split by newlines and filter empty
                     const lines = formatted.split('\n').filter(line => line.trim());
-                    const listItems = lines.map(line => {
+
+                    // Format each line with bullet (copy ID columns pattern)
+                    const formattedLines = lines.map(line => {
                         // Remove leading "- " if present
                         const content = line.replace(/^- /, '').trim();
-                        return content ? `<li>${content}</li>` : '';
-                    }).filter(item => item).join('');
+                        if (!content) return '';
 
-                    return listItems ? `<ul style="margin: 0.5em 0; padding-left: 1.5em;">${listItems}</ul>` : '(None)';
+                        // Add colored bullet inline (pink for requirements)
+                        return `<span style="display: inline-block; width: 0.8em; height: 0.8em; background: #880e4f; border-radius: 50%; margin-right: 6px; vertical-align: middle;"></span>${content}`;
+                    }).filter(item => item);
+
+                    // Join with <br> (COPY COLUMNS PATTERN)
+                    return formattedLines.join('<br>');
                 }
 
                 // Format hard requirements
-                const hardReqs = stripCitationsAndFormat(requirements.hard) || '(None)';
-                const softReqs = stripCitationsAndFormat(requirements.soft) || '(None)';
+                const hardReqs = formatRequirementsText(requirements.hard);
+                const softReqs = formatRequirementsText(requirements.soft);
 
                 // Create requirements box HTML (Quinary color - pink/magenta)
                 const requirementsBoxHtml = `
@@ -5071,10 +5103,10 @@
                         <span class="message-icon">ℹ️</span>
                         <div>
                             <strong>Table Requirements</strong><br>
-                            <strong style="font-weight: 700;">Hard Requirements:</strong>
-                            <div style="margin-left: 1em;">${hardReqs}</div>
-                            <strong>Soft Requirements:</strong>
-                            <div style="margin-left: 1em;">${softReqs}</div>
+                            <strong style="font-weight: 700;">Hard Requirements:</strong><br>
+                            ${hardReqs}<br>
+                            <strong>Soft Requirements:</strong><br>
+                            ${softReqs}
                         </div>
                     </div>
                 `;

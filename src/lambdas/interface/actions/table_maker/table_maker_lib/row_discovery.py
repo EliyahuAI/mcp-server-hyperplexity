@@ -315,7 +315,18 @@ class RowDiscovery:
                         f"(defined {len(subdomains)} subdomains)"
                     )
 
+                # Send single WebSocket update at start of parallel execution
+                # Individual streams will NOT send updates to avoid bouncing
+                if websocket_callback:
+                    subdomain_names = ', '.join([s['name'] for s in subdomains_to_process])
+                    websocket_callback(
+                        status=f"Finding rows across {len(subdomains_to_process)} areas in parallel: {subdomain_names}",
+                        progress_percent=30,
+                        total_subdomains=len(subdomains_to_process)
+                    )
+
                 # Execute streams in parallel
+                # NOTE: websocket_callback is NOT passed to avoid bouncing progress
                 stream_results = await self._execute_parallel_streams(
                     subdomains_to_process,
                     columns,
@@ -324,9 +335,9 @@ class RowDiscovery:
                     escalation_strategy,
                     global_counter,
                     global_counter_lock,
-                    websocket_callback,
-                    target_row_count,
-                    soft_schema
+                    websocket_callback=None,  # Do NOT pass - prevents bouncing
+                    target_row_count=target_row_count,
+                    soft_schema=soft_schema
                 )
 
             result['stats']['parallel_streams'] = len(stream_results)
@@ -510,18 +521,9 @@ class RowDiscovery:
 
         # Create wrapper function for each subdomain to handle websocket updates
         async def discover_with_updates(subdomain_info: Dict[str, Any], idx: int):
-            # Send WebSocket update before starting this subdomain
-            if websocket_callback and global_counter_lock:
-                async with global_counter_lock:
-                    current_global = global_counter['total_discovered'] if global_counter else 0
-                    websocket_callback(
-                        status=f"Finding rows in {subdomain_info['name']}...",
-                        subdomain=subdomain_info['name'],
-                        subdomain_index=idx,
-                        total_subdomains=len(subdomains),
-                        global_discovered=current_global,
-                        global_target=target_row_count
-                    )
+            # DO NOT send WebSocket updates from within parallel streams
+            # This causes progress indicator to bounce around between streams
+            # Only the orchestrator (this file) should send progress updates
 
             # Create stream instance
             stream = self.row_discovery_stream_class(
@@ -531,6 +533,7 @@ class RowDiscovery:
             )
 
             # Execute discovery with global counter
+            # NOTE: websocket_callback is NOT passed to individual streams
             result = await stream.discover_rows(
                 subdomain=subdomain_info,
                 columns=columns,

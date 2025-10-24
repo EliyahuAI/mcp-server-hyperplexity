@@ -48,7 +48,7 @@ def handle(event, context):
             session_id = body.get('sessionId')
             logger.info(f"📋 Subscribe body: {body}")
             logger.info(f"🎯 Session ID: {session_id}")
-            
+
             if session_id:
                 associate_session_with_connection(connection_id, session_id)
                 logger.info(f"✅ Connection {connection_id} successfully subscribed to session {session_id}")
@@ -61,7 +61,12 @@ def handle(event, context):
             import traceback
             logger.error(traceback.format_exc())
             return {'statusCode': 500, 'body': 'Internal server error.'}
-            
+
+    elif route_key == 'ping':
+        logger.debug(f"💓 Ping received from {connection_id}")
+        # Just acknowledge the ping to keep connection alive
+        return {'statusCode': 200, 'body': 'pong'}
+
     else:
         # Default route
         logger.warning(f"❓ Unhandled route key: {route_key} for connection {connection_id}")

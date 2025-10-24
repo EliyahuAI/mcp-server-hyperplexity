@@ -1315,14 +1315,8 @@ async def execute_full_table_generation(
         # ======================================================================
         logger.info("[EXECUTION] Waiting for config generation to complete...")
 
-        send_execution_progress(
-            session_id=session_id,
-            conversation_id=conversation_id,
-            current_step=4,
-            total_steps=4,
-            status='Waiting for config generation to complete...',
-            progress_percent=85
-        )
+        # DO NOT send WebSocket update here - config is silent in background
+        # Sending a message here causes progress indicator to disappear/flicker
 
         # Wait for config generation to finish
         if config_generation_task:
