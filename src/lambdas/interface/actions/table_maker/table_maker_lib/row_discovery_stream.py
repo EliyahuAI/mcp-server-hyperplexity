@@ -562,7 +562,7 @@ class RowDiscoveryStream:
                 max_tokens=16000,  # Increased for finding multiple entities with details
                 max_web_searches=max_web_searches,  # For Claude models (Perplexity uses subdomain queries)
                 search_context_size=search_context_size,  # For Perplexity models
-                soft_schema=True  # Use soft schema for Perplexity - more flexible results
+                soft_schema=False  # Use hard schema for more accurate results
             )
 
             # call_structured_api returns dict with 'response', 'token_usage', etc.

@@ -238,6 +238,7 @@ class RowDiscovery:
                 # SEQUENTIAL MODE (for initial testing)
                 logger.info("Step 2/3: Processing subdomains SEQUENTIALLY (testing mode)")
                 stream_results = []
+                aggregated_search_improvements = []
 
                 for i, subdomain in enumerate(subdomains, 1):
                     # Send WebSocket update before processing subdomain
@@ -266,9 +267,19 @@ class RowDiscovery:
                         scoring_model,
                         escalation_strategy,
                         global_counter,
-                        None  # No lock needed for sequential mode
+                        None,  # No lock needed for sequential mode
+                        aggregated_search_improvements
                     )
                     stream_results.append(result_item)
+
+                    # Collect search improvements from this subdomain for next ones
+                    subdomain_improvements = result_item.get('search_improvements', [])
+                    if subdomain_improvements:
+                        aggregated_search_improvements.extend(subdomain_improvements)
+                        logger.info(
+                            f"Collected {len(subdomain_improvements)} search improvement(s) from "
+                            f"'{subdomain['name']}'. Total improvements: {len(aggregated_search_improvements)}"
+                        )
             else:
                 # PARALLEL MODE (for production)
                 logger.info(
@@ -401,7 +412,8 @@ class RowDiscovery:
         scoring_model: str,
         escalation_strategy: Optional[List[Dict[str, Any]]] = None,
         global_counter: Optional[Dict[str, Any]] = None,
-        global_counter_lock: Optional[asyncio.Lock] = None
+        global_counter_lock: Optional[asyncio.Lock] = None,
+        previous_search_improvements: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Execute a single row discovery stream.
@@ -433,7 +445,8 @@ class RowDiscovery:
             scoring_model=scoring_model,
             escalation_strategy=escalation_strategy,
             global_counter=global_counter,
-            global_counter_lock=global_counter_lock
+            global_counter_lock=global_counter_lock,
+            previous_search_improvements=previous_search_improvements
         )
 
         return result

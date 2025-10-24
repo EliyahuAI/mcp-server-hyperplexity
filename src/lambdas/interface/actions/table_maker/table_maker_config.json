@@ -20,7 +20,7 @@
     "default_target_rows_total": 30
   },
 
-  "_comment_row_discovery": "Row discovery with 2-level escalation. Starts with sonar (high context) for quality, escalates to sonar-pro (high) only if insufficient results. Global counter checks total across all subdomains before escalating. Exclusion list prevents duplicate discovery.",
+  "_comment_row_discovery": "Row discovery with 3-level escalation. Starts with sonar (high context) for quality, escalates to sonar-pro (high) if insufficient, then falls back to Claude Haiku with web searches if both fail. Global counter checks total across all subdomains before escalating.",
   "row_discovery": {
     "web_search_model": "sonar-pro",
     "scoring_model": "sonar-pro",
@@ -46,6 +46,12 @@
         "model": "sonar-pro",
         "search_context_size": "high",
         "description": "Premium search if sonar insufficient",
+        "min_candidates_percentage": 90
+      },
+      {
+        "model": "claude-haiku-4-5",
+        "max_web_searches": 3,
+        "description": "Fallback to Claude with web search if both Perplexity models fail",
         "min_candidates_percentage": null
       }
     ],

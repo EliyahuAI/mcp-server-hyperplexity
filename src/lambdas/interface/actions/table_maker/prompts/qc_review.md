@@ -79,6 +79,7 @@ For each row:
 - ✗ Redundant (same as another row, just different name)
 - ✗ Low quality sources or unreliable
 - ✗ Off-topic or irrelevant
+- ✗ **Fabricated/nonsense entries** - clearly made-up URLs like "this.great.job/12345.html" or generic patterns that are unlikely real
 
 ### 2. Assign QC Score (0-1.0)
 
@@ -95,6 +96,8 @@ More flexible than discovery rubric. Consider:
 - **0.3-0.49:** Marginal - barely meets requirements, reject unless needed
 - **0.0-0.29:** Poor - reject
 
+**Note:** If your qc_score matches the discovery score (row_score), you can omit the qc_rationale - agreement needs no explanation.
+
 ### 3. Priority Adjustment
 
 - **promote:** Particularly good fit, rank higher than discovery score suggests
@@ -105,13 +108,15 @@ More flexible than discovery rubric. Consider:
 
 ## Output Format
 
+**IMPORTANT: Use the row_id shown for each row in your response.**
+
 Return JSON:
 
 ```json
 {
   "reviewed_rows": [
     {
-      "id_values": {"Company Name": "Anthropic"},
+      "row_id": "1-Anthropic",
       "row_score": 0.95,
       "qc_score": 0.98,
       "qc_rationale": "Perfect match - leading AI company with active hiring",
@@ -119,29 +124,26 @@ Return JSON:
       "priority_adjustment": "promote"
     },
     {
-      "id_values": {"Company Name": "Generic Corp"},
+      "row_id": "2-PathAI",
+      "row_score": 0.80,
+      "qc_score": 0.80,
+      "keep": true,
+      "priority_adjustment": "none"
+    },
+    {
+      "row_id": "3-Generic Corp",
       "row_score": 0.65,
       "qc_score": 0.2,
       "qc_rationale": "Not an AI company, off-topic",
       "keep": false,
       "priority_adjustment": "none"
     }
-  ],
-  "rejected_rows": [
-    {
-      "id_values": {"Company Name": "Generic Corp"},
-      "rejection_reason": "Not an AI company"
-    }
-  ],
-  "qc_summary": {
-    "total_reviewed": 12,
-    "kept": 10,
-    "rejected": 2,
-    "promoted": 3,
-    "demoted": 1,
-    "reasoning": "Rejected 2 off-topic entries, promoted 3 exceptional fits"
-  }
+  ]
 }
 ```
+
+Note: Row 2 (PathAI) omits qc_rationale since qc_score matches row_score - no explanation needed for agreement.
+
+**Note:** qc_summary will be auto-calculated from reviewed_rows if you don't provide it.
 
 Review all rows and return your assessment.

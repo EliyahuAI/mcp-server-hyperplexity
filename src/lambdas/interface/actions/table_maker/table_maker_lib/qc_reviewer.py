@@ -139,12 +139,12 @@ class QCReviewer:
                 prompt=prompt,
                 schema=schema,
                 model=model,
-                max_tokens=max_tokens,
+                max_tokens=16000,  # Increased for thorough review
                 use_cache=True,  # Enable cache for Lambda
                 max_web_searches=0,  # No web search for QC
                 search_context_size='low',
                 debug_name="qc_review",
-                soft_schema=True  # Use soft schema for more robust responses
+                soft_schema=False  # Use hard schema for strict validation
             )
 
             # Check for API errors
@@ -189,42 +189,75 @@ class QCReviewer:
             # QC returns: id_values, row_score, qc_score, qc_rationale, keep, priority_adjustment
             # Original has: id_values, match_score, score_breakdown, model_used, context_used, match_rationale, source_urls, etc.
 
-            # Create mapping of discovered rows by ID values (for fast lookup)
+            # Create mapping of discovered rows by row_id (for fast lookup)
             discovered_map = {}
-            for orig in discovered_rows:
-                # Create a stable key from id_values
-                id_vals = orig.get('id_values', {})
-                # Sort keys for consistent comparison
-                key = json.dumps(id_vals, sort_keys=True)
-                discovered_map[key] = orig
+            discovered_by_position = {}  # Fallback: match by position and score
 
-            logger.info(f"Created mapping of {len(discovered_map)} discovered rows")
+            for idx, orig in enumerate(discovered_rows, 1):
+                # Create row_id: row number + first ID column value
+                id_vals = orig.get('id_values', {})
+                first_id_value = list(id_vals.values())[0] if id_vals else 'Unknown'
+                row_id = f"{idx}-{first_id_value}"
+                discovered_map[row_id] = orig
+
+                # Also store by position and score for fallback
+                row_score = orig.get('match_score', 0)
+                position_key = f"{idx}:{row_score:.2f}"
+                discovered_by_position[position_key] = orig
+
+            logger.info(f"Created mapping of {len(discovered_map)} discovered rows by row_id")
 
             merged_rows = []
             matches_found = 0
+            fallback_matches = 0
 
             for qc_row in reviewed_rows:
-                # Find matching original row by id_values
-                qc_id_values = qc_row.get('id_values', {})
-                qc_key = json.dumps(qc_id_values, sort_keys=True)
+                # Try matching by row_id first
+                row_id = qc_row.get('row_id', '')
+                original_row = discovered_map.get(row_id)
 
-                original_row = discovered_map.get(qc_key)
+                # Fallback: Try matching by extracting row number and score
+                if not original_row and row_id:
+                    try:
+                        # Extract row number from row_id (e.g., "1-Benchling" → "1")
+                        row_num = row_id.split('-')[0]
+                        qc_score_from_response = qc_row.get('row_score', 0)
+                        fallback_key = f"{row_num}:{qc_score_from_response:.2f}"
+
+                        original_row = discovered_by_position.get(fallback_key)
+                        if original_row:
+                            logger.info(f"[FALLBACK_MATCH] Matched row_id '{row_id}' using position {row_num} and score {qc_score_from_response:.2f}")
+                            fallback_matches += 1
+                    except Exception as e:
+                        logger.warning(f"[FALLBACK_MATCH] Failed to extract position from row_id '{row_id}': {e}")
 
                 if original_row:
                     # Merge: start with original, overlay QC fields
                     merged = original_row.copy()
-                    merged['qc_score'] = qc_row.get('qc_score', 0)
-                    merged['qc_rationale'] = qc_row.get('qc_rationale', '')
+                    qc_score = qc_row.get('qc_score', 0)
+                    row_score = qc_row.get('row_score', merged.get('match_score', 0))
+
+                    # If qc_rationale not provided and scores match, generate default
+                    qc_rationale = qc_row.get('qc_rationale', '')
+                    if not qc_rationale and abs(qc_score - row_score) < 0.01:
+                        qc_rationale = "QC confirms discovery assessment"
+
+                    merged['qc_score'] = qc_score
+                    merged['qc_rationale'] = qc_rationale
                     merged['keep'] = qc_row.get('keep', False)
                     merged['priority_adjustment'] = qc_row.get('priority_adjustment', 'none')
+                    merged['row_id'] = row_id  # Preserve row_id for tracking
                     merged_rows.append(merged)
                     matches_found += 1
                 else:
                     # QC row has no matching original (shouldn't happen)
-                    logger.warning(f"QC row has no matching original: {qc_id_values}")
+                    logger.warning(f"QC row has no matching original: row_id={row_id}")
                     merged_rows.append(qc_row)
 
-            logger.info(f"Merged {matches_found}/{len(reviewed_rows)} QC rows with original metadata")
+            if fallback_matches > 0:
+                logger.info(f"Merged {matches_found}/{len(reviewed_rows)} QC rows with original metadata ({fallback_matches} fallback matches)")
+            else:
+                logger.info(f"Merged {matches_found}/{len(reviewed_rows)} QC rows with original metadata")
 
             # Filter approved rows (keep=true, qc_score >= threshold)
             approved_rows = [
@@ -348,7 +381,7 @@ class QCReviewer:
 
     def _format_rows(self, rows: List[Dict]) -> str:
         """
-        Format discovered rows for prompt.
+        Format discovered rows for prompt with row_id.
 
         Args:
             rows: List of discovered row dictionaries
@@ -364,11 +397,16 @@ class QCReviewer:
             found_by = row.get('found_by_models', [])
             source_subdomain = row.get('source_subdomain', 'Unknown')
 
-            # Format ID values
+            # Create row_id: row number + first ID column value
+            first_id_value = list(id_values.values())[0] if id_values else 'Unknown'
+            row_id = f"{idx}-{first_id_value}"
+
+            # Format full ID values for context
             id_str = ', '.join(f"{k}: {v}" for k, v in id_values.items())
 
             lines.append(f"\n**Row {idx}:**")
-            lines.append(f"- ID: {id_str}")
+            lines.append(f"- **row_id (use this in your response):** `{row_id}`")
+            lines.append(f"- Full ID: {id_str}")
             lines.append(f"- Discovery Score: {row_score:.2f}")
             lines.append(f"- Rationale: {match_rationale}")
             if found_by:

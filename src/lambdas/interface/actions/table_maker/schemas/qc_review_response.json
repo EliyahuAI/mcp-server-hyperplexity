@@ -7,11 +7,11 @@
       "description": "All rows after QC review with keep/reject decisions",
       "items": {
         "type": "object",
-        "required": ["id_values", "row_score", "qc_score", "qc_rationale", "keep"],
+        "required": ["row_id", "row_score", "qc_score", "keep"],
         "properties": {
-          "id_values": {
-            "type": "object",
-            "description": "ID column values (copied from input)"
+          "row_id": {
+            "type": "string",
+            "description": "Row identifier: row number + first ID column value (e.g., '1-Benchling')"
           },
           "row_score": {
             "type": "number",
@@ -44,11 +44,11 @@
       "description": "Rows that were rejected (keep=false)",
       "items": {
         "type": "object",
-        "required": ["id_values", "rejection_reason"],
+        "required": ["row_id", "rejection_reason"],
         "properties": {
-          "id_values": {
-            "type": "object",
-            "description": "ID column values of rejected row"
+          "row_id": {
+            "type": "string",
+            "description": "Row identifier: row number + first ID column value"
           },
           "rejection_reason": {
             "type": "string",
