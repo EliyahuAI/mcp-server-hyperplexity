@@ -161,18 +161,93 @@ We have an outline of a series of columns for a research table. Your job is to:
 - Every key aspect mentioned by the user should appear in requirements
 - Requirements are used independently during discovery - they must stand alone
 
+## Discovery vs Validation Criteria (CRITICAL DESIGN DECISION)
+
+**Key Principle:** During row discovery, we can only filter by criteria that are EASILY DETERMINED from search results. Complex criteria should become research columns instead.
+
+### Discovery Requirements (Easy to Determine)
+Use these as hard requirements during row discovery:
+- **Entity type/category**: "biotech company", "AI research paper", "Series B startup"
+- **Size/scale**: "midsized (100-500 employees)", "Fortune 500", "published in major venue"
+- **Geographic location**: "US-based", "Bay Area", "European"
+- **Time period**: "founded after 2020", "published in 2024"
+- **Industry/sector**: "healthcare", "fintech", "e-commerce"
+
+These can be determined from:
+- Company directories (Crunchbase, LinkedIn)
+- Search result snippets
+- Domain names and about pages
+- Publication metadata
+
+### Validation Criteria (Requires Research)
+Convert these into RESEARCH COLUMNS instead of discovery requirements:
+- **Specific programs/initiatives**: "has GenAI program", "has diversity initiative"
+- **Job postings**: "is hiring for X role", "has open position for Y"
+- **Recent activities**: "raised funding in last 6 months", "published paper in Q1"
+- **Technology stack**: "uses React", "built on AWS"
+- **Relationships**: "partnered with X", "acquired by Y"
+
+These require:
+- Reading job posting pages
+- Analyzing company websites in depth
+- Checking recent news and announcements
+- Cross-referencing multiple sources
+
+### Example Transformation
+
+❌ **WRONG (mixing discovery and validation):**
+```
+Hard Requirements for Discovery:
+- Must be a midsized biotech company
+- Must be actively hiring for GenAI leadership roles
+- Must not have an existing GenAI program
+
+Columns:
+- Company Name
+- Website
+```
+
+✅ **CORRECT (separated):**
+```
+Hard Requirements for Discovery:
+- Must be a midsized biotech company (100-500 employees)
+- Must be in biotechnology sector
+
+Columns:
+- Company Name (ID)
+- Website (ID)
+- Has GenAI Leadership Job Posting (Research) - Yes/No, URL if yes
+- Has Existing GenAI Program (Research) - Yes/No, description if yes
+```
+
+**Why this is better:**
+- Discovery finds ALL ~500 midsized biotech companies
+- Validation checks each for job postings and programs
+- Much more efficient and comprehensive
+- Clear separation of concerns
+
 ### Hard vs Soft Requirements
 
-**Hard Requirements (Core Must-Haves):**
-- Absolute dealbreakers that entities MUST meet
-- Any entity that violates a hard requirement will be rejected
-- Use for NON-NEGOTIABLE criteria from the user's request
-- **Key indicator:** If the user says "find X that ARE Y" or "find X doing Y", then Y is a hard requirement
-- Examples:
-  - "Must be a biotech company" (user specifically wants biotech)
-  - "Must be published after 2020" (user specified timeframe)
-  - "Must have active GenAI leadership job postings" (user wants companies actively hiring)
-  - "Must be US-based" (user specified geography)
+**Hard Requirements (Discovery Phase - Must Be Easily Determinable):**
+
+**Purpose:** Filter the search space during discovery to find candidate entities.
+
+**Must be EASILY determined from:**
+- Search result titles and snippets
+- Company/entity directories (Crunchbase, LinkedIn, Google Scholar)
+- Domain names and basic website content
+- Publication metadata
+
+**Key indicator:** "If I can determine this from a Google search results page without clicking through, it's good for discovery"
+
+**Examples:**
+- ✅ "Must be a biotech company" (visible in Crunchbase category)
+- ✅ "Must be midsized (100-500 employees)" (visible in LinkedIn company page)
+- ✅ "Must be US-based" (visible in company location)
+- ❌ "Must have active job postings" (requires checking careers page) → Make this a RESEARCH COLUMN
+- ❌ "Must not have GenAI program" (requires research) → Make this a RESEARCH COLUMN
+
+**If a requirement needs research to determine, make it a research COLUMN instead.**
 
 **Soft Requirements (Nice-to-Have Preferences):**
 - Preferences that improve scoring and ranking
@@ -316,6 +391,24 @@ Example: "Looking for authoritative sources with detailed analysis. Company size
 - Will be discovered during row discovery phase (not validated later)
 
 ### Research Columns (To be validated)
+
+**Purpose:** These columns will be populated during validation and can encode complex criteria.
+
+**Use research columns for:**
+- Criteria that require visiting websites/reading content
+- Criteria that require cross-referencing multiple sources
+- Binary checks that could filter entities: "Has Active Job Posting", "Has GenAI Program"
+- Detailed information: descriptions, counts, dates
+
+**Examples:**
+- "Has Head of AI Job Posting" (Boolean/URL) - Checks careers page
+- "Has Existing GenAI Program" (Boolean/Description) - Checks news and company site
+- "Recent Funding Round" (Date/Amount) - Checks Crunchbase recent activity
+- "Uses Technology X" (Boolean) - Checks tech stack indicators
+
+**These act as validation filters:** Rows with "No" for critical research columns can be filtered out during validation.
+
+**Technical requirements:**
 - Detailed descriptions explaining EXACTLY what data to find
 - Specific validation strategies explaining HOW to find the data
 - May reference specific sources, methods, or criteria

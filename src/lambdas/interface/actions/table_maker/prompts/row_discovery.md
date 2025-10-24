@@ -20,6 +20,8 @@ These rows are characterized by their **ID fields** (identification columns). Yo
 
 ## REQUIREMENTS (Must be visible and clear)
 
+**NOTE:** These requirements focus on criteria that can be easily determined from search results. More complex criteria have been converted into research columns that will be validated later.
+
 ### Hard Requirements (Absolute - entity MUST meet these):
 {{HARD_REQUIREMENTS}}
 
