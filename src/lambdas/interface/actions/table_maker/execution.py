@@ -719,9 +719,9 @@ async def execute_full_table_generation(
             formatted_soft_requirements = column_result.get('formatted_soft_requirements', '')
 
             logger.info(
-                f"[EXECUTION] Requirements extracted for frontend: "
-                f"hard={len(formatted_hard_requirements)} chars, "
-                f"soft={len(formatted_soft_requirements)} chars"
+                f"[DEBUG] Requirements extracted: "
+                f"hard={repr(formatted_hard_requirements)}, "
+                f"soft={repr(formatted_soft_requirements)}"
             )
 
             # Send progress update with columns, table_name, and requirements
@@ -731,6 +731,15 @@ async def execute_full_table_generation(
             #   - Show "Hard Requirements" section with formatted_hard_requirements (red/bold styling)
             #   - Show "Soft Requirements" section with formatted_soft_requirements (yellow/normal styling)
             #   - Requirements are formatted as bullet lists from column_definition_handler.py
+            logger.info(
+                f"[DEBUG] Sending WebSocket with requirements to frontend: "
+                f"has_requirements={bool(formatted_hard_requirements or formatted_soft_requirements)}"
+            )
+
+            logger.info(
+                f"[DEBUG] Sending WebSocket with columns and requirements"
+            )
+
             send_execution_progress(
                 session_id=session_id,
                 conversation_id=conversation_id,
@@ -887,8 +896,8 @@ async def execute_full_table_generation(
             total_discovered_count = len(final_rows)
 
             logger.info(
-                f"[EXECUTION] Sending discovered rows preview: "
-                f"{len(discovered_rows_preview)} of {total_discovered_count} total rows"
+                f"[DEBUG] Discovered rows preview created: "
+                f"{len(discovered_rows_preview)} rows, total={total_discovered_count}"
             )
 
             # Send progress update with discovered_rows
@@ -899,6 +908,11 @@ async def execute_full_table_generation(
             # - Display format: "{ID Column 1}: {value}, {ID Column 2}: {value}, ..."
             # - Show "+Y more rows" if total_discovered > 15
             # - This box will be UPDATED after QC to show "Approved Rows"
+            logger.info(
+                f"[DEBUG] Sending WebSocket with discovered_rows: "
+                f"count={len(discovered_rows_preview)}, total={total_discovered_count}"
+            )
+
             send_execution_progress(
                 session_id=session_id,
                 conversation_id=conversation_id,
@@ -1236,9 +1250,9 @@ async def execute_full_table_generation(
         qc_summary = qc_result.get('qc_summary', {}) if qc_result else {}
 
         logger.info(
-            f"[EXECUTION] Sending approved rows preview: "
-            f"{len(approved_rows_preview)} of {len(approved_rows)} approved rows "
-            f"(from {len(final_rows)} discovered)"
+            f"[DEBUG] Sending WebSocket with approved_rows: "
+            f"count={len(approved_rows_preview)}, total_approved={len(approved_rows)}, "
+            f"has_qc_summary={bool(qc_summary)}"
         )
 
         # Send progress update with approved_rows data (top 15 for display)
@@ -1253,13 +1267,9 @@ async def execute_full_table_generation(
         #   * Demoted rows: rows downgraded but kept
         #   * Rejected rows: rows removed from final set
         # - QC summary display (if available): "QC Review: +X promoted, -Y rejected"
-        progress_data = {
-            'session_id': session_id,
-            'conversation_id': conversation_id,
-            'current_step': 4,
-            'total_steps': 4,
-            'status': progress_message,
-            'progress_percent': 80,
+
+        # Build kwargs for additional fields
+        additional_fields = {
             'approved_rows': approved_rows_preview,  # First 15 rows for display
             'total_approved': len(approved_rows),
             'total_discovered': len(final_rows),  # Total before QC filtering
@@ -1268,11 +1278,19 @@ async def execute_full_table_generation(
 
         # Add insufficient rows info if applicable
         if result.get('insufficient_rows'):
-            progress_data['insufficient_rows'] = True
-            progress_data['insufficient_rows_statement'] = result.get('insufficient_rows_statement', '')
-            progress_data['insufficient_rows_recommendations'] = result.get('insufficient_rows_recommendations', [])
+            additional_fields['insufficient_rows'] = True
+            additional_fields['insufficient_rows_statement'] = result.get('insufficient_rows_statement', '')
+            additional_fields['insufficient_rows_recommendations'] = result.get('insufficient_rows_recommendations', [])
 
-        send_execution_progress(**progress_data)
+        send_execution_progress(
+            session_id=session_id,
+            conversation_id=conversation_id,
+            current_step=4,
+            total_steps=4,
+            status=progress_message,
+            progress_percent=80,
+            **additional_fields
+        )
 
         # ======================================================================
         # MUTUAL COMPLETION: Wait for Config Generation
